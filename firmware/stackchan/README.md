@@ -46,8 +46,11 @@ Gateway configuration is currently compile-time and A21-only:
 - Wi-Fi status text redacts the password
 - SSIDs containing legacy project identity are rejected
 - `platformio.ini` must not contain `A21_WIFI_PASSWORD`
+- local hardware bring-up may copy `include/a21_firmware_secrets.example.h` to ignored `include/a21_firmware_secrets.local.h`
 
-The firmware still does not open real Wi-Fi or WebSocket connections in this slice. Network transport will be added after the Wi-Fi config guard, connection state model, and screen rendering path remain stable under native tests.
+`a21_firmware_wifi_runtime.h` provides the first guarded Wi-Fi runtime. It uses a small driver interface in native tests and Arduino `WiFi.h` on CoreS3. The runtime will not call `WiFi.begin` without valid credentials, calls it once per connection attempt, transitions to Gateway connecting when Wi-Fi reports connected, and enters reconnect wait after Wi-Fi loss.
+
+The firmware still does not open a WebSocket connection in this slice. Gateway WebSocket transport will be added after Wi-Fi connection behavior remains stable under native tests and real-device serial evidence.
 
 ## Upload
 

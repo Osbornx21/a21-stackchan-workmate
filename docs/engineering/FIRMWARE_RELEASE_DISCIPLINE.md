@@ -11,7 +11,7 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 - A21 firmware may not use X21 or V21 project names, service names, artifact names, namespaces, or upload targets.
 - Firmware upload is forbidden unless a preflight command verifies manifest identity, board ID, version, git commit, and explicit upload port.
 - `pio run -t upload` must not be wrapped in a generic target until an A21 upload guard exists.
-- `platformio.ini` must not contain Wi-Fi passwords or other local secrets. Real credentials need an explicit provisioning path or an ignored local override, never a committed build flag.
+- `platformio.ini` must not contain Wi-Fi passwords or other local secrets. Real credentials need an explicit provisioning path or ignored `firmware/stackchan/include/a21_firmware_secrets.local.h`, never a committed build flag.
 - Provider API keys, V21 access, proxy config, and long-term memory are forbidden in firmware.
 - StackChan/CoreS3 remains a thin device client.
 
@@ -85,6 +85,7 @@ Current native firmware tests cover:
 - reconnect wait timing after Gateway loss
 - local fallback on invalid Gateway config
 - Wi-Fi config defaults, password redaction, legacy SSID rejection, and local fallback when credentials are missing
+- Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

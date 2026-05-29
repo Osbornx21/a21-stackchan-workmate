@@ -1,10 +1,12 @@
 #include <M5Unified.h>
+#include <WiFi.h>
 
 #include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_wifi.h"
+#include "a21_firmware_wifi_runtime.h"
 
 namespace {
 
@@ -78,6 +80,43 @@ A21ConnectionState g_connection;
 A21RenderState g_last_render_state = A21_RENDER_ERROR;
 char g_last_text[A21_TEXT_CAP] = "";
 char g_last_connection_text[A21_CONNECTION_TEXT_CAP] = "";
+A21WiFiRuntime g_wifi_runtime;
+
+bool arduinoWiFiBegin(void* ctx, const char* ssid, const char* password) {
+  (void)ctx;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  return true;
+}
+
+A21WiFiDriverStatus arduinoWiFiStatus(void* ctx) {
+  (void)ctx;
+  switch (WiFi.status()) {
+    case WL_CONNECTED:
+      return A21_WIFI_DRIVER_CONNECTED;
+    case WL_IDLE_STATUS:
+      return A21_WIFI_DRIVER_CONNECTING;
+    default:
+      return A21_WIFI_DRIVER_DISCONNECTED;
+  }
+}
+
+bool arduinoWiFiLocalIP(void* ctx, char* output, size_t output_size) {
+  (void)ctx;
+  if (output == nullptr || output_size == 0) {
+    return false;
+  }
+  IPAddress ip = WiFi.localIP();
+  const int written = snprintf(output, output_size, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+  return written > 0 && static_cast<size_t>(written) < output_size;
+}
+
+A21WiFiDriver g_wifi_driver = {
+    nullptr,
+    arduinoWiFiBegin,
+    arduinoWiFiStatus,
+    arduinoWiFiLocalIP,
+};
 
 void drawIfChanged() {
   if (g_last_render_state == g_state.render_state &&
@@ -100,6 +139,7 @@ void setup() {
   a21InitNetworkConfig(&g_network);
   a21InitWiFiConfig(&g_wifi);
   a21InitConnectionStateWithWiFi(&g_connection, &g_network, &g_wifi, millis());
+  a21InitWiFiRuntime(&g_wifi_runtime);
   if (!a21ValidateNetworkConfig(&g_network)) {
     a21CopyString(g_state.text, A21_TEXT_CAP, "A21 Gateway config error");
     a21CopyString(g_state.last_error, A21_ERROR_CAP, "network_config");
@@ -110,6 +150,7 @@ void setup() {
 
 void loop() {
   M5.update();
+  a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, millis());
   drawIfChanged();
   delay(20);
 }

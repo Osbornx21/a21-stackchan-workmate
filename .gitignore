@@ -3,3 +3,4 @@ reports/
 .pio/
 firmware/**/.pio/
 firmware/artifacts/
+firmware/stackchan/include/a21_firmware_secrets.local.h

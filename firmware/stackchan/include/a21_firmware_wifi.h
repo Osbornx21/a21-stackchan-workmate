@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#if __has_include("a21_firmware_secrets.local.h")
+#include "a21_firmware_secrets.local.h"
+#endif
+
 #ifndef A21_WIFI_SSID
 #define A21_WIFI_SSID ""
 #endif

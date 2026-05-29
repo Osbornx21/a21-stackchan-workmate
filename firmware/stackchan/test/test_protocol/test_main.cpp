@@ -5,6 +5,46 @@
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_wifi.h"
+#include "a21_firmware_wifi_runtime.h"
+
+struct FakeWiFiDriver {
+  int begin_count;
+  const char* last_ssid;
+  const char* last_password;
+  A21WiFiDriverStatus status;
+  const char* local_ip;
+};
+
+bool fakeWiFiBegin(void* ctx, const char* ssid, const char* password) {
+  FakeWiFiDriver* driver = static_cast<FakeWiFiDriver*>(ctx);
+  driver->begin_count += 1;
+  driver->last_ssid = ssid;
+  driver->last_password = password;
+  return true;
+}
+
+A21WiFiDriverStatus fakeWiFiStatus(void* ctx) {
+  FakeWiFiDriver* driver = static_cast<FakeWiFiDriver*>(ctx);
+  return driver->status;
+}
+
+bool fakeWiFiLocalIP(void* ctx, char* output, size_t output_size) {
+  FakeWiFiDriver* driver = static_cast<FakeWiFiDriver*>(ctx);
+  a21CopyString(output, output_size, driver->local_ip);
+  return true;
+}
+
+void initFakeWiFiDriver(FakeWiFiDriver* fake, A21WiFiDriver* driver) {
+  fake->begin_count = 0;
+  fake->last_ssid = "";
+  fake->last_password = "";
+  fake->status = A21_WIFI_DRIVER_DISCONNECTED;
+  fake->local_ip = "192.168.31.21";
+  driver->ctx = fake;
+  driver->begin = fakeWiFiBegin;
+  driver->status = fakeWiFiStatus;
+  driver->local_ip = fakeWiFiLocalIP;
+}
 
 void test_parse_control_event_listening() {
   const char* json =
@@ -243,6 +283,96 @@ void test_connection_state_machine_starts_wifi_when_credentials_are_valid() {
   TEST_ASSERT_EQUAL_STRING("Wi-Fi connecting", connection.status_text);
 }
 
+void test_wifi_runtime_does_not_begin_without_credentials() {
+  A21WiFiRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21WiFiConfig wifi;
+  FakeWiFiDriver fake;
+  A21WiFiDriver driver;
+  initFakeWiFiDriver(&fake, &driver);
+  a21InitNetworkConfig(&network);
+  a21InitWiFiConfig(&wifi);
+  a21InitConnectionStateWithWiFi(&connection, &network, &wifi, 1000);
+  a21InitWiFiRuntime(&runtime);
+
+  a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1200);
+
+  TEST_ASSERT_EQUAL(0, fake.begin_count);
+  TEST_ASSERT_EQUAL(A21_CONN_LOCAL_FALLBACK, connection.phase);
+}
+
+void test_wifi_runtime_begins_once_and_redacts_driver_state() {
+  A21WiFiRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21WiFiConfig wifi;
+  FakeWiFiDriver fake;
+  A21WiFiDriver driver;
+  initFakeWiFiDriver(&fake, &driver);
+  a21InitNetworkConfig(&network);
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "wang301");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+  a21InitConnectionStateWithWiFi(&connection, &network, &wifi, 1000);
+  a21InitWiFiRuntime(&runtime);
+
+  a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1200);
+  a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1300);
+
+  TEST_ASSERT_EQUAL(1, fake.begin_count);
+  TEST_ASSERT_EQUAL_STRING("wang301", fake.last_ssid);
+  TEST_ASSERT_EQUAL_STRING("secret-password", fake.last_password);
+  TEST_ASSERT_TRUE(runtime.begin_sent);
+  TEST_ASSERT_EQUAL_UINT32(1200, runtime.last_begin_at_ms);
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_CONNECTING, connection.phase);
+}
+
+void test_wifi_runtime_moves_to_gateway_connecting_on_connected_status() {
+  A21WiFiRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21WiFiConfig wifi;
+  FakeWiFiDriver fake;
+  A21WiFiDriver driver;
+  initFakeWiFiDriver(&fake, &driver);
+  fake.status = A21_WIFI_DRIVER_CONNECTED;
+  a21InitNetworkConfig(&network);
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "wang301");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+  a21InitConnectionStateWithWiFi(&connection, &network, &wifi, 1000);
+  a21InitWiFiRuntime(&runtime);
+
+  a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1400);
+
+  TEST_ASSERT_EQUAL(A21_CONN_GATEWAY_CONNECTING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("192.168.31.21", connection.local_ip);
+}
+
+void test_wifi_runtime_retries_after_disconnect() {
+  A21WiFiRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21WiFiConfig wifi;
+  FakeWiFiDriver fake;
+  A21WiFiDriver driver;
+  initFakeWiFiDriver(&fake, &driver);
+  a21InitNetworkConfig(&network);
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "wang301");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+  a21InitConnectionStateWithWiFi(&connection, &network, &wifi, 1000);
+  a21ConnectionOnWiFiConnected(&connection, "192.168.31.21", 1200);
+  a21InitWiFiRuntime(&runtime);
+
+  a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1500);
+
+  TEST_ASSERT_EQUAL(A21_CONN_RECONNECT_WAIT, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("wifi_disconnected", connection.last_error);
+  TEST_ASSERT_FALSE(runtime.begin_sent);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -261,5 +391,9 @@ int main(int argc, char** argv) {
   RUN_TEST(test_wifi_config_rejects_legacy_project_ssid);
   RUN_TEST(test_connection_state_machine_uses_local_fallback_without_wifi_credentials);
   RUN_TEST(test_connection_state_machine_starts_wifi_when_credentials_are_valid);
+  RUN_TEST(test_wifi_runtime_does_not_begin_without_credentials);
+  RUN_TEST(test_wifi_runtime_begins_once_and_redacts_driver_state);
+  RUN_TEST(test_wifi_runtime_moves_to_gateway_connecting_on_connected_status);
+  RUN_TEST(test_wifi_runtime_retries_after_disconnect);
   return UNITY_END();
 }

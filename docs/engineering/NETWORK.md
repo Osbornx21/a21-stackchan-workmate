@@ -16,7 +16,7 @@ StackChan must not know provider network details. Firmware connects only to A21 
 - network diagnostics
 - retry/fallback behavior
 
-Firmware Wi-Fi credentials are not provider credentials, but they are still local secrets. They must not be committed into `platformio.ini`, firmware docs, logs, doctor reports, or artifact names. Default firmware builds may contain no SSID and must enter local fallback until an explicit A21 provisioning path is added.
+Firmware Wi-Fi credentials are not provider credentials, but they are still local secrets. They must not be committed into `platformio.ini`, firmware docs, logs, doctor reports, or artifact names. Default firmware builds may contain no SSID and must enter local fallback. Local hardware bring-up may use ignored `firmware/stackchan/include/a21_firmware_secrets.local.h`; longer-term provisioning must preserve StackChan calibration/NVS keys and stay A21-namespaced.
 
 ## Direct-Connect Set
 
