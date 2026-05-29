@@ -18,7 +18,10 @@ import (
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/gateway"
+	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/runtimeguard"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
@@ -167,9 +170,10 @@ type latencyBenchReport struct {
 }
 
 type latencyBenchSummary struct {
-	MockTurnMS     latencyBenchSeries `json:"mock_turn_ms"`
-	ProfessionalMS latencyBenchSeries `json:"professional_turn_ms"`
-	BargeInStopMS  latencyBenchSeries `json:"barge_in_stop_ms"`
+	MockTurnMS        latencyBenchSeries `json:"mock_turn_ms"`
+	ProfessionalMS    latencyBenchSeries `json:"professional_turn_ms"`
+	BargeInStopMS     latencyBenchSeries `json:"barge_in_stop_ms"`
+	AudioWSDownlinkMS latencyBenchSeries `json:"audio_ws_downlink_ms"`
 }
 
 type latencyBenchSeries struct {
@@ -225,9 +229,12 @@ func runLatencyBench(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 	handler := gateway.NewServer().Handler()
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
 	mockTurn := make([]time.Duration, 0, iterations)
 	professional := make([]time.Duration, 0, iterations)
 	bargeIn := make([]time.Duration, 0, iterations)
+	audioDownlink := make([]time.Duration, 0, iterations)
 	for i := 0; i < iterations; i++ {
 		duration, err := measureGatewayRequest(handler, http.MethodPost, "/v1/mock-turn", `{"device_id":"stackchan-bench-001","text":"先说，我在","mode":"workmate"}`)
 		if err != nil {
@@ -246,17 +253,85 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 			return latencyBenchReport{}, err
 		}
 		bargeIn = append(bargeIn, duration)
+
+		duration, err = measureGatewayAudioDownlink(httpServer.URL, uint64(i+1))
+		if err != nil {
+			return latencyBenchReport{}, err
+		}
+		audioDownlink = append(audioDownlink, duration)
 	}
 	return latencyBenchReport{
 		Mode:       "mock",
 		Iterations: iterations,
 		Summary: latencyBenchSummary{
-			MockTurnMS:     latencySeries(mockTurn),
-			ProfessionalMS: latencySeries(professional),
-			BargeInStopMS:  latencySeries(bargeIn),
+			MockTurnMS:        latencySeries(mockTurn),
+			ProfessionalMS:    latencySeries(professional),
+			BargeInStopMS:     latencySeries(bargeIn),
+			AudioWSDownlinkMS: latencySeries(audioDownlink),
 		},
 		OK: true,
 	}, nil
+}
+
+func measureGatewayAudioDownlink(serverURL string, seq uint64) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	started := time.Now()
+	conn, _, err := websocket.Dial(ctx, latencyBenchWebSocketURL(serverURL, "/ws/audio"), nil)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "a21 latency bench done")
+
+	payload, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	})
+	if err != nil {
+		return 0, err
+	}
+	traceID := fmt.Sprintf("a21-trace-audio-bench-%06d", seq)
+	sessionID := fmt.Sprintf("a21-session-audio-bench-%06d", seq)
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-bench-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       seq,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		Payload:   payload,
+	}); err != nil {
+		return 0, err
+	}
+
+	for i := 0; i < 2; i++ {
+		var event protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &event); err != nil {
+			return 0, err
+		}
+		if event.Kind != protocol.KindControlEvent {
+			return 0, fmt.Errorf("audio bench event %d kind %q, want %q", i, event.Kind, protocol.KindControlEvent)
+		}
+	}
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		return 0, err
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		return 0, fmt.Errorf("audio bench playback kind %q, want %q", playback.Kind, protocol.KindAudioPlaybackChunk)
+	}
+	if playback.TraceID != traceID || playback.SessionID != sessionID {
+		return 0, fmt.Errorf("audio bench playback trace/session mismatch")
+	}
+	return time.Since(started), nil
+}
+
+func latencyBenchWebSocketURL(serverURL string, path string) string {
+	return "ws" + strings.TrimPrefix(serverURL, "http") + path
 }
 
 func measureGatewayRequest(handler http.Handler, method string, path string, body string) (time.Duration, error) {
