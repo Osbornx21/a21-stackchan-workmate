@@ -60,4 +60,4 @@ The tests cover mapping, validation, cancel/turn sequencing, provider output aud
 
 ## Next Step
 
-The next provider slice should wrap this mapper into a concrete `VoiceProvider` implementation that remains disabled unless `A21_PROVIDER_PRIMARY=openai_realtime` and the required credentials are configured. The first executable smoke should still require an explicit operator flag and should use short-lived test audio, not live office microphone input.
+Phase 4F wraps this mapper in an `OpenAIRealtimeVoiceProvider` session boundary. Remaining provider work should add dry-run CLI visibility first, then an explicit executable smoke using a tiny local test audio fixture, short timeout, and cost-aware reporting.
