@@ -33,6 +33,22 @@ Current approved direction:
 
 StackChan is responsible for sensing and expression. A21 Core/Gateway is responsible for thinking, providers, proxy policy, V21 bridging, session state, and observability.
 
+## Architecture Governance
+
+A21 must stay disciplined at the architecture and software-engineering level. Mature, proven libraries and official SDKs are preferred for established infrastructure such as WebSocket transport, metrics, parsing, audio codecs, provider APIs, firmware build systems, and observability export.
+
+Custom A21 code should focus on:
+
+- A21 protocol and mode semantics
+- StackChan expression and device contracts
+- provider adapter boundaries
+- proxy and China-mainland network guardrails
+- X21/V21 contamination defense
+- product experience orchestration
+- observability correlation
+
+Do not hand-roll mature infrastructure just to keep code "pure". If A21 rejects a mature library or SDK, write an ADR explaining the tradeoff, maintenance cost, and replacement path.
+
 ## Voice Strategy
 
 A21 must support two voice paths:

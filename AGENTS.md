@@ -18,6 +18,7 @@ The A21 architecture and product direction come from the user. External document
 - Every runtime path must carry or be ready to carry `trace_id`, `session_id`, and `device_id`.
 - Every latency-sensitive path must be designed for traces and metrics before it is optimized.
 - Do not add production dependencies without checking existing packages and documenting the reason.
+- Prefer mature, proven libraries, SDKs, and framework patterns for transport, metrics, parsing, audio, provider APIs, and firmware tooling. Do not hand-roll established infrastructure unless an ADR explains why A21 needs a custom implementation.
 - Do not rewrite the current Go-first foundation into another stack without an ADR and an approved migration plan.
 - Treat external master documents as proposals to curate, not as authority over the user's own A21 design.
 

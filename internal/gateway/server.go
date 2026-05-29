@@ -10,6 +10,7 @@ import (
 
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
+	"a21.local/a21/internal/providers"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -19,6 +20,11 @@ type Server struct {
 	next    uint64
 	now     func() time.Time
 	metrics *metrics
+	voice   providers.VoiceProvider
+}
+
+type ServerOptions struct {
+	VoiceProvider providers.VoiceProvider
 }
 
 type MockTurnRequest struct {
@@ -37,7 +43,15 @@ type MockTurnResponse struct {
 }
 
 func NewServer() *Server {
-	return &Server{now: time.Now, metrics: newMetrics()}
+	return NewServerWithOptions(ServerOptions{})
+}
+
+func NewServerWithOptions(options ServerOptions) *Server {
+	voiceProvider := options.VoiceProvider
+	if voiceProvider == nil {
+		voiceProvider = providers.NewMockVoiceProvider()
+	}
+	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -181,11 +195,22 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 		req.Mode = protocol.ModeWorkmate
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+	payloads := []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
-		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我想一下"},
-		{State: protocol.ExpressionSpeaking, Mode: req.Mode, Text: "先说，我在。", Final: true, StreamID: "a21-mock-stream-000001"},
+	}
+	providerEvents, err := s.voice.StartTurn(context.Background(), providers.VoiceTurnRequest{
+		Session: providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID},
+		Text:    req.Text,
+		Mode:    string(req.Mode),
 	})
+	if err != nil {
+		payloads = append(payloads, protocol.ControlEventPayload{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: err.Error(), Final: true})
+	} else {
+		for event := range providerEvents {
+			payloads = append(payloads, voiceEventToControlPayload(event, req.Mode))
+		}
+	}
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
 	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
 }
 
@@ -196,11 +221,34 @@ func (s *Server) mockInterruptResponse(req MockTurnRequest) MockTurnResponse {
 	if mode == "" {
 		mode = protocol.ModeWorkmate
 	}
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
-		{State: protocol.ExpressionInterrupted, Mode: mode, Text: "好，我听新的。"},
-		{State: protocol.ExpressionListening, Mode: mode, Text: "你说。"},
+	payloads := make([]protocol.ControlEventPayload, 0, 2)
+	providerEvents, err := s.voice.Cancel(context.Background(), providers.VoiceCancelRequest{
+		Session: providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID},
+		Reason:  providers.CancelBargeIn,
 	})
+	if err != nil {
+		payloads = append(payloads, protocol.ControlEventPayload{State: protocol.ExpressionInterrupted, Mode: mode, Text: "好，我听新的。"})
+	} else {
+		for event := range providerEvents {
+			payloads = append(payloads, voiceEventToControlPayload(event, mode))
+		}
+	}
+	payloads = append(payloads, protocol.ControlEventPayload{State: protocol.ExpressionListening, Mode: mode, Text: "你说。"})
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
 	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+}
+
+func voiceEventToControlPayload(event providers.VoiceEvent, mode protocol.Mode) protocol.ControlEventPayload {
+	switch event.Kind {
+	case providers.VoiceEventThinking:
+		return protocol.ControlEventPayload{State: protocol.ExpressionThinking, Mode: mode, Text: event.Text}
+	case providers.VoiceEventSpeaking:
+		return protocol.ControlEventPayload{State: protocol.ExpressionSpeaking, Mode: mode, Text: event.Text, Final: event.Final, StreamID: event.StreamID}
+	case providers.VoiceEventCancelled:
+		return protocol.ControlEventPayload{State: protocol.ExpressionInterrupted, Mode: mode, Text: event.Text, Final: event.Final, StreamID: event.StreamID}
+	default:
+		return protocol.ControlEventPayload{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: event.Text, Final: true}
+	}
 }
 
 func (s *Server) errorEvents(event protocol.Envelope, text string) []protocol.Envelope {

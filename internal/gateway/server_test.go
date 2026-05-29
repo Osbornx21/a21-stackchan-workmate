@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/protocol"
+	"a21.local/a21/internal/providers"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -89,6 +90,40 @@ func TestMockTurnReturnsDeterministicStateSequence(t *testing.T) {
 		if response.Events[i].TraceID != response.TraceID {
 			t.Fatalf("event %d trace = %q, want %q", i, response.Events[i].TraceID, response.TraceID)
 		}
+	}
+}
+
+func TestMockTurnUsesVoiceProviderEvents(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: scriptedVoiceProvider{
+			events: []providers.VoiceEvent{
+				{Kind: providers.VoiceEventThinking, Text: "provider thinking"},
+				{Kind: providers.VoiceEventSpeaking, Text: "provider speaking", Final: true, StreamID: "provider-stream"},
+			},
+		},
+	})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"custom","mode":"workmate"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var speaking protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[2].Payload, &speaking); err != nil {
+		t.Fatal(err)
+	}
+	if speaking.Text != "provider speaking" {
+		t.Fatalf("speaking text = %q, want provider speaking", speaking.Text)
+	}
+	if speaking.StreamID != "provider-stream" {
+		t.Fatalf("stream = %q, want provider-stream", speaking.StreamID)
 	}
 }
 
@@ -358,4 +393,33 @@ func readControlEvents(t *testing.T, ctx context.Context, conn *websocket.Conn, 
 
 func webSocketURL(serverURL string, path string) string {
 	return "ws" + strings.TrimPrefix(serverURL, "http") + path
+}
+
+type scriptedVoiceProvider struct {
+	events []providers.VoiceEvent
+}
+
+func (p scriptedVoiceProvider) Name() string {
+	return "scripted"
+}
+
+func (p scriptedVoiceProvider) StartTurn(ctx context.Context, req providers.VoiceTurnRequest) (<-chan providers.VoiceEvent, error) {
+	events := make(chan providers.VoiceEvent, len(p.events))
+	defer close(events)
+	for _, event := range p.events {
+		event.Session = req.Session
+		events <- event
+	}
+	return events, nil
+}
+
+func (p scriptedVoiceProvider) Cancel(ctx context.Context, req providers.VoiceCancelRequest) (<-chan providers.VoiceEvent, error) {
+	events := make(chan providers.VoiceEvent, 1)
+	defer close(events)
+	events <- providers.VoiceEvent{Session: req.Session, Kind: providers.VoiceEventCancelled, Text: "cancelled", Final: true}
+	return events, nil
+}
+
+func (p scriptedVoiceProvider) Close(ctx context.Context) error {
+	return ctx.Err()
 }
