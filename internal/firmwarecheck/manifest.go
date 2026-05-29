@@ -108,6 +108,9 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "pre:scripts/a21_build_identity.py") {
 		return fmt.Errorf("platformio A21 build identity script is required")
 	}
+	if !strings.Contains(content, "pre:scripts/a21_block_raw_upload.py") {
+		return fmt.Errorf("platformio A21 raw upload blocker script is required")
+	}
 	if strings.Contains(content, "a21_wifi_password") {
 		return fmt.Errorf("platformio.ini must not contain A21 Wi-Fi password build flags")
 	}

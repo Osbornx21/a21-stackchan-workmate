@@ -96,7 +96,7 @@ Servo safety currently lives in `a21_firmware_config.h`:
 
 ## Upload
 
-There is still no upload target. Do not run `pio run -t upload` until a future explicit guarded flash command requires the A21 upload and device-identity receipts.
+There is still no upload target. Raw PlatformIO upload targets are blocked by `scripts/a21_block_raw_upload.py`; do not bypass it or remove it. A future explicit guarded flash command must require the A21 upload and device-identity receipts before any real hardware write can exist.
 
 Phase 5B/5C adds only dry-run guards:
 
@@ -109,6 +109,6 @@ go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackc
 
 These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, serial-like path form, whether another process is already holding the serial path, and whether the A21 Gateway has seen the expected device ID with matching A21 firmware identity. They do not flash the device.
 
-Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`.
+Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`, and the PlatformIO blocker is expected to fail raw upload attempts.
 
 `make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source.

@@ -152,7 +152,9 @@ build_flags =
   -D A21_FIRMWARE_BOARD=\"m5stack-cores3\"
   -D A21_GATEWAY_HOST=\"10.21.0.1\"
   -D A21_GATEWAY_PORT=21080
-extra_scripts = pre:scripts/a21_build_identity.py
+extra_scripts =
+  pre:scripts/a21_block_raw_upload.py
+  pre:scripts/a21_build_identity.py
 lib_deps =
   m5stack/M5Unified @ 0.2.16
   bblanchon/ArduinoJson @ 7.4.3
@@ -167,7 +169,9 @@ build_flags =
   -D A21_FIRMWARE_BOARD=\"m5stack-cores3\"
   -D A21_GATEWAY_HOST=\"10.21.0.1\"
   -D A21_GATEWAY_PORT=21080
-extra_scripts = pre:scripts/a21_build_identity.py
+extra_scripts =
+  pre:scripts/a21_block_raw_upload.py
+  pre:scripts/a21_build_identity.py
 lib_deps =
   bblanchon/ArduinoJson @ 7.4.3
 `), 0o644); err != nil {

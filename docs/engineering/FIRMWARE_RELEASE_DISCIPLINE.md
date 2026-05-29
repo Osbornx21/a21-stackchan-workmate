@@ -12,7 +12,7 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 - Gateway must record and validate firmware build identity from device events before real hardware acceptance.
 - A21 firmware may not use X21 or V21 project names, service names, artifact names, namespaces, or upload targets.
 - Firmware upload is forbidden unless a preflight command verifies manifest identity, board ID, version, git commit, and explicit upload port.
-- `pio run -t upload` must not be wrapped in a generic target until an A21 upload guard exists.
+- Raw `pio run -t upload` must be blocked by the A21 PlatformIO script; upload-check remains a dry-run receipt and is not permission to flash.
 - Firmware packaging is forbidden when the git worktree is dirty.
 - `platformio.ini` must not contain Wi-Fi passwords or other local secrets. Real credentials need an explicit provisioning path or ignored `firmware/stackchan/include/a21_firmware_secrets.local.h`, never a committed build flag.
 - Provider API keys, V21 access, proxy config, and long-term memory are forbidden in firmware.
@@ -55,9 +55,10 @@ The first firmware protocol parser uses pinned mature dependencies:
 - native unit-test environment: `a21_stackchan_native` with Unity
 - `A21_GATEWAY_HOST` and `A21_GATEWAY_PORT=21080` build flags
 - `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags
+- `scripts/a21_block_raw_upload.py` PlatformIO pre-build script for failing raw upload targets before flashing can start
 - `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata
 
-`firmware-check` rejects unpinned or missing core firmware dependencies. This is intentional: firmware builds must be reproducible and must not silently drift under A21.
+`firmware-check` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
 
 The generated commit header is ignored:
 
@@ -227,7 +228,7 @@ This receipt is a stronger identity confirmation than `firmware-upload-check`, b
 
 ## Current Flashing Status
 
-Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, and device-identity dry-run gates, but no command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
+Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, device-identity dry-run gates, and a PlatformIO raw-upload blocker. No command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
 
 A21 firmware work must continue to use the repository-local `.a21-tools/` PlatformIO environment and `firmware/artifacts/a21-stackchan-...` packages. Do not point A21 upload checks at X21/V21 build directories, generic `firmware.bin` paths, or auto-selected serial ports.
 

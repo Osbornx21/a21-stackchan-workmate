@@ -92,6 +92,7 @@ Firmware-specific protections now include:
 - upload ports containing X21/V21 names are rejected.
 - firmware package requires a clean git worktree.
 - firmware upload remains dry-run only and returns `flash_allowed: false`.
+- raw PlatformIO upload targets are blocked by `scripts/a21_block_raw_upload.py` before any flash action can run.
 - firmware device identity guard validates a Gateway `/v1/devices` capture against the exact packaged artifact and still returns `flash_allowed: false`.
 - non-serial `/dev/*` paths such as `/dev/null` are rejected.
 - StackChan Y-axis servo clamp is fixed at 5 to 85 degrees and covered in native firmware tests.
@@ -131,6 +132,8 @@ go run ./cmd/a21 doctor     PASS, current artifact detected
 firmware-artifact-check     PASS for current commit artifact
 firmware-upload-check       FAILS SAFE when serial port is busy
 firmware-upload-check       FAILS SAFE for /dev/null non-serial path
+pio run -e a21_stackchan_native -t upload
+                           FAILS SAFE through A21 raw-upload blocker
 ```
 
 Known defensive checks:
