@@ -436,6 +436,9 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Frames</label><div id="audioFramesSent">0</div></div>
             <div class="metric"><label>RMS</label><div id="audioRms">0.000</div></div>
             <div class="metric"><label>Playback</label><div id="playbackState">stopped</div></div>
+            <div class="metric"><label>Downlink</label><div id="playbackChunksReceived">0</div></div>
+            <div class="metric"><label>Buffer</label><div id="playbackBufferedChunks">0</div></div>
+            <div class="metric"><label>Stream</label><div id="playbackStream">none</div></div>
           </div>
         </section>
         <section class="registry" aria-label="Device Registry">
@@ -481,6 +484,9 @@ const simulatorHTML = `<!doctype html>
       audioFramesSent: document.getElementById('audioFramesSent'),
       audioRms: document.getElementById('audioRms'),
       playbackState: document.getElementById('playbackState'),
+      playbackChunksReceived: document.getElementById('playbackChunksReceived'),
+      playbackBufferedChunks: document.getElementById('playbackBufferedChunks'),
+      playbackStream: document.getElementById('playbackStream'),
       mockPlayback: document.getElementById('mockPlayback'),
       registryDevice: document.getElementById('registryDevice'),
       registryIdentity: document.getElementById('registryIdentity'),
@@ -501,6 +507,9 @@ const simulatorHTML = `<!doctype html>
       mode: 'workmate',
       state: 'idle',
       audioFrames: 0,
+      playbackChunks: 0,
+      playbackBufferedChunks: 0,
+      playbackStreamId: '',
       micStream: null,
       audioContext: null,
       analyser: null,
@@ -552,6 +561,12 @@ const simulatorHTML = `<!doctype html>
     function handleEnvelope(envelope) {
       rememberEnvelope(envelope);
       const payload = envelope.payload || {};
+      if (envelope.kind === 'audio.playback.chunk') {
+        handleAudioPlaybackChunk(payload);
+        log(envelope.kind + ' seq=' + envelope.seq + ' stream=' + (payload.stream_id || 'n/a') + ' duration=' + (payload.duration_ms || 'n/a'));
+        refreshWaterfall();
+        return;
+      }
       if (payload.state) setState(payload.state);
       if (payload.mode) setMode(payload.mode);
       updatePlaybackState(payload);
@@ -596,11 +611,34 @@ const simulatorHTML = `<!doctype html>
         playMockPlaybackTick();
       } else if (payload.state === 'interrupted') {
         ui.playbackState.textContent = 'interrupted';
+        clearPlaybackBuffer();
       } else if (payload.state === 'error') {
         ui.playbackState.textContent = 'error';
+        clearPlaybackBuffer();
       } else if (payload.state === 'listening' && payload.text === 'audio frame accepted') {
         ui.playbackState.textContent = 'uplink ack';
+      } else if (payload.state && payload.state !== 'speaking') {
+        clearPlaybackBuffer();
       }
+    }
+    function handleAudioPlaybackChunk(payload) {
+      if (!payload || !payload.stream_id) return;
+      if (sim.playbackStreamId && sim.playbackStreamId !== payload.stream_id) {
+        sim.playbackBufferedChunks = 0;
+      }
+      sim.playbackStreamId = payload.stream_id;
+      sim.playbackChunks += 1;
+      sim.playbackBufferedChunks = Math.min(sim.playbackBufferedChunks + 1, 8);
+      ui.playbackChunksReceived.textContent = String(sim.playbackChunks);
+      ui.playbackBufferedChunks.textContent = String(sim.playbackBufferedChunks);
+      ui.playbackStream.textContent = payload.stream_id;
+      ui.playbackState.textContent = 'buffered ' + payload.stream_id;
+    }
+    function clearPlaybackBuffer() {
+      sim.playbackBufferedChunks = 0;
+      sim.playbackStreamId = '';
+      ui.playbackBufferedChunks.textContent = '0';
+      ui.playbackStream.textContent = 'none';
     }
     function playMockPlaybackTick() {
       if (!ui.mockPlayback.checked) return;
@@ -708,6 +746,7 @@ const simulatorHTML = `<!doctype html>
       setState('idle');
       setMode(ui.mode.value);
       ui.playbackState.textContent = 'stopped';
+      clearPlaybackBuffer();
     }
     function sendDeviceEvent(eventName) {
       if (!sim.control || sim.control.readyState !== WebSocket.OPEN) {

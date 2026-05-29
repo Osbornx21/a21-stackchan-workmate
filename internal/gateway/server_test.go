@@ -72,9 +72,14 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="mockAudioBurst"`,
 		`id="audioFramesSent"`,
 		`id="playbackState"`,
+		`id="playbackChunksReceived"`,
+		`id="playbackBufferedChunks"`,
+		`id="playbackStream"`,
 		"startMicrophoneStream",
 		"stopMicrophoneStream",
 		"sendMockAudioBurst",
+		"handleAudioPlaybackChunk",
+		"audio.playback.chunk",
 		`id="professionalEvidence"`,
 		"firmware_id",
 		"a21-stackchan",
@@ -942,6 +947,30 @@ func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketKeepsPlaybackStreamStableForTrace(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	first := writeAudioFrame(t, ctx, conn, 11, "a21-trace-audio-stable", "a21-session-audio-stable")
+	second := writeAudioFrame(t, ctx, conn, 12, "a21-trace-audio-stable", "a21-session-audio-stable")
+
+	if first.StreamID == "" {
+		t.Fatal("first stream id is empty")
+	}
+	if second.StreamID != first.StreamID {
+		t.Fatalf("second stream = %q, want stable stream %q", second.StreamID, first.StreamID)
+	}
+}
+
 func writeDeviceEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope, payload protocol.DeviceEventPayload) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -955,6 +984,44 @@ func writeDeviceEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, e
 	if err := wsjson.Write(ctx, conn, envelope); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeAudioFrame(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string) protocol.AudioPlaybackChunk {
+	t.Helper()
+	audio, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-sim-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       seq,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		Payload:   audio,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("kind = %q, want playback chunk", playback.Kind)
+	}
+	var chunk protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
+		t.Fatal(err)
+	}
+	return chunk
 }
 
 func readControlEvents(t *testing.T, ctx context.Context, conn *websocket.Conn, count int) []protocol.Envelope {

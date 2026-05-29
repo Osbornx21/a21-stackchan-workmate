@@ -83,6 +83,8 @@ Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a pl
 
 The Phase 5 downlink is still a mock/silence probe. The current firmware buffer accepts the first safe subset only: `pcm_s16le`, 16 kHz, mono, 20 ms chunks, with enough envelope capacity for a full 20 ms PCM base64 payload. It proves A21 protocol shape, trace/session propagation, Gateway-to-device media direction, and firmware buffering/cancellation semantics. It does not prove real provider TTS, hardware speaker output, mouth sync, or full-duplex capture.
 
+For a single mock trace/session, Gateway keeps the same `stream_id` across consecutive playback chunks. New traces may allocate a new stream. This mirrors the future TTS stream contract and prevents device/simulator buffers from treating every chunk as a replacement stream.
+
 ## Control And Device Events
 
 Phase 2B supports:

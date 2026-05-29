@@ -21,15 +21,16 @@ import (
 )
 
 type Server struct {
-	mu      sync.Mutex
-	next    uint64
-	now     func() time.Time
-	metrics *metrics
-	voice   providers.VoiceProvider
-	v21     v21adapter.Client
-	v21TTL  time.Duration
-	devices map[string]DeviceRecord
-	traces  map[string][]TraceEvent
+	mu           sync.Mutex
+	next         uint64
+	now          func() time.Time
+	metrics      *metrics
+	voice        providers.VoiceProvider
+	v21          v21adapter.Client
+	v21TTL       time.Duration
+	devices      map[string]DeviceRecord
+	traces       map[string][]TraceEvent
+	audioStreams map[string]string
 }
 
 type ServerOptions struct {
@@ -108,7 +109,16 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if v21TTL <= 0 {
 		v21TTL = 3 * time.Second
 	}
-	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, v21: v21Client, v21TTL: v21TTL, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
+	return &Server{
+		now:          time.Now,
+		metrics:      newMetrics(),
+		voice:        voiceProvider,
+		v21:          v21Client,
+		v21TTL:       v21TTL,
+		devices:      make(map[string]DeviceRecord),
+		traces:       make(map[string][]TraceEvent),
+		audioStreams: make(map[string]string),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -247,7 +257,7 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
-		streamID := mockAudioStreamID(frame)
+		streamID := s.mockAudioStreamID(frame, traceID, sessionID)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
 			{State: protocol.ExpressionSpeaking, Mode: protocol.ModeWorkmate, Text: "mock playback chunk", Final: true, StreamID: streamID},
@@ -257,7 +267,7 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID)
+		playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID, streamID)
 		if err := wsjson.Write(ctx, conn, playback); err != nil {
 			return
 		}
@@ -575,9 +585,9 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 	return events
 }
 
-func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string) protocol.Envelope {
+func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string, streamID string) protocol.Envelope {
 	payload := protocol.AudioPlaybackChunk{
-		StreamID:     mockAudioStreamID(frame),
+		StreamID:     streamID,
 		Codec:        protocol.AudioCodecPCMS16LE,
 		SampleRateHz: 16000,
 		Channels:     1,
@@ -600,12 +610,26 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 	}
 }
 
-func mockAudioStreamID(frame protocol.Envelope) string {
+func (s *Server) mockAudioStreamID(frame protocol.Envelope, traceID string, sessionID string) string {
 	streamSeq := frame.Seq
 	if streamSeq == 0 {
 		streamSeq = 1
 	}
-	return fmt.Sprintf("a21-audio-stream-%06d", streamSeq)
+	key := traceID
+	if key == "" {
+		key = sessionID
+	}
+	if key == "" {
+		return fmt.Sprintf("a21-audio-stream-%06d", streamSeq)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing := s.audioStreams[key]; existing != "" {
+		return existing
+	}
+	streamID := fmt.Sprintf("a21-audio-stream-%06d", streamSeq)
+	s.audioStreams[key] = streamID
+	return streamID
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

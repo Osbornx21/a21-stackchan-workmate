@@ -140,7 +140,7 @@ Phase 0: repository governance and engineering docs. Completed by this document 
 
 Phase 1: Go core foundation. Current baseline includes build identity, runtime guardrails, preflight/doctor, protocol contracts, provider contracts, and verification.
 
-Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audio/control WebSocket boundaries, deterministic mock voice provider, session/trace propagation, state transitions, device registry, in-memory trace waterfall, office visibility mode indicators, and a built-in browser simulator.
+Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audio/control WebSocket boundaries, deterministic mock voice provider, session/trace propagation, state transitions, device registry, in-memory trace waterfall, office visibility mode indicators, and a built-in browser simulator that can show Gateway audio downlink chunk counts, buffer depth, and active stream ID.
 
 Phase 3: doctor and observability expansion. Current baseline includes richer reports, firmware/toolchain/artifact/serial diagnostics, Prometheus-compatible metrics, a mock trace waterfall, optional V21 health checks, and mock latency-bench reporting for mock turn, professional turn, barge-in, and audio WebSocket downlink shape. OpenTelemetry export and real provider/device latency benches remain future work.
 
