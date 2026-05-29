@@ -47,6 +47,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
+	case "provider-realtime-plan":
+		return runProviderRealtimePlan(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -100,6 +102,39 @@ func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if execute && report.Status != providers.ProviderSmokePassed {
+		return 1
+	}
+	return 0
+}
+
+func runProviderRealtimePlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	provider := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 provider-realtime-plan [--provider <provider>]")
+			return 0
+		case "--provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--provider requires a value")
+				return 2
+			}
+			i++
+			provider = args[i]
+		case "--execute":
+			fmt.Fprintln(stderr, "provider-realtime-plan does not support --execute; use a future explicit realtime smoke command")
+			return 2
+		default:
+			fmt.Fprintf(stderr, "unknown provider-realtime-plan option %q\n", args[i])
+			return 2
+		}
+	}
+	report := providers.RealtimeWebSocketPlanFromEnv(os.Environ(), provider)
+	if err := writeJSONProviderSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode provider realtime plan: %v\n", err)
+		return 1
+	}
+	if report.Status == providers.ProviderSmokeFailed {
 		return 1
 	}
 	return 0

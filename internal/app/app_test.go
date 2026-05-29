@@ -282,6 +282,64 @@ func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) 
 	}
 }
 
+func TestRunProviderRealtimePlanDoubaoTTSDoesNotLeakSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-realtime-plan", "--provider", "doubao_tts_realtime"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "doubao_tts_realtime"`,
+		`"protocol": "websocket_realtime"`,
+		`"status": "ready"`,
+		`"configured": true`,
+		`"executed": false`,
+		`"endpoint_host": "ai-gateway.vei.volces.com"`,
+		`"api_key_env": "A21_DOUBAO_API_KEY"`,
+		`"model_env": "A21_DOUBAO_TTS_MODEL"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("provider realtime plan leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestRunProviderRealtimePlanRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-realtime-plan", "--provider", "x21_voice"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"provider": "invalid_legacy_provider"`) {
+		t.Fatalf("stdout missing redacted provider: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "x21_voice") || strings.Contains(stderr.String(), "x21_voice") {
+		t.Fatalf("legacy provider leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunProviderRealtimePlanRejectsExecuteFlag(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-realtime-plan", "--execute"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "does not support --execute") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunDoctorIncludesV21AdapterHealthWhenConfigured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {

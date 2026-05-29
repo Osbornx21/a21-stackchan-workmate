@@ -62,4 +62,4 @@ The tests cover configured health redaction, missing env handling, explicit sess
 
 ## Next Step
 
-The next provider slice should add an explicit realtime provider plan/smoke CLI that can render OpenAI and Doubao realtime plans without going through `doctor`, still with no network execution. After that, add a tiny fixture-based executable smoke only with explicit operator intent, short timeout, and cost-aware reporting.
+Phase 4I adds an explicit `provider-realtime-plan` CLI that can render OpenAI and Doubao realtime plans without going through `doctor`, still with no network execution. After that, add a tiny fixture-based executable smoke only with explicit operator intent, short timeout, and cost-aware reporting.

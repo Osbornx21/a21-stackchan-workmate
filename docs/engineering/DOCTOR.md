@@ -7,7 +7,9 @@ go run ./cmd/a21 doctor
 go run ./cmd/a21 doctor --output-dir reports
 go run ./cmd/a21 serial-list
 go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <git-sha>
+go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
 make doctor
+make provider-realtime-plan
 ```
 
 `doctor` emits the preflight report, A21 firmware/tooling status, and also writes a timestamped JSON file:
@@ -49,7 +51,7 @@ The voice provider registry is a readiness audit, not a real provider smoke test
 
 The voice smoke section is a dry-run plan inside `doctor`. It reports whether the selected provider has enough env to run a smoke test, which protocol would be used, which env variable names are involved, and which endpoint host would be contacted. It does not execute network calls and never prints key, model, proxy, or full URL values.
 
-The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning and Doubao realtime TTS planning. It reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, voice IDs, auth headers, or full provider URLs, and it does not dial the provider.
+The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning and Doubao realtime TTS planning. It reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, voice IDs, auth headers, or full provider URLs, and it does not dial the provider. The same realtime plan can be inspected directly with `provider-realtime-plan` when an operator needs a smaller provider-only report.
 
 Explicit provider smoke execution is a separate command:
 
@@ -59,6 +61,8 @@ go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
 ```
 
 Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
+
+`provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
