@@ -180,6 +180,42 @@ func TestRunDoctorIncludesProviderNetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "openai_realtime")
+	t.Setenv("A21_OPENAI_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_OPENAI_REALTIME_MODEL", "gpt-realtime")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor"}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1", code)
+	}
+	for _, want := range []string{`"providers"`, `"primary": "openai_realtime"`, `"name": "openai_realtime"`, `"configured": true`, `"A21_OPENAI_API_KEY"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "sk-a21-secret") {
+		t.Fatalf("stdout leaked provider key: %s", stdout.String())
+	}
+}
+
+func TestRunDoctorBlocksLegacyProviderPrimaryWithoutEchoingValue(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "x21_voice")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"provider_legacy_identity"`) {
+		t.Fatalf("stdout missing provider legacy finding: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "x21_voice") {
+		t.Fatalf("stdout leaked legacy provider value: %s", stdout.String())
+	}
+}
+
 func TestRunDoctorIncludesV21AdapterHealthWhenConfigured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {

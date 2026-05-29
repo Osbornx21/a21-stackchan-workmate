@@ -36,6 +36,16 @@ Healthy or degraded providers return HTTP 200 with lower-case JSON fields. Unava
 
 The same `voice` doctor section now includes a provider network report from `internal/providers.NetworkPolicyFromEnv`. This report deliberately records network mode and env variable names only. By default provider HTTP clients are `direct` and explicitly disable ambient `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` inheritance. `A21_PROVIDER_PROXY_URL` switches provider HTTP clients to `explicit_proxy` mode for future cloud egress, but that setting does not change LAN, StackChan, or V21-local routing.
 
+The voice section also includes a provider registry report from `internal/providers.ProviderCatalogFromEnv`. It currently audits readiness for:
+
+- `mock`
+- `doubao_realtime`
+- `openai_realtime`
+- `bailian_dashscope`
+- `deepseek`
+
+The registry reports selected provider, capability labels, required env names, present env names, and missing env names. It never prints env values. `A21_PROVIDER_PRIMARY` selects the intended primary provider for readiness reporting. Unknown provider names are redacted to `unknown_provider`; legacy-looking provider names containing X21 or V21 are redacted to `invalid_legacy_provider` and become blocking doctor findings.
+
 ## Current Event Mapping
 
 - provider `thinking` -> device `thinking`
@@ -61,5 +71,6 @@ Phase 4A does not implement:
 - provider latency histograms
 - cascade fallback
 - real provider connectivity checks
+- real provider construction from the registry
 
 Phase 4B adds cascade fallback. See `PHASE4B_PROVIDER_CASCADE.md`.

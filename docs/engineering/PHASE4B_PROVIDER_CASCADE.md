@@ -30,6 +30,8 @@ A21 will likely need a China-mainland-first provider path plus fallbacks. The ca
 
 This policy is separate from runtime `NO_PROXY` coverage. It prevents real provider adapters from accidentally inheriting Codex, shell, Dragon Cat Lite, or other ambient proxy settings while still allowing an explicit provider egress proxy when the Shanghai network requires one.
 
+`internal/providers.ProviderCatalogFromEnv` is the current readiness registry. It does not create providers yet. It lets doctor show which primary provider is intended and which env names are still missing before a real adapter can be built or smoke-tested.
+
 ## Governance
 
 Real provider adapters should use official SDKs or mature protocol clients where available. Provider SDK types must remain behind `internal/providers` and must not leak into:
@@ -50,3 +52,4 @@ Phase 4B does not implement:
 - real realtime audio
 - provider-specific cancellation protocol
 - provider-specific HTTP/WebSocket clients
+- registry-driven provider construction

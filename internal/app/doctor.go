@@ -62,15 +62,16 @@ type v21DoctorReport struct {
 }
 
 type voiceDoctorReport struct {
-	Provider       string                  `json:"provider"`
-	Status         string                  `json:"status"`
-	Healthy        bool                    `json:"healthy"`
-	Configured     bool                    `json:"configured"`
-	Realtime       bool                    `json:"realtime"`
-	Network        providers.NetworkReport `json:"network"`
-	ActiveProvider string                  `json:"active_provider,omitempty"`
-	Detail         string                  `json:"detail,omitempty"`
-	Findings       []runtimeguard.Finding  `json:"findings"`
+	Provider       string                          `json:"provider"`
+	Status         string                          `json:"status"`
+	Healthy        bool                            `json:"healthy"`
+	Configured     bool                            `json:"configured"`
+	Realtime       bool                            `json:"realtime"`
+	Network        providers.NetworkReport         `json:"network"`
+	Providers      providers.ProviderCatalogReport `json:"providers"`
+	ActiveProvider string                          `json:"active_provider,omitempty"`
+	Detail         string                          `json:"detail,omitempty"`
+	Findings       []runtimeguard.Finding          `json:"findings"`
 }
 
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
@@ -96,6 +97,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 	defer cancel()
 	health, err := probeVoiceProviderHealth(ctx)
 	_, network := providers.NetworkPolicyFromEnv(os.Environ())
+	catalog := providers.ProviderCatalogFromEnv(os.Environ())
 	report := voiceDoctorReport{
 		Provider:       health.Provider,
 		Status:         string(health.Status),
@@ -103,6 +105,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 		Configured:     health.Configured,
 		Realtime:       health.Realtime,
 		Network:        network,
+		Providers:      catalog,
 		ActiveProvider: health.ActiveProvider,
 		Detail:         health.Detail,
 	}
@@ -118,6 +121,18 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 			Severity: runtimeguard.SeverityWarn,
 			Message:  "A21 voice provider health check failed",
 			Detail:   redactDoctorSecret(errString(err, report.Detail)),
+		})
+	}
+	for _, finding := range catalog.Findings {
+		severity := runtimeguard.SeverityWarn
+		if finding.Code == "provider_legacy_identity" {
+			severity = runtimeguard.SeverityBlock
+		}
+		report.Findings = append(report.Findings, runtimeguard.Finding{
+			Code:     finding.Code,
+			Severity: severity,
+			Message:  finding.Message,
+			Detail:   finding.Detail,
 		})
 	}
 	return report
