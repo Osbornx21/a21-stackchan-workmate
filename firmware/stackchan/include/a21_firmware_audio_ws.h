@@ -1,5 +1,6 @@
 #pragma once
 
+#include "a21_firmware_audio_playback.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_state.h"
@@ -8,7 +9,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static constexpr size_t A21_AUDIO_WS_TEXT_MESSAGE_CAP = 960;
+static constexpr size_t A21_AUDIO_WS_TEXT_MESSAGE_CAP = 1400;
 
 struct A21AudioWSDriver {
   void* ctx;
@@ -25,6 +26,7 @@ struct A21AudioWSRuntime {
   uint32_t last_begin_at_ms;
   uint32_t received_control_events;
   uint32_t invalid_control_events;
+  uint32_t received_audio_chunks;
   uint32_t sent_audio_frames;
   uint64_t next_seq;
 };
@@ -38,6 +40,7 @@ inline void a21InitAudioWSRuntime(A21AudioWSRuntime* runtime) {
   runtime->last_begin_at_ms = 0;
   runtime->received_control_events = 0;
   runtime->invalid_control_events = 0;
+  runtime->received_audio_chunks = 0;
   runtime->sent_audio_frames = 0;
   runtime->next_seq = 1;
 }
@@ -112,9 +115,10 @@ inline bool a21AudioWSSendMockFrame(
   return true;
 }
 
-inline void a21AudioWSApplyText(
+inline void a21AudioWSApplyTextWithPlayback(
     A21AudioWSRuntime* runtime,
     A21FirmwareState* state,
+    A21AudioPlaybackBuffer* playback_buffer,
     const char* text,
     uint32_t now_ms) {
   if (runtime == nullptr || state == nullptr || text == nullptr || text[0] == '\0') {
@@ -126,6 +130,13 @@ inline void a21AudioWSApplyText(
     runtime->received_control_events += 1;
     return;
   }
+  A21AudioPlaybackChunk chunk;
+  if (playback_buffer != nullptr && a21ParseAudioPlaybackChunk(text, state->device_id, &chunk)) {
+    if (a21AudioPlaybackBufferPush(playback_buffer, &chunk)) {
+      runtime->received_audio_chunks += 1;
+      return;
+    }
+  }
   runtime->invalid_control_events += 1;
   a21CopyString(state->last_error, A21_ERROR_CAP, event.error);
   a21CopyString(state->text, A21_TEXT_CAP, "A21 audio message error");
@@ -133,25 +144,43 @@ inline void a21AudioWSApplyText(
   state->updated_at_ms = now_ms;
 }
 
+inline void a21AudioWSApplyText(
+    A21AudioWSRuntime* runtime,
+    A21FirmwareState* state,
+    const char* text,
+    uint32_t now_ms) {
+  a21AudioWSApplyTextWithPlayback(runtime, state, nullptr, text, now_ms);
+}
+
+inline void a21AudioWSDrainTextWithPlayback(
+    A21AudioWSRuntime* runtime,
+    const A21AudioWSDriver* driver,
+    A21FirmwareState* state,
+    A21AudioPlaybackBuffer* playback_buffer,
+    uint32_t now_ms) {
+  char text[A21_AUDIO_WS_TEXT_MESSAGE_CAP];
+  uint8_t guard = 0;
+  while (guard < 4 && driver->read_text(driver->ctx, text, sizeof(text))) {
+    a21AudioWSApplyTextWithPlayback(runtime, state, playback_buffer, text, now_ms);
+    ++guard;
+  }
+}
+
 inline void a21AudioWSDrainText(
     A21AudioWSRuntime* runtime,
     const A21AudioWSDriver* driver,
     A21FirmwareState* state,
     uint32_t now_ms) {
-  char text[A21_AUDIO_WS_TEXT_MESSAGE_CAP];
-  uint8_t guard = 0;
-  while (guard < 4 && driver->read_text(driver->ctx, text, sizeof(text))) {
-    a21AudioWSApplyText(runtime, state, text, now_ms);
-    ++guard;
-  }
+  a21AudioWSDrainTextWithPlayback(runtime, driver, state, nullptr, now_ms);
 }
 
-inline void a21AudioWSRuntimeTick(
+inline void a21AudioWSRuntimeTickWithPlayback(
     A21AudioWSRuntime* runtime,
     const A21AudioWSDriver* driver,
     const A21ConnectionState* connection,
     const A21NetworkConfig* network,
     A21FirmwareState* state,
+    A21AudioPlaybackBuffer* playback_buffer,
     uint32_t now_ms) {
   if (runtime == nullptr || !a21AudioWSDriverReady(driver) || connection == nullptr || network == nullptr || state == nullptr) {
     return;
@@ -166,7 +195,7 @@ inline void a21AudioWSRuntimeTick(
   driver->loop(driver->ctx);
   if (driver->connected(driver->ctx)) {
     runtime->was_connected = true;
-    a21AudioWSDrainText(runtime, driver, state, now_ms);
+    a21AudioWSDrainTextWithPlayback(runtime, driver, state, playback_buffer, now_ms);
     return;
   }
 
@@ -183,4 +212,14 @@ inline void a21AudioWSRuntimeTick(
       a21CopyString(state->last_error, A21_ERROR_CAP, "audio_ws_begin_failed");
     }
   }
+}
+
+inline void a21AudioWSRuntimeTick(
+    A21AudioWSRuntime* runtime,
+    const A21AudioWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21NetworkConfig* network,
+    A21FirmwareState* state,
+    uint32_t now_ms) {
+  a21AudioWSRuntimeTickWithPlayback(runtime, driver, connection, network, state, nullptr, now_ms);
 }

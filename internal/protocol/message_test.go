@@ -25,11 +25,12 @@ func TestEnvelopeJSONUsesA21Protocol(t *testing.T) {
 
 func TestMessageKindsCoverCoreDeviceLoop(t *testing.T) {
 	tests := map[string]Kind{
-		"audio.frame":       KindAudioFrame,
-		"device.event":      KindDeviceEvent,
-		"assistant.state":   KindAssistantState,
-		"screen.expression": KindScreenExpression,
-		"motion.command":    KindMotionCommand,
+		"audio.frame":          KindAudioFrame,
+		"audio.playback.chunk": KindAudioPlaybackChunk,
+		"device.event":         KindDeviceEvent,
+		"assistant.state":      KindAssistantState,
+		"screen.expression":    KindScreenExpression,
+		"motion.command":       KindMotionCommand,
 	}
 
 	for want, got := range tests {
@@ -166,5 +167,33 @@ func TestAudioChunkPayloadShape(t *testing.T) {
 	}
 	if chunk.Channels != 1 {
 		t.Fatalf("Channels = %d, want 1", chunk.Channels)
+	}
+}
+
+func TestAudioPlaybackChunkPayloadShape(t *testing.T) {
+	chunk := AudioPlaybackChunk{
+		StreamID:     "a21-mock-stream-001",
+		Codec:        AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	}
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		`"stream_id":"a21-mock-stream-001"`,
+		`"codec":"pcm_s16le"`,
+		`"sample_rate_hz":16000`,
+		`"channels":1`,
+		`"duration_ms":20`,
+		`"data_base64":"AAAA"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("playback chunk json missing %q: %s", want, text)
+		}
 	}
 }

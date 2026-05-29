@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "a21_firmware_connection.h"
+#include "a21_firmware_audio_playback.h"
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_config.h"
 #include "a21_firmware_network.h"
@@ -63,6 +64,9 @@ struct FakeGatewayWSDriver {
   char last_sent_text[A21_WS_TEXT_MESSAGE_CAP];
   bool connected;
   const char* pending_text;
+  const char* pending_texts[4];
+  uint8_t pending_text_count;
+  uint8_t pending_text_cursor;
 };
 
 bool fakeGatewayWSBegin(void* ctx, const char* host, uint16_t port, const char* path) {
@@ -86,6 +90,11 @@ bool fakeGatewayWSConnected(void* ctx) {
 
 bool fakeGatewayWSReadText(void* ctx, char* output, size_t output_size) {
   FakeGatewayWSDriver* driver = static_cast<FakeGatewayWSDriver*>(ctx);
+  if (driver->pending_text_cursor < driver->pending_text_count) {
+    a21CopyString(output, output_size, driver->pending_texts[driver->pending_text_cursor]);
+    driver->pending_text_cursor += 1;
+    return true;
+  }
   if (driver->pending_text == nullptr || driver->pending_text[0] == '\0') {
     return false;
   }
@@ -111,6 +120,11 @@ void initFakeGatewayWSDriver(FakeGatewayWSDriver* fake, A21GatewayWSDriver* driv
   fake->last_sent_text[0] = '\0';
   fake->connected = false;
   fake->pending_text = "";
+  for (int i = 0; i < 4; ++i) {
+    fake->pending_texts[i] = "";
+  }
+  fake->pending_text_count = 0;
+  fake->pending_text_cursor = 0;
   driver->ctx = fake;
   driver->begin = fakeGatewayWSBegin;
   driver->loop = fakeGatewayWSLoop;
@@ -129,6 +143,11 @@ void initFakeAudioWSDriver(FakeGatewayWSDriver* fake, A21AudioWSDriver* driver) 
   fake->last_sent_text[0] = '\0';
   fake->connected = false;
   fake->pending_text = "";
+  for (int i = 0; i < 4; ++i) {
+    fake->pending_texts[i] = "";
+  }
+  fake->pending_text_count = 0;
+  fake->pending_text_cursor = 0;
   driver->ctx = fake;
   driver->begin = fakeGatewayWSBegin;
   driver->loop = fakeGatewayWSLoop;
@@ -905,6 +924,142 @@ void test_audio_ws_applies_gateway_ack_control_event() {
   TEST_ASSERT_TRUE(runtime.was_connected);
 }
 
+void test_parse_audio_playback_chunk_accepts_a21_downlink() {
+  const char* json =
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"audio.playback.chunk\","
+      "\"seq\":8,"
+      "\"trace_id\":\"a21-trace-playback-001\","
+      "\"session_id\":\"a21-session-playback-001\","
+      "\"payload\":{\"stream_id\":\"a21-audio-stream-000001\",\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,\"channels\":1,\"duration_ms\":20,\"data_base64\":\"AAAA\"}}";
+
+  A21AudioPlaybackChunk chunk;
+  TEST_ASSERT_TRUE(a21ParseAudioPlaybackChunk(json, "stackchan-001", &chunk));
+  TEST_ASSERT_EQUAL_STRING("a21-trace-playback-001", chunk.trace_id);
+  TEST_ASSERT_EQUAL_STRING("a21-session-playback-001", chunk.session_id);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", chunk.stream_id);
+  TEST_ASSERT_EQUAL_STRING("pcm_s16le", chunk.codec);
+  TEST_ASSERT_EQUAL_UINT32(16000, chunk.sample_rate_hz);
+  TEST_ASSERT_EQUAL_UINT8(1, chunk.channels);
+  TEST_ASSERT_EQUAL_UINT16(20, chunk.duration_ms);
+  TEST_ASSERT_EQUAL_STRING("AAAA", chunk.data_base64);
+}
+
+void test_parse_audio_playback_chunk_keeps_full_20ms_pcm_base64_payload() {
+  char data[900];
+  for (int i = 0; i < 856; ++i) {
+    data[i] = 'A';
+  }
+  data[856] = '\0';
+
+  char json[1400];
+  snprintf(
+      json,
+      sizeof(json),
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"audio.playback.chunk\","
+      "\"trace_id\":\"a21-trace-playback-long\","
+      "\"session_id\":\"a21-session-playback-long\","
+      "\"payload\":{\"stream_id\":\"a21-audio-stream-000001\",\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,\"channels\":1,\"duration_ms\":20,\"data_base64\":\"%s\"}}",
+      data);
+
+  A21AudioPlaybackChunk chunk;
+  TEST_ASSERT_TRUE(a21ParseAudioPlaybackChunk(json, "stackchan-001", &chunk));
+  TEST_ASSERT_EQUAL_STRING(data, chunk.data_base64);
+}
+
+void test_audio_playback_buffer_tracks_bounded_stream_chunks() {
+  A21AudioPlaybackBuffer buffer;
+  a21InitAudioPlaybackBuffer(&buffer);
+
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, "AAAA");
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+
+  for (int i = 0; i < A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP + 2; ++i) {
+    TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  }
+
+  TEST_ASSERT_EQUAL_UINT8(A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP, buffer.total_chunks);
+  TEST_ASSERT_EQUAL_UINT32(2, buffer.dropped_chunks);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", buffer.active_stream_id);
+  TEST_ASSERT_EQUAL_UINT16(20, buffer.last_duration_ms);
+}
+
+void test_audio_ws_buffers_playback_chunk_without_error_state() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21FirmwareState state;
+  A21AudioPlaybackBuffer playback_buffer;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  fake.connected = true;
+  fake.pending_texts[0] =
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"control.event\","
+      "\"trace_id\":\"a21-trace-playback-002\","
+      "\"session_id\":\"a21-session-playback-002\","
+      "\"payload\":{\"state\":\"speaking\",\"mode\":\"workmate\",\"text\":\"mock playback chunk\",\"stream_id\":\"a21-audio-stream-000001\",\"final\":true}}";
+  fake.pending_texts[1] =
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"audio.playback.chunk\","
+      "\"trace_id\":\"a21-trace-playback-002\","
+      "\"session_id\":\"a21-session-playback-002\","
+      "\"payload\":{\"stream_id\":\"a21-audio-stream-000001\",\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,\"channels\":1,\"duration_ms\":20,\"data_base64\":\"AAAA\"}}";
+  fake.pending_text_count = 2;
+  a21InitAudioWSRuntime(&runtime);
+  a21InitNetworkConfig(&network);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21InitAudioPlaybackBuffer(&playback_buffer);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  a21AudioWSRuntimeTickWithPlayback(&runtime, &driver, &connection, &network, &state, &playback_buffer, 2100);
+
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.invalid_control_events);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.received_control_events);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.received_audio_chunks);
+  TEST_ASSERT_EQUAL_UINT8(1, playback_buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", playback_buffer.active_stream_id);
+  TEST_ASSERT_EQUAL(A21_RENDER_SPEAKING, state.render_state);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", state.stream_id);
+}
+
+void test_audio_playback_buffer_clears_on_barge_in_state() {
+  A21AudioPlaybackBuffer buffer;
+  A21FirmwareState state;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitFirmwareState(&state, "stackchan-001");
+
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, "AAAA");
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  state.render_state = A21_RENDER_INTERRUPTED;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferApplyState(&buffer, &state));
+
+  TEST_ASSERT_EQUAL_UINT8(0, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(1, buffer.clear_count);
+  TEST_ASSERT_EQUAL_STRING("", buffer.active_stream_id);
+}
+
 void test_audio_ws_send_mock_frame_rejects_when_audio_not_connected() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1227,6 +1382,11 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);
   RUN_TEST(test_audio_ws_applies_gateway_ack_control_event);
+  RUN_TEST(test_parse_audio_playback_chunk_accepts_a21_downlink);
+  RUN_TEST(test_parse_audio_playback_chunk_keeps_full_20ms_pcm_base64_payload);
+  RUN_TEST(test_audio_playback_buffer_tracks_bounded_stream_chunks);
+  RUN_TEST(test_audio_ws_buffers_playback_chunk_without_error_state);
+  RUN_TEST(test_audio_playback_buffer_clears_on_barge_in_state);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
   RUN_TEST(test_touch_runtime_sends_wake_or_listen_with_semantic_source);
   RUN_TEST(test_touch_runtime_sends_barge_in_from_top_sensor);

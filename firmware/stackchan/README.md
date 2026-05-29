@@ -67,6 +67,7 @@ Gateway configuration is currently compile-time and A21-only:
 - opens a separate `/ws/audio` socket only after the control Gateway is connected
 - sends deterministic mock `audio.frame` envelopes with `pcm_s16le`, 16 kHz, mono, 20 ms silence payload
 - applies Gateway ack `control.event` messages through the same tested parser
+- accepts Gateway `audio.playback.chunk` envelopes into a bounded playback buffer keyed by `stream_id`
 - keeps real microphone capture and speaker playback out of this slice
 
 Current local controls are intentionally minimal and routed through semantic device intents:
@@ -78,6 +79,8 @@ Current local controls are intentionally minimal and routed through semantic dev
 `a21_firmware_touch.h` keeps touch as a semantic runtime (`wake_or_listen`, `barge_in`) instead of exposing coordinates or hardware registers to Gateway. Real screen touch and top-sensor calibration remain future hardware work; this slice only proves the tested intent pipeline and preserves the source label.
 
 `a21_firmware_playback.h` owns the first playback state machine. It starts a stream when the local state becomes `speaking` with a `stream_id`, writes only once for the same stream, and immediately stops plus clears pending audio when the state changes to `interrupted`, `listening`, `error`, `local_fallback`, or another non-speaking state. The CoreS3 main loop currently uses a no-op playback driver, so this proves cancellation semantics without driving the speaker.
+
+`a21_firmware_audio_playback.h` owns the hardware-free playback chunk parser and bounded buffer. It accepts only A21 `audio.playback.chunk` envelopes for the current device, validates current Phase 5 PCM mono chunk metadata (`pcm_s16le`, 16 kHz, 20 ms), tracks queue depth/drop counts, and clears the buffer when render state leaves `speaking`.
 
 The firmware still does not capture microphone audio, play Gateway audio samples, run VAD, or claim full-duplex behavior. The current audio WebSocket and playback paths are disciplined transport/control probes only.
 

@@ -132,7 +132,7 @@ Any voice delay must be traceable. A turn should eventually expose:
 - playback stop
 - fallback and error code
 
-Phase 1 has the first runtime fingerprint. Current Gateway observability includes in-memory trace markers and Prometheus metrics for mock turns, barge-in, audio frames, invalid firmware identity, WebSocket connections, and professional V21 query latency. Later phases must add OpenTelemetry spans, structured logs, and latency benchmark reports.
+Phase 1 has the first runtime fingerprint. Current Gateway observability includes in-memory trace markers and Prometheus metrics for mock turns, barge-in, audio frames, mock playback chunk sends, invalid firmware identity, WebSocket connections, and professional V21 query latency. Later phases must add OpenTelemetry spans, structured logs, and latency benchmark reports.
 
 ## Phase Roadmap
 
@@ -146,7 +146,7 @@ Phase 3: doctor and observability expansion. Current baseline includes richer re
 
 Phase 4: provider adapters. Current baseline includes mock and cascade voice providers, provider-neutral health status, and explicit cancel reason/stream acknowledgements. Next slices should add China-mainland-first realtime/streaming providers, latency metrics, credential-free health probes, and provider-specific cancellation adapters behind this boundary.
 
-Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, semantic motion runtime with Y-axis servo clamp safety, semantic RGB state runtime, semantic touch intent runtime, playback start/stop/clear state machine, build/package/upload/device-identity dry-run discipline, and native tests. Real mic capture/playback samples, calibrated servo/RGB hardware output, calibrated screen/top-sensor touch hardware mapping, OTA, and physical flashing remain future work.
+Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, mock Gateway audio downlink chunks, bounded firmware playback buffering, reconnect/local fallback state, semantic motion runtime with Y-axis servo clamp safety, semantic RGB state runtime, semantic touch intent runtime, playback start/stop/clear state machine, build/package/upload/device-identity dry-run discipline, and native tests. Real mic capture/playback samples, calibrated servo/RGB hardware output, calibrated screen/top-sensor touch hardware mapping, OTA, and physical flashing remain future work.
 
 Phase 6: V21 professional mode. Current baseline includes a V21 adapter contract, HTTP/mock clients, Gateway professional mode routing, explicit evidence fields, confidence, speech blocks, failure fallback, trace markers, optional doctor health checks, and simulator evidence-card rendering. Real endpoint smoke and timeout metrics remain future work.
 

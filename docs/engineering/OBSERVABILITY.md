@@ -18,7 +18,7 @@ The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metric
 
 Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
 
-Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
+Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, mock playback chunk sends, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
 
 ## Trace Fields
 
@@ -47,6 +47,7 @@ Current mock trace events include:
 - `device.touch.wake_or_listen.received`
 - `device.touch.barge_in.received`
 - `audio.frame.received`
+- `audio.playback.chunk.sent`
 - `v21.query.start`
 - `v21.query.first_result`
 - `v21.query.error`
@@ -84,6 +85,7 @@ Current Prometheus metrics:
 - `a21_mock_turn_total`
 - `a21_barge_in_total`
 - `a21_audio_frame_total`
+- `a21_audio_playback_chunk_total`
 - `a21_device_identity_invalid_total`
 - `a21_v21_query_ms_bucket`
 - `a21_ws_connections_active`

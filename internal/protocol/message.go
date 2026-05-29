@@ -7,12 +7,13 @@ const ProtocolVersion = "a21.device.v1"
 type Kind string
 
 const (
-	KindAudioFrame       Kind = "audio.frame"
-	KindDeviceEvent      Kind = "device.event"
-	KindAssistantState   Kind = "assistant.state"
-	KindScreenExpression Kind = "screen.expression"
-	KindMotionCommand    Kind = "motion.command"
-	KindControlEvent     Kind = "control.event"
+	KindAudioFrame         Kind = "audio.frame"
+	KindAudioPlaybackChunk Kind = "audio.playback.chunk"
+	KindDeviceEvent        Kind = "device.event"
+	KindAssistantState     Kind = "assistant.state"
+	KindScreenExpression   Kind = "screen.expression"
+	KindMotionCommand      Kind = "motion.command"
+	KindControlEvent       Kind = "control.event"
 )
 
 type Envelope struct {
@@ -122,4 +123,13 @@ type AudioChunk struct {
 	CaptureStartedAtMS int64      `json:"capture_started_at_ms,omitempty"`
 	CaptureEndedAtMS   int64      `json:"capture_ended_at_ms,omitempty"`
 	DataBase64         string     `json:"data_base64"`
+}
+
+type AudioPlaybackChunk struct {
+	StreamID     string     `json:"stream_id"`
+	Codec        AudioCodec `json:"codec"`
+	SampleRateHz int        `json:"sample_rate_hz"`
+	Channels     int        `json:"channels"`
+	DurationMS   int        `json:"duration_ms"`
+	DataBase64   string     `json:"data_base64"`
 }

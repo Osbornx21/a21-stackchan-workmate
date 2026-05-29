@@ -483,7 +483,14 @@ func TestMetricsEndpointRecordsAudioFrame(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	readControlEvents(t, ctx, conn, 1)
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("playback kind = %q, want %q", playback.Kind, protocol.KindAudioPlaybackChunk)
+	}
 
 	resp, err := http.Get(httpServer.URL + "/metrics")
 	if err != nil {
@@ -494,8 +501,11 @@ func TestMetricsEndpointRecordsAudioFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "a21_audio_frame_total 1") {
-		t.Fatalf("metrics missing audio frame count:\n%s", data)
+	body := string(data)
+	for _, want := range []string{"a21_audio_frame_total 1", "a21_audio_playback_chunk_total 1"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, data)
+		}
 	}
 }
 
@@ -864,6 +874,71 @@ func TestAudioWebSocketAcceptsAudioFrame(t *testing.T) {
 	}
 	if events[0].TraceID != "a21-trace-audio-001" {
 		t.Fatalf("trace = %q, want a21-trace-audio-001", events[0].TraceID)
+	}
+}
+
+func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	audio, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-sim-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       1,
+		TraceID:   "a21-trace-audio-downlink",
+		SessionID: "a21-session-audio-downlink",
+		Payload:   audio,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events := readControlEvents(t, ctx, conn, 2)
+	var speaking protocol.ControlEventPayload
+	if err := json.Unmarshal(events[1].Payload, &speaking); err != nil {
+		t.Fatal(err)
+	}
+	if speaking.State != protocol.ExpressionSpeaking || speaking.StreamID != "a21-audio-stream-000001" {
+		t.Fatalf("speaking payload = %+v", speaking)
+	}
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("kind = %q, want %q", playback.Kind, protocol.KindAudioPlaybackChunk)
+	}
+	if playback.TraceID != "a21-trace-audio-downlink" {
+		t.Fatalf("trace = %q, want a21-trace-audio-downlink", playback.TraceID)
+	}
+	var payload protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.StreamID != "a21-audio-stream-000001" {
+		t.Fatalf("stream = %q, want a21-audio-stream-000001", payload.StreamID)
+	}
+	if payload.Codec != protocol.AudioCodecPCMS16LE || payload.SampleRateHz != 16000 || payload.Channels != 1 || payload.DurationMS != 20 || payload.DataBase64 != "AAAA" {
+		t.Fatalf("playback payload = %+v", payload)
 	}
 }
 

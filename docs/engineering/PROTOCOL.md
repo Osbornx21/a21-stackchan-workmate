@@ -10,12 +10,13 @@ const ProtocolVersion = "a21.device.v1"
 type Kind string
 
 const (
-	KindAudioFrame       Kind = "audio.frame"
-	KindDeviceEvent      Kind = "device.event"
-	KindAssistantState   Kind = "assistant.state"
-	KindScreenExpression Kind = "screen.expression"
-	KindMotionCommand    Kind = "motion.command"
-	KindControlEvent     Kind = "control.event"
+	KindAudioFrame         Kind = "audio.frame"
+	KindAudioPlaybackChunk Kind = "audio.playback.chunk"
+	KindDeviceEvent        Kind = "device.event"
+	KindAssistantState     Kind = "assistant.state"
+	KindScreenExpression   Kind = "screen.expression"
+	KindMotionCommand      Kind = "motion.command"
+	KindControlEvent       Kind = "control.event"
 )
 
 type Envelope struct {
@@ -59,7 +60,7 @@ A21 mode values are semantic product and office-state signals, not provider name
 
 Only `professional` is allowed to trigger the V21 adapter path. `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context.
 
-## Audio Chunk
+## Audio Chunks
 
 Current mock audio payload:
 
@@ -69,6 +70,19 @@ Current mock audio payload:
 - device frame duration: 20 ms or 40 ms for LAN responsiveness
 - provider aggregation: adapter-specific, often 100-200 ms
 
+Device uplink uses `audio.frame`.
+
+Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a playback payload:
+
+- `stream_id`: stable playback stream identifier
+- `codec`: currently `pcm_s16le`
+- `sample_rate_hz`: 16000, 24000, or 48000
+- `channels`: 1
+- `duration_ms`: 20 or 40
+- `data_base64`: encoded PCM payload
+
+The Phase 5 downlink is still a mock/silence probe. The current firmware buffer accepts the first safe subset only: `pcm_s16le`, 16 kHz, mono, 20 ms chunks, with enough envelope capacity for a full 20 ms PCM base64 payload. It proves A21 protocol shape, trace/session propagation, Gateway-to-device media direction, and firmware buffering/cancellation semantics. It does not prove real provider TTS, hardware speaker output, mouth sync, or full-duplex capture.
+
 ## Control And Device Events
 
 Phase 2B supports:
@@ -77,7 +91,7 @@ Phase 2B supports:
 - device event `interrupt` -> control events `interrupted`, `listening`
 - device event `touch.wake_or_listen` -> same turn path as `mock.turn`, with optional `touch_source`
 - device event `touch.barge_in` -> same interruption path as `interrupt`, with optional `touch_source`
-- audio frame -> mock listening ack
+- audio frame -> mock listening ack, mock speaking state with `stream_id`, then `audio.playback.chunk`
 
 Firmware-originated `device.event` payloads may also carry build identity:
 
@@ -99,7 +113,9 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
+Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; the buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
+
+Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 
 ## Barge-In Requirements
 

@@ -247,10 +247,18 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
+		streamID := mockAudioStreamID(frame)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
+			{State: protocol.ExpressionSpeaking, Mode: protocol.ModeWorkmate, Text: "mock playback chunk", Final: true, StreamID: streamID},
 		})
-		if err := wsjson.Write(ctx, conn, events[0]); err != nil {
+		for _, event := range events {
+			if err := wsjson.Write(ctx, conn, event); err != nil {
+				return
+			}
+		}
+		playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID)
+		if err := wsjson.Write(ctx, conn, playback); err != nil {
 			return
 		}
 	}
@@ -565,6 +573,39 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 		s.recordTrace(traceID, sessionID, deviceID, "control."+string(payload.State)+".sent", sentAt+int64(i))
 	}
 	return events
+}
+
+func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string) protocol.Envelope {
+	payload := protocol.AudioPlaybackChunk{
+		StreamID:     mockAudioStreamID(frame),
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	}
+	data, _ := json.Marshal(payload)
+	sentAt := s.now().UnixMilli()
+	s.metrics.audioPlaybackChunkTotal.Inc()
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.playback.chunk.sent", sentAt)
+	return protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  frame.DeviceID,
+		Kind:      protocol.KindAudioPlaybackChunk,
+		Seq:       frame.Seq + 1,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		SentAtMS:  sentAt,
+		Payload:   data,
+	}
+}
+
+func mockAudioStreamID(frame protocol.Envelope) string {
+	streamSeq := frame.Seq
+	if streamSeq == 0 {
+		streamSeq = 1
+	}
+	return fmt.Sprintf("a21-audio-stream-%06d", streamSeq)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

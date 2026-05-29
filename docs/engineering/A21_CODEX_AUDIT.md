@@ -70,7 +70,7 @@ go run ./cmd/a21 serial-list
 - `internal/runtimeguard`: env, endpoint, cwd, port, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
 - `internal/providers`: provider-neutral voice contracts plus deterministic mock/cascade behavior.
-- `firmware/stackchan`: PlatformIO CoreS3 firmware lane with A21-only identity, Wi-Fi/Gateway state machines, control/audio WebSocket probes, protocol parsing, and native Unity tests.
+- `firmware/stackchan`: PlatformIO CoreS3 firmware lane with A21-only identity, Wi-Fi/Gateway state machines, control/audio WebSocket probes, mock playback downlink buffering, protocol parsing, and native Unity tests.
 - `internal/v21adapter`: professional-mode V21 adapter contract, HTTP client, mock client, and legacy-port boundary checks.
 
 ## Namespace Findings
@@ -98,7 +98,7 @@ Firmware-specific protections now include:
 - semantic render states now map to safe Y-axis motion targets through a driver interface; CoreS3 currently uses a no-op driver until calibrated hardware output is added.
 - semantic render states now map to RGB state colors through a driver interface; CoreS3 currently uses a no-op driver until calibrated RGB hardware output is added.
 - semantic touch intents now map to A21 `touch.wake_or_listen` and `touch.barge_in` device events while preserving `screen` versus `top_sensor` source metadata; CoreS3 button inputs currently feed this runtime as a hardware-free development path.
-- playback now has a tested no-op driver boundary that starts on speaking `stream_id`, stops and clears on barge-in, and replaces streams with stop/clear before restart; real speaker sample output is still not implemented.
+- playback now has a tested no-op driver boundary that starts on speaking `stream_id`, stops and clears on barge-in, and replaces streams with stop/clear before restart; audio downlink chunks are parsed into a bounded firmware buffer keyed by `stream_id`; real speaker sample output is still not implemented.
 
 ## Legacy Neighbor Risks
 
@@ -126,7 +126,7 @@ Fresh verification after the current Gateway/Simulator/Firmware guard baseline:
 
 ```text
 make verify                 PASS
-make firmware-test          PASS, 34/34 native firmware tests
+make firmware-test          PASS, 49/49 native firmware tests
 go run ./cmd/a21 doctor     PASS, current artifact detected
 firmware-artifact-check     PASS for current commit artifact
 firmware-upload-check       FAILS SAFE when serial port is busy
@@ -144,13 +144,13 @@ firmware-upload-check --port /dev/null ...                    exits 1
 
 ## Gaps
 
-- Gateway and simulator are mock-first and deterministic; real microphone capture, playback, VAD, jitter buffer, and provider audio streaming remain future work.
-- Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
+- Gateway and simulator are mock-first and deterministic; real microphone capture, speaker playback, VAD, jitter buffer, and provider audio streaming remain future work.
+- Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes and bounded mock downlink buffering, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
 - Metrics and in-memory trace waterfall exist, including professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
 - Provider-neutral mock/cascade contracts include health status and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
 - Mock `latency-bench` exists for Gateway mock/professional/barge-in report shape; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
-- Simulator now has browser microphone/mock-burst controls and local mock playback state; real Gateway TTS audio downlink playback remains future work.
+- Simulator now has browser microphone/mock-burst controls and local mock playback state; real Gateway/provider TTS audio downlink playback remains future work.
 - Protocol and simulator now expose office visibility modes for private/public/pro/muted/listening states; only `professional` calls the V21 adapter.
 - No CI yet.
 

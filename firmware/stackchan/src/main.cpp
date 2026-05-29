@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "a21_firmware_config.h"
+#include "a21_firmware_audio_playback.h"
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_gateway_ws.h"
@@ -100,12 +101,16 @@ A21MotionRuntime g_motion_runtime;
 A21RGBRuntime g_rgb_runtime;
 A21TouchRuntime g_touch_runtime;
 A21PlaybackRuntime g_playback_runtime;
+A21AudioPlaybackBuffer g_audio_playback_buffer;
+
+static constexpr size_t A21_ARDUINO_WS_TEXT_MESSAGE_CAP =
+    A21_AUDIO_WS_TEXT_MESSAGE_CAP > A21_WS_TEXT_MESSAGE_CAP ? A21_AUDIO_WS_TEXT_MESSAGE_CAP : A21_WS_TEXT_MESSAGE_CAP;
 
 struct A21ArduinoTextWS {
   WebSocketsClient client;
   bool connected;
   bool has_text;
-  char text[A21_WS_TEXT_MESSAGE_CAP];
+  char text[A21_ARDUINO_WS_TEXT_MESSAGE_CAP];
 };
 
 A21ArduinoTextWS g_gateway_ws_client;
@@ -160,7 +165,7 @@ void applyArduinoWSEvent(A21ArduinoTextWS* client, WStype_t type, uint8_t* paylo
       client->has_text = false;
       break;
     case WStype_TEXT: {
-      const size_t copy_len = length < (A21_WS_TEXT_MESSAGE_CAP - 1) ? length : (A21_WS_TEXT_MESSAGE_CAP - 1);
+      const size_t copy_len = length < (A21_ARDUINO_WS_TEXT_MESSAGE_CAP - 1) ? length : (A21_ARDUINO_WS_TEXT_MESSAGE_CAP - 1);
       memcpy(client->text, payload, copy_len);
       client->text[copy_len] = '\0';
       client->has_text = true;
@@ -377,6 +382,7 @@ void setup() {
   a21InitRGBRuntime(&g_rgb_runtime);
   a21InitTouchRuntime(&g_touch_runtime);
   a21InitPlaybackRuntime(&g_playback_runtime);
+  a21InitAudioPlaybackBuffer(&g_audio_playback_buffer);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
@@ -392,8 +398,16 @@ void loop() {
   const uint32_t now_ms = millis();
   a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, now_ms);
   a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
-  a21AudioWSRuntimeTick(&g_audio_ws_runtime, &g_audio_ws_driver, &g_connection, &g_network, &g_state, now_ms);
+  a21AudioWSRuntimeTickWithPlayback(
+      &g_audio_ws_runtime,
+      &g_audio_ws_driver,
+      &g_connection,
+      &g_network,
+      &g_state,
+      &g_audio_playback_buffer,
+      now_ms);
   a21PlaybackRuntimeApplyState(&g_playback_runtime, &g_playback_driver, &g_state);
+  a21AudioPlaybackBufferApplyState(&g_audio_playback_buffer, &g_state);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);
