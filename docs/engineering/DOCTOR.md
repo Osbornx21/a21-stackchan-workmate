@@ -49,7 +49,7 @@ The voice provider registry is a readiness audit, not a real provider smoke test
 
 The voice smoke section is a dry-run plan inside `doctor`. It reports whether the selected provider has enough env to run a smoke test, which protocol would be used, which env variable names are involved, and which endpoint host would be contacted. It does not execute network calls and never prints key, model, proxy, or full URL values.
 
-The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning only and reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, auth headers, or full provider URLs, and it does not dial the provider.
+The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning and Doubao realtime TTS planning. It reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, voice IDs, auth headers, or full provider URLs, and it does not dial the provider.
 
 Explicit provider smoke execution is a separate command:
 
@@ -58,7 +58,7 @@ go run ./cmd/a21 provider-smoke --provider deepseek --execute
 go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
 ```
 
-Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime and Doubao Realtime are reported as `unsupported` until their dedicated realtime adapters exist.
+Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 

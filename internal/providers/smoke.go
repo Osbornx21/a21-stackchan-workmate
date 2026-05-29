@@ -47,6 +47,7 @@ type providerSmokeSpec struct {
 	APIKeyEnv      string
 	ModelEnv       string
 	BaseURLEnv     string
+	RequiredEnv    []string
 	DefaultBaseURL string
 	EndpointPath   string
 	Executable     bool
@@ -87,6 +88,14 @@ var providerSmokeSpecs = []providerSmokeSpec{
 		APIKeyEnv:  "A21_DOUBAO_API_KEY",
 		ModelEnv:   "A21_DOUBAO_REALTIME_MODEL",
 		Executable: false,
+	},
+	{
+		Name:        "doubao_tts_realtime",
+		Protocol:    "websocket_realtime",
+		APIKeyEnv:   "A21_DOUBAO_API_KEY",
+		ModelEnv:    "A21_DOUBAO_TTS_MODEL",
+		RequiredEnv: []string{"A21_DOUBAO_TTS_VOICE"},
+		Executable:  false,
 	},
 }
 
@@ -181,6 +190,11 @@ func providerSmokeConfigured(env []string, spec providerSmokeSpec) (bool, []stri
 		if name == "" {
 			continue
 		}
+		if strings.TrimSpace(envValue(env, name)) == "" {
+			missing = append(missing, name)
+		}
+	}
+	for _, name := range spec.RequiredEnv {
 		if strings.TrimSpace(envValue(env, name)) == "" {
 			missing = append(missing, name)
 		}

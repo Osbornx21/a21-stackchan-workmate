@@ -12,6 +12,7 @@ import (
 )
 
 const openAIRealtimeDefaultURL = "wss://api.openai.com/v1/realtime"
+const doubaoRealtimeDefaultURL = "wss://ai-gateway.vei.volces.com/v1/realtime"
 
 type RealtimeWebSocketConfig struct {
 	Provider      string
@@ -64,7 +65,55 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		report.Detail = "provider target rejected"
 		return report
 	}
-	if provider != "openai_realtime" {
+	switch provider {
+	case "openai_realtime":
+		report.Provider = provider
+		report.APIKeyEnv = "A21_OPENAI_API_KEY"
+		report.ModelEnv = "A21_OPENAI_REALTIME_MODEL"
+		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
+			APIKeyEnv: report.APIKeyEnv,
+			ModelEnv:  report.ModelEnv,
+		})
+		if !report.Configured {
+			report.Status = ProviderSmokeSkipped
+			report.Detail = "realtime websocket plan skipped because required env is missing"
+			return report
+		}
+		endpoint, err := openAIRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)))
+		if err != nil {
+			report.Status = ProviderSmokeFailed
+			report.Detail = redactProviderSmokeDetail(err.Error())
+			return report
+		}
+		report.EndpointHost = endpointHost(endpoint)
+		report.Status = ProviderSmokeReady
+		report.Detail = "realtime websocket plan is configured; explicit adapter connect is required"
+		return report
+	case "doubao_tts_realtime":
+		report.Provider = provider
+		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
+		report.ModelEnv = "A21_DOUBAO_TTS_MODEL"
+		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
+			APIKeyEnv:   report.APIKeyEnv,
+			ModelEnv:    report.ModelEnv,
+			RequiredEnv: []string{"A21_DOUBAO_TTS_VOICE"},
+		})
+		if !report.Configured {
+			report.Status = ProviderSmokeSkipped
+			report.Detail = "doubao realtime TTS plan skipped because required env is missing"
+			return report
+		}
+		endpoint, err := doubaoRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)))
+		if err != nil {
+			report.Status = ProviderSmokeFailed
+			report.Detail = redactProviderSmokeDetail(err.Error())
+			return report
+		}
+		report.EndpointHost = endpointHost(endpoint)
+		report.Status = ProviderSmokeReady
+		report.Detail = "doubao realtime TTS websocket plan is configured; explicit adapter connect is required"
+		return report
+	default:
 		report.Status = ProviderSmokeUnsupported
 		report.Detail = "provider-specific realtime websocket plan is not implemented yet"
 		if provider == "mock" {
@@ -73,28 +122,6 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		}
 		return report
 	}
-	report.Provider = provider
-	report.APIKeyEnv = "A21_OPENAI_API_KEY"
-	report.ModelEnv = "A21_OPENAI_REALTIME_MODEL"
-	report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
-		APIKeyEnv: report.APIKeyEnv,
-		ModelEnv:  report.ModelEnv,
-	})
-	if !report.Configured {
-		report.Status = ProviderSmokeSkipped
-		report.Detail = "realtime websocket plan skipped because required env is missing"
-		return report
-	}
-	endpoint, err := openAIRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)))
-	if err != nil {
-		report.Status = ProviderSmokeFailed
-		report.Detail = redactProviderSmokeDetail(err.Error())
-		return report
-	}
-	report.EndpointHost = endpointHost(endpoint)
-	report.Status = ProviderSmokeReady
-	report.Detail = "realtime websocket plan is configured; explicit adapter connect is required"
-	return report
 }
 
 func NewRealtimeWebSocketAdapter(config RealtimeWebSocketConfig, dialer RealtimeDialer) *RealtimeWebSocketAdapter {
@@ -223,6 +250,20 @@ func openAIRealtimeURL(model string) (string, error) {
 		return "", fmt.Errorf("A21_OPENAI_REALTIME_MODEL is required")
 	}
 	parsed, err := url.Parse(openAIRealtimeDefaultURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("model", model)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func doubaoRealtimeURL(model string) (string, error) {
+	if model == "" {
+		return "", fmt.Errorf("A21_DOUBAO_TTS_MODEL is required")
+	}
+	parsed, err := url.Parse(doubaoRealtimeDefaultURL)
 	if err != nil {
 		return "", err
 	}

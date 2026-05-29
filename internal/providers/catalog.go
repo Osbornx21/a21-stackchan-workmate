@@ -61,6 +61,23 @@ var providerSpecs = []providerSpec{
 		},
 	},
 	{
+		Name:     "doubao_tts_realtime",
+		Label:    "Doubao realtime TTS",
+		Realtime: true,
+		Capabilities: []string{
+			"tts",
+			"realtime",
+			"websocket",
+			"voice_clone",
+			"professional_audio",
+		},
+		RequiredEnv: []string{
+			"A21_DOUBAO_API_KEY",
+			"A21_DOUBAO_TTS_MODEL",
+			"A21_DOUBAO_TTS_VOICE",
+		},
+	},
+	{
 		Name:         "openai_realtime",
 		Label:        "OpenAI realtime voice",
 		Realtime:     true,

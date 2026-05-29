@@ -58,4 +58,4 @@ The tests cover configured health redaction, missing env handling, explicit sess
 
 ## Next Step
 
-The next provider slice should add a redacted `openai-realtime-plan` CLI or extend `provider-smoke` with a dry-run realtime plan command. A real `--execute` smoke should be added only after it can use a tiny local test audio fixture, explicit operator intent, short timeout, and cost-aware reporting.
+Phase 4G adds a Doubao realtime TTS WebSocket boundary as a separate TTS-only provider lane. Remaining OpenAI provider work should add a redacted realtime plan CLI or extend `provider-smoke` with a dry-run realtime plan command. A real `--execute` smoke should be added only after it can use a tiny local test audio fixture, explicit operator intent, short timeout, and cost-aware reporting.

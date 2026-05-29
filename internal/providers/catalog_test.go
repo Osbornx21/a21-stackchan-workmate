@@ -38,6 +38,30 @@ func TestProviderCatalogReportsSelectedDoubaoMissingCredentials(t *testing.T) {
 	}
 }
 
+func TestProviderCatalogReportsDoubaoTTSRealtimeReadiness(t *testing.T) {
+	report := ProviderCatalogFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	})
+
+	doubao := providerReadinessByName(t, report, "doubao_tts_realtime")
+	if !doubao.Selected || !doubao.Configured || !doubao.Realtime {
+		t.Fatalf("doubao tts readiness = %+v", doubao)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("catalog leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestProviderCatalogMarksOpenAIConfiguredWithoutLeakingSecret(t *testing.T) {
 	report := ProviderCatalogFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=openai_realtime",
