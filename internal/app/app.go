@@ -36,6 +36,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareCheck(args[1:], stdout, stderr)
 	case "firmware-package":
 		return runFirmwarePackage(args[1:], stdout, stderr)
+	case "firmware-artifact-check":
+		return runFirmwareArtifactCheck(args[1:], stdout, stderr)
+	case "firmware-upload-check":
+		return runFirmwareUploadCheck(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -253,6 +257,110 @@ func runFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func runFirmwareArtifactCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.ArtifactOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-artifact-check option %q\n", args[i])
+			return 2
+		}
+	}
+	result, err := firmwarecheck.ValidateArtifact(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware artifact check failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareArtifact(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware artifact result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware artifact ok")
+	return 0
+}
+
+func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.UploadCheckOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-upload-check option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.Port == "" {
+		fmt.Fprintln(stderr, "--port requires a value")
+		return 2
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	result, err := firmwarecheck.ValidateUploadCandidate(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware upload check failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareUploadCheck(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware upload check result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware upload guard ok")
+	return 0
+}
+
 func writeJSONFirmwareCheck(writer io.Writer, result firmwarecheck.Result) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -260,6 +368,18 @@ func writeJSONFirmwareCheck(writer io.Writer, result firmwarecheck.Result) error
 }
 
 func writeJSONFirmwarePackage(writer io.Writer, result firmwarecheck.PackageResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareArtifact(writer io.Writer, result firmwarecheck.ArtifactResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareUploadCheck(writer io.Writer, result firmwarecheck.UploadCheckResult) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)

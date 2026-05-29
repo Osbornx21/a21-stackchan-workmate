@@ -21,3 +21,12 @@ go run ./cmd/a21 firmware-check
 ## Upload
 
 There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, and artifact name have been verified.
+
+Phase 5B adds only dry-run guards:
+
+```bash
+go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>
+go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <expected-git-sha>
+```
+
+These commands validate artifact identity, board, version, checksum, expected git commit, and explicit serial target. They do not flash the device.

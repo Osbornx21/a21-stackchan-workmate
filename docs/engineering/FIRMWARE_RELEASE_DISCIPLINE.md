@@ -64,6 +64,53 @@ a21-stackchan-<version>-m5stack-cores3-<git-sha>-<YYYYMMDD-HHMMSS>.bin
 
 It also writes a sibling `.sha256` file. Only packaged artifacts should be considered candidates for future upload.
 
+## Artifact Guard
+
+Every packaged firmware binary must pass:
+
+```bash
+go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>
+```
+
+or:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> make firmware-artifact-check
+```
+
+The guard verifies:
+
+- manifest identity is `A21`
+- firmware ID is `a21-stackchan`
+- PlatformIO environment uses an `a21_` prefix
+- board is `m5stack-cores3`
+- artifact filename matches manifest prefix, version, board, git commit, and timestamp
+- sibling `.sha256` exists and matches the binary
+- artifact filename does not contain forbidden X21/V21 identities
+
+## Upload Guard
+
+Phase 5B adds an upload dry-run guard, not an upload command:
+
+```bash
+go run ./cmd/a21 firmware-upload-check \
+  --artifact firmware/artifacts/<a21-stackchan...bin> \
+  --port /dev/cu.usbmodemXXXX \
+  --commit <expected-git-sha>
+```
+
+or:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+make firmware-upload-check
+```
+
+This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, or non-`/dev/` paths. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
+
+The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
+
 Before any future firmware upload:
 
 1. Confirm physical device identity.
@@ -71,6 +118,8 @@ Before any future firmware upload:
 3. Confirm `firmware/stackchan/a21-firmware.json`.
 4. Confirm git commit and version.
 5. Confirm generated artifact filename begins with `a21-stackchan-`.
-6. Run an A21 upload guard command.
+6. Run `firmware-artifact-check`.
+7. Run `firmware-upload-check`.
+8. Only then may a future explicit guarded upload command run.
 
-There is intentionally no upload target in Phase 5A.
+There is intentionally no upload target in Phase 5B.
