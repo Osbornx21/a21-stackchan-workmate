@@ -1,7 +1,7 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 
-.PHONY: test verify preflight doctor gateway latency-bench release-check firmware-check firmware-test firmware-build firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check
+.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute latency-bench release-check firmware-check firmware-test firmware-build firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check
 
 test:
 	go test ./...
@@ -14,6 +14,13 @@ doctor:
 
 gateway:
 	go run ./cmd/a21 gateway --addr 127.0.0.1:21080
+
+provider-smoke:
+	go run ./cmd/a21 provider-smoke
+
+provider-smoke-execute:
+	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
+	go run ./cmd/a21 provider-smoke --provider "$(A21_PROVIDER)" --execute
 
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5

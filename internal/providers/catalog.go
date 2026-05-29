@@ -72,7 +72,7 @@ var providerSpecs = []providerSpec{
 		Label:        "Alibaba Bailian/DashScope model studio",
 		Realtime:     false,
 		Capabilities: []string{"tts", "asr", "llm", "openai_compatible"},
-		RequiredEnv:  []string{"A21_DASHSCOPE_API_KEY"},
+		RequiredEnv:  []string{"A21_DASHSCOPE_API_KEY", "A21_DASHSCOPE_MODEL"},
 	},
 	{
 		Name:         "deepseek",

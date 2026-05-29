@@ -35,6 +35,7 @@ It checks what the current foundation can truthfully check:
 - serial device process ownership via `lsof`
 - voice provider health and provider network mode
 - voice provider registry readiness for mock, Doubao realtime, OpenAI realtime, Bailian/DashScope, and DeepSeek
+- voice provider smoke readiness, without executing paid or external provider calls
 - optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
@@ -44,6 +45,17 @@ The proxy section intentionally records only env variable names and direct-conne
 The voice section includes provider network mode. `direct` means future provider HTTP clients will not inherit environment proxies. `explicit_proxy` means `A21_PROVIDER_PROXY_URL` is configured; doctor reports only the variable name and never prints the proxy URL, host, port, username, or password.
 
 The voice provider registry is a readiness audit, not a real provider smoke test. It reports selected provider, required env names, present env names, and missing env names. It never prints API keys or model values. `A21_PROVIDER_PRIMARY` controls the selected provider in the report; unknown names are shown as `unknown_provider`, and legacy-looking provider names are shown as `invalid_legacy_provider` with blocking findings so raw X21/V21-looking values are never echoed back.
+
+The voice smoke section is a dry-run plan inside `doctor`. It reports whether the selected provider has enough env to run a smoke test, which protocol would be used, which env variable names are involved, and which endpoint host would be contacted. It does not execute network calls and never prints key, model, proxy, or full URL values.
+
+Explicit provider smoke execution is a separate command:
+
+```bash
+go run ./cmd/a21 provider-smoke --provider deepseek --execute
+go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
+```
+
+Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime and Doubao Realtime are reported as `unsupported` until their dedicated realtime adapters exist.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 

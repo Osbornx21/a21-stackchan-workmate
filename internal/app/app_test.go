@@ -216,6 +216,43 @@ func TestRunDoctorBlocksLegacyProviderPrimaryWithoutEchoingValue(t *testing.T) {
 	}
 }
 
+func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-smoke", "--provider", "deepseek"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"provider": "deepseek"`, `"status": "ready"`, `"executed": false`, `"api_key_env": "A21_DEEPSEEK_API_KEY"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-smoke", "--provider", "x21_voice"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"provider": "invalid_legacy_provider"`) {
+		t.Fatalf("stdout missing redacted provider: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "x21_voice") || strings.Contains(stderr.String(), "x21_voice") {
+		t.Fatalf("legacy provider leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunDoctorIncludesV21AdapterHealthWhenConfigured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {

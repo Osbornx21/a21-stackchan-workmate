@@ -20,6 +20,7 @@ import (
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/protocol"
+	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/runtimeguard"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -44,6 +45,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "provider-smoke":
+		return runProviderSmoke(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -62,6 +65,42 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+}
+
+func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
+	provider := ""
+	execute := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 provider-smoke --provider <provider> [--execute]")
+			return 0
+		case "--provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--provider requires a value")
+				return 2
+			}
+			i++
+			provider = args[i]
+		case "--execute":
+			execute = true
+		default:
+			fmt.Fprintf(stderr, "unknown provider-smoke option %q\n", args[i])
+			return 2
+		}
+	}
+	report := providers.ProviderSmokeFromEnv(context.Background(), os.Environ(), provider, execute, nil)
+	if err := writeJSONProviderSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode provider smoke report: %v\n", err)
+		return 1
+	}
+	if report.Status == providers.ProviderSmokeFailed {
+		return 1
+	}
+	if execute && report.Status != providers.ProviderSmokePassed {
+		return 1
+	}
+	return 0
 }
 
 func runPreflight(stdout io.Writer, stderr io.Writer) int {
@@ -474,6 +513,12 @@ func writeJSONReport(writer io.Writer, report runtimeguard.PreflightReport) erro
 }
 
 func writeJSONDoctorReport(writer io.Writer, report doctorReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

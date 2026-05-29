@@ -32,6 +32,8 @@ This policy is separate from runtime `NO_PROXY` coverage. It prevents real provi
 
 `internal/providers.ProviderCatalogFromEnv` is the current readiness registry. It does not create providers yet. It lets doctor show which primary provider is intended and which env names are still missing before a real adapter can be built or smoke-tested.
 
+`internal/providers.ProviderSmokeFromEnv` is the first smoke boundary. It is intentionally separate from provider construction: doctor reports only a dry-run smoke plan, and `a21 provider-smoke --execute` is required before A21 makes a real provider request.
+
 ## Governance
 
 Real provider adapters should use official SDKs or mature protocol clients where available. Provider SDK types must remain behind `internal/providers` and must not leak into:
@@ -53,3 +55,5 @@ Phase 4B does not implement:
 - provider-specific cancellation protocol
 - provider-specific HTTP/WebSocket clients
 - registry-driven provider construction
+
+Phase 4C adds provider smoke checks. See `PHASE4C_PROVIDER_SMOKE.md`.

@@ -69,6 +69,7 @@ type voiceDoctorReport struct {
 	Realtime       bool                            `json:"realtime"`
 	Network        providers.NetworkReport         `json:"network"`
 	Providers      providers.ProviderCatalogReport `json:"providers"`
+	Smoke          providers.ProviderSmokeReport   `json:"smoke"`
 	ActiveProvider string                          `json:"active_provider,omitempty"`
 	Detail         string                          `json:"detail,omitempty"`
 	Findings       []runtimeguard.Finding          `json:"findings"`
@@ -98,6 +99,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 	health, err := probeVoiceProviderHealth(ctx)
 	_, network := providers.NetworkPolicyFromEnv(os.Environ())
 	catalog := providers.ProviderCatalogFromEnv(os.Environ())
+	smoke := providers.ProviderSmokeFromEnv(ctx, os.Environ(), "", false, nil)
 	report := voiceDoctorReport{
 		Provider:       health.Provider,
 		Status:         string(health.Status),
@@ -106,6 +108,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 		Realtime:       health.Realtime,
 		Network:        network,
 		Providers:      catalog,
+		Smoke:          smoke,
 		ActiveProvider: health.ActiveProvider,
 		Detail:         health.Detail,
 	}

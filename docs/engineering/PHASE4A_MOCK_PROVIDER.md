@@ -74,3 +74,5 @@ Phase 4A does not implement:
 - real provider construction from the registry
 
 Phase 4B adds cascade fallback. See `PHASE4B_PROVIDER_CASCADE.md`.
+
+Phase 4C adds explicit dry-run/execute provider smoke checks for OpenAI-compatible text providers. See `PHASE4C_PROVIDER_SMOKE.md`.
