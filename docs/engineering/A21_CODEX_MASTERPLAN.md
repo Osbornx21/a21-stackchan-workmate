@@ -142,7 +142,7 @@ Phase 1: Go core foundation. Current baseline includes build identity, runtime g
 
 Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audio/control WebSocket boundaries, deterministic mock voice provider, session/trace propagation, state transitions, device registry, in-memory trace waterfall, and a built-in browser simulator.
 
-Phase 3: doctor and observability expansion. Current baseline includes richer reports, firmware/toolchain/artifact/serial diagnostics, Prometheus-compatible metrics, and a mock trace waterfall. OpenTelemetry export, V21 health checks, and latency bench remain future work.
+Phase 3: doctor and observability expansion. Current baseline includes richer reports, firmware/toolchain/artifact/serial diagnostics, Prometheus-compatible metrics, a mock trace waterfall, optional V21 health checks, and mock latency-bench reporting. OpenTelemetry export and real provider/device latency benches remain future work.
 
 Phase 4: provider adapters. Current baseline includes mock and cascade voice providers, provider-neutral health status, and explicit cancel reason/stream acknowledgements. Next slices should add China-mainland-first realtime/streaming providers, latency metrics, credential-free health probes, and provider-specific cancellation adapters behind this boundary.
 

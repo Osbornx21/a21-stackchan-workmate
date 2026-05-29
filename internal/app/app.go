@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +40,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "latency-bench":
+		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
 		return runSerialList(args[1:], stdout, stderr)
 	case "firmware-check":
@@ -149,6 +155,144 @@ func runSerialList(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+type latencyBenchReport struct {
+	Mode       string              `json:"mode"`
+	Iterations int                 `json:"iterations"`
+	Summary    latencyBenchSummary `json:"summary"`
+	OK         bool                `json:"ok"`
+}
+
+type latencyBenchSummary struct {
+	MockTurnMS     latencyBenchSeries `json:"mock_turn_ms"`
+	ProfessionalMS latencyBenchSeries `json:"professional_turn_ms"`
+	BargeInStopMS  latencyBenchSeries `json:"barge_in_stop_ms"`
+}
+
+type latencyBenchSeries struct {
+	Samples int     `json:"samples"`
+	P50MS   float64 `json:"p50_ms"`
+	P95MS   float64 `json:"p95_ms"`
+}
+
+func runLatencyBench(args []string, stdout io.Writer, stderr io.Writer) int {
+	mock := false
+	iterations := 5
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 latency-bench --mock --iterations 5")
+			return 0
+		case "--mock":
+			mock = true
+		case "--iterations":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--iterations requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--iterations must be a positive integer")
+				return 2
+			}
+			iterations = value
+		default:
+			fmt.Fprintf(stderr, "unknown latency-bench option %q\n", args[i])
+			return 2
+		}
+	}
+	if !mock {
+		fmt.Fprintln(stderr, "--mock is required until real provider/device benchmarks are implemented")
+		return 2
+	}
+	report, err := runMockLatencyBench(iterations)
+	if err != nil {
+		fmt.Fprintf(stderr, "latency bench failed: %v\n", err)
+		return 1
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(report); err != nil {
+		fmt.Fprintf(stderr, "encode latency bench report: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
+	handler := gateway.NewServer().Handler()
+	mockTurn := make([]time.Duration, 0, iterations)
+	professional := make([]time.Duration, 0, iterations)
+	bargeIn := make([]time.Duration, 0, iterations)
+	for i := 0; i < iterations; i++ {
+		duration, err := measureGatewayRequest(handler, http.MethodPost, "/v1/mock-turn", `{"device_id":"stackchan-bench-001","text":"先说，我在","mode":"workmate"}`)
+		if err != nil {
+			return latencyBenchReport{}, err
+		}
+		mockTurn = append(mockTurn, duration)
+
+		duration, err = measureGatewayRequest(handler, http.MethodPost, "/v1/mock-turn", `{"device_id":"stackchan-bench-001","text":"查一下语音唤醒误触发","mode":"professional"}`)
+		if err != nil {
+			return latencyBenchReport{}, err
+		}
+		professional = append(professional, duration)
+
+		duration, err = measureGatewayRequest(handler, http.MethodPost, "/v1/mock-interrupt", `{"device_id":"stackchan-bench-001","mode":"workmate"}`)
+		if err != nil {
+			return latencyBenchReport{}, err
+		}
+		bargeIn = append(bargeIn, duration)
+	}
+	return latencyBenchReport{
+		Mode:       "mock",
+		Iterations: iterations,
+		Summary: latencyBenchSummary{
+			MockTurnMS:     latencySeries(mockTurn),
+			ProfessionalMS: latencySeries(professional),
+			BargeInStopMS:  latencySeries(bargeIn),
+		},
+		OK: true,
+	}, nil
+}
+
+func measureGatewayRequest(handler http.Handler, method string, path string, body string) (time.Duration, error) {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	started := time.Now()
+	handler.ServeHTTP(rec, req)
+	duration := time.Since(started)
+	if rec.Code != http.StatusOK {
+		return 0, fmt.Errorf("%s %s returned status %d: %s", method, path, rec.Code, rec.Body.String())
+	}
+	return duration, nil
+}
+
+func latencySeries(samples []time.Duration) latencyBenchSeries {
+	return latencyBenchSeries{
+		Samples: len(samples),
+		P50MS:   percentileMS(samples, 0.50),
+		P95MS:   percentileMS(samples, 0.95),
+	}
+}
+
+func percentileMS(samples []time.Duration, quantile float64) float64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	sorted := append([]time.Duration(nil), samples...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
+	rank := int(math.Ceil(quantile*float64(len(sorted)))) - 1
+	if rank < 0 {
+		rank = 0
+	}
+	if rank >= len(sorted) {
+		rank = len(sorted) - 1
+	}
+	return float64(sorted[rank].Microseconds()) / 1000
 }
 
 func buildPreflightReport(stderr io.Writer) (runtimeguard.PreflightReport, int) {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"a21.local/a21/internal/firmwarecheck"
 )
@@ -255,6 +256,46 @@ func TestRunGatewayRejectsUnknownFlag(t *testing.T) {
 	}
 	if stderr.String() == "" {
 		t.Fatal("expected error text")
+	}
+}
+
+func TestRunLatencyBenchMockEmitsPercentileReport(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"latency-bench", "--mock", "--iterations", "3"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"mode": "mock"`,
+		`"iterations": 3`,
+		`"mock_turn_ms"`,
+		`"professional_turn_ms"`,
+		`"barge_in_stop_ms"`,
+		`"p50_ms"`,
+		`"p95_ms"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunLatencyBenchRequiresMockMode(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"latency-bench"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--mock is required") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestLatencyBenchPercentileUsesNearestRank(t *testing.T) {
+	got := percentileMS([]time.Duration{time.Millisecond, 2 * time.Millisecond, 100 * time.Millisecond}, 0.95)
+	if got != 100 {
+		t.Fatalf("p95 = %v, want 100", got)
 	}
 }
 

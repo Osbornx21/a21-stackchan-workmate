@@ -51,18 +51,21 @@ Every latency report should include:
 - playback start
 - interrupt detection and stop time
 
-## Current Phase 1 State
+## Current Mock Benchmark
 
-Phase 1 does not yet implement realtime audio. It establishes runtime guardrails and a minimum network/DNS fingerprint so later latency measurements can be interpreted.
-
-## Benchmark Commands
-
-Future commands:
+A21 has a mock-only latency benchmark:
 
 ```bash
-go run ./cmd/a21 latency-bench --mock
-go run ./cmd/a21 latency-bench --provider <name>
-go run ./cmd/a21 latency-bench --device <device_id>
+go run ./cmd/a21 latency-bench --mock --iterations 5
+make latency-bench
 ```
 
-No benchmark result counts unless it records environment fingerprint and stores a report artifact.
+The report currently measures in-process Gateway paths for:
+
+- `mock_turn_ms`
+- `professional_turn_ms`
+- `barge_in_stop_ms`
+
+Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles. Mock results do not represent real provider, LAN, microphone, speaker, or StackChan hardware latency. They only protect report shape and Gateway baseline behavior.
+
+Future real-provider/device benchmarks must add environment fingerprint and store a report artifact before their results count for release decisions.

@@ -142,6 +142,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 - Metrics and in-memory trace waterfall exist, including professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
 - Provider-neutral mock/cascade contracts include health status and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
+- Mock `latency-bench` exists for Gateway mock/professional/barge-in report shape; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
 - No CI yet.
 
 These gaps are phase boundaries, not Phase 1 regressions.
