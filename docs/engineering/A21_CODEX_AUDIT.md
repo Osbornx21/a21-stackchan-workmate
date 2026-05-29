@@ -141,7 +141,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 - Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
 - Metrics and in-memory trace waterfall exist, including professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
-- No real provider adapters yet.
+- Provider-neutral mock/cascade contracts include health status and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
 - No CI yet.
 
 These gaps are phase boundaries, not Phase 1 regressions.
@@ -150,7 +150,6 @@ These gaps are phase boundaries, not Phase 1 regressions.
 
 Proceed through the next phase without diluting the Go core:
 
-1. Add provider adapter health/cancel contracts behind deterministic mock tests.
-2. Add real V21 adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.
-3. Expand simulator microphone/playback only after latency and trace fields are stable.
-4. Keep real firmware flashing disabled until physical-device identity checks are implemented.
+1. Add real V21 adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.
+2. Expand simulator microphone/playback only after latency and trace fields are stable.
+3. Keep real firmware flashing disabled until physical-device identity checks are implemented.

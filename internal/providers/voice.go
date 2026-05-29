@@ -27,8 +27,9 @@ const (
 )
 
 type VoiceCancelRequest struct {
-	Session VoiceSession
-	Reason  VoiceCancelReason
+	Session  VoiceSession
+	Reason   VoiceCancelReason
+	StreamID string
 }
 
 type VoiceEventKind string
@@ -41,16 +42,35 @@ const (
 )
 
 type VoiceEvent struct {
-	Session  VoiceSession
-	Kind     VoiceEventKind
-	Text     string
-	Final    bool
-	StreamID string
+	Session      VoiceSession
+	Kind         VoiceEventKind
+	Text         string
+	Final        bool
+	StreamID     string
+	CancelReason VoiceCancelReason
+}
+
+type VoiceProviderHealthStatus string
+
+const (
+	VoiceProviderHealthy     VoiceProviderHealthStatus = "healthy"
+	VoiceProviderDegraded    VoiceProviderHealthStatus = "degraded"
+	VoiceProviderUnavailable VoiceProviderHealthStatus = "unavailable"
+)
+
+type VoiceProviderHealth struct {
+	Provider       string
+	Status         VoiceProviderHealthStatus
+	Configured     bool
+	Realtime       bool
+	ActiveProvider string
+	Detail         string
 }
 
 type VoiceProvider interface {
 	Name() string
 	StartTurn(ctx context.Context, req VoiceTurnRequest) (<-chan VoiceEvent, error)
 	Cancel(ctx context.Context, req VoiceCancelRequest) (<-chan VoiceEvent, error)
+	Health(ctx context.Context) (VoiceProviderHealth, error)
 	Close(ctx context.Context) error
 }

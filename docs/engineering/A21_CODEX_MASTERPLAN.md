@@ -144,7 +144,7 @@ Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audi
 
 Phase 3: doctor and observability expansion. Current baseline includes richer reports, firmware/toolchain/artifact/serial diagnostics, Prometheus-compatible metrics, and a mock trace waterfall. OpenTelemetry export, V21 health checks, and latency bench remain future work.
 
-Phase 4: provider adapters. Add mock, China-mainland-first realtime/streaming providers, fallback/cascade behavior, and cancellation.
+Phase 4: provider adapters. Current baseline includes mock and cascade voice providers, provider-neutral health status, and explicit cancel reason/stream acknowledgements. Next slices should add China-mainland-first realtime/streaming providers, latency metrics, credential-free health probes, and provider-specific cancellation adapters behind this boundary.
 
 Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, build/package/upload dry-run discipline, and native tests. Real mic capture/playback, servo clamp, LED/touch runtime, OTA, and physical flashing remain future work.
 

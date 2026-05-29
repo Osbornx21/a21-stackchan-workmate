@@ -14,10 +14,15 @@ The goal is architectural control: gateway behavior now flows through a provider
 - `VoiceTurnRequest`
 - `VoiceCancelRequest`
 - `VoiceEvent`
+- `VoiceProviderHealth`
 - `VoiceProvider`
 - `MockVoiceProvider`
 
 The default gateway uses `MockVoiceProvider`. Tests can inject a scripted provider through `NewServerWithOptions`.
+
+`VoiceCancelRequest` carries the cancellation reason and optional stream ID. `VoiceEvent` echoes cancellation reason and stream ID when a provider acknowledges cancel. This keeps barge-in semantics explicit before real provider-specific `cancel`, `truncate`, or `session reset` calls are added.
+
+`VoiceProvider.Health(ctx)` returns provider name, status, configured state, realtime capability, active child provider when applicable, and a short detail field. The deterministic mock reports `healthy`, `configured=true`, and `realtime=true`.
 
 ## Current Event Mapping
 
@@ -41,7 +46,6 @@ Phase 4A does not implement:
 - OpenAI realtime
 - Bailian/DashScope
 - streaming audio deltas
-- provider health checks
 - provider latency histograms
 - cascade fallback
 

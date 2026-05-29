@@ -41,6 +41,47 @@ func (p *CascadeVoiceProvider) Cancel(ctx context.Context, req VoiceCancelReques
 	return nil, errors.Join(append([]error{ErrVoiceProviderUnavailable}, errs...)...)
 }
 
+func (p *CascadeVoiceProvider) Health(ctx context.Context) (VoiceProviderHealth, error) {
+	var errs []error
+	var degraded *VoiceProviderHealth
+	for _, provider := range p.providers {
+		health, err := provider.Health(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if health.Status == VoiceProviderHealthy {
+			return VoiceProviderHealth{
+				Provider:       p.Name(),
+				Status:         VoiceProviderHealthy,
+				Configured:     true,
+				Realtime:       health.Realtime,
+				ActiveProvider: health.Provider,
+			}, nil
+		}
+		if health.Status == VoiceProviderDegraded && degraded == nil {
+			copy := health
+			degraded = &copy
+		}
+	}
+	if degraded != nil {
+		return VoiceProviderHealth{
+			Provider:       p.Name(),
+			Status:         VoiceProviderDegraded,
+			Configured:     true,
+			Realtime:       degraded.Realtime,
+			ActiveProvider: degraded.Provider,
+			Detail:         degraded.Detail,
+		}, nil
+	}
+	return VoiceProviderHealth{
+		Provider:   p.Name(),
+		Status:     VoiceProviderUnavailable,
+		Configured: len(p.providers) > 0,
+		Detail:     "no healthy voice provider",
+	}, errors.Join(append([]error{ErrVoiceProviderUnavailable}, errs...)...)
+}
+
 func (p *CascadeVoiceProvider) Close(ctx context.Context) error {
 	var errs []error
 	for _, provider := range p.providers {

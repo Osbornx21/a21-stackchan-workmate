@@ -13,6 +13,9 @@ This is architecture plumbing, not a real provider integration.
 - calls providers in configured order
 - returns the first successful `StartTurn` stream
 - returns the first successful `Cancel` stream
+- preserves cancellation reason and stream ID through child provider cancel acknowledgements
+- reports `healthy` when the first available child provider is healthy
+- reports `unavailable` with `ErrVoiceProviderUnavailable` when no child provider is healthy
 - returns `ErrVoiceProviderUnavailable` when no provider can handle the request
 - closes all child providers and joins close errors
 
@@ -34,7 +37,6 @@ Real provider adapters should use official SDKs or mature protocol clients where
 
 Phase 4B does not implement:
 
-- provider health probes
 - retry backoff
 - cost-based routing
 - credentials

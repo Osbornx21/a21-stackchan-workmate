@@ -41,8 +41,9 @@ func TestMockVoiceProviderStartTurnStreamsDeterministicEvents(t *testing.T) {
 func TestMockVoiceProviderCancelStreamsCancelledEvent(t *testing.T) {
 	provider := NewMockVoiceProvider()
 	events, err := provider.Cancel(context.Background(), VoiceCancelRequest{
-		Session: VoiceSession{TraceID: "a21-trace-000009", SessionID: "a21-session-000009"},
-		Reason:  CancelBargeIn,
+		Session:  VoiceSession{TraceID: "a21-trace-000009", SessionID: "a21-session-000009"},
+		Reason:   CancelBargeIn,
+		StreamID: "a21-mock-stream-000123",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +56,34 @@ func TestMockVoiceProviderCancelStreamsCancelledEvent(t *testing.T) {
 	if got[0].Kind != VoiceEventCancelled {
 		t.Fatalf("kind = %q, want cancelled", got[0].Kind)
 	}
+	if got[0].CancelReason != CancelBargeIn {
+		t.Fatalf("cancel reason = %q, want barge_in", got[0].CancelReason)
+	}
+	if got[0].StreamID != "a21-mock-stream-000123" {
+		t.Fatalf("stream = %q, want a21-mock-stream-000123", got[0].StreamID)
+	}
 	if got[0].Session.SessionID != "a21-session-000009" {
 		t.Fatalf("session = %q", got[0].Session.SessionID)
+	}
+}
+
+func TestMockVoiceProviderHealthIsDeterministic(t *testing.T) {
+	provider := NewMockVoiceProvider()
+	health, err := provider.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Provider != "a21-mock-voice" {
+		t.Fatalf("provider = %q, want a21-mock-voice", health.Provider)
+	}
+	if health.Status != VoiceProviderHealthy {
+		t.Fatalf("status = %q, want healthy", health.Status)
+	}
+	if !health.Configured {
+		t.Fatal("mock provider should report configured")
+	}
+	if !health.Realtime {
+		t.Fatal("mock provider should report realtime capable")
 	}
 }
 

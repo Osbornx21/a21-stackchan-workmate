@@ -789,6 +789,10 @@ func (p scriptedVoiceProvider) Cancel(ctx context.Context, req providers.VoiceCa
 	return events, nil
 }
 
+func (p scriptedVoiceProvider) Health(ctx context.Context) (providers.VoiceProviderHealth, error) {
+	return providers.VoiceProviderHealth{Provider: p.Name(), Status: providers.VoiceProviderHealthy, Configured: true, Realtime: true}, ctx.Err()
+}
+
 func (p scriptedVoiceProvider) Close(ctx context.Context) error {
 	return ctx.Err()
 }

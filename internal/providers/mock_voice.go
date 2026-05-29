@@ -39,13 +39,31 @@ func (p *MockVoiceProvider) Cancel(ctx context.Context, req VoiceCancelRequest) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	streamID := req.StreamID
+	if streamID == "" {
+		streamID = "a21-mock-stream-000001"
+	}
 	events <- VoiceEvent{
-		Session: req.Session,
-		Kind:    VoiceEventCancelled,
-		Text:    "好，我听新的。",
-		Final:   true,
+		Session:      req.Session,
+		Kind:         VoiceEventCancelled,
+		Text:         "好，我听新的。",
+		Final:        true,
+		StreamID:     streamID,
+		CancelReason: req.Reason,
 	}
 	return events, nil
+}
+
+func (p *MockVoiceProvider) Health(ctx context.Context) (VoiceProviderHealth, error) {
+	if err := ctx.Err(); err != nil {
+		return VoiceProviderHealth{Provider: p.Name(), Status: VoiceProviderUnavailable, Configured: true, Realtime: true}, err
+	}
+	return VoiceProviderHealth{
+		Provider:   p.Name(),
+		Status:     VoiceProviderHealthy,
+		Configured: true,
+		Realtime:   true,
+	}, nil
 }
 
 func (p *MockVoiceProvider) Close(ctx context.Context) error {
