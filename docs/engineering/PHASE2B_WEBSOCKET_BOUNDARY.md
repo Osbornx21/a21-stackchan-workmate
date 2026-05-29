@@ -35,6 +35,8 @@ Trace and session IDs are propagated from the device event when supplied. If mis
 
 ## Boundaries
 
+Phase 2B itself did not implement the browser simulator. Phase 2C now adds the first built-in simulator against these WebSocket endpoints.
+
 Phase 2B still does not implement:
 
 - real audio capture
@@ -42,7 +44,6 @@ Phase 2B still does not implement:
 - VAD
 - jitter buffer
 - provider streaming
-- browser simulator
 - firmware integration
 
 Those belong to later phases after this transport contract is stable.

@@ -30,6 +30,27 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestSimulatorPageServed(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/simulator", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("content-type = %q, want text/html", rec.Header().Get("Content-Type"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"A21 Device Simulator", `data-testid="simulator-root"`, "/ws/control"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q", want)
+		}
+	}
+}
+
 func TestMockTurnReturnsDeterministicStateSequence(t *testing.T) {
 	server := NewServer()
 	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"先说，我在","mode":"workmate"}`)

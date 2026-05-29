@@ -104,7 +104,7 @@ PATH without route/dig ... preflight                         exits 1
 
 - Phase 2A adds a mock gateway HTTP handler.
 - Phase 2B adds mock audio/control WebSocket boundaries; real audio media processing remains future work.
-- No simulator yet.
+- Phase 2C adds a built-in browser device simulator; microphone/playback simulation remains future work.
 - No OpenTelemetry/Prometheus implementation yet.
 - No firmware tree yet.
 - No V21 adapter client yet.
