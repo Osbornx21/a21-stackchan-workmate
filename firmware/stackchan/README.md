@@ -19,11 +19,11 @@ make firmware-test
 .a21-tools/platformio-venv/bin/pio run -d firmware/stackchan
 ```
 
-`make firmware-test` runs host-native protocol parser tests. It does not flash hardware.
+`make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
 
 ## Runtime Surface
 
-The current firmware starts in local fallback state and renders the A21 identity, firmware version, state label, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
+The current firmware starts in local fallback render state and renders the A21 identity, firmware version, state label, Gateway target, connection lifecycle status, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
 
 Gateway configuration is currently compile-time and A21-only:
 
@@ -32,7 +32,15 @@ Gateway configuration is currently compile-time and A21-only:
 - control path `/ws/control`
 - audio path `/ws/audio`
 
-The firmware still does not connect to Wi-Fi or WebSocket in this slice. Network transport will be added after the state model and screen rendering path are stable under native tests.
+`a21_firmware_connection.h` owns the hardware-free connection lifecycle model:
+
+- Wi-Fi connecting
+- Gateway connecting
+- Gateway connected
+- reconnect wait with bounded backoff
+- local fallback on invalid A21 Gateway config
+
+The firmware still does not open real Wi-Fi or WebSocket connections in this slice. Network transport will be added after the connection state model and screen rendering path remain stable under native tests.
 
 ## Upload
 

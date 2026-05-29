@@ -80,6 +80,9 @@ Current native firmware tests cover:
 - A21 Gateway host/port/path validation
 - control/audio WebSocket URL construction
 - rejection of legacy Gateway ports and X21/V21 route names
+- hardware-free connection lifecycle from Wi-Fi connecting to Gateway connected
+- reconnect wait timing after Gateway loss
+- local fallback on invalid Gateway config
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

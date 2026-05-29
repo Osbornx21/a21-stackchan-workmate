@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include "a21_firmware_connection.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
@@ -124,6 +125,56 @@ void test_network_config_rejects_legacy_ports_and_names() {
   TEST_ASSERT_FALSE(a21ValidateNetworkConfig(&config));
 }
 
+void test_connection_state_machine_reaches_gateway_connected() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+  a21InitConnectionState(&connection, &config, 1000);
+
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_CONNECTING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("Wi-Fi connecting", connection.status_text);
+
+  a21ConnectionOnWiFiConnected(&connection, "192.168.31.21", 1200);
+  TEST_ASSERT_EQUAL(A21_CONN_GATEWAY_CONNECTING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("192.168.31.21", connection.local_ip);
+  TEST_ASSERT_EQUAL_STRING("Gateway connecting", connection.status_text);
+
+  a21ConnectionOnGatewayConnected(&connection, 1300);
+  TEST_ASSERT_EQUAL(A21_CONN_GATEWAY_CONNECTED, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("Gateway connected", connection.status_text);
+  TEST_ASSERT_EQUAL_UINT8(0, connection.reconnect_attempt);
+}
+
+void test_connection_state_machine_enters_reconnect_after_gateway_loss() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+  a21InitConnectionState(&connection, &config, 1000);
+  a21ConnectionOnWiFiConnected(&connection, "192.168.31.21", 1200);
+  a21ConnectionOnGatewayConnected(&connection, 1300);
+
+  a21ConnectionOnGatewayDisconnected(&connection, "ws_closed", 1500);
+  TEST_ASSERT_EQUAL(A21_CONN_RECONNECT_WAIT, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("ws_closed", connection.last_error);
+  TEST_ASSERT_EQUAL_UINT8(1, connection.reconnect_attempt);
+  TEST_ASSERT_TRUE(connection.next_retry_at_ms > 1500);
+
+  TEST_ASSERT_FALSE(a21ConnectionRetryDue(&connection, connection.next_retry_at_ms - 1));
+  TEST_ASSERT_TRUE(a21ConnectionRetryDue(&connection, connection.next_retry_at_ms));
+}
+
+void test_connection_state_machine_rejects_invalid_config() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+  config.gateway_port = 8080;
+  a21InitConnectionState(&connection, &config, 1000);
+
+  TEST_ASSERT_EQUAL(A21_CONN_LOCAL_FALLBACK, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("invalid_config", connection.last_error);
+  TEST_ASSERT_EQUAL_STRING("Local fallback", connection.status_text);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -134,5 +185,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_network_config_defaults_to_a21_gateway);
   RUN_TEST(test_network_config_builds_control_and_audio_urls);
   RUN_TEST(test_network_config_rejects_legacy_ports_and_names);
+  RUN_TEST(test_connection_state_machine_reaches_gateway_connected);
+  RUN_TEST(test_connection_state_machine_enters_reconnect_after_gateway_loss);
+  RUN_TEST(test_connection_state_machine_rejects_invalid_config);
   return UNITY_END();
 }
