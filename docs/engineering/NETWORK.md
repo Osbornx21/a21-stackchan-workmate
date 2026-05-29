@@ -41,6 +41,12 @@ Accepted bypass forms include exact hosts, host:port values, bracketed IPv6 host
 
 The report records env variable names only. It does not print proxy URLs, credentials, or provider proxy values. `A21_PROVIDER_PROXY_URL` is treated as an explicit provider egress setting, not as permission for LAN, localhost, `.local`, StackChan, or local V21 adapter traffic to inherit global proxy behavior.
 
+## Provider Egress Policy
+
+Future HTTP-based provider adapters must build clients through `internal/providers.NewProviderHTTPClient`. The default mode is `direct`, which disables ambient environment proxy inheritance. If `A21_PROVIDER_PROXY_URL` is set, provider HTTP clients switch to `explicit_proxy` mode and use that URL for cloud provider egress only.
+
+The current HTTP provider proxy support accepts `http` and `https` proxy URLs. SOCKS and provider-specific WebSocket dialers need a separate adapter implementation and tests before use. Doctor reports only the env variable name and network mode; it never prints provider proxy values.
+
 ## Required Diagnostics
 
 Phase 1 already records:

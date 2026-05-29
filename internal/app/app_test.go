@@ -160,6 +160,26 @@ func TestRunDoctorIncludesVoiceProviderHealth(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesProviderNetworkPolicy(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PROXY_URL", "http://provider-secret@127.0.0.1:7891")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor"}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1", code)
+	}
+	for _, want := range []string{`"network"`, `"mode": "explicit_proxy"`, `"proxy_configured": true`, `"provider_proxy_env"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"provider-secret", "7891"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked provider proxy value %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorIncludesV21AdapterHealthWhenConfigured(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {

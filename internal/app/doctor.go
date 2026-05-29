@@ -62,14 +62,15 @@ type v21DoctorReport struct {
 }
 
 type voiceDoctorReport struct {
-	Provider       string                 `json:"provider"`
-	Status         string                 `json:"status"`
-	Healthy        bool                   `json:"healthy"`
-	Configured     bool                   `json:"configured"`
-	Realtime       bool                   `json:"realtime"`
-	ActiveProvider string                 `json:"active_provider,omitempty"`
-	Detail         string                 `json:"detail,omitempty"`
-	Findings       []runtimeguard.Finding `json:"findings"`
+	Provider       string                  `json:"provider"`
+	Status         string                  `json:"status"`
+	Healthy        bool                    `json:"healthy"`
+	Configured     bool                    `json:"configured"`
+	Realtime       bool                    `json:"realtime"`
+	Network        providers.NetworkReport `json:"network"`
+	ActiveProvider string                  `json:"active_provider,omitempty"`
+	Detail         string                  `json:"detail,omitempty"`
+	Findings       []runtimeguard.Finding  `json:"findings"`
 }
 
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
@@ -94,12 +95,14 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	health, err := probeVoiceProviderHealth(ctx)
+	_, network := providers.NetworkPolicyFromEnv(os.Environ())
 	report := voiceDoctorReport{
 		Provider:       health.Provider,
 		Status:         string(health.Status),
 		Healthy:        health.Status == providers.VoiceProviderHealthy,
 		Configured:     health.Configured,
 		Realtime:       health.Realtime,
+		Network:        network,
 		ActiveProvider: health.ActiveProvider,
 		Detail:         health.Detail,
 	}

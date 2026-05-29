@@ -34,6 +34,8 @@ Healthy or degraded providers return HTTP 200 with lower-case JSON fields. Unava
 
 `a21 doctor` also includes a `voice` section that uses the same provider health contract. Today it reports the deterministic mock provider; future real provider selection must update doctor and Gateway through the same construction path so Shanghai-office debugging sees the same adapter state from CLI and HTTP.
 
+The same `voice` doctor section now includes a provider network report from `internal/providers.NetworkPolicyFromEnv`. This report deliberately records network mode and env variable names only. By default provider HTTP clients are `direct` and explicitly disable ambient `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` inheritance. `A21_PROVIDER_PROXY_URL` switches provider HTTP clients to `explicit_proxy` mode for future cloud egress, but that setting does not change LAN, StackChan, or V21-local routing.
+
 ## Current Event Mapping
 
 - provider `thinking` -> device `thinking`
@@ -58,5 +60,6 @@ Phase 4A does not implement:
 - streaming audio deltas
 - provider latency histograms
 - cascade fallback
+- real provider connectivity checks
 
 Phase 4B adds cascade fallback. See `PHASE4B_PROVIDER_CASCADE.md`.

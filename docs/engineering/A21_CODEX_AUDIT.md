@@ -58,7 +58,7 @@ go run ./cmd/a21 doctor
 go run ./cmd/a21 serial-list
 ```
 
-`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory, voice provider health, and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
+`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory, voice provider health, provider network mode, and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
 
 `make release-check` is the local high-confidence gate. It runs Go verification, firmware native tests, clean-worktree firmware packaging, and doctor. Because packaging embeds the current git commit, run it only from a clean tree after the intended commit exists.
 
@@ -71,7 +71,7 @@ go run ./cmd/a21 serial-list
 - `internal/gateway`: mock Gateway HTTP/WebSocket server, bounded audio ingress observability, active playback stream tracking for audio-path barge-in, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
 - `internal/runtimeguard`: env, endpoint, cwd, port, proxy/no-proxy, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
-- `internal/providers`: provider-neutral voice contracts plus deterministic mock/cascade behavior.
+- `internal/providers`: provider-neutral voice contracts, deterministic mock/cascade behavior, and explicit provider HTTP network policy.
 - `firmware/stackchan`: PlatformIO CoreS3 firmware lane with A21-only identity, Wi-Fi/Gateway state machines, control/audio WebSocket probes, mock playback downlink buffering, protocol parsing, and native Unity tests.
 - `internal/v21adapter`: professional-mode V21 adapter contract, HTTP client, mock client, and legacy-port boundary checks.
 
@@ -124,6 +124,8 @@ The local environment uses Dragon Cat Lite and DNS mapping into `198.18.0.x`. Ph
 
 It blocks startup reports when the minimum fingerprint is missing. It also blocks global `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` configurations unless `NO_PROXY` or `A21_NO_PROXY` covers localhost, loopback, `.local`, and private LAN CIDRs including the A21 lab range. Explicit `A21_PROVIDER_PROXY_URL` is reported as provider egress configuration and does not satisfy LAN bypass coverage.
 
+Provider HTTP clients default to `direct` mode and do not inherit environment proxies. `A21_PROVIDER_PROXY_URL` switches future HTTP provider adapters to `explicit_proxy` mode, while doctor still reports only env variable names and never prints proxy values.
+
 ## Verification Evidence
 
 Fresh verification after the current Gateway/Simulator/Firmware guard baseline:
@@ -155,7 +157,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 - Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes and bounded mock downlink buffering, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
 - Metrics, voice provider health, and in-memory trace waterfall exist, including audio ingress/VAD markers, audio-path barge-in cancel markers, and professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
-- Provider-neutral mock/cascade contracts include health status, a Gateway provider health endpoint, and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
+- Provider-neutral mock/cascade contracts include health status, provider HTTP network policy, a Gateway provider health endpoint, and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
 - Mock `latency-bench` exists for Gateway mock/professional/barge-in/audio-WS-downlink/audio-WS-barge-in report shape. `audio_ws_downlink_ms` measures until a full 20 ms / 16 kHz / mono / `pcm_s16le` silence chunk is returned, and `audio_ws_barge_in_stop_ms` measures from an interrupting voiced audio frame to the `interrupted` control event; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
 - Simulator now has browser microphone/mock-burst controls, local mock playback state, Gateway downlink chunk count, buffer depth, active stream display, real PCM decode/schedule via WebAudio, and scheduled-source stop on interruption; real provider TTS and StackChan speaker output remain future work.
 - Protocol and simulator now expose office visibility modes for private/public/pro/muted/listening states; only `professional` calls the V21 adapter.
