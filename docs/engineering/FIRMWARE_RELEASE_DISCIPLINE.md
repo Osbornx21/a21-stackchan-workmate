@@ -8,9 +8,11 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 
 - A21 firmware lives under `firmware/stackchan/`.
 - A21 firmware build artifacts must be named with `a21`, target board, firmware version, git commit, and build timestamp.
+- A21 firmware binaries must embed an A21 build identity containing firmware ID, version, board, and git commit.
 - A21 firmware may not use X21 or V21 project names, service names, artifact names, namespaces, or upload targets.
 - Firmware upload is forbidden unless a preflight command verifies manifest identity, board ID, version, git commit, and explicit upload port.
 - `pio run -t upload` must not be wrapped in a generic target until an A21 upload guard exists.
+- Firmware packaging is forbidden when the git worktree is dirty.
 - `platformio.ini` must not contain Wi-Fi passwords or other local secrets. Real credentials need an explicit provisioning path or ignored `firmware/stackchan/include/a21_firmware_secrets.local.h`, never a committed build flag.
 - Provider API keys, V21 access, proxy config, and long-term memory are forbidden in firmware.
 - StackChan/CoreS3 remains a thin device client.
@@ -51,8 +53,18 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `links2004/WebSockets @ 2.7.3`
 - native unit-test environment: `a21_stackchan_native` with Unity
 - `A21_GATEWAY_HOST` and `A21_GATEWAY_PORT=21080` build flags
+- `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags
+- `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata
 
 `firmware-check` rejects unpinned or missing core firmware dependencies. This is intentional: firmware builds must be reproducible and must not silently drift under A21.
+
+The generated commit header is ignored:
+
+```text
+firmware/stackchan/include/a21_firmware_build.generated.h
+```
+
+It is created by PlatformIO before native tests and CoreS3 builds. It must not be committed.
 
 ## Build Discipline
 
@@ -75,6 +87,7 @@ make firmware-package
 
 Current native firmware tests cover:
 
+- firmware build identity fields, firmware label construction, and build identity propagation in outgoing device events
 - A21 `control.event` parsing
 - protocol/device identity rejection
 - control event to local render-state transitions
@@ -98,6 +111,8 @@ a21-stackchan-<version>-m5stack-cores3-<git-sha>-<YYYYMMDD-HHMMSS>.bin
 ```
 
 It also writes a sibling `.sha256` file. Only packaged artifacts should be considered candidates for future upload.
+
+`make firmware-package` first runs a clean-worktree guard. This prevents a binary built from uncommitted sources from being packaged under a misleading git commit.
 
 ## Artifact Guard
 

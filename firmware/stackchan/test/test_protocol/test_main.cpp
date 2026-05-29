@@ -2,6 +2,7 @@
 
 #include "a21_firmware_connection.h"
 #include "a21_firmware_audio_ws.h"
+#include "a21_firmware_config.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
@@ -130,6 +131,22 @@ void initFakeAudioWSDriver(FakeGatewayWSDriver* fake, A21AudioWSDriver* driver) 
   driver->connected = fakeGatewayWSConnected;
   driver->read_text = fakeGatewayWSReadText;
   driver->send_text = fakeGatewayWSSendText;
+}
+
+void test_firmware_build_identity_contains_a21_release_fields() {
+  A21FirmwareBuildIdentity identity;
+  a21GetFirmwareBuildIdentity(&identity);
+
+  TEST_ASSERT_EQUAL_STRING("a21-stackchan", identity.firmware_id);
+  TEST_ASSERT_EQUAL_STRING("0.1.0", identity.version);
+  TEST_ASSERT_EQUAL_STRING("m5stack-cores3", identity.board);
+  TEST_ASSERT_NOT_EQUAL('\0', identity.commit[0]);
+  TEST_ASSERT_TRUE(a21FirmwareBuildIdentityValid(&identity));
+
+  char label[96];
+  TEST_ASSERT_TRUE(a21BuildFirmwareLabel(label, sizeof(label)));
+  TEST_ASSERT_NOT_NULL(strstr(label, "0.1.0"));
+  TEST_ASSERT_NOT_NULL(strstr(label, identity.commit));
 }
 
 void test_parse_control_event_listening() {
@@ -617,6 +634,10 @@ void test_gateway_ws_send_mock_turn_builds_a21_device_event() {
   TEST_ASSERT_EQUAL_STRING("mock.turn", doc["payload"]["event"] | "");
   TEST_ASSERT_EQUAL_STRING("workmate", doc["payload"]["mode"] | "");
   TEST_ASSERT_EQUAL_STRING("先说，我在", doc["payload"]["text"] | "");
+  TEST_ASSERT_EQUAL_STRING("a21-stackchan", doc["payload"]["firmware_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("0.1.0", doc["payload"]["firmware_version"] | "");
+  TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
+  TEST_ASSERT_NOT_EQUAL('\0', (doc["payload"]["firmware_commit"] | "")[0]);
 }
 
 void test_gateway_ws_send_interrupt_increments_seq() {
@@ -793,6 +814,7 @@ void test_audio_ws_send_mock_frame_rejects_when_audio_not_connected() {
 
 int main(int argc, char** argv) {
   UNITY_BEGIN();
+  RUN_TEST(test_firmware_build_identity_contains_a21_release_fields);
   RUN_TEST(test_parse_control_event_listening);
   RUN_TEST(test_parse_control_event_rejects_wrong_protocol);
   RUN_TEST(test_parse_control_event_rejects_wrong_device);

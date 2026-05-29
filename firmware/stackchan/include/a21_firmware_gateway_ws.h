@@ -1,5 +1,6 @@
 #pragma once
 
+#include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_state.h"
@@ -77,6 +78,10 @@ inline bool a21GatewayWSBuildDeviceEvent(
   JsonObject payload = doc["payload"].to<JsonObject>();
   payload["event"] = event;
   payload["mode"] = (mode == nullptr || mode[0] == '\0') ? "workmate" : mode;
+  payload["firmware_id"] = A21_FIRMWARE_ID;
+  payload["firmware_version"] = A21_FIRMWARE_VERSION;
+  payload["firmware_board"] = A21_FIRMWARE_BOARD;
+  payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
   if (text != nullptr && text[0] != '\0') {
     payload["text"] = text;
   }

@@ -96,6 +96,18 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "a21_gateway_port=21080") {
 		return fmt.Errorf("platformio A21 gateway port must be 21080")
 	}
+	if !strings.Contains(content, "a21_firmware_id") {
+		return fmt.Errorf("platformio A21 firmware id build flag is required")
+	}
+	if !strings.Contains(content, "a21_firmware_version") {
+		return fmt.Errorf("platformio A21 firmware version build flag is required")
+	}
+	if !strings.Contains(content, "a21_firmware_board") {
+		return fmt.Errorf("platformio A21 firmware board build flag is required")
+	}
+	if !strings.Contains(content, "pre:scripts/a21_build_identity.py") {
+		return fmt.Errorf("platformio A21 build identity script is required")
+	}
 	if strings.Contains(content, "a21_wifi_password") {
 		return fmt.Errorf("platformio.ini must not contain A21 Wi-Fi password build flags")
 	}

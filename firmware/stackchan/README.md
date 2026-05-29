@@ -9,6 +9,8 @@ This is the A21 firmware lane for M5Stack StackChan/CoreS3.
 - Board: `m5stack-cores3`
 - Version: `0.1.0`
 
+PlatformIO runs `scripts/a21_build_identity.py` before each firmware build. The script writes ignored `include/a21_firmware_build.generated.h` with the current git commit, so the device build identity can be shown on screen and sent in device events without committing generated metadata.
+
 ## Build
 
 From the repository root:
@@ -23,7 +25,7 @@ make firmware-test
 
 ## Runtime Surface
 
-The current firmware starts in local fallback render state and renders the A21 identity, firmware version, state label, Gateway target, connection lifecycle status, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
+The current firmware starts in local fallback render state and renders the A21 identity, firmware version plus commit, state label, Gateway target, connection lifecycle status, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
 
 Gateway configuration is currently compile-time and A21-only:
 
@@ -56,6 +58,7 @@ Gateway configuration is currently compile-time and A21-only:
 - uses the A21-only Gateway host, port, and `/ws/control` path
 - applies incoming `control.event` envelopes through the tested parser
 - sends A21 `device.event` envelopes with deterministic seq/trace IDs
+- includes firmware id, version, board, and commit in outgoing `device.event` payloads
 - enters reconnect wait when the control socket disconnects
 - uses `links2004/WebSockets @ 2.7.3` behind a small driver interface on CoreS3
 
@@ -76,7 +79,7 @@ The firmware still does not capture microphone audio, play Gateway audio, run VA
 
 ## Upload
 
-There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, and artifact name have been verified.
+There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, build commit, and artifact name have been verified.
 
 Phase 5B adds only dry-run guards:
 
@@ -87,3 +90,5 @@ go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackc
 ```
 
 These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, and whether another process is already holding the serial path. They do not flash the device.
+
+`make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source.

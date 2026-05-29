@@ -1,7 +1,7 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 
-.PHONY: test verify preflight doctor gateway firmware-check firmware-test firmware-build firmware-package firmware-artifact-check firmware-upload-check
+.PHONY: test verify preflight doctor gateway firmware-check firmware-test firmware-build firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check
 
 test:
 	go test ./...
@@ -24,7 +24,10 @@ firmware-test: firmware-check
 firmware-build: firmware-check
 	$(PIO) run -d firmware/stackchan
 
-firmware-package: firmware-build
+firmware-clean-check:
+	@test -z "$$(git status --porcelain --untracked-files=all)" || (echo "A21 firmware package requires a clean git worktree"; git status --short; exit 2)
+
+firmware-package: firmware-clean-check firmware-build
 	go run ./cmd/a21 firmware-package --commit $$(git rev-parse --short=12 HEAD)
 
 firmware-artifact-check:

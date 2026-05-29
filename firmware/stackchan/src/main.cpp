@@ -61,12 +61,16 @@ const char* state_label(A21RenderState state) {
 
 void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& network, const A21ConnectionState& connection) {
   const uint32_t accent = state_color(state.render_state);
+  char firmware_label[A21_FIRMWARE_LABEL_CAP];
+  if (!a21BuildFirmwareLabel(firmware_label, sizeof(firmware_label))) {
+    a21ConfigCopyString(firmware_label, sizeof(firmware_label), A21_FIRMWARE_VERSION);
+  }
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.setTextDatum(middle_center);
   M5.Display.setFont(&fonts::Font2);
   M5.Display.drawString("A21", M5.Display.width() / 2, M5.Display.height() / 2 - 28);
-  M5.Display.drawString(A21_FIRMWARE_VERSION, M5.Display.width() / 2, M5.Display.height() / 2);
+  M5.Display.drawString(firmware_label, M5.Display.width() / 2, M5.Display.height() / 2);
   M5.Display.setTextColor(accent, TFT_BLACK);
   M5.Display.drawString(state_label(state.render_state), M5.Display.width() / 2, M5.Display.height() / 2 + 28);
   M5.Display.setTextDatum(top_center);
