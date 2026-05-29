@@ -93,6 +93,9 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "a21_gateway_port=21080") {
 		return fmt.Errorf("platformio A21 gateway port must be 21080")
 	}
+	if strings.Contains(content, "a21_wifi_password") {
+		return fmt.Errorf("platformio.ini must not contain A21 Wi-Fi password build flags")
+	}
 	boardPattern := regexp.MustCompile(`(?m)^\s*board\s*=\s*([A-Za-z0-9_-]+)\s*$`)
 	match := boardPattern.FindStringSubmatch(content)
 	if len(match) != 2 {

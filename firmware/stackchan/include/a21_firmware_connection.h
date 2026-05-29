@@ -2,6 +2,7 @@
 
 #include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
+#include "a21_firmware_wifi.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -89,6 +90,21 @@ inline void a21InitConnectionState(A21ConnectionState* connection, const A21Netw
   }
 
   a21SetConnectionPhase(connection, A21_CONN_WIFI_CONNECTING, now_ms);
+}
+
+inline void a21InitConnectionStateWithWiFi(
+    A21ConnectionState* connection,
+    const A21NetworkConfig* network,
+    const A21WiFiConfig* wifi,
+    uint32_t now_ms) {
+  a21InitConnectionState(connection, network, now_ms);
+  if (connection == nullptr || connection->phase == A21_CONN_LOCAL_FALLBACK) {
+    return;
+  }
+  if (!a21ValidateWiFiConfig(wifi)) {
+    a21SetConnectionPhase(connection, A21_CONN_LOCAL_FALLBACK, now_ms);
+    a21CopyString(connection->last_error, A21_ERROR_CAP, (wifi == nullptr || wifi->ssid[0] == '\0') ? "missing_wifi" : "invalid_wifi");
+  }
 }
 
 inline void a21ConnectionOnWiFiConnected(A21ConnectionState* connection, const char* local_ip, uint32_t now_ms) {

@@ -4,6 +4,7 @@
 #include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
+#include "a21_firmware_wifi.h"
 
 void test_parse_control_event_listening() {
   const char* json =
@@ -175,6 +176,73 @@ void test_connection_state_machine_rejects_invalid_config() {
   TEST_ASSERT_EQUAL_STRING("Local fallback", connection.status_text);
 }
 
+void test_wifi_config_defaults_to_missing_credentials() {
+  A21WiFiConfig wifi;
+  a21InitWiFiConfig(&wifi);
+
+  TEST_ASSERT_EQUAL_STRING("", wifi.ssid);
+  TEST_ASSERT_FALSE(a21ValidateWiFiConfig(&wifi));
+
+  char status[96];
+  TEST_ASSERT_TRUE(a21DescribeWiFiConfig(&wifi, status, sizeof(status)));
+  TEST_ASSERT_NOT_NULL(strstr(status, "ssid=missing"));
+  TEST_ASSERT_NOT_NULL(strstr(status, "password=missing"));
+}
+
+void test_wifi_config_redacts_password_in_status_text() {
+  A21WiFiConfig wifi;
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "wang301");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+
+  TEST_ASSERT_TRUE(a21ValidateWiFiConfig(&wifi));
+
+  char status[96];
+  TEST_ASSERT_TRUE(a21DescribeWiFiConfig(&wifi, status, sizeof(status)));
+  TEST_ASSERT_NOT_NULL(strstr(status, "ssid=wang301"));
+  TEST_ASSERT_NOT_NULL(strstr(status, "password=configured"));
+  TEST_ASSERT_NULL(strstr(status, "secret-password"));
+}
+
+void test_wifi_config_rejects_legacy_project_ssid() {
+  A21WiFiConfig wifi;
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "x21-lab");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+
+  TEST_ASSERT_FALSE(a21ValidateWiFiConfig(&wifi));
+}
+
+void test_connection_state_machine_uses_local_fallback_without_wifi_credentials() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  A21WiFiConfig wifi;
+  a21InitNetworkConfig(&config);
+  a21InitWiFiConfig(&wifi);
+
+  a21InitConnectionStateWithWiFi(&connection, &config, &wifi, 1000);
+
+  TEST_ASSERT_EQUAL(A21_CONN_LOCAL_FALLBACK, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("missing_wifi", connection.last_error);
+  TEST_ASSERT_EQUAL_STRING("Local fallback", connection.status_text);
+}
+
+void test_connection_state_machine_starts_wifi_when_credentials_are_valid() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  A21WiFiConfig wifi;
+  a21InitNetworkConfig(&config);
+  a21InitWiFiConfig(&wifi);
+  a21CopyString(wifi.ssid, A21_WIFI_SSID_CAP, "wang301");
+  a21CopyString(wifi.password, A21_WIFI_PASSWORD_CAP, "secret-password");
+
+  a21InitConnectionStateWithWiFi(&connection, &config, &wifi, 1000);
+
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_CONNECTING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("", connection.last_error);
+  TEST_ASSERT_EQUAL_STRING("Wi-Fi connecting", connection.status_text);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -188,5 +256,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_connection_state_machine_reaches_gateway_connected);
   RUN_TEST(test_connection_state_machine_enters_reconnect_after_gateway_loss);
   RUN_TEST(test_connection_state_machine_rejects_invalid_config);
+  RUN_TEST(test_wifi_config_defaults_to_missing_credentials);
+  RUN_TEST(test_wifi_config_redacts_password_in_status_text);
+  RUN_TEST(test_wifi_config_rejects_legacy_project_ssid);
+  RUN_TEST(test_connection_state_machine_uses_local_fallback_without_wifi_credentials);
+  RUN_TEST(test_connection_state_machine_starts_wifi_when_credentials_are_valid);
   return UNITY_END();
 }

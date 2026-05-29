@@ -40,7 +40,14 @@ Gateway configuration is currently compile-time and A21-only:
 - reconnect wait with bounded backoff
 - local fallback on invalid A21 Gateway config
 
-The firmware still does not open real Wi-Fi or WebSocket connections in this slice. Network transport will be added after the connection state model and screen rendering path remain stable under native tests.
+`a21_firmware_wifi.h` owns the first Wi-Fi configuration guard:
+
+- default builds have no Wi-Fi SSID and stay in local fallback
+- Wi-Fi status text redacts the password
+- SSIDs containing legacy project identity are rejected
+- `platformio.ini` must not contain `A21_WIFI_PASSWORD`
+
+The firmware still does not open real Wi-Fi or WebSocket connections in this slice. Network transport will be added after the Wi-Fi config guard, connection state model, and screen rendering path remain stable under native tests.
 
 ## Upload
 

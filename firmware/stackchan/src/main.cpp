@@ -4,6 +4,7 @@
 #include "a21_firmware_connection.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_state.h"
+#include "a21_firmware_wifi.h"
 
 namespace {
 
@@ -72,6 +73,7 @@ void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& netw
 
 A21FirmwareState g_state;
 A21NetworkConfig g_network;
+A21WiFiConfig g_wifi;
 A21ConnectionState g_connection;
 A21RenderState g_last_render_state = A21_RENDER_ERROR;
 char g_last_text[A21_TEXT_CAP] = "";
@@ -96,7 +98,8 @@ void setup() {
   M5.begin(config);
   a21InitFirmwareState(&g_state, A21_DEVICE_ID);
   a21InitNetworkConfig(&g_network);
-  a21InitConnectionState(&g_connection, &g_network, millis());
+  a21InitWiFiConfig(&g_wifi);
+  a21InitConnectionStateWithWiFi(&g_connection, &g_network, &g_wifi, millis());
   if (!a21ValidateNetworkConfig(&g_network)) {
     a21CopyString(g_state.text, A21_TEXT_CAP, "A21 Gateway config error");
     a21CopyString(g_state.last_error, A21_ERROR_CAP, "network_config");
