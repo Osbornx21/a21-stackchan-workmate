@@ -5,6 +5,7 @@
 ```bash
 go run ./cmd/a21 doctor
 go run ./cmd/a21 doctor --output-dir reports
+go run ./cmd/a21 serial-list
 make doctor
 ```
 
@@ -27,8 +28,13 @@ It checks what the current foundation can truthfully check:
 - repository-local PlatformIO core path
 - validated firmware artifact count
 - current git commit firmware artifact match
+- local `/dev/cu.*` serial device inventory
+- serial device USB-modem classification
+- serial device process ownership via `lsof`
 
 The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
+
+`serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 
 ## Exit Codes
 

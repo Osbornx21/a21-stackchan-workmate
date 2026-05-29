@@ -25,8 +25,9 @@ There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A
 Phase 5B adds only dry-run guards:
 
 ```bash
+go run ./cmd/a21 serial-list
 go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>
 go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <expected-git-sha>
 ```
 
-These commands validate artifact identity, board, version, checksum, expected git commit, explicit serial target, and whether another process is already holding the serial path. They do not flash the device.
+These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, and whether another process is already holding the serial path. They do not flash the device.

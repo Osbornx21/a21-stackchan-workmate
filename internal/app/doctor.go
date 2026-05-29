@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,10 @@ import (
 	"a21.local/a21/internal/runtimeguard"
 )
 
+var listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+	return firmwarecheck.ListSerialDevices(context.Background())
+}
+
 type doctorReport struct {
 	Result      runtimeguard.Result      `json:"result"`
 	Fingerprint runtimeguard.Fingerprint `json:"fingerprint"`
@@ -18,16 +23,17 @@ type doctorReport struct {
 }
 
 type firmwareDoctorReport struct {
-	ManifestPath        string                 `json:"manifest_path"`
-	ManifestOK          bool                   `json:"manifest_ok"`
-	PlatformIOVenvPath  string                 `json:"platformio_venv_path"`
-	PlatformIOVenvOK    bool                   `json:"platformio_venv_ok"`
-	PlatformIOCoreDir   string                 `json:"platformio_core_dir"`
-	PlatformIOCoreOK    bool                   `json:"platformio_core_ok"`
-	CurrentCommit       string                 `json:"current_commit,omitempty"`
-	CurrentArtifactPath string                 `json:"current_artifact_path,omitempty"`
-	ArtifactCount       int                    `json:"artifact_count"`
-	Findings            []runtimeguard.Finding `json:"findings"`
+	ManifestPath        string                       `json:"manifest_path"`
+	ManifestOK          bool                         `json:"manifest_ok"`
+	PlatformIOVenvPath  string                       `json:"platformio_venv_path"`
+	PlatformIOVenvOK    bool                         `json:"platformio_venv_ok"`
+	PlatformIOCoreDir   string                       `json:"platformio_core_dir"`
+	PlatformIOCoreOK    bool                         `json:"platformio_core_ok"`
+	CurrentCommit       string                       `json:"current_commit,omitempty"`
+	CurrentArtifactPath string                       `json:"current_artifact_path,omitempty"`
+	ArtifactCount       int                          `json:"artifact_count"`
+	SerialDevices       []firmwarecheck.SerialDevice `json:"serial_devices"`
+	Findings            []runtimeguard.Finding       `json:"findings"`
 }
 
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
@@ -109,6 +115,17 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 			Message:  "No validated A21 firmware artifact matches the current git commit",
 			Detail:   currentCommit,
 		})
+	}
+	devices, err := listFirmwareSerialDevices()
+	if err != nil {
+		report.Findings = append(report.Findings, runtimeguard.Finding{
+			Code:     "firmware_serial_inventory_failed",
+			Severity: runtimeguard.SeverityWarn,
+			Message:  "A21 could not list local serial devices",
+			Detail:   err.Error(),
+		})
+	} else {
+		report.SerialDevices = devices
 	}
 	return report
 }

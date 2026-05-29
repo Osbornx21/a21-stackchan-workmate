@@ -36,6 +36,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "serial-list":
+		return runSerialList(args[1:], stdout, stderr)
 	case "firmware-check":
 		return runFirmwareCheck(args[1:], stdout, stderr)
 	case "firmware-package":
@@ -116,6 +118,34 @@ func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	if !report.Result.OK {
+		return 1
+	}
+	return 0
+}
+
+func runSerialList(args []string, stdout io.Writer, stderr io.Writer) int {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 serial-list")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown serial-list option %q\n", args[i])
+			return 2
+		}
+	}
+	devices, err := listFirmwareSerialDevices()
+	if err != nil {
+		fmt.Fprintf(stderr, "serial-list failed: %v\n", err)
+		return 1
+	}
+	payload := struct {
+		SerialDevices []firmwarecheck.SerialDevice `json:"serial_devices"`
+	}{SerialDevices: devices}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(payload); err != nil {
+		fmt.Fprintf(stderr, "encode serial-list result: %v\n", err)
 		return 1
 	}
 	return 0
@@ -373,6 +403,10 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	portUsage, err := detectFirmwareUploadPortUsage(options.Port)
 	if err != nil {
 		fmt.Fprintf(stderr, "firmware upload check failed: upload port ownership check failed: %v\n", err)
+		return 1
+	}
+	if !portUsage.Exists {
+		fmt.Fprintf(stderr, "firmware upload check failed: upload port %s does not exist\n", options.Port)
 		return 1
 	}
 	if portUsage.InUse {

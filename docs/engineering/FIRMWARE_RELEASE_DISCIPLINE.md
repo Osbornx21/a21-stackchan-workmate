@@ -123,3 +123,13 @@ Before any future firmware upload:
 8. Only then may a future explicit guarded upload command run.
 
 There is intentionally no upload target in Phase 5B.
+
+## Serial Inventory
+
+Before choosing an upload port, inspect the current serial state:
+
+```bash
+go run ./cmd/a21 serial-list
+```
+
+The inventory lists `/dev/cu.*` paths, marks `usbmodem` candidates, and reports whether `lsof` sees another process holding the path. A busy port is a hard stop for `firmware-upload-check`.
