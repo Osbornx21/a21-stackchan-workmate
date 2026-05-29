@@ -19,6 +19,7 @@ const simulatorHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
   <title>A21 Device Simulator</title>
   <style>
     :root {
@@ -135,7 +136,7 @@ const simulatorHTML = `<!doctype html>
     body[data-state="listening"] .eye { transform: scaleY(1.08); }
     .side {
       display: grid;
-      grid-template-rows: auto auto 1fr;
+      grid-template-rows: auto auto auto auto 1fr;
       gap: 18px;
       padding: 24px;
       min-width: 0;
@@ -170,6 +171,23 @@ const simulatorHTML = `<!doctype html>
     .readout {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .registry {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #141a1d;
+      min-width: 0;
+    }
+    .registry h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 680;
+    }
+    .registry-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
     .metric {
@@ -209,6 +227,7 @@ const simulatorHTML = `<!doctype html>
       main { grid-template-columns: 1fr; }
       .stage { border-right: 0; border-bottom: 1px solid var(--line); }
       .readout { grid-template-columns: 1fr; }
+      .registry-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -249,6 +268,15 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
           <div class="metric"><label>Session</label><div id="session">none</div></div>
         </div>
+        <section class="registry" aria-label="Device Registry">
+          <h2>Device Registry</h2>
+          <div class="registry-grid">
+            <div class="metric"><label>Device</label><div id="registryDevice">none</div></div>
+            <div class="metric"><label>Identity</label><div id="registryIdentity">none</div></div>
+            <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
+            <div class="metric"><label>Commit</label><div id="registryCommit">none</div></div>
+          </div>
+        </section>
         <pre id="log" aria-label="event log"></pre>
       </section>
     </main>
@@ -259,11 +287,21 @@ const simulatorHTML = `<!doctype html>
       state: document.getElementById('state'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
+      registryDevice: document.getElementById('registryDevice'),
+      registryIdentity: document.getElementById('registryIdentity'),
+      registryFirmware: document.getElementById('registryFirmware'),
+      registryCommit: document.getElementById('registryCommit'),
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
       utterance: document.getElementById('utterance')
     };
     const sim = { control: null, audio: null, seq: 1, traceId: '', sessionId: '' };
+    const firmwareIdentity = {
+      firmware_id: 'a21-stackchan',
+      firmware_version: '0.1.0',
+      firmware_board: 'm5stack-cores3',
+      firmware_commit: '0000000'
+    };
 
     function wsURL(path) {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -297,6 +335,25 @@ const simulatorHTML = `<!doctype html>
       if (payload.state) setState(payload.state);
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
     }
+    async function refreshRegistry() {
+      try {
+        const response = await fetch('/v1/devices', { cache: 'no-store' });
+        if (!response.ok) {
+          log('device registry error ' + response.status);
+          return;
+        }
+        const registry = await response.json();
+        const device = (registry.devices || []).find((item) => item.device_id === 'stackchan-sim-001') || (registry.devices || [])[0];
+        if (!device) return;
+        const firmware = device.firmware || {};
+        ui.registryDevice.textContent = device.device_id || 'none';
+        ui.registryIdentity.textContent = device.identity_status || 'none';
+        ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';
+        ui.registryCommit.textContent = firmware.commit || 'none';
+      } catch (err) {
+        log('device registry unavailable');
+      }
+    }
     function connect() {
       if (sim.control && sim.control.readyState === WebSocket.OPEN) return;
       sim.control = new WebSocket(wsURL('/ws/control'));
@@ -304,10 +361,11 @@ const simulatorHTML = `<!doctype html>
       sim.control.onopen = () => { setConnected(true); log('control connected /ws/control'); };
       sim.control.onclose = () => { setConnected(false); log('control closed'); };
       sim.control.onerror = () => { setState('error'); log('control error'); };
-      sim.control.onmessage = (event) => handleEnvelope(JSON.parse(event.data));
+      sim.control.onmessage = (event) => { handleEnvelope(JSON.parse(event.data)); refreshRegistry(); };
       sim.audio.onopen = () => log('audio connected /ws/audio');
       sim.audio.onmessage = (event) => handleEnvelope(JSON.parse(event.data));
       sim.audio.onerror = () => log('audio error');
+      refreshRegistry();
     }
     function disconnect() {
       if (sim.control) sim.control.close();
@@ -327,10 +385,11 @@ const simulatorHTML = `<!doctype html>
         seq: sim.seq++,
         trace_id: sim.traceId,
         session_id: sim.sessionId,
-        payload: { event: eventName, mode: ui.mode.value, text: ui.utterance.value }
+        payload: Object.assign({ event: eventName, mode: ui.mode.value, text: ui.utterance.value }, firmwareIdentity)
       };
       sim.control.send(JSON.stringify(envelope));
       log('sent device event ' + eventName);
+      refreshRegistry();
     }
     function sendAudioFrame() {
       if (!sim.audio || sim.audio.readyState !== WebSocket.OPEN) {
@@ -360,6 +419,7 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('mockTurn').addEventListener('click', () => sendDeviceEvent('mock.turn'));
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
+    refreshRegistry();
   </script>
 </body>
 </html>`

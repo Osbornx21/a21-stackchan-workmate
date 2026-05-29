@@ -22,13 +22,17 @@ http://127.0.0.1:21080/simulator
 - Connects to `/ws/audio`
 - Sends `mock.turn` device events
 - Sends `interrupt` device events
+- Sends simulated A21 firmware identity in device events
 - Sends mock `audio.frame` envelopes
 - Displays expression state, mode, trace ID, session ID, and event log
+- Displays Gateway `/v1/devices` registry status for the simulator device
 - Shows a simple StackChan face state for `idle`, `listening`, `thinking`, `speaking`, `interrupted`, and `error`
 
 ## Boundaries
 
 The simulator is a development surface, not the final A21 device UI. It does not use the browser microphone, does not play gateway audio, and does not emulate firmware timing or servo/RGB behavior yet.
+
+The simulator uses a synthetic firmware commit `0000000` so Gateway identity validation can be exercised without pretending the simulator is a real packaged firmware artifact.
 
 Future simulator work should add:
 

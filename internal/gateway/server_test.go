@@ -46,7 +46,16 @@ func TestSimulatorPageServed(t *testing.T) {
 		t.Fatalf("content-type = %q, want text/html", rec.Header().Get("Content-Type"))
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"A21 Device Simulator", `data-testid="simulator-root"`, "/ws/control"} {
+	for _, want := range []string{
+		"A21 Device Simulator",
+		`data-testid="simulator-root"`,
+		"/ws/control",
+		"/v1/devices",
+		"Device Registry",
+		"firmware_id",
+		"a21-stackchan",
+		"m5stack-cores3",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
 		}
