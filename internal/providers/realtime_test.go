@@ -105,8 +105,8 @@ func TestRealtimeWebSocketSessionSendsSessionUpdateAndCancel(t *testing.T) {
 	if got, want := conn.messages[1]["type"], "response.cancel"; got != want {
 		t.Fatalf("second event type = %v, want %s", got, want)
 	}
-	if got, want := conn.messages[1]["reason"], string(CancelBargeIn); got != want {
-		t.Fatalf("cancel reason = %v, want %s", got, want)
+	if _, ok := conn.messages[1]["reason"]; ok {
+		t.Fatalf("provider cancel event leaked A21-local reason: %#v", conn.messages[1])
 	}
 }
 

@@ -47,7 +47,16 @@ type VoiceEvent struct {
 	Text         string
 	Final        bool
 	StreamID     string
+	Audio        *VoiceAudioChunk
 	CancelReason VoiceCancelReason
+}
+
+type VoiceAudioChunk struct {
+	Codec        string
+	SampleRateHz int
+	Channels     int
+	DurationMS   int
+	DataBase64   string
 }
 
 type VoiceProviderHealthStatus string

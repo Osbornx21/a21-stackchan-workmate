@@ -121,6 +121,8 @@ Current firmware derives playback start/stop from `control.event` state plus `st
 
 Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 
+Provider audio deltas are translated back into A21 voice/audio events before any Gateway or device-facing code sees them. For example, OpenAI `response.output_audio.delta` is mapped inside `internal/providers` to an A21 `VoiceEvent` with `VoiceAudioChunk`; firmware still receives only A21 downlink playback chunks and semantic control events.
+
 ## Barge-In Requirements
 
 Interrupt is not just stop audio. It must coordinate:

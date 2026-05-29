@@ -54,10 +54,10 @@ Phase 4D does not:
 
 ## Next Step
 
-The next implementation slice should add a provider-specific OpenAI realtime voice adapter around this transport, still using mock/local tests first:
+Phase 4E adds the first provider-specific OpenAI event mapper around this transport. Remaining provider work should continue in small tested slices:
 
-1. Map A21 audio chunks to `input_audio_buffer.append`.
-2. Map provider audio deltas into A21 downlink audio events.
-3. Map barge-in to provider cancel and local playback stop spans.
-4. Add a dry-run CLI that prints a redacted realtime plan only.
-5. Add an explicit `--execute` smoke that is skipped unless credentials and operator intent are both present.
+1. Wrap the mapper in a concrete `VoiceProvider` implementation.
+2. Add conversation truncation for played/unplayed audio once Gateway tracks provider item IDs.
+3. Add a dry-run CLI that prints a redacted realtime plan only.
+4. Add an explicit `--execute` smoke that is skipped unless credentials and operator intent are both present.
+5. Build a separate Doubao adapter after a provider-specific Volcengine readiness pass.

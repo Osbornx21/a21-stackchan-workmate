@@ -162,17 +162,12 @@ func (a *RealtimeWebSocketAdapter) Report() ProviderSmokeReport {
 	return report
 }
 
-func (s *RealtimeWebSocketSession) Cancel(ctx context.Context, req VoiceCancelRequest) error {
+func (s *RealtimeWebSocketSession) Cancel(ctx context.Context, _ VoiceCancelRequest) error {
 	if s == nil || s.conn == nil {
 		return fmt.Errorf("realtime websocket session is not connected")
 	}
-	reason := string(req.Reason)
-	if reason == "" {
-		reason = string(CancelError)
-	}
 	return s.conn.WriteJSON(ctx, map[string]any{
-		"type":   "response.cancel",
-		"reason": reason,
+		"type": "response.cancel",
 	})
 }
 
