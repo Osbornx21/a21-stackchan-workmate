@@ -137,6 +137,8 @@ Each line records the A21 firmware ID, version, board, git commit, build timesta
 
 Packaging rejects input or output paths containing forbidden X21/V21 identities so A21 release candidates cannot be produced from legacy build folders or written into legacy artifact directories.
 
+Upload-path dry-run guards now require this release index record. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256.
+
 ## Artifact Guard
 
 Every packaged firmware binary must pass:
@@ -161,6 +163,7 @@ The guard verifies:
 - sibling `.sha256` exists and matches the binary
 - binary content embeds the same A21 firmware ID, version, board, and git commit
 - artifact filename does not contain forbidden X21/V21 identities
+- upload-path guards require a matching `a21-firmware-release-index.jsonl` entry in the artifact directory
 
 The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. A package is not a valid A21 candidate unless the filename, checksum, manifest, and binary identity all agree.
 

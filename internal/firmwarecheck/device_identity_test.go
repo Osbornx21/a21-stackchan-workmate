@@ -201,6 +201,19 @@ func writeDeviceIdentityArtifact(t *testing.T, artifactPath string, content []by
 	if err := os.WriteFile(artifactPath+".sha256", []byte(checksum+"  "+filepath.Base(artifactPath)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := appendReleaseIndexEntry(filepath.Join(filepath.Dir(artifactPath), ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        commit,
+		Timestamp:     deviceIdentityArtifactTimestampFromName(t, artifactPath),
+		ArtifactPath:  artifactPath,
+		SHA256Path:    artifactPath + ".sha256",
+		SHA256:        checksum,
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func deviceIdentityArtifactCommitFromName(t *testing.T, artifactPath string) string {
@@ -211,4 +224,14 @@ func deviceIdentityArtifactCommitFromName(t *testing.T, artifactPath string) str
 		t.Fatalf("artifact name %q lacks commit field", name)
 	}
 	return parts[len(parts)-3]
+}
+
+func deviceIdentityArtifactTimestampFromName(t *testing.T, artifactPath string) string {
+	t.Helper()
+	name := strings.TrimSuffix(filepath.Base(artifactPath), ".bin")
+	parts := strings.Split(name, "-")
+	if len(parts) < 5 {
+		t.Fatalf("artifact name %q lacks timestamp field", name)
+	}
+	return parts[len(parts)-2] + "-" + parts[len(parts)-1]
 }

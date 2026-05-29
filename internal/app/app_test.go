@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -1191,6 +1192,30 @@ func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, conten
 	if err := os.WriteFile(artifactPath+".sha256", []byte(checksum+"  "+filepath.Base(artifactPath)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	entry := firmwarecheck.ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        commit,
+		Timestamp:     testArtifactTimestampFromName(t, artifactPath),
+		ArtifactPath:  artifactPath,
+		SHA256Path:    artifactPath + ".sha256",
+		SHA256:        checksum,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(filepath.Dir(artifactPath), firmwarecheck.ReleaseIndexFileName)
+	file, err := os.OpenFile(indexPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testArtifactCommitFromName(t *testing.T, artifactPath string) string {
@@ -1201,4 +1226,14 @@ func testArtifactCommitFromName(t *testing.T, artifactPath string) string {
 		t.Fatalf("artifact name %q lacks commit field", name)
 	}
 	return parts[len(parts)-3]
+}
+
+func testArtifactTimestampFromName(t *testing.T, artifactPath string) string {
+	t.Helper()
+	name := strings.TrimSuffix(filepath.Base(artifactPath), ".bin")
+	parts := strings.Split(name, "-")
+	if len(parts) < 5 {
+		t.Fatalf("artifact name %q lacks timestamp field", name)
+	}
+	return parts[len(parts)-2] + "-" + parts[len(parts)-1]
 }

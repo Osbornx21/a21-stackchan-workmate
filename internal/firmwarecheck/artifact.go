@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,18 +14,20 @@ import (
 )
 
 type ArtifactOptions struct {
-	ManifestPath string
-	ArtifactPath string
+	ManifestPath        string
+	ArtifactPath        string
+	RequireReleaseIndex bool
 }
 
 type ArtifactResult struct {
-	Manifest     Manifest `json:"manifest"`
-	ArtifactPath string   `json:"artifact_path"`
-	SHA256Path   string   `json:"sha256_path"`
-	SHA256       string   `json:"sha256"`
-	Commit       string   `json:"commit"`
-	Timestamp    string   `json:"timestamp"`
-	OK           bool     `json:"ok"`
+	Manifest         Manifest `json:"manifest"`
+	ArtifactPath     string   `json:"artifact_path"`
+	SHA256Path       string   `json:"sha256_path"`
+	SHA256           string   `json:"sha256"`
+	Commit           string   `json:"commit"`
+	Timestamp        string   `json:"timestamp"`
+	ReleaseIndexPath string   `json:"release_index_path,omitempty"`
+	OK               bool     `json:"ok"`
 }
 
 type UploadCheckOptions struct {
@@ -84,7 +87,7 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 		return ArtifactResult{}, err
 	}
 
-	return ArtifactResult{
+	result := ArtifactResult{
 		Manifest:     manifest,
 		ArtifactPath: options.ArtifactPath,
 		SHA256Path:   shaPath,
@@ -92,7 +95,15 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 		Commit:       parsed.commit,
 		Timestamp:    parsed.timestamp,
 		OK:           true,
-	}, nil
+	}
+	if options.RequireReleaseIndex {
+		releaseIndexPath := filepath.Join(filepath.Dir(options.ArtifactPath), ReleaseIndexFileName)
+		if err := validateReleaseIndexEntry(releaseIndexPath, result); err != nil {
+			return ArtifactResult{}, err
+		}
+		result.ReleaseIndexPath = releaseIndexPath
+	}
+	return result, nil
 }
 
 func validateEmbeddedArtifactIdentity(path string, manifest Manifest, commit string) error {
@@ -125,8 +136,9 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 		return UploadCheckResult{}, err
 	}
 	artifact, err := ValidateArtifact(ArtifactOptions{
-		ManifestPath: options.ManifestPath,
-		ArtifactPath: options.ArtifactPath,
+		ManifestPath:        options.ManifestPath,
+		ArtifactPath:        options.ArtifactPath,
+		RequireReleaseIndex: true,
 	})
 	if err != nil {
 		return UploadCheckResult{}, err
@@ -143,6 +155,40 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 		Port:                     options.Port,
 		OK:                       true,
 	}, nil
+}
+
+func validateReleaseIndexEntry(path string, artifact ArtifactResult) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("release index missing or unreadable: %w", err)
+	}
+	expectedArtifactName := filepath.Base(artifact.ArtifactPath)
+	expectedSHAName := filepath.Base(artifact.SHA256Path)
+	for lineNumber, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		var entry ReleaseIndexEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			return fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
+		}
+		if filepath.Base(entry.ArtifactPath) != expectedArtifactName {
+			continue
+		}
+		if entry.SchemaVersion != "a21.firmware.release.v1" ||
+			entry.FirmwareID != artifact.Manifest.FirmwareID ||
+			entry.Version != artifact.Manifest.Version ||
+			entry.Board != artifact.Manifest.Board ||
+			!sameGitCommit(entry.Commit, artifact.Commit) ||
+			entry.Timestamp != artifact.Timestamp ||
+			filepath.Base(entry.SHA256Path) != expectedSHAName ||
+			!strings.EqualFold(entry.SHA256, artifact.SHA256) {
+			return fmt.Errorf("release index entry for %q does not match artifact identity or checksum", expectedArtifactName)
+		}
+		return nil
+	}
+	return fmt.Errorf("release index has no entry for artifact %q", expectedArtifactName)
 }
 
 type parsedArtifactName struct {
