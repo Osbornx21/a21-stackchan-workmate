@@ -26,6 +26,7 @@ http://127.0.0.1:21080/simulator
 - Sends mock `audio.frame` envelopes
 - Displays expression state, mode, trace ID, session ID, and event log
 - Displays Gateway `/v1/devices` registry status for the simulator device
+- Displays Gateway `/v1/traces` waterfall events for the active trace
 - Shows a simple StackChan face state for `idle`, `listening`, `thinking`, `speaking`, `interrupted`, and `error`
 
 ## Boundaries
@@ -39,6 +40,6 @@ Future simulator work should add:
 - microphone capture behind an explicit permission prompt
 - mock audio playback
 - separate public/private/professional mode indicators
-- latency waterfall panel
+- richer latency waterfall segments and p50/p95 summaries
 - disconnect and reconnect scenarios
 - visible barge-in timing markers

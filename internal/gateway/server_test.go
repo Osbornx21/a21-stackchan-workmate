@@ -51,7 +51,9 @@ func TestSimulatorPageServed(t *testing.T) {
 		`data-testid="simulator-root"`,
 		"/ws/control",
 		"/v1/devices",
+		"/v1/traces",
 		"Device Registry",
+		"Waterfall",
 		"firmware_id",
 		"a21-stackchan",
 		"m5stack-cores3",
@@ -99,6 +101,61 @@ func TestMockTurnReturnsDeterministicStateSequence(t *testing.T) {
 		if response.Events[i].TraceID != response.TraceID {
 			t.Fatalf("event %d trace = %q, want %q", i, response.Events[i].TraceID, response.TraceID)
 		}
+	}
+}
+
+func TestTraceEndpointRecordsMockTurnWaterfall(t *testing.T) {
+	server := NewServer()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"先说，我在","mode":"workmate","trace_id":"a21-trace-test-001","session_id":"a21-session-test-001"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-test-001", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var response TraceResponse
+	if err := json.Unmarshal(traceRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TraceID != "a21-trace-test-001" {
+		t.Fatalf("trace id = %q", response.TraceID)
+	}
+	if len(response.Events) < 4 {
+		t.Fatalf("events = %d, want at least 4: %+v", len(response.Events), response.Events)
+	}
+	wantNames := []string{
+		"http.mock_turn.received",
+		"control.listening.sent",
+		"control.thinking.sent",
+		"control.speaking.sent",
+	}
+	for i, want := range wantNames {
+		if response.Events[i].Name != want {
+			t.Fatalf("event %d name = %q, want %q", i, response.Events[i].Name, want)
+		}
+		if response.Events[i].OffsetMS < 0 {
+			t.Fatalf("event %d offset = %d, want non-negative", i, response.Events[i].OffsetMS)
+		}
+	}
+}
+
+func TestTraceEndpointRequiresTraceID(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 

@@ -18,6 +18,8 @@ The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metric
 
 Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
 
+Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
+
 ## Trace Fields
 
 Future runtime spans should include:
@@ -35,6 +37,18 @@ Future runtime spans should include:
 - `audio_chunk_id`
 - `stream_id`
 - `error_code`
+
+Current mock trace events include:
+
+- `http.mock_turn.received`
+- `http.mock_interrupt.received`
+- `device.mock.turn.received`
+- `device.interrupt.received`
+- `audio.frame.received`
+- `control.listening.sent`
+- `control.thinking.sent`
+- `control.speaking.sent`
+- `control.interrupted.sent`
 
 ## Voice Waterfall Events
 

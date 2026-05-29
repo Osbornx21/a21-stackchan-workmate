@@ -190,6 +190,35 @@ const simulatorHTML = `<!doctype html>
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
+    .waterfall {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #11171a;
+      min-width: 0;
+    }
+    .waterfall h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 680;
+    }
+    .waterfall-list {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: #c8d4d6;
+    }
+    .waterfall-row {
+      display: grid;
+      grid-template-columns: 68px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+    .waterfall-name {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
     .metric {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -277,6 +306,12 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Commit</label><div id="registryCommit">none</div></div>
           </div>
         </section>
+        <section class="waterfall" aria-label="Latency Waterfall">
+          <h2>Waterfall</h2>
+          <div class="waterfall-list" id="waterfall">
+            <div class="waterfall-row"><span>0 ms</span><span class="waterfall-name">none</span></div>
+          </div>
+        </section>
         <pre id="log" aria-label="event log"></pre>
       </section>
     </main>
@@ -291,6 +326,7 @@ const simulatorHTML = `<!doctype html>
       registryIdentity: document.getElementById('registryIdentity'),
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
+      waterfall: document.getElementById('waterfall'),
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
       utterance: document.getElementById('utterance')
@@ -334,6 +370,7 @@ const simulatorHTML = `<!doctype html>
       const payload = envelope.payload || {};
       if (payload.state) setState(payload.state);
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
+      refreshWaterfall();
     }
     async function refreshRegistry() {
       try {
@@ -354,6 +391,24 @@ const simulatorHTML = `<!doctype html>
         log('device registry unavailable');
       }
     }
+    async function refreshWaterfall() {
+      if (!sim.traceId) return;
+      try {
+        const response = await fetch('/v1/traces?trace_id=' + encodeURIComponent(sim.traceId), { cache: 'no-store' });
+        if (!response.ok) {
+          log('trace waterfall error ' + response.status);
+          return;
+        }
+        const trace = await response.json();
+        const events = trace.events || [];
+        if (!events.length) return;
+        ui.waterfall.innerHTML = events.map((event) =>
+          '<div class="waterfall-row"><span>' + event.offset_ms + ' ms</span><span class="waterfall-name">' + event.name + '</span></div>'
+        ).join('');
+      } catch (err) {
+        log('trace waterfall unavailable');
+      }
+    }
     function connect() {
       if (sim.control && sim.control.readyState === WebSocket.OPEN) return;
       sim.control = new WebSocket(wsURL('/ws/control'));
@@ -366,6 +421,7 @@ const simulatorHTML = `<!doctype html>
       sim.audio.onmessage = (event) => handleEnvelope(JSON.parse(event.data));
       sim.audio.onerror = () => log('audio error');
       refreshRegistry();
+      refreshWaterfall();
     }
     function disconnect() {
       if (sim.control) sim.control.close();
@@ -390,6 +446,7 @@ const simulatorHTML = `<!doctype html>
       sim.control.send(JSON.stringify(envelope));
       log('sent device event ' + eventName);
       refreshRegistry();
+      refreshWaterfall();
     }
     function sendAudioFrame() {
       if (!sim.audio || sim.audio.readyState !== WebSocket.OPEN) {
@@ -413,6 +470,7 @@ const simulatorHTML = `<!doctype html>
       };
       sim.audio.send(JSON.stringify(envelope));
       log('sent mock audio frame');
+      refreshWaterfall();
     }
     document.getElementById('connect').addEventListener('click', connect);
     document.getElementById('disconnect').addEventListener('click', disconnect);

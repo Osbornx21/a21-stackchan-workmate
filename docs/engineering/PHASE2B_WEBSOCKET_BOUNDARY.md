@@ -14,6 +14,7 @@ All Phase 2B endpoints run on the existing gateway address, default `127.0.0.1:2
 
 - `GET /healthz`
 - `GET /v1/devices`
+- `GET /v1/traces?trace_id=<trace_id>`
 - `POST /v1/mock-turn`
 - `POST /v1/mock-interrupt`
 - `GET /ws/control`
@@ -29,6 +30,8 @@ Supported mock events:
 - `interrupt`: emits `interrupted`, `listening`
 
 Trace and session IDs are propagated from the device event when supplied. If missing, the mock gateway assigns deterministic A21 IDs.
+
+Gateway records a lightweight in-memory trace waterfall for mock transport events. This supports simulator and local debugging before OpenTelemetry or durable trace storage is introduced.
 
 Firmware-originated device events can include firmware ID, version, board, and commit. Gateway stores the latest record in `GET /v1/devices`, marks identity as `ok`, `unknown`, or `invalid`, and returns an error control event when a provided firmware identity contains forbidden X21/V21 naming or mismatches the A21 StackChan target.
 

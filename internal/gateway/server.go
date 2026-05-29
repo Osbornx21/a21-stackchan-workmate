@@ -25,6 +25,7 @@ type Server struct {
 	metrics *metrics
 	voice   providers.VoiceProvider
 	devices map[string]DeviceRecord
+	traces  map[string][]TraceEvent
 }
 
 type ServerOptions struct {
@@ -70,6 +71,20 @@ type DeviceRegistryResponse struct {
 	Devices []DeviceRecord `json:"devices"`
 }
 
+type TraceEvent struct {
+	Name      string `json:"name"`
+	TraceID   string `json:"trace_id"`
+	SessionID string `json:"session_id,omitempty"`
+	DeviceID  string `json:"device_id,omitempty"`
+	AtMS      int64  `json:"at_ms"`
+	OffsetMS  int64  `json:"offset_ms"`
+}
+
+type TraceResponse struct {
+	TraceID string       `json:"trace_id"`
+	Events  []TraceEvent `json:"events"`
+}
+
 func NewServer() *Server {
 	return NewServerWithOptions(ServerOptions{})
 }
@@ -79,7 +94,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if voiceProvider == nil {
 		voiceProvider = providers.NewMockVoiceProvider()
 	}
-	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, devices: make(map[string]DeviceRecord)}
+	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -88,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/simulator", s.handleSimulator)
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
+	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -101,6 +117,19 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, DeviceRegistryResponse{Devices: s.deviceRecords()})
+}
+
+func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	traceID := r.URL.Query().Get("trace_id")
+	if traceID == "" {
+		http.Error(w, "trace_id is required", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, TraceResponse{TraceID: traceID, Events: s.traceEvents(traceID)})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +161,10 @@ func (s *Server) handleMockTurn(w http.ResponseWriter, r *http.Request) {
 	if req.Mode == "" {
 		req.Mode = protocol.ModeWorkmate
 	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	s.recordTrace(traceID, sessionID, req.DeviceID, "http.mock_turn.received", s.now().UnixMilli())
 	writeJSON(w, http.StatusOK, s.mockTurnResponse(req))
 }
 
@@ -149,6 +182,10 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "device_id is required", http.StatusBadRequest)
 		return
 	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	s.recordTrace(traceID, sessionID, req.DeviceID, "http.mock_interrupt.received", s.now().UnixMilli())
 	writeJSON(w, http.StatusOK, s.mockInterruptResponse(req))
 }
 
@@ -195,6 +232,7 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 			s.metrics.audioFrameTotal.Inc()
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
+		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
 		})
@@ -209,6 +247,10 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return s.errorEvents(event, "invalid device event")
 	}
+	traceID, sessionID := s.ids(event.TraceID, event.SessionID)
+	event.TraceID = traceID
+	event.SessionID = sessionID
+	s.recordTrace(traceID, sessionID, event.DeviceID, "device."+string(payload.Event)+".received", s.now().UnixMilli())
 	record := s.recordDeviceEvent(event, payload)
 	if record.IdentityStatus == "invalid" {
 		s.metrics.deviceIdentityInvalidTotal.Inc()
@@ -229,6 +271,41 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 	default:
 		return s.errorEvents(event, "unsupported device event")
 	}
+}
+
+func (s *Server) recordTrace(traceID string, sessionID string, deviceID string, name string, atMS int64) {
+	if traceID == "" || name == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := s.traces[traceID]
+	offset := int64(0)
+	if len(events) > 0 {
+		offset = atMS - events[0].AtMS
+		if offset < 0 {
+			offset = 0
+		}
+	}
+	event := TraceEvent{
+		Name:      name,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		DeviceID:  deviceID,
+		AtMS:      atMS,
+		OffsetMS:  offset,
+	}
+	s.traces[traceID] = append(events, event)
+}
+
+func (s *Server) traceEvents(traceID string) []TraceEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events := append([]TraceEvent(nil), s.traces[traceID]...)
+	sort.SliceStable(events, func(i, j int) bool {
+		return events[i].OffsetMS < events[j].OffsetMS
+	})
+	return events
 }
 
 func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.DeviceEventPayload) DeviceRecord {
@@ -400,6 +477,7 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 			SentAtMS:  sentAt + int64(i),
 			Payload:   data,
 		})
+		s.recordTrace(traceID, sessionID, deviceID, "control."+string(payload.State)+".sent", sentAt+int64(i))
 	}
 	return events
 }
