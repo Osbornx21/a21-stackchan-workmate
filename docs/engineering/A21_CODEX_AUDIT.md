@@ -57,7 +57,7 @@ go run ./cmd/a21 doctor
 go run ./cmd/a21 serial-list
 ```
 
-`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
+`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory, voice provider health, and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
 
 `make release-check` is the local high-confidence gate. It runs Go verification, firmware native tests, clean-worktree firmware packaging, and doctor. Because packaging embeds the current git commit, run it only from a clean tree after the intended commit exists.
 
@@ -149,7 +149,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 
 - Gateway and simulator are mock-first and deterministic; real microphone capture, speaker playback, VAD, jitter buffer, and provider audio streaming remain future work.
 - Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes and bounded mock downlink buffering, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
-- Metrics and in-memory trace waterfall exist, including professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
+- Metrics, voice provider health, and in-memory trace waterfall exist, including professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
 - Provider-neutral mock/cascade contracts include health status, a Gateway provider health endpoint, and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
 - Mock `latency-bench` exists for Gateway mock/professional/barge-in/audio-WS-downlink report shape, and `audio_ws_downlink_ms` now measures until a full 20 ms / 16 kHz / mono / `pcm_s16le` silence chunk is returned; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.

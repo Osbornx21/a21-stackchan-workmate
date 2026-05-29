@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/providers"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -115,6 +116,33 @@ func TestRunDoctorIncludesFirmwareSection(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"serial_devices"`) {
 		t.Fatalf("stdout missing serial devices: %q", stdout.String())
+	}
+}
+
+func TestRunDoctorIncludesVoiceProviderHealth(t *testing.T) {
+	originalProbe := probeVoiceProviderHealth
+	probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProviderHealth, error) {
+		return providers.VoiceProviderHealth{
+			Provider:   "a21-test-voice",
+			Status:     providers.VoiceProviderHealthy,
+			Configured: true,
+			Realtime:   true,
+		}, nil
+	}
+	defer func() {
+		probeVoiceProviderHealth = originalProbe
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor"}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1", code)
+	}
+	for _, want := range []string{`"voice"`, `"provider": "a21-test-voice"`, `"status": "healthy"`, `"healthy": true`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
 	}
 }
 

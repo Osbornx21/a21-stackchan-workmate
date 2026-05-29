@@ -32,6 +32,8 @@ GET /v1/providers/voice/health
 
 Healthy or degraded providers return HTTP 200 with lower-case JSON fields. Unavailable providers return HTTP 503 with the same response shape. This endpoint is the first provider observability boundary for future Doubao/OpenAI/Bailian adapters; it must not expose provider credentials or SDK-specific internals.
 
+`a21 doctor` also includes a `voice` section that uses the same provider health contract. Today it reports the deterministic mock provider; future real provider selection must update doctor and Gateway through the same construction path so Shanghai-office debugging sees the same adapter state from CLI and HTTP.
+
 ## Current Event Mapping
 
 - provider `thinking` -> device `thinking`

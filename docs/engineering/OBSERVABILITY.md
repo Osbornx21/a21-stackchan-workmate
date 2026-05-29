@@ -13,6 +13,8 @@ The current CLI preflight/doctor report emits:
 - default route interface
 - external DNS probe IP
 - proxy env variable names without values
+- current voice provider health through the provider adapter contract
+- optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.
 

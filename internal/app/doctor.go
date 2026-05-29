@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/runtimeguard"
 	"a21.local/a21/internal/v21adapter"
 )
@@ -25,10 +26,15 @@ var probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
 	return v21adapter.ProbeHealth(ctx, baseURL, client)
 }
 
+var probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProviderHealth, error) {
+	return providers.NewMockVoiceProvider().Health(ctx)
+}
+
 type doctorReport struct {
 	Result      runtimeguard.Result      `json:"result"`
 	Fingerprint runtimeguard.Fingerprint `json:"fingerprint"`
 	Firmware    firmwareDoctorReport     `json:"firmware"`
+	Voice       voiceDoctorReport        `json:"voice"`
 	V21         v21DoctorReport          `json:"v21"`
 }
 
@@ -54,18 +60,62 @@ type v21DoctorReport struct {
 	Findings   []runtimeguard.Finding `json:"findings"`
 }
 
+type voiceDoctorReport struct {
+	Provider       string                 `json:"provider"`
+	Status         string                 `json:"status"`
+	Healthy        bool                   `json:"healthy"`
+	Configured     bool                   `json:"configured"`
+	Realtime       bool                   `json:"realtime"`
+	ActiveProvider string                 `json:"active_provider,omitempty"`
+	Detail         string                 `json:"detail,omitempty"`
+	Findings       []runtimeguard.Finding `json:"findings"`
+}
+
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
 	firmware := buildFirmwareDoctorReport(projectRoot, currentCommit)
+	voice := buildVoiceDoctorReport()
 	v21 := buildV21DoctorReport(os.Getenv("A21_V21_ADAPTER_URL"))
 	findings := append([]runtimeguard.Finding{}, preflight.Result.Findings...)
 	findings = append(findings, firmware.Findings...)
+	findings = append(findings, voice.Findings...)
 	findings = append(findings, v21.Findings...)
 	return doctorReport{
 		Result:      runtimeguard.NewResult(findings),
 		Fingerprint: preflight.Fingerprint,
 		Firmware:    firmware,
+		Voice:       voice,
 		V21:         v21,
 	}
+}
+
+func buildVoiceDoctorReport() voiceDoctorReport {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	health, err := probeVoiceProviderHealth(ctx)
+	report := voiceDoctorReport{
+		Provider:       health.Provider,
+		Status:         string(health.Status),
+		Healthy:        health.Status == providers.VoiceProviderHealthy,
+		Configured:     health.Configured,
+		Realtime:       health.Realtime,
+		ActiveProvider: health.ActiveProvider,
+		Detail:         health.Detail,
+	}
+	if report.Provider == "" {
+		report.Provider = "unknown"
+	}
+	if report.Status == "" {
+		report.Status = string(providers.VoiceProviderUnavailable)
+	}
+	if err != nil || health.Status == providers.VoiceProviderUnavailable {
+		report.Findings = append(report.Findings, runtimeguard.Finding{
+			Code:     "voice_provider_health_failed",
+			Severity: runtimeguard.SeverityWarn,
+			Message:  "A21 voice provider health check failed",
+			Detail:   redactDoctorSecret(errString(err, report.Detail)),
+		})
+	}
+	return report
 }
 
 func buildV21DoctorReport(adapterURL string) v21DoctorReport {
@@ -175,6 +225,13 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 		report.SerialDevices = devices
 	}
 	return report
+}
+
+func errString(err error, fallback string) string {
+	if err != nil {
+		return err.Error()
+	}
+	return fallback
 }
 
 var doctorURLCredentialPattern = regexp.MustCompile(`(https?://)[^/\s"']+@`)
