@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"a21.local/a21/internal/firmwarecheck"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -433,6 +435,36 @@ func TestRunFirmwareUploadCheckRejectsAmbiguousPort(t *testing.T) {
 		t.Fatalf("code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "explicit serial device path") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunFirmwareUploadCheckRejectsBusyPort(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{InUse: true, Detail: "p1234 cpio"}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-upload-check",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "already in use") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

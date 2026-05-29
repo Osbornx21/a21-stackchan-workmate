@@ -107,7 +107,7 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
 make firmware-upload-check
 ```
 
-This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, or non-`/dev/` paths. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
+This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, or non-`/dev/` paths. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
 
 The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
 

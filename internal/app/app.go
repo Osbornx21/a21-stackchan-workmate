@@ -17,6 +17,10 @@ import (
 	"a21.local/a21/internal/runtimeguard"
 )
 
+var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+	return firmwarecheck.DetectPortUsage(context.Background(), port)
+}
+
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 {
 		args = []string{"version"}
@@ -364,6 +368,15 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	result, err := firmwarecheck.ValidateUploadCandidate(options)
 	if err != nil {
 		fmt.Fprintf(stderr, "firmware upload check failed: %v\n", err)
+		return 1
+	}
+	portUsage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware upload check failed: upload port ownership check failed: %v\n", err)
+		return 1
+	}
+	if portUsage.InUse {
+		fmt.Fprintf(stderr, "firmware upload check failed: upload port %s is already in use: %s\n", options.Port, portUsage.Detail)
 		return 1
 	}
 	if err := writeJSONFirmwareUploadCheck(stdout, result); err != nil {
