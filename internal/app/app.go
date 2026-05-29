@@ -81,11 +81,18 @@ func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 		}
 	}
 
-	report, code := buildPreflightReport(stderr)
+	preflight, code := buildPreflightReport(stderr)
 	if code != 0 {
 		return code
 	}
-	if err := writeJSONReport(stdout, report); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "get working directory: %v\n", err)
+		return 1
+	}
+	projectRoot := findProjectRoot(cwd)
+	report := buildDoctorReport(preflight, projectRoot, currentGitCommit(projectRoot))
+	if err := writeJSONDoctorReport(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode doctor report: %v\n", err)
 		return 1
 	}
@@ -100,7 +107,7 @@ func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	defer file.Close()
-	if err := writeJSONReport(file, report); err != nil {
+	if err := writeJSONDoctorReport(file, report); err != nil {
 		fmt.Fprintf(stderr, "write doctor report: %v\n", err)
 		return 1
 	}
@@ -125,6 +132,12 @@ func buildPreflightReport(stderr io.Writer) (runtimeguard.PreflightReport, int) 
 }
 
 func writeJSONReport(writer io.Writer, report runtimeguard.PreflightReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONDoctorReport(writer io.Writer, report doctorReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

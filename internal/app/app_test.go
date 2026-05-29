@@ -71,6 +71,55 @@ func TestRunDoctorWritesReportFile(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesFirmwareSection(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"firmware"`) {
+		t.Fatalf("stdout missing firmware section: %q", stdout.String())
+	}
+}
+
+func TestBuildFirmwareDoctorReportFindsCurrentArtifact(t *testing.T) {
+	root := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, filepath.Join(root, "firmware", "stackchan"))
+	_ = manifest
+	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-venv", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".a21-tools", "platformio-venv", "bin", "pio"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := filepath.Join(root, "firmware", "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+
+	report := buildFirmwareDoctorReport(root, "abcdef1")
+
+	if !report.ManifestOK {
+		t.Fatalf("ManifestOK = false, findings = %#v", report.Findings)
+	}
+	if !report.PlatformIOVenvOK {
+		t.Fatal("expected local PlatformIO venv to be detected")
+	}
+	if !report.PlatformIOCoreOK {
+		t.Fatal("expected local PlatformIO core to be detected")
+	}
+	if report.CurrentArtifactPath != artifact {
+		t.Fatalf("CurrentArtifactPath = %q, want %q", report.CurrentArtifactPath, artifact)
+	}
+}
+
 func TestRunDoctorRejectsUnknownFlag(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"doctor", "--wat"}, &bytes.Buffer{}, &stderr)
@@ -390,6 +439,9 @@ func TestRunFirmwareUploadCheckRejectsAmbiguousPort(t *testing.T) {
 
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	manifest := filepath.Join(dir, "a21-firmware.json")
 	if err := os.WriteFile(manifest, []byte(`{
   "project": "A21",
