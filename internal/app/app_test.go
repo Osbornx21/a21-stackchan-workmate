@@ -605,6 +605,7 @@ build_flags =
 lib_deps =
   m5stack/M5Unified @ 0.2.16
   bblanchon/ArduinoJson @ 7.4.3
+  links2004/WebSockets @ 2.7.3
 
 [env:a21_stackchan_native]
 platform = native

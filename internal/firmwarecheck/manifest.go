@@ -84,6 +84,9 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "bblanchon/arduinojson @ 7.4.3") {
 		return fmt.Errorf("platformio arduinojson dependency must pin 7.4.3")
 	}
+	if !strings.Contains(content, "links2004/websockets @ 2.7.3") {
+		return fmt.Errorf("platformio websockets dependency must pin links2004/WebSockets 2.7.3")
+	}
 	if !strings.Contains(content, "[env:a21_stackchan_native]") || !strings.Contains(content, "test_framework = unity") {
 		return fmt.Errorf("platformio native unit test environment is required")
 	}

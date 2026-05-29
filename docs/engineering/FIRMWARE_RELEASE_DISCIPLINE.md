@@ -48,6 +48,7 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `platform = espressif32@7.0.1`
 - `m5stack/M5Unified @ 0.2.16`
 - `bblanchon/ArduinoJson @ 7.4.3`
+- `links2004/WebSockets @ 2.7.3`
 - native unit-test environment: `a21_stackchan_native` with Unity
 - `A21_GATEWAY_HOST` and `A21_GATEWAY_PORT=21080` build flags
 
@@ -86,6 +87,7 @@ Current native firmware tests cover:
 - local fallback on invalid Gateway config
 - Wi-Fi config defaults, password redaction, legacy SSID rejection, and local fallback when credentials are missing
 - Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
+- Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

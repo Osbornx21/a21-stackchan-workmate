@@ -50,7 +50,15 @@ Gateway configuration is currently compile-time and A21-only:
 
 `a21_firmware_wifi_runtime.h` provides the first guarded Wi-Fi runtime. It uses a small driver interface in native tests and Arduino `WiFi.h` on CoreS3. The runtime will not call `WiFi.begin` without valid credentials, calls it once per connection attempt, transitions to Gateway connecting when Wi-Fi reports connected, and enters reconnect wait after Wi-Fi loss.
 
-The firmware still does not open a WebSocket connection in this slice. Gateway WebSocket transport will be added after Wi-Fi connection behavior remains stable under native tests and real-device serial evidence.
+`a21_firmware_gateway_ws.h` owns the first guarded Gateway control WebSocket runtime:
+
+- connects only after Wi-Fi moves the device into Gateway connecting
+- uses the A21-only Gateway host, port, and `/ws/control` path
+- applies incoming `control.event` envelopes through the tested parser
+- enters reconnect wait when the control socket disconnects
+- uses `links2004/WebSockets @ 2.7.3` behind a small driver interface on CoreS3
+
+The firmware still does not open the audio WebSocket or capture/play audio in this slice. Audio transport will be added after the control WebSocket has real-device serial evidence.
 
 ## Upload
 
