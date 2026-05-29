@@ -85,6 +85,8 @@ Servo safety currently lives in `a21_firmware_config.h`:
 
 `a21_firmware_motion.h` maps semantic render states to safe Y-axis targets and writes only when the target angle changes. The CoreS3 main loop is wired through a no-op motion driver for now, so the runtime path is exercised without actuating hardware. Real servo hardware output still requires a future calibrated driver.
 
+`a21_firmware_rgb.h` maps semantic render states to RGB state colors and writes only when the target color changes. The CoreS3 main loop is wired through a no-op RGB driver for now, so the runtime path is exercised without lighting hardware. Real RGB output still requires a future calibrated driver.
+
 ## Upload
 
 There is still no upload target. Do not run `pio run -t upload` until a future explicit guarded flash command requires the A21 upload and device-identity receipts.

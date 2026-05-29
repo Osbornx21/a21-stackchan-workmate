@@ -96,6 +96,7 @@ Firmware-specific protections now include:
 - non-serial `/dev/*` paths such as `/dev/null` are rejected.
 - StackChan Y-axis servo clamp is fixed at 5 to 85 degrees and covered in native firmware tests.
 - semantic render states now map to safe Y-axis motion targets through a driver interface; CoreS3 currently uses a no-op driver until calibrated hardware output is added.
+- semantic render states now map to RGB state colors through a driver interface; CoreS3 currently uses a no-op driver until calibrated RGB hardware output is added.
 
 ## Legacy Neighbor Risks
 

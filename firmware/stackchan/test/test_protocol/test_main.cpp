@@ -6,6 +6,7 @@
 #include "a21_firmware_network.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_protocol.h"
+#include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_wifi.h"
@@ -151,6 +152,25 @@ void initFakeMotionDriver(FakeMotionDriver* fake, A21MotionDriver* driver) {
   fake->last_y_deg = -1;
   driver->ctx = fake;
   driver->write_y = fakeMotionWriteY;
+}
+
+struct FakeRGBDriver {
+  int write_count;
+  A21RGBColor last_color;
+};
+
+bool fakeRGBWrite(void* ctx, A21RGBColor color) {
+  FakeRGBDriver* driver = static_cast<FakeRGBDriver*>(ctx);
+  driver->write_count += 1;
+  driver->last_color = color;
+  return true;
+}
+
+void initFakeRGBDriver(FakeRGBDriver* fake, A21RGBDriver* driver) {
+  fake->write_count = 0;
+  fake->last_color = {0, 0, 0};
+  driver->ctx = fake;
+  driver->write = fakeRGBWrite;
 }
 
 void test_firmware_build_identity_contains_a21_release_fields() {
@@ -878,6 +898,78 @@ void test_motion_runtime_writes_once_per_y_angle_change() {
   TEST_ASSERT_EQUAL_UINT32(2, runtime.applied_count);
 }
 
+void test_rgb_target_maps_render_states_to_state_colors() {
+  A21RGBColor idle = a21RGBForRenderState(A21_RENDER_IDLE);
+  TEST_ASSERT_EQUAL_UINT8(16, idle.r);
+  TEST_ASSERT_EQUAL_UINT8(16, idle.g);
+  TEST_ASSERT_EQUAL_UINT8(16, idle.b);
+
+  A21RGBColor listening = a21RGBForRenderState(A21_RENDER_LISTENING);
+  TEST_ASSERT_EQUAL_UINT8(0, listening.r);
+  TEST_ASSERT_EQUAL_UINT8(48, listening.g);
+  TEST_ASSERT_EQUAL_UINT8(16, listening.b);
+
+  A21RGBColor thinking = a21RGBForRenderState(A21_RENDER_THINKING);
+  TEST_ASSERT_EQUAL_UINT8(48, thinking.r);
+  TEST_ASSERT_EQUAL_UINT8(32, thinking.g);
+  TEST_ASSERT_EQUAL_UINT8(0, thinking.b);
+
+  A21RGBColor speaking = a21RGBForRenderState(A21_RENDER_SPEAKING);
+  TEST_ASSERT_EQUAL_UINT8(0, speaking.r);
+  TEST_ASSERT_EQUAL_UINT8(36, speaking.g);
+  TEST_ASSERT_EQUAL_UINT8(48, speaking.b);
+
+  A21RGBColor interrupted = a21RGBForRenderState(A21_RENDER_INTERRUPTED);
+  TEST_ASSERT_EQUAL_UINT8(64, interrupted.r);
+  TEST_ASSERT_EQUAL_UINT8(24, interrupted.g);
+  TEST_ASSERT_EQUAL_UINT8(0, interrupted.b);
+
+  A21RGBColor professional = a21RGBForRenderState(A21_RENDER_PROFESSIONAL);
+  TEST_ASSERT_EQUAL_UINT8(0, professional.r);
+  TEST_ASSERT_EQUAL_UINT8(16, professional.g);
+  TEST_ASSERT_EQUAL_UINT8(64, professional.b);
+
+  A21RGBColor local = a21RGBForRenderState(A21_RENDER_LOCAL);
+  TEST_ASSERT_EQUAL_UINT8(8, local.r);
+  TEST_ASSERT_EQUAL_UINT8(8, local.g);
+  TEST_ASSERT_EQUAL_UINT8(8, local.b);
+
+  A21RGBColor error = a21RGBForRenderState(A21_RENDER_ERROR);
+  TEST_ASSERT_EQUAL_UINT8(64, error.r);
+  TEST_ASSERT_EQUAL_UINT8(0, error.g);
+  TEST_ASSERT_EQUAL_UINT8(0, error.b);
+}
+
+void test_rgb_runtime_writes_once_per_color_change() {
+  A21RGBRuntime runtime;
+  A21FirmwareState state;
+  FakeRGBDriver fake;
+  A21RGBDriver driver;
+  a21InitRGBRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeRGBDriver(&fake, &driver);
+
+  state.render_state = A21_RENDER_LISTENING;
+  TEST_ASSERT_TRUE(a21RGBRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(1, fake.write_count);
+  TEST_ASSERT_EQUAL_UINT8(0, fake.last_color.r);
+  TEST_ASSERT_EQUAL_UINT8(48, fake.last_color.g);
+  TEST_ASSERT_EQUAL_UINT8(16, fake.last_color.b);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.applied_count);
+
+  TEST_ASSERT_TRUE(a21RGBRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(1, fake.write_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.applied_count);
+
+  state.render_state = A21_RENDER_ERROR;
+  TEST_ASSERT_TRUE(a21RGBRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(2, fake.write_count);
+  TEST_ASSERT_EQUAL_UINT8(64, fake.last_color.r);
+  TEST_ASSERT_EQUAL_UINT8(0, fake.last_color.g);
+  TEST_ASSERT_EQUAL_UINT8(0, fake.last_color.b);
+  TEST_ASSERT_EQUAL_UINT32(2, runtime.applied_count);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_firmware_build_identity_contains_a21_release_fields);
@@ -917,5 +1009,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_servo_y_angle_clamps_to_stackchan_safe_range);
   RUN_TEST(test_motion_target_maps_render_states_to_safe_y_angles);
   RUN_TEST(test_motion_runtime_writes_once_per_y_angle_change);
+  RUN_TEST(test_rgb_target_maps_render_states_to_state_colors);
+  RUN_TEST(test_rgb_runtime_writes_once_per_color_change);
   return UNITY_END();
 }

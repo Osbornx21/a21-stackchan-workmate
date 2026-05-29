@@ -8,6 +8,7 @@
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
+#include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_wifi.h"
 #include "a21_firmware_wifi_runtime.h"
@@ -94,6 +95,7 @@ A21WiFiRuntime g_wifi_runtime;
 A21GatewayWSRuntime g_gateway_ws_runtime;
 A21AudioWSRuntime g_audio_ws_runtime;
 A21MotionRuntime g_motion_runtime;
+A21RGBRuntime g_rgb_runtime;
 
 struct A21ArduinoTextWS {
   WebSocketsClient client;
@@ -259,6 +261,17 @@ A21MotionDriver g_motion_driver = {
     arduinoMotionWriteY,
 };
 
+bool arduinoRGBWrite(void* ctx, A21RGBColor color) {
+  (void)ctx;
+  (void)color;
+  return true;
+}
+
+A21RGBDriver g_rgb_driver = {
+    nullptr,
+    arduinoRGBWrite,
+};
+
 void handleLocalControls(uint32_t now_ms) {
   if (M5.BtnA.wasClicked()) {
     a21GatewayWSSendDeviceEvent(
@@ -317,6 +330,7 @@ void setup() {
   a21InitGatewayWSRuntime(&g_gateway_ws_runtime);
   a21InitAudioWSRuntime(&g_audio_ws_runtime);
   a21InitMotionRuntime(&g_motion_runtime);
+  a21InitRGBRuntime(&g_rgb_runtime);
   if (!a21ValidateNetworkConfig(&g_network)) {
     a21CopyString(g_state.text, A21_TEXT_CAP, "A21 Gateway config error");
     a21CopyString(g_state.last_error, A21_ERROR_CAP, "network_config");
@@ -332,6 +346,7 @@ void loop() {
   a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
   a21AudioWSRuntimeTick(&g_audio_ws_runtime, &g_audio_ws_driver, &g_connection, &g_network, &g_state, now_ms);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
+  a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);
   drawIfChanged();
   delay(20);

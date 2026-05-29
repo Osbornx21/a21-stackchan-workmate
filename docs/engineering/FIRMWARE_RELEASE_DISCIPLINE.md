@@ -106,6 +106,7 @@ Current native firmware tests cover:
 - audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, and send rejection while disconnected
 - StackChan Y-axis servo clamp to 5 to 85 degrees
 - semantic render-state to Y-axis motion target mapping, plus write-on-change motion runtime behavior through a driver interface
+- semantic render-state to RGB color mapping, plus write-on-change RGB runtime behavior through a driver interface
 
 Current Gateway tests cover:
 
