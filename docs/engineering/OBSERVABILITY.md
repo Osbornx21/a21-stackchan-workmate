@@ -1,0 +1,104 @@
+# A21 Observability
+
+## Principle
+
+A21 must be observable before it is optimized. "Probably the network" is not an acceptable diagnosis.
+
+## Current Phase 1 Signals
+
+The current CLI preflight/doctor report emits:
+
+- preflight result
+- blocking findings
+- default route interface
+- external DNS probe IP
+- proxy env variable names without values
+
+This is the seed of the future doctor/observability system.
+
+## Trace Fields
+
+Future runtime spans should include:
+
+- `trace_id`
+- `session_id`
+- `device_id`
+- `turn_id`
+- `mode`
+- `network_interface`
+- `dns_probe_ip`
+- `proxy_mode`
+- `provider`
+- `adapter`
+- `audio_chunk_id`
+- `stream_id`
+- `error_code`
+
+## Voice Waterfall Events
+
+Every voice turn should eventually expose:
+
+- `audio.capture.start`
+- `audio.capture.end`
+- `gateway.audio.first_frame`
+- `vad.speech.start`
+- `vad.speech.end`
+- `asr.first_partial`
+- `llm.first_token`
+- `v21.query.start`
+- `v21.first_result`
+- `tts.first_chunk`
+- `device.downlink.first_frame`
+- `device.playback.start`
+- `barge_in.detected`
+- `provider.cancel`
+- `playback.stop`
+- `fallback.used`
+
+## Metrics
+
+Future Prometheus metrics should include:
+
+- `a21_session_total`
+- `a21_session_active`
+- `a21_first_audio_ms_bucket`
+- `a21_audio_uplink_ms_bucket`
+- `a21_audio_downlink_ms_bucket`
+- `a21_vad_duration_ms_bucket`
+- `a21_tts_first_chunk_ms_bucket`
+- `a21_v21_query_ms_bucket`
+- `a21_barge_in_total`
+- `a21_barge_in_stop_ms_bucket`
+- `a21_provider_error_total`
+- `a21_proxy_misconfig_total`
+- `a21_device_disconnect_total`
+- `a21_fallback_total`
+
+## Logs
+
+Runtime logs must be structured JSON once long-running services exist. Minimum fields:
+
+```json
+{
+  "level": "info",
+  "service": "a21-core",
+  "event": "preflight",
+  "trace_id": "a21-trace-example",
+  "session_id": "a21-session-example",
+  "device_id": "stackchan-001"
+}
+```
+
+Do not log provider keys, raw secrets, or proxy URLs with credentials.
+
+## Dashboards
+
+Future dashboards:
+
+- A21 Latency Waterfall
+- A21 Provider Health
+- A21 Device Health
+- A21 Proxy And Network
+- A21 V21 Professional Mode
+- A21 Barge-In
+- A21 Errors And Fallback

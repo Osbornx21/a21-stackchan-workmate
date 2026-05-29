@@ -20,7 +20,7 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "version":
 		fmt.Fprintf(stdout, "%s %s (%s)\n", buildinfo.ProjectName, buildinfo.Version, buildinfo.ServiceName)
 		return 0
-	case "preflight":
+	case "preflight", "doctor":
 		cwd, err := os.Getwd()
 		if err != nil {
 			fmt.Fprintf(stderr, "get working directory: %v\n", err)
