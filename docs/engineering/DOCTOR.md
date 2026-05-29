@@ -36,6 +36,7 @@ It checks what the current foundation can truthfully check:
 - voice provider health and provider network mode
 - voice provider registry readiness for mock, Doubao realtime, OpenAI realtime, Bailian/DashScope, and DeepSeek
 - voice provider smoke readiness, without executing paid or external provider calls
+- voice realtime WebSocket readiness plan, without dialing providers
 - optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
@@ -47,6 +48,8 @@ The voice section includes provider network mode. `direct` means future provider
 The voice provider registry is a readiness audit, not a real provider smoke test. It reports selected provider, required env names, present env names, and missing env names. It never prints API keys or model values. `A21_PROVIDER_PRIMARY` controls the selected provider in the report; unknown names are shown as `unknown_provider`, and legacy-looking provider names are shown as `invalid_legacy_provider` with blocking findings so raw X21/V21-looking values are never echoed back.
 
 The voice smoke section is a dry-run plan inside `doctor`. It reports whether the selected provider has enough env to run a smoke test, which protocol would be used, which env variable names are involved, and which endpoint host would be contacted. It does not execute network calls and never prints key, model, proxy, or full URL values.
+
+The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning only and reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, auth headers, or full provider URLs, and it does not dial the provider.
 
 Explicit provider smoke execution is a separate command:
 

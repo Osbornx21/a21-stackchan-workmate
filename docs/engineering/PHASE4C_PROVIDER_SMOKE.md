@@ -45,6 +45,8 @@ Current non-executable smoke providers:
 
 They are realtime WebSocket providers, not Chat Completions providers. Phase 4C reports them as `unsupported` for smoke execution instead of pretending an HTTP chat request proves realtime audio readiness.
 
+Phase 4D adds a lower-level realtime WebSocket adapter skeleton in `internal/providers/realtime.go`. That skeleton can build a redacted OpenAI realtime connection plan and send generic `session.update` / `response.cancel` events through an injected WebSocket connection, but it still does not execute realtime provider smoke from `provider-smoke`.
+
 ## Env
 
 DeepSeek smoke:
@@ -73,6 +75,8 @@ The OpenAI-compatible smoke path follows the public provider contracts rather th
 - DeepSeek official API docs expose `/chat/completions` and current model IDs under the OpenAI-compatible API: https://api-docs.deepseek.com/api/create-chat-completion
 - Alibaba Cloud Model Studio/Bailian official docs list the OpenAI-compatible Beijing base URL `https://dashscope.aliyuncs.com/compatible-mode/v1` and HTTP endpoint `POST /chat/completions`: https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope
 - OpenAI official Realtime docs describe server-to-server WebSocket sessions for Realtime, so A21 does not treat OpenAI Realtime as an HTTP Chat Completions smoke target: https://developers.openai.com/api/docs/guides/realtime-websocket
+- OpenAI official Realtime conversations docs describe `session.update`, streamed audio buffer events, and server audio delta events: https://developers.openai.com/api/docs/guides/realtime-conversations#handling-audio-with-websockets
+- Volcengine official realtime AI voice docs show that Doubao/Volcengine realtime voice belongs to an RTC/OpenAPI-oriented stack with interruption, latency, embedded hardware, knowledge-base, and MCP concerns; A21 will keep it behind a provider-specific adapter: https://www.volcengine.com/docs/6348/1902994
 
 ## Safety Rules
 
@@ -90,9 +94,9 @@ Phase 4C does not implement:
 
 - realtime WebSocket smoke
 - Doubao realtime adapter
-- OpenAI realtime adapter
+- production OpenAI realtime adapter
 - provider latency histograms
 - provider cost accounting
 - provider-specific retry or backoff
 
-Those belong in later provider-adapter phases after this smoke boundary is stable.
+Those belong in later provider-adapter phases after this smoke boundary and the Phase 4D realtime transport skeleton are stable.

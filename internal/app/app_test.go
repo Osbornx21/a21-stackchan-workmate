@@ -200,6 +200,35 @@ func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesRealtimePlanWithoutSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "openai_realtime")
+	t.Setenv("A21_OPENAI_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_OPENAI_REALTIME_MODEL", "gpt-realtime-2")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"realtime_plan"`,
+		`"provider": "openai_realtime"`,
+		`"protocol": "websocket_realtime"`,
+		`"status": "ready"`,
+		`"endpoint_host": "api.openai.com"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "gpt-realtime-2", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorBlocksLegacyProviderPrimaryWithoutEchoingValue(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "x21_voice")
 	var stdout bytes.Buffer
