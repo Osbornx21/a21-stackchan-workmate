@@ -59,6 +59,15 @@ Phase 2B supports:
 - device event `interrupt` -> control events `interrupted`, `listening`
 - audio frame -> mock listening ack
 
+Firmware-originated `device.event` payloads may also carry build identity:
+
+- `firmware_id`: must be `a21-stackchan` when present
+- `firmware_version`: semver-like A21 firmware version
+- `firmware_board`: must be `m5stack-cores3` when present
+- `firmware_commit`: git SHA embedded by the A21 PlatformIO pre-build script
+
+Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
+
 Future control events should cover subtitle deltas, playback start/stop, mode updates, device status, and trace markers.
 
 ## Barge-In Requirements

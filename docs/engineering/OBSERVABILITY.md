@@ -16,6 +16,8 @@ The current CLI preflight/doctor report emits:
 
 The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.
 
+Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
+
 ## Trace Fields
 
 Future runtime spans should include:
@@ -62,6 +64,7 @@ Current Prometheus metrics:
 - `a21_mock_turn_total`
 - `a21_barge_in_total`
 - `a21_audio_frame_total`
+- `a21_device_identity_invalid_total`
 - `a21_ws_connections_active`
 
 Future Prometheus metrics should include:

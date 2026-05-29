@@ -81,15 +81,22 @@ func TestControlEventPayloadStates(t *testing.T) {
 
 func TestDeviceEventPayloadKinds(t *testing.T) {
 	event := DeviceEventPayload{
-		Event: DeviceEventMockTurn,
-		Mode:  ModeWorkmate,
-		Text:  "先说，我在",
+		Event:           DeviceEventMockTurn,
+		Mode:            ModeWorkmate,
+		Text:            "先说，我在",
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
 	}
 	if event.Event != "mock.turn" {
 		t.Fatalf("Event = %q, want mock.turn", event.Event)
 	}
 	if event.Mode != "workmate" {
 		t.Fatalf("Mode = %q, want workmate", event.Mode)
+	}
+	if event.FirmwareID != "a21-stackchan" {
+		t.Fatalf("FirmwareID = %q, want a21-stackchan", event.FirmwareID)
 	}
 }
 

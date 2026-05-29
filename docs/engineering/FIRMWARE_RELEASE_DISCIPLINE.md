@@ -9,6 +9,7 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 - A21 firmware lives under `firmware/stackchan/`.
 - A21 firmware build artifacts must be named with `a21`, target board, firmware version, git commit, and build timestamp.
 - A21 firmware binaries must embed an A21 build identity containing firmware ID, version, board, and git commit.
+- Gateway must record and validate firmware build identity from device events before real hardware acceptance.
 - A21 firmware may not use X21 or V21 project names, service names, artifact names, namespaces, or upload targets.
 - Firmware upload is forbidden unless a preflight command verifies manifest identity, board ID, version, git commit, and explicit upload port.
 - `pio run -t upload` must not be wrapped in a generic target until an A21 upload guard exists.
@@ -103,6 +104,12 @@ Current native firmware tests cover:
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 - audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, and send rejection while disconnected
+
+Current Gateway tests cover:
+
+- `/v1/devices` registration from firmware-originated `device.event` payloads
+- A21 firmware identity validation for `a21-stackchan`, semver version, `m5stack-cores3`, and git SHA commit
+- rejection and metrics for forbidden X21/V21 firmware identity
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

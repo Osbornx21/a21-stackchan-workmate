@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +24,7 @@ type Server struct {
 	now     func() time.Time
 	metrics *metrics
 	voice   providers.VoiceProvider
+	devices map[string]DeviceRecord
 }
 
 type ServerOptions struct {
@@ -42,6 +46,30 @@ type MockTurnResponse struct {
 	Events    []protocol.Envelope `json:"events"`
 }
 
+type DeviceFirmwareIdentity struct {
+	ID      string `json:"id,omitempty"`
+	Version string `json:"version,omitempty"`
+	Board   string `json:"board,omitempty"`
+	Commit  string `json:"commit,omitempty"`
+}
+
+type DeviceRecord struct {
+	DeviceID       string                   `json:"device_id"`
+	Firmware       DeviceFirmwareIdentity   `json:"firmware,omitempty"`
+	IdentityStatus string                   `json:"identity_status"`
+	IdentityError  string                   `json:"identity_error,omitempty"`
+	LastEvent      protocol.DeviceEventKind `json:"last_event,omitempty"`
+	LastSeq        uint64                   `json:"last_seq,omitempty"`
+	LastTraceID    string                   `json:"last_trace_id,omitempty"`
+	LastSessionID  string                   `json:"last_session_id,omitempty"`
+	FirstSeenMS    int64                    `json:"first_seen_ms"`
+	LastSeenMS     int64                    `json:"last_seen_ms"`
+}
+
+type DeviceRegistryResponse struct {
+	Devices []DeviceRecord `json:"devices"`
+}
+
 func NewServer() *Server {
 	return NewServerWithOptions(ServerOptions{})
 }
@@ -51,7 +79,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if voiceProvider == nil {
 		voiceProvider = providers.NewMockVoiceProvider()
 	}
-	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider}
+	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, devices: make(map[string]DeviceRecord)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -59,11 +87,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/simulator", s.handleSimulator)
 	mux.Handle("/metrics", s.metrics.handler())
+	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
 	mux.HandleFunc("/ws/audio", s.handleAudioWS)
 	return mux
+}
+
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, DeviceRegistryResponse{Devices: s.deviceRecords()})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +209,11 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return s.errorEvents(event, "invalid device event")
 	}
+	record := s.recordDeviceEvent(event, payload)
+	if record.IdentityStatus == "invalid" {
+		s.metrics.deviceIdentityInvalidTotal.Inc()
+		return s.errorEvents(event, "invalid device firmware identity: "+record.IdentityError)
+	}
 	req := MockTurnRequest{
 		DeviceID:  event.DeviceID,
 		Text:      payload.Text,
@@ -187,6 +229,76 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 	default:
 		return s.errorEvents(event, "unsupported device event")
 	}
+}
+
+func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.DeviceEventPayload) DeviceRecord {
+	nowMS := s.now().UnixMilli()
+	firmware := DeviceFirmwareIdentity{
+		ID:      payload.FirmwareID,
+		Version: payload.FirmwareVersion,
+		Board:   payload.FirmwareBoard,
+		Commit:  payload.FirmwareCommit,
+	}
+	status, identityError := validateFirmwareIdentity(firmware)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[event.DeviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = event.DeviceID
+		record.FirstSeenMS = nowMS
+	}
+	record.Firmware = firmware
+	record.IdentityStatus = status
+	record.IdentityError = identityError
+	record.LastEvent = payload.Event
+	record.LastSeq = event.Seq
+	record.LastTraceID = event.TraceID
+	record.LastSessionID = event.SessionID
+	record.LastSeenMS = nowMS
+	s.devices[event.DeviceID] = record
+	return record
+}
+
+func (s *Server) deviceRecords() []DeviceRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := make([]DeviceRecord, 0, len(s.devices))
+	for _, record := range s.devices {
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].DeviceID < records[j].DeviceID
+	})
+	return records
+}
+
+var a21FirmwareCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+var a21FirmwareVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$`)
+
+func validateFirmwareIdentity(identity DeviceFirmwareIdentity) (string, string) {
+	if identity.ID == "" && identity.Version == "" && identity.Board == "" && identity.Commit == "" {
+		return "unknown", ""
+	}
+	values := []string{identity.ID, identity.Version, identity.Board, identity.Commit}
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), "x21") || strings.Contains(strings.ToLower(value), "v21") {
+			return "invalid", "firmware identity contains forbidden legacy identity"
+		}
+	}
+	if identity.ID != "a21-stackchan" {
+		return "invalid", "firmware_id must be a21-stackchan"
+	}
+	if !a21FirmwareVersionPattern.MatchString(identity.Version) {
+		return "invalid", "firmware_version must be semver-like"
+	}
+	if identity.Board != "m5stack-cores3" {
+		return "invalid", "firmware_board must be m5stack-cores3"
+	}
+	if !a21FirmwareCommitPattern.MatchString(identity.Commit) {
+		return "invalid", "firmware_commit must be a git sha"
+	}
+	return "ok", ""
 }
 
 func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
