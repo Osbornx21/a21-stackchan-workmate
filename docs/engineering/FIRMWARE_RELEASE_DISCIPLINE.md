@@ -178,6 +178,12 @@ Any future real flashing command must not reinterpret this receipt as permission
 
 The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
 
+## Current Flashing Status
+
+Real flashing is intentionally locked. The repository has build, package, artifact-check, and upload-check dry-run gates, but no command is allowed to write an A21 binary to hardware yet. The next unlock must add a physical-device identity check first, then introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
+
+A21 firmware work must continue to use the repository-local `.a21-tools/` PlatformIO environment and `firmware/artifacts/a21-stackchan-...` packages. Do not point A21 upload checks at X21/V21 build directories, generic `firmware.bin` paths, or auto-selected serial ports.
+
 Before any future firmware upload:
 
 1. Confirm physical device identity.

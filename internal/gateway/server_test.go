@@ -297,6 +297,69 @@ func TestProfessionalModeV21FailureIsHonestFallback(t *testing.T) {
 	}
 }
 
+func TestProfessionalModeRecordsV21QueryLatencyMetric(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{V21Client: v21adapter.NewMockClient()})
+	handler := server.Handler()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+
+	if metricsRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", metricsRec.Code)
+	}
+	bodyText := metricsRec.Body.String()
+	for _, want := range []string{"a21_v21_query_ms_bucket", "a21_v21_query_ms_count 1"} {
+		if !strings.Contains(bodyText, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, bodyText)
+		}
+	}
+}
+
+func TestProfessionalModeV21TimeoutCancelsQueryAndFallsBack(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		V21Client:  slowV21Client{delay: 200 * time.Millisecond},
+		V21Timeout: 10 * time.Millisecond,
+	})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-timeout","session_id":"a21-session-pro-timeout"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+	start := time.Now()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if elapsed := time.Since(start); elapsed >= 150*time.Millisecond {
+		t.Fatalf("request took %s, want timeout before slow V21 delay", elapsed)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var fallback protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[len(response.Events)-1].Payload, &fallback); err != nil {
+		t.Fatal(err)
+	}
+	if fallback.State != protocol.ExpressionError || fallback.Mode != protocol.ModeProfessional {
+		t.Fatalf("fallback payload = %+v", fallback)
+	}
+	if !strings.Contains(fallback.Text, "V21 现在没接上") {
+		t.Fatalf("fallback text = %q", fallback.Text)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-timeout", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), "v21.query.timeout") {
+		t.Fatalf("trace missing v21 timeout marker: %s", traceRec.Body.String())
+	}
+}
+
 func TestMockInterruptReturnsInterruptedThenListening(t *testing.T) {
 	server := NewServer()
 	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","trace_id":"a21-trace-000009","session_id":"a21-session-000009"}`)
@@ -743,4 +806,19 @@ type failingV21Client struct{}
 
 func (failingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
 	return v21adapter.QueryResponse{}, errors.New("v21 unavailable")
+}
+
+type slowV21Client struct {
+	delay time.Duration
+}
+
+func (c slowV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	timer := time.NewTimer(c.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return v21adapter.QueryResponse{}, ctx.Err()
+	case <-timer.C:
+		return v21adapter.NewMockClient().Query(ctx, request)
+	}
 }

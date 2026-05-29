@@ -122,7 +122,8 @@ Any voice delay must be traceable. A turn should eventually expose:
 - VAD start/end
 - ASR first partial
 - LLM first token
-- V21 query start/first result
+- V21 query start/first result/error/timeout
+- V21 query latency histogram
 - TTS first chunk
 - downlink first frame
 - device playback start
@@ -131,7 +132,7 @@ Any voice delay must be traceable. A turn should eventually expose:
 - playback stop
 - fallback and error code
 
-Phase 1 has the first runtime fingerprint. Later phases must add OpenTelemetry spans, Prometheus metrics, structured logs, and latency benchmark reports.
+Phase 1 has the first runtime fingerprint. Current Gateway observability includes in-memory trace markers and Prometheus metrics for mock turns, barge-in, audio frames, invalid firmware identity, WebSocket connections, and professional V21 query latency. Later phases must add OpenTelemetry spans, structured logs, and latency benchmark reports.
 
 ## Phase Roadmap
 

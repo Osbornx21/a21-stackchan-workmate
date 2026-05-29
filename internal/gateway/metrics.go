@@ -13,6 +13,7 @@ type metrics struct {
 	bargeInTotal               prometheus.Counter
 	audioFrameTotal            prometheus.Counter
 	deviceIdentityInvalidTotal prometheus.Counter
+	v21QueryMS                 prometheus.Histogram
 	wsConnections              *prometheus.GaugeVec
 }
 
@@ -36,12 +37,17 @@ func newMetrics() *metrics {
 			Name: "a21_device_identity_invalid_total",
 			Help: "Total A21 device events rejected because firmware identity was invalid.",
 		}),
+		v21QueryMS: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "a21_v21_query_ms",
+			Help:    "A21 professional-mode V21 adapter query latency in milliseconds.",
+			Buckets: []float64{50, 100, 250, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000},
+		}),
 		wsConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "a21_ws_connections_active",
 			Help: "Active A21 WebSocket connections by channel.",
 		}, []string{"channel"}),
 	}
-	registry.MustRegister(m.mockTurnTotal, m.bargeInTotal, m.audioFrameTotal, m.deviceIdentityInvalidTotal, m.wsConnections)
+	registry.MustRegister(m.mockTurnTotal, m.bargeInTotal, m.audioFrameTotal, m.deviceIdentityInvalidTotal, m.v21QueryMS, m.wsConnections)
 	return m
 }
 

@@ -16,7 +16,9 @@ A21 can enter professional mode without becoming a V21 voice shell. The Gateway 
 - Gateway calls V21 only when `mode=professional`.
 - Workmate mode does not call V21.
 - Gateway emits professional control events with `confidence`, `evidence`, `speech_blocks`, `screen_cards`, and `follow_ups`.
-- Gateway records `v21.query.start`, `v21.query.first_result`, and `v21.query.error` trace markers.
+- Gateway records `v21.query.start`, `v21.query.first_result`, `v21.query.error`, and `v21.query.timeout` trace markers.
+- Gateway observes professional V21 query latency with `a21_v21_query_ms_bucket`.
+- Gateway applies a 3000 ms default outer timeout around V21 adapter calls.
 - V21 failure returns an honest professional fallback instead of pretending retrieval succeeded.
 - `doctor` reports V21 adapter health when `A21_V21_ADAPTER_URL` is configured.
 - V21 health failure details redact URL credentials.
@@ -38,7 +40,9 @@ Current tests cover:
 - Gateway professional mode evidence payload
 - workmate mode V21 isolation
 - V21 unavailable fallback copy
+- V21 timeout fallback and cancellation
 - V21 trace markers
+- V21 latency metric
 - simulator Professional Evidence panel availability
 - doctor V21 health configured/skipped states
 - doctor V21 health credential redaction
@@ -52,5 +56,4 @@ make verify
 
 ## Next
 
-- Add timeout and latency metric for `a21_v21_query_ms`.
 - Add real adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.

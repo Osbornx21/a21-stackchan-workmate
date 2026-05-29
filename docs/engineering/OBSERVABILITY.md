@@ -83,6 +83,7 @@ Current Prometheus metrics:
 - `a21_barge_in_total`
 - `a21_audio_frame_total`
 - `a21_device_identity_invalid_total`
+- `a21_v21_query_ms_bucket`
 - `a21_ws_connections_active`
 
 Future Prometheus metrics should include:
@@ -94,7 +95,6 @@ Future Prometheus metrics should include:
 - `a21_audio_downlink_ms_bucket`
 - `a21_vad_duration_ms_bucket`
 - `a21_tts_first_chunk_ms_bucket`
-- `a21_v21_query_ms_bucket`
 - `a21_barge_in_total`
 - `a21_barge_in_stop_ms_bucket`
 - `a21_provider_error_total`

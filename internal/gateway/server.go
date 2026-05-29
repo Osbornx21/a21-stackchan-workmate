@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -26,6 +27,7 @@ type Server struct {
 	metrics *metrics
 	voice   providers.VoiceProvider
 	v21     v21adapter.Client
+	v21TTL  time.Duration
 	devices map[string]DeviceRecord
 	traces  map[string][]TraceEvent
 }
@@ -33,6 +35,7 @@ type Server struct {
 type ServerOptions struct {
 	VoiceProvider providers.VoiceProvider
 	V21Client     v21adapter.Client
+	V21Timeout    time.Duration
 }
 
 type MockTurnRequest struct {
@@ -101,7 +104,11 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if v21Client == nil {
 		v21Client = v21adapter.NewMockClient()
 	}
-	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, v21: v21Client, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
+	v21TTL := options.V21Timeout
+	if v21TTL <= 0 {
+		v21TTL = 3 * time.Second
+	}
+	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, v21: v21Client, v21TTL: v21TTL, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -420,13 +427,21 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		{State: protocol.ExpressionProfessional, Mode: protocol.ModeProfessional, Text: "进入专业模式。情绪先放旁边，现在只看证据。"},
 	}
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
-	response, err := s.v21.Query(context.Background(), v21adapter.QueryRequest{
+	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
+	defer cancel()
+	started := time.Now()
+	response, err := s.v21.Query(queryCtx, v21adapter.QueryRequest{
 		TraceID:   traceID,
 		SessionID: sessionID,
 		Utterance: req.Text,
 	})
+	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	if err != nil {
-		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error", s.now().UnixMilli())
+		marker := "v21.query.error"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
+			marker = "v21.query.timeout"
+		}
+		s.recordTrace(traceID, sessionID, req.DeviceID, marker, s.now().UnixMilli())
 		payloads = append(payloads, protocol.ControlEventPayload{
 			State: protocol.ExpressionError,
 			Mode:  protocol.ModeProfessional,

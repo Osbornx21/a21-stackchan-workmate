@@ -27,6 +27,8 @@ A21's latency target is perceived conversation quality, not a single backend num
 
 Professional answers may take longer than companion replies, but they must stream progress and show evidence state instead of going silent.
 
+Current Gateway default: V21 adapter calls have a 3000 ms hard timeout. The adapter request still asks V21 for `max_first_response_ms=1200`, but A21 keeps the outer timeout slightly wider so the fallback can be honest instead of racing transient local adapter overhead. A timeout records `v21.query.timeout`, returns the professional fallback copy, and observes `a21_v21_query_ms`.
+
 ## Measurement Requirements
 
 Every latency report should include:
@@ -43,6 +45,7 @@ Every latency report should include:
 - VAD start/end
 - provider send time
 - provider first token/audio
+- V21 query latency histogram when mode is professional
 - TTS first chunk when applicable
 - downlink first frame
 - playback start
