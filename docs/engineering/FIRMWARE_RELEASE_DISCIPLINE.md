@@ -127,6 +127,16 @@ It also writes a sibling `.sha256` file. Only packaged artifacts should be consi
 
 `make firmware-package` first runs a clean-worktree guard. This prevents a binary built from uncommitted sources from being packaged under a misleading git commit.
 
+`firmware-package` also appends a machine-readable JSONL release record to:
+
+```text
+firmware/artifacts/a21-firmware-release-index.jsonl
+```
+
+Each line records the A21 firmware ID, version, board, git commit, build timestamp, artifact path, checksum path, and SHA-256. The index is a traceability ledger, not flash permission. It makes wrong-package investigations concrete: the candidate binary must be explainable by an A21 package record rather than by a loose PlatformIO `firmware.bin`.
+
+Packaging rejects input or output paths containing forbidden X21/V21 identities so A21 release candidates cannot be produced from legacy build folders or written into legacy artifact directories.
+
 ## Artifact Guard
 
 Every packaged firmware binary must pass:
