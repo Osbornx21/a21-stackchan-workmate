@@ -49,6 +49,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderSmoke(args[1:], stdout, stderr)
 	case "provider-realtime-plan":
 		return runProviderRealtimePlan(args[1:], stdout, stderr)
+	case "provider-realtime-fixture":
+		return runProviderRealtimeFixture(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -135,6 +137,42 @@ func runProviderRealtimePlan(args []string, stdout io.Writer, stderr io.Writer) 
 		return 1
 	}
 	if report.Status == providers.ProviderSmokeFailed {
+		return 1
+	}
+	return 0
+}
+
+func runProviderRealtimeFixture(args []string, stdout io.Writer, stderr io.Writer) int {
+	provider := ""
+	execute := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 provider-realtime-fixture [--provider <provider>] [--execute]")
+			return 0
+		case "--provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--provider requires a value")
+				return 2
+			}
+			i++
+			provider = args[i]
+		case "--execute":
+			execute = true
+		default:
+			fmt.Fprintf(stderr, "unknown provider-realtime-fixture option %q\n", args[i])
+			return 2
+		}
+	}
+	report := providers.RealtimeFixtureSmokeFromEnv(context.Background(), os.Environ(), provider, execute)
+	if err := writeJSONProviderSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode provider realtime fixture report: %v\n", err)
+		return 1
+	}
+	if report.Status == providers.ProviderSmokeFailed {
+		return 1
+	}
+	if execute && report.Status != providers.ProviderSmokePassed {
 		return 1
 	}
 	return 0

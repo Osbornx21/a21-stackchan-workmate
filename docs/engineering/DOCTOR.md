@@ -68,6 +68,15 @@ Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realt
 
 `provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.
 
+Offline realtime fixture smoke is a separate fake-connection command:
+
+```bash
+go run ./cmd/a21 provider-realtime-fixture --provider doubao_tts_realtime --execute
+go run ./cmd/a21 provider-realtime-fixture --provider openai_realtime --execute
+```
+
+It validates provider wrapper event flow without dialing a provider. It is still not connectivity, latency, audio-quality, or paid-provider proof.
+
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
