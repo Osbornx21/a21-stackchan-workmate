@@ -33,6 +33,8 @@ Trace and session IDs are propagated from the device event when supplied. If mis
 
 `/ws/audio` accepts an A21 `audio.frame` envelope with an `AudioChunk` payload and returns one mock `control.event` ack in `listening` state. This proves the audio transport boundary exists without claiming real PCM processing.
 
+Later firmware work now consumes this boundary with a guarded mock `audio.frame` sender. That does not change the Phase 2B claim: real capture, playback, VAD, and full-duplex media behavior remain outside this boundary milestone.
+
 ## Boundaries
 
 Phase 2B itself did not implement the browser simulator. Phase 2C now adds the first built-in simulator against these WebSocket endpoints.
@@ -44,6 +46,6 @@ Phase 2B still does not implement:
 - VAD
 - jitter buffer
 - provider streaming
-- firmware integration
+- production firmware media integration
 
 Those belong to later phases after this transport contract is stable.

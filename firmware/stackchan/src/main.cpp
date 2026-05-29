@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "a21_firmware_config.h"
+#include "a21_firmware_audio_ws.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_network.h"
@@ -86,15 +87,17 @@ char g_last_text[A21_TEXT_CAP] = "";
 char g_last_connection_text[A21_CONNECTION_TEXT_CAP] = "";
 A21WiFiRuntime g_wifi_runtime;
 A21GatewayWSRuntime g_gateway_ws_runtime;
+A21AudioWSRuntime g_audio_ws_runtime;
 
-struct A21ArduinoGatewayWS {
+struct A21ArduinoTextWS {
   WebSocketsClient client;
   bool connected;
   bool has_text;
   char text[A21_WS_TEXT_MESSAGE_CAP];
 };
 
-A21ArduinoGatewayWS g_gateway_ws_client;
+A21ArduinoTextWS g_gateway_ws_client;
+A21ArduinoTextWS g_audio_ws_client;
 
 bool arduinoWiFiBegin(void* ctx, const char* ssid, const char* password) {
   (void)ctx;
@@ -132,20 +135,23 @@ A21WiFiDriver g_wifi_driver = {
     arduinoWiFiLocalIP,
 };
 
-void gatewayWSEvent(WStype_t type, uint8_t* payload, size_t length) {
+void applyArduinoWSEvent(A21ArduinoTextWS* client, WStype_t type, uint8_t* payload, size_t length) {
+  if (client == nullptr) {
+    return;
+  }
   switch (type) {
     case WStype_CONNECTED:
-      g_gateway_ws_client.connected = true;
+      client->connected = true;
       break;
     case WStype_DISCONNECTED:
-      g_gateway_ws_client.connected = false;
-      g_gateway_ws_client.has_text = false;
+      client->connected = false;
+      client->has_text = false;
       break;
     case WStype_TEXT: {
       const size_t copy_len = length < (A21_WS_TEXT_MESSAGE_CAP - 1) ? length : (A21_WS_TEXT_MESSAGE_CAP - 1);
-      memcpy(g_gateway_ws_client.text, payload, copy_len);
-      g_gateway_ws_client.text[copy_len] = '\0';
-      g_gateway_ws_client.has_text = true;
+      memcpy(client->text, payload, copy_len);
+      client->text[copy_len] = '\0';
+      client->has_text = true;
       break;
     }
     default:
@@ -153,8 +159,16 @@ void gatewayWSEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
+void gatewayWSEvent(WStype_t type, uint8_t* payload, size_t length) {
+  applyArduinoWSEvent(&g_gateway_ws_client, type, payload, length);
+}
+
+void audioWSEvent(WStype_t type, uint8_t* payload, size_t length) {
+  applyArduinoWSEvent(&g_audio_ws_client, type, payload, length);
+}
+
 bool arduinoGatewayWSBegin(void* ctx, const char* host, uint16_t port, const char* path) {
-  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
   if (client == nullptr) {
     return false;
   }
@@ -166,20 +180,33 @@ bool arduinoGatewayWSBegin(void* ctx, const char* host, uint16_t port, const cha
   return true;
 }
 
+bool arduinoAudioWSBegin(void* ctx, const char* host, uint16_t port, const char* path) {
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
+  if (client == nullptr) {
+    return false;
+  }
+  client->connected = false;
+  client->has_text = false;
+  client->client.begin(host, port, path);
+  client->client.onEvent(audioWSEvent);
+  client->client.setReconnectInterval(0);
+  return true;
+}
+
 void arduinoGatewayWSLoop(void* ctx) {
-  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
   if (client != nullptr) {
     client->client.loop();
   }
 }
 
 bool arduinoGatewayWSConnected(void* ctx) {
-  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
   return client != nullptr && client->connected;
 }
 
 bool arduinoGatewayWSReadText(void* ctx, char* output, size_t output_size) {
-  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
   if (client == nullptr || output == nullptr || output_size == 0 || !client->has_text) {
     return false;
   }
@@ -190,7 +217,7 @@ bool arduinoGatewayWSReadText(void* ctx, char* output, size_t output_size) {
 }
 
 bool arduinoGatewayWSSendText(void* ctx, const char* text) {
-  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  A21ArduinoTextWS* client = static_cast<A21ArduinoTextWS*>(ctx);
   if (client == nullptr || text == nullptr || text[0] == '\0') {
     return false;
   }
@@ -200,6 +227,15 @@ bool arduinoGatewayWSSendText(void* ctx, const char* text) {
 A21GatewayWSDriver g_gateway_ws_driver = {
     &g_gateway_ws_client,
     arduinoGatewayWSBegin,
+    arduinoGatewayWSLoop,
+    arduinoGatewayWSConnected,
+    arduinoGatewayWSReadText,
+    arduinoGatewayWSSendText,
+};
+
+A21AudioWSDriver g_audio_ws_driver = {
+    &g_audio_ws_client,
+    arduinoAudioWSBegin,
     arduinoGatewayWSLoop,
     arduinoGatewayWSConnected,
     arduinoGatewayWSReadText,
@@ -229,6 +265,14 @@ void handleLocalControls(uint32_t now_ms) {
         "",
         now_ms);
   }
+  if (M5.BtnC.wasClicked()) {
+    a21AudioWSSendMockFrame(
+        &g_audio_ws_runtime,
+        &g_audio_ws_driver,
+        &g_connection,
+        &g_state,
+        now_ms);
+  }
 }
 
 void drawIfChanged() {
@@ -254,6 +298,7 @@ void setup() {
   a21InitConnectionStateWithWiFi(&g_connection, &g_network, &g_wifi, millis());
   a21InitWiFiRuntime(&g_wifi_runtime);
   a21InitGatewayWSRuntime(&g_gateway_ws_runtime);
+  a21InitAudioWSRuntime(&g_audio_ws_runtime);
   if (!a21ValidateNetworkConfig(&g_network)) {
     a21CopyString(g_state.text, A21_TEXT_CAP, "A21 Gateway config error");
     a21CopyString(g_state.last_error, A21_ERROR_CAP, "network_config");
@@ -267,6 +312,7 @@ void loop() {
   const uint32_t now_ms = millis();
   a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, now_ms);
   a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
+  a21AudioWSRuntimeTick(&g_audio_ws_runtime, &g_audio_ws_driver, &g_connection, &g_network, &g_state, now_ms);
   handleLocalControls(now_ms);
   drawIfChanged();
   delay(20);

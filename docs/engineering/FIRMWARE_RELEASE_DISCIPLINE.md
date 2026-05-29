@@ -89,6 +89,7 @@ Current native firmware tests cover:
 - Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
+- audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, and send rejection while disconnected
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

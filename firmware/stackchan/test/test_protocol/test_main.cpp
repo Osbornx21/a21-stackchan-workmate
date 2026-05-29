@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "a21_firmware_connection.h"
+#include "a21_firmware_audio_ws.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
@@ -96,6 +97,24 @@ bool fakeGatewayWSSendText(void* ctx, const char* text) {
 }
 
 void initFakeGatewayWSDriver(FakeGatewayWSDriver* fake, A21GatewayWSDriver* driver) {
+  fake->begin_count = 0;
+  fake->loop_count = 0;
+  fake->send_count = 0;
+  fake->last_host = "";
+  fake->last_port = 0;
+  fake->last_path = "";
+  fake->last_sent_text[0] = '\0';
+  fake->connected = false;
+  fake->pending_text = "";
+  driver->ctx = fake;
+  driver->begin = fakeGatewayWSBegin;
+  driver->loop = fakeGatewayWSLoop;
+  driver->connected = fakeGatewayWSConnected;
+  driver->read_text = fakeGatewayWSReadText;
+  driver->send_text = fakeGatewayWSSendText;
+}
+
+void initFakeAudioWSDriver(FakeGatewayWSDriver* fake, A21AudioWSDriver* driver) {
   fake->begin_count = 0;
   fake->loop_count = 0;
   fake->send_count = 0;
@@ -642,6 +661,136 @@ void test_gateway_ws_send_device_event_rejects_when_not_connected() {
   TEST_ASSERT_EQUAL_UINT64(1, runtime.next_seq);
 }
 
+void test_audio_ws_runtime_waits_for_gateway_connection() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  a21InitAudioWSRuntime(&runtime);
+  a21InitNetworkConfig(&network);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21InitConnectionState(&connection, &network, 1000);
+  a21ConnectionOnWiFiConnected(&connection, "192.168.31.21", 1100);
+
+  a21AudioWSRuntimeTick(&runtime, &driver, &connection, &network, &state, 1200);
+
+  TEST_ASSERT_EQUAL(0, fake.begin_count);
+  TEST_ASSERT_FALSE(runtime.begin_sent);
+}
+
+void test_audio_ws_runtime_begins_audio_socket_once() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  a21InitAudioWSRuntime(&runtime);
+  a21InitNetworkConfig(&network);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  a21AudioWSRuntimeTick(&runtime, &driver, &connection, &network, &state, 1700);
+  a21AudioWSRuntimeTick(&runtime, &driver, &connection, &network, &state, 1800);
+
+  TEST_ASSERT_EQUAL(1, fake.begin_count);
+  TEST_ASSERT_EQUAL_STRING("10.21.0.1", fake.last_host);
+  TEST_ASSERT_EQUAL_UINT16(21080, fake.last_port);
+  TEST_ASSERT_EQUAL_STRING("/ws/audio", fake.last_path);
+  TEST_ASSERT_TRUE(runtime.begin_sent);
+  TEST_ASSERT_FALSE(runtime.was_connected);
+}
+
+void test_audio_ws_send_mock_frame_builds_a21_audio_frame() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitAudioWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  TEST_ASSERT_TRUE(a21AudioWSSendMockFrame(&runtime, &driver, &connection, &state, 2000));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.sent_audio_frames);
+  TEST_ASSERT_EQUAL_UINT64(2, runtime.next_seq);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("a21.device.v1", doc["protocol"] | "");
+  TEST_ASSERT_EQUAL_STRING("stackchan-001", doc["device_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("audio.frame", doc["kind"] | "");
+  TEST_ASSERT_EQUAL_UINT64(1, doc["seq"] | 0);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-audio-000001", doc["trace_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("a21-session-device", doc["session_id"] | "");
+  TEST_ASSERT_EQUAL_INT64(2000, doc["sent_at_ms"] | 0);
+  TEST_ASSERT_EQUAL_STRING("pcm_s16le", doc["payload"]["codec"] | "");
+  TEST_ASSERT_EQUAL_INT(16000, doc["payload"]["sample_rate_hz"] | 0);
+  TEST_ASSERT_EQUAL_INT(1, doc["payload"]["channels"] | 0);
+  TEST_ASSERT_EQUAL_INT(20, doc["payload"]["duration_ms"] | 0);
+  TEST_ASSERT_EQUAL_INT64(1980, doc["payload"]["capture_started_at_ms"] | 0);
+  TEST_ASSERT_EQUAL_INT64(2000, doc["payload"]["capture_ended_at_ms"] | 0);
+  TEST_ASSERT_EQUAL_STRING("AAAA", doc["payload"]["data_base64"] | "");
+}
+
+void test_audio_ws_applies_gateway_ack_control_event() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  fake.connected = true;
+  fake.pending_text =
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"control.event\","
+      "\"trace_id\":\"a21-trace-audio-001\","
+      "\"session_id\":\"a21-session-audio-001\","
+      "\"payload\":{\"state\":\"listening\",\"mode\":\"workmate\",\"text\":\"audio frame accepted\",\"final\":true}}";
+  a21InitAudioWSRuntime(&runtime);
+  a21InitNetworkConfig(&network);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  a21AudioWSRuntimeTick(&runtime, &driver, &connection, &network, &state, 2100);
+
+  TEST_ASSERT_EQUAL(A21_RENDER_LISTENING, state.render_state);
+  TEST_ASSERT_EQUAL_STRING("audio frame accepted", state.text);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-audio-001", state.trace_id);
+  TEST_ASSERT_EQUAL_STRING("a21-session-audio-001", state.session_id);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.received_control_events);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.invalid_control_events);
+  TEST_ASSERT_TRUE(runtime.was_connected);
+}
+
+void test_audio_ws_send_mock_frame_rejects_when_audio_not_connected() {
+  A21AudioWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21AudioWSDriver driver;
+  initFakeAudioWSDriver(&fake, &driver);
+  fake.connected = false;
+  a21InitAudioWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  TEST_ASSERT_FALSE(a21AudioWSSendMockFrame(&runtime, &driver, &connection, &state, 2200));
+  TEST_ASSERT_EQUAL(0, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.sent_audio_frames);
+  TEST_ASSERT_EQUAL_UINT64(1, runtime.next_seq);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -672,5 +821,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_gateway_ws_send_mock_turn_builds_a21_device_event);
   RUN_TEST(test_gateway_ws_send_interrupt_increments_seq);
   RUN_TEST(test_gateway_ws_send_device_event_rejects_when_not_connected);
+  RUN_TEST(test_audio_ws_runtime_waits_for_gateway_connection);
+  RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
+  RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);
+  RUN_TEST(test_audio_ws_applies_gateway_ack_control_event);
+  RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
   return UNITY_END();
 }

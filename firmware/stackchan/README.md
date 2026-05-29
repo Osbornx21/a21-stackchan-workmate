@@ -59,12 +59,20 @@ Gateway configuration is currently compile-time and A21-only:
 - enters reconnect wait when the control socket disconnects
 - uses `links2004/WebSockets @ 2.7.3` behind a small driver interface on CoreS3
 
+`a21_firmware_audio_ws.h` owns the first guarded audio WebSocket runtime:
+
+- opens a separate `/ws/audio` socket only after the control Gateway is connected
+- sends deterministic mock `audio.frame` envelopes with `pcm_s16le`, 16 kHz, mono, 20 ms silence payload
+- applies Gateway ack `control.event` messages through the same tested parser
+- keeps real microphone capture and speaker playback out of this slice
+
 Current local controls are intentionally minimal:
 
 - `BtnA`: send `mock.turn` to Gateway
 - `BtnB`: send `interrupt` to Gateway
+- `BtnC`: send one mock silence `audio.frame` to Gateway `/ws/audio`
 
-The firmware still does not open the audio WebSocket or capture/play audio in this slice. Audio transport will be added after the control WebSocket has real-device serial evidence.
+The firmware still does not capture microphone audio, play Gateway audio, run VAD, or claim full-duplex behavior. The current audio WebSocket path is a disciplined transport probe only.
 
 ## Upload
 
