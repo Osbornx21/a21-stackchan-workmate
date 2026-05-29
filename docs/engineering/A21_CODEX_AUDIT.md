@@ -1,6 +1,6 @@
 # A21 Codex Audit
 
-Date: 2026-05-29
+Date: 2026-05-30
 Workspace: `/Users/jiyurun/Documents/New project`
 Branch: `codex/a21-phase1-clean-skeleton`
 
@@ -13,9 +13,13 @@ cmd/a21/main.go
 docs/a21/
 docs/engineering/
 docs/superpowers/
+firmware/stackchan/
+firmware/artifacts/         # ignored packaged A21 binaries + sha256 receipts
 go.mod
 internal/app/
 internal/buildinfo/
+internal/firmwarecheck/
+internal/gateway/
 internal/protocol/
 internal/providers/
 internal/runtimeguard/
@@ -28,8 +32,8 @@ internal/runtimeguard/
 - Go version in module: `1.26`.
 - Current verification entrypoint: `make verify`.
 - Current runtime entrypoint: `go run ./cmd/a21`.
+- Firmware build system: repository-local PlatformIO virtualenv under `.a21-tools/`, with `PLATFORMIO_CORE_DIR` pinned to `.a21-tools/platformio-core`.
 - No Node/pnpm workspace exists yet.
-- No firmware tree exists yet.
 - No Docker/Compose runtime exists yet.
 
 The external TS/pnpm monorepo proposal remains a future option for simulator/dev-console work, not the current repository foundation.
@@ -38,20 +42,30 @@ The external TS/pnpm monorepo proposal remains a future option for simulator/dev
 
 ```bash
 make verify
+make firmware-test
+make firmware-build
+make firmware-package
+make firmware-artifact-check
+make firmware-upload-check
+make gateway
 go run ./cmd/a21 version
 go run ./cmd/a21 preflight
 go run ./cmd/a21 doctor
+go run ./cmd/a21 serial-list
 ```
 
-`doctor` currently emits the same Phase 1 runtime report as `preflight`. Later phases should expand it into a broader dependency, proxy, StackChan, V21, provider, metrics, and firmware diagnostic.
+`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
 
 ## Current A21 Code
 
 - `internal/buildinfo`: canonical A21 service identity.
-- `internal/app`: CLI dispatch for version, preflight, and doctor.
+- `internal/app`: CLI dispatch for version, preflight, doctor, gateway, serial inventory, and firmware release guards.
+- `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, and upload dry-run checks.
+- `internal/gateway`: mock Gateway HTTP/WebSocket server, metrics, device registry, trace waterfall, and built-in simulator HTML.
 - `internal/runtimeguard`: env, endpoint, cwd, port, and fingerprint guardrails.
-- `internal/protocol`: minimal versioned A21 device envelope.
-- `internal/providers`: provider-neutral ASR/LLM/TTS/knowledge contracts.
+- `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
+- `internal/providers`: provider-neutral voice contracts plus deterministic mock/cascade behavior.
+- `firmware/stackchan`: PlatformIO CoreS3 firmware lane with A21-only identity, Wi-Fi/Gateway state machines, control/audio WebSocket probes, protocol parsing, and native Unity tests.
 
 ## Namespace Findings
 
@@ -62,6 +76,17 @@ Intentional X21/V21 references exist in:
 - architecture and baseline docs
 
 No new runtime package, command, process, or service name uses X21/V21 identity.
+
+Firmware-specific protections now include:
+
+- `firmware_id` must be `a21-stackchan`.
+- PlatformIO envs must use `a21_` naming.
+- artifact names must start with `a21-stackchan-`.
+- artifacts containing X21/V21 names are rejected.
+- upload ports containing X21/V21 names are rejected.
+- firmware package requires a clean git worktree.
+- firmware upload remains dry-run only and returns `flash_allowed: false`.
+- non-serial `/dev/*` paths such as `/dev/null` are rejected.
 
 ## Legacy Neighbor Risks
 
@@ -85,12 +110,15 @@ It blocks startup reports when the minimum fingerprint is missing.
 
 ## Verification Evidence
 
-Fresh verification after the Phase 1 foundation:
+Fresh verification after the current Gateway/Simulator/Firmware guard baseline:
 
 ```text
-go test -count=1 ./...   PASS
-make verify              PASS
-go run ./cmd/a21 preflight  PASS in current shell
+make verify                 PASS
+make firmware-test          PASS, 34/34 native firmware tests
+go run ./cmd/a21 doctor     PASS, current artifact detected
+firmware-artifact-check     PASS for current commit artifact
+firmware-upload-check       FAILS SAFE when serial port is busy
+firmware-upload-check       FAILS SAFE for /dev/null non-serial path
 ```
 
 Known defensive checks:
@@ -98,15 +126,15 @@ Known defensive checks:
 ```text
 A21_PROVIDER_ENDPOINT=http://127.0.0.1:8000 ... preflight  exits 1
 PATH without route/dig ... preflight                         exits 1
+firmware-upload-check --port auto ...                         exits 1
+firmware-upload-check --port /dev/null ...                    exits 1
 ```
 
 ## Gaps
 
-- Phase 2A adds a mock gateway HTTP handler.
-- Phase 2B adds mock audio/control WebSocket boundaries; real audio media processing remains future work.
-- Phase 2C adds a built-in browser device simulator; microphone/playback simulation remains future work.
-- Phase 3A adds Prometheus-compatible gateway metrics; OpenTelemetry traces remain future work.
-- No firmware tree yet.
+- Gateway and simulator are mock-first and deterministic; real microphone capture, playback, VAD, jitter buffer, and provider audio streaming remain future work.
+- Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
+- Metrics and in-memory trace waterfall exist; OpenTelemetry export and durable trace storage remain future work.
 - No V21 adapter client yet.
 - No real provider adapters yet.
 - No CI yet.
@@ -115,9 +143,10 @@ These gaps are phase boundaries, not Phase 1 regressions.
 
 ## Recommended Next Step
 
-Proceed to a narrowly scoped gateway/simulator plan that keeps the Go core intact:
+Proceed through the next phase without diluting the Go core:
 
-1. Expand protocol around session, trace, audio, control, mode, and expression messages.
-2. Add a mock gateway with health, audio/control WebSocket endpoints, and deterministic mock provider.
-3. Add simulator only after the protocol and gateway contracts are testable.
-4. Add observability hooks before real providers.
+1. Add CI/local release gate that runs `make verify`, `make firmware-test`, `doctor`, and artifact checks.
+2. Add a V21 adapter client contract and mock server before touching real V21 internals.
+3. Add provider adapter health/cancel contracts behind deterministic mock tests.
+4. Expand simulator microphone/playback only after latency and trace fields are stable.
+5. Keep real firmware flashing disabled until physical-device identity checks are implemented.

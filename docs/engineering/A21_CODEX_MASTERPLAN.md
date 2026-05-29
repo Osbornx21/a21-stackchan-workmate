@@ -139,13 +139,13 @@ Phase 0: repository governance and engineering docs. Completed by this document 
 
 Phase 1: Go core foundation. Current baseline includes build identity, runtime guardrails, preflight/doctor, protocol contracts, provider contracts, and verification.
 
-Phase 2: gateway mock and simulator. Add HTTP health, audio/control WebSocket boundaries, mock provider, session state, trace IDs, state transitions, and a browser/device simulator.
+Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audio/control WebSocket boundaries, deterministic mock voice provider, session/trace propagation, state transitions, device registry, in-memory trace waterfall, and a built-in browser simulator.
 
-Phase 3: doctor and observability expansion. Add richer environment checks, reports, metrics endpoint, trace helper, proxy checks, V21 health checks, and mock latency bench.
+Phase 3: doctor and observability expansion. Current baseline includes richer reports, firmware/toolchain/artifact/serial diagnostics, Prometheus-compatible metrics, and a mock trace waterfall. OpenTelemetry export, V21 health checks, and latency bench remain future work.
 
 Phase 4: provider adapters. Add mock, China-mainland-first realtime/streaming providers, fallback/cascade behavior, and cancellation.
 
-Phase 5: StackChan firmware MVP. Add Wi-Fi config, gateway WebSocket, audio capture/playback, expression render, servo clamp, LED/touch events, reconnect, and local fallback.
+Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, build/package/upload dry-run discipline, and native tests. Real mic capture/playback, servo clamp, LED/touch runtime, OTA, and physical flashing remain future work.
 
 Phase 6: V21 professional mode. Add V21 adapter client, professional intent, evidence cards, confidence handling, timeout fallback, and speech blocks.
 
