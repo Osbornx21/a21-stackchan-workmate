@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -75,10 +76,14 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="playbackChunksReceived"`,
 		`id="playbackBufferedChunks"`,
 		`id="playbackStream"`,
+		`id="playbackScheduledChunks"`,
 		"startMicrophoneStream",
 		"stopMicrophoneStream",
 		"sendMockAudioBurst",
 		"handleAudioPlaybackChunk",
+		"decodePCM16Base64",
+		"schedulePCMPlayback",
+		"stopScheduledPlayback",
 		"audio.playback.chunk",
 		`id="professionalEvidence"`,
 		"firmware_id",
@@ -942,8 +947,15 @@ func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 	if payload.StreamID != "a21-audio-stream-000001" {
 		t.Fatalf("stream = %q, want a21-audio-stream-000001", payload.StreamID)
 	}
-	if payload.Codec != protocol.AudioCodecPCMS16LE || payload.SampleRateHz != 16000 || payload.Channels != 1 || payload.DurationMS != 20 || payload.DataBase64 != "AAAA" {
+	if payload.Codec != protocol.AudioCodecPCMS16LE || payload.SampleRateHz != 16000 || payload.Channels != 1 || payload.DurationMS != 20 {
 		t.Fatalf("playback payload = %+v", payload)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(payload.DataBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 640 {
+		t.Fatalf("decoded payload bytes = %d, want 640", len(decoded))
 	}
 }
 

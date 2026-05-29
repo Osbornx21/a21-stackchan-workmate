@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -592,7 +593,7 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 		SampleRateHz: 16000,
 		Channels:     1,
 		DurationMS:   20,
-		DataBase64:   "AAAA",
+		DataBase64:   mockPCM16SilenceBase64(16000, 20),
 	}
 	data, _ := json.Marshal(payload)
 	sentAt := s.now().UnixMilli()
@@ -608,6 +609,14 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 		SentAtMS:  sentAt,
 		Payload:   data,
 	}
+}
+
+func mockPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
+	if sampleRateHz <= 0 || durationMS <= 0 {
+		return ""
+	}
+	byteCount := sampleRateHz * durationMS * 2 / 1000
+	return base64.StdEncoding.EncodeToString(make([]byte, byteCount))
 }
 
 func (s *Server) mockAudioStreamID(frame protocol.Envelope, traceID string, sessionID string) string {

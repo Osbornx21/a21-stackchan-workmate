@@ -439,6 +439,7 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Downlink</label><div id="playbackChunksReceived">0</div></div>
             <div class="metric"><label>Buffer</label><div id="playbackBufferedChunks">0</div></div>
             <div class="metric"><label>Stream</label><div id="playbackStream">none</div></div>
+            <div class="metric"><label>Scheduled</label><div id="playbackScheduledChunks">0</div></div>
           </div>
         </section>
         <section class="registry" aria-label="Device Registry">
@@ -487,6 +488,7 @@ const simulatorHTML = `<!doctype html>
       playbackChunksReceived: document.getElementById('playbackChunksReceived'),
       playbackBufferedChunks: document.getElementById('playbackBufferedChunks'),
       playbackStream: document.getElementById('playbackStream'),
+      playbackScheduledChunks: document.getElementById('playbackScheduledChunks'),
       mockPlayback: document.getElementById('mockPlayback'),
       registryDevice: document.getElementById('registryDevice'),
       registryIdentity: document.getElementById('registryIdentity'),
@@ -509,12 +511,15 @@ const simulatorHTML = `<!doctype html>
       audioFrames: 0,
       playbackChunks: 0,
       playbackBufferedChunks: 0,
+      playbackScheduledChunks: 0,
       playbackStreamId: '',
       micStream: null,
       audioContext: null,
       analyser: null,
       micTimer: null,
-      playbackContext: null
+      playbackContext: null,
+      playbackNextAt: 0,
+      playbackSources: []
     };
     const firmwareIdentity = {
       firmware_id: 'a21-stackchan',
@@ -633,12 +638,62 @@ const simulatorHTML = `<!doctype html>
       ui.playbackBufferedChunks.textContent = String(sim.playbackBufferedChunks);
       ui.playbackStream.textContent = payload.stream_id;
       ui.playbackState.textContent = 'buffered ' + payload.stream_id;
+      schedulePCMPlayback(payload);
     }
     function clearPlaybackBuffer() {
+      stopScheduledPlayback();
       sim.playbackBufferedChunks = 0;
       sim.playbackStreamId = '';
+      sim.playbackNextAt = 0;
       ui.playbackBufferedChunks.textContent = '0';
       ui.playbackStream.textContent = 'none';
+    }
+    function decodePCM16Base64(dataBase64) {
+      const binary = atob(dataBase64 || '');
+      const sampleCount = Math.floor(binary.length / 2);
+      const samples = new Float32Array(sampleCount);
+      for (let i = 0; i < sampleCount; i++) {
+        const lo = binary.charCodeAt(i * 2);
+        const hi = binary.charCodeAt(i * 2 + 1);
+        const value = (hi << 8) | lo;
+        const signed = value >= 0x8000 ? value - 0x10000 : value;
+        samples[i] = signed / 0x8000;
+      }
+      return samples;
+    }
+    function schedulePCMPlayback(payload) {
+      if (!ui.mockPlayback.checked || !payload || payload.codec !== 'pcm_s16le' || payload.channels !== 1) return;
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtor) return;
+      const context = sim.playbackContext || new AudioCtor();
+      sim.playbackContext = context;
+      const samples = decodePCM16Base64(payload.data_base64);
+      if (!samples.length || !payload.sample_rate_hz) return;
+      const buffer = context.createBuffer(1, samples.length, payload.sample_rate_hz);
+      buffer.copyToChannel(samples, 0);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      const startAt = Math.max(context.currentTime + 0.01, sim.playbackNextAt || 0);
+      sim.playbackSources.push(source);
+      source.onended = () => {
+        sim.playbackSources = sim.playbackSources.filter((item) => item !== source);
+      };
+      source.start(startAt);
+      sim.playbackNextAt = startAt + buffer.duration;
+      sim.playbackScheduledChunks += 1;
+      ui.playbackScheduledChunks.textContent = String(sim.playbackScheduledChunks);
+      ui.playbackState.textContent = 'scheduled ' + payload.stream_id;
+    }
+    function stopScheduledPlayback() {
+      sim.playbackSources.forEach((source) => {
+        try {
+          source.stop();
+        } catch (err) {
+          // The source may already have ended; stopping is best-effort for barge-in.
+        }
+      });
+      sim.playbackSources = [];
     }
     function playMockPlaybackTick() {
       if (!ui.mockPlayback.checked) return;

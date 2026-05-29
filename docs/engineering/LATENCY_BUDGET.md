@@ -67,7 +67,9 @@ The report currently measures in-process Gateway paths for:
 - `barge_in_stop_ms`
 - `audio_ws_downlink_ms`
 
-`audio_ws_downlink_ms` opens a mock audio WebSocket, sends one `audio.frame`, and measures until the Gateway returns the mock speaking control state plus `audio.playback.chunk`. Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles. Mock results do not represent real provider, LAN, microphone, speaker, or StackChan hardware latency. They only protect report shape and Gateway baseline behavior.
+`audio_ws_downlink_ms` opens a mock audio WebSocket, sends one `audio.frame`, and measures until the Gateway returns the mock speaking control state plus a full 20 ms / 16 kHz / mono / `pcm_s16le` `audio.playback.chunk`. Each mock chunk carries 640 raw PCM bytes encoded in base64, so the measurement now covers the Gateway downlink envelope path for a real-sized first PCM chunk instead of a tiny placeholder payload. Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles.
+
+The browser simulator decodes and schedules those mock PCM chunks with WebAudio and stops scheduled sources on interruption, but mock results still do not represent real provider, LAN, microphone, speaker, or StackChan hardware latency. They only protect report shape, Gateway baseline behavior, and the client-side playback/cancellation development surface.
 
 Future real-provider/device benchmarks must add environment fingerprint and store a report artifact before their results count for release decisions.
 
