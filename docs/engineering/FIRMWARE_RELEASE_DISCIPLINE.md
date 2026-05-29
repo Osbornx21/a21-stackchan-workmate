@@ -70,6 +70,13 @@ make firmware-package
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
+Current native firmware tests cover:
+
+- A21 `control.event` parsing
+- protocol/device identity rejection
+- control event to local render-state transitions
+- unsupported state fallback to firmware error state
+
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 
 ```text

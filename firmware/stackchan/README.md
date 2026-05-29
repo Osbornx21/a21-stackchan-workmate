@@ -21,6 +21,12 @@ make firmware-test
 
 `make firmware-test` runs host-native protocol parser tests. It does not flash hardware.
 
+## Runtime Surface
+
+The current firmware starts in local fallback state and renders the A21 identity, firmware version, state label, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
+
+The firmware still does not connect to Wi-Fi or WebSocket in this slice. Network transport will be added after the state model and screen rendering path are stable under native tests.
+
 ## Upload
 
 There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, and artifact name have been verified.
