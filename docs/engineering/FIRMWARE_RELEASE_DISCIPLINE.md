@@ -48,6 +48,7 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `m5stack/M5Unified @ 0.2.16`
 - `bblanchon/ArduinoJson @ 7.4.3`
 - native unit-test environment: `a21_stackchan_native` with Unity
+- `A21_GATEWAY_HOST` and `A21_GATEWAY_PORT=21080` build flags
 
 `firmware-check` rejects unpinned or missing core firmware dependencies. This is intentional: firmware builds must be reproducible and must not silently drift under A21.
 
@@ -76,6 +77,9 @@ Current native firmware tests cover:
 - protocol/device identity rejection
 - control event to local render-state transitions
 - unsupported state fallback to firmware error state
+- A21 Gateway host/port/path validation
+- control/audio WebSocket URL construction
+- rejection of legacy Gateway ports and X21/V21 route names
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

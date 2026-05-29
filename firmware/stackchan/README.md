@@ -25,6 +25,13 @@ make firmware-test
 
 The current firmware starts in local fallback state and renders the A21 identity, firmware version, state label, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.
 
+Gateway configuration is currently compile-time and A21-only:
+
+- `A21_GATEWAY_HOST=10.21.0.1`
+- `A21_GATEWAY_PORT=21080`
+- control path `/ws/control`
+- audio path `/ws/audio`
+
 The firmware still does not connect to Wi-Fi or WebSocket in this slice. Network transport will be added after the state model and screen rendering path are stable under native tests.
 
 ## Upload

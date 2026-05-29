@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include "a21_firmware_network.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
 
@@ -88,6 +89,41 @@ void test_apply_invalid_control_event_enters_error_state() {
   TEST_ASSERT_EQUAL_STRING("bad", state.text);
 }
 
+void test_network_config_defaults_to_a21_gateway() {
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+
+  TEST_ASSERT_EQUAL_STRING("10.21.0.1", config.gateway_host);
+  TEST_ASSERT_EQUAL_UINT16(21080, config.gateway_port);
+  TEST_ASSERT_EQUAL_STRING("/ws/control", config.control_path);
+  TEST_ASSERT_EQUAL_STRING("/ws/audio", config.audio_path);
+  TEST_ASSERT_TRUE(a21ValidateNetworkConfig(&config));
+}
+
+void test_network_config_builds_control_and_audio_urls() {
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+  a21CopyString(config.gateway_host, A21_GATEWAY_HOST_CAP, "192.168.31.50");
+
+  char control_url[A21_WS_URL_CAP];
+  char audio_url[A21_WS_URL_CAP];
+  TEST_ASSERT_TRUE(a21BuildControlWSURL(&config, control_url, sizeof(control_url)));
+  TEST_ASSERT_TRUE(a21BuildAudioWSURL(&config, audio_url, sizeof(audio_url)));
+  TEST_ASSERT_EQUAL_STRING("ws://192.168.31.50:21080/ws/control", control_url);
+  TEST_ASSERT_EQUAL_STRING("ws://192.168.31.50:21080/ws/audio", audio_url);
+}
+
+void test_network_config_rejects_legacy_ports_and_names() {
+  A21NetworkConfig config;
+  a21InitNetworkConfig(&config);
+  config.gateway_port = 8080;
+  TEST_ASSERT_FALSE(a21ValidateNetworkConfig(&config));
+
+  a21InitNetworkConfig(&config);
+  a21CopyString(config.gateway_host, A21_GATEWAY_HOST_CAP, "x21.local");
+  TEST_ASSERT_FALSE(a21ValidateNetworkConfig(&config));
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -95,5 +131,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_parse_control_event_rejects_wrong_device);
   RUN_TEST(test_apply_control_event_updates_runtime_state);
   RUN_TEST(test_apply_invalid_control_event_enters_error_state);
+  RUN_TEST(test_network_config_defaults_to_a21_gateway);
+  RUN_TEST(test_network_config_builds_control_and_audio_urls);
+  RUN_TEST(test_network_config_rejects_legacy_ports_and_names);
   return UNITY_END();
 }

@@ -87,6 +87,12 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "[env:a21_stackchan_native]") || !strings.Contains(content, "test_framework = unity") {
 		return fmt.Errorf("platformio native unit test environment is required")
 	}
+	if !strings.Contains(content, "a21_gateway_host") {
+		return fmt.Errorf("platformio A21 gateway host build flag is required")
+	}
+	if !strings.Contains(content, "a21_gateway_port=21080") {
+		return fmt.Errorf("platformio A21 gateway port must be 21080")
+	}
 	boardPattern := regexp.MustCompile(`(?m)^\s*board\s*=\s*([A-Za-z0-9_-]+)\s*$`)
 	match := boardPattern.FindStringSubmatch(content)
 	if len(match) != 2 {

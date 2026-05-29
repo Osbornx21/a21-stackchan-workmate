@@ -310,6 +310,24 @@ func TestRunFirmwareCheckRejectsUnpinnedPlatformIOPlatform(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareCheckRejectsLegacyGatewayPort(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	config := strings.ReplaceAll(testPlatformIOConfig("m5stack-cores3"), "-D A21_GATEWAY_PORT=21080", "-D A21_GATEWAY_PORT=8080")
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--manifest", manifest}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "gateway port") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunFirmwareArtifactCheckAcceptsMatchingArtifactAndChecksum(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeTestFirmwareManifest(t, dir)
@@ -581,6 +599,9 @@ default_envs = a21_stackchan_cores3
 platform = espressif32@7.0.1
 board = ` + board + `
 framework = arduino
+build_flags =
+  -D A21_GATEWAY_HOST=\"10.21.0.1\"
+  -D A21_GATEWAY_PORT=21080
 lib_deps =
   m5stack/M5Unified @ 0.2.16
   bblanchon/ArduinoJson @ 7.4.3
@@ -588,6 +609,9 @@ lib_deps =
 [env:a21_stackchan_native]
 platform = native
 test_framework = unity
+build_flags =
+  -D A21_GATEWAY_HOST=\"10.21.0.1\"
+  -D A21_GATEWAY_PORT=21080
 lib_deps =
   bblanchon/ArduinoJson @ 7.4.3
 `
