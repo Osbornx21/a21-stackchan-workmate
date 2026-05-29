@@ -37,6 +37,7 @@ Current tests cover:
 - workmate mode V21 isolation
 - V21 unavailable fallback copy
 - V21 trace markers
+- simulator Professional Evidence panel availability
 
 Run:
 

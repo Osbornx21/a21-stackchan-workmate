@@ -136,7 +136,7 @@ const simulatorHTML = `<!doctype html>
     body[data-state="listening"] .eye { transform: scaleY(1.08); }
     .side {
       display: grid;
-      grid-template-rows: auto auto auto auto 1fr;
+      grid-template-rows: auto auto auto auto auto auto 1fr;
       gap: 18px;
       padding: 24px;
       min-width: 0;
@@ -218,6 +218,43 @@ const simulatorHTML = `<!doctype html>
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }
+    .evidence {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #141a1d;
+      min-width: 0;
+    }
+    .evidence h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 680;
+    }
+    .evidence-list {
+      display: grid;
+      gap: 8px;
+    }
+    .evidence-card {
+      border: 1px solid #314149;
+      border-radius: 6px;
+      padding: 9px;
+      background: #101619;
+      color: #d8e3e5;
+      font-size: 12px;
+      line-height: 1.45;
+      min-width: 0;
+    }
+    .evidence-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+    .evidence-card span {
+      display: block;
+      color: var(--muted);
+      overflow-wrap: anywhere;
     }
     .metric {
       border: 1px solid var(--line);
@@ -312,6 +349,12 @@ const simulatorHTML = `<!doctype html>
             <div class="waterfall-row"><span>0 ms</span><span class="waterfall-name">none</span></div>
           </div>
         </section>
+        <section class="evidence" aria-label="Professional Evidence">
+          <h2>Professional Evidence</h2>
+          <div class="evidence-list" id="professionalEvidence">
+            <div class="evidence-card"><strong>none</strong><span>professional mode has not returned evidence yet</span></div>
+          </div>
+        </section>
         <pre id="log" aria-label="event log"></pre>
       </section>
     </main>
@@ -327,6 +370,7 @@ const simulatorHTML = `<!doctype html>
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
       waterfall: document.getElementById('waterfall'),
+      professionalEvidence: document.getElementById('professionalEvidence'),
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
       utterance: document.getElementById('utterance')
@@ -369,8 +413,38 @@ const simulatorHTML = `<!doctype html>
       rememberEnvelope(envelope);
       const payload = envelope.payload || {};
       if (payload.state) setState(payload.state);
+      if (payload.mode && payload.mode !== 'professional') clearProfessionalEvidence();
+      if (payload.evidence || payload.screen_cards || payload.speech_blocks) renderProfessionalEvidence(payload);
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
       refreshWaterfall();
+    }
+    function escapeText(value) {
+      return String(value || '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+    function clearProfessionalEvidence() {
+      ui.professionalEvidence.innerHTML = '<div class="evidence-card"><strong>none</strong><span>professional mode has not returned evidence yet</span></div>';
+    }
+    function renderProfessionalEvidence(payload) {
+      const cards = [];
+      if (typeof payload.confidence === 'number') {
+        cards.push('<div class="evidence-card"><strong>confidence</strong><span>' + Math.round(payload.confidence * 100) + '%</span></div>');
+      }
+      (payload.screen_cards || []).forEach((card) => {
+        cards.push('<div class="evidence-card"><strong>' + escapeText(card.label) + '</strong><span>' + escapeText(card.text) + '</span></div>');
+      });
+      (payload.evidence || []).forEach((item) => {
+        cards.push('<div class="evidence-card"><strong>' + escapeText(item.title || item.source_id) + '</strong><span>' + escapeText(item.summary || item.type) + '</span></div>');
+      });
+      if (payload.follow_ups && payload.follow_ups.length) {
+        cards.push('<div class="evidence-card"><strong>follow-ups</strong><span>' + escapeText(payload.follow_ups.join(' / ')) + '</span></div>');
+      }
+      ui.professionalEvidence.innerHTML = cards.join('') || '<div class="evidence-card"><strong>professional</strong><span>No evidence returned.</span></div>';
     }
     async function refreshRegistry() {
       try {

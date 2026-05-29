@@ -27,6 +27,7 @@ http://127.0.0.1:21080/simulator
 - Displays expression state, mode, trace ID, session ID, and event log
 - Displays Gateway `/v1/devices` registry status for the simulator device
 - Displays Gateway `/v1/traces` waterfall events for the active trace
+- Displays professional evidence, confidence, screen cards, and follow-ups returned by the V21 adapter mock path
 - Shows a simple StackChan face state for `idle`, `listening`, `thinking`, `speaking`, `interrupted`, and `error`
 
 ## Boundaries

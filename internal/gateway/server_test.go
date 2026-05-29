@@ -56,6 +56,8 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/traces",
 		"Device Registry",
 		"Waterfall",
+		"Professional Evidence",
+		`id="professionalEvidence"`,
 		"firmware_id",
 		"a21-stackchan",
 		"m5stack-cores3",
