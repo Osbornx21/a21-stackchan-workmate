@@ -61,6 +61,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareUploadCheck(args[1:], stdout, stderr)
 	case "firmware-device-check":
 		return runFirmwareDeviceCheck(args[1:], stdout, stderr)
+	case "firmware-flash-plan":
+		return runFirmwareFlashPlan(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -847,6 +849,101 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	return 0
 }
 
+func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.FlashPlanOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha>")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--device-report":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-report requires a value")
+				return 2
+			}
+			i++
+			options.ReportPath = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedDeviceID = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedGitCommit = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-flash-plan option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.ArtifactPath == "" {
+		fmt.Fprintln(stderr, "--artifact requires a value")
+		return 2
+	}
+	if options.Port == "" {
+		fmt.Fprintln(stderr, "--port requires a value")
+		return 2
+	}
+	if options.ReportPath == "" {
+		fmt.Fprintln(stderr, "--device-report requires a value")
+		return 2
+	}
+	if options.ExpectedDeviceID == "" {
+		fmt.Fprintln(stderr, "--device-id requires a value")
+		return 2
+	}
+	if options.ExpectedGitCommit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	portUsage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware flash plan failed: upload port ownership check failed: %v\n", err)
+		return 1
+	}
+	options.PortUsage = portUsage
+	result, err := firmwarecheck.BuildFlashPlan(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware flash plan failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareFlashPlan(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware flash plan result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware flash plan guard ok (no flash performed)")
+	return 0
+}
+
 func writeJSONFirmwareCheck(writer io.Writer, result firmwarecheck.Result) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -872,6 +969,12 @@ func writeJSONFirmwareUploadCheck(writer io.Writer, result firmwarecheck.UploadC
 }
 
 func writeJSONFirmwareDeviceCheck(writer io.Writer, result firmwarecheck.DeviceIdentityResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareFlashPlan(writer io.Writer, result firmwarecheck.FlashPlanResult) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
