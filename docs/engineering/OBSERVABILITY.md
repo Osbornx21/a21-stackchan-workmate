@@ -20,6 +20,8 @@ Gateway now also exposes `GET /v1/devices` for the current in-memory device regi
 
 Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, mock playback chunk sends, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
 
+Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
+
 ## Trace Fields
 
 Future runtime spans should include:

@@ -24,6 +24,14 @@ The default gateway uses `MockVoiceProvider`. Tests can inject a scripted provid
 
 `VoiceProvider.Health(ctx)` returns provider name, status, configured state, realtime capability, active child provider when applicable, and a short detail field. The deterministic mock reports `healthy`, `configured=true`, and `realtime=true`.
 
+Gateway exposes the current voice provider health at:
+
+```text
+GET /v1/providers/voice/health
+```
+
+Healthy or degraded providers return HTTP 200 with lower-case JSON fields. Unavailable providers return HTTP 503 with the same response shape. This endpoint is the first provider observability boundary for future Doubao/OpenAI/Bailian adapters; it must not expose provider credentials or SDK-specific internals.
+
 ## Current Event Mapping
 
 - provider `thinking` -> device `thinking`

@@ -35,6 +35,51 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestVoiceProviderHealthEndpoint(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: scriptedVoiceProvider{events: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "ready", Final: true},
+		}},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var health providers.VoiceProviderHealth
+	if err := json.Unmarshal(rec.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if health.Provider != "scripted" || health.Status != providers.VoiceProviderHealthy || !health.Realtime || !health.Configured {
+		t.Fatalf("health = %+v", health)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"provider":"scripted"`)) {
+		t.Fatalf("body missing provider json field: %s", rec.Body.String())
+	}
+}
+
+func TestVoiceProviderHealthEndpointReturnsUnavailable(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: unavailableVoiceProvider{}})
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	var health providers.VoiceProviderHealth
+	if err := json.Unmarshal(rec.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if health.Provider != "unavailable" || health.Status != providers.VoiceProviderUnavailable {
+		t.Fatalf("health = %+v", health)
+	}
+}
+
 func TestSimulatorPageServed(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/simulator", nil)
@@ -1086,6 +1131,34 @@ func (p scriptedVoiceProvider) Health(ctx context.Context) (providers.VoiceProvi
 }
 
 func (p scriptedVoiceProvider) Close(ctx context.Context) error {
+	return ctx.Err()
+}
+
+type unavailableVoiceProvider struct{}
+
+func (p unavailableVoiceProvider) Name() string {
+	return "unavailable"
+}
+
+func (p unavailableVoiceProvider) StartTurn(ctx context.Context, req providers.VoiceTurnRequest) (<-chan providers.VoiceEvent, error) {
+	return nil, providers.ErrVoiceProviderUnavailable
+}
+
+func (p unavailableVoiceProvider) Cancel(ctx context.Context, req providers.VoiceCancelRequest) (<-chan providers.VoiceEvent, error) {
+	return nil, providers.ErrVoiceProviderUnavailable
+}
+
+func (p unavailableVoiceProvider) Health(ctx context.Context) (providers.VoiceProviderHealth, error) {
+	return providers.VoiceProviderHealth{
+		Provider:   p.Name(),
+		Status:     providers.VoiceProviderUnavailable,
+		Configured: false,
+		Realtime:   false,
+		Detail:     "test unavailable",
+	}, providers.ErrVoiceProviderUnavailable
+}
+
+func (p unavailableVoiceProvider) Close(ctx context.Context) error {
 	return ctx.Err()
 }
 

@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
+	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -167,6 +168,21 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"version": buildinfo.Version,
 	})
+}
+
+func (s *Server) handleVoiceProviderHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	health, err := s.voice.Health(ctx)
+	status := http.StatusOK
+	if err != nil || health.Status == providers.VoiceProviderUnavailable {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, health)
 }
 
 func (s *Server) handleMockTurn(w http.ResponseWriter, r *http.Request) {

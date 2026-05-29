@@ -59,12 +59,12 @@ const (
 )
 
 type VoiceProviderHealth struct {
-	Provider       string
-	Status         VoiceProviderHealthStatus
-	Configured     bool
-	Realtime       bool
-	ActiveProvider string
-	Detail         string
+	Provider       string                    `json:"provider"`
+	Status         VoiceProviderHealthStatus `json:"status"`
+	Configured     bool                      `json:"configured"`
+	Realtime       bool                      `json:"realtime"`
+	ActiveProvider string                    `json:"active_provider,omitempty"`
+	Detail         string                    `json:"detail,omitempty"`
 }
 
 type VoiceProvider interface {
