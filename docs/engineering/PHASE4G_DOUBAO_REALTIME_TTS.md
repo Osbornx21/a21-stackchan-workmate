@@ -76,4 +76,4 @@ The tests cover redacted readiness planning, required env handling, provider cat
 
 ## Next Step
 
-The next provider slice should add a `DoubaoRealtimeTTSProvider` wrapper with `StartTurn` explicitly scoped to text-to-TTS professional/audio playback. The companion fast path still needs a separate Doubao S2S design based on the official realtime voice/RTC product contract.
+Phase 4H wraps this mapper in a `DoubaoRealtimeTTSProvider` with an explicit realtime TTS session entrypoint. The companion fast path still needs a separate Doubao S2S design based on the official realtime voice/RTC product contract.
