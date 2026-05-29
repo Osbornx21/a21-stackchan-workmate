@@ -44,3 +44,5 @@ Phase 4A does not implement:
 - provider health checks
 - provider latency histograms
 - cascade fallback
+
+Phase 4B adds cascade fallback. See `PHASE4B_PROVIDER_CASCADE.md`.

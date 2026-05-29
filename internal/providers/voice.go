@@ -1,6 +1,11 @@
 package providers
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrVoiceProviderUnavailable = errors.New("a21 voice provider unavailable")
 
 type VoiceSession struct {
 	TraceID   string
