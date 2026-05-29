@@ -1,0 +1,45 @@
+package gateway
+
+import (
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+type metrics struct {
+	registry        *prometheus.Registry
+	mockTurnTotal   prometheus.Counter
+	bargeInTotal    prometheus.Counter
+	audioFrameTotal prometheus.Counter
+	wsConnections   *prometheus.GaugeVec
+}
+
+func newMetrics() *metrics {
+	registry := prometheus.NewRegistry()
+	m := &metrics{
+		registry: registry,
+		mockTurnTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_mock_turn_total",
+			Help: "Total mock A21 turns handled by the gateway.",
+		}),
+		bargeInTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_barge_in_total",
+			Help: "Total A21 interrupt or barge-in events handled by the gateway.",
+		}),
+		audioFrameTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_audio_frame_total",
+			Help: "Total mock audio frames accepted by the gateway.",
+		}),
+		wsConnections: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "a21_ws_connections_active",
+			Help: "Active A21 WebSocket connections by channel.",
+		}, []string{"channel"}),
+	}
+	registry.MustRegister(m.mockTurnTotal, m.bargeInTotal, m.audioFrameTotal, m.wsConnections)
+	return m
+}
+
+func (m *metrics) handler() http.Handler {
+	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
+}

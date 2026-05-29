@@ -4,7 +4,7 @@
 
 A21 must be observable before it is optimized. "Probably the network" is not an acceptable diagnosis.
 
-## Current Phase 1 Signals
+## Current Signals
 
 The current CLI preflight/doctor report emits:
 
@@ -14,7 +14,7 @@ The current CLI preflight/doctor report emits:
 - external DNS probe IP
 - proxy env variable names without values
 
-This is the seed of the future doctor/observability system.
+The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.
 
 ## Trace Fields
 
@@ -56,6 +56,13 @@ Every voice turn should eventually expose:
 - `fallback.used`
 
 ## Metrics
+
+Current Prometheus metrics:
+
+- `a21_mock_turn_total`
+- `a21_barge_in_total`
+- `a21_audio_frame_total`
+- `a21_ws_connections_active`
 
 Future Prometheus metrics should include:
 

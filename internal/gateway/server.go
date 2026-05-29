@@ -15,9 +15,10 @@ import (
 )
 
 type Server struct {
-	mu   sync.Mutex
-	next uint64
-	now  func() time.Time
+	mu      sync.Mutex
+	next    uint64
+	now     func() time.Time
+	metrics *metrics
 }
 
 type MockTurnRequest struct {
@@ -36,13 +37,14 @@ type MockTurnResponse struct {
 }
 
 func NewServer() *Server {
-	return &Server{now: time.Now}
+	return &Server{now: time.Now, metrics: newMetrics()}
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/simulator", s.handleSimulator)
+	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -104,6 +106,8 @@ func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	s.metrics.wsConnections.WithLabelValues("control").Inc()
+	defer s.metrics.wsConnections.WithLabelValues("control").Dec()
 	defer conn.Close(websocket.StatusNormalClosure, "a21 control closed")
 
 	ctx := context.Background()
@@ -126,6 +130,8 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	s.metrics.wsConnections.WithLabelValues("audio").Inc()
+	defer s.metrics.wsConnections.WithLabelValues("audio").Dec()
 	defer conn.Close(websocket.StatusNormalClosure, "a21 audio closed")
 
 	ctx := context.Background()
@@ -133,6 +139,9 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		var frame protocol.Envelope
 		if err := wsjson.Read(ctx, conn, &frame); err != nil {
 			return
+		}
+		if frame.Kind == protocol.KindAudioFrame {
+			s.metrics.audioFrameTotal.Inc()
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
@@ -167,6 +176,7 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 }
 
 func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
+	s.metrics.mockTurnTotal.Inc()
 	if req.Mode == "" {
 		req.Mode = protocol.ModeWorkmate
 	}
@@ -180,6 +190,7 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 }
 
 func (s *Server) mockInterruptResponse(req MockTurnRequest) MockTurnResponse {
+	s.metrics.bargeInTotal.Inc()
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	mode := req.Mode
 	if mode == "" {

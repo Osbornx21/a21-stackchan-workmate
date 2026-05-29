@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,6 +116,79 @@ func TestMockInterruptReturnsInterruptedThenListening(t *testing.T) {
 	}
 	if first.State != protocol.ExpressionInterrupted {
 		t.Fatalf("first state = %q, want interrupted", first.State)
+	}
+}
+
+func TestMetricsEndpointRecordsMockHTTPFlow(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	mockTurn := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", bytes.NewBufferString(`{"device_id":"stackchan-sim-001"}`))
+	handler.ServeHTTP(httptest.NewRecorder(), mockTurn)
+	interrupt := httptest.NewRequest(http.MethodPost, "/v1/mock-interrupt", bytes.NewBufferString(`{"device_id":"stackchan-sim-001"}`))
+	handler.ServeHTTP(httptest.NewRecorder(), interrupt)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"a21_mock_turn_total 1", "a21_barge_in_total 1"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestMetricsEndpointRecordsAudioFrame(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	audio, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol: protocol.ProtocolVersion,
+		DeviceID: "stackchan-sim-001",
+		Kind:     protocol.KindAudioFrame,
+		Seq:      1,
+		Payload:  audio,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	resp, err := http.Get(httpServer.URL + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "a21_audio_frame_total 1") {
+		t.Fatalf("metrics missing audio frame count:\n%s", data)
 	}
 }
 
