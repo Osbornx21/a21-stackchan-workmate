@@ -193,6 +193,10 @@ func validateUploadPort(port string) error {
 	if !filepath.IsAbs(port) || !strings.HasPrefix(port, "/dev/") {
 		return fmt.Errorf("upload port must be an explicit serial device path")
 	}
+	base := strings.ToLower(filepath.Base(port))
+	if !(strings.HasPrefix(base, "cu.") || strings.HasPrefix(base, "tty.") || strings.HasPrefix(base, "ttyusb") || strings.HasPrefix(base, "ttyacm")) {
+		return fmt.Errorf("upload port must be an explicit serial device path")
+	}
 	if strings.Contains(normalized, "x21") || strings.Contains(normalized, "v21") {
 		return fmt.Errorf("upload port contains forbidden legacy identity")
 	}

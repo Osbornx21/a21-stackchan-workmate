@@ -89,7 +89,7 @@ go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stac
 go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <expected-git-sha>
 ```
 
-These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, and whether another process is already holding the serial path. They do not flash the device.
+These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, serial-like path form, and whether another process is already holding the serial path. They do not flash the device.
 
 Successful upload-check output is a dry-run receipt with `dry_run: true` and `flash_allowed: false`. It is a preflight record, not permission to run `pio run -t upload`.
 

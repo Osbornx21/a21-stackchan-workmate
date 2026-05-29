@@ -164,7 +164,7 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
 make firmware-upload-check
 ```
 
-This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, or non-`/dev/` paths. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
+This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, non-`/dev/` paths, and non-serial `/dev/*` paths such as `/dev/null`. Accepted serial path forms are macOS `cu.*`/`tty.*` and Linux `ttyUSB*`/`ttyACM*`. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
 
 Successful `firmware-upload-check` output is intentionally a dry-run receipt. The JSON must include:
 
