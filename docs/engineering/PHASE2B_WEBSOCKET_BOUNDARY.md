@@ -39,7 +39,7 @@ Firmware-originated device events can include firmware ID, version, board, and c
 
 ## Audio WebSocket
 
-`/ws/audio` accepts an A21 `audio.frame` envelope with an `AudioChunk` payload and returns one mock `control.event` ack in `listening` state. This proves the audio transport boundary exists without claiming real PCM processing.
+`/ws/audio` accepts an A21 `audio.frame` envelope with an `AudioChunk` payload, pushes the frame through the Gateway audio ingress buffer, records mock VAD trace markers when RMS crosses the current threshold, and returns deterministic mock `control.event`/`audio.playback.chunk` responses. This proves the audio transport and first ingress observability boundary exists without claiming production VAD, acoustic echo cancellation, provider streaming, or real hardware PCM processing.
 
 Later firmware work now consumes this boundary with a guarded mock `audio.frame` sender. That does not change the Phase 2B claim: real capture, playback, VAD, and full-duplex media behavior remain outside this boundary milestone.
 
@@ -51,8 +51,9 @@ Phase 2B still does not implement:
 
 - real audio capture
 - real audio playback
-- VAD
-- jitter buffer
+- production VAD
+- production jitter buffer
+- echo cancellation
 - provider streaming
 - production firmware media integration
 

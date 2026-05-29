@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
@@ -32,6 +33,7 @@ type Server struct {
 	devices      map[string]DeviceRecord
 	traces       map[string][]TraceEvent
 	audioStreams map[string]string
+	audioIngress *audio.Ingress
 }
 
 type ServerOptions struct {
@@ -119,6 +121,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		devices:      make(map[string]DeviceRecord),
 		traces:       make(map[string][]TraceEvent),
 		audioStreams: make(map[string]string),
+		audioIngress: audio.NewIngress(audio.DefaultIngressConfig()),
 	}
 }
 
@@ -274,6 +277,7 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
+		s.observeAudioIngress(frame, traceID, sessionID)
 		streamID := s.mockAudioStreamID(frame, traceID, sessionID)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
@@ -288,6 +292,42 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		if err := wsjson.Write(ctx, conn, playback); err != nil {
 			return
 		}
+	}
+}
+
+func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) {
+	if frame.Kind != protocol.KindAudioFrame {
+		return
+	}
+	var chunk protocol.AudioChunk
+	if err := json.Unmarshal(frame.Payload, &chunk); err != nil {
+		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.invalid", s.now().UnixMilli())
+		return
+	}
+	result := s.audioIngress.Push(audio.Frame{
+		DeviceID:     frame.DeviceID,
+		TraceID:      traceID,
+		SessionID:    sessionID,
+		Seq:          frame.Seq,
+		SampleRateHz: chunk.SampleRateHz,
+		Channels:     chunk.Channels,
+		DurationMS:   chunk.DurationMS,
+		DataBase64:   chunk.DataBase64,
+	})
+	s.metrics.audioIngressFramesTotal.Inc()
+	if result.DroppedFrameDelta > 0 {
+		s.metrics.audioIngressDroppedTotal.Add(float64(result.DroppedFrameDelta))
+	}
+	s.metrics.audioIngressBufferDepth.Set(float64(result.BufferedFrames))
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.buffered", s.now().UnixMilli())
+	for _, event := range result.Events {
+		switch event {
+		case audio.EventVADSpeechStart:
+			s.metrics.vadSpeechStartTotal.Inc()
+		case audio.EventVADSpeechEnd:
+			s.metrics.vadSpeechEndTotal.Inc()
+		}
+		s.recordTrace(traceID, sessionID, frame.DeviceID, string(event), s.now().UnixMilli())
 	}
 }
 

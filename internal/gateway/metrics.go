@@ -13,6 +13,11 @@ type metrics struct {
 	bargeInTotal               prometheus.Counter
 	audioFrameTotal            prometheus.Counter
 	audioPlaybackChunkTotal    prometheus.Counter
+	audioIngressFramesTotal    prometheus.Counter
+	audioIngressDroppedTotal   prometheus.Counter
+	audioIngressBufferDepth    prometheus.Gauge
+	vadSpeechStartTotal        prometheus.Counter
+	vadSpeechEndTotal          prometheus.Counter
 	deviceIdentityInvalidTotal prometheus.Counter
 	v21QueryMS                 prometheus.Histogram
 	wsConnections              *prometheus.GaugeVec
@@ -38,6 +43,26 @@ func newMetrics() *metrics {
 			Name: "a21_audio_playback_chunk_total",
 			Help: "Total mock playback audio chunks sent by the gateway.",
 		}),
+		audioIngressFramesTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_audio_ingress_frames_total",
+			Help: "Total A21 audio frames accepted by the Gateway ingress buffer.",
+		}),
+		audioIngressDroppedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_audio_ingress_dropped_frames_total",
+			Help: "Total A21 audio ingress frames dropped by bounded buffering.",
+		}),
+		audioIngressBufferDepth: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "a21_audio_ingress_buffer_depth",
+			Help: "Current A21 audio ingress buffer depth for the most recently handled stream.",
+		}),
+		vadSpeechStartTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_vad_speech_start_total",
+			Help: "Total mock VAD speech-start transitions detected at Gateway ingress.",
+		}),
+		vadSpeechEndTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_vad_speech_end_total",
+			Help: "Total mock VAD speech-end transitions detected at Gateway ingress.",
+		}),
 		deviceIdentityInvalidTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_device_identity_invalid_total",
 			Help: "Total A21 device events rejected because firmware identity was invalid.",
@@ -52,7 +77,20 @@ func newMetrics() *metrics {
 			Help: "Active A21 WebSocket connections by channel.",
 		}, []string{"channel"}),
 	}
-	registry.MustRegister(m.mockTurnTotal, m.bargeInTotal, m.audioFrameTotal, m.audioPlaybackChunkTotal, m.deviceIdentityInvalidTotal, m.v21QueryMS, m.wsConnections)
+	registry.MustRegister(
+		m.mockTurnTotal,
+		m.bargeInTotal,
+		m.audioFrameTotal,
+		m.audioPlaybackChunkTotal,
+		m.audioIngressFramesTotal,
+		m.audioIngressDroppedTotal,
+		m.audioIngressBufferDepth,
+		m.vadSpeechStartTotal,
+		m.vadSpeechEndTotal,
+		m.deviceIdentityInvalidTotal,
+		m.v21QueryMS,
+		m.wsConnections,
+	)
 	return m
 }
 
