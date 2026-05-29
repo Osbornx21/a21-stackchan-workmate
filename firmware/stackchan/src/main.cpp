@@ -189,13 +189,47 @@ bool arduinoGatewayWSReadText(void* ctx, char* output, size_t output_size) {
   return true;
 }
 
+bool arduinoGatewayWSSendText(void* ctx, const char* text) {
+  A21ArduinoGatewayWS* client = static_cast<A21ArduinoGatewayWS*>(ctx);
+  if (client == nullptr || text == nullptr || text[0] == '\0') {
+    return false;
+  }
+  return client->client.sendTXT(text);
+}
+
 A21GatewayWSDriver g_gateway_ws_driver = {
     &g_gateway_ws_client,
     arduinoGatewayWSBegin,
     arduinoGatewayWSLoop,
     arduinoGatewayWSConnected,
     arduinoGatewayWSReadText,
+    arduinoGatewayWSSendText,
 };
+
+void handleLocalControls(uint32_t now_ms) {
+  if (M5.BtnA.wasClicked()) {
+    a21GatewayWSSendDeviceEvent(
+        &g_gateway_ws_runtime,
+        &g_gateway_ws_driver,
+        &g_connection,
+        &g_state,
+        "mock.turn",
+        "workmate",
+        "先说，我在",
+        now_ms);
+  }
+  if (M5.BtnB.wasClicked()) {
+    a21GatewayWSSendDeviceEvent(
+        &g_gateway_ws_runtime,
+        &g_gateway_ws_driver,
+        &g_connection,
+        &g_state,
+        "interrupt",
+        "workmate",
+        "",
+        now_ms);
+  }
+}
 
 void drawIfChanged() {
   if (g_last_render_state == g_state.render_state &&
@@ -230,8 +264,10 @@ void setup() {
 
 void loop() {
   M5.update();
-  a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, millis());
-  a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, millis());
+  const uint32_t now_ms = millis();
+  a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, now_ms);
+  a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
+  handleLocalControls(now_ms);
   drawIfChanged();
   delay(20);
 }

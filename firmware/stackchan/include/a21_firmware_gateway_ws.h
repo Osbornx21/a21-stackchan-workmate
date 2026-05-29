@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 768;
 
@@ -15,6 +16,7 @@ struct A21GatewayWSDriver {
   void (*loop)(void* ctx);
   bool (*connected)(void* ctx);
   bool (*read_text)(void* ctx, char* output, size_t output_size);
+  bool (*send_text)(void* ctx, const char* text);
 };
 
 struct A21GatewayWSRuntime {
@@ -22,6 +24,8 @@ struct A21GatewayWSRuntime {
   uint32_t last_begin_at_ms;
   uint32_t received_control_events;
   uint32_t invalid_control_events;
+  uint32_t sent_device_events;
+  uint64_t next_seq;
 };
 
 inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
@@ -32,6 +36,8 @@ inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
   runtime->last_begin_at_ms = 0;
   runtime->received_control_events = 0;
   runtime->invalid_control_events = 0;
+  runtime->sent_device_events = 0;
+  runtime->next_seq = 1;
 }
 
 inline bool a21GatewayWSDriverReady(const A21GatewayWSDriver* driver) {
@@ -39,7 +45,72 @@ inline bool a21GatewayWSDriverReady(const A21GatewayWSDriver* driver) {
          driver->begin != nullptr &&
          driver->loop != nullptr &&
          driver->connected != nullptr &&
-         driver->read_text != nullptr;
+         driver->read_text != nullptr &&
+         driver->send_text != nullptr;
+}
+
+inline bool a21GatewayWSBuildDeviceEvent(
+    const A21GatewayWSRuntime* runtime,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    uint32_t now_ms,
+    char* output,
+    size_t output_size) {
+  if (runtime == nullptr || state == nullptr || event == nullptr || event[0] == '\0' || output == nullptr || output_size == 0) {
+    return false;
+  }
+  output[0] = '\0';
+
+  char trace_id[A21_TRACE_ID_CAP];
+  snprintf(trace_id, sizeof(trace_id), "a21-trace-device-%06llu", static_cast<unsigned long long>(runtime->next_seq));
+
+  JsonDocument doc;
+  doc["protocol"] = "a21.device.v1";
+  doc["device_id"] = state->device_id;
+  doc["kind"] = "device.event";
+  doc["seq"] = runtime->next_seq;
+  doc["trace_id"] = trace_id;
+  doc["session_id"] = state->session_id[0] == '\0' ? "a21-session-device" : state->session_id;
+  doc["sent_at_ms"] = now_ms;
+  JsonObject payload = doc["payload"].to<JsonObject>();
+  payload["event"] = event;
+  payload["mode"] = (mode == nullptr || mode[0] == '\0') ? "workmate" : mode;
+  if (text != nullptr && text[0] != '\0') {
+    payload["text"] = text;
+  }
+
+  const size_t written = serializeJson(doc, output, output_size);
+  return written > 0 && written < output_size;
+}
+
+inline bool a21GatewayWSSendDeviceEvent(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    uint32_t now_ms) {
+  if (runtime == nullptr || !a21GatewayWSDriverReady(driver) || connection == nullptr || state == nullptr) {
+    return false;
+  }
+  if (connection->phase != A21_CONN_GATEWAY_CONNECTED || !driver->connected(driver->ctx)) {
+    return false;
+  }
+
+  char message[A21_WS_TEXT_MESSAGE_CAP];
+  if (!a21GatewayWSBuildDeviceEvent(runtime, state, event, mode, text, now_ms, message, sizeof(message))) {
+    return false;
+  }
+  if (!driver->send_text(driver->ctx, message)) {
+    return false;
+  }
+  runtime->sent_device_events += 1;
+  runtime->next_seq += 1;
+  return true;
 }
 
 inline void a21GatewayWSApplyText(

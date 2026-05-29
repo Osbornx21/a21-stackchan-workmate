@@ -50,9 +50,11 @@ void initFakeWiFiDriver(FakeWiFiDriver* fake, A21WiFiDriver* driver) {
 struct FakeGatewayWSDriver {
   int begin_count;
   int loop_count;
+  int send_count;
   const char* last_host;
   uint16_t last_port;
   const char* last_path;
+  char last_sent_text[A21_WS_TEXT_MESSAGE_CAP];
   bool connected;
   const char* pending_text;
 };
@@ -86,12 +88,21 @@ bool fakeGatewayWSReadText(void* ctx, char* output, size_t output_size) {
   return true;
 }
 
+bool fakeGatewayWSSendText(void* ctx, const char* text) {
+  FakeGatewayWSDriver* driver = static_cast<FakeGatewayWSDriver*>(ctx);
+  driver->send_count += 1;
+  a21CopyString(driver->last_sent_text, sizeof(driver->last_sent_text), text);
+  return true;
+}
+
 void initFakeGatewayWSDriver(FakeGatewayWSDriver* fake, A21GatewayWSDriver* driver) {
   fake->begin_count = 0;
   fake->loop_count = 0;
+  fake->send_count = 0;
   fake->last_host = "";
   fake->last_port = 0;
   fake->last_path = "";
+  fake->last_sent_text[0] = '\0';
   fake->connected = false;
   fake->pending_text = "";
   driver->ctx = fake;
@@ -99,6 +110,7 @@ void initFakeGatewayWSDriver(FakeGatewayWSDriver* fake, A21GatewayWSDriver* driv
   driver->loop = fakeGatewayWSLoop;
   driver->connected = fakeGatewayWSConnected;
   driver->read_text = fakeGatewayWSReadText;
+  driver->send_text = fakeGatewayWSSendText;
 }
 
 void test_parse_control_event_listening() {
@@ -549,6 +561,87 @@ void test_gateway_ws_runtime_enters_reconnect_after_disconnect() {
   TEST_ASSERT_FALSE(runtime.begin_sent);
 }
 
+void test_gateway_ws_send_mock_turn_builds_a21_device_event() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendDeviceEvent(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      "mock.turn",
+      "workmate",
+      "先说，我在",
+      1600));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.sent_device_events);
+  TEST_ASSERT_EQUAL_UINT64(2, runtime.next_seq);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("a21.device.v1", doc["protocol"] | "");
+  TEST_ASSERT_EQUAL_STRING("stackchan-001", doc["device_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("device.event", doc["kind"] | "");
+  TEST_ASSERT_EQUAL_UINT64(1, doc["seq"] | 0);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-device-000001", doc["trace_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("a21-session-device", doc["session_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("mock.turn", doc["payload"]["event"] | "");
+  TEST_ASSERT_EQUAL_STRING("workmate", doc["payload"]["mode"] | "");
+  TEST_ASSERT_EQUAL_STRING("先说，我在", doc["payload"]["text"] | "");
+}
+
+void test_gateway_ws_send_interrupt_increments_seq() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendDeviceEvent(&runtime, &driver, &connection, &state, "mock.turn", "workmate", "", 1600));
+  TEST_ASSERT_TRUE(a21GatewayWSSendDeviceEvent(&runtime, &driver, &connection, &state, "interrupt", "workmate", "", 1700));
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_UINT64(2, doc["seq"] | 0);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-device-000002", doc["trace_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("interrupt", doc["payload"]["event"] | "");
+  TEST_ASSERT_EQUAL_UINT32(2, runtime.sent_device_events);
+  TEST_ASSERT_EQUAL_UINT64(3, runtime.next_seq);
+}
+
+void test_gateway_ws_send_device_event_rejects_when_not_connected() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = false;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTING, 1600);
+
+  TEST_ASSERT_FALSE(a21GatewayWSSendDeviceEvent(&runtime, &driver, &connection, &state, "mock.turn", "workmate", "", 1600));
+  TEST_ASSERT_EQUAL(0, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.sent_device_events);
+  TEST_ASSERT_EQUAL_UINT64(1, runtime.next_seq);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_parse_control_event_listening);
@@ -576,5 +669,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_gateway_ws_runtime_marks_gateway_connected);
   RUN_TEST(test_gateway_ws_runtime_applies_control_event_text);
   RUN_TEST(test_gateway_ws_runtime_enters_reconnect_after_disconnect);
+  RUN_TEST(test_gateway_ws_send_mock_turn_builds_a21_device_event);
+  RUN_TEST(test_gateway_ws_send_interrupt_increments_seq);
+  RUN_TEST(test_gateway_ws_send_device_event_rejects_when_not_connected);
   return UNITY_END();
 }

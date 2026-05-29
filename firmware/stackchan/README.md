@@ -55,8 +55,14 @@ Gateway configuration is currently compile-time and A21-only:
 - connects only after Wi-Fi moves the device into Gateway connecting
 - uses the A21-only Gateway host, port, and `/ws/control` path
 - applies incoming `control.event` envelopes through the tested parser
+- sends A21 `device.event` envelopes with deterministic seq/trace IDs
 - enters reconnect wait when the control socket disconnects
 - uses `links2004/WebSockets @ 2.7.3` behind a small driver interface on CoreS3
+
+Current local controls are intentionally minimal:
+
+- `BtnA`: send `mock.turn` to Gateway
+- `BtnB`: send `interrupt` to Gateway
 
 The firmware still does not open the audio WebSocket or capture/play audio in this slice. Audio transport will be added after the control WebSocket has real-device serial evidence.
 

@@ -88,6 +88,7 @@ Current native firmware tests cover:
 - Wi-Fi config defaults, password redaction, legacy SSID rejection, and local fallback when credentials are missing
 - Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
+- Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 
