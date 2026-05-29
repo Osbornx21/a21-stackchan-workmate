@@ -41,6 +41,82 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestGatewayServerFromEnvDefaultsToMockDespiteSelectedPrimary(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"provider":"a21-mock-voice"`) {
+		t.Fatalf("health = %s, want mock provider", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "sk-a21-secret") || strings.Contains(rec.Body.String(), "doubao-tts") {
+		t.Fatalf("health leaked provider config: %s", rec.Body.String())
+	}
+}
+
+func TestGatewayServerFromEnvUsesSelectedProviderOnlyWhenExplicit(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_GATEWAY_VOICE_PROVIDER=selected",
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"provider":"a21-doubao-realtime-tts"`) {
+		t.Fatalf("health = %s, want selected Doubao provider", rec.Body.String())
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("health leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func TestGatewayServerSelectedRealtimeProviderKeepsTextTurnGuarded(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_GATEWAY_VOICE_PROVIDER=selected",
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"普通文本轮不应该误拨 provider","mode":"workmate"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "StartRealtimeTTSSession") {
+		t.Fatalf("response missing guarded realtime-session guidance: %s", rec.Body.String())
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
 func TestRunSerialListEmitsSerialDevices(t *testing.T) {
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
@@ -214,6 +290,7 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 	}
 	for _, want := range []string{
 		`"provider": "a21-doubao-realtime-tts"`,
+		`"gateway_provider": "a21-mock-voice"`,
 		`"status": "healthy"`,
 		`"configured": true`,
 		`"primary": "doubao_tts_realtime"`,
@@ -228,6 +305,28 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 		t.Fatalf("doctor voice health still reports mock provider: %s", stdout.String())
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime(t *testing.T) {
+	t.Setenv("A21_GATEWAY_VOICE_PROVIDER", "selected")
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"gateway_provider": "a21-doubao-realtime-tts"`) {
+		t.Fatalf("stdout missing explicit gateway provider: %s", stdout.String())
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
 		}

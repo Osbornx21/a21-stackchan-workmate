@@ -28,7 +28,7 @@ Provider factory behavior:
 
 - Provider factory construction must not dial external services.
 - `doctor` health is local configuration health, not provider connectivity proof.
-- Gateway still defaults to the mock provider until an explicit runtime-switch slice is implemented.
+- Gateway still defaults to the mock provider unless `A21_GATEWAY_VOICE_PROVIDER=selected` is explicitly configured.
 - Raw legacy provider values, API keys, model values, voice IDs, auth headers, proxy URLs, and full provider URLs must not appear in doctor output.
 
 ## Test Coverage
@@ -44,4 +44,4 @@ The tests cover default mock selection, Doubao TTS selection, OpenAI selection, 
 
 ## Next Step
 
-The next runtime slice should add an explicit Gateway provider-selection guard. It should keep mock as the default and require a deliberate environment flag before any non-mock provider can be used by Gateway turn handling.
+Phase 4K adds the explicit Gateway provider-selection guard and records the distinction in `doctor.voice.gateway_provider`.

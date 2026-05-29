@@ -582,11 +582,17 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	fmt.Fprintf(stdout, "a21 gateway listening on %s\n", addr)
-	if err := http.ListenAndServe(addr, gateway.NewServer().Handler()); err != nil {
+	if err := http.ListenAndServe(addr, newGatewayServerFromEnv(os.Environ()).Handler()); err != nil {
 		fmt.Fprintf(stderr, "gateway: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func newGatewayServerFromEnv(env []string) *gateway.Server {
+	return gateway.NewServerWithOptions(gateway.ServerOptions{
+		VoiceProvider: providers.NewGatewayVoiceProviderFromEnv(env),
+	})
 }
 
 func runFirmwareCheck(args []string, stdout io.Writer, stderr io.Writer) int {
