@@ -20,10 +20,11 @@ It checks what the current foundation can truthfully check:
 
 - legacy env variable prefixes
 - A21 endpoint env vars pointing at known legacy X21/V21 ports
+- global proxy env presence without printing values
+- direct-connect `NO_PROXY` / `A21_NO_PROXY` coverage when a global proxy exists
 - legacy working directories
 - A21 reserved port conflicts
 - minimum network/DNS fingerprint
-- proxy env variable names, without values
 - StackChan firmware manifest identity
 - repository-local PlatformIO venv path
 - repository-local PlatformIO core path
@@ -35,6 +36,8 @@ It checks what the current foundation can truthfully check:
 - optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
+
+The proxy section intentionally records only env variable names and direct-connect coverage labels. It blocks `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` configurations that do not prove direct routing for localhost, loopback, `.local`, `10.0.0.0/8`, `10.21.0.0/16`, `172.16.0.0/12`, and `192.168.0.0/16`. `A21_PROVIDER_PROXY_URL` is reported separately as explicit provider egress configuration and is not treated as LAN bypass coverage.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
@@ -59,7 +62,6 @@ The full doctor should eventually add human-readable table output and cover:
 - project identity and namespace
 - Go/Node/Python tooling
 - A21 ports
-- proxy and no-proxy coverage
 - StackChan LAN reachability
 - provider connectivity and credential presence
 - mock audio loop

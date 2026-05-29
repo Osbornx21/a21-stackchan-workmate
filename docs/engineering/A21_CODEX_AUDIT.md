@@ -69,7 +69,7 @@ go run ./cmd/a21 serial-list
 - `internal/audio`: Gateway audio ingress buffer plus RMS-based mock VAD transition detector.
 - `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, upload dry-run checks, and Gateway device-identity dry-run checks.
 - `internal/gateway`: mock Gateway HTTP/WebSocket server, bounded audio ingress observability, active playback stream tracking for audio-path barge-in, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
-- `internal/runtimeguard`: env, endpoint, cwd, port, and fingerprint guardrails.
+- `internal/runtimeguard`: env, endpoint, cwd, port, proxy/no-proxy, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
 - `internal/providers`: provider-neutral voice contracts plus deterministic mock/cascade behavior.
 - `firmware/stackchan`: PlatformIO CoreS3 firmware lane with A21-only identity, Wi-Fi/Gateway state machines, control/audio WebSocket probes, mock playback downlink buffering, protocol parsing, and native Unity tests.
@@ -120,8 +120,9 @@ The local environment uses Dragon Cat Lite and DNS mapping into `198.18.0.x`. Ph
 - default interface
 - external DNS probe result
 - proxy env variable names, not values
+- direct-connect proxy bypass coverage when a global proxy exists
 
-It blocks startup reports when the minimum fingerprint is missing.
+It blocks startup reports when the minimum fingerprint is missing. It also blocks global `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` configurations unless `NO_PROXY` or `A21_NO_PROXY` covers localhost, loopback, `.local`, and private LAN CIDRs including the A21 lab range. Explicit `A21_PROVIDER_PROXY_URL` is reported as provider egress configuration and does not satisfy LAN bypass coverage.
 
 ## Verification Evidence
 
@@ -142,6 +143,7 @@ Known defensive checks:
 
 ```text
 A21_PROVIDER_ENDPOINT=http://127.0.0.1:8000 ... preflight  exits 1
+HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost ... preflight exits 1
 PATH without route/dig ... preflight                         exits 1
 firmware-upload-check --port auto ...                         exits 1
 firmware-upload-check --port /dev/null ...                    exits 1

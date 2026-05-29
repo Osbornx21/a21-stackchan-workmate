@@ -33,6 +33,14 @@ These targets must not silently route through global proxies:
 
 Future provider adapters may use explicit proxy settings, but LAN/device/V21-local traffic must stay direct unless a migration/audit command says otherwise.
 
+## Current Proxy Guard
+
+`preflight` and `doctor` now evaluate a proxy policy report. When any global proxy env var is configured (`HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`), A21 requires `NO_PROXY` or `A21_NO_PROXY` to cover the full direct-connect set above. Missing coverage blocks startup with `proxy_direct_bypass_missing`.
+
+Accepted bypass forms include exact hosts, host:port values, bracketed IPv6 host:port values, `.local`/`*.local`, and CIDR ranges. A broader CIDR may cover a narrower required range, so `10.0.0.0/8` covers the StackChan lab range `10.21.0.0/16`.
+
+The report records env variable names only. It does not print proxy URLs, credentials, or provider proxy values. `A21_PROVIDER_PROXY_URL` is treated as an explicit provider egress setting, not as permission for LAN, localhost, `.local`, StackChan, or local V21 adapter traffic to inherit global proxy behavior.
+
 ## Required Diagnostics
 
 Phase 1 already records:
@@ -40,6 +48,7 @@ Phase 1 already records:
 - default route interface
 - external DNS probe IP
 - proxy env variable names without values
+- proxy/no-proxy coverage for the direct-connect set
 
 Future `a21 doctor` expansion must add:
 
@@ -47,8 +56,6 @@ Future `a21 doctor` expansion must add:
 - StackChan reachability or mDNS
 - V21 adapter health
 - provider endpoint connectivity by adapter
-- `NO_PROXY` coverage for direct-connect set
-- detection of global `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY`
 - warning when DNS maps external domains to `198.18.0.x`
 
 ## Shanghai Office Audit

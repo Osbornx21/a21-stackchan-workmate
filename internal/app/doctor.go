@@ -31,11 +31,12 @@ var probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProvide
 }
 
 type doctorReport struct {
-	Result      runtimeguard.Result      `json:"result"`
-	Fingerprint runtimeguard.Fingerprint `json:"fingerprint"`
-	Firmware    firmwareDoctorReport     `json:"firmware"`
-	Voice       voiceDoctorReport        `json:"voice"`
-	V21         v21DoctorReport          `json:"v21"`
+	Result      runtimeguard.Result            `json:"result"`
+	Fingerprint runtimeguard.Fingerprint       `json:"fingerprint"`
+	Proxy       runtimeguard.ProxyPolicyReport `json:"proxy"`
+	Firmware    firmwareDoctorReport           `json:"firmware"`
+	Voice       voiceDoctorReport              `json:"voice"`
+	V21         v21DoctorReport                `json:"v21"`
 }
 
 type firmwareDoctorReport struct {
@@ -82,6 +83,7 @@ func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot strin
 	return doctorReport{
 		Result:      runtimeguard.NewResult(findings),
 		Fingerprint: preflight.Fingerprint,
+		Proxy:       preflight.Proxy,
 		Firmware:    firmware,
 		Voice:       voice,
 		V21:         v21,

@@ -119,6 +119,20 @@ func TestRunDoctorIncludesFirmwareSection(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesProxyPolicy(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor"}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1", code)
+	}
+	for _, want := range []string{`"proxy"`, `"global_proxy_configured"`, `"direct_connect_ok"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorIncludesVoiceProviderHealth(t *testing.T) {
 	originalProbe := probeVoiceProviderHealth
 	probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProviderHealth, error) {

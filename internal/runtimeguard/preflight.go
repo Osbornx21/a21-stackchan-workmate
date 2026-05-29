@@ -10,8 +10,9 @@ type PreflightInput struct {
 }
 
 type PreflightReport struct {
-	Result      Result      `json:"result"`
-	Fingerprint Fingerprint `json:"fingerprint"`
+	Result      Result            `json:"result"`
+	Fingerprint Fingerprint       `json:"fingerprint"`
+	Proxy       ProxyPolicyReport `json:"proxy"`
 }
 
 func RunPreflight(ctx context.Context, input PreflightInput) Result {
@@ -22,6 +23,7 @@ func RunPreflight(ctx context.Context, input PreflightInput) Result {
 
 	findings := make([]Finding, 0)
 	findings = append(findings, CheckEnv(cfg, input.Env)...)
+	findings = append(findings, CheckProxyPolicy(EvaluateProxyPolicy(input.Env))...)
 	findings = append(findings, CheckWorkingDirectory(cfg, input.CWD)...)
 	findings = append(findings, CheckPorts(cfg.ReservedPorts)...)
 
@@ -30,11 +32,13 @@ func RunPreflight(ctx context.Context, input PreflightInput) Result {
 
 func RunPreflightReport(ctx context.Context, input PreflightInput) PreflightReport {
 	fingerprint := DetectFingerprint(ctx, input.Runner, input.Env)
+	proxy := EvaluateProxyPolicy(input.Env)
 	result := RunPreflight(ctx, input)
 	findings := append([]Finding{}, result.Findings...)
 	findings = append(findings, CheckFingerprint(fingerprint)...)
 	return PreflightReport{
 		Result:      NewResult(findings),
 		Fingerprint: fingerprint,
+		Proxy:       proxy,
 	}
 }
