@@ -129,7 +129,7 @@ Safety rules:
 - HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
 - HTTP client rejects known X21/V21 internal legacy ports such as `8000`, `8080`, `18080`, `4173`, `42173`, `16686`, and `16687`. A21 must target an adapter boundary, not V21 internals.
 - Gateway calls V21 only when the request mode is `professional`.
-- Workmate/companion mock turns do not call V21.
+- Workmate, companion, co-creation, roleplay, focus, public, private, muted, and local-fallback mock turns do not call V21.
 - Gateway professional responses carry explicit evidence fields in `control.event` payloads rather than flattening evidence into generic chat text.
 - Gateway wraps V21 queries in a 3000 ms default timeout and records `v21.query.start`, `v21.query.first_result`, `v21.query.error`, or `v21.query.timeout` trace markers.
 - Gateway observes `a21_v21_query_ms_bucket` for professional-mode V21 adapter latency on success, error, and timeout.

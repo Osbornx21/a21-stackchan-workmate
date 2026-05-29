@@ -30,7 +30,14 @@ type Mode string
 
 const (
 	ModeWorkmate      Mode = "workmate"
+	ModeCompanion     Mode = "companion"
+	ModeCoCreation    Mode = "co_creation"
+	ModeRoleplay      Mode = "roleplay"
 	ModeProfessional  Mode = "professional"
+	ModeFocus         Mode = "focus"
+	ModePublic        Mode = "public"
+	ModePrivate       Mode = "private"
+	ModeMuted         Mode = "muted"
 	ModeLocalFallback Mode = "local_fallback"
 	ModeError         Mode = "error"
 )

@@ -41,6 +41,24 @@ This remains intentionally small. It establishes the A21 namespace, control even
 - StackChan firmware should receive semantic commands, not provider-specific events.
 - V21 evidence must not be encoded as generic chat text when in professional mode; it needs explicit evidence/card fields in later contracts.
 
+## Modes
+
+A21 mode values are semantic product and office-state signals, not provider names:
+
+- `workmate`
+- `companion`
+- `co_creation`
+- `roleplay`
+- `professional`
+- `focus`
+- `public`
+- `private`
+- `muted`
+- `local_fallback`
+- `error`
+
+Only `professional` is allowed to trigger the V21 adapter path. `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context.
+
 ## Audio Chunk
 
 Current mock audio payload:
@@ -78,7 +96,7 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Future control events should cover subtitle deltas, playback start/stop, mode updates, device status, and trace markers.
+Future control events should cover subtitle deltas, playback start/stop, explicit mode update event kinds, device status, and trace markers.
 
 ## Barge-In Requirements
 

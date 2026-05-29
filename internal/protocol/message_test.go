@@ -79,6 +79,27 @@ func TestControlEventPayloadStates(t *testing.T) {
 	}
 }
 
+func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
+	tests := map[string]Mode{
+		"workmate":       ModeWorkmate,
+		"companion":      ModeCompanion,
+		"co_creation":    ModeCoCreation,
+		"roleplay":       ModeRoleplay,
+		"professional":   ModeProfessional,
+		"focus":          ModeFocus,
+		"public":         ModePublic,
+		"private":        ModePrivate,
+		"muted":          ModeMuted,
+		"local_fallback": ModeLocalFallback,
+		"error":          ModeError,
+	}
+	for want, got := range tests {
+		if string(got) != want {
+			t.Fatalf("mode = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestDeviceEventPayloadKinds(t *testing.T) {
 	event := DeviceEventPayload{
 		Event:           DeviceEventMockTurn,

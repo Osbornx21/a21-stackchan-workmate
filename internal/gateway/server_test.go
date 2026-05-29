@@ -58,6 +58,15 @@ func TestSimulatorPageServed(t *testing.T) {
 		"Waterfall",
 		"Professional Evidence",
 		"Audio Link",
+		"Office Visibility",
+		`id="visibilityBadge"`,
+		`id="privacyBadge"`,
+		`id="listeningBadge"`,
+		"PUBLIC",
+		"PRIVATE",
+		"PRO",
+		"MUTED",
+		"updateVisibilityBadges",
 		`id="startMic"`,
 		`id="stopMic"`,
 		`id="mockAudioBurst"`,
@@ -269,6 +278,27 @@ func TestWorkmateModeDoesNotCallV21Adapter(t *testing.T) {
 	}
 	if v21.calls != 0 {
 		t.Fatalf("v21 calls = %d, want 0", v21.calls)
+	}
+}
+
+func TestOfficePrivacyModesDoNotCallV21Adapter(t *testing.T) {
+	for _, mode := range []protocol.Mode{protocol.ModePublic, protocol.ModePrivate, protocol.ModeMuted} {
+		t.Run(string(mode), func(t *testing.T) {
+			v21 := &countingV21Client{}
+			server := NewServerWithOptions(ServerOptions{V21Client: v21})
+			body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"不要进专业检索","mode":"` + string(mode) + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+			rec := httptest.NewRecorder()
+
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			if v21.calls != 0 {
+				t.Fatalf("v21 calls = %d, want 0", v21.calls)
+			}
+		})
 	}
 }
 

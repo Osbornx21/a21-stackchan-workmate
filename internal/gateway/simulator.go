@@ -133,6 +133,10 @@ const simulatorHTML = `<!doctype html>
     body[data-state="interrupted"] .face { background: #f0dfc4; transform: rotate(0deg) scale(0.98); }
     body[data-state="interrupted"] .mouth { height: 8px; width: 70px; border-width: 5px; }
     body[data-state="error"] .face { background: #edc8c8; }
+    body[data-mode="professional"] .face { outline: 5px solid rgba(120,183,206,0.36); }
+    body[data-mode="public"] .face { outline: 5px solid rgba(214,177,95,0.34); }
+    body[data-mode="private"] .face { outline: 5px solid rgba(130,198,143,0.34); }
+    body[data-mode="muted"] .face { filter: grayscale(0.45); }
     body[data-state="listening"] .eye { transform: scaleY(1.08); }
     .side {
       display: grid;
@@ -173,6 +177,43 @@ const simulatorHTML = `<!doctype html>
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
     }
+    .visibility {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #11171a;
+      min-width: 0;
+    }
+    .visibility h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 680;
+    }
+    .badge-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .badge {
+      min-height: 42px;
+      border: 1px solid #324049;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: #151b1f;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+    .badge[data-active="true"] {
+      border-color: #77b9c9;
+      color: var(--text);
+      background: #17252a;
+    }
+    .badge.private[data-active="true"] { border-color: #82c68f; background: #16231b; }
+    .badge.public[data-active="true"] { border-color: #d6b15f; background: #2a2315; }
+    .badge.muted[data-active="true"] { border-color: #95a6aa; background: #1c2225; }
     .registry, .audio-link {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -350,16 +391,38 @@ const simulatorHTML = `<!doctype html>
         <div class="fields">
           <select id="mode" aria-label="mode">
             <option value="workmate">workmate</option>
+            <option value="companion">companion</option>
+            <option value="co_creation">co_creation</option>
+            <option value="roleplay">roleplay</option>
             <option value="professional">professional</option>
+            <option value="focus">focus</option>
+            <option value="public">public</option>
+            <option value="private">private</option>
+            <option value="muted">muted</option>
             <option value="local_fallback">local_fallback</option>
           </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
           <div class="metric"><label>State</label><div id="state">idle</div></div>
+          <div class="metric"><label>Mode</label><div id="modeReadout">workmate</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
-          <div class="metric"><label>Session</label><div id="session">none</div></div>
         </div>
+        <section class="visibility" aria-label="Office Visibility">
+          <h2>Office Visibility</h2>
+          <div class="badge-row">
+            <div class="badge private" id="privacyBadge">PRIVATE</div>
+            <div class="badge public" id="visibilityBadge">PUBLIC</div>
+            <div class="badge" id="proBadge">PRO</div>
+            <div class="badge muted" id="mutedBadge">MUTED</div>
+          </div>
+          <div class="badge-row" style="margin-top:10px;">
+            <div class="badge" id="listeningBadge">LISTENING</div>
+            <div class="metric"><label>Session</label><div id="session">none</div></div>
+            <div class="metric"><label>Screen</label><div id="screenBadge">LOCAL</div></div>
+            <div class="metric"><label>Output</label><div id="outputBadge">speaker</div></div>
+          </div>
+        </section>
         <section class="audio-link" aria-label="Audio Link">
           <h2>Audio Link</h2>
           <div class="audio-controls">
@@ -404,8 +467,16 @@ const simulatorHTML = `<!doctype html>
     const ui = {
       connection: document.getElementById('connection'),
       state: document.getElementById('state'),
+      modeReadout: document.getElementById('modeReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
+      privacyBadge: document.getElementById('privacyBadge'),
+      visibilityBadge: document.getElementById('visibilityBadge'),
+      proBadge: document.getElementById('proBadge'),
+      mutedBadge: document.getElementById('mutedBadge'),
+      listeningBadge: document.getElementById('listeningBadge'),
+      screenBadge: document.getElementById('screenBadge'),
+      outputBadge: document.getElementById('outputBadge'),
       audioInputState: document.getElementById('audioInputState'),
       audioFramesSent: document.getElementById('audioFramesSent'),
       audioRms: document.getElementById('audioRms'),
@@ -427,6 +498,8 @@ const simulatorHTML = `<!doctype html>
       seq: 1,
       traceId: '',
       sessionId: '',
+      mode: 'workmate',
+      state: 'idle',
       audioFrames: 0,
       micStream: null,
       audioContext: null,
@@ -452,10 +525,19 @@ const simulatorHTML = `<!doctype html>
     function setConnected(connected) {
       document.body.dataset.connected = connected ? 'true' : 'false';
       ui.connection.textContent = connected ? 'CONNECTED' : 'DISCONNECTED';
+      updateVisibilityBadges();
     }
     function setState(state) {
-      document.body.dataset.state = state || 'idle';
-      ui.state.textContent = state || 'idle';
+      sim.state = state || 'idle';
+      document.body.dataset.state = sim.state;
+      ui.state.textContent = sim.state;
+      updateVisibilityBadges();
+    }
+    function setMode(mode) {
+      sim.mode = mode || 'workmate';
+      document.body.dataset.mode = sim.mode;
+      ui.modeReadout.textContent = sim.mode;
+      updateVisibilityBadges();
     }
     function rememberEnvelope(envelope) {
       if (envelope.trace_id) {
@@ -471,11 +553,33 @@ const simulatorHTML = `<!doctype html>
       rememberEnvelope(envelope);
       const payload = envelope.payload || {};
       if (payload.state) setState(payload.state);
+      if (payload.mode) setMode(payload.mode);
       updatePlaybackState(payload);
       if (payload.mode && payload.mode !== 'professional') clearProfessionalEvidence();
       if (payload.evidence || payload.screen_cards || payload.speech_blocks) renderProfessionalEvidence(payload);
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
       refreshWaterfall();
+    }
+    function setBadge(element, active) {
+      element.dataset.active = active ? 'true' : 'false';
+    }
+    function currentScreenLabel() {
+      if (sim.mode === 'professional') return 'PRO';
+      if (sim.mode === 'local_fallback') return 'LOCAL';
+      if (sim.mode === 'public') return 'PUBLIC';
+      if (sim.mode === 'private') return 'PRIVATE';
+      if (sim.mode === 'muted') return 'MUTED';
+      if (sim.state === 'listening') return 'LISTENING';
+      return sim.mode.toUpperCase().replace(/_/g, ' ');
+    }
+    function updateVisibilityBadges() {
+      setBadge(ui.privacyBadge, sim.mode === 'private');
+      setBadge(ui.visibilityBadge, sim.mode === 'public');
+      setBadge(ui.proBadge, sim.mode === 'professional');
+      setBadge(ui.mutedBadge, sim.mode === 'muted');
+      setBadge(ui.listeningBadge, sim.state === 'listening');
+      ui.screenBadge.textContent = currentScreenLabel();
+      ui.outputBadge.textContent = sim.mode === 'muted' ? 'muted' : 'speaker';
     }
     function updateAudioInput(state) {
       ui.audioInputState.textContent = state;
@@ -594,6 +698,7 @@ const simulatorHTML = `<!doctype html>
       sim.audio.onerror = () => log('audio error');
       refreshRegistry();
       refreshWaterfall();
+      setMode(ui.mode.value);
     }
     function disconnect() {
       stopMicrophoneStream();
@@ -601,6 +706,7 @@ const simulatorHTML = `<!doctype html>
       if (sim.audio) sim.audio.close();
       setConnected(false);
       setState('idle');
+      setMode(ui.mode.value);
       ui.playbackState.textContent = 'stopped';
     }
     function sendDeviceEvent(eventName) {
@@ -734,10 +840,13 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('mockTurn').addEventListener('click', () => sendDeviceEvent('mock.turn'));
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
+    ui.mode.addEventListener('change', () => setMode(ui.mode.value));
     document.getElementById('startMic').addEventListener('click', startMicrophoneStream);
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
     document.getElementById('mockAudioBurst').addEventListener('click', sendMockAudioBurst);
     refreshRegistry();
+    setMode(ui.mode.value);
+    updateVisibilityBadges();
   </script>
 </body>
 </html>`

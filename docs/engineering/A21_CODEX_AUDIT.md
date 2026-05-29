@@ -144,6 +144,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 - Provider-neutral mock/cascade contracts include health status and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
 - Mock `latency-bench` exists for Gateway mock/professional/barge-in report shape; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
 - Simulator now has browser microphone/mock-burst controls and local mock playback state; real Gateway TTS audio downlink playback remains future work.
+- Protocol and simulator now expose office visibility modes for private/public/pro/muted/listening states; only `professional` calls the V21 adapter.
 - No CI yet.
 
 These gaps are phase boundaries, not Phase 1 regressions.

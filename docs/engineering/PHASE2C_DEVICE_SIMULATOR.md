@@ -29,6 +29,7 @@ http://127.0.0.1:21080/simulator
 - Displays audio input state, frame count, RMS, and playback state
 - Plays a short local mock playback tick when a speaking control event arrives and playback is enabled
 - Displays expression state, mode, trace ID, session ID, and event log
+- Displays office visibility badges for `PRIVATE`, `PUBLIC`, `PRO`, `MUTED`, `LISTENING`, screen state, and output state
 - Displays Gateway `/v1/devices` registry status for the simulator device
 - Displays Gateway `/v1/traces` waterfall events for the active trace
 - Displays professional evidence, confidence, screen cards, and follow-ups returned by the V21 adapter mock path
@@ -46,7 +47,6 @@ The simulator uses a synthetic firmware commit `0000000` so Gateway identity val
 
 Future simulator work should add:
 
-- separate public/private/professional mode indicators
 - richer latency waterfall segments and p50/p95 summaries
 - disconnect and reconnect scenarios
 - visible barge-in timing markers
