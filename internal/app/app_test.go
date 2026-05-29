@@ -207,7 +207,7 @@ func TestRunFirmwareCheckAcceptsA21Manifest(t *testing.T) {
 	if err := os.WriteFile(manifest, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(platformio, []byte("[env:a21_stackchan_cores3]\nboard = m5stack-cores3\n"), 0o644); err != nil {
+	if err := os.WriteFile(platformio, []byte(testPlatformIOConfig("m5stack-cores3")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
@@ -234,7 +234,7 @@ func TestRunFirmwareCheckRejectsWrongPlatformIOBoard(t *testing.T) {
 	if err := os.WriteFile(manifest, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte("[env:a21_stackchan_cores3]\nboard = m5stack-core2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(testPlatformIOConfig("m5stack-core2")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -259,7 +259,7 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte("[env:a21_stackchan_cores3]\nboard = m5stack-cores3\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(testPlatformIOConfig("m5stack-cores3")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	input := filepath.Join(dir, "firmware.bin")
@@ -289,6 +289,24 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), filepath.Base(artifact)) {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunFirmwareCheckRejectsUnpinnedPlatformIOPlatform(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	config := strings.ReplaceAll(testPlatformIOConfig("m5stack-cores3"), "platform = espressif32@7.0.1", "platform = espressif32")
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--manifest", manifest}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "platform") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 
@@ -549,10 +567,30 @@ func writeTestFirmwareManifest(t *testing.T, dir string) string {
 }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte("[env:a21_stackchan_cores3]\nboard = m5stack-cores3\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(testPlatformIOConfig("m5stack-cores3")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return manifest
+}
+
+func testPlatformIOConfig(board string) string {
+	return `[platformio]
+default_envs = a21_stackchan_cores3
+
+[env:a21_stackchan_cores3]
+platform = espressif32@7.0.1
+board = ` + board + `
+framework = arduino
+lib_deps =
+  m5stack/M5Unified @ 0.2.16
+  bblanchon/ArduinoJson @ 7.4.3
+
+[env:a21_stackchan_native]
+platform = native
+test_framework = unity
+lib_deps =
+  bblanchon/ArduinoJson @ 7.4.3
+`
 }
 
 func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, content []byte) {

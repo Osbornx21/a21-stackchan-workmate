@@ -40,6 +40,17 @@ Primary sources checked on 2026-05-30:
 
 The StackChan Y-axis servo must eventually be clamped to the documented safe range of 5 to 85 degrees.
 
+## Pinned Firmware Dependencies
+
+The first firmware protocol parser uses pinned mature dependencies:
+
+- `platform = espressif32@7.0.1`
+- `m5stack/M5Unified @ 0.2.16`
+- `bblanchon/ArduinoJson @ 7.4.3`
+- native unit-test environment: `a21_stackchan_native` with Unity
+
+`firmware-check` rejects unpinned or missing core firmware dependencies. This is intentional: firmware builds must be reproducible and must not silently drift under A21.
+
 ## Build Discipline
 
 Before any firmware build:
@@ -52,9 +63,12 @@ PLATFORMIO_CORE_DIR=$PWD/.a21-tools/platformio-core .a21-tools/platformio-venv/b
 The preferred wrapper is:
 
 ```bash
+make firmware-test
 make firmware-build
 make firmware-package
 ```
+
+`firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:
 

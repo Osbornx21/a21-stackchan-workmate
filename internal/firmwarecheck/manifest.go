@@ -75,6 +75,18 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "[env:a21_") {
 		return fmt.Errorf("platformio env must use a21 prefix")
 	}
+	if !strings.Contains(content, "platform = espressif32@7.0.1") {
+		return fmt.Errorf("platformio platform must pin espressif32@7.0.1")
+	}
+	if !strings.Contains(content, "m5stack/m5unified @ 0.2.16") {
+		return fmt.Errorf("platformio m5unified dependency must pin 0.2.16")
+	}
+	if !strings.Contains(content, "bblanchon/arduinojson @ 7.4.3") {
+		return fmt.Errorf("platformio arduinojson dependency must pin 7.4.3")
+	}
+	if !strings.Contains(content, "[env:a21_stackchan_native]") || !strings.Contains(content, "test_framework = unity") {
+		return fmt.Errorf("platformio native unit test environment is required")
+	}
 	boardPattern := regexp.MustCompile(`(?m)^\s*board\s*=\s*([A-Za-z0-9_-]+)\s*$`)
 	match := boardPattern.FindStringSubmatch(content)
 	if len(match) != 2 {

@@ -15,8 +15,11 @@ From the repository root:
 
 ```bash
 go run ./cmd/a21 firmware-check
+make firmware-test
 .a21-tools/platformio-venv/bin/pio run -d firmware/stackchan
 ```
+
+`make firmware-test` runs host-native protocol parser tests. It does not flash hardware.
 
 ## Upload
 

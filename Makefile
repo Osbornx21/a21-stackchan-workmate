@@ -1,7 +1,7 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 
-.PHONY: test verify preflight doctor gateway firmware-check firmware-build firmware-package firmware-artifact-check firmware-upload-check
+.PHONY: test verify preflight doctor gateway firmware-check firmware-test firmware-build firmware-package firmware-artifact-check firmware-upload-check
 
 test:
 	go test ./...
@@ -17,6 +17,9 @@ gateway:
 
 firmware-check:
 	go run ./cmd/a21 firmware-check
+
+firmware-test: firmware-check
+	$(PIO) test -d firmware/stackchan -e a21_stackchan_native
 
 firmware-build: firmware-check
 	$(PIO) run -d firmware/stackchan
