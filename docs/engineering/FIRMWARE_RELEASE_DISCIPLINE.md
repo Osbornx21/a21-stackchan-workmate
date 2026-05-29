@@ -149,7 +149,10 @@ The guard verifies:
 - board is `m5stack-cores3`
 - artifact filename matches manifest prefix, version, board, git commit, and timestamp
 - sibling `.sha256` exists and matches the binary
+- binary content embeds the same A21 firmware ID, version, board, and git commit
 - artifact filename does not contain forbidden X21/V21 identities
+
+The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. A package is not a valid A21 candidate unless the filename, checksum, manifest, and binary identity all agree.
 
 ## Upload Guard
 

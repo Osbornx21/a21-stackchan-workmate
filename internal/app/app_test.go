@@ -965,6 +965,8 @@ lib_deps =
 
 func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, content []byte) {
 	t.Helper()
+	commit := testArtifactCommitFromName(t, artifactPath)
+	content = append(content, []byte("\na21-stackchan\n0.1.0\nm5stack-cores3\n"+commit+"\n")...)
 	if err := os.WriteFile(artifactPath, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -973,4 +975,14 @@ func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, conten
 	if err := os.WriteFile(artifactPath+".sha256", []byte(checksum+"  "+filepath.Base(artifactPath)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func testArtifactCommitFromName(t *testing.T, artifactPath string) string {
+	t.Helper()
+	name := strings.TrimSuffix(filepath.Base(artifactPath), ".bin")
+	parts := strings.Split(name, "-")
+	if len(parts) < 4 {
+		t.Fatalf("artifact name %q lacks commit field", name)
+	}
+	return parts[len(parts)-3]
 }

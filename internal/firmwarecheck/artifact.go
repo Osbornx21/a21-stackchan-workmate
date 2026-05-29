@@ -1,6 +1,7 @@
 package firmwarecheck
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -79,6 +80,9 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 	if !strings.EqualFold(expectedChecksum, actualChecksum) {
 		return ArtifactResult{}, fmt.Errorf("artifact checksum mismatch")
 	}
+	if err := validateEmbeddedArtifactIdentity(options.ArtifactPath, manifest, parsed.commit); err != nil {
+		return ArtifactResult{}, err
+	}
 
 	return ArtifactResult{
 		Manifest:     manifest,
@@ -89,6 +93,28 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 		Timestamp:    parsed.timestamp,
 		OK:           true,
 	}, nil
+}
+
+func validateEmbeddedArtifactIdentity(path string, manifest Manifest, commit string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	required := []struct {
+		label string
+		value string
+	}{
+		{label: "firmware_id", value: manifest.FirmwareID},
+		{label: "version", value: manifest.Version},
+		{label: "board", value: manifest.Board},
+		{label: "commit", value: commit},
+	}
+	for _, item := range required {
+		if item.value == "" || !bytes.Contains(data, []byte(item.value)) {
+			return fmt.Errorf("artifact missing embedded A21 %s identity", item.label)
+		}
+	}
+	return nil
 }
 
 func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, error) {
