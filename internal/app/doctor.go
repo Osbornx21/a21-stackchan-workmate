@@ -2,24 +2,34 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/runtimeguard"
+	"a21.local/a21/internal/v21adapter"
 )
 
 var listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 	return firmwarecheck.ListSerialDevices(context.Background())
 }
 
+var probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	return v21adapter.ProbeHealth(ctx, baseURL, client)
+}
+
 type doctorReport struct {
 	Result      runtimeguard.Result      `json:"result"`
 	Fingerprint runtimeguard.Fingerprint `json:"fingerprint"`
 	Firmware    firmwareDoctorReport     `json:"firmware"`
+	V21         v21DoctorReport          `json:"v21"`
 }
 
 type firmwareDoctorReport struct {
@@ -36,15 +46,52 @@ type firmwareDoctorReport struct {
 	Findings            []runtimeguard.Finding       `json:"findings"`
 }
 
+type v21DoctorReport struct {
+	Configured bool                   `json:"configured"`
+	Status     string                 `json:"status"`
+	Healthy    bool                   `json:"healthy"`
+	HealthPath string                 `json:"health_path"`
+	Findings   []runtimeguard.Finding `json:"findings"`
+}
+
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
 	firmware := buildFirmwareDoctorReport(projectRoot, currentCommit)
+	v21 := buildV21DoctorReport(os.Getenv("A21_V21_ADAPTER_URL"))
 	findings := append([]runtimeguard.Finding{}, preflight.Result.Findings...)
 	findings = append(findings, firmware.Findings...)
+	findings = append(findings, v21.Findings...)
 	return doctorReport{
 		Result:      runtimeguard.NewResult(findings),
 		Fingerprint: preflight.Fingerprint,
 		Firmware:    firmware,
+		V21:         v21,
 	}
+}
+
+func buildV21DoctorReport(adapterURL string) v21DoctorReport {
+	report := v21DoctorReport{
+		Configured: strings.TrimSpace(adapterURL) != "",
+		HealthPath: v21adapter.HealthPath,
+	}
+	if !report.Configured {
+		report.Status = "skipped"
+		return report
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := probeV21AdapterHealth(ctx, adapterURL); err != nil {
+		report.Status = "unhealthy"
+		report.Findings = append(report.Findings, runtimeguard.Finding{
+			Code:     "v21_adapter_health_failed",
+			Severity: runtimeguard.SeverityWarn,
+			Message:  "A21 V21 adapter health check failed",
+			Detail:   redactDoctorSecret(err.Error()),
+		})
+		return report
+	}
+	report.Status = "healthy"
+	report.Healthy = true
+	return report
 }
 
 func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwareDoctorReport {
@@ -128,6 +175,12 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 		report.SerialDevices = devices
 	}
 	return report
+}
+
+var doctorURLCredentialPattern = regexp.MustCompile(`(https?://)[^/\s"']+@`)
+
+func redactDoctorSecret(text string) string {
+	return doctorURLCredentialPattern.ReplaceAllString(text, "${1}<redacted>@")
 }
 
 func findProjectRoot(start string) string {

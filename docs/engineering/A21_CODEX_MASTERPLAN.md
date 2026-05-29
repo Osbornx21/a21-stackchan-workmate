@@ -147,7 +147,7 @@ Phase 4: provider adapters. Add mock, China-mainland-first realtime/streaming pr
 
 Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, build/package/upload dry-run discipline, and native tests. Real mic capture/playback, servo clamp, LED/touch runtime, OTA, and physical flashing remain future work.
 
-Phase 6: V21 professional mode. Current baseline includes a V21 adapter contract, HTTP/mock clients, Gateway professional mode routing, explicit evidence fields, confidence, speech blocks, failure fallback, and trace markers. Real endpoint configuration, health checks, timeout metrics, and simulator evidence-card rendering remain future work.
+Phase 6: V21 professional mode. Current baseline includes a V21 adapter contract, HTTP/mock clients, Gateway professional mode routing, explicit evidence fields, confidence, speech blocks, failure fallback, trace markers, optional doctor health checks, and simulator evidence-card rendering. Real endpoint smoke and timeout metrics remain future work.
 
 Phase 7: low-latency and full-duplex optimization. Add jitter buffer, VAD/barge-in tuning, playback cancellation, provider cancellation, and latency dashboards.
 

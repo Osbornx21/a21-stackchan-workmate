@@ -31,8 +31,11 @@ It checks what the current foundation can truthfully check:
 - local `/dev/cu.*` serial device inventory
 - serial device USB-modem classification
 - serial device process ownership via `lsof`
+- optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
+
+The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 
@@ -55,7 +58,6 @@ The full doctor should eventually add human-readable table output and cover:
 - A21 ports
 - proxy and no-proxy coverage
 - StackChan LAN reachability
-- V21 adapter health
 - provider connectivity and credential presence
 - mock audio loop
 - metrics/trace availability

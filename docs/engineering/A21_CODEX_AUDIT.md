@@ -56,7 +56,7 @@ go run ./cmd/a21 doctor
 go run ./cmd/a21 serial-list
 ```
 
-`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
+`doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
 
 `make release-check` is the local high-confidence gate. It runs Go verification, firmware native tests, clean-worktree firmware packaging, and doctor. Because packaging embeds the current git commit, run it only from a clean tree after the intended commit exists.
 
@@ -140,7 +140,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 - Gateway and simulator are mock-first and deterministic; real microphone capture, playback, VAD, jitter buffer, and provider audio streaming remain future work.
 - Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
 - Metrics and in-memory trace waterfall exist; OpenTelemetry export and durable trace storage remain future work.
-- V21 adapter contract and mock Gateway professional path exist; real V21 endpoint configuration, health checks, timeout metrics, and evidence-card simulator rendering remain future work.
+- V21 adapter contract, mock Gateway professional path, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke and timeout metrics remain future work.
 - No real provider adapters yet.
 - No CI yet.
 
@@ -150,8 +150,8 @@ These gaps are phase boundaries, not Phase 1 regressions.
 
 Proceed through the next phase without diluting the Go core:
 
-1. Add configurable `A21_V21_ADAPTER_URL`, preflight validation, and doctor health check.
+1. Add timeout and latency metric for `a21_v21_query_ms`.
 2. Add provider adapter health/cancel contracts behind deterministic mock tests.
-3. Render professional evidence cards in the simulator before real provider work.
+3. Add real V21 adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.
 4. Expand simulator microphone/playback only after latency and trace fields are stable.
 5. Keep real firmware flashing disabled until physical-device identity checks are implemented.

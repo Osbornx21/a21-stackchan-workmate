@@ -2,8 +2,12 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +114,78 @@ func TestRunDoctorIncludesFirmwareSection(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"serial_devices"`) {
 		t.Fatalf("stdout missing serial devices: %q", stdout.String())
+	}
+}
+
+func TestRunDoctorIncludesV21AdapterHealthWhenConfigured(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			t.Fatalf("path = %q, want /healthz", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"v21"`,
+		`"configured": true`,
+		`"healthy": true`,
+		`"health_path": "/healthz"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunDoctorReportsV21AdapterSkippedWhenUnconfigured(t *testing.T) {
+	t.Setenv("A21_V21_ADAPTER_URL", "")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"v21"`,
+		`"configured": false`,
+		`"status": "skipped"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestBuildV21DoctorReportRedactsHealthFailureSecrets(t *testing.T) {
+	originalProbe := probeV21AdapterHealth
+	probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
+		return errors.New(`Get "http://user:secret-token@127.0.0.1:21121/healthz": connection refused`)
+	}
+	defer func() {
+		probeV21AdapterHealth = originalProbe
+	}()
+
+	report := buildV21DoctorReport("http://user:secret-token@127.0.0.1:21121")
+
+	if report.Status != "unhealthy" {
+		t.Fatalf("status = %q, want unhealthy", report.Status)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(report.Findings))
+	}
+	if strings.Contains(report.Findings[0].Detail, "secret-token") || strings.Contains(report.Findings[0].Detail, "user:") {
+		t.Fatalf("detail leaked credentials: %q", report.Findings[0].Detail)
 	}
 }
 

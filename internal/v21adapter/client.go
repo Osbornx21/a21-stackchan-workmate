@@ -11,6 +11,7 @@ import (
 )
 
 const QueryPath = "/a21/v21/query"
+const HealthPath = "/healthz"
 
 type Client interface {
 	Query(ctx context.Context, request QueryRequest) (QueryResponse, error)
@@ -103,6 +104,29 @@ func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResp
 		response.TraceID = request.TraceID
 	}
 	return response, nil
+}
+
+func ProbeHealth(ctx context.Context, baseURL string, httpClient *http.Client) error {
+	client, err := NewHTTPClient(baseURL)
+	if err != nil {
+		return err
+	}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+HealthPath, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("v21 adapter health failed with status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 type MockClient struct{}

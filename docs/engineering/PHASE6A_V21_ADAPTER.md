@@ -18,6 +18,8 @@ A21 can enter professional mode without becoming a V21 voice shell. The Gateway 
 - Gateway emits professional control events with `confidence`, `evidence`, `speech_blocks`, `screen_cards`, and `follow_ups`.
 - Gateway records `v21.query.start`, `v21.query.first_result`, and `v21.query.error` trace markers.
 - V21 failure returns an honest professional fallback instead of pretending retrieval succeeded.
+- `doctor` reports V21 adapter health when `A21_V21_ADAPTER_URL` is configured.
+- V21 health failure details redact URL credentials.
 
 ## Boundaries
 
@@ -38,6 +40,8 @@ Current tests cover:
 - V21 unavailable fallback copy
 - V21 trace markers
 - simulator Professional Evidence panel availability
+- doctor V21 health configured/skipped states
+- doctor V21 health credential redaction
 
 Run:
 
@@ -48,8 +52,5 @@ make verify
 
 ## Next
 
-- Add configurable `A21_V21_ADAPTER_URL` with preflight validation.
-- Add V21 health check to `doctor`.
 - Add timeout and latency metric for `a21_v21_query_ms`.
-- Add simulator UI rendering for evidence cards.
 - Add real adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.

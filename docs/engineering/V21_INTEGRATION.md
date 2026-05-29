@@ -41,6 +41,12 @@ Implemented client endpoint:
 POST /a21/v21/query
 ```
 
+Implemented health endpoint:
+
+```text
+GET /healthz
+```
+
 Request:
 
 ```json
@@ -112,10 +118,14 @@ internal/v21adapter
 Implemented clients:
 
 - `NewHTTPClient(baseURL)` posts to `/a21/v21/query`.
+- `ProbeHealth(ctx, baseURL, httpClient)` checks adapter `/healthz`.
 - `NewMockClient()` returns deterministic evidence, speech blocks, screen cards, and follow-ups for Gateway/simulator tests.
 
 Safety rules:
 
+- Real adapter configuration uses `A21_V21_ADAPTER_URL`.
+- `doctor` skips V21 health when `A21_V21_ADAPTER_URL` is unset.
+- `doctor` checks `/healthz` when `A21_V21_ADAPTER_URL` is set and redacts URL credentials from error details.
 - HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
 - HTTP client rejects known X21/V21 internal legacy ports such as `8000`, `8080`, `18080`, `4173`, `42173`, `16686`, and `16687`. A21 must target an adapter boundary, not V21 internals.
 - Gateway calls V21 only when the request mode is `professional`.
