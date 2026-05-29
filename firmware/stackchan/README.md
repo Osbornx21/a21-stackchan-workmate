@@ -83,7 +83,7 @@ Servo safety currently lives in `a21_firmware_config.h`:
 - `A21_SERVO_Y_MAX_DEG=85`
 - `a21ClampServoY(...)`
 
-The clamp is covered by the native Unity suite. No runtime servo actuation is enabled yet.
+`a21_firmware_motion.h` maps semantic render states to safe Y-axis targets and writes only when the target angle changes. The CoreS3 main loop is wired through a no-op motion driver for now, so the runtime path is exercised without actuating hardware. Real servo hardware output still requires a future calibrated driver.
 
 ## Upload
 

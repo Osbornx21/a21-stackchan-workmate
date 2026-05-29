@@ -4,6 +4,7 @@
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_config.h"
 #include "a21_firmware_network.h"
+#include "a21_firmware_motion.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_gateway_ws.h"
@@ -131,6 +132,25 @@ void initFakeAudioWSDriver(FakeGatewayWSDriver* fake, A21AudioWSDriver* driver) 
   driver->connected = fakeGatewayWSConnected;
   driver->read_text = fakeGatewayWSReadText;
   driver->send_text = fakeGatewayWSSendText;
+}
+
+struct FakeMotionDriver {
+  int write_count;
+  int last_y_deg;
+};
+
+bool fakeMotionWriteY(void* ctx, int y_deg) {
+  FakeMotionDriver* driver = static_cast<FakeMotionDriver*>(ctx);
+  driver->write_count += 1;
+  driver->last_y_deg = y_deg;
+  return true;
+}
+
+void initFakeMotionDriver(FakeMotionDriver* fake, A21MotionDriver* driver) {
+  fake->write_count = 0;
+  fake->last_y_deg = -1;
+  driver->ctx = fake;
+  driver->write_y = fakeMotionWriteY;
 }
 
 void test_firmware_build_identity_contains_a21_release_fields() {
@@ -821,6 +841,43 @@ void test_servo_y_angle_clamps_to_stackchan_safe_range() {
   TEST_ASSERT_EQUAL_INT(85, a21ClampServoY(100));
 }
 
+void test_motion_target_maps_render_states_to_safe_y_angles() {
+  TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_IDLE));
+  TEST_ASSERT_EQUAL_INT(38, a21MotionYForRenderState(A21_RENDER_LISTENING));
+  TEST_ASSERT_EQUAL_INT(32, a21MotionYForRenderState(A21_RENDER_THINKING));
+  TEST_ASSERT_EQUAL_INT(48, a21MotionYForRenderState(A21_RENDER_SPEAKING));
+  TEST_ASSERT_EQUAL_INT(38, a21MotionYForRenderState(A21_RENDER_INTERRUPTED));
+  TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_PROFESSIONAL));
+  TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_LOCAL));
+  TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_ERROR));
+}
+
+void test_motion_runtime_writes_once_per_y_angle_change() {
+  A21MotionRuntime runtime;
+  A21FirmwareState state;
+  FakeMotionDriver fake;
+  A21MotionDriver driver;
+  a21InitMotionRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMotionDriver(&fake, &driver);
+
+  state.render_state = A21_RENDER_LISTENING;
+  TEST_ASSERT_TRUE(a21MotionRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(1, fake.write_count);
+  TEST_ASSERT_EQUAL_INT(38, fake.last_y_deg);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.applied_count);
+
+  TEST_ASSERT_TRUE(a21MotionRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(1, fake.write_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.applied_count);
+
+  state.render_state = A21_RENDER_SPEAKING;
+  TEST_ASSERT_TRUE(a21MotionRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(2, fake.write_count);
+  TEST_ASSERT_EQUAL_INT(48, fake.last_y_deg);
+  TEST_ASSERT_EQUAL_UINT32(2, runtime.applied_count);
+}
+
 int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_firmware_build_identity_contains_a21_release_fields);
@@ -858,5 +915,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_applies_gateway_ack_control_event);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
   RUN_TEST(test_servo_y_angle_clamps_to_stackchan_safe_range);
+  RUN_TEST(test_motion_target_maps_render_states_to_safe_y_angles);
+  RUN_TEST(test_motion_runtime_writes_once_per_y_angle_change);
   return UNITY_END();
 }

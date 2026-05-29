@@ -95,6 +95,7 @@ Firmware-specific protections now include:
 - firmware device identity guard validates a Gateway `/v1/devices` capture against the exact packaged artifact and still returns `flash_allowed: false`.
 - non-serial `/dev/*` paths such as `/dev/null` are rejected.
 - StackChan Y-axis servo clamp is fixed at 5 to 85 degrees and covered in native firmware tests.
+- semantic render states now map to safe Y-axis motion targets through a driver interface; CoreS3 currently uses a no-op driver until calibrated hardware output is added.
 
 ## Legacy Neighbor Risks
 
