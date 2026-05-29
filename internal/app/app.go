@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/buildinfo"
+	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/runtimeguard"
 )
@@ -31,6 +32,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "firmware-check":
+		return runFirmwareCheck(args[1:], stdout, stderr)
+	case "firmware-package":
+		return runFirmwarePackage(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -147,4 +152,115 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func runFirmwareCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	manifestPath := "firmware/stackchan/a21-firmware.json"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-check --manifest firmware/stackchan/a21-firmware.json")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			manifestPath = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-check option %q\n", args[i])
+			return 2
+		}
+	}
+
+	result, err := firmwarecheck.LoadAndValidate(manifestPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware manifest check failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareCheck(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware check result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware manifest ok")
+	return 0
+}
+
+func runFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.PackageOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		InputPath:    "firmware/stackchan/.pio/build/a21_stackchan_cores3/firmware.bin",
+		OutputDir:    "firmware/artifacts",
+		Commit:       "unknown",
+		Timestamp:    time.Now().Format("20060102-150405"),
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-package --commit <git-sha>")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--input":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--input requires a value")
+				return 2
+			}
+			i++
+			options.InputPath = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		case "--timestamp":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--timestamp requires a value")
+				return 2
+			}
+			i++
+			options.Timestamp = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-package option %q\n", args[i])
+			return 2
+		}
+	}
+
+	result, err := firmwarecheck.PackageArtifact(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware package failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwarePackage(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware package result: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func writeJSONFirmwareCheck(writer io.Writer, result firmwarecheck.Result) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwarePackage(writer io.Writer, result firmwarecheck.PackageResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
 }

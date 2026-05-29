@@ -1,1 +1,5 @@
 reports/
+.a21-tools/
+.pio/
+firmware/**/.pio/
+firmware/artifacts/

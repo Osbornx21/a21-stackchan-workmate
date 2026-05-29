@@ -1,0 +1,90 @@
+package firmwarecheck
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+type Manifest struct {
+	Project        string `json:"project"`
+	FirmwareID     string `json:"firmware_id"`
+	Version        string `json:"version"`
+	Board          string `json:"board"`
+	ArtifactPrefix string `json:"artifact_prefix"`
+}
+
+type Result struct {
+	Manifest Manifest `json:"manifest"`
+	OK       bool     `json:"ok"`
+}
+
+func LoadAndValidate(path string) (Result, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return Result{}, err
+	}
+	if err := validate(manifest); err != nil {
+		return Result{}, err
+	}
+	if err := validatePlatformIO(filepath.Join(filepath.Dir(path), "platformio.ini"), manifest); err != nil {
+		return Result{}, err
+	}
+	return Result{Manifest: manifest, OK: true}, nil
+}
+
+func validate(manifest Manifest) error {
+	if manifest.Project != "A21" {
+		return fmt.Errorf("project must be A21")
+	}
+	if manifest.FirmwareID != "a21-stackchan" {
+		return fmt.Errorf("firmware_id must be a21-stackchan")
+	}
+	if manifest.Board != "m5stack-cores3" {
+		return fmt.Errorf("board must be m5stack-cores3")
+	}
+	if manifest.ArtifactPrefix != "a21-stackchan" {
+		return fmt.Errorf("artifact_prefix must be a21-stackchan")
+	}
+	if ok, _ := regexp.MatchString(`^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$`, manifest.Version); !ok {
+		return fmt.Errorf("version must be semver-like")
+	}
+	joined := strings.ToLower(strings.Join([]string{manifest.Project, manifest.FirmwareID, manifest.Board, manifest.ArtifactPrefix}, " "))
+	if strings.Contains(joined, "x21") || strings.Contains(joined, "v21") {
+		return fmt.Errorf("manifest contains forbidden legacy identity")
+	}
+	return nil
+}
+
+func validatePlatformIO(path string, manifest Manifest) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := strings.ToLower(string(data))
+	if strings.Contains(content, "x21") || strings.Contains(content, "v21") {
+		return fmt.Errorf("platformio.ini contains forbidden legacy identity")
+	}
+	if !strings.Contains(content, "[env:a21_") {
+		return fmt.Errorf("platformio env must use a21 prefix")
+	}
+	boardPattern := regexp.MustCompile(`(?m)^\s*board\s*=\s*([A-Za-z0-9_-]+)\s*$`)
+	match := boardPattern.FindStringSubmatch(content)
+	if len(match) != 2 {
+		return fmt.Errorf("platformio board is missing")
+	}
+	if match[1] != manifest.Board {
+		return fmt.Errorf("platformio board %q does not match manifest board %q", match[1], manifest.Board)
+	}
+	if strings.Contains(content, "-t upload") || strings.Contains(content, "upload_port") {
+		return fmt.Errorf("platformio upload configuration is forbidden before A21 upload guard")
+	}
+	return nil
+}

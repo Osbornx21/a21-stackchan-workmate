@@ -101,3 +101,113 @@ func TestRunGatewayRejectsUnknownFlag(t *testing.T) {
 		t.Fatal("expected error text")
 	}
 }
+
+func TestRunFirmwareCheckRejectsMissingManifest(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--manifest", filepath.Join(t.TempDir(), "missing.json")}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if stderr.String() == "" {
+		t.Fatal("expected error text")
+	}
+}
+
+func TestRunFirmwareCheckAcceptsA21Manifest(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "a21-firmware.json")
+	platformio := filepath.Join(dir, "platformio.ini")
+	data := []byte(`{
+  "project": "A21",
+  "firmware_id": "a21-stackchan",
+  "version": "0.1.0",
+  "board": "m5stack-cores3",
+  "artifact_prefix": "a21-stackchan"
+}`)
+	if err := os.WriteFile(manifest, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(platformio, []byte("[env:a21_stackchan_cores3]\nboard = m5stack-cores3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--manifest", manifest}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "firmware manifest ok") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunFirmwareCheckRejectsWrongPlatformIOBoard(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "a21-firmware.json")
+	data := []byte(`{
+  "project": "A21",
+  "firmware_id": "a21-stackchan",
+  "version": "0.1.0",
+  "board": "m5stack-cores3",
+  "artifact_prefix": "a21-stackchan"
+}`)
+	if err := os.WriteFile(manifest, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte("[env:a21_stackchan_cores3]\nboard = m5stack-core2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--manifest", manifest}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "platformio board") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "a21-firmware.json")
+	if err := os.WriteFile(manifest, []byte(`{
+  "project": "A21",
+  "firmware_id": "a21-stackchan",
+  "version": "0.1.0",
+  "board": "m5stack-cores3",
+  "artifact_prefix": "a21-stackchan"
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte("[env:a21_stackchan_cores3]\nboard = m5stack-cores3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(dir, "firmware.bin")
+	if err := os.WriteFile(input, []byte("firmware"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(dir, "artifacts")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-package",
+		"--manifest", manifest,
+		"--input", input,
+		"--output-dir", outputDir,
+		"--commit", "abcdef1",
+		"--timestamp", "20260530-004500",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	artifact := filepath.Join(outputDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	if _, err := os.Stat(artifact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(artifact + ".sha256"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), filepath.Base(artifact)) {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}

@@ -14,6 +14,7 @@ The A21 architecture and product direction come from the user. External document
 - Never introduce new X21 naming in A21 code. X21/V21 strings are allowed only in guardrails, tests, docs, and explicit adapter context.
 - StackChan remains a thin device client. A21 Core/Gateway owns provider keys, proxy policy, V21 access, observability, and network complexity.
 - No provider API key may be stored in firmware.
+- Firmware builds and uploads require strict A21 identity, board, version, artifact, and upload-target checks. Never add an unguarded firmware upload command.
 - Localhost, LAN, `.local`, StackChan, and V21 adapter traffic must not silently inherit global proxies.
 - Every runtime path must carry or be ready to carry `trace_id`, `session_id`, and `device_id`.
 - Every latency-sensitive path must be designed for traces and metrics before it is optimized.
