@@ -178,9 +178,51 @@ Any future real flashing command must not reinterpret this receipt as permission
 
 The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
 
+## Device Identity Guard
+
+Phase 5C adds a physical-device identity dry-run guard. It still does not flash. It validates a Gateway `/v1/devices` JSON capture against the exact packaged firmware candidate:
+
+```bash
+curl -fsS http://127.0.0.1:21080/v1/devices > reports/a21-devices.json
+
+go run ./cmd/a21 firmware-device-check \
+  --artifact firmware/artifacts/<a21-stackchan...bin> \
+  --device-report reports/a21-devices.json \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha>
+```
+
+or:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_DEVICE_REPORT=reports/a21-devices.json \
+A21_DEVICE_ID=stackchan-001 \
+make firmware-device-check
+```
+
+The guard verifies:
+
+- the artifact still passes `firmware-artifact-check`
+- the artifact commit matches the expected git commit
+- the device report contains the explicit `A21_DEVICE_ID`
+- `identity_status` is `ok`
+- reported firmware ID is `a21-stackchan`
+- reported version, board, and commit match the artifact manifest and filename
+- device ID and firmware identity contain no forbidden X21/V21 names
+
+Successful output includes:
+
+- `guard_id: a21.firmware.device_identity_guard.v1`
+- `device_identity_confirmed: true`
+- `flash_allowed: false`
+- `next_required_confirmation: explicit_guarded_flash_command`
+
+This receipt is a stronger identity confirmation than `firmware-upload-check`, but it is still not permission to flash. It proves that Gateway has seen a StackChan-like A21 device identity matching the candidate artifact. A future real flashing command must require both the upload dry-run receipt and this device identity receipt, then perform its own final confirmation.
+
 ## Current Flashing Status
 
-Real flashing is intentionally locked. The repository has build, package, artifact-check, and upload-check dry-run gates, but no command is allowed to write an A21 binary to hardware yet. The next unlock must add a physical-device identity check first, then introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
+Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, and device-identity dry-run gates, but no command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
 
 A21 firmware work must continue to use the repository-local `.a21-tools/` PlatformIO environment and `firmware/artifacts/a21-stackchan-...` packages. Do not point A21 upload checks at X21/V21 build directories, generic `firmware.bin` paths, or auto-selected serial ports.
 
@@ -193,9 +235,10 @@ Before any future firmware upload:
 5. Confirm generated artifact filename begins with `a21-stackchan-`.
 6. Run `firmware-artifact-check`.
 7. Run `firmware-upload-check`.
-8. Only then may a future explicit guarded upload command run.
+8. Capture `/v1/devices` from the A21 Gateway and run `firmware-device-check`.
+9. Only then may a future explicit guarded upload command run.
 
-There is intentionally no upload target in Phase 5B.
+There is intentionally no upload target in Phase 5C.
 
 ## Serial Inventory
 

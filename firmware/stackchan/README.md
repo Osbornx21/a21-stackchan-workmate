@@ -81,16 +81,17 @@ The firmware still does not capture microphone audio, play Gateway audio, run VA
 
 There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, build commit, and artifact name have been verified.
 
-Phase 5B adds only dry-run guards:
+Phase 5B/5C adds only dry-run guards:
 
 ```bash
 go run ./cmd/a21 serial-list
 go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>
 go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <expected-git-sha>
+go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <expected-git-sha>
 ```
 
-These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, serial-like path form, and whether another process is already holding the serial path. They do not flash the device.
+These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, explicit serial target, port existence, serial-like path form, whether another process is already holding the serial path, and whether the A21 Gateway has seen the expected device ID with matching A21 firmware identity. They do not flash the device.
 
-Successful upload-check output is a dry-run receipt with `dry_run: true` and `flash_allowed: false`. It is a preflight record, not permission to run `pio run -t upload`.
+Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`.
 
 `make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source.

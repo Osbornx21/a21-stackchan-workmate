@@ -728,6 +728,81 @@ func TestRunFirmwareUploadCheckRejectsMissingPort(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareDeviceCheckAcceptsMatchingGatewayReport(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(report, []byte(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      }
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-check",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--device-report", report,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"firmware device identity guard ok (no flash performed)",
+		`"guard_id": "a21.firmware.device_identity_guard.v1"`,
+		`"device_identity_confirmed": true`,
+		`"flash_allowed": false`,
+		`"expected_device_id": "stackchan-001"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunFirmwareDeviceCheckRequiresDeviceID(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(report, []byte(`{"devices":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-check",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--device-report", report,
+		"--commit", "abcdef1",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--device-id requires a value") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

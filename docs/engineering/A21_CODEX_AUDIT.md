@@ -48,6 +48,7 @@ make firmware-build
 make firmware-package
 make firmware-artifact-check
 make firmware-upload-check
+make firmware-device-check
 make gateway
 make release-check
 go run ./cmd/a21 version
@@ -64,7 +65,7 @@ go run ./cmd/a21 serial-list
 
 - `internal/buildinfo`: canonical A21 service identity.
 - `internal/app`: CLI dispatch for version, preflight, doctor, gateway, serial inventory, and firmware release guards.
-- `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, and upload dry-run checks.
+- `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, upload dry-run checks, and Gateway device-identity dry-run checks.
 - `internal/gateway`: mock Gateway HTTP/WebSocket server, metrics, device registry, trace waterfall, and built-in simulator HTML.
 - `internal/runtimeguard`: env, endpoint, cwd, port, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
@@ -91,6 +92,7 @@ Firmware-specific protections now include:
 - upload ports containing X21/V21 names are rejected.
 - firmware package requires a clean git worktree.
 - firmware upload remains dry-run only and returns `flash_allowed: false`.
+- firmware device identity guard validates a Gateway `/v1/devices` capture against the exact packaged artifact and still returns `flash_allowed: false`.
 - non-serial `/dev/*` paths such as `/dev/null` are rejected.
 
 ## Legacy Neighbor Risks
@@ -155,4 +157,4 @@ Proceed through the next phase without diluting the Go core:
 
 1. Add real V21 adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.
 2. Expand simulator microphone/playback only after latency and trace fields are stable.
-3. Keep real firmware flashing disabled until physical-device identity checks are implemented.
+3. Keep real firmware flashing disabled until a separate explicit guarded flash command requires both upload-check and device-identity receipts.

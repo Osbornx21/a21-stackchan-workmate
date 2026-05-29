@@ -6,6 +6,7 @@
 go run ./cmd/a21 doctor
 go run ./cmd/a21 doctor --output-dir reports
 go run ./cmd/a21 serial-list
+go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <git-sha>
 make doctor
 ```
 
@@ -38,6 +39,8 @@ The firmware section intentionally checks repository-local paths under `.a21-too
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
+
+`firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, and expected git commit. It also does not flash, provision, reset, or open a serial monitor.
 
 ## Exit Codes
 

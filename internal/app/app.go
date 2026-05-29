@@ -52,6 +52,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareArtifactCheck(args[1:], stdout, stderr)
 	case "firmware-upload-check":
 		return runFirmwareUploadCheck(args[1:], stdout, stderr)
+	case "firmware-device-check":
+		return runFirmwareDeviceCheck(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -566,6 +568,84 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	return 0
 }
 
+func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.DeviceIdentityOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha>")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		case "--device-report":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-report requires a value")
+				return 2
+			}
+			i++
+			options.ReportPath = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedDeviceID = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedGitCommit = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-device-check option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.ArtifactPath == "" {
+		fmt.Fprintln(stderr, "--artifact requires a value")
+		return 2
+	}
+	if options.ReportPath == "" {
+		fmt.Fprintln(stderr, "--device-report requires a value")
+		return 2
+	}
+	if options.ExpectedDeviceID == "" {
+		fmt.Fprintln(stderr, "--device-id requires a value")
+		return 2
+	}
+	if options.ExpectedGitCommit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	result, err := firmwarecheck.ValidateDeviceIdentity(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware device check failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareDeviceCheck(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware device check result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware device identity guard ok (no flash performed)")
+	return 0
+}
+
 func writeJSONFirmwareCheck(writer io.Writer, result firmwarecheck.Result) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -585,6 +665,12 @@ func writeJSONFirmwareArtifact(writer io.Writer, result firmwarecheck.ArtifactRe
 }
 
 func writeJSONFirmwareUploadCheck(writer io.Writer, result firmwarecheck.UploadCheckResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareDeviceCheck(writer io.Writer, result firmwarecheck.DeviceIdentityResult) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
