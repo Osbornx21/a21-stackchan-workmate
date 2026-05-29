@@ -77,9 +77,17 @@ Current local controls are intentionally minimal:
 
 The firmware still does not capture microphone audio, play Gateway audio, run VAD, or claim full-duplex behavior. The current audio WebSocket path is a disciplined transport probe only.
 
+Servo safety currently lives in `a21_firmware_config.h`:
+
+- `A21_SERVO_Y_MIN_DEG=5`
+- `A21_SERVO_Y_MAX_DEG=85`
+- `a21ClampServoY(...)`
+
+The clamp is covered by the native Unity suite. No runtime servo actuation is enabled yet.
+
 ## Upload
 
-There is no upload target in Phase 5A. Do not run `pio run -t upload` until an A21 upload guard exists and the physical device, serial port, firmware version, build commit, and artifact name have been verified.
+There is still no upload target. Do not run `pio run -t upload` until a future explicit guarded flash command requires the A21 upload and device-identity receipts.
 
 Phase 5B/5C adds only dry-run guards:
 

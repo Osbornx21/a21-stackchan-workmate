@@ -42,7 +42,7 @@ Primary sources checked on 2026-05-30:
 - M5Unified PlatformIO registry: https://registry.platformio.org/libraries/m5stack/M5Unified
 - M5Stack StackChan documentation: https://docs.m5stack.com/en/StackChan
 
-The StackChan Y-axis servo must eventually be clamped to the documented safe range of 5 to 85 degrees.
+The StackChan Y-axis servo is clamped to the documented safe range of 5 to 85 degrees in firmware config and covered by native tests.
 
 ## Pinned Firmware Dependencies
 
@@ -104,6 +104,7 @@ Current native firmware tests cover:
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 - audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, and send rejection while disconnected
+- StackChan Y-axis servo clamp to 5 to 85 degrees
 
 Current Gateway tests cover:
 

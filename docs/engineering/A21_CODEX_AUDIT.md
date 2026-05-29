@@ -94,6 +94,7 @@ Firmware-specific protections now include:
 - firmware upload remains dry-run only and returns `flash_allowed: false`.
 - firmware device identity guard validates a Gateway `/v1/devices` capture against the exact packaged artifact and still returns `flash_allowed: false`.
 - non-serial `/dev/*` paths such as `/dev/null` are rejected.
+- StackChan Y-axis servo clamp is fixed at 5 to 85 degrees and covered in native firmware tests.
 
 ## Legacy Neighbor Risks
 

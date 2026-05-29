@@ -146,7 +146,7 @@ Phase 3: doctor and observability expansion. Current baseline includes richer re
 
 Phase 4: provider adapters. Current baseline includes mock and cascade voice providers, provider-neutral health status, and explicit cancel reason/stream acknowledgements. Next slices should add China-mainland-first realtime/streaming providers, latency metrics, credential-free health probes, and provider-specific cancellation adapters behind this boundary.
 
-Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, build/package/upload/device-identity dry-run discipline, and native tests. Real mic capture/playback, servo clamp, LED/touch runtime, OTA, and physical flashing remain future work.
+Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmware identity, Wi-Fi config/runtime guards, control/audio WebSocket transport probes, reconnect/local fallback state, Y-axis servo clamp safety, build/package/upload/device-identity dry-run discipline, and native tests. Real mic capture/playback, servo actuation runtime, LED/touch runtime, OTA, and physical flashing remain future work.
 
 Phase 6: V21 professional mode. Current baseline includes a V21 adapter contract, HTTP/mock clients, Gateway professional mode routing, explicit evidence fields, confidence, speech blocks, failure fallback, trace markers, optional doctor health checks, and simulator evidence-card rendering. Real endpoint smoke and timeout metrics remain future work.
 
