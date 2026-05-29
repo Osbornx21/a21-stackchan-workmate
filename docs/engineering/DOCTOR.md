@@ -4,10 +4,17 @@
 
 ```bash
 go run ./cmd/a21 doctor
+go run ./cmd/a21 doctor --output-dir reports
 make doctor
 ```
 
-Phase 1 `doctor` intentionally reuses the preflight report. It checks what the current foundation can truthfully check:
+Phase 3B `doctor` reuses the preflight report and also writes a timestamped JSON file:
+
+```text
+reports/a21-doctor-YYYYMMDD-HHMMSS.json
+```
+
+It checks what the current foundation can truthfully check:
 
 - legacy env variable prefixes
 - A21 endpoint env vars pointing at known legacy X21/V21 ports
@@ -18,17 +25,17 @@ Phase 1 `doctor` intentionally reuses the preflight report. It checks what the c
 
 ## Exit Codes
 
-Current Phase 1 behavior:
+Current behavior:
 
 - `0`: required Phase 1 checks pass
 - `1`: required Phase 1 check fails
-- `2`: CLI usage error, such as unknown command
+- `2`: CLI usage error, such as unknown command or invalid doctor flag
 
 Warnings-only exit code is reserved for a later expanded doctor.
 
 ## Future Expansion
 
-The full doctor should eventually output both terminal text and a JSON file under `reports/`, covering:
+The full doctor should eventually add human-readable table output and cover:
 
 - project identity and namespace
 - Go/Node/Python/Firmware tooling
