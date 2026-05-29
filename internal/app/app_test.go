@@ -200,6 +200,39 @@ func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "a21-doubao-realtime-tts"`,
+		`"status": "healthy"`,
+		`"configured": true`,
+		`"primary": "doubao_tts_realtime"`,
+		`"provider": "doubao_tts_realtime"`,
+		`"endpoint_host": "ai-gateway.vei.volces.com"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), `"provider": "a21-mock-voice"`) {
+		t.Fatalf("doctor voice health still reports mock provider: %s", stdout.String())
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorIncludesRealtimePlanWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "openai_realtime")
 	t.Setenv("A21_OPENAI_API_KEY", "sk-a21-secret")

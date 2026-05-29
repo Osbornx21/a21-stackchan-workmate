@@ -27,7 +27,7 @@ var probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
 }
 
 var probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProviderHealth, error) {
-	return providers.NewMockVoiceProvider().Health(ctx)
+	return providers.NewVoiceProviderFromEnv(os.Environ()).Health(ctx)
 }
 
 type doctorReport struct {

@@ -35,7 +35,7 @@ It checks what the current foundation can truthfully check:
 - local `/dev/cu.*` serial device inventory
 - serial device USB-modem classification
 - serial device process ownership via `lsof`
-- voice provider health and provider network mode
+- selected voice provider local health and provider network mode
 - voice provider registry readiness for mock, Doubao realtime, OpenAI realtime, Bailian/DashScope, and DeepSeek
 - voice provider smoke readiness, without executing paid or external provider calls
 - voice realtime WebSocket readiness plan, without dialing providers
@@ -45,7 +45,9 @@ The firmware section intentionally checks repository-local paths under `.a21-too
 
 The proxy section intentionally records only env variable names and direct-connect coverage labels. It blocks `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` configurations that do not prove direct routing for localhost, loopback, `.local`, `10.0.0.0/8`, `10.21.0.0/16`, `172.16.0.0/12`, and `192.168.0.0/16`. `A21_PROVIDER_PROXY_URL` is reported separately as explicit provider egress configuration and is not treated as LAN bypass coverage.
 
-The voice section includes provider network mode. `direct` means future provider HTTP clients will not inherit environment proxies. `explicit_proxy` means `A21_PROVIDER_PROXY_URL` is configured; doctor reports only the variable name and never prints the proxy URL, host, port, username, or password.
+The voice section includes selected provider local health and provider network mode. `direct` means future provider HTTP clients will not inherit environment proxies. `explicit_proxy` means `A21_PROVIDER_PROXY_URL` is configured; doctor reports only the variable name and never prints the proxy URL, host, port, username, or password.
+
+Selected provider health is local configuration health, not external connectivity proof. For example, `A21_PROVIDER_PRIMARY=doubao_tts_realtime` reports the Doubao realtime TTS provider object and missing/present required env state without dialing Volcengine. Gateway runtime remains on its explicit provider configuration path; doctor health alone does not switch Gateway turn handling away from mock.
 
 The voice provider registry is a readiness audit, not a real provider smoke test. It reports selected provider, required env names, present env names, and missing env names. It never prints API keys or model values. `A21_PROVIDER_PRIMARY` controls the selected provider in the report; unknown names are shown as `unknown_provider`, and legacy-looking provider names are shown as `invalid_legacy_provider` with blocking findings so raw X21/V21-looking values are never echoed back.
 
