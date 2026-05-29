@@ -23,17 +23,18 @@ import (
 )
 
 type Server struct {
-	mu           sync.Mutex
-	next         uint64
-	now          func() time.Time
-	metrics      *metrics
-	voice        providers.VoiceProvider
-	v21          v21adapter.Client
-	v21TTL       time.Duration
-	devices      map[string]DeviceRecord
-	traces       map[string][]TraceEvent
-	audioStreams map[string]string
-	audioIngress *audio.Ingress
+	mu            sync.Mutex
+	next          uint64
+	now           func() time.Time
+	metrics       *metrics
+	voice         providers.VoiceProvider
+	v21           v21adapter.Client
+	v21TTL        time.Duration
+	devices       map[string]DeviceRecord
+	traces        map[string][]TraceEvent
+	audioStreams  map[string]string
+	activeStreams map[string]string
+	audioIngress  *audio.Ingress
 }
 
 type ServerOptions struct {
@@ -113,15 +114,16 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		v21TTL = 3 * time.Second
 	}
 	return &Server{
-		now:          time.Now,
-		metrics:      newMetrics(),
-		voice:        voiceProvider,
-		v21:          v21Client,
-		v21TTL:       v21TTL,
-		devices:      make(map[string]DeviceRecord),
-		traces:       make(map[string][]TraceEvent),
-		audioStreams: make(map[string]string),
-		audioIngress: audio.NewIngress(audio.DefaultIngressConfig()),
+		now:           time.Now,
+		metrics:       newMetrics(),
+		voice:         voiceProvider,
+		v21:           v21Client,
+		v21TTL:        v21TTL,
+		devices:       make(map[string]DeviceRecord),
+		traces:        make(map[string][]TraceEvent),
+		audioStreams:  make(map[string]string),
+		activeStreams: make(map[string]string),
+		audioIngress:  audio.NewIngress(audio.DefaultIngressConfig()),
 	}
 }
 
@@ -277,7 +279,16 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
-		s.observeAudioIngress(frame, traceID, sessionID)
+		ingress := s.observeAudioIngress(frame, traceID, sessionID)
+		if s.shouldBargeIn(frame, traceID, sessionID, ingress) {
+			events := s.audioBargeInEvents(frame, traceID, sessionID)
+			for _, event := range events {
+				if err := wsjson.Write(ctx, conn, event); err != nil {
+					return
+				}
+			}
+			continue
+		}
 		streamID := s.mockAudioStreamID(frame, traceID, sessionID)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
@@ -292,17 +303,18 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		if err := wsjson.Write(ctx, conn, playback); err != nil {
 			return
 		}
+		s.setActiveStream(traceID, sessionID, frame.DeviceID, streamID)
 	}
 }
 
-func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) {
+func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) audio.IngressResult {
 	if frame.Kind != protocol.KindAudioFrame {
-		return
+		return audio.IngressResult{}
 	}
 	var chunk protocol.AudioChunk
 	if err := json.Unmarshal(frame.Payload, &chunk); err != nil {
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.invalid", s.now().UnixMilli())
-		return
+		return audio.IngressResult{}
 	}
 	result := s.audioIngress.Push(audio.Frame{
 		DeviceID:     frame.DeviceID,
@@ -329,6 +341,55 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		}
 		s.recordTrace(traceID, sessionID, frame.DeviceID, string(event), s.now().UnixMilli())
 	}
+	return result
+}
+
+func (s *Server) shouldBargeIn(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) bool {
+	if frame.Kind != protocol.KindAudioFrame {
+		return false
+	}
+	if !containsAudioIngressEvent(ingress.Events, audio.EventVADSpeechStart) {
+		return false
+	}
+	return s.activeStream(traceID, sessionID, frame.DeviceID) != ""
+}
+
+func containsAudioIngressEvent(events []audio.Event, want audio.Event) bool {
+	for _, event := range events {
+		if event == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) audioBargeInEvents(frame protocol.Envelope, traceID string, sessionID string) []protocol.Envelope {
+	streamID := s.clearActiveStream(traceID, sessionID, frame.DeviceID)
+	s.metrics.bargeInTotal.Inc()
+	now := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "barge_in.detected", now)
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "playback.stop", now)
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.cancel", now)
+	payloads := make([]protocol.ControlEventPayload, 0, 2)
+	providerEvents, err := s.voice.Cancel(context.Background(), providers.VoiceCancelRequest{
+		Session:  providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: frame.DeviceID},
+		Reason:   providers.CancelBargeIn,
+		StreamID: streamID,
+	})
+	if err != nil {
+		payloads = append(payloads, protocol.ControlEventPayload{
+			State:    protocol.ExpressionInterrupted,
+			Mode:     protocol.ModeWorkmate,
+			Text:     "好，我听新的。",
+			StreamID: streamID,
+		})
+	} else {
+		for event := range providerEvents {
+			payloads = append(payloads, voiceEventToControlPayload(event, protocol.ModeWorkmate))
+		}
+	}
+	payloads = append(payloads, protocol.ControlEventPayload{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "你说。"})
+	return s.controlSequence(frame.DeviceID, traceID, sessionID, payloads)
 }
 
 func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol.Envelope {
@@ -675,6 +736,32 @@ func mockPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
 	return base64.StdEncoding.EncodeToString(make([]byte, byteCount))
 }
 
+func (s *Server) setActiveStream(traceID string, sessionID string, deviceID string, streamID string) {
+	if streamID == "" {
+		return
+	}
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeStreams[key] = streamID
+}
+
+func (s *Server) activeStream(traceID string, sessionID string, deviceID string) string {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.activeStreams[key]
+}
+
+func (s *Server) clearActiveStream(traceID string, sessionID string, deviceID string) string {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	streamID := s.activeStreams[key]
+	delete(s.activeStreams, key)
+	return streamID
+}
+
 func (s *Server) mockAudioStreamID(frame protocol.Envelope, traceID string, sessionID string) string {
 	streamSeq := frame.Seq
 	if streamSeq == 0 {
@@ -695,6 +782,19 @@ func (s *Server) mockAudioStreamID(frame protocol.Envelope, traceID string, sess
 	streamID := fmt.Sprintf("a21-audio-stream-%06d", streamSeq)
 	s.audioStreams[key] = streamID
 	return streamID
+}
+
+func streamStateKey(traceID string, sessionID string, deviceID string) string {
+	switch {
+	case sessionID != "":
+		return sessionID
+	case traceID != "":
+		return traceID
+	case deviceID != "":
+		return deviceID
+	default:
+		return "a21-audio-stream-default"
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

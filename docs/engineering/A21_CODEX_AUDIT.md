@@ -68,7 +68,7 @@ go run ./cmd/a21 serial-list
 - `internal/app`: CLI dispatch for version, preflight, doctor, gateway, serial inventory, and firmware release guards.
 - `internal/audio`: Gateway audio ingress buffer plus RMS-based mock VAD transition detector.
 - `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, upload dry-run checks, and Gateway device-identity dry-run checks.
-- `internal/gateway`: mock Gateway HTTP/WebSocket server, bounded audio ingress observability, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
+- `internal/gateway`: mock Gateway HTTP/WebSocket server, bounded audio ingress observability, active playback stream tracking for audio-path barge-in, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
 - `internal/runtimeguard`: env, endpoint, cwd, port, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
 - `internal/providers`: provider-neutral voice contracts plus deterministic mock/cascade behavior.
@@ -151,10 +151,10 @@ firmware-upload-check --port /dev/null ...                    exits 1
 
 - Gateway and simulator are mock-first and deterministic; Gateway now has a bounded ingress buffer and RMS mock VAD markers, but real microphone capture, speaker playback, production VAD, production jitter tuning, AEC, and provider audio streaming remain future work.
 - Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes and bounded mock downlink buffering, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
-- Metrics, voice provider health, and in-memory trace waterfall exist, including audio ingress/VAD markers and professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
+- Metrics, voice provider health, and in-memory trace waterfall exist, including audio ingress/VAD markers, audio-path barge-in cancel markers, and professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
 - Provider-neutral mock/cascade contracts include health status, a Gateway provider health endpoint, and explicit cancel reason/stream acknowledgements; no real provider adapters exist yet.
-- Mock `latency-bench` exists for Gateway mock/professional/barge-in/audio-WS-downlink report shape, and `audio_ws_downlink_ms` now measures until a full 20 ms / 16 kHz / mono / `pcm_s16le` silence chunk is returned; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
+- Mock `latency-bench` exists for Gateway mock/professional/barge-in/audio-WS-downlink/audio-WS-barge-in report shape. `audio_ws_downlink_ms` measures until a full 20 ms / 16 kHz / mono / `pcm_s16le` silence chunk is returned, and `audio_ws_barge_in_stop_ms` measures from an interrupting voiced audio frame to the `interrupted` control event; real provider, LAN, microphone, speaker, and hardware latency benches remain future work.
 - Simulator now has browser microphone/mock-burst controls, local mock playback state, Gateway downlink chunk count, buffer depth, active stream display, real PCM decode/schedule via WebAudio, and scheduled-source stop on interruption; real provider TTS and StackChan speaker output remain future work.
 - Protocol and simulator now expose office visibility modes for private/public/pro/muted/listening states; only `professional` calls the V21 adapter.
 - No CI yet.

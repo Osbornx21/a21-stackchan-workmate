@@ -1040,6 +1040,67 @@ func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketVADStartDuringPlaybackTriggersBargeIn(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	firstChunk := writeAudioFrameWithPayload(t, ctx, conn, 1, "a21-trace-barge-audio", "a21-session-barge-audio", pcm16Base64WithSample(0))
+	if firstChunk.StreamID != "a21-audio-stream-000001" {
+		t.Fatalf("first stream = %q, want a21-audio-stream-000001", firstChunk.StreamID)
+	}
+
+	writeAudioFrameEnvelope(t, ctx, conn, 2, "a21-trace-barge-audio", "a21-session-barge-audio", pcm16Base64WithSample(12000))
+
+	events := readControlEvents(t, ctx, conn, 2)
+	var interrupted protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &interrupted); err != nil {
+		t.Fatal(err)
+	}
+	if interrupted.State != protocol.ExpressionInterrupted || interrupted.StreamID != firstChunk.StreamID {
+		t.Fatalf("interrupted payload = %+v, want interrupted stream %q", interrupted, firstChunk.StreamID)
+	}
+	var listening protocol.ControlEventPayload
+	if err := json.Unmarshal(events[1].Payload, &listening); err != nil {
+		t.Fatal(err)
+	}
+	if listening.State != protocol.ExpressionListening {
+		t.Fatalf("second state = %q, want listening", listening.State)
+	}
+
+	readCtx, readCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer readCancel()
+	var unexpected protocol.Envelope
+	if err := wsjson.Read(readCtx, conn, &unexpected); err == nil {
+		t.Fatalf("unexpected envelope after barge-in: %+v", unexpected)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-barge-audio", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"barge_in.detected", "provider.cancel", "playback.stop"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	if !strings.Contains(metricsRec.Body.String(), "a21_barge_in_total 1") {
+		t.Fatalf("metrics missing barge-in count:\n%s", metricsRec.Body.String())
+	}
+}
+
 func TestAudioWebSocketKeepsPlaybackStreamStableForTrace(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -1086,6 +1147,24 @@ func writeAudioFrame(t *testing.T, ctx context.Context, conn *websocket.Conn, se
 
 func writeAudioFrameWithPayload(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string, payloadBase64 string) protocol.AudioPlaybackChunk {
 	t.Helper()
+	writeAudioFrameEnvelope(t, ctx, conn, seq, traceID, sessionID, payloadBase64)
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("kind = %q, want playback chunk", playback.Kind)
+	}
+	var chunk protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
+		t.Fatal(err)
+	}
+	return chunk
+}
+
+func writeAudioFrameEnvelope(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string, payloadBase64 string) {
+	t.Helper()
 	audio, err := json.Marshal(protocol.AudioChunk{
 		Codec:        protocol.AudioCodecPCMS16LE,
 		SampleRateHz: 16000,
@@ -1107,19 +1186,6 @@ func writeAudioFrameWithPayload(t *testing.T, ctx context.Context, conn *websock
 	}); err != nil {
 		t.Fatal(err)
 	}
-	readControlEvents(t, ctx, conn, 2)
-	var playback protocol.Envelope
-	if err := wsjson.Read(ctx, conn, &playback); err != nil {
-		t.Fatal(err)
-	}
-	if playback.Kind != protocol.KindAudioPlaybackChunk {
-		t.Fatalf("kind = %q, want playback chunk", playback.Kind)
-	}
-	var chunk protocol.AudioPlaybackChunk
-	if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
-		t.Fatal(err)
-	}
-	return chunk
 }
 
 func pcm16Base64WithSample(sample int16) string {

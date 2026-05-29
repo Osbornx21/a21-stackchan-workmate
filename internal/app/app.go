@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -174,6 +175,7 @@ type latencyBenchSummary struct {
 	ProfessionalMS    latencyBenchSeries `json:"professional_turn_ms"`
 	BargeInStopMS     latencyBenchSeries `json:"barge_in_stop_ms"`
 	AudioWSDownlinkMS latencyBenchSeries `json:"audio_ws_downlink_ms"`
+	AudioWSBargeInMS  latencyBenchSeries `json:"audio_ws_barge_in_stop_ms"`
 }
 
 type latencyBenchSeries struct {
@@ -235,6 +237,7 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 	professional := make([]time.Duration, 0, iterations)
 	bargeIn := make([]time.Duration, 0, iterations)
 	audioDownlink := make([]time.Duration, 0, iterations)
+	audioBargeIn := make([]time.Duration, 0, iterations)
 	for i := 0; i < iterations; i++ {
 		duration, err := measureGatewayRequest(handler, http.MethodPost, "/v1/mock-turn", `{"device_id":"stackchan-bench-001","text":"先说，我在","mode":"workmate"}`)
 		if err != nil {
@@ -259,6 +262,12 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 			return latencyBenchReport{}, err
 		}
 		audioDownlink = append(audioDownlink, duration)
+
+		duration, err = measureGatewayAudioBargeIn(httpServer.URL, uint64(i+1))
+		if err != nil {
+			return latencyBenchReport{}, err
+		}
+		audioBargeIn = append(audioBargeIn, duration)
 	}
 	return latencyBenchReport{
 		Mode:       "mock",
@@ -268,6 +277,7 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 			ProfessionalMS:    latencySeries(professional),
 			BargeInStopMS:     latencySeries(bargeIn),
 			AudioWSDownlinkMS: latencySeries(audioDownlink),
+			AudioWSBargeInMS:  latencySeries(audioBargeIn),
 		},
 		OK: true,
 	}, nil
@@ -284,27 +294,9 @@ func measureGatewayAudioDownlink(serverURL string, seq uint64) (time.Duration, e
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "a21 latency bench done")
 
-	payload, err := json.Marshal(protocol.AudioChunk{
-		Codec:        protocol.AudioCodecPCMS16LE,
-		SampleRateHz: 16000,
-		Channels:     1,
-		DurationMS:   20,
-		DataBase64:   "AAAA",
-	})
-	if err != nil {
-		return 0, err
-	}
 	traceID := fmt.Sprintf("a21-trace-audio-bench-%06d", seq)
 	sessionID := fmt.Sprintf("a21-session-audio-bench-%06d", seq)
-	if err := wsjson.Write(ctx, conn, protocol.Envelope{
-		Protocol:  protocol.ProtocolVersion,
-		DeviceID:  "stackchan-bench-001",
-		Kind:      protocol.KindAudioFrame,
-		Seq:       seq,
-		TraceID:   traceID,
-		SessionID: sessionID,
-		Payload:   payload,
-	}); err != nil {
+	if err := writeLatencyBenchAudioFrame(ctx, conn, seq, traceID, sessionID, latencyBenchPCM16Base64(0)); err != nil {
 		return 0, err
 	}
 
@@ -328,6 +320,95 @@ func measureGatewayAudioDownlink(serverURL string, seq uint64) (time.Duration, e
 		return 0, fmt.Errorf("audio bench playback trace/session mismatch")
 	}
 	return time.Since(started), nil
+}
+
+func measureGatewayAudioBargeIn(serverURL string, seq uint64) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, latencyBenchWebSocketURL(serverURL, "/ws/audio"), nil)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "a21 latency bench done")
+
+	traceID := fmt.Sprintf("a21-trace-audio-barge-bench-%06d", seq)
+	sessionID := fmt.Sprintf("a21-session-audio-barge-bench-%06d", seq)
+	if err := writeLatencyBenchAudioFrame(ctx, conn, seq*2, traceID, sessionID, latencyBenchPCM16Base64(0)); err != nil {
+		return 0, err
+	}
+	for i := 0; i < 2; i++ {
+		var event protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &event); err != nil {
+			return 0, err
+		}
+		if event.Kind != protocol.KindControlEvent {
+			return 0, fmt.Errorf("audio barge-in setup event %d kind %q, want %q", i, event.Kind, protocol.KindControlEvent)
+		}
+	}
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		return 0, err
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		return 0, fmt.Errorf("audio barge-in setup playback kind %q, want %q", playback.Kind, protocol.KindAudioPlaybackChunk)
+	}
+
+	started := time.Now()
+	if err := writeLatencyBenchAudioFrame(ctx, conn, seq*2+1, traceID, sessionID, latencyBenchPCM16Base64(12000)); err != nil {
+		return 0, err
+	}
+	var interrupted protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &interrupted); err != nil {
+		return 0, err
+	}
+	duration := time.Since(started)
+	if interrupted.Kind != protocol.KindControlEvent {
+		return 0, fmt.Errorf("audio barge-in event kind %q, want %q", interrupted.Kind, protocol.KindControlEvent)
+	}
+	var payload protocol.ControlEventPayload
+	if err := json.Unmarshal(interrupted.Payload, &payload); err != nil {
+		return 0, err
+	}
+	if payload.State != protocol.ExpressionInterrupted {
+		return 0, fmt.Errorf("audio barge-in state %q, want %q", payload.State, protocol.ExpressionInterrupted)
+	}
+	if payload.StreamID == "" {
+		return 0, fmt.Errorf("audio barge-in missing stream_id")
+	}
+	return duration, nil
+}
+
+func writeLatencyBenchAudioFrame(ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string, dataBase64 string) error {
+	payload, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   dataBase64,
+	})
+	if err != nil {
+		return err
+	}
+	return wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-bench-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       seq,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		Payload:   payload,
+	})
+}
+
+func latencyBenchPCM16Base64(sample int16) string {
+	sampleCount := 16000 * 20 / 1000
+	data := make([]byte, sampleCount*2)
+	for i := 0; i < sampleCount; i++ {
+		data[i*2] = byte(sample)
+		data[i*2+1] = byte(uint16(sample) >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func latencyBenchWebSocketURL(serverURL string, path string) string {

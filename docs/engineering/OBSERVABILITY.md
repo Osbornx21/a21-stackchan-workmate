@@ -20,7 +20,7 @@ The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metric
 
 Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
 
-Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, mock VAD start/end markers, mock playback chunk sends, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
+Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, mock VAD start/end markers, mock playback chunk sends, audio-path barge-in markers, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
 
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
@@ -55,6 +55,9 @@ Current mock trace events include:
 - `audio.ingress.invalid`
 - `vad.speech.start`
 - `vad.speech.end`
+- `barge_in.detected`
+- `playback.stop`
+- `provider.cancel`
 - `audio.playback.chunk.sent`
 - `v21.query.start`
 - `v21.query.first_result`

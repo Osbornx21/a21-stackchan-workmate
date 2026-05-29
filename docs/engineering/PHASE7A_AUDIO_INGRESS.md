@@ -32,6 +32,21 @@ Gateway metrics now include:
 - `a21_vad_speech_start_total`
 - `a21_vad_speech_end_total`
 
+## Current Barge-In Control Point
+
+Gateway `/ws/audio` now tracks the active mock playback stream per session/trace/device key. When a new audio frame produces `vad.speech.start` while that stream is active, Gateway treats the frame as an audio-path barge-in:
+
+- clears the active stream
+- increments `a21_barge_in_total`
+- records `barge_in.detected`
+- records `playback.stop`
+- records `provider.cancel`
+- calls the voice provider `Cancel` contract with reason `barge_in` and the interrupted `stream_id`
+- sends `interrupted` followed by `listening`
+- does not send a new `audio.playback.chunk` for the interrupting frame
+
+This gives the simulator and future firmware a stable interruption contract before real AEC, production VAD, or provider streaming exists.
+
 ## Boundaries
 
 The current VAD is deliberately simple RMS thresholding. It is useful for trace, buffer, and state-machine integration tests only. It is not a replacement for a mature VAD/AEC stack.

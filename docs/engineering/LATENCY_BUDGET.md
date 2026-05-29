@@ -66,8 +66,11 @@ The report currently measures in-process Gateway paths for:
 - `professional_turn_ms`
 - `barge_in_stop_ms`
 - `audio_ws_downlink_ms`
+- `audio_ws_barge_in_stop_ms`
 
 `audio_ws_downlink_ms` opens a mock audio WebSocket, sends one `audio.frame`, and measures until the Gateway returns the mock speaking control state plus a full 20 ms / 16 kHz / mono / `pcm_s16le` `audio.playback.chunk`. Each mock chunk carries 640 raw PCM bytes encoded in base64, so the measurement now covers the Gateway downlink envelope path for a real-sized first PCM chunk instead of a tiny placeholder payload. Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles.
+
+`audio_ws_barge_in_stop_ms` opens the same mock audio WebSocket, establishes an active playback stream with a silent frame, then sends a voiced PCM16 frame that triggers mock VAD `vad.speech.start`. The measurement starts when the voiced frame is written and stops when Gateway returns `interrupted`. This protects the audio-channel interruption contract without claiming hardware microphone, speaker, AEC, or provider-cancel latency.
 
 The Gateway audio ingress path now has a small bounded frame buffer and RMS-based mock VAD transition detector. It records `audio.ingress.buffered`, `vad.speech.start`, and `vad.speech.end` trace markers and exposes ingress/VAD Prometheus metrics. This is a control-point and observability baseline for future tuning; it is not production VAD, echo cancellation, full-duplex validation, or LAN jitter characterization.
 

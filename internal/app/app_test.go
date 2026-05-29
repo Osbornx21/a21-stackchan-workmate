@@ -301,6 +301,7 @@ func TestRunLatencyBenchMockEmitsPercentileReport(t *testing.T) {
 		`"professional_turn_ms"`,
 		`"barge_in_stop_ms"`,
 		`"audio_ws_downlink_ms"`,
+		`"audio_ws_barge_in_stop_ms"`,
 		`"p50_ms"`,
 		`"p95_ms"`,
 	} {
