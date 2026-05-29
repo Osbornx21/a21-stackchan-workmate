@@ -54,3 +54,33 @@ type ControlEventPayload struct {
 	Final    bool            `json:"final,omitempty"`
 	StreamID string          `json:"stream_id,omitempty"`
 }
+
+type DeviceEventKind string
+
+const (
+	DeviceEventMockTurn  DeviceEventKind = "mock.turn"
+	DeviceEventInterrupt DeviceEventKind = "interrupt"
+)
+
+type DeviceEventPayload struct {
+	Event DeviceEventKind `json:"event"`
+	Mode  Mode            `json:"mode,omitempty"`
+	Text  string          `json:"text,omitempty"`
+}
+
+type AudioCodec string
+
+const (
+	AudioCodecPCMS16LE AudioCodec = "pcm_s16le"
+	AudioCodecOpus     AudioCodec = "opus"
+)
+
+type AudioChunk struct {
+	Codec              AudioCodec `json:"codec"`
+	SampleRateHz       int        `json:"sample_rate_hz"`
+	Channels           int        `json:"channels"`
+	DurationMS         int        `json:"duration_ms"`
+	CaptureStartedAtMS int64      `json:"capture_started_at_ms,omitempty"`
+	CaptureEndedAtMS   int64      `json:"capture_ended_at_ms,omitempty"`
+	DataBase64         string     `json:"data_base64"`
+}

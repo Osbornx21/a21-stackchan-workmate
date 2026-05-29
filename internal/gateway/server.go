@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 )
 
 type Server struct {
@@ -41,6 +44,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
+	mux.HandleFunc("/ws/control", s.handleControlWS)
+	mux.HandleFunc("/ws/audio", s.handleAudioWS)
 	return mux
 }
 
@@ -73,13 +78,7 @@ func (s *Server) handleMockTurn(w http.ResponseWriter, r *http.Request) {
 	if req.Mode == "" {
 		req.Mode = protocol.ModeWorkmate
 	}
-	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
-		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
-		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我想一下"},
-		{State: protocol.ExpressionSpeaking, Mode: req.Mode, Text: "先说，我在。", Final: true, StreamID: "a21-mock-stream-000001"},
-	})
-	writeJSON(w, http.StatusOK, MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events})
+	writeJSON(w, http.StatusOK, s.mockTurnResponse(req))
 }
 
 func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +95,90 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "device_id is required", http.StatusBadRequest)
 		return
 	}
+	writeJSON(w, http.StatusOK, s.mockInterruptResponse(req))
+}
+
+func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "a21 control closed")
+
+	ctx := context.Background()
+	for {
+		var event protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &event); err != nil {
+			return
+		}
+		events := s.controlEventsForDeviceEvent(event)
+		for _, control := range events {
+			if err := wsjson.Write(ctx, conn, control); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "a21 audio closed")
+
+	ctx := context.Background()
+	for {
+		var frame protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &frame); err != nil {
+			return
+		}
+		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
+		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
+		})
+		if err := wsjson.Write(ctx, conn, events[0]); err != nil {
+			return
+		}
+	}
+}
+
+func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol.Envelope {
+	var payload protocol.DeviceEventPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return s.errorEvents(event, "invalid device event")
+	}
+	req := MockTurnRequest{
+		DeviceID:  event.DeviceID,
+		Text:      payload.Text,
+		Mode:      payload.Mode,
+		TraceID:   event.TraceID,
+		SessionID: event.SessionID,
+	}
+	switch payload.Event {
+	case protocol.DeviceEventMockTurn:
+		return s.mockTurnResponse(req).Events
+	case protocol.DeviceEventInterrupt:
+		return s.mockInterruptResponse(req).Events
+	default:
+		return s.errorEvents(event, "unsupported device event")
+	}
+}
+
+func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
+	if req.Mode == "" {
+		req.Mode = protocol.ModeWorkmate
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
+		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我想一下"},
+		{State: protocol.ExpressionSpeaking, Mode: req.Mode, Text: "先说，我在。", Final: true, StreamID: "a21-mock-stream-000001"},
+	})
+	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+}
+
+func (s *Server) mockInterruptResponse(req MockTurnRequest) MockTurnResponse {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	mode := req.Mode
 	if mode == "" {
@@ -105,7 +188,14 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 		{State: protocol.ExpressionInterrupted, Mode: mode, Text: "好，我听新的。"},
 		{State: protocol.ExpressionListening, Mode: mode, Text: "你说。"},
 	})
-	writeJSON(w, http.StatusOK, MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events})
+	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+}
+
+func (s *Server) errorEvents(event protocol.Envelope, text string) []protocol.Envelope {
+	traceID, sessionID := s.ids(event.TraceID, event.SessionID)
+	return s.controlSequence(event.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+		{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: text, Final: true},
+	})
 }
 
 func (s *Server) ids(traceID string, sessionID string) (string, string) {

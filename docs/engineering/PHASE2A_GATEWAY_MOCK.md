@@ -4,6 +4,8 @@
 
 Phase 2A proves a no-hardware interaction loop without introducing WebSocket, browser UI, real audio, or real providers.
 
+Phase 2B now adds mock WebSocket boundaries on top of this HTTP foundation. See `PHASE2B_WEBSOCKET_BOUNDARY.md`.
+
 ## Current Endpoints
 
 - `GET /healthz`

@@ -78,3 +78,39 @@ func TestControlEventPayloadStates(t *testing.T) {
 		t.Fatalf("Mode = %q, want workmate", event.Mode)
 	}
 }
+
+func TestDeviceEventPayloadKinds(t *testing.T) {
+	event := DeviceEventPayload{
+		Event: DeviceEventMockTurn,
+		Mode:  ModeWorkmate,
+		Text:  "先说，我在",
+	}
+	if event.Event != "mock.turn" {
+		t.Fatalf("Event = %q, want mock.turn", event.Event)
+	}
+	if event.Mode != "workmate" {
+		t.Fatalf("Mode = %q, want workmate", event.Mode)
+	}
+}
+
+func TestAudioChunkPayloadShape(t *testing.T) {
+	chunk := AudioChunk{
+		Codec:              AudioCodecPCMS16LE,
+		SampleRateHz:       16000,
+		Channels:           1,
+		DurationMS:         20,
+		CaptureStartedAtMS: 1000,
+		CaptureEndedAtMS:   1020,
+		DataBase64:         "AAAA",
+	}
+	data, err := json.Marshal(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"codec":"pcm_s16le"`) {
+		t.Fatalf("json missing codec: %s", data)
+	}
+	if chunk.Channels != 1 {
+		t.Fatalf("Channels = %d, want 1", chunk.Channels)
+	}
+}

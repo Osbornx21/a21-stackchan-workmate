@@ -8,7 +8,7 @@ All A21-owned ports must be documented here before code starts depending on them
 
 | Port | Owner | Status | Purpose |
 | ---: | --- | --- | --- |
-| 21080 | A21 Core | reserved | future core HTTP/API/device OTA entry |
+| 21080 | A21 Gateway | active | HTTP mock endpoints and Phase 2B WebSocket boundary |
 | 21081 | A21 Realtime | reserved | future realtime voice or WebSocket entry |
 | 21073 | A21 Console | reserved | future dev console UI |
 | 21086 | A21 Observability | reserved | future trace/observability UI |
@@ -16,7 +16,7 @@ All A21-owned ports must be documented here before code starts depending on them
 | 21114 | A21 LLM Adapter | reserved | future local model/LLM adapter |
 | 21434 | A21 Local Model Bridge | reserved | future Ollama-compatible adapter |
 
-Phase 1 does not bind long-running services yet. Runtime preflight probes these ports on loopback and fails if they are occupied.
+Phase 2B binds `21080` only when `a21 gateway` is running. Runtime preflight probes reserved ports on loopback and fails if they are occupied.
 
 ## Legacy Ports Treated As Contaminated
 

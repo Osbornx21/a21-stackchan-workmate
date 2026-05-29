@@ -102,8 +102,8 @@ PATH without route/dig ... preflight                         exits 1
 
 ## Gaps
 
-- Phase 2A adds a mock gateway HTTP handler; real audio/control WebSocket remains future work.
-- No audio/control WebSocket yet.
+- Phase 2A adds a mock gateway HTTP handler.
+- Phase 2B adds mock audio/control WebSocket boundaries; real audio media processing remains future work.
 - No simulator yet.
 - No OpenTelemetry/Prometheus implementation yet.
 - No firmware tree yet.

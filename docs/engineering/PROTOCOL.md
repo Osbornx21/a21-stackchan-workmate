@@ -1,8 +1,8 @@
 # A21 Protocol
 
-## Current Phase 1 Contract
+## Current Contract
 
-The current Go protocol package defines a minimal device envelope:
+The current Go protocol package defines a small device envelope with trace/session metadata and raw JSON payloads:
 
 ```go
 const ProtocolVersion = "a21.device.v1"
@@ -15,49 +15,35 @@ const (
 	KindAssistantState   Kind = "assistant.state"
 	KindScreenExpression Kind = "screen.expression"
 	KindMotionCommand    Kind = "motion.command"
+	KindControlEvent     Kind = "control.event"
 )
 
 type Envelope struct {
-	Protocol string `json:"protocol"`
-	DeviceID string `json:"device_id"`
-	Kind     Kind   `json:"kind"`
-	Seq      uint64 `json:"seq"`
+	Protocol  string          `json:"protocol"`
+	DeviceID  string          `json:"device_id"`
+	Kind      Kind            `json:"kind"`
+	Seq       uint64          `json:"seq"`
+	TraceID   string          `json:"trace_id,omitempty"`
+	SessionID string          `json:"session_id,omitempty"`
+	SentAtMS  int64           `json:"sent_at_ms,omitempty"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 ```
 
-This is intentionally small. It establishes the A21 namespace and the first wire families without pretending to solve all device media concerns.
+This remains intentionally small. It establishes the A21 namespace, control events, device events, and mock audio chunks without pretending to solve all device media concerns.
 
 ## Protocol Rules
 
 - Every message family must be versioned.
 - Device messages must include `device_id`.
-- Runtime paths must be ready to carry `trace_id` and `session_id` before Phase 2 gateway work.
+- Runtime paths carry `trace_id` and `session_id`.
 - Audio and control traffic may share an envelope but should have separate transport surfaces when real-time behavior requires it.
 - StackChan firmware should receive semantic commands, not provider-specific events.
 - V21 evidence must not be encoded as generic chat text when in professional mode; it needs explicit evidence/card fields in later contracts.
 
-## Future Envelope Candidate
+## Audio Chunk
 
-Phase 2 may expand the envelope to:
-
-```ts
-type A21Envelope<TType extends string, TPayload> = {
-  version: "a21.protocol.v1";
-  type: TType;
-  trace_id: string;
-  session_id: string;
-  device_id: string;
-  seq: number;
-  sent_at_ms: number;
-  payload: TPayload;
-};
-```
-
-This is a candidate, not current code. If adopted, update the Go protocol first and keep simulator/firmware/generated schemas aligned.
-
-## Audio Chunk Direction
-
-Phase 2 should define:
+Current mock audio payload:
 
 - codec: `pcm_s16le` first, Opus later if needed
 - sample rates: 16000, 24000, or 48000 Hz
@@ -65,18 +51,15 @@ Phase 2 should define:
 - device frame duration: 20 ms or 40 ms for LAN responsiveness
 - provider aggregation: adapter-specific, often 100-200 ms
 
-## Control Event Direction
+## Control And Device Events
 
-Future control events should cover:
+Phase 2B supports:
 
-- state update
-- expression update
-- subtitle delta
-- playback start
-- playback stop
-- mode update
-- device status
-- trace marker
+- device event `mock.turn` -> control events `listening`, `thinking`, `speaking`
+- device event `interrupt` -> control events `interrupted`, `listening`
+- audio frame -> mock listening ack
+
+Future control events should cover subtitle deltas, playback start/stop, mode updates, device status, and trace markers.
 
 ## Barge-In Requirements
 
