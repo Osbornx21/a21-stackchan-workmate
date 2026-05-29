@@ -136,7 +136,7 @@ const simulatorHTML = `<!doctype html>
     body[data-state="listening"] .eye { transform: scaleY(1.08); }
     .side {
       display: grid;
-      grid-template-rows: auto auto auto auto auto auto 1fr;
+      grid-template-rows: auto auto auto auto auto auto auto 1fr;
       gap: 18px;
       padding: 24px;
       min-width: 0;
@@ -173,17 +173,43 @@ const simulatorHTML = `<!doctype html>
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
     }
-    .registry {
+    .registry, .audio-link {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       background: #141a1d;
       min-width: 0;
     }
-    .registry h2 {
+    .registry h2, .audio-link h2 {
       margin: 0 0 10px;
       font-size: 13px;
       font-weight: 680;
+    }
+    .audio-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .toggle {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #11171a;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .toggle input {
+      width: 16px;
+      height: 16px;
+      min-width: 0;
+      flex: 0 0 auto;
+      accent-color: var(--cyan);
     }
     .registry-grid {
       display: grid;
@@ -334,6 +360,21 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
           <div class="metric"><label>Session</label><div id="session">none</div></div>
         </div>
+        <section class="audio-link" aria-label="Audio Link">
+          <h2>Audio Link</h2>
+          <div class="audio-controls">
+            <button id="startMic">Start Mic</button>
+            <button id="stopMic">Stop Mic</button>
+            <button id="mockAudioBurst">Mock Burst</button>
+            <label class="toggle"><input id="mockPlayback" type="checkbox" checked> Playback</label>
+          </div>
+          <div class="registry-grid">
+            <div class="metric"><label>Input</label><div id="audioInputState">idle</div></div>
+            <div class="metric"><label>Frames</label><div id="audioFramesSent">0</div></div>
+            <div class="metric"><label>RMS</label><div id="audioRms">0.000</div></div>
+            <div class="metric"><label>Playback</label><div id="playbackState">stopped</div></div>
+          </div>
+        </section>
         <section class="registry" aria-label="Device Registry">
           <h2>Device Registry</h2>
           <div class="registry-grid">
@@ -365,6 +406,11 @@ const simulatorHTML = `<!doctype html>
       state: document.getElementById('state'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
+      audioInputState: document.getElementById('audioInputState'),
+      audioFramesSent: document.getElementById('audioFramesSent'),
+      audioRms: document.getElementById('audioRms'),
+      playbackState: document.getElementById('playbackState'),
+      mockPlayback: document.getElementById('mockPlayback'),
       registryDevice: document.getElementById('registryDevice'),
       registryIdentity: document.getElementById('registryIdentity'),
       registryFirmware: document.getElementById('registryFirmware'),
@@ -375,7 +421,19 @@ const simulatorHTML = `<!doctype html>
       mode: document.getElementById('mode'),
       utterance: document.getElementById('utterance')
     };
-    const sim = { control: null, audio: null, seq: 1, traceId: '', sessionId: '' };
+    const sim = {
+      control: null,
+      audio: null,
+      seq: 1,
+      traceId: '',
+      sessionId: '',
+      audioFrames: 0,
+      micStream: null,
+      audioContext: null,
+      analyser: null,
+      micTimer: null,
+      playbackContext: null
+    };
     const firmwareIdentity = {
       firmware_id: 'a21-stackchan',
       firmware_version: '0.1.0',
@@ -413,10 +471,50 @@ const simulatorHTML = `<!doctype html>
       rememberEnvelope(envelope);
       const payload = envelope.payload || {};
       if (payload.state) setState(payload.state);
+      updatePlaybackState(payload);
       if (payload.mode && payload.mode !== 'professional') clearProfessionalEvidence();
       if (payload.evidence || payload.screen_cards || payload.speech_blocks) renderProfessionalEvidence(payload);
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
       refreshWaterfall();
+    }
+    function updateAudioInput(state) {
+      ui.audioInputState.textContent = state;
+    }
+    function updateAudioFrameStats(rms) {
+      sim.audioFrames += 1;
+      ui.audioFramesSent.textContent = String(sim.audioFrames);
+      ui.audioRms.textContent = Number(rms || 0).toFixed(3);
+    }
+    function updatePlaybackState(payload) {
+      if (!payload || !payload.state) return;
+      if (payload.state === 'speaking') {
+        ui.playbackState.textContent = payload.stream_id ? 'playing ' + payload.stream_id : 'playing';
+        playMockPlaybackTick();
+      } else if (payload.state === 'interrupted') {
+        ui.playbackState.textContent = 'interrupted';
+      } else if (payload.state === 'error') {
+        ui.playbackState.textContent = 'error';
+      } else if (payload.state === 'listening' && payload.text === 'audio frame accepted') {
+        ui.playbackState.textContent = 'uplink ack';
+      }
+    }
+    function playMockPlaybackTick() {
+      if (!ui.mockPlayback.checked) return;
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtor) return;
+      const context = sim.playbackContext || new AudioCtor();
+      sim.playbackContext = context;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 440;
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.035, context.currentTime + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.09);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.1);
     }
     function escapeText(value) {
       return String(value || '').replace(/[&<>"']/g, (char) => ({
@@ -498,10 +596,12 @@ const simulatorHTML = `<!doctype html>
       refreshWaterfall();
     }
     function disconnect() {
+      stopMicrophoneStream();
       if (sim.control) sim.control.close();
       if (sim.audio) sim.audio.close();
       setConnected(false);
       setState('idle');
+      ui.playbackState.textContent = 'stopped';
     }
     function sendDeviceEvent(eventName) {
       if (!sim.control || sim.control.readyState !== WebSocket.OPEN) {
@@ -522,11 +622,12 @@ const simulatorHTML = `<!doctype html>
       refreshRegistry();
       refreshWaterfall();
     }
-    function sendAudioFrame() {
+    function sendAudioFramePayload(dataBase64, durationMS, rms, source) {
       if (!sim.audio || sim.audio.readyState !== WebSocket.OPEN) {
         log('audio socket is not connected');
         return;
       }
+      const endedAt = Date.now();
       const envelope = {
         protocol: 'a21.device.v1',
         device_id: 'stackchan-sim-001',
@@ -538,19 +639,104 @@ const simulatorHTML = `<!doctype html>
           codec: 'pcm_s16le',
           sample_rate_hz: 16000,
           channels: 1,
-          duration_ms: 20,
-          data_base64: 'AAAA'
+          duration_ms: durationMS,
+          capture_started_at_ms: endedAt - durationMS,
+          capture_ended_at_ms: endedAt,
+          data_base64: dataBase64
         }
       };
       sim.audio.send(JSON.stringify(envelope));
-      log('sent mock audio frame');
+      updateAudioFrameStats(rms);
+      log('sent ' + source + ' audio frame #' + sim.audioFrames);
       refreshWaterfall();
+    }
+    function sendAudioFrame() {
+      sendAudioFramePayload('AAAA', 20, 0, 'mock');
+    }
+    function sendMockAudioBurst() {
+      updateAudioInput('mock burst');
+      for (let i = 0; i < 5; i++) {
+        window.setTimeout(() => sendAudioFramePayload('AAAA', 20, 0, 'mock-burst'), i * 25);
+      }
+      window.setTimeout(() => updateAudioInput('idle'), 150);
+    }
+    function pcm16Base64FromFloat32(samples, count) {
+      const length = count || samples.length;
+      const bytes = new Uint8Array(length * 2);
+      const view = new DataView(bytes.buffer);
+      for (let i = 0; i < length; i++) {
+        const value = Math.max(-1, Math.min(1, samples[i % samples.length] || 0));
+        view.setInt16(i * 2, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+      }
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return btoa(binary);
+    }
+    async function startMicrophoneStream() {
+      if (sim.micTimer) return;
+      if (!sim.audio || sim.audio.readyState !== WebSocket.OPEN) {
+        log('connect audio websocket before starting mic');
+        updateAudioInput('needs connect');
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        updateAudioInput('unavailable');
+        log('browser microphone API unavailable');
+        return;
+      }
+      try {
+        updateAudioInput('requesting');
+        sim.micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+        sim.audioContext = new AudioCtor();
+        const source = sim.audioContext.createMediaStreamSource(sim.micStream);
+        sim.analyser = sim.audioContext.createAnalyser();
+        sim.analyser.fftSize = 1024;
+        source.connect(sim.analyser);
+        const samples = new Float32Array(1024);
+        sim.micTimer = window.setInterval(() => {
+          if (!sim.analyser) return;
+          sim.analyser.getFloatTimeDomainData(samples);
+          let sum = 0;
+          for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+          const rms = Math.sqrt(sum / samples.length);
+          sendAudioFramePayload(pcm16Base64FromFloat32(samples, 640), 40, rms, 'mic');
+        }, 40);
+        updateAudioInput('streaming');
+        log('microphone stream started');
+      } catch (err) {
+        updateAudioInput('blocked');
+        log('microphone unavailable or permission denied');
+      }
+    }
+    async function stopMicrophoneStream() {
+      if (sim.micTimer) {
+        window.clearInterval(sim.micTimer);
+        sim.micTimer = null;
+      }
+      if (sim.micStream) {
+        sim.micStream.getTracks().forEach((track) => track.stop());
+        sim.micStream = null;
+      }
+      if (sim.audioContext) {
+        await sim.audioContext.close();
+        sim.audioContext = null;
+      }
+      sim.analyser = null;
+      updateAudioInput('idle');
+      log('microphone stream stopped');
     }
     document.getElementById('connect').addEventListener('click', connect);
     document.getElementById('disconnect').addEventListener('click', disconnect);
     document.getElementById('mockTurn').addEventListener('click', () => sendDeviceEvent('mock.turn'));
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
+    document.getElementById('startMic').addEventListener('click', startMicrophoneStream);
+    document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
+    document.getElementById('mockAudioBurst').addEventListener('click', sendMockAudioBurst);
     refreshRegistry();
   </script>
 </body>
