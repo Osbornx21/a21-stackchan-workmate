@@ -48,6 +48,7 @@ make firmware-package
 make firmware-artifact-check
 make firmware-upload-check
 make gateway
+make release-check
 go run ./cmd/a21 version
 go run ./cmd/a21 preflight
 go run ./cmd/a21 doctor
@@ -55,6 +56,8 @@ go run ./cmd/a21 serial-list
 ```
 
 `doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
+
+`make release-check` is the local high-confidence gate. It runs Go verification, firmware native tests, clean-worktree firmware packaging, and doctor. Because packaging embeds the current git commit, run it only from a clean tree after the intended commit exists.
 
 ## Current A21 Code
 
@@ -145,8 +148,7 @@ These gaps are phase boundaries, not Phase 1 regressions.
 
 Proceed through the next phase without diluting the Go core:
 
-1. Add CI/local release gate that runs `make verify`, `make firmware-test`, `doctor`, and artifact checks.
-2. Add a V21 adapter client contract and mock server before touching real V21 internals.
-3. Add provider adapter health/cancel contracts behind deterministic mock tests.
-4. Expand simulator microphone/playback only after latency and trace fields are stable.
-5. Keep real firmware flashing disabled until physical-device identity checks are implemented.
+1. Add a V21 adapter client contract and mock server before touching real V21 internals.
+2. Add provider adapter health/cancel contracts behind deterministic mock tests.
+3. Expand simulator microphone/playback only after latency and trace fields are stable.
+4. Keep real firmware flashing disabled until physical-device identity checks are implemented.
