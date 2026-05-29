@@ -77,7 +77,9 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_touch.h` keeps touch as a semantic runtime (`wake_or_listen`, `barge_in`) instead of exposing coordinates or hardware registers to Gateway. Real screen touch and top-sensor calibration remain future hardware work; this slice only proves the tested intent pipeline and preserves the source label.
 
-The firmware still does not capture microphone audio, play Gateway audio, run VAD, or claim full-duplex behavior. The current audio WebSocket path is a disciplined transport probe only.
+`a21_firmware_playback.h` owns the first playback state machine. It starts a stream when the local state becomes `speaking` with a `stream_id`, writes only once for the same stream, and immediately stops plus clears pending audio when the state changes to `interrupted`, `listening`, `error`, `local_fallback`, or another non-speaking state. The CoreS3 main loop currently uses a no-op playback driver, so this proves cancellation semantics without driving the speaker.
+
+The firmware still does not capture microphone audio, play Gateway audio samples, run VAD, or claim full-duplex behavior. The current audio WebSocket and playback paths are disciplined transport/control probes only.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

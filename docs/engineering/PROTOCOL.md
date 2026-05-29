@@ -99,7 +99,7 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Future control events should cover subtitle deltas, playback start/stop, explicit mode update event kinds, device status, and trace markers.
+Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 
 ## Barge-In Requirements
 

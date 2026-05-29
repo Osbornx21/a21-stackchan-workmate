@@ -5,6 +5,7 @@
 #include "a21_firmware_config.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_motion.h"
+#include "a21_firmware_playback.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
@@ -201,6 +202,46 @@ void initFakeTouchDriver(FakeTouchDriver* fake, A21TouchDriver* driver) {
   }
   driver->ctx = fake;
   driver->read = fakeTouchRead;
+}
+
+struct FakePlaybackDriver {
+  int start_count;
+  int stop_count;
+  int clear_count;
+  char last_stream_id[A21_STREAM_ID_CAP];
+  char last_stop_reason[32];
+};
+
+bool fakePlaybackStart(void* ctx, const char* stream_id) {
+  FakePlaybackDriver* driver = static_cast<FakePlaybackDriver*>(ctx);
+  driver->start_count += 1;
+  a21CopyString(driver->last_stream_id, sizeof(driver->last_stream_id), stream_id);
+  return true;
+}
+
+bool fakePlaybackStop(void* ctx, const char* reason) {
+  FakePlaybackDriver* driver = static_cast<FakePlaybackDriver*>(ctx);
+  driver->stop_count += 1;
+  a21CopyString(driver->last_stop_reason, sizeof(driver->last_stop_reason), reason);
+  return true;
+}
+
+bool fakePlaybackClear(void* ctx) {
+  FakePlaybackDriver* driver = static_cast<FakePlaybackDriver*>(ctx);
+  driver->clear_count += 1;
+  return true;
+}
+
+void initFakePlaybackDriver(FakePlaybackDriver* fake, A21PlaybackDriver* driver) {
+  fake->start_count = 0;
+  fake->stop_count = 0;
+  fake->clear_count = 0;
+  fake->last_stream_id[0] = '\0';
+  fake->last_stop_reason[0] = '\0';
+  driver->ctx = fake;
+  driver->start = fakePlaybackStart;
+  driver->stop = fakePlaybackStop;
+  driver->clear = fakePlaybackClear;
 }
 
 void test_firmware_build_identity_contains_a21_release_fields() {
@@ -963,6 +1004,76 @@ void test_touch_runtime_sends_barge_in_from_top_sensor() {
   TEST_ASSERT_FALSE(doc["payload"]["text"].is<const char*>());
 }
 
+void test_playback_runtime_starts_once_for_speaking_stream() {
+  A21PlaybackRuntime runtime;
+  A21FirmwareState state;
+  FakePlaybackDriver fake;
+  A21PlaybackDriver driver;
+  a21InitPlaybackRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakePlaybackDriver(&fake, &driver);
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "stream-1");
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_TRUE(runtime.playing);
+  TEST_ASSERT_EQUAL_STRING("stream-1", runtime.active_stream_id);
+  TEST_ASSERT_EQUAL_INT(1, fake.start_count);
+  TEST_ASSERT_EQUAL_INT(0, fake.stop_count);
+  TEST_ASSERT_EQUAL_INT(0, fake.clear_count);
+
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_EQUAL_INT(1, fake.start_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.start_count);
+}
+
+void test_playback_runtime_stops_and_clears_on_barge_in() {
+  A21PlaybackRuntime runtime;
+  A21FirmwareState state;
+  FakePlaybackDriver fake;
+  A21PlaybackDriver driver;
+  a21InitPlaybackRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakePlaybackDriver(&fake, &driver);
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "stream-1");
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+
+  state.render_state = A21_RENDER_INTERRUPTED;
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_FALSE(runtime.playing);
+  TEST_ASSERT_EQUAL_STRING("", runtime.active_stream_id);
+  TEST_ASSERT_EQUAL_INT(1, fake.stop_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.clear_count);
+  TEST_ASSERT_EQUAL_STRING("barge_in", fake.last_stop_reason);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.stop_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.clear_count);
+}
+
+void test_playback_runtime_replaces_stream_with_stop_and_clear() {
+  A21PlaybackRuntime runtime;
+  A21FirmwareState state;
+  FakePlaybackDriver fake;
+  A21PlaybackDriver driver;
+  a21InitPlaybackRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakePlaybackDriver(&fake, &driver);
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "stream-1");
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "stream-2");
+  TEST_ASSERT_TRUE(a21PlaybackRuntimeApplyState(&runtime, &driver, &state));
+  TEST_ASSERT_TRUE(runtime.playing);
+  TEST_ASSERT_EQUAL_STRING("stream-2", runtime.active_stream_id);
+  TEST_ASSERT_EQUAL_INT(2, fake.start_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.stop_count);
+  TEST_ASSERT_EQUAL_INT(1, fake.clear_count);
+  TEST_ASSERT_EQUAL_STRING("replace_stream", fake.last_stop_reason);
+}
+
 void test_servo_y_angle_clamps_to_stackchan_safe_range() {
   TEST_ASSERT_EQUAL_INT(5, A21_SERVO_Y_MIN_DEG);
   TEST_ASSERT_EQUAL_INT(85, A21_SERVO_Y_MAX_DEG);
@@ -1119,6 +1230,9 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
   RUN_TEST(test_touch_runtime_sends_wake_or_listen_with_semantic_source);
   RUN_TEST(test_touch_runtime_sends_barge_in_from_top_sensor);
+  RUN_TEST(test_playback_runtime_starts_once_for_speaking_stream);
+  RUN_TEST(test_playback_runtime_stops_and_clears_on_barge_in);
+  RUN_TEST(test_playback_runtime_replaces_stream_with_stop_and_clear);
   RUN_TEST(test_servo_y_angle_clamps_to_stackchan_safe_range);
   RUN_TEST(test_motion_target_maps_render_states_to_safe_y_angles);
   RUN_TEST(test_motion_runtime_writes_once_per_y_angle_change);

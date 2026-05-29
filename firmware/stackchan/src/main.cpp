@@ -8,6 +8,7 @@
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
+#include "a21_firmware_playback.h"
 #include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_touch.h"
@@ -98,6 +99,7 @@ A21AudioWSRuntime g_audio_ws_runtime;
 A21MotionRuntime g_motion_runtime;
 A21RGBRuntime g_rgb_runtime;
 A21TouchRuntime g_touch_runtime;
+A21PlaybackRuntime g_playback_runtime;
 
 struct A21ArduinoTextWS {
   WebSocketsClient client;
@@ -296,6 +298,30 @@ A21TouchDriver g_touch_driver = {
     arduinoTouchRead,
 };
 
+bool arduinoPlaybackStart(void* ctx, const char* stream_id) {
+  (void)ctx;
+  (void)stream_id;
+  return true;
+}
+
+bool arduinoPlaybackStop(void* ctx, const char* reason) {
+  (void)ctx;
+  (void)reason;
+  return true;
+}
+
+bool arduinoPlaybackClear(void* ctx) {
+  (void)ctx;
+  return true;
+}
+
+A21PlaybackDriver g_playback_driver = {
+    nullptr,
+    arduinoPlaybackStart,
+    arduinoPlaybackStop,
+    arduinoPlaybackClear,
+};
+
 void handleLocalControls(uint32_t now_ms) {
   if (M5.BtnA.wasClicked()) {
     g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_WAKE_OR_LISTEN};
@@ -350,6 +376,7 @@ void setup() {
   a21InitMotionRuntime(&g_motion_runtime);
   a21InitRGBRuntime(&g_rgb_runtime);
   a21InitTouchRuntime(&g_touch_runtime);
+  a21InitPlaybackRuntime(&g_playback_runtime);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
@@ -366,6 +393,7 @@ void loop() {
   a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, now_ms);
   a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
   a21AudioWSRuntimeTick(&g_audio_ws_runtime, &g_audio_ws_driver, &g_connection, &g_network, &g_state, now_ms);
+  a21PlaybackRuntimeApplyState(&g_playback_runtime, &g_playback_driver, &g_state);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);

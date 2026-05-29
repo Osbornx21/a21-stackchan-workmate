@@ -98,6 +98,7 @@ Firmware-specific protections now include:
 - semantic render states now map to safe Y-axis motion targets through a driver interface; CoreS3 currently uses a no-op driver until calibrated hardware output is added.
 - semantic render states now map to RGB state colors through a driver interface; CoreS3 currently uses a no-op driver until calibrated RGB hardware output is added.
 - semantic touch intents now map to A21 `touch.wake_or_listen` and `touch.barge_in` device events while preserving `screen` versus `top_sensor` source metadata; CoreS3 button inputs currently feed this runtime as a hardware-free development path.
+- playback now has a tested no-op driver boundary that starts on speaking `stream_id`, stops and clears on barge-in, and replaces streams with stop/clear before restart; real speaker sample output is still not implemented.
 
 ## Legacy Neighbor Risks
 

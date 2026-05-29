@@ -105,6 +105,7 @@ Current native firmware tests cover:
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 - audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, and send rejection while disconnected
 - semantic touch intent runtime for `wake_or_listen` and `barge_in`, preserving `screen` vs `top_sensor` source metadata through Gateway `device.event` envelopes
+- playback state-machine behavior for starting a speaking stream once, replacing streams with stop/clear, and stopping plus clearing immediately on barge-in
 - StackChan Y-axis servo clamp to 5 to 85 degrees
 - semantic render-state to Y-axis motion target mapping, plus write-on-change motion runtime behavior through a driver interface
 - semantic render-state to RGB color mapping, plus write-on-change RGB runtime behavior through a driver interface

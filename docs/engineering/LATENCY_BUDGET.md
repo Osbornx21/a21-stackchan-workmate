@@ -69,3 +69,9 @@ The report currently measures in-process Gateway paths for:
 Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles. Mock results do not represent real provider, LAN, microphone, speaker, or StackChan hardware latency. They only protect report shape and Gateway baseline behavior.
 
 Future real-provider/device benchmarks must add environment fingerprint and store a report artifact before their results count for release decisions.
+
+## Current Firmware Playback Control
+
+The StackChan firmware now has a hardware-free playback state machine. It records the local transition from `speaking` plus `stream_id` to playback started, and it stops plus clears pending playback when the state leaves `speaking`, especially `interrupted`.
+
+This does not prove speaker output latency yet. It establishes the device-side control point that future real audio playback, mouth sync, and barge-in measurements must instrument as `device_playback_start_ms` and `playback_stop_ms`.
