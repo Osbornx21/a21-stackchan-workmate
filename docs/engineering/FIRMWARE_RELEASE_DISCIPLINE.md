@@ -166,6 +166,16 @@ make firmware-upload-check
 
 This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, or non-`/dev/` paths. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
 
+Successful `firmware-upload-check` output is intentionally a dry-run receipt. The JSON must include:
+
+- `guard_id: a21.firmware.upload_guard.v1`
+- `dry_run: true`
+- `flash_allowed: false`
+- `next_required_confirmation: physical_device_identity`
+- `port_usage`
+
+Any future real flashing command must not reinterpret this receipt as permission to flash. It is evidence that the candidate passed preflight checks, and nothing more.
+
 The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
 
 Before any future firmware upload:

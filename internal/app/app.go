@@ -413,11 +413,12 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 		fmt.Fprintf(stderr, "firmware upload check failed: upload port %s is already in use: %s\n", options.Port, portUsage.Detail)
 		return 1
 	}
+	result.PortUsage = portUsage
 	if err := writeJSONFirmwareUploadCheck(stdout, result); err != nil {
 		fmt.Fprintf(stderr, "encode firmware upload check result: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "firmware upload guard ok")
+	fmt.Fprintln(stdout, "firmware upload dry-run guard ok (no flash performed)")
 	return 0
 }
 

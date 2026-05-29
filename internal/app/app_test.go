@@ -461,8 +461,19 @@ func TestRunFirmwareUploadCheckAcceptsExplicitDevicePort(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "firmware upload guard ok") {
+	if !strings.Contains(stdout.String(), "firmware upload dry-run guard ok (no flash performed)") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+	for _, want := range []string{
+		`"guard_id": "a21.firmware.upload_guard.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"port_usage"`,
+		`"exists": true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
 	}
 }
 

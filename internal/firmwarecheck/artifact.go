@@ -34,9 +34,14 @@ type UploadCheckOptions struct {
 }
 
 type UploadCheckResult struct {
-	Artifact ArtifactResult `json:"artifact"`
-	Port     string         `json:"port"`
-	OK       bool           `json:"ok"`
+	GuardID                  string         `json:"guard_id"`
+	DryRun                   bool           `json:"dry_run"`
+	FlashAllowed             bool           `json:"flash_allowed"`
+	NextRequiredConfirmation string         `json:"next_required_confirmation"`
+	Artifact                 ArtifactResult `json:"artifact"`
+	Port                     string         `json:"port"`
+	PortUsage                PortUsage      `json:"port_usage,omitempty"`
+	OK                       bool           `json:"ok"`
 }
 
 func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
@@ -103,7 +108,15 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 	if !sameGitCommit(options.Commit, artifact.Commit) {
 		return UploadCheckResult{}, fmt.Errorf("artifact commit %q does not match expected commit %q", artifact.Commit, options.Commit)
 	}
-	return UploadCheckResult{Artifact: artifact, Port: options.Port, OK: true}, nil
+	return UploadCheckResult{
+		GuardID:                  "a21.firmware.upload_guard.v1",
+		DryRun:                   true,
+		FlashAllowed:             false,
+		NextRequiredConfirmation: "physical_device_identity",
+		Artifact:                 artifact,
+		Port:                     options.Port,
+		OK:                       true,
+	}, nil
 }
 
 type parsedArtifactName struct {
