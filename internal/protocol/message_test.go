@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,45 @@ func TestMessageKindsCoverCoreDeviceLoop(t *testing.T) {
 		if string(got) != want {
 			t.Fatalf("kind = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestEnvelopeSupportsTraceSessionAndPayload(t *testing.T) {
+	payload := json.RawMessage(`{"state":"listening","mode":"workmate"}`)
+	msg := Envelope{
+		Protocol:  ProtocolVersion,
+		DeviceID:  "stackchan-sim-001",
+		Kind:      KindControlEvent,
+		Seq:       1,
+		TraceID:   "a21-trace-000001",
+		SessionID: "a21-session-000001",
+		SentAtMS:  1234,
+		Payload:   payload,
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"trace_id":"a21-trace-000001"`) {
+		t.Fatalf("json missing trace_id: %s", data)
+	}
+	if !strings.Contains(string(data), `"payload":{"state":"listening","mode":"workmate"}`) {
+		t.Fatalf("json missing payload: %s", data)
+	}
+}
+
+func TestControlEventPayloadStates(t *testing.T) {
+	event := ControlEventPayload{
+		State: ExpressionListening,
+		Mode:  ModeWorkmate,
+		Text:  "我在听",
+		Final: false,
+	}
+	if event.State != "listening" {
+		t.Fatalf("State = %q, want listening", event.State)
+	}
+	if event.Mode != "workmate" {
+		t.Fatalf("Mode = %q, want workmate", event.Mode)
 	}
 }

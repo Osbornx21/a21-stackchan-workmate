@@ -102,7 +102,7 @@ PATH without route/dig ... preflight                         exits 1
 
 ## Gaps
 
-- No gateway HTTP server yet.
+- Phase 2A adds a mock gateway HTTP handler; real audio/control WebSocket remains future work.
 - No audio/control WebSocket yet.
 - No simulator yet.
 - No OpenTelemetry/Prometheus implementation yet.

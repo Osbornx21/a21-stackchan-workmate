@@ -42,3 +42,25 @@ func TestRunDoctorEmitsReport(t *testing.T) {
 		t.Fatalf("stdout missing fingerprint report: %q", stdout.String())
 	}
 }
+
+func TestRunGatewayHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	code := Run([]string{"gateway", "--help"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "a21 gateway") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunGatewayRejectsUnknownFlag(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"gateway", "--wat"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if stderr.String() == "" {
+		t.Fatal("expected error text")
+	}
+}
