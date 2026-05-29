@@ -278,9 +278,9 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 		SessionID: event.SessionID,
 	}
 	switch payload.Event {
-	case protocol.DeviceEventMockTurn:
+	case protocol.DeviceEventMockTurn, protocol.DeviceEventTouchWakeOrListen:
 		return s.mockTurnResponse(req).Events
-	case protocol.DeviceEventInterrupt:
+	case protocol.DeviceEventInterrupt, protocol.DeviceEventTouchBargeIn:
 		return s.mockInterruptResponse(req).Events
 	default:
 		return s.errorEvents(event, "unsupported device event")

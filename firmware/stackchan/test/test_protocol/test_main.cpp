@@ -8,6 +8,7 @@
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
+#include "a21_firmware_touch.h"
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_wifi.h"
 #include "a21_firmware_wifi_runtime.h"
@@ -171,6 +172,35 @@ void initFakeRGBDriver(FakeRGBDriver* fake, A21RGBDriver* driver) {
   fake->last_color = {0, 0, 0};
   driver->ctx = fake;
   driver->write = fakeRGBWrite;
+}
+
+struct FakeTouchDriver {
+  int read_count;
+  uint8_t cursor;
+  uint8_t sample_count;
+  A21TouchSample samples[4];
+};
+
+bool fakeTouchRead(void* ctx, A21TouchSample* sample) {
+  FakeTouchDriver* driver = static_cast<FakeTouchDriver*>(ctx);
+  driver->read_count += 1;
+  if (driver->cursor >= driver->sample_count) {
+    return false;
+  }
+  *sample = driver->samples[driver->cursor];
+  driver->cursor += 1;
+  return true;
+}
+
+void initFakeTouchDriver(FakeTouchDriver* fake, A21TouchDriver* driver) {
+  fake->read_count = 0;
+  fake->cursor = 0;
+  fake->sample_count = 0;
+  for (int i = 0; i < 4; ++i) {
+    fake->samples[i] = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
+  }
+  driver->ctx = fake;
+  driver->read = fakeTouchRead;
 }
 
 void test_firmware_build_identity_contains_a21_release_fields() {
@@ -852,6 +882,87 @@ void test_audio_ws_send_mock_frame_rejects_when_audio_not_connected() {
   TEST_ASSERT_EQUAL_UINT64(1, runtime.next_seq);
 }
 
+void test_touch_runtime_sends_wake_or_listen_with_semantic_source() {
+  A21TouchRuntime touch;
+  A21GatewayWSRuntime gateway_runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake_gateway;
+  A21GatewayWSDriver gateway_driver;
+  FakeTouchDriver fake_touch;
+  A21TouchDriver touch_driver;
+  initFakeGatewayWSDriver(&fake_gateway, &gateway_driver);
+  initFakeTouchDriver(&fake_touch, &touch_driver);
+  fake_gateway.connected = true;
+  fake_touch.samples[0] = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_WAKE_OR_LISTEN};
+  fake_touch.sample_count = 1;
+  a21InitTouchRuntime(&touch);
+  a21InitGatewayWSRuntime(&gateway_runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 2300);
+
+  TEST_ASSERT_TRUE(a21TouchRuntimeTick(
+      &touch,
+      &touch_driver,
+      &gateway_runtime,
+      &gateway_driver,
+      &connection,
+      &state,
+      2300));
+
+  TEST_ASSERT_EQUAL_INT(1, fake_gateway.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, touch.handled_count);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_WAKE_OR_LISTEN, touch.last_intent);
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_SCREEN, touch.last_source);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake_gateway.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("touch.wake_or_listen", doc["payload"]["event"] | "");
+  TEST_ASSERT_EQUAL_STRING("screen", doc["payload"]["touch_source"] | "");
+  TEST_ASSERT_EQUAL_STRING("workmate", doc["payload"]["mode"] | "");
+  TEST_ASSERT_EQUAL_STRING("先说，我在", doc["payload"]["text"] | "");
+}
+
+void test_touch_runtime_sends_barge_in_from_top_sensor() {
+  A21TouchRuntime touch;
+  A21GatewayWSRuntime gateway_runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  FakeGatewayWSDriver fake_gateway;
+  A21GatewayWSDriver gateway_driver;
+  FakeTouchDriver fake_touch;
+  A21TouchDriver touch_driver;
+  initFakeGatewayWSDriver(&fake_gateway, &gateway_driver);
+  initFakeTouchDriver(&fake_touch, &touch_driver);
+  fake_gateway.connected = true;
+  fake_touch.samples[0] = {A21_TOUCH_SOURCE_TOP_SENSOR, A21_TOUCH_INTENT_BARGE_IN};
+  fake_touch.sample_count = 1;
+  a21InitTouchRuntime(&touch);
+  a21InitGatewayWSRuntime(&gateway_runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 2400);
+
+  TEST_ASSERT_TRUE(a21TouchRuntimeTick(
+      &touch,
+      &touch_driver,
+      &gateway_runtime,
+      &gateway_driver,
+      &connection,
+      &state,
+      2400));
+
+  TEST_ASSERT_EQUAL_INT(1, fake_gateway.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, touch.handled_count);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, touch.last_intent);
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_TOP_SENSOR, touch.last_source);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake_gateway.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("touch.barge_in", doc["payload"]["event"] | "");
+  TEST_ASSERT_EQUAL_STRING("top_sensor", doc["payload"]["touch_source"] | "");
+  TEST_ASSERT_FALSE(doc["payload"]["text"].is<const char*>());
+}
+
 void test_servo_y_angle_clamps_to_stackchan_safe_range() {
   TEST_ASSERT_EQUAL_INT(5, A21_SERVO_Y_MIN_DEG);
   TEST_ASSERT_EQUAL_INT(85, A21_SERVO_Y_MAX_DEG);
@@ -1006,6 +1117,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);
   RUN_TEST(test_audio_ws_applies_gateway_ack_control_event);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
+  RUN_TEST(test_touch_runtime_sends_wake_or_listen_with_semantic_source);
+  RUN_TEST(test_touch_runtime_sends_barge_in_from_top_sensor);
   RUN_TEST(test_servo_y_angle_clamps_to_stackchan_safe_range);
   RUN_TEST(test_motion_target_maps_render_states_to_safe_y_angles);
   RUN_TEST(test_motion_runtime_writes_once_per_y_angle_change);

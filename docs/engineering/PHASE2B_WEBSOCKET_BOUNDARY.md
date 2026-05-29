@@ -28,6 +28,8 @@ Supported mock events:
 
 - `mock.turn`: emits `listening`, `thinking`, `speaking`
 - `interrupt`: emits `interrupted`, `listening`
+- `touch.wake_or_listen`: emits the same low-latency mock turn sequence while preserving semantic touch origin in payload metadata
+- `touch.barge_in`: emits the same interruption sequence while preserving semantic touch origin in payload metadata
 
 Trace and session IDs are propagated from the device event when supplied. If missing, the mock gateway assigns deterministic A21 IDs.
 

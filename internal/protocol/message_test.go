@@ -121,6 +121,32 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 	}
 }
 
+func TestDeviceEventPayloadKindsCoverTouchSemantics(t *testing.T) {
+	tests := map[DeviceEventKind]string{
+		DeviceEventTouchWakeOrListen: "touch.wake_or_listen",
+		DeviceEventTouchBargeIn:      "touch.barge_in",
+	}
+	for got, want := range tests {
+		if string(got) != want {
+			t.Fatalf("touch event = %q, want %q", got, want)
+		}
+	}
+
+	event := DeviceEventPayload{
+		Event:       DeviceEventTouchWakeOrListen,
+		Mode:        ModeWorkmate,
+		Text:        "先说，我在",
+		TouchSource: TouchSourceScreen,
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"touch_source":"screen"`) {
+		t.Fatalf("json missing touch source: %s", data)
+	}
+}
+
 func TestAudioChunkPayloadShape(t *testing.T) {
 	chunk := AudioChunk{
 		Codec:              AudioCodecPCMS16LE,

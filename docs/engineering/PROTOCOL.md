@@ -75,6 +75,8 @@ Phase 2B supports:
 
 - device event `mock.turn` -> control events `listening`, `thinking`, `speaking`
 - device event `interrupt` -> control events `interrupted`, `listening`
+- device event `touch.wake_or_listen` -> same turn path as `mock.turn`, with optional `touch_source`
+- device event `touch.barge_in` -> same interruption path as `interrupt`, with optional `touch_source`
 - audio frame -> mock listening ack
 
 Firmware-originated `device.event` payloads may also carry build identity:
@@ -83,6 +85,7 @@ Firmware-originated `device.event` payloads may also carry build identity:
 - `firmware_version`: semver-like A21 firmware version
 - `firmware_board`: must be `m5stack-cores3` when present
 - `firmware_commit`: git SHA embedded by the A21 PlatformIO pre-build script
+- `touch_source`: `screen` or `top_sensor` for semantic touch-origin events
 
 Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
 

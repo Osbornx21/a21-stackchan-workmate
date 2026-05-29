@@ -10,6 +10,7 @@
 #include "a21_firmware_network.h"
 #include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
+#include "a21_firmware_touch.h"
 #include "a21_firmware_wifi.h"
 #include "a21_firmware_wifi_runtime.h"
 
@@ -96,6 +97,7 @@ A21GatewayWSRuntime g_gateway_ws_runtime;
 A21AudioWSRuntime g_audio_ws_runtime;
 A21MotionRuntime g_motion_runtime;
 A21RGBRuntime g_rgb_runtime;
+A21TouchRuntime g_touch_runtime;
 
 struct A21ArduinoTextWS {
   WebSocketsClient client;
@@ -272,28 +274,36 @@ A21RGBDriver g_rgb_driver = {
     arduinoRGBWrite,
 };
 
+struct A21ArduinoTouchState {
+  bool has_sample;
+  A21TouchSample sample;
+};
+
+A21ArduinoTouchState g_touch_state;
+
+bool arduinoTouchRead(void* ctx, A21TouchSample* sample) {
+  A21ArduinoTouchState* state = static_cast<A21ArduinoTouchState*>(ctx);
+  if (state == nullptr || sample == nullptr || !state->has_sample) {
+    return false;
+  }
+  *sample = state->sample;
+  state->has_sample = false;
+  return true;
+}
+
+A21TouchDriver g_touch_driver = {
+    &g_touch_state,
+    arduinoTouchRead,
+};
+
 void handleLocalControls(uint32_t now_ms) {
   if (M5.BtnA.wasClicked()) {
-    a21GatewayWSSendDeviceEvent(
-        &g_gateway_ws_runtime,
-        &g_gateway_ws_driver,
-        &g_connection,
-        &g_state,
-        "mock.turn",
-        "workmate",
-        "先说，我在",
-        now_ms);
+    g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_WAKE_OR_LISTEN};
+    g_touch_state.has_sample = true;
   }
   if (M5.BtnB.wasClicked()) {
-    a21GatewayWSSendDeviceEvent(
-        &g_gateway_ws_runtime,
-        &g_gateway_ws_driver,
-        &g_connection,
-        &g_state,
-        "interrupt",
-        "workmate",
-        "",
-        now_ms);
+    g_touch_state.sample = {A21_TOUCH_SOURCE_TOP_SENSOR, A21_TOUCH_INTENT_BARGE_IN};
+    g_touch_state.has_sample = true;
   }
   if (M5.BtnC.wasClicked()) {
     a21AudioWSSendMockFrame(
@@ -303,6 +313,14 @@ void handleLocalControls(uint32_t now_ms) {
         &g_state,
         now_ms);
   }
+  a21TouchRuntimeTick(
+      &g_touch_runtime,
+      &g_touch_driver,
+      &g_gateway_ws_runtime,
+      &g_gateway_ws_driver,
+      &g_connection,
+      &g_state,
+      now_ms);
 }
 
 void drawIfChanged() {
@@ -331,6 +349,9 @@ void setup() {
   a21InitAudioWSRuntime(&g_audio_ws_runtime);
   a21InitMotionRuntime(&g_motion_runtime);
   a21InitRGBRuntime(&g_rgb_runtime);
+  a21InitTouchRuntime(&g_touch_runtime);
+  g_touch_state.has_sample = false;
+  g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
     a21CopyString(g_state.text, A21_TEXT_CAP, "A21 Gateway config error");
     a21CopyString(g_state.last_error, A21_ERROR_CAP, "network_config");

@@ -50,12 +50,56 @@ inline bool a21GatewayWSDriverReady(const A21GatewayWSDriver* driver) {
          driver->send_text != nullptr;
 }
 
+inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
+    const A21GatewayWSRuntime* runtime,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    const char* touch_source,
+    uint32_t now_ms,
+    char* output,
+    size_t output_size);
+
+inline bool a21GatewayWSSendDeviceEventWithTouchSource(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    const char* touch_source,
+    uint32_t now_ms);
+
 inline bool a21GatewayWSBuildDeviceEvent(
     const A21GatewayWSRuntime* runtime,
     const A21FirmwareState* state,
     const char* event,
     const char* mode,
     const char* text,
+    uint32_t now_ms,
+    char* output,
+    size_t output_size) {
+  return a21GatewayWSBuildDeviceEventWithTouchSource(
+      runtime,
+      state,
+      event,
+      mode,
+      text,
+      "",
+      now_ms,
+      output,
+      output_size);
+}
+
+inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
+    const A21GatewayWSRuntime* runtime,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    const char* touch_source,
     uint32_t now_ms,
     char* output,
     size_t output_size) {
@@ -85,6 +129,9 @@ inline bool a21GatewayWSBuildDeviceEvent(
   if (text != nullptr && text[0] != '\0') {
     payload["text"] = text;
   }
+  if (touch_source != nullptr && touch_source[0] != '\0') {
+    payload["touch_source"] = touch_source;
+  }
 
   const size_t written = serializeJson(doc, output, output_size);
   return written > 0 && written < output_size;
@@ -99,6 +146,28 @@ inline bool a21GatewayWSSendDeviceEvent(
     const char* mode,
     const char* text,
     uint32_t now_ms) {
+  return a21GatewayWSSendDeviceEventWithTouchSource(
+      runtime,
+      driver,
+      connection,
+      state,
+      event,
+      mode,
+      text,
+      "",
+      now_ms);
+}
+
+inline bool a21GatewayWSSendDeviceEventWithTouchSource(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const char* event,
+    const char* mode,
+    const char* text,
+    const char* touch_source,
+    uint32_t now_ms) {
   if (runtime == nullptr || !a21GatewayWSDriverReady(driver) || connection == nullptr || state == nullptr) {
     return false;
   }
@@ -107,7 +176,7 @@ inline bool a21GatewayWSSendDeviceEvent(
   }
 
   char message[A21_WS_TEXT_MESSAGE_CAP];
-  if (!a21GatewayWSBuildDeviceEvent(runtime, state, event, mode, text, now_ms, message, sizeof(message))) {
+  if (!a21GatewayWSBuildDeviceEventWithTouchSource(runtime, state, event, mode, text, touch_source, now_ms, message, sizeof(message))) {
     return false;
   }
   if (!driver->send_text(driver->ctx, message)) {

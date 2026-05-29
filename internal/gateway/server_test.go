@@ -720,6 +720,105 @@ func TestControlWebSocketInterruptKeepsTrace(t *testing.T) {
 	}
 }
 
+func TestControlWebSocketTouchWakeOrListenMapsToMockTurn(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       3,
+		TraceID:   "a21-trace-touch-001",
+		SessionID: "a21-session-touch-001",
+	}, protocol.DeviceEventPayload{
+		Event:       protocol.DeviceEventTouchWakeOrListen,
+		Mode:        protocol.ModeWorkmate,
+		Text:        "先说，我在",
+		TouchSource: protocol.TouchSourceScreen,
+	})
+
+	events := readControlEvents(t, ctx, conn, 3)
+	wantStates := []protocol.ExpressionState{
+		protocol.ExpressionListening,
+		protocol.ExpressionThinking,
+		protocol.ExpressionSpeaking,
+	}
+	for i, want := range wantStates {
+		var payload protocol.ControlEventPayload
+		if err := json.Unmarshal(events[i].Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.State != want {
+			t.Fatalf("event %d state = %q, want %q", i, payload.State, want)
+		}
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var registry DeviceRegistryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(registry.Devices))
+	}
+	if registry.Devices[0].LastEvent != protocol.DeviceEventTouchWakeOrListen {
+		t.Fatalf("last event = %q, want touch wake", registry.Devices[0].LastEvent)
+	}
+}
+
+func TestControlWebSocketTouchBargeInMapsToInterrupt(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       4,
+		TraceID:   "a21-trace-touch-002",
+		SessionID: "a21-session-touch-002",
+	}, protocol.DeviceEventPayload{
+		Event:       protocol.DeviceEventTouchBargeIn,
+		Mode:        protocol.ModeWorkmate,
+		TouchSource: protocol.TouchSourceTopSensor,
+	})
+
+	events := readControlEvents(t, ctx, conn, 2)
+	var first protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &first); err != nil {
+		t.Fatal(err)
+	}
+	if first.State != protocol.ExpressionInterrupted {
+		t.Fatalf("first state = %q, want interrupted", first.State)
+	}
+	if events[0].TraceID != "a21-trace-touch-002" {
+		t.Fatalf("trace = %q, want a21-trace-touch-002", events[0].TraceID)
+	}
+}
+
 func TestAudioWebSocketAcceptsAudioFrame(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

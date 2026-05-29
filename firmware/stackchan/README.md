@@ -69,11 +69,13 @@ Gateway configuration is currently compile-time and A21-only:
 - applies Gateway ack `control.event` messages through the same tested parser
 - keeps real microphone capture and speaker playback out of this slice
 
-Current local controls are intentionally minimal:
+Current local controls are intentionally minimal and routed through semantic device intents:
 
-- `BtnA`: send `mock.turn` to Gateway
-- `BtnB`: send `interrupt` to Gateway
+- `BtnA`: emit `touch.wake_or_listen` with `touch_source=screen`
+- `BtnB`: emit `touch.barge_in` with `touch_source=top_sensor`
 - `BtnC`: send one mock silence `audio.frame` to Gateway `/ws/audio`
+
+`a21_firmware_touch.h` keeps touch as a semantic runtime (`wake_or_listen`, `barge_in`) instead of exposing coordinates or hardware registers to Gateway. Real screen touch and top-sensor calibration remain future hardware work; this slice only proves the tested intent pipeline and preserves the source label.
 
 The firmware still does not capture microphone audio, play Gateway audio, run VAD, or claim full-duplex behavior. The current audio WebSocket path is a disciplined transport probe only.
 

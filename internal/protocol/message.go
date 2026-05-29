@@ -83,14 +83,24 @@ type ScreenCard struct {
 type DeviceEventKind string
 
 const (
-	DeviceEventMockTurn  DeviceEventKind = "mock.turn"
-	DeviceEventInterrupt DeviceEventKind = "interrupt"
+	DeviceEventMockTurn          DeviceEventKind = "mock.turn"
+	DeviceEventInterrupt         DeviceEventKind = "interrupt"
+	DeviceEventTouchWakeOrListen DeviceEventKind = "touch.wake_or_listen"
+	DeviceEventTouchBargeIn      DeviceEventKind = "touch.barge_in"
+)
+
+type TouchSource string
+
+const (
+	TouchSourceScreen    TouchSource = "screen"
+	TouchSourceTopSensor TouchSource = "top_sensor"
 )
 
 type DeviceEventPayload struct {
 	Event           DeviceEventKind `json:"event"`
 	Mode            Mode            `json:"mode,omitempty"`
 	Text            string          `json:"text,omitempty"`
+	TouchSource     TouchSource     `json:"touch_source,omitempty"`
 	FirmwareID      string          `json:"firmware_id,omitempty"`
 	FirmwareVersion string          `json:"firmware_version,omitempty"`
 	FirmwareBoard   string          `json:"firmware_board,omitempty"`
