@@ -45,7 +45,11 @@ Current mock trace events include:
 - `device.mock.turn.received`
 - `device.interrupt.received`
 - `audio.frame.received`
+- `v21.query.start`
+- `v21.query.first_result`
+- `v21.query.error`
 - `control.listening.sent`
+- `control.professional.sent`
 - `control.thinking.sent`
 - `control.speaking.sent`
 - `control.interrupted.sent`

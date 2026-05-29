@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -190,6 +192,106 @@ func TestMockTurnUsesVoiceProviderEvents(t *testing.T) {
 	}
 	if speaking.StreamID != "provider-stream" {
 		t.Fatalf("stream = %q, want provider-stream", speaking.StreamID)
+	}
+}
+
+func TestProfessionalModeUsesV21AdapterEvidence(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21adapter.NewMockClient(),
+	})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-001","session_id":"a21-session-pro-001"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Events) != 3 {
+		t.Fatalf("events = %d, want 3", len(response.Events))
+	}
+	var pro protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[1].Payload, &pro); err != nil {
+		t.Fatal(err)
+	}
+	if pro.State != protocol.ExpressionProfessional || pro.Mode != protocol.ModeProfessional {
+		t.Fatalf("professional payload = %+v", pro)
+	}
+	var answer protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[2].Payload, &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.State != protocol.ExpressionSpeaking || answer.Mode != protocol.ModeProfessional {
+		t.Fatalf("answer payload = %+v", answer)
+	}
+	if answer.Text == "" || len(answer.Evidence) == 0 || len(answer.ScreenCards) == 0 {
+		t.Fatalf("professional answer missing evidence fields: %+v", answer)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-001", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	if !strings.Contains(traceRec.Body.String(), "v21.query.start") || !strings.Contains(traceRec.Body.String(), "v21.query.first_result") {
+		t.Fatalf("trace missing v21 markers: %s", traceRec.Body.String())
+	}
+}
+
+func TestWorkmateModeDoesNotCallV21Adapter(t *testing.T) {
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"先说，我在","mode":"workmate"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if v21.calls != 0 {
+		t.Fatalf("v21 calls = %d, want 0", v21.calls)
+	}
+}
+
+func TestProfessionalModeV21FailureIsHonestFallback(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{V21Client: failingV21Client{}})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-fail","session_id":"a21-session-pro-fail"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var fallback protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[len(response.Events)-1].Payload, &fallback); err != nil {
+		t.Fatal(err)
+	}
+	if fallback.State != protocol.ExpressionError || fallback.Mode != protocol.ModeProfessional {
+		t.Fatalf("fallback payload = %+v", fallback)
+	}
+	if !strings.Contains(fallback.Text, "V21 现在没接上") {
+		t.Fatalf("fallback text = %q", fallback.Text)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-fail", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), "v21.query.error") {
+		t.Fatalf("trace missing v21 error marker: %s", traceRec.Body.String())
 	}
 }
 
@@ -624,4 +726,19 @@ func (p scriptedVoiceProvider) Cancel(ctx context.Context, req providers.VoiceCa
 
 func (p scriptedVoiceProvider) Close(ctx context.Context) error {
 	return ctx.Err()
+}
+
+type countingV21Client struct {
+	calls int
+}
+
+func (c *countingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	c.calls++
+	return v21adapter.NewMockClient().Query(ctx, request)
+}
+
+type failingV21Client struct{}
+
+func (failingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	return v21adapter.QueryResponse{}, errors.New("v21 unavailable")
 }

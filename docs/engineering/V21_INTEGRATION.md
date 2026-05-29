@@ -33,15 +33,15 @@ Examples:
 
 The mode switch must be visible in voice and screen state.
 
-## Future Adapter Contract
+## Current Adapter Contract
 
-Candidate endpoint:
+Implemented client endpoint:
 
 ```text
 POST /a21/v21/query
 ```
 
-Candidate request:
+Request:
 
 ```json
 {
@@ -56,7 +56,7 @@ Candidate request:
 }
 ```
 
-Candidate response:
+Response:
 
 ```json
 {
@@ -100,3 +100,31 @@ If V21 is unavailable:
 Example:
 
 "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。"
+
+## Current Implementation
+
+Current Go package:
+
+```text
+internal/v21adapter
+```
+
+Implemented clients:
+
+- `NewHTTPClient(baseURL)` posts to `/a21/v21/query`.
+- `NewMockClient()` returns deterministic evidence, speech blocks, screen cards, and follow-ups for Gateway/simulator tests.
+
+Safety rules:
+
+- HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
+- HTTP client rejects known X21/V21 internal legacy ports such as `8000`, `8080`, `18080`, `4173`, `42173`, `16686`, and `16687`. A21 must target an adapter boundary, not V21 internals.
+- Gateway calls V21 only when the request mode is `professional`.
+- Workmate/companion mock turns do not call V21.
+- Gateway professional responses carry explicit evidence fields in `control.event` payloads rather than flattening evidence into generic chat text.
+- Gateway records `v21.query.start`, `v21.query.first_result`, and `v21.query.error` trace markers.
+
+Current Gateway professional sequence:
+
+1. `listening`
+2. `professional`
+3. `speaking` with `fast_answer`, `confidence`, `evidence`, `speech_blocks`, `screen_cards`, and `follow_ups`

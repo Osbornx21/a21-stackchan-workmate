@@ -48,11 +48,29 @@ const (
 )
 
 type ControlEventPayload struct {
-	State    ExpressionState `json:"state"`
-	Mode     Mode            `json:"mode"`
-	Text     string          `json:"text,omitempty"`
-	Final    bool            `json:"final,omitempty"`
-	StreamID string          `json:"stream_id,omitempty"`
+	State        ExpressionState `json:"state"`
+	Mode         Mode            `json:"mode"`
+	Text         string          `json:"text,omitempty"`
+	Final        bool            `json:"final,omitempty"`
+	StreamID     string          `json:"stream_id,omitempty"`
+	Confidence   float64         `json:"confidence,omitempty"`
+	Evidence     []EvidenceItem  `json:"evidence,omitempty"`
+	SpeechBlocks []string        `json:"speech_blocks,omitempty"`
+	ScreenCards  []ScreenCard    `json:"screen_cards,omitempty"`
+	FollowUps    []string        `json:"follow_ups,omitempty"`
+}
+
+type EvidenceItem struct {
+	Title    string `json:"title"`
+	Type     string `json:"type"`
+	SourceID string `json:"source_id"`
+	Summary  string `json:"summary"`
+	Quote    string `json:"quote,omitempty"`
+}
+
+type ScreenCard struct {
+	Label string `json:"label"`
+	Text  string `json:"text"`
 }
 
 type DeviceEventKind string

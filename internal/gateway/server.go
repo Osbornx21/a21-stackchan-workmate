@@ -14,6 +14,7 @@ import (
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -24,12 +25,14 @@ type Server struct {
 	now     func() time.Time
 	metrics *metrics
 	voice   providers.VoiceProvider
+	v21     v21adapter.Client
 	devices map[string]DeviceRecord
 	traces  map[string][]TraceEvent
 }
 
 type ServerOptions struct {
 	VoiceProvider providers.VoiceProvider
+	V21Client     v21adapter.Client
 }
 
 type MockTurnRequest struct {
@@ -94,7 +97,11 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if voiceProvider == nil {
 		voiceProvider = providers.NewMockVoiceProvider()
 	}
-	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
+	v21Client := options.V21Client
+	if v21Client == nil {
+		v21Client = v21adapter.NewMockClient()
+	}
+	return &Server{now: time.Now, metrics: newMetrics(), voice: voiceProvider, v21: v21Client, devices: make(map[string]DeviceRecord), traces: make(map[string][]TraceEvent)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -383,6 +390,9 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 	if req.Mode == "" {
 		req.Mode = protocol.ModeWorkmate
 	}
+	if req.Mode == protocol.ModeProfessional {
+		return s.professionalTurnResponse(req)
+	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	payloads := []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
@@ -398,6 +408,44 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 		for event := range providerEvents {
 			payloads = append(payloads, voiceEventToControlPayload(event, req.Mode))
 		}
+	}
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+}
+
+func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse {
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	payloads := []protocol.ControlEventPayload{
+		{State: protocol.ExpressionListening, Mode: protocol.ModeProfessional, Text: "我在听"},
+		{State: protocol.ExpressionProfessional, Mode: protocol.ModeProfessional, Text: "进入专业模式。情绪先放旁边，现在只看证据。"},
+	}
+	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
+	response, err := s.v21.Query(context.Background(), v21adapter.QueryRequest{
+		TraceID:   traceID,
+		SessionID: sessionID,
+		Utterance: req.Text,
+	})
+	if err != nil {
+		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error", s.now().UnixMilli())
+		payloads = append(payloads, protocol.ControlEventPayload{
+			State: protocol.ExpressionError,
+			Mode:  protocol.ModeProfessional,
+			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
+			Final: true,
+		})
+	} else {
+		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.first_result", s.now().UnixMilli())
+		payloads = append(payloads, protocol.ControlEventPayload{
+			State:        protocol.ExpressionSpeaking,
+			Mode:         protocol.ModeProfessional,
+			Text:         response.FastAnswer,
+			Final:        true,
+			Confidence:   response.Confidence,
+			Evidence:     v21EvidenceToProtocol(response.Evidence),
+			SpeechBlocks: response.SpeechBlocks,
+			ScreenCards:  v21ScreenCardsToProtocol(response.ScreenCards),
+			FollowUps:    response.FollowUps,
+		})
 	}
 	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
 	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
@@ -438,6 +486,28 @@ func voiceEventToControlPayload(event providers.VoiceEvent, mode protocol.Mode) 
 	default:
 		return protocol.ControlEventPayload{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: event.Text, Final: true}
 	}
+}
+
+func v21EvidenceToProtocol(evidence []v21adapter.Evidence) []protocol.EvidenceItem {
+	items := make([]protocol.EvidenceItem, 0, len(evidence))
+	for _, item := range evidence {
+		items = append(items, protocol.EvidenceItem{
+			Title:    item.Title,
+			Type:     item.Type,
+			SourceID: item.SourceID,
+			Summary:  item.Summary,
+			Quote:    item.Quote,
+		})
+	}
+	return items
+}
+
+func v21ScreenCardsToProtocol(cards []v21adapter.ScreenCard) []protocol.ScreenCard {
+	result := make([]protocol.ScreenCard, 0, len(cards))
+	for _, card := range cards {
+		result = append(result, protocol.ScreenCard{Label: card.Label, Text: card.Text})
+	}
+	return result
 }
 
 func (s *Server) errorEvents(event protocol.Envelope, text string) []protocol.Envelope {

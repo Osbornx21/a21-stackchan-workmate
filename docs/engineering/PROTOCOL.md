@@ -68,6 +68,16 @@ Firmware-originated `device.event` payloads may also carry build identity:
 
 Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
 
+Professional `control.event` payloads can now include explicit evidence fields:
+
+- `confidence`
+- `evidence[]`
+- `speech_blocks[]`
+- `screen_cards[]`
+- `follow_ups[]`
+
+This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
+
 Future control events should cover subtitle deltas, playback start/stop, mode updates, device status, and trace markers.
 
 ## Barge-In Requirements
