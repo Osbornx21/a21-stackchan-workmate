@@ -4,6 +4,7 @@
 #include "a21_firmware_audio_playback.h"
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_config.h"
+#include "a21_firmware_display.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_mic.h"
@@ -452,6 +453,12 @@ void test_apply_invalid_control_event_enters_error_state() {
   TEST_ASSERT_EQUAL(A21_RENDER_ERROR, state.render_state);
   TEST_ASSERT_EQUAL_STRING("unsupported_state", state.last_error);
   TEST_ASSERT_EQUAL_STRING("bad", state.text);
+}
+
+void test_display_state_label_makes_professional_mode_explicit() {
+  TEST_ASSERT_EQUAL_STRING("PRO MODE", a21DisplayStateLabel(A21_RENDER_PROFESSIONAL));
+  TEST_ASSERT_EQUAL_STRING("LISTENING", a21DisplayStateLabel(A21_RENDER_LISTENING));
+  TEST_ASSERT_EQUAL_STRING("LOCAL", a21DisplayStateLabel(A21_RENDER_LOCAL));
 }
 
 void test_network_config_defaults_to_a21_gateway() {
@@ -1922,6 +1929,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_parse_control_event_rejects_wrong_device);
   RUN_TEST(test_apply_control_event_updates_runtime_state);
   RUN_TEST(test_apply_invalid_control_event_enters_error_state);
+  RUN_TEST(test_display_state_label_makes_professional_mode_explicit);
   RUN_TEST(test_network_config_defaults_to_a21_gateway);
   RUN_TEST(test_network_config_builds_control_and_audio_urls);
   RUN_TEST(test_network_config_rejects_legacy_ports_and_names);

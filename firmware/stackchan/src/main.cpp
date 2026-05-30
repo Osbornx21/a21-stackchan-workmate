@@ -7,6 +7,7 @@
 #include "a21_firmware_audio_playback.h"
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_connection.h"
+#include "a21_firmware_display.h"
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_mic.h"
 #include "a21_firmware_motion.h"
@@ -34,7 +35,7 @@ uint32_t state_color(A21RenderState state) {
     case A21_RENDER_INTERRUPTED:
       return TFT_ORANGE;
     case A21_RENDER_PROFESSIONAL:
-      return TFT_BLUE;
+      return TFT_CYAN;
     case A21_RENDER_ERROR:
       return TFT_RED;
     case A21_RENDER_LOCAL:
@@ -42,28 +43,6 @@ uint32_t state_color(A21RenderState state) {
     case A21_RENDER_IDLE:
     default:
       return TFT_WHITE;
-  }
-}
-
-const char* state_label(A21RenderState state) {
-  switch (state) {
-    case A21_RENDER_LISTENING:
-      return "LISTENING";
-    case A21_RENDER_THINKING:
-      return "THINKING";
-    case A21_RENDER_SPEAKING:
-      return "SPEAKING";
-    case A21_RENDER_INTERRUPTED:
-      return "INTERRUPTED";
-    case A21_RENDER_PROFESSIONAL:
-      return "PRO";
-    case A21_RENDER_ERROR:
-      return "ERROR";
-    case A21_RENDER_LOCAL:
-      return "LOCAL";
-    case A21_RENDER_IDLE:
-    default:
-      return "IDLE";
   }
 }
 
@@ -80,7 +59,7 @@ void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& netw
   M5.Display.drawString("A21", M5.Display.width() / 2, M5.Display.height() / 2 - 28);
   M5.Display.drawString(firmware_label, M5.Display.width() / 2, M5.Display.height() / 2);
   M5.Display.setTextColor(accent, TFT_BLACK);
-  M5.Display.drawString(state_label(state.render_state), M5.Display.width() / 2, M5.Display.height() / 2 + 28);
+  M5.Display.drawString(a21DisplayStateLabel(state.render_state), M5.Display.width() / 2, M5.Display.height() / 2 + 28);
   M5.Display.setTextDatum(top_center);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   char gateway_line[96];
