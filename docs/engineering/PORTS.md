@@ -33,6 +33,8 @@ Phase 2B binds `21080` only when `a21 gateway` is running. Runtime preflight pro
 
 A21 endpoint env vars pointing at these ports must fail preflight unless a future explicit migration/audit command allows them.
 
+`a21 lan-probe` uses the same legacy denylist. It must fail before dialing these ports and must not echo the rejected host, port, or target name. The only supported V21 reachability boundary for A21 is the A21 adapter port `21121`.
+
 ## Future Media Split Candidate
 
 The external master directive proposed:

@@ -49,4 +49,6 @@ It does not include proxy URLs, proxy hosts/ports, proxy credentials, URL creden
 
 This is not a replacement for `doctor`. It is explicit because home development should not fail just because office-only StackChan or adapter endpoints are offline.
 
+`lan-probe` must stay on A21-owned or A21-adapter boundaries. It rejects the shared legacy internal port denylist (`8000`, `8080`, `10095`, `18080`, `4173`, `42173`, `16686`, `16687`) before dialing and without echoing the rejected target. The professional-mode path should probe `a21-v21-adapter` on `21121`, not V21/VKP internal services.
+
 This is also not a full voice latency benchmark. It proves TCP reachability plus connect-time p50/p95/jitter evidence only. mDNS, WebSocket protocol health, device identity, audio frame timing, and provider latency remain separate checks.

@@ -457,6 +457,9 @@ func parseLANProbeTarget(raw string) (lanProbeTarget, error) {
 	if err != nil || portNumber <= 0 || portNumber > 65535 {
 		return lanProbeTarget{}, fmt.Errorf("target port is invalid")
 	}
+	if runtimeguard.DefaultConfig().IsLegacyEndpointPort(portNumber) {
+		return lanProbeTarget{}, fmt.Errorf("target uses forbidden legacy internal port")
+	}
 	return lanProbeTarget{
 		name:     name,
 		endpoint: net.JoinHostPort(host, port),

@@ -684,6 +684,26 @@ func TestRunLANProbeRejectsCredentialTargetWithoutEchoingSecret(t *testing.T) {
 	}
 }
 
+func TestRunLANProbeRejectsLegacyInternalPortWithoutEchoingTarget(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"lan-probe",
+		"--target", "a21-gateway=127.0.0.1:18080",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "legacy internal port") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	for _, forbidden := range []string{"a21-gateway", "127.0.0.1", "18080"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("lan probe leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunProviderRealtimePlanDoubaoTTSDoesNotLeakSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")

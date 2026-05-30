@@ -36,3 +36,12 @@ func (c Config) IsReservedPort(port int) bool {
 	}
 	return false
 }
+
+func (c Config) IsLegacyEndpointPort(port int) bool {
+	for _, legacy := range c.LegacyEndpointPorts {
+		if legacy == port {
+			return true
+		}
+	}
+	return false
+}

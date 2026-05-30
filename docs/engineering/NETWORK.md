@@ -75,6 +75,8 @@ reports/a21-lan-probe-YYYYMMDD-HHMMSS.json
 
 The report includes generated timestamp, current commit, network/DNS fingerprint, redacted proxy-policy metadata, target name, normalized `host:port`, direct flag, status, sample count, passed/failed samples, p50, p95, jitter, and a coarse error code. It must not include proxy URLs, proxy hosts/ports, proxy credentials, API keys, URL credentials, or X21 identities.
 
+`lan-probe` also refuses known legacy internal ports used by X21/V21/VKP services. Use the A21 V21 adapter boundary (`21121`) for professional-mode reachability evidence; do not probe V21 internals such as `8080` or `18080` from A21 tooling.
+
 Use it to compare:
 
 - home development network
