@@ -379,23 +379,36 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 			return 1
 		}
 	}
+	cliReport := buildAudioFrontEndEvalCLIReport(report)
 	if outputDir != "" {
 		if err := validateA21ReportDir(outputDir); err != nil {
 			fmt.Fprintf(stderr, "audio front-end report dir invalid: %v\n", err)
 			return 1
 		}
-		reportPath, err := writeAudioFrontEndEvalReport(outputDir, report)
+		reportPath, err := writeAudioFrontEndEvalReport(outputDir, cliReport)
 		if err != nil {
 			fmt.Fprintf(stderr, "write audio front-end eval report: %v\n", err)
 			return 1
 		}
-		report.ReportPath = reportPath
+		cliReport.ReportPath = reportPath
 	}
-	if err := writeJSONAudioFrontEndEval(stdout, report); err != nil {
+	if err := writeJSONAudioFrontEndEval(stdout, cliReport); err != nil {
 		fmt.Fprintf(stderr, "encode audio front-end eval: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+type audioFrontEndEvalCLIReport struct {
+	audio.FrontEndEvalReport
+	Metadata latencyBenchMetadata `json:"metadata"`
+}
+
+func buildAudioFrontEndEvalCLIReport(report audio.FrontEndEvalReport) audioFrontEndEvalCLIReport {
+	return audioFrontEndEvalCLIReport{
+		FrontEndEvalReport: report,
+		Metadata:           buildLatencyBenchMetadata(),
+	}
 }
 
 type firmwareDeviceReport struct {
@@ -568,7 +581,7 @@ func validateA21ReportDir(outputDir string) error {
 	return nil
 }
 
-func writeAudioFrontEndEvalReport(outputDir string, report audio.FrontEndEvalReport) (string, error) {
+func writeAudioFrontEndEvalReport(outputDir string, report audioFrontEndEvalCLIReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
 	}
@@ -1137,7 +1150,7 @@ func writeJSONAudioFrontEndPlan(writer io.Writer, report audio.FrontEndPlan) err
 	return encoder.Encode(report)
 }
 
-func writeJSONAudioFrontEndEval(writer io.Writer, report audio.FrontEndEvalReport) error {
+func writeJSONAudioFrontEndEval(writer io.Writer, report audioFrontEndEvalCLIReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

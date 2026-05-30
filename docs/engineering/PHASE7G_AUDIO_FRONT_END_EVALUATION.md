@@ -26,7 +26,7 @@ make audio-front-end-eval
 reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
 ```
 
-Report artifacts contain aggregate metrics and metadata only. They do not include raw PCM, base64 audio frames, provider secrets, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected.
+Report artifacts contain aggregate metrics and environment metadata only. The metadata includes generated timestamp, current git commit, network/DNS fingerprint, and doctor-style redacted proxy-policy fields. They do not include raw PCM, base64 audio frames, provider secrets, proxy URLs, proxy hosts/ports, proxy credentials, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected.
 
 `speech_start_lag_ms` and `speech_end_lag_ms` compare the first expected speech transition in the labelled fixture with the first detector event emitted by A21. A positive value means the detector was late; a negative value means it fired early. The current RMS mock baseline reports `speech_start_lag_ms: 0` and `speech_end_lag_ms: 20` because the two-frame silence hangover delays speech-end by one 20 ms frame.
 
@@ -79,6 +79,7 @@ Before any candidate becomes default, A21 needs:
 - mock benchmark preservation
 - `audio-front-end-eval --mock` report preservation
 - labelled fixture preservation through `audio-front-end-eval --fixture`
+- current commit, network fingerprint, and proxy-policy metadata preservation without secret leakage
 - recorded Shanghai-office noise benchmark
 - physical StackChan speaker-to-mic echo report
 - speech start/end lag evidence
