@@ -441,6 +441,51 @@ func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
 	}
 }
 
+func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-smoke", "--provider", "deepseek", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"report_path"`) {
+		t.Fatalf("stdout missing report_path: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("provider smoke reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, want := range []string{
+		`"provider": "deepseek"`,
+		`"status": "ready"`,
+		`"executed": false`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(reportJSON, want) {
+			t.Fatalf("provider smoke report missing %q: %s", want, reportJSON)
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("provider smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
 func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

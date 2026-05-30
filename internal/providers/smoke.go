@@ -37,6 +37,7 @@ type ProviderSmokeReport struct {
 	APIKeyEnv    string                   `json:"api_key_env,omitempty"`
 	ModelEnv     string                   `json:"model_env,omitempty"`
 	MissingEnv   []string                 `json:"missing_env,omitempty"`
+	ReportPath   string                   `json:"report_path,omitempty"`
 	Detail       string                   `json:"detail,omitempty"`
 	Findings     []ProviderCatalogFinding `json:"findings,omitempty"`
 }

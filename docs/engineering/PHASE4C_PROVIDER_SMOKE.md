@@ -21,9 +21,18 @@ The CLI command is:
 ```bash
 go run ./cmd/a21 provider-smoke --provider deepseek
 go run ./cmd/a21 provider-smoke --provider deepseek --execute
+go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
 `--execute` is required for a real network call.
+
+`--output-dir reports` writes a timestamped redacted evidence report:
+
+```text
+reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json
+```
+
+The saved report is useful for paid DeepSeek or Bailian/DashScope smoke runs because it preserves provider, protocol, status, execution flag, HTTP status, duration, network mode, and endpoint host without recording API key values, model values, proxy URLs, or full request URLs.
 
 ## Executable Providers
 
@@ -89,6 +98,7 @@ The OpenAI-compatible smoke path follows the public provider contracts rather th
 - `provider-smoke` without `--execute` never performs network I/O.
 - Reports expose env variable names, protocol, status, network mode, and endpoint host only.
 - Reports never expose API key values, model values, proxy values, or full URLs.
+- `--output-dir` reports must use the A21 report namespace and reject legacy X21/V21-looking paths through the shared report-dir guard.
 - Unknown provider names are redacted to `unknown_provider`.
 - legacy-looking provider names are redacted to `invalid_legacy_provider` and fail.
 - StackChan firmware never sees any provider key or provider smoke configuration.

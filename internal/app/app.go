@@ -115,10 +115,11 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	provider := ""
 	execute := false
+	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 provider-smoke --provider <provider> [--execute]")
+			fmt.Fprintln(stdout, "a21 provider-smoke --provider <provider> [--execute] [--output-dir reports]")
 			return 0
 		case "--provider":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -129,12 +130,31 @@ func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			provider = args[i]
 		case "--execute":
 			execute = true
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown provider-smoke option %q\n", args[i])
 			return 2
 		}
 	}
 	report := providers.ProviderSmokeFromEnv(context.Background(), os.Environ(), provider, execute, nil)
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "provider smoke report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeProviderSmokeReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write provider smoke report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
 	if err := writeJSONProviderSmoke(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode provider smoke report: %v\n", err)
 		return 1
@@ -525,6 +545,23 @@ func writeFirmwareFlashPlanReport(outputDir string, result firmwarecheck.FlashPl
 	defer file.Close()
 	result.ReportPath = reportPath
 	if err := writeJSONFirmwareFlashPlan(file, result); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-provider-smoke-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONProviderSmoke(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
