@@ -766,6 +766,14 @@ func TestRunFirmwareCheckRejectsWrongPlatformIOBoard(t *testing.T) {
 }
 
 func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
+	originalDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalDetector
+	}()
+
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "a21-firmware.json")
 	if err := os.WriteFile(manifest, []byte(`{
@@ -813,6 +821,46 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "release_manifest_path") {
 		t.Fatalf("stdout missing release_manifest_path: %s", stdout.String())
+	}
+}
+
+func TestRunFirmwarePackageRejectsDirtySourceTree(t *testing.T) {
+	originalDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{
+			Root:   "/tmp/a21",
+			Clean:  false,
+			Detail: " M firmware/stackchan/src/main.cpp\n?? scratch.bin",
+		}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	input := filepath.Join(dir, "firmware.bin")
+	if err := os.WriteFile(input, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-package",
+		"--manifest", manifest,
+		"--input", input,
+		"--output-dir", filepath.Join(dir, "artifacts"),
+		"--commit", "abcdef1",
+		"--timestamp", "20260530-004500",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "source tree is dirty") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "firmware/stackchan/src/main.cpp") {
+		t.Fatalf("stderr missing dirty detail: %q", stderr.String())
 	}
 }
 

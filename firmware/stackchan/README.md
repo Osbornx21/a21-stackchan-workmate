@@ -111,4 +111,4 @@ These commands inventory serial devices and validate artifact identity, board, v
 
 Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`, and the PlatformIO blocker is expected to fail raw upload attempts.
 
-`make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source. It writes the A21-named `.bin`, sibling `.sha256`, sibling `.manifest.json`, and `a21-firmware-release-index.jsonl`; upload-path dry-run guards require all of them to agree.
+`make firmware-package` and `a21 firmware-package` refuse to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source. The package step writes the A21-named `.bin`, sibling `.sha256`, sibling `.manifest.json`, and `a21-firmware-release-index.jsonl`; upload-path dry-run guards require all of them to agree.

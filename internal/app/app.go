@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -28,6 +29,32 @@ import (
 
 var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 	return firmwarecheck.DetectPortUsage(context.Background(), port)
+}
+
+type firmwareSourceState struct {
+	Root   string
+	Clean  bool
+	Detail string
+}
+
+var detectFirmwareSourceState = detectGitFirmwareSourceState
+
+func detectGitFirmwareSourceState() (firmwareSourceState, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return firmwareSourceState{}, err
+	}
+	root := findProjectRoot(cwd)
+	output, err := exec.Command("git", "-C", root, "status", "--porcelain", "--untracked-files=all").Output()
+	if err != nil {
+		return firmwareSourceState{}, err
+	}
+	detail := strings.TrimSpace(string(output))
+	return firmwareSourceState{
+		Root:   root,
+		Clean:  detail == "",
+		Detail: detail,
+	}, nil
 }
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -718,6 +745,16 @@ func runFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "unknown firmware-package option %q\n", args[i])
 			return 2
 		}
+	}
+
+	sourceState, err := detectFirmwareSourceState()
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware package failed: source tree check failed: %v\n", err)
+		return 1
+	}
+	if !sourceState.Clean {
+		fmt.Fprintf(stderr, "firmware package failed: source tree is dirty under %s\n%s\n", sourceState.Root, sourceState.Detail)
+		return 1
 	}
 
 	result, err := firmwarecheck.PackageArtifact(options)

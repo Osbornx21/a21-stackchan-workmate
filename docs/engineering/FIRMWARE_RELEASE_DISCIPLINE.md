@@ -132,7 +132,7 @@ a21-stackchan-<version>-m5stack-cores3-<git-sha>-<YYYYMMDD-HHMMSS>.bin.manifest.
 
 Only packaged artifacts should be considered candidates for future upload.
 
-`make firmware-package` first runs a clean-worktree guard. This prevents a binary built from uncommitted sources from being packaged under a misleading git commit.
+`make firmware-package` and `a21 firmware-package` both run a clean-worktree guard. This prevents a binary built from uncommitted sources from being packaged under a misleading git commit, even if someone bypasses Makefile and calls the CLI directly.
 
 `firmware-package` also appends a machine-readable JSONL release record to:
 

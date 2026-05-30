@@ -29,4 +29,6 @@ Upload-path dry-run guards now require both:
 
 This closes the gap where a manually assembled `.bin + .sha256` pair could look locally valid. A loose binary can still be inspected with `firmware-artifact-check`, but it cannot enter `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless the package ledger and the per-artifact manifest agree.
 
+The CLI package command itself now enforces a clean git worktree before packaging. This mirrors the Makefile guard and prevents direct `a21 firmware-package` calls from producing a release artifact whose commit does not describe the source tree.
+
 Real flashing remains locked. This phase adds no hardware-writing command.
