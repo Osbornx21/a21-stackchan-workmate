@@ -145,6 +145,18 @@ This writes `reports/a21-stackchan-mic-probe-acceptance-YYYYMMDD-HHMMSS.json` wi
 
 The gate requires the device to report microphone capability `diagnostic_probe_m5unified_i2s_capture`, captured/sent frame deltas above threshold, zero new driver errors, zero new queue drops, non-zero sample evidence, Gateway audio ingress deltas, no new playback chunks, and optional VAD speech deltas. A passing report means the isolated M5Unified/CoreS3 diagnostic microphone path captured and uplinked real PCM frames during this session. It still does not prove production microphone availability, speaker output, AEC, full-duplex, provider latency, or the release firmware path.
 
+For instrumented speaker/downlink evidence, use:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+A21_SPEAKER_WINDOW_MS=1000 \
+A21_SPEAKER_MOCK_AUDIO_CHUNKS=4 \
+A21_SPEAKER_MIN_PLAYED_FRAMES=4 \
+make stackchan-speaker-acceptance
+```
+
+This writes `reports/a21-stackchan-speaker-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway playback metrics, sends a bounded `SPEAKING` control event with non-silent A21 `audio.playback.chunk` frames, waits for runtime echo updates, checks playback-buffer and speaker-pump deltas, and then clears back to `IDLE`. A passing report confirms the commanded stream moved through Gateway downlink, firmware buffer, and speaker-pump instrumentation. It intentionally records `physical_sound_observed=false`; use later operator or instrument evidence before claiming physical audibility or product-quality TTS.
+
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.

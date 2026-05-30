@@ -10,8 +10,11 @@ A21_MIC_PROBE_MIN_NONZERO_SAMPLES ?= 1
 A21_MIC_PROBE_MIN_VAD_SPEECH ?= 0
 A21_MIC_PROBE_WINDOW_MS ?= 0
 A21_PLATFORMIO_VERSION ?= 6.1.19
+A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 4
+A21_SPEAKER_MIN_PLAYED_FRAMES ?= 4
+A21_SPEAKER_WINDOW_MS ?= 1000
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute
 
 test:
 	go test ./...
@@ -175,6 +178,10 @@ stackchan-capability-acceptance:
 stackchan-mic-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --output-dir reports
+
+stackchan-speaker-acceptance:
+	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
+	go run ./cmd/a21 stackchan-speaker-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SPEAKER_WINDOW_MS)" --mock-audio-chunks "$(A21_SPEAKER_MOCK_AUDIO_CHUNKS)" --min-played-frames "$(A21_SPEAKER_MIN_PLAYED_FRAMES)" --output-dir reports
 
 stackchan-touch-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
