@@ -1831,6 +1831,45 @@ func TestAudioWebSocketDoesNotLoopPhysicalMockPlaybackForSameSpeech(t *testing.T
 	assertNoEnvelope(t, conn, 100*time.Millisecond)
 }
 
+func TestDeviceControlArmsSinglePhysicalMockPlaybackForNextAudioFrame(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-armed-loop","session_id":"a21-session-armed-loop","mock_playback_on_next_audio_frame":true}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-armed-loop", "a21-session-armed-loop", pcm16Base64WithSample(0))
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("kind = %q, want playback chunk", playback.Kind)
+	}
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 2, "a21-trace-armed-loop", "a21-session-armed-loop", pcm16Base64WithSample(0))
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+}
+
 func TestPhysicalStackChanDeviceIDExcludesSimulatorAndBenchDevices(t *testing.T) {
 	tests := []struct {
 		deviceID string

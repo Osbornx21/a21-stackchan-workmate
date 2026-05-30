@@ -158,7 +158,7 @@ A21_HALF_DUPLEX_MIN_DELIVERY_RATIO=0.95 \
 make stackchan-half-duplex-acceptance
 ```
 
-This writes `reports/a21-stackchan-half-duplex-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway metrics, sends `LISTENING` without `audio_probe_only`, waits for live microphone frames to trigger Gateway mock downlink, checks microphone capture/send deltas, Gateway ingress/playback deltas, firmware playback-buffer deltas, and speaker-pump deltas, then clears back to `IDLE`. A passing report confirms the connected StackChan can drive a minimal half-duplex A21 loop through Gateway mock playback instrumentation. It still records `physical_sound_observed=false` and does not claim production ASR, LLM, TTS, AEC, full-duplex, or human-accepted audio quality.
+This writes `reports/a21-stackchan-half-duplex-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway metrics, sends `LISTENING` without `audio_probe_only`, arms exactly one `mock_playback_on_next_audio_frame`, waits for live microphone frames to trigger Gateway mock downlink, checks microphone capture/send deltas, Gateway ingress/playback deltas, firmware playback-buffer deltas, and speaker-pump deltas, then clears back to `IDLE`. A passing report confirms the connected StackChan can drive a minimal half-duplex A21 loop through Gateway mock playback instrumentation. It still records `physical_sound_observed=false` and does not claim production ASR, LLM, TTS, AEC, full-duplex, or human-accepted audio quality.
 
 For instrumented speaker/downlink evidence, use:
 

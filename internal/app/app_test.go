@@ -4565,11 +4565,12 @@ func TestRunStackChanHalfDuplexAcceptanceConfirmsMicTriggeredPlayback(t *testing
 		switch r.URL.Path {
 		case "/v1/devices/control":
 			var payload struct {
-				DeviceID       string `json:"device_id"`
-				State          string `json:"state"`
-				TraceID        string `json:"trace_id"`
-				SessionID      string `json:"session_id"`
-				AudioProbeOnly bool   `json:"audio_probe_only"`
+				DeviceID                     string `json:"device_id"`
+				State                        string `json:"state"`
+				TraceID                      string `json:"trace_id"`
+				SessionID                    string `json:"session_id"`
+				AudioProbeOnly               bool   `json:"audio_probe_only"`
+				MockPlaybackOnNextAudioFrame bool   `json:"mock_playback_on_next_audio_frame"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
@@ -4581,6 +4582,9 @@ func TestRunStackChanHalfDuplexAcceptanceConfirmsMicTriggeredPlayback(t *testing
 				probeStarted = true
 				if payload.AudioProbeOnly {
 					t.Fatalf("half-duplex listening must allow Gateway playback: %+v", payload)
+				}
+				if !payload.MockPlaybackOnNextAudioFrame {
+					t.Fatalf("half-duplex listening must arm one next-frame mock playback: %+v", payload)
 				}
 			}
 			if payload.State == "idle" {

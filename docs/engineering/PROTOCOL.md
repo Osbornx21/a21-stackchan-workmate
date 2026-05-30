@@ -159,8 +159,9 @@ Request fields:
 - `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation
 - `mock_audio_chunks`: 0-8 non-silent chunks for physical speaker validation
 - `audio_probe_only`: optional diagnostic flag for the requested trace/session. When true, Gateway keeps accepting and measuring matching `audio.frame` uplink frames but suppresses mock listening/speaking/playback responses. Use this for physical microphone probes so Gateway does not force StackChan into `speaking` while measuring capture.
+- `mock_playback_on_next_audio_frame`: optional physical validation flag for the requested trace/session. When true, Gateway arms exactly one mock playback response for the next matching physical StackChan `audio.frame`, then immediately disarms it.
 
-The audio WebSocket mock path keeps simulator devices silent by default, but physical `stackchan-*` devices receive a short non-silent PCM chunk after the VAD `speech_start` uplink frame. Later frames in the same speech segment are measured but do not produce more mock playback. That distinction lets the half-duplex acceptance prove a real microphone-to-Gateway-to-speaker loop without creating a mic/playback feedback loop, changing simulator expectations, or claiming a real provider response.
+The audio WebSocket mock path keeps simulator devices silent by default, but physical `stackchan-*` devices can receive a short non-silent PCM chunk after an explicit one-shot validation arm or after the VAD `speech_start` uplink frame. Later frames in the same speech segment are measured but do not produce more mock playback. That distinction lets the half-duplex acceptance prove a real microphone-to-Gateway-to-speaker loop without creating a mic/playback feedback loop, changing simulator expectations, or claiming a real provider response.
 
 This endpoint is not a provider path, not a conversation transcript API, and not a replacement for real VAD/STT/LLM/TTS. It exists so office acceptance can command a real device into `listening` or play a bounded validation beep while preserving trace/session evidence.
 

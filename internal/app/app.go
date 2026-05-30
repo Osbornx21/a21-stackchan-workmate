@@ -2722,7 +2722,7 @@ func runStackChanMicProbeAcceptanceWindow(report *stackChanMicProbeAcceptanceRep
 
 	traceID := fmt.Sprintf("a21-trace-mic-probe-%d", report.GeneratedAtMS)
 	sessionID := fmt.Sprintf("a21-session-mic-probe-%d", report.GeneratedAtMS)
-	control, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "MIC PROBE", traceID, sessionID, true)
+	control, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "MIC PROBE", traceID, sessionID, true, false)
 	if err != nil {
 		report.addFinding("mic_probe_control_failed", err.Error())
 		return
@@ -2770,7 +2770,7 @@ func runStackChanMicProbeAcceptanceWindow(report *stackChanMicProbeAcceptanceRep
 	populateStackChanMicProbeWindowQuality(report)
 	validateStackChanMicProbeDeliveryRatios(report, options)
 
-	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false); err != nil {
+	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false, false); err != nil {
 		report.addFinding("mic_probe_idle_control_failed", err.Error())
 	}
 }
@@ -3193,7 +3193,7 @@ func buildStackChanHalfDuplexAcceptanceReport(options stackChanHalfDuplexAccepta
 
 	traceID := fmt.Sprintf("a21-trace-half-duplex-%d", report.GeneratedAtMS)
 	sessionID := fmt.Sprintf("a21-session-half-duplex-%d", report.GeneratedAtMS)
-	control, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "HALF DUPLEX", traceID, sessionID, false)
+	control, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "HALF DUPLEX", traceID, sessionID, false, true)
 	if err != nil {
 		report.addFinding("half_duplex_control_failed", err.Error())
 		report.HalfDuplexAcceptanceStatus = "blocked"
@@ -3241,7 +3241,7 @@ func buildStackChanHalfDuplexAcceptanceReport(options stackChanHalfDuplexAccepta
 	report.GatewayIngressDeliveryRatio = roundedStackChanDiagnosticRatio(report.GatewayAudioIngressFramesDelta, report.AudioWSSentAudioFramesDelta)
 	validateStackChanHalfDuplexDeltas(&report, options)
 
-	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false); err != nil {
+	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false, false); err != nil {
 		report.addFinding("half_duplex_idle_control_failed", err.Error())
 	}
 	if len(report.Findings) > 0 {
@@ -3980,19 +3980,20 @@ func stackChanTouchCase(name string) (stackChanTouchCaseSpec, bool) {
 	}
 }
 
-func postStackChanMicProbeControl(gatewayBaseURL string, deviceID string, state protocol.ExpressionState, mode protocol.Mode, text string, traceID string, sessionID string, audioProbeOnly bool) (gateway.DeviceControlResponse, error) {
+func postStackChanMicProbeControl(gatewayBaseURL string, deviceID string, state protocol.ExpressionState, mode protocol.Mode, text string, traceID string, sessionID string, audioProbeOnly bool, mockPlaybackOnNextAudioFrame bool) (gateway.DeviceControlResponse, error) {
 	endpoint, _, err := firmwareGatewayEndpoint(gatewayBaseURL, "/v1/devices/control", nil)
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
 	request := gateway.DeviceControlRequest{
-		DeviceID:       deviceID,
-		State:          state,
-		Mode:           mode,
-		Text:           text,
-		TraceID:        traceID,
-		SessionID:      sessionID,
-		AudioProbeOnly: audioProbeOnly,
+		DeviceID:                     deviceID,
+		State:                        state,
+		Mode:                         mode,
+		Text:                         text,
+		TraceID:                      traceID,
+		SessionID:                    sessionID,
+		AudioProbeOnly:               audioProbeOnly,
+		MockPlaybackOnNextAudioFrame: mockPlaybackOnNextAudioFrame,
 	}
 	data, err := json.Marshal(request)
 	if err != nil {

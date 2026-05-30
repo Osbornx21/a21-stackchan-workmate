@@ -38,6 +38,7 @@ type Server struct {
 	realtimeAudioCommitAt      map[string]time.Time
 	realtimeAudioFirstDownlink map[string]bool
 	audioProbeSessions         map[string]bool
+	mockPlaybackArmedSessions  map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
 }
@@ -90,15 +91,16 @@ type RealtimeSessionResponse struct {
 }
 
 type DeviceControlRequest struct {
-	DeviceID        string                   `json:"device_id"`
-	State           protocol.ExpressionState `json:"state,omitempty"`
-	Mode            protocol.Mode            `json:"mode,omitempty"`
-	Text            string                   `json:"text,omitempty"`
-	TraceID         string                   `json:"trace_id,omitempty"`
-	SessionID       string                   `json:"session_id,omitempty"`
-	StreamID        string                   `json:"stream_id,omitempty"`
-	MockAudioChunks int                      `json:"mock_audio_chunks,omitempty"`
-	AudioProbeOnly  bool                     `json:"audio_probe_only,omitempty"`
+	DeviceID                     string                   `json:"device_id"`
+	State                        protocol.ExpressionState `json:"state,omitempty"`
+	Mode                         protocol.Mode            `json:"mode,omitempty"`
+	Text                         string                   `json:"text,omitempty"`
+	TraceID                      string                   `json:"trace_id,omitempty"`
+	SessionID                    string                   `json:"session_id,omitempty"`
+	StreamID                     string                   `json:"stream_id,omitempty"`
+	MockAudioChunks              int                      `json:"mock_audio_chunks,omitempty"`
+	AudioProbeOnly               bool                     `json:"audio_probe_only,omitempty"`
+	MockPlaybackOnNextAudioFrame bool                     `json:"mock_playback_on_next_audio_frame,omitempty"`
 }
 
 type DeviceControlResponse struct {
@@ -215,6 +217,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeAudioCommitAt:      make(map[string]time.Time),
 		realtimeAudioFirstDownlink: make(map[string]bool),
 		audioProbeSessions:         make(map[string]bool),
+		mockPlaybackArmedSessions:  make(map[string]bool),
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
 	}
@@ -281,6 +284,7 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	req.TraceID = traceID
 	req.SessionID = sessionID
 	s.setAudioProbeOnly(req.DeviceID, traceID, sessionID, req.AudioProbeOnly)
+	s.setMockPlaybackOnNextAudioFrame(req.DeviceID, traceID, sessionID, req.MockPlaybackOnNextAudioFrame)
 	socket, ok := s.audioSocket(req.DeviceID)
 	if !ok {
 		http.Error(w, "device audio websocket is not connected", http.StatusConflict)
@@ -663,6 +667,10 @@ func (s *Server) shouldEmitMockAudioPlayback(frame protocol.Envelope, traceID st
 		return true
 	}
 	if !physicalStackChanDeviceID(frame.DeviceID) {
+		return true
+	}
+	if s.consumeMockPlaybackOnNextAudioFrame(frame.DeviceID, traceID, sessionID) {
+		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.mock_physical.armed", s.now().UnixMilli())
 		return true
 	}
 	if containsAudioIngressEvent(ingress.Events, audio.EventVADSpeechStart) {
@@ -1612,6 +1620,28 @@ func (s *Server) audioProbeOnly(deviceID string, traceID string, sessionID strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.audioProbeSessions[key]
+}
+
+func (s *Server) setMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string, enabled bool) {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enabled {
+		s.mockPlaybackArmedSessions[key] = true
+		return
+	}
+	delete(s.mockPlaybackArmedSessions, key)
+}
+
+func (s *Server) consumeMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string) bool {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.mockPlaybackArmedSessions[key] {
+		return false
+	}
+	delete(s.mockPlaybackArmedSessions, key)
+	return true
 }
 
 func (s *Server) realtimeAudioSession(traceID string, sessionID string, deviceID string) providers.RealtimeVoiceSession {
