@@ -2,6 +2,16 @@ package providers
 
 import "strings"
 
+type ProviderFamily string
+
+const (
+	ProviderFamilyMock          ProviderFamily = "mock"
+	ProviderFamilyTextStream    ProviderFamily = "text_stream"
+	ProviderFamilyVoiceRealtime ProviderFamily = "voice_realtime"
+	ProviderFamilyLocalAudio    ProviderFamily = "local_audio"
+	ProviderFamilyAgentTask     ProviderFamily = "agent_task"
+)
+
 type ProviderCatalogReport struct {
 	Primary   string                   `json:"primary"`
 	Providers []ProviderReadiness      `json:"providers"`
@@ -11,6 +21,8 @@ type ProviderCatalogReport struct {
 type ProviderReadiness struct {
 	Name         string   `json:"name"`
 	Label        string   `json:"label"`
+	Family       string   `json:"family,omitempty"`
+	Protocol     string   `json:"protocol,omitempty"`
 	Selected     bool     `json:"selected"`
 	Configured   bool     `json:"configured"`
 	Realtime     bool     `json:"realtime"`
@@ -29,6 +41,8 @@ type ProviderCatalogFinding struct {
 type providerSpec struct {
 	Name         string
 	Label        string
+	Family       ProviderFamily
+	Protocol     string
 	Realtime     bool
 	Capabilities []string
 	RequiredEnv  []string
@@ -38,12 +52,16 @@ var providerSpecs = []providerSpec{
 	{
 		Name:         "mock",
 		Label:        "A21 deterministic mock voice",
+		Family:       ProviderFamilyMock,
+		Protocol:     "mock",
 		Realtime:     true,
 		Capabilities: []string{"voice", "mock", "realtime", "barge_in"},
 	},
 	{
 		Name:     "doubao_realtime",
 		Label:    "Doubao realtime speech-to-speech",
+		Family:   ProviderFamilyVoiceRealtime,
+		Protocol: "websocket_realtime",
 		Realtime: true,
 		Capabilities: []string{
 			"voice",
@@ -63,6 +81,8 @@ var providerSpecs = []providerSpec{
 	{
 		Name:     "doubao_tts_realtime",
 		Label:    "Doubao realtime TTS",
+		Family:   ProviderFamilyVoiceRealtime,
+		Protocol: "websocket_realtime",
 		Realtime: true,
 		Capabilities: []string{
 			"tts",
@@ -80,6 +100,8 @@ var providerSpecs = []providerSpec{
 	{
 		Name:         "openai_realtime",
 		Label:        "OpenAI realtime voice",
+		Family:       ProviderFamilyVoiceRealtime,
+		Protocol:     "websocket_realtime",
 		Realtime:     true,
 		Capabilities: []string{"voice", "speech_to_speech", "realtime", "barge_in", "tool_calling"},
 		RequiredEnv:  []string{"A21_OPENAI_API_KEY", "A21_OPENAI_REALTIME_MODEL"},
@@ -87,15 +109,19 @@ var providerSpecs = []providerSpec{
 	{
 		Name:         "bailian_dashscope",
 		Label:        "Alibaba Bailian/DashScope model studio",
+		Family:       ProviderFamilyTextStream,
+		Protocol:     "openai_chat_completions",
 		Realtime:     false,
-		Capabilities: []string{"tts", "asr", "llm", "openai_compatible"},
+		Capabilities: []string{"tts", "asr", "llm", "openai_compatible", "text_stream"},
 		RequiredEnv:  []string{"A21_DASHSCOPE_API_KEY", "A21_DASHSCOPE_MODEL"},
 	},
 	{
 		Name:         "deepseek",
 		Label:        "DeepSeek text reasoning",
+		Family:       ProviderFamilyTextStream,
+		Protocol:     "openai_chat_completions",
 		Realtime:     false,
-		Capabilities: []string{"llm", "streaming_text", "professional_reasoning"},
+		Capabilities: []string{"llm", "streaming_text", "text_stream", "professional_reasoning"},
 		RequiredEnv:  []string{"A21_DEEPSEEK_API_KEY", "A21_DEEPSEEK_MODEL"},
 	},
 }
@@ -119,6 +145,8 @@ func ProviderCatalogFromEnv(env []string) ProviderCatalogReport {
 		readiness := ProviderReadiness{
 			Name:         spec.Name,
 			Label:        spec.Label,
+			Family:       string(spec.Family),
+			Protocol:     spec.Protocol,
 			Selected:     primaryKnown && spec.Name == primary,
 			Realtime:     spec.Realtime,
 			Capabilities: append([]string(nil), spec.Capabilities...),

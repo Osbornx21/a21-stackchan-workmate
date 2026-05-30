@@ -138,6 +138,21 @@ func TestProviderCatalogRedactsUnknownPrimary(t *testing.T) {
 	}
 }
 
+func TestProviderCatalogMarksDeepSeekAsTextStreamFamily(t *testing.T) {
+	report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=deepseek"})
+
+	deepseek := providerReadinessByName(t, report, "deepseek")
+	if deepseek.Family != string(ProviderFamilyTextStream) {
+		t.Fatalf("deepseek family = %q, want %q", deepseek.Family, ProviderFamilyTextStream)
+	}
+	if deepseek.Protocol != "openai_chat_completions" {
+		t.Fatalf("deepseek protocol = %q", deepseek.Protocol)
+	}
+	if !stringSliceContains(deepseek.Capabilities, "text_stream") {
+		t.Fatalf("deepseek capabilities lack text_stream: %#v", deepseek.Capabilities)
+	}
+}
+
 func providerReadinessByName(t *testing.T, report ProviderCatalogReport, name string) ProviderReadiness {
 	t.Helper()
 	for _, readiness := range report.Providers {

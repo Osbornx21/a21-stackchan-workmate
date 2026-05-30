@@ -99,13 +99,15 @@ Explicit provider smoke execution is a separate command:
 
 ```bash
 go run ./cmd/a21 provider-smoke --provider deepseek --execute
+go run ./cmd/a21 provider-smoke --provider deepseek --stream --repeat 3
+go run ./cmd/a21 provider-smoke --provider deepseek --execute --stream --repeat 3 --output-dir reports
 go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
 Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans, provider health, and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
 
-When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json`. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, or full provider URLs.
+When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json`. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 
 `provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.
 

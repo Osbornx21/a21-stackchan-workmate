@@ -624,6 +624,30 @@ func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T)
 	}
 }
 
+func TestRunProviderSmokeAcceptsStreamRepeatFlags(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-smoke", "--provider", "deepseek", "--stream", "--repeat", "3"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"provider": "deepseek"`, `"status": "ready"`, `"stream": true`, `"repeat": 3`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

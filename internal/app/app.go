@@ -206,11 +206,13 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	provider := ""
 	execute := false
+	stream := false
+	repeat := 1
 	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 provider-smoke --provider <provider> [--execute] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 provider-smoke --provider <provider> [--execute] [--stream] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--provider":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -221,6 +223,20 @@ func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			provider = args[i]
 		case "--execute":
 			execute = true
+		case "--stream":
+			stream = true
+		case "--repeat":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--repeat requires a value")
+				return 2
+			}
+			i++
+			parsed, err := strconv.Atoi(args[i])
+			if err != nil || parsed <= 0 || parsed > 10 {
+				fmt.Fprintln(stderr, "--repeat requires an integer between 1 and 10")
+				return 2
+			}
+			repeat = parsed
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -233,7 +249,12 @@ func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			return 2
 		}
 	}
-	report := providers.ProviderSmokeFromEnv(context.Background(), os.Environ(), provider, execute, nil)
+	report := providers.ProviderSmokeFromEnvWithOptions(context.Background(), os.Environ(), providers.ProviderSmokeOptions{
+		ProviderName: provider,
+		Execute:      execute,
+		Stream:       stream,
+		Repeat:       repeat,
+	})
 	if outputDir != "" {
 		if err := validateA21ReportDir(outputDir); err != nil {
 			fmt.Fprintf(stderr, "provider smoke report dir invalid: %v\n", err)

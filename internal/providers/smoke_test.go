@@ -103,6 +103,118 @@ func TestProviderSmokeExecutesOpenAICompatibleRequest(t *testing.T) {
 	}
 }
 
+func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
+	var sawStream bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		sawStream = body.Stream && body.Model == "deepseek-v4-flash"
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning":"先想"}}]}`,
+			`data: {"choices":[{"delta":{"content":"OK"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
+		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_DEEPSEEK_BASE_URL=" + server.URL,
+	}, ProviderSmokeOptions{
+		ProviderName: "deepseek",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       2,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if !sawStream {
+		t.Fatal("server did not receive stream request with configured model")
+	}
+	if report.Family != string(ProviderFamilyTextStream) || !report.Stream || report.Repeat != 2 {
+		t.Fatalf("family/stream/repeat = %q/%v/%d", report.Family, report.Stream, report.Repeat)
+	}
+	if len(report.Attempts) != 2 {
+		t.Fatalf("attempts = %d, want 2", len(report.Attempts))
+	}
+	for _, attempt := range report.Attempts {
+		if attempt.FirstByteMS <= 0 || attempt.FirstContentMS <= 0 || attempt.TotalDurationMS <= 0 {
+			t.Fatalf("attempt timings not populated: %+v", attempt)
+		}
+		if attempt.ContentDeltaCount != 1 || attempt.ReasoningDeltaCount != 1 || !attempt.Done {
+			t.Fatalf("attempt stream counts = %+v", attempt)
+		}
+	}
+	if report.TimingSummary == nil || report.TimingSummary.FirstByteP50MS <= 0 || report.TimingSummary.FirstContentP95MS <= 0 {
+		t.Fatalf("timing summary not populated: %+v", report.TimingSummary)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "先想", "OK"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stream report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `bad key sk-a21-secret for deepseek-v4-flash`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
+		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_DEEPSEEK_BASE_URL=" + server.URL,
+	}, ProviderSmokeOptions{
+		ProviderName: "deepseek",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       1,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokeFailed {
+		t.Fatalf("status = %q, want failed", report.Status)
+	}
+	if report.Fallback == nil || !report.Fallback.Activated || report.Fallback.Provider != "mock" {
+		t.Fatalf("fallback = %+v, want activated mock", report.Fallback)
+	}
+	if report.TraceID == "" || len(report.TraceMarkers) == 0 || len(report.Metrics) == 0 {
+		t.Fatalf("trace/metrics missing: trace_id=%q markers=%+v metrics=%+v", report.TraceID, report.TraceMarkers, report.Metrics)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "bad key"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("failure report leaked %q: %s", forbidden, rendered)
+		}
+	}
+	if !strings.Contains(report.Detail, "body_sha256=") {
+		t.Fatalf("detail missing redacted body hash: %q", report.Detail)
+	}
+}
+
 func TestProviderSmokeRedactsLegacyProviderName(t *testing.T) {
 	report := ProviderSmokeFromEnv(context.Background(), []string{"A21_PROVIDER_PRIMARY=x21_voice"}, "x21_voice", false, nil)
 

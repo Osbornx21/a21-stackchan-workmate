@@ -21,10 +21,12 @@ The CLI command is:
 ```bash
 go run ./cmd/a21 provider-smoke --provider deepseek
 go run ./cmd/a21 provider-smoke --provider deepseek --execute
+go run ./cmd/a21 provider-smoke --provider deepseek --stream --repeat 3
+go run ./cmd/a21 provider-smoke --provider deepseek --execute --stream --repeat 3 --output-dir reports
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
-`--execute` is required for a real network call.
+`--execute` is required for a real network call. `--stream` switches OpenAI-compatible providers to SSE streaming mode, and `--repeat N` repeats the same redacted smoke up to 10 times so A21 can collect first-byte, first-content, and total-duration timing evidence without logging prompt, model value, API key, proxy URL, generated text, or reasoning text.
 
 `--output-dir reports` writes a timestamped redacted evidence report:
 
@@ -32,7 +34,7 @@ go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json
 ```
 
-The saved report is useful for paid DeepSeek or Bailian/DashScope smoke runs because it preserves provider, protocol, status, execution flag, HTTP status, duration, network mode, and endpoint host without recording API key values, model values, proxy URLs, or full request URLs.
+The saved report is useful for paid DeepSeek or Bailian/DashScope smoke runs because it preserves provider, provider family, protocol, status, execution flag, HTTP status, duration, streaming repeat count, first-byte/first-content summary timings, network mode, endpoint host, fallback markers, and trace/metric names without recording API key values, model values, proxy URLs, full request URLs, prompt text, output text, or reasoning text.
 
 ## Executable Providers
 
@@ -41,7 +43,7 @@ Current executable smoke providers:
 - `deepseek`
 - `bailian_dashscope`
 
-Both use OpenAI-compatible Chat Completions with a tiny non-streaming request.
+Both use OpenAI-compatible Chat Completions with a tiny request. DeepSeek is the current P0 `text_stream` profile for A21's fast companion provider spine; streaming smoke uses OpenAI-compatible data-only SSE chunks and records redacted timing evidence.
 
 The provider network client defaults to `direct` mode and ignores ambient `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY`. If Shanghai network conditions require explicit provider egress, set `A21_PROVIDER_PROXY_URL`; reports show only the env variable name and network mode, never the proxy URL value.
 
@@ -97,7 +99,10 @@ The OpenAI-compatible smoke path follows the public provider contracts rather th
 - `doctor` never executes provider smoke.
 - `provider-smoke` without `--execute` never performs network I/O.
 - Reports expose env variable names, protocol, status, network mode, and endpoint host only.
-- Reports never expose API key values, model values, proxy values, or full URLs.
+- Reports never expose API key values, model values, proxy values, full URLs, prompt text, generated content, or reasoning content.
+- Streaming parser support is limited to OpenAI-compatible `delta.content`, `delta.reasoning`, `delta.reasoning_content`, and `data: [DONE]` events. Provider-specific semantics stay inside `internal/providers`.
+- Non-2xx response bodies are converted to status, body byte count, and SHA-256 hash only.
+- When streaming primary smoke fails, the report records a deterministic mock fallback marker and metric so the failure is visible without pretending the paid provider succeeded.
 - `--output-dir` reports must use the A21 report namespace and reject legacy X21/V21-looking paths through the shared report-dir guard.
 - Unknown provider names are redacted to `unknown_provider`.
 - legacy-looking provider names are redacted to `invalid_legacy_provider` and fail.

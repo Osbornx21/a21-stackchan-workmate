@@ -99,6 +99,8 @@ The command is a planning and diagnostic gate only. It must not flash firmware, 
 
 Current progress: the IMU track now has a guarded native runtime boundary and isolated `a21_stackchan_cores3_imu_probe` build lane. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior.
 
+Provider spine progress: DeepSeek is now the first P0 `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule.
+
 ### P0. Professional V21 Evidence Lane
 
 Goal: keep professional mode auditable and separate from opaque realtime voice.
