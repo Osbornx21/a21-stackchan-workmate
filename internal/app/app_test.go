@@ -3193,6 +3193,166 @@ func TestRunFirmwareBootstrapFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T
 	}
 }
 
+func TestRunFirmwareMicProbeFlashPlanWritesNoFlashReport(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestMicProbeFlashImages(t, dir, "abcdef1")
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-mic-probe-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"guard_id": "a21.firmware.mic_probe_flash_plan.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"platformio_env": "a21_stackchan_cores3_mic_probe"`,
+		"firmware mic probe flash plan ok",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-mic-probe-flash-plan-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("plan reports = %d, want 1", len(matches))
+	}
+}
+
+func TestRunFirmwareMicProbeFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestMicProbeFlashImages(t, dir, "abcdef1")
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-mic-probe-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--confirm WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE is required") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunFirmwareMicProbeFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+	originalRunner := runFirmwareBootstrapFlashCommand
+	var command []string
+	runFirmwareBootstrapFlashCommand = func(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+		command = append([]string(nil), args...)
+		_, _ = fmt.Fprintln(stdout, "stub esptool ok")
+		return nil
+	}
+	defer func() {
+		runFirmwareBootstrapFlashCommand = originalRunner
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestMicProbeFlashImages(t, dir, "abcdef1")
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-mic-probe-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+		"--confirm", "WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"stub esptool ok",
+		"firmware mic probe flash executed",
+		`"schema_version": "a21.firmware.mic_probe_flash_execution.v1"`,
+		`"flash_executed": true`,
+		`"platformio_env": "a21_stackchan_cores3_mic_probe"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	commandText := strings.Join(command, " ")
+	for _, want := range []string{"esptool.py", "--chip esp32s3", "--port /dev/cu.usbmodemA21", "write_flash", "0x0000", "0x8000", "0xe000", "0x10000"} {
+		if !strings.Contains(commandText, want) {
+			t.Fatalf("command missing %q: %v", want, command)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-mic-probe-flash-execution-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("execution reports = %d, want 1", len(matches))
+	}
+}
+
 func TestRunOfficePreflightBuildsNoFlashReport(t *testing.T) {
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
@@ -4648,6 +4808,27 @@ func writeTestBootstrapFlashImages(t *testing.T, dir string) (string, string) {
 		}
 	}
 	return buildDir, coreDir
+}
+
+func writeTestMicProbeFlashImages(t *testing.T, dir string, commit string) (string, string, string) {
+	t.Helper()
+	buildDir := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3_mic_probe")
+	coreDir := filepath.Join(dir, "platformio-core")
+	artifact := filepath.Join(buildDir, "firmware.bin")
+	for path, content := range map[string][]byte{
+		filepath.Join(buildDir, "bootloader.bin"): []byte("a21 mic probe bootloader"),
+		filepath.Join(buildDir, "partitions.bin"): []byte("a21 mic probe partitions"),
+		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 mic probe boot app"),
+		artifact: []byte("a21-stackchan\n0.1.0\nm5stack-cores3\n" + commit + "\ndiagnostic_probe_m5unified_i2s_capture\n"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buildDir, coreDir, artifact
 }
 
 func readTestSHA256(t *testing.T, path string) string {

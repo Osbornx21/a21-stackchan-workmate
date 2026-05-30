@@ -108,6 +108,17 @@ make office-handoff
 
 `firmware-mic-probe-upload-blocker-check` repeats the same raw-upload negative test for `a21_stackchan_cores3_mic_probe`. The diagnostic build may compile for lab evidence, but it must not create an unguarded flashing lane.
 
+When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
+
+```bash
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE \
+make firmware-mic-probe-flash-execute
+```
+
+The plan and execute commands rebuild `a21_stackchan_cores3_mic_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_mic_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require the `diagnostic_probe_m5unified_i2s_capture` marker, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-mic-probe-flash-*.json` receipts. This lane is for microphone diagnosis only; it does not promote microphone capability to production `available`.
+
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
