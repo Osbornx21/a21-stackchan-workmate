@@ -28,6 +28,10 @@
 #define A21_DEVICE_ID "stackchan-001"
 #endif
 
+#if __has_include("a21_firmware_secrets.local.h")
+#include "a21_firmware_secrets.local.h"
+#endif
+
 static constexpr size_t A21_FIRMWARE_ID_CAP = 32;
 static constexpr size_t A21_FIRMWARE_VERSION_CAP = 24;
 static constexpr size_t A21_FIRMWARE_BOARD_CAP = 32;

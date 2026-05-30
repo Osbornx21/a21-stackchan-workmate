@@ -37,6 +37,8 @@ Gateway configuration is currently compile-time and A21-only:
 - control path `/ws/control`
 - audio path `/ws/audio`
 
+Local hardware bring-up can override the Gateway host and Wi-Fi credentials through ignored `include/a21_firmware_secrets.local.h`. That header is included early enough to override the compile-time `A21_GATEWAY_HOST` macro, which is useful when a home Mac is at a temporary LAN address such as `192.168.1.20`. Do not put local SSID/password values in `platformio.ini`, docs, commits, or artifact names.
+
 `a21_firmware_connection.h` owns the hardware-free connection lifecycle model:
 
 - Wi-Fi connecting
@@ -128,5 +130,20 @@ go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackc
 These commands inventory serial devices and validate artifact identity, board, version, checksum, sibling artifact manifest, release-index record, latest same-commit package selection, expected git commit, embedded binary identity, explicit serial target, port existence, serial-like path form, whether another process is already holding the serial path, and whether the A21 Gateway has recently seen the expected device ID with matching A21 firmware identity. They do not flash the device.
 
 Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`, and the PlatformIO blocker is expected to fail raw upload attempts.
+
+Initial bring-up or recovery uses the explicit A21 bootstrap flash path, not raw PlatformIO upload:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+make firmware-bootstrap-flash-plan
+
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_BOOTSTRAP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_FIRMWARE \
+make firmware-bootstrap-flash-execute
+```
+
+The plan command writes a no-flash receipt with SHA-256 for bootloader, partitions, `boot_app0.bin`, and the packaged A21 application artifact. The execute command rebuilds the plan, requires the confirmation token, uses repository-local esptool, and writes a timestamped execution receipt under `reports/`.
 
 `make firmware-package` and `a21 firmware-package` refuse to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source. The package step writes the A21-named `.bin`, sibling `.sha256`, sibling `.manifest.json`, and `a21-firmware-release-index.jsonl`; upload-path dry-run guards require all of them to agree.

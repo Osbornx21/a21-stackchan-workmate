@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -3016,6 +3017,182 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareBootstrapFlashPlanBuildsNoFlashReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	buildDir, coreDir := writeTestBootstrapFlashImages(t, dir)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-bootstrap-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"firmware bootstrap flash plan ok (no flash performed)",
+		`"guard_id": "a21.firmware.bootstrap_flash_plan.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"next_required_confirmation": "firmware-bootstrap-flash-execute_with_confirmation_token"`,
+		`"port": "/dev/cu.usbmodemA21"`,
+		`"offset": "0x0000"`,
+		`"offset": "0x10000"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunFirmwareBootstrapFlashPlanRejectsLegacyInputPathWithoutEchoingPath(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "v21-artifacts", "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	buildDir, coreDir := writeTestBootstrapFlashImages(t, dir)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-bootstrap-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "v21-artifacts") || strings.Contains(strings.ToLower(stderr.String()), "v21-artifacts") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunFirmwareBootstrapFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	buildDir, coreDir := writeTestBootstrapFlashImages(t, dir)
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-bootstrap-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--confirm WRITE_A21_STACKCHAN_FIRMWARE is required") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunFirmwareBootstrapFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runFirmwareBootstrapFlashCommand
+	var command []string
+	runFirmwareBootstrapFlashCommand = func(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+		command = append([]string(nil), args...)
+		_, _ = fmt.Fprintln(stdout, "stub esptool ok")
+		return nil
+	}
+	defer func() {
+		runFirmwareBootstrapFlashCommand = originalRunner
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	buildDir, coreDir := writeTestBootstrapFlashImages(t, dir)
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-bootstrap-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+		"--confirm", "WRITE_A21_STACKCHAN_FIRMWARE",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"stub esptool ok",
+		"firmware bootstrap flash executed",
+		`"schema_version": "a21.firmware.bootstrap_flash_execution.v1"`,
+		`"flash_executed": true`,
+		`"dry_run": false`,
+		`"port": "/dev/cu.usbmodemA21"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	commandText := strings.Join(command, " ")
+	for _, want := range []string{"esptool.py", "--chip esp32s3", "--port /dev/cu.usbmodemA21", "write_flash", "0x0000", "0x8000", "0xe000", "0x10000"} {
+		if !strings.Contains(commandText, want) {
+			t.Fatalf("command missing %q: %v", want, command)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-bootstrap-flash-execution-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %v, want one bootstrap execution report", matches)
+	}
+}
+
 func TestRunOfficePreflightBuildsNoFlashReport(t *testing.T) {
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
@@ -4271,6 +4448,9 @@ lib_deps =
 
 func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, content []byte) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	commit := testArtifactCommitFromName(t, artifactPath)
 	content = append(content, []byte("\na21-stackchan\n0.1.0\nm5stack-cores3\n"+commit+"\n")...)
 	if err := os.WriteFile(artifactPath, content, 0o644); err != nil {
@@ -4326,6 +4506,25 @@ func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, conten
 	if _, err := file.Write(append(data, '\n')); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeTestBootstrapFlashImages(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	buildDir := filepath.Join(dir, "build")
+	coreDir := filepath.Join(dir, "platformio-core")
+	for path, content := range map[string][]byte{
+		filepath.Join(buildDir, "bootloader.bin"): []byte("a21 bootloader"),
+		filepath.Join(buildDir, "partitions.bin"): []byte("a21 partitions"),
+		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 boot app"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buildDir, coreDir
 }
 
 func readTestSHA256(t *testing.T, path string) string {

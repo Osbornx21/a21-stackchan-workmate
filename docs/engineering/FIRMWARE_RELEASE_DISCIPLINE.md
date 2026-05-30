@@ -396,7 +396,74 @@ This receipt is the strongest no-flash receipt in the current repository. It is 
 
 ## Current Flashing Status
 
-Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, device-identity dry-run, flash-plan dry-run gates, and a PlatformIO raw-upload blocker covered by `make firmware-upload-blocker-check`. No command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
+Phase 5E introduces the first explicit guarded bootstrap flash path for a real StackChan/CoreS3 unit that cannot yet report an A21 firmware identity to Gateway. This is intentionally separate from `firmware-flash-plan`: bootstrap flashing is only for initial bring-up or recovery, while `firmware-flash-plan` remains the stronger steady-state path after Gateway has seen a matching A21 device.
+
+Bootstrap flash planning is still a dry-run receipt:
+
+```bash
+go run ./cmd/a21 firmware-bootstrap-flash-plan \
+  --artifact firmware/artifacts/<a21-stackchan...bin> \
+  --port /dev/cu.usbmodemXXXX \
+  --commit <expected-git-sha> \
+  --output-dir reports
+```
+
+or:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+make firmware-bootstrap-flash-plan
+```
+
+The receipt writes:
+
+```text
+reports/a21-firmware-bootstrap-flash-plan-YYYYMMDD-HHMMSS.json
+```
+
+It verifies the packaged A21 artifact, latest same-commit release-ledger selection, explicit non-busy serial port, and the exact ESP32-S3 image parts to write:
+
+- `0x0000` bootloader from `firmware/stackchan/.pio/build/a21_stackchan_cores3/bootloader.bin`
+- `0x8000` partitions from `firmware/stackchan/.pio/build/a21_stackchan_cores3/partitions.bin`
+- `0xe000` `boot_app0.bin` from the repository-local `.a21-tools/platformio-core`
+- `0x10000` the packaged `a21-stackchan-...bin` artifact
+
+Successful plan output includes:
+
+- `guard_id: a21.firmware.bootstrap_flash_plan.v1`
+- `dry_run: true`
+- `flash_allowed: false`
+- `next_required_confirmation: firmware-bootstrap-flash-execute_with_confirmation_token`
+- SHA-256 for every image part
+
+The only real write command is:
+
+```bash
+A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_BOOTSTRAP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_FIRMWARE \
+make firmware-bootstrap-flash-execute
+```
+
+or the equivalent CLI command:
+
+```bash
+go run ./cmd/a21 firmware-bootstrap-flash-execute \
+  --artifact firmware/artifacts/<a21-stackchan...bin> \
+  --port /dev/cu.usbmodemXXXX \
+  --commit <expected-git-sha> \
+  --confirm WRITE_A21_STACKCHAN_FIRMWARE \
+  --output-dir reports
+```
+
+The execute command rebuilds the same plan immediately before flashing, requires the confirmation token, writes through the repository-local esptool, and records:
+
+```text
+reports/a21-firmware-bootstrap-flash-execution-YYYYMMDD-HHMMSS.json
+```
+
+Raw PlatformIO upload remains forbidden. Bootstrap flashing is not permission to use `pio run -t upload`, `uploadfs`, `uploadota`, copied X21/V21 esptool snippets, or generic `firmware.bin` paths.
 
 A21 firmware work must continue to use the repository-local `.a21-tools/` PlatformIO environment and `firmware/artifacts/a21-stackchan-...` packages. Do not point A21 upload checks at X21/V21 build directories, generic `firmware.bin` paths, or auto-selected serial ports.
 
@@ -411,9 +478,9 @@ Before any future firmware upload:
 7. Run `firmware-upload-check`.
 8. Capture `/v1/devices` from the A21 Gateway and run `firmware-device-check`.
 9. Run `firmware-flash-plan`.
-10. Only then may a future explicit guarded upload command run.
-
-There is intentionally no upload target in Phase 5D.
+10. If the device already reports A21 identity, prefer `firmware-flash-plan` and keep bootstrap flashing out of the path.
+11. If this is initial bring-up or recovery and no A21 identity can be captured, run `firmware-bootstrap-flash-plan`.
+12. Only after the bootstrap plan passes may `firmware-bootstrap-flash-execute` run with `WRITE_A21_STACKCHAN_FIRMWARE`.
 
 ## Office Preflight
 
