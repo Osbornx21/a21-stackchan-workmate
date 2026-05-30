@@ -753,6 +753,15 @@ func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error)
 	if strings.Contains(strings.ToLower(parsed.String()), "x21") || strings.Contains(strings.ToLower(parsed.String()), "v21") {
 		return "", "", fmt.Errorf("gateway URL contains forbidden legacy identity")
 	}
+	if port := parsed.Port(); port != "" {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber <= 0 || portNumber > 65535 {
+			return "", "", fmt.Errorf("gateway URL port is invalid")
+		}
+		if runtimeguard.DefaultConfig().IsLegacyEndpointPort(portNumber) {
+			return "", "", fmt.Errorf("gateway URL uses forbidden legacy internal port")
+		}
+	}
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	basePath := strings.TrimRight(parsed.Path, "/")

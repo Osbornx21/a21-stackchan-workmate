@@ -133,7 +133,7 @@ Upload and flash-plan guards accept only explicit USB serial-looking ports. On m
 
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit from `a21-firmware-release-index.jsonl`, then re-runs artifact, release-index, and per-artifact manifest checks. It is part of `make release-check` immediately after `firmware-package`.
 
-`firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. Use this instead of hand-written curl captures before device identity or flash-plan checks.
+`firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It rejects known X21/V21 legacy ports before dialing. Use this instead of hand-written curl captures before device identity or flash-plan checks.
 
 `firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, required online status, and required freshness window. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale or offline device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
 

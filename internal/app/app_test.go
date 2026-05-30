@@ -1261,6 +1261,26 @@ func TestRunFirmwareDeviceReportRejectsGatewayCredentialsWithoutEchoingSecret(t 
 	}
 }
 
+func TestRunFirmwareDeviceReportRejectsLegacyGatewayPortWithoutDialingOrEchoingIt(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", "http://127.0.0.1:8080",
+		"--output-dir", t.TempDir(),
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "legacy internal port") {
+		t.Fatalf("stderr = %q, want legacy internal port rejection", stderr.String())
+	}
+	for _, forbidden := range []string{"127.0.0.1", "8080"} {
+		if strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("stderr leaked %q: %s", forbidden, stderr.String())
+		}
+	}
+}
+
 func TestRunFirmwareDeviceReportRejectsLegacyGatewayDeviceWithoutEchoingIt(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
