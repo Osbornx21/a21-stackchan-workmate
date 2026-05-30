@@ -162,7 +162,7 @@ firmware-upload-check --port /dev/null ...                    exits 1
 ## Gaps
 
 - Gateway and simulator are mock-first and deterministic; Gateway now has a bounded ingress buffer and RMS mock VAD markers, but real microphone capture, speaker playback, production VAD, production jitter tuning, AEC, and provider audio streaming remain future work.
-- Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes and bounded mock downlink buffering, but it still does not claim real microphone capture, speaker playback, VAD, full-duplex, or OTA.
+- Firmware has disciplined Wi-Fi/Gateway/control/audio transport probes, full-size mock audio-frame uplink, bounded mock downlink buffering, and a CoreS3 speaker pump build path, but it still does not claim real microphone capture, physical speaker acceptance, VAD, full-duplex, or OTA.
 - Metrics, voice provider health, and in-memory trace waterfall exist, including audio ingress/VAD markers, audio-path barge-in cancel markers, and professional V21 query latency; OpenTelemetry export and durable trace storage remain future work.
 - V21 adapter contract, mock Gateway professional path, timeout fallback, latency metric, optional doctor health, and simulator evidence-card rendering exist; real V21 endpoint smoke remains future work.
 - Provider-neutral mock/cascade contracts include health status, provider HTTP network policy, provider readiness registry, redacted provider smoke checks, a Gateway provider health endpoint, and explicit cancel reason/stream acknowledgements; no realtime provider adapters exist yet.

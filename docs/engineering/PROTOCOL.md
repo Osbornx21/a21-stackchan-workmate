@@ -70,6 +70,8 @@ Current mock audio payload:
 - device frame duration: 20 ms or 40 ms for LAN responsiveness
 - provider aggregation: adapter-specific, often 100-200 ms
 
+The current firmware mock uplink emits the first safe subset as a complete deterministic silence payload: `pcm_s16le`, 16 kHz, mono, 20 ms. Each mock `audio.frame` contains 640 raw PCM bytes encoded as an 856-character base64 string, so Gateway ingress, VAD, and WebSocket sizing are exercised with real frame dimensions instead of a tiny placeholder payload.
+
 Device uplink uses `audio.frame`.
 
 Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a playback payload:

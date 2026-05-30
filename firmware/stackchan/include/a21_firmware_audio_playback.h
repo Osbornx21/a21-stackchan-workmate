@@ -18,6 +18,7 @@ static constexpr uint16_t A21_AUDIO_PCM_DURATION_MS = 20;
 static constexpr uint16_t A21_AUDIO_PCM_FRAME_SAMPLES =
     static_cast<uint16_t>((A21_AUDIO_PCM_SAMPLE_RATE_HZ * A21_AUDIO_PCM_DURATION_MS) / 1000);
 static constexpr size_t A21_AUDIO_PCM_FRAME_BYTES = static_cast<size_t>(A21_AUDIO_PCM_FRAME_SAMPLES) * 2;
+static constexpr size_t A21_AUDIO_PCM_FRAME_BASE64_CHARS = 856;
 
 struct A21AudioPlaybackChunk {
   char trace_id[A21_TRACE_ID_CAP];
@@ -114,6 +115,19 @@ inline int8_t a21Base64Value(char value) {
     return -2;
   }
   return -1;
+}
+
+inline bool a21FillPCM16SilenceBase64(char* output, size_t output_size) {
+  if (output == nullptr || output_size <= A21_AUDIO_PCM_FRAME_BASE64_CHARS) {
+    return false;
+  }
+  for (size_t i = 0; i < A21_AUDIO_PCM_FRAME_BASE64_CHARS - 2; ++i) {
+    output[i] = 'A';
+  }
+  output[A21_AUDIO_PCM_FRAME_BASE64_CHARS - 2] = '=';
+  output[A21_AUDIO_PCM_FRAME_BASE64_CHARS - 1] = '=';
+  output[A21_AUDIO_PCM_FRAME_BASE64_CHARS] = '\0';
+  return true;
 }
 
 inline void a21InitAudioPlaybackBuffer(A21AudioPlaybackBuffer* buffer) {

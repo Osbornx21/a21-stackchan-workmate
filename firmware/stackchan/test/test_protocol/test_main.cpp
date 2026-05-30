@@ -62,7 +62,7 @@ struct FakeGatewayWSDriver {
   const char* last_host;
   uint16_t last_port;
   const char* last_path;
-  char last_sent_text[A21_WS_TEXT_MESSAGE_CAP];
+  char last_sent_text[A21_AUDIO_WS_TEXT_MESSAGE_CAP];
   bool connected;
   const char* pending_text;
   const char* pending_texts[4];
@@ -307,20 +307,9 @@ void initFakeSpeakerDriver(FakeSpeakerDriver* fake, A21SpeakerDriver* driver) {
 }
 
 void fillPCM16SilenceBase64(char* output, size_t output_size) {
-  if (output == nullptr || output_size == 0) {
-    return;
-  }
-  const size_t payload_chars = 856;
-  if (output_size <= payload_chars) {
+  if (!a21FillPCM16SilenceBase64(output, output_size) && output != nullptr && output_size > 0) {
     output[0] = '\0';
-    return;
   }
-  for (size_t i = 0; i < 854; ++i) {
-    output[i] = 'A';
-  }
-  output[854] = '=';
-  output[855] = '=';
-  output[856] = '\0';
 }
 
 void test_firmware_build_identity_contains_a21_release_fields() {
@@ -949,7 +938,11 @@ void test_audio_ws_send_mock_frame_builds_a21_audio_frame() {
   TEST_ASSERT_EQUAL_INT(20, doc["payload"]["duration_ms"] | 0);
   TEST_ASSERT_EQUAL_INT64(1980, doc["payload"]["capture_started_at_ms"] | 0);
   TEST_ASSERT_EQUAL_INT64(2000, doc["payload"]["capture_ended_at_ms"] | 0);
-  TEST_ASSERT_EQUAL_STRING("AAAA", doc["payload"]["data_base64"] | "");
+  const char* data_base64 = doc["payload"]["data_base64"] | "";
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BASE64_CHARS), static_cast<uint32_t>(strlen(data_base64)));
+  A21AudioPCMFrame frame;
+  TEST_ASSERT_TRUE(a21DecodeBase64PCM16(data_base64, &frame));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BYTES), static_cast<uint32_t>(frame.byte_count));
 }
 
 void test_audio_ws_applies_gateway_ack_control_event() {

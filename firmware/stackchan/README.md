@@ -66,10 +66,10 @@ Gateway configuration is currently compile-time and A21-only:
 `a21_firmware_audio_ws.h` owns the first guarded audio WebSocket runtime:
 
 - opens a separate `/ws/audio` socket only after the control Gateway is connected
-- sends deterministic mock `audio.frame` envelopes with `pcm_s16le`, 16 kHz, mono, 20 ms silence payload
+- sends deterministic mock `audio.frame` envelopes with a full 640-byte `pcm_s16le`, 16 kHz, mono, 20 ms silence payload encoded in base64
 - applies Gateway ack `control.event` messages through the same tested parser
 - accepts Gateway `audio.playback.chunk` envelopes into a bounded playback buffer keyed by `stream_id`
-- keeps real microphone capture and speaker playback out of this slice
+- keeps real microphone capture out of this slice while allowing guarded CoreS3 speaker playback of Gateway downlink frames
 
 Current local controls are intentionally minimal and routed through semantic device intents:
 

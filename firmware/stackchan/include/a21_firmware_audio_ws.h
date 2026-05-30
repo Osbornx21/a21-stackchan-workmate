@@ -65,6 +65,11 @@ inline bool a21AudioWSBuildMockFrame(
   }
   output[0] = '\0';
 
+  char data_base64[A21_AUDIO_DATA_BASE64_CAP];
+  if (!a21FillPCM16SilenceBase64(data_base64, sizeof(data_base64))) {
+    return false;
+  }
+
   char trace_id[A21_TRACE_ID_CAP];
   snprintf(trace_id, sizeof(trace_id), "a21-trace-audio-%06llu", static_cast<unsigned long long>(runtime->next_seq));
 
@@ -84,7 +89,7 @@ inline bool a21AudioWSBuildMockFrame(
   payload["duration_ms"] = 20;
   payload["capture_started_at_ms"] = now_ms >= 20 ? now_ms - 20 : 0;
   payload["capture_ended_at_ms"] = now_ms;
-  payload["data_base64"] = "AAAA";
+  payload["data_base64"] = data_base64;
 
   const size_t written = serializeJson(doc, output, output_size);
   return written > 0 && written < output_size;
