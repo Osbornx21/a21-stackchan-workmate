@@ -135,6 +135,35 @@ func TestSherpaONNXLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
 	}
 }
 
+func TestLocalTTSOutputPathsAreUniqueAcrossFastConsecutiveCalls(t *testing.T) {
+	dir := t.TempDir()
+	runner := &fakeTTSCommandRunner{}
+
+	first, err := SynthesizeMacOSSay(context.Background(), LocalTTSOptions{
+		Text:          "A21 ack",
+		OutputDir:     dir,
+		CommandRunner: runner,
+		SayPath:       "/usr/bin/say",
+		AFConvertPath: "/usr/bin/afconvert",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := SynthesizeMacOSSay(context.Background(), LocalTTSOptions{
+		Text:          "A21 answer",
+		OutputDir:     dir,
+		CommandRunner: runner,
+		SayPath:       "/usr/bin/say",
+		AFConvertPath: "/usr/bin/afconvert",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.OutputPath == second.OutputPath {
+		t.Fatalf("output paths collided: %q", first.OutputPath)
+	}
+}
+
 func mustJSON(t *testing.T, value any) string {
 	t.Helper()
 	data, err := json.Marshal(value)

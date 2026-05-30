@@ -12,6 +12,7 @@ Status: v0.4, aligned with `docs/prd/A21_PRD.md`.
 - A21/X21/V21 naming, process, port, env, log, report, and artifact isolation remains mandatory.
 - Provider keys never enter firmware, docs output, reports, traces, logs, screenshots, Git, or device messages.
 - External latency labs and procurement experiments stay outside the A21 mainline; only redacted conclusions and profile/env names return.
+- X21 is now a read-only, one-way reference source for prior real-device voice lessons. Borrowed parameters, algorithms, or state-machine rules must be rewritten through A21 provider-neutral packages and named in the commit body according to `docs/engineering/A21_LEGACY_ONE_WAY_REFERENCE.md`.
 
 ## Current Mainline
 
@@ -48,16 +49,16 @@ Required shape:
 
 ### P0. Fast Companion Hybrid Lane
 
-Goal: achieve low perceived latency through local audio front-end plus streaming text provider plus local or streaming TTS.
+Goal: achieve low perceived latency through the best measured combination of local audio front-end, cloud/local ASR, streaming text provider, and cloud/local/streaming TTS. Local ASR/TTS are the current controlled baseline, not a permanent rule.
 
 Default lane:
 
 ```text
 StackChan mic
   -> Gateway VAD/barge-in
-  -> local ASR
+  -> measured ASR lane: local or cloud API
   -> OpenAI-compatible streaming text provider
-  -> local/streaming TTS
+  -> measured TTS lane: local, cloud API, or streaming TTS
   -> StackChan speaker/screen/servo/RGB/touch state
 ```
 
@@ -66,6 +67,8 @@ Acceptance target:
 - first audible response P50 < 900 ms and P95 < 1500 ms for the candidate chain;
 - barge-in local stop/cancel P95 < 300 ms;
 - first byte, first content, TTS first audio, downlink first frame, and device playback start are recorded.
+- ASR/TTS selection is evidence-led: compare local and API candidates on mainland-network first response, P95 tail, subjective voice quality, interruption behavior, privacy boundary, failure behavior, cost, and implementation risk before promoting a lane.
+- Experiments that need a mainland-network external lab must be packaged as isolated probes with redacted JSON reports and no provider keys in Git, reports, logs, screenshots, or firmware.
 
 ### P0. StackChan Physical Acceptance
 
@@ -101,7 +104,7 @@ Current progress: the IMU track now has a guarded native runtime boundary, isola
 
 Provider spine progress: `ProviderProfile` is now the single registry shape, but P0 built-ins are intentionally limited to `mock` and `deepseek`. Baidu/Huawei candidates remain blocked and redacted. DeepSeek is the only P0 route-eligible `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary, a default `deepseek-chat` model, and the lab key name `A21_LAB_DEEPSEEK_API_KEY`. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule. Other provider families and profiles stay as future plan/fixture boundaries until the vertical M0-M3 evidence is clean.
 
-Local audio progress: `sherpa-onnx` is now the selected M2 local TTS lane, with macOS `say + afconvert` retained only as a diagnostic fallback. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-asr-smoke` now verifies the isolated sherpa-onnx ASR runtime against local Paraformer/SenseVoice/Zipformer-compatible model directories through A21's tracked runner; reports keep decode timing, RTF, transcript length, model basename, and WAV basename, but never transcript text or full local paths. `local-voice-loopback --asr-provider sherpa_onnx` now passes the local ASR transcript internally into the text-stream step while keeping the saved report redacted, and still supports mock ASR as the default stable path. The loopback stitches mock VAD, selected ASR, mock OpenAI-compatible text-stream parsing or explicit DeepSeek text-stream execution, selected local TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt with P50/P95 timing fields. The explicit DeepSeek path requires `--text-provider deepseek --execute-text-provider`, consumes `A21_LAB_DEEPSEEK_API_KEY`, feeds provider content to TTS, and still keeps input/ASR transcript/provider output/reasoning/model/secret values out of reports. `stackchan-local-tts-playback` sends selected local TTS PCM chunks through Gateway to the real StackChan playback path. The isolated `.a21-tools` sherpa runtime, selected Chinese VITS model, and first local ASR fixtures are installed; physical microphone capture remains blocked by the current firmware mic stop-crash guard and real DeepSeek timing evidence requires the lab key to be exported in the shell.
+Local audio progress: `sherpa-onnx` is now the selected M2 local TTS baseline, with macOS `say + afconvert` retained only as a diagnostic fallback. Local is not a permanent ASR/TTS rule; API ASR/TTS candidates must be compared through Provider Spine or isolated mainland-lab probes before promotion. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-asr-smoke` now verifies the isolated sherpa-onnx ASR runtime against local Paraformer/SenseVoice/Zipformer-compatible model directories through A21's tracked runner; reports keep decode timing, RTF, transcript length, model basename, and WAV basename, but never transcript text or full local paths. `local-voice-loopback --asr-provider sherpa_onnx` now passes the local ASR transcript internally into the text-stream step while keeping the saved report redacted, and still supports mock ASR as the default stable path. The loopback stitches mock VAD, selected ASR, local acknowledgement TTS, mock OpenAI-compatible text-stream parsing or explicit DeepSeek text-stream execution, selected answer TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt with separate `local_ack_*` perceived-response timing and `answer_first_audio_total_*` provider-backed answer timing. The explicit DeepSeek path requires `--text-provider deepseek --execute-text-provider`, consumes `A21_LAB_DEEPSEEK_API_KEY`, feeds provider content to answer TTS, and still keeps input/ASR transcript/provider output/reasoning/local acknowledgement text/model/secret values out of reports. `stackchan-local-tts-playback` sends selected local TTS PCM chunks through Gateway to the real StackChan playback path. The isolated `.a21-tools` sherpa runtime, selected Chinese VITS model, and first local ASR fixtures are installed; physical microphone capture remains blocked by the current firmware mic stop-crash guard and real DeepSeek timing evidence requires the lab key to be exported in the shell.
 
 ### P0. Professional V21 Evidence Lane
 

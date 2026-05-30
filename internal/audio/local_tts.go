@@ -111,7 +111,7 @@ func SynthesizeMacOSSay(ctx context.Context, options LocalTTSOptions) (LocalTTSR
 	defer os.RemoveAll(tempDir)
 
 	aiffPath := filepath.Join(tempDir, "a21-local-tts.aiff")
-	wavPath := filepath.Join(outputDir, "a21-local-tts-"+time.Now().Format("20060102-150405")+".wav")
+	wavPath := filepath.Join(outputDir, uniqueLocalTTSFilename("a21-local-tts"))
 	if err := runner.Run(ctx, sayPath, "-v", report.Voice, "-o", aiffPath, options.Text); err != nil {
 		report.Findings = append(report.Findings, "say command failed")
 		return report, err
@@ -210,7 +210,7 @@ func SynthesizeSherpaONNX(ctx context.Context, options LocalTTSOptions) (LocalTT
 
 	textPath := filepath.Join(tempDir, "a21-tts-input.txt")
 	rawWAVPath := filepath.Join(tempDir, "a21-sherpa-onnx-tts.raw.wav")
-	wavPath := filepath.Join(outputDir, "a21-sherpa-onnx-tts-"+time.Now().Format("20060102-150405")+".wav")
+	wavPath := filepath.Join(outputDir, uniqueLocalTTSFilename("a21-sherpa-onnx-tts"))
 	if err := os.WriteFile(textPath, []byte(options.Text), 0o600); err != nil {
 		report.Findings = append(report.Findings, err.Error())
 		return report, err
@@ -242,6 +242,11 @@ func validateLocalTTSOutputDir(path string) error {
 		return fmt.Errorf("local TTS output dir contains forbidden legacy project identity")
 	}
 	return nil
+}
+
+func uniqueLocalTTSFilename(prefix string) string {
+	now := time.Now()
+	return fmt.Sprintf("%s-%s-%09d.wav", prefix, now.Format("20060102-150405"), now.Nanosecond())
 }
 
 func validateSherpaONNXModelDir(path string) error {

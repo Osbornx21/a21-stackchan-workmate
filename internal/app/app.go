@@ -1038,6 +1038,12 @@ type localVoiceLoopbackReport struct {
 	TextStreamContentDeltas   int                  `json:"text_stream_content_delta_count"`
 	TextStreamReasoningDeltas int                  `json:"text_stream_reasoning_delta_count"`
 	TextStreamDone            bool                 `json:"text_stream_done"`
+	LocalAckEnabled           bool                 `json:"local_ack_enabled"`
+	LocalAckStatus            string               `json:"local_ack_status,omitempty"`
+	LocalAckTTSProvider       string               `json:"local_ack_tts_provider,omitempty"`
+	LocalAckTTSFirstAudioMS   float64              `json:"local_ack_tts_first_audio_ms,omitempty"`
+	LocalAckFirstAudioTotalMS float64              `json:"local_ack_first_audio_total_ms,omitempty"`
+	LocalAckAudioPath         string               `json:"local_ack_audio_path,omitempty"`
 	TTSProvider               string               `json:"tts_provider"`
 	TTSVoice                  string               `json:"tts_voice"`
 	TTSOutputFormat           string               `json:"tts_output_format"`
@@ -1045,6 +1051,8 @@ type localVoiceLoopbackReport struct {
 	TTSFirstAudioMS           float64              `json:"tts_first_audio_ms"`
 	TTSFirstAudioP50MS        float64              `json:"tts_first_audio_p50_ms,omitempty"`
 	TTSFirstAudioP95MS        float64              `json:"tts_first_audio_p95_ms,omitempty"`
+	AnswerFirstAudioP50MS     float64              `json:"answer_first_audio_total_p50_ms,omitempty"`
+	AnswerFirstAudioP95MS     float64              `json:"answer_first_audio_total_p95_ms,omitempty"`
 	FirstAudioTotalP50MS      float64              `json:"first_audio_total_p50_ms,omitempty"`
 	FirstAudioTotalP95MS      float64              `json:"first_audio_total_p95_ms,omitempty"`
 	TotalDurationMS           float64              `json:"total_duration_ms"`
@@ -1288,10 +1296,21 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 		return report, nil
 	}
 
-	ttsText, err := runLocalVoiceLoopbackTextStream(ctx, transcript, textOptions, &report)
-	if err != nil {
+	textResultCh := make(chan localVoiceLoopbackTextResult, 1)
+	go func() {
+		textReport := localVoiceLoopbackReport{}
+		ttsText, textErr := runLocalVoiceLoopbackTextStream(ctx, transcript, textOptions, &textReport)
+		textResultCh <- localVoiceLoopbackTextResult{text: ttsText, report: textReport, err: textErr}
+	}()
+	if err := runLocalVoiceLoopbackLocalAck(ctx, ttsOptions, &report); err != nil {
 		return report, err
 	}
+	textResult := <-textResultCh
+	mergeLocalVoiceLoopbackTextReport(&report, textResult.report)
+	if textResult.err != nil {
+		return report, textResult.err
+	}
+	ttsText := textResult.text
 	if ttsText == "" {
 		report.Findings = append(report.Findings, "text stream produced no content")
 		return report, nil
@@ -1316,12 +1335,15 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 			return report, nil
 		}
 		ttsSamples = append(ttsSamples, time.Duration(ttsReport.TTSFirstAudioMS*1000)*time.Microsecond)
-		firstAudioTotalSamples = append(firstAudioTotalSamples, time.Duration((report.ASRFirstPartialMS+report.TextStreamFirstContentMS+ttsReport.TTSFirstAudioMS)*1000)*time.Microsecond)
+		answerStartGateMS := math.Max(report.TextStreamFirstContentMS, report.LocalAckTTSFirstAudioMS)
+		firstAudioTotalSamples = append(firstAudioTotalSamples, time.Duration((report.ASRFirstPartialMS+answerStartGateMS+ttsReport.TTSFirstAudioMS)*1000)*time.Microsecond)
 	}
 	report.TTSFirstAudioP50MS = percentileMS(ttsSamples, 0.50)
 	report.TTSFirstAudioP95MS = percentileMS(ttsSamples, 0.95)
-	report.FirstAudioTotalP50MS = percentileMS(firstAudioTotalSamples, 0.50)
-	report.FirstAudioTotalP95MS = percentileMS(firstAudioTotalSamples, 0.95)
+	report.AnswerFirstAudioP50MS = percentileMS(firstAudioTotalSamples, 0.50)
+	report.AnswerFirstAudioP95MS = percentileMS(firstAudioTotalSamples, 0.95)
+	report.FirstAudioTotalP50MS = report.AnswerFirstAudioP50MS
+	report.FirstAudioTotalP95MS = report.AnswerFirstAudioP95MS
 
 	bench, err := runMockLatencyBench(1)
 	if err != nil {
@@ -1333,6 +1355,53 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 	report.TotalDurationMS = elapsedReportMS(start)
 	report.Status = "passed"
 	return report, nil
+}
+
+type localVoiceLoopbackTextResult struct {
+	text   string
+	report localVoiceLoopbackReport
+	err    error
+}
+
+func runLocalVoiceLoopbackLocalAck(ctx context.Context, options localTTSRuntimeOptions, report *localVoiceLoopbackReport) error {
+	report.LocalAckEnabled = true
+	ackOptions := options
+	ackOptions.Text = localCompanionAckText()
+	ackReport, err := synthesizeLocalTTS(ctx, ackOptions)
+	if err != nil {
+		report.LocalAckStatus = "failed"
+		report.Findings = append(report.Findings, "local ack TTS failed")
+		return err
+	}
+	report.LocalAckTTSProvider = ackReport.Provider
+	report.LocalAckTTSFirstAudioMS = ackReport.TTSFirstAudioMS
+	report.LocalAckAudioPath = ackReport.OutputPath
+	report.LocalAckFirstAudioTotalMS = report.ASRFirstPartialMS + ackReport.TTSFirstAudioMS
+	if ackReport.Status != "passed" {
+		report.LocalAckStatus = "failed"
+		report.Findings = append(report.Findings, "local ack TTS did not pass")
+		return nil
+	}
+	report.LocalAckStatus = "passed"
+	return nil
+}
+
+func localCompanionAckText() string {
+	return "嗯，我在。"
+}
+
+func mergeLocalVoiceLoopbackTextReport(report *localVoiceLoopbackReport, textReport localVoiceLoopbackReport) {
+	report.TextStreamProvider = textReport.TextStreamProvider
+	report.TextStreamFamily = textReport.TextStreamFamily
+	report.TextStreamExecuted = textReport.TextStreamExecuted
+	report.TextStreamEndpointHost = textReport.TextStreamEndpointHost
+	report.TextStreamFirstContentMS = textReport.TextStreamFirstContentMS
+	report.TextStreamContentDeltas = textReport.TextStreamContentDeltas
+	report.TextStreamReasoningDeltas = textReport.TextStreamReasoningDeltas
+	report.TextStreamDone = textReport.TextStreamDone
+	if len(textReport.Findings) > 0 {
+		report.Findings = append(report.Findings, textReport.Findings...)
+	}
 }
 
 func runLocalVoiceLoopbackASR(ctx context.Context, options localVoiceLoopbackASROptions, report *localVoiceLoopbackReport) (string, error) {

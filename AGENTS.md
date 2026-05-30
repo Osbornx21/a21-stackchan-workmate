@@ -24,6 +24,7 @@ The A21 architecture and product direction come from the user. External document
 - Do not rewrite the current Go-first foundation into another stack without an ADR and an approved migration plan.
 - Treat external master documents as proposals to curate, not as authority over the user's own A21 design.
 - Do not ship an A21 hardware effect that is worse than the original StackChan experience. Keep it as a spike or planned capability until implementation and acceptance evidence justify product use.
+- X21 may be read only as a frozen one-way reference for latency, ASR, TTS, VAD, streaming, wake-word, and device lessons. Never copy X21 architecture or runtime identity into A21. If a commit borrows an X21 parameter, algorithm, or rule, its commit body must name the X21 source and the A21 provider-neutral rewrite target.
 
 ## Product Canon
 
@@ -50,6 +51,7 @@ Default stance:
 - `docs/engineering/OBSERVABILITY.md`
 - `docs/engineering/PROTOCOL.md`
 - `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_LEGACY_ONE_WAY_REFERENCE.md`
 - `docs/engineering/V21_INTEGRATION.md`
 - `docs/engineering/DOCTOR.md`
 

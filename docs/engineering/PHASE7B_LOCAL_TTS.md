@@ -1,12 +1,14 @@
-# A21 Phase 7B Local TTS Boundary
+# A21 Phase 7B Local And API ASR/TTS Boundary
 
 ## Purpose
 
-Phase 7B adds the first local TTS adapter boundary for the fast companion hybrid lane. It is intentionally small: use mature local tooling to prove that A21 can synthesize speech without provider keys, proxy state, firmware changes, or external network calls.
+Phase 7B adds the first local TTS adapter boundary for the fast companion hybrid lane and establishes the comparison discipline for local/API ASR and TTS. It is intentionally small: use mature local tooling to prove that A21 can synthesize speech without provider keys, proxy state, firmware changes, or external network calls, then compare API ASR/TTS candidates through Provider Spine or isolated mainland-lab probes before promotion.
 
-This is not the final A21 voice or voice-clone solution. It is the replaceable local TTS seam that later Piper, sherpa-onnx, CosyVoice, Doubao TTS, or another accepted voice engine can implement behind the same reporting and redaction discipline.
+This is not the final A21 voice or voice-clone solution. It is the replaceable ASR/TTS seam that later Piper, sherpa-onnx, CosyVoice, Doubao TTS, DashScope/Bailian, or another accepted local/API engine can implement behind the same reporting and redaction discipline.
 
 The current selected real local TTS candidate for M2 is `sherpa-onnx`. macOS `say` is only a diagnostic fallback. It must not be counted as the PRD-grade local TTS lane.
+
+Local ASR/TTS is a controlled baseline, not a permanent product rule. A21 may promote API ASR, API TTS, realtime TTS, or hybrid lanes when mainland-network evidence beats the local baseline on latency, long-tail stability, voice quality, barge-in behavior, privacy, failure handling, and cost. API bakeoffs must stay behind Provider Spine or an explicit isolated lab probe; provider keys must never enter Git, reports, logs, screenshots, firmware, or device messages.
 
 ## Current Implementation
 
@@ -82,11 +84,12 @@ The report does not store input text, provider credentials, proxy values, auth h
 mock VAD fixture
   -> mock ASR boundary or explicit sherpa-onnx ASR fixture
   -> mock OpenAI-compatible text_stream parser or explicit DeepSeek text_stream execution
+  -> local acknowledgement TTS receipt
   -> selected local TTS
   -> existing Gateway mock barge-in latency bench
 ```
 
-This command is not a fake product demo. It is a deterministic host loopback receipt that proves A21's current software seams can carry redacted timing evidence across VAD, ASR, text-stream parsing, local TTS, and barge-in stop measurement before physical StackChan and real provider execution are allowed into the lane. The default stays `mock_asr` for stable local development; `--asr-provider sherpa_onnx` runs the tracked local ASR runner and passes the transcript internally to the text-stream step without writing it to stdout or reports.
+This command is not a fake product demo. It is a deterministic host loopback receipt that proves A21's current software seams can carry redacted timing evidence across VAD, ASR, text-stream parsing, local acknowledgement TTS, local answer TTS, and barge-in stop measurement before physical StackChan and real provider execution are allowed into the lane. The default stays `mock_asr` for stable local development; `--asr-provider sherpa_onnx` runs the tracked local ASR runner and passes the transcript internally to the text-stream step without writing it to stdout or reports.
 
 By default it uses the deterministic mock text stream. `--text-provider deepseek --execute-text-provider` is the explicit paid-network path. It requires `A21_LAB_DEEPSEEK_API_KEY`, uses the P0 DeepSeek profile, sends only the current ASR transcript to the provider, uses the streamed provider content as the TTS input, and still redacts user input, ASR transcript, provider content, reasoning content, API key, model value, proxy value, and full URL from stdout and the saved report.
 
@@ -96,7 +99,7 @@ The command writes:
 reports/a21-local-voice-loopback-YYYYMMDD-HHMMSS.json
 ```
 
-The report records byte counts, ASR provider/model basename/WAV basename, ASR decode timing, ASR RTF, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, ASR transcript, provider output text, reasoning text, provider credentials, model value, proxy value, full URL, full model path, or full WAV path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
+The report records byte counts, ASR provider/model basename/WAV basename, ASR decode timing, ASR RTF, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, ASR transcript, provider output text, local acknowledgement text, reasoning text, provider credentials, model value, proxy value, full URL, full model path, or full WAV path. It separately records `local_ack_*` timing for perceived acknowledgement and `answer_first_audio_total_*` timing for the provider-backed answer. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`; the legacy `first_audio_total_*` fields remain answer-total aliases until downstream report consumers migrate.
 
 ## Local ASR Smoke
 

@@ -1061,6 +1061,98 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	}
 }
 
+func TestRunLocalVoiceLoopbackRecordsLocalAckSeparatelyFromProviderAnswer(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInputs []string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInputs = append(ttsInputs, options.Text)
+		outputPath := filepath.Join(options.OutputDir, fmt.Sprintf("a21-local-voice-loopback-ack-test-%d.wav", len(ttsInputs)))
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		firstAudioMS := float64(13)
+		if len(ttsInputs) == 1 {
+			firstAudioMS = 7
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      firstAudioMS,
+			TTSFirstAudioMS: firstAudioMS,
+		}, nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"这是正式回答"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DEEPSEEK_BASE_URL", server.URL)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "deepseek", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if len(ttsInputs) != 2 {
+		t.Fatalf("tts calls = %d, want local ack + provider answer: %#v", len(ttsInputs), ttsInputs)
+	}
+	if !strings.Contains(ttsInputs[0], "我在") || ttsInputs[0] == "这是正式回答" {
+		t.Fatalf("first TTS input should be local ack, got %q", ttsInputs[0])
+	}
+	if ttsInputs[1] != "这是正式回答" {
+		t.Fatalf("second TTS input = %q, want provider answer", ttsInputs[1])
+	}
+	for _, want := range []string{
+		`"local_ack_enabled": true`,
+		`"local_ack_tts_first_audio_ms": 7`,
+		`"local_ack_first_audio_total_ms"`,
+		`"answer_first_audio_total_p95_ms"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report localVoiceLoopbackReport
+	if err := json.Unmarshal(reportData, &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.AnswerFirstAudioP95MS < 20 {
+		t.Fatalf("answer first audio total = %.3f, want local ack gate + answer TTS", report.AnswerFirstAudioP95MS)
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "用户原文不要进报告", "这是正式回答", "我在", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackCanUseSherpaASRWithoutLeakingTranscript(t *testing.T) {
 	originalTTS := synthesizeMacOSSay
 	originalASR := runSherpaONNXASR
