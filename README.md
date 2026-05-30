@@ -42,7 +42,7 @@ make release-check
 
 `make v21-adapter-smoke` writes an ignored `reports/a21-v21-adapter-smoke-*.json` readiness report. `A21_V21_ADAPTER_URL=<adapter-boundary> make v21-adapter-smoke-execute` is the explicit query smoke; it never stores query text, answer text, evidence content, full adapter URLs, credentials, proxy URLs, or API keys.
 
-`make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, and doctor. It does not flash hardware.
+`make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, artifact retention planning, office handoff manifest generation, and doctor. It does not flash hardware or delete artifacts.
 
 ## Local Gateway
 
@@ -82,6 +82,14 @@ make firmware-device-check
 `/v1/devices` and the simulator Device Registry panel show the latest A21 connection status, mode, and expression for each registered device. They do not store utterance text or V21 evidence bodies.
 
 When a fresh device report and explicit serial port are available, `make firmware-flash-plan` writes `reports/a21-firmware-flash-plan-*.json`. This is the strongest current no-flash receipt and still sets `flash_allowed: false`.
+
+Before taking the project into the Shanghai office, run:
+
+```bash
+make office-handoff
+```
+
+It writes `reports/a21-office-handoff-*.json` with the current release-ledger-validated firmware artifact, no-delete artifact retention summary, serial inventory, and the next physical acceptance steps. It still sets `flash_allowed: false` and `delete_allowed: false`.
 
 ## Required Reading
 

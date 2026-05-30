@@ -112,6 +112,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareDeviceReport(args[1:], stdout, stderr)
 	case "office-preflight":
 		return runOfficePreflight(args[1:], stdout, stderr)
+	case "office-handoff":
+		return runOfficeHandoff(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -738,6 +740,185 @@ type officePreflightReport struct {
 	Findings                 []officePreflightFinding            `json:"findings,omitempty"`
 }
 
+type officeHandoffOptions struct {
+	ManifestPath string
+	ArtifactDir  string
+	Commit       string
+	KeepRecent   int
+	OutputDir    string
+}
+
+type officeHandoffReport struct {
+	SchemaVersion              string                           `json:"schema_version"`
+	GeneratedAtMS              int64                            `json:"generated_at_ms"`
+	Metadata                   latencyBenchMetadata             `json:"metadata"`
+	DryRun                     bool                             `json:"dry_run"`
+	FlashAllowed               bool                             `json:"flash_allowed"`
+	DeleteAllowed              bool                             `json:"delete_allowed"`
+	PhysicalAcceptanceRequired bool                             `json:"physical_acceptance_required"`
+	OfficePreflightRequired    bool                             `json:"office_preflight_required"`
+	Commit                     string                           `json:"commit"`
+	CurrentArtifactPath        string                           `json:"current_artifact_path"`
+	Artifact                   firmwarecheck.ArtifactResult     `json:"artifact"`
+	ArtifactRetention          firmwareArtifactPrunePlanSummary `json:"artifact_retention"`
+	SerialDevices              []firmwarecheck.SerialDevice     `json:"serial_devices"`
+	USBSerialCandidateCount    int                              `json:"usb_serial_candidate_count"`
+	NextRequiredActions        []string                         `json:"next_required_actions"`
+	ReportPath                 string                           `json:"report_path,omitempty"`
+	Findings                   []officePreflightFinding         `json:"findings,omitempty"`
+}
+
+func runOfficeHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := defaultOfficeHandoffOptions()
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 office-handoff --commit <git-sha> [--manifest firmware/stackchan/a21-firmware.json] [--artifact-dir firmware/artifacts] [--keep-recent 5] [--output-dir reports]")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact-dir requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactDir = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		case "--keep-recent":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--keep-recent requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value < 1 {
+				fmt.Fprintln(stderr, "--keep-recent must be a positive integer")
+				return 2
+			}
+			options.KeepRecent = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown office-handoff option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	if err := validateA21InputPath(options.ManifestPath); err != nil {
+		fmt.Fprintf(stderr, "office handoff manifest path invalid: %v\n", err)
+		return 1
+	}
+	if err := validateA21InputPath(options.ArtifactDir); err != nil {
+		fmt.Fprintf(stderr, "office handoff artifact dir invalid: %v\n", err)
+		return 1
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "office handoff report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := buildOfficeHandoffReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "office handoff failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeOfficeHandoffReport(options.OutputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write office handoff report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONOfficeHandoff(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode office handoff report: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "office handoff manifest ok (no flash, no delete)")
+	return 0
+}
+
+func defaultOfficeHandoffOptions() officeHandoffOptions {
+	cwd, _ := os.Getwd()
+	projectRoot := findProjectRoot(cwd)
+	return officeHandoffOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		ArtifactDir:  "firmware/artifacts",
+		Commit:       currentGitCommit(projectRoot),
+		KeepRecent:   5,
+		OutputDir:    "reports",
+	}
+}
+
+func buildOfficeHandoffReport(options officeHandoffOptions) (officeHandoffReport, error) {
+	artifact, err := firmwarecheck.ValidateLatestArtifactForCommit(firmwarecheck.LatestArtifactOptions{
+		ManifestPath: options.ManifestPath,
+		ArtifactDir:  options.ArtifactDir,
+		Commit:       options.Commit,
+	})
+	if err != nil {
+		return officeHandoffReport{}, err
+	}
+	prunePlan, err := firmwarecheck.BuildArtifactPrunePlan(firmwarecheck.ArtifactPrunePlanOptions{
+		ManifestPath: options.ManifestPath,
+		ArtifactDir:  options.ArtifactDir,
+		Commit:       options.Commit,
+		KeepRecent:   options.KeepRecent,
+	})
+	if err != nil {
+		return officeHandoffReport{}, err
+	}
+	serialDevices, serialErr := listFirmwareSerialDevices()
+	findings := []officePreflightFinding{}
+	if serialErr != nil {
+		findings = append(findings, officePreflightFinding{
+			Code:    "serial_inventory_failed",
+			Message: serialErr.Error(),
+		})
+	}
+	usbCandidates := officeUSBSerialCandidates(serialDevices)
+	return officeHandoffReport{
+		SchemaVersion:              "a21.office_handoff.v1",
+		GeneratedAtMS:              time.Now().UnixMilli(),
+		Metadata:                   buildLatencyBenchMetadata(),
+		DryRun:                     true,
+		FlashAllowed:               false,
+		DeleteAllowed:              false,
+		PhysicalAcceptanceRequired: true,
+		OfficePreflightRequired:    true,
+		Commit:                     options.Commit,
+		CurrentArtifactPath:        artifact.ArtifactPath,
+		Artifact:                   artifact,
+		ArtifactRetention:          summarizeFirmwareArtifactPrunePlan(prunePlan),
+		SerialDevices:              serialDevices,
+		USBSerialCandidateCount:    len(usbCandidates),
+		NextRequiredActions: []string{
+			"Run make release-check on the travel machine before leaving home.",
+			"At the office, connect only the intended StackChan/CoreS3 and run A21_DEVICE_ID=stackchan-001 make office-preflight.",
+			"Only after a fresh A21 Gateway device report and explicit USB serial path, run make firmware-flash-plan.",
+			"Real flashing remains locked until a future explicit guarded A21 flash command exists.",
+		},
+		Findings: findings,
+	}, nil
+}
+
 func runOfficePreflight(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := defaultOfficePreflightOptions()
 	for i := 0; i < len(args); i++ {
@@ -1192,6 +1373,23 @@ func writeOfficePreflightReport(outputDir string, report officePreflightReport) 
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONOfficePreflight(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeOfficeHandoffReport(outputDir string, report officeHandoffReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-office-handoff-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONOfficeHandoff(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -1785,6 +1983,12 @@ func writeJSONFirmwareDeviceReport(writer io.Writer, report firmwareDeviceReport
 }
 
 func writeJSONOfficePreflight(writer io.Writer, report officePreflightReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONOfficeHandoff(writer io.Writer, report officeHandoffReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

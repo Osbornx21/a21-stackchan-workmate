@@ -3124,6 +3124,91 @@ func TestRunOfficePreflightRejectsLegacyArtifactDirWithoutEchoingPath(t *testing
 	}
 }
 
+func TestRunOfficeHandoffWritesNoFlashManifest(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.usbmodemA21",
+			USBModem: true,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifactDir := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	currentArtifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, currentArtifact, []byte("firmware"))
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-handoff",
+		"--manifest", manifest,
+		"--artifact-dir", artifactDir,
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.office_handoff.v1"`,
+		`"flash_allowed": false`,
+		`"delete_allowed": false`,
+		`"physical_acceptance_required": true`,
+		`"office_preflight_required": true`,
+		`"current_artifact_path": "` + currentArtifact + `"`,
+		`"usb_serial_candidate_count": 1`,
+		"office handoff manifest ok (no flash, no delete)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-office-handoff-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("handoff reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reportData), currentArtifact) {
+		t.Fatalf("handoff report missing artifact path: %s", string(reportData))
+	}
+}
+
+func TestRunOfficeHandoffRejectsLegacyArtifactDirWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-handoff",
+		"--artifact-dir", filepath.Join(t.TempDir(), "x21-artifacts"),
+		"--commit", "abcdef1",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy artifact dir rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-artifacts") {
+		t.Fatalf("legacy artifact dir leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

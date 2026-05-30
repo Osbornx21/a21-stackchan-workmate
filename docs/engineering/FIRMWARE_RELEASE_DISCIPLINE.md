@@ -91,6 +91,7 @@ make firmware-upload-blocker-check
 make firmware-package
 make firmware-current-artifact-check
 make firmware-artifact-prune-plan
+make office-handoff
 ```
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
@@ -102,6 +103,8 @@ make firmware-artifact-prune-plan
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
 
 `firmware-artifact-prune-plan` writes a no-delete retention receipt after the current artifact guard. It requires the same release-ledger current artifact, keeps that package plus the configured recent release-ledger-valid packages, lists older release-ledger-valid packages as prune candidates, and lists loose or invalid files for manual review. It always sets `dry_run=true` and `delete_allowed=false`; it is planning evidence, not a deletion command. When `--output-dir` is set, stdout stays summary-only and the full plan goes into the JSON report so release logs are not flooded by old package paths.
+
+`office-handoff` writes the home-to-office handoff manifest. It requires the current release-ledger artifact, embeds the artifact-retention summary, records serial inventory, and lists the next office-only physical acceptance actions. It sets `flash_allowed=false` and `delete_allowed=false`; it is not a substitute for `office-preflight`.
 
 Current native firmware tests cover:
 
@@ -412,6 +415,20 @@ Before any future firmware upload:
 There is intentionally no upload target in Phase 5D.
 
 ## Office Preflight
+
+The home/travel handoff command is:
+
+```bash
+make office-handoff
+```
+
+It writes:
+
+```text
+reports/a21-office-handoff-YYYYMMDD-HHMMSS.json
+```
+
+This manifest proves which current artifact and retention state will be carried into the office. It does not contact Gateway, does not require StackChan to be connected, and does not authorize flashing. It exists so the operator does not reconstruct travel state from scattered reports.
 
 Phase 5J adds a no-flash office preflight receipt for the Shanghai handoff path:
 

@@ -5,7 +5,7 @@ A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_LAN_SAMPLES ?= 5
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-preflight firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -61,7 +61,7 @@ audio-front-end-eval:
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 
-release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan doctor
+release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff doctor
 
 firmware-tools:
 	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh
@@ -112,6 +112,9 @@ firmware-upload-check:
 
 firmware-device-report:
 	go run ./cmd/a21 firmware-device-report --gateway-url "$(A21_GATEWAY_URL)" --output-dir reports
+
+office-handoff:
+	go run ./cmd/a21 office-handoff --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 office-preflight:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
