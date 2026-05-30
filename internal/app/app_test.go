@@ -42,6 +42,46 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\ninternal/v21adapter/client.go\n")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"namespace-audit"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"ok": true`,
+		`"files_scanned": 2`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunNamespaceAuditRejectsLegacyPathWithoutEchoingIt(t *testing.T) {
+	dir := t.TempDir()
+	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\napps/x21-gateway/main.go\n")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"namespace-audit"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), `"namespace_legacy_path"`) {
+		t.Fatalf("stdout missing namespace finding: %s", stdout.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21-gateway") || strings.Contains(strings.ToLower(stderr.String()), "x21-gateway") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestGatewayServerFromEnvDefaultsToMockDespiteSelectedPrimary(t *testing.T) {
 	server := newGatewayServerFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
@@ -1829,6 +1869,15 @@ func testFirmwareBuildProvenance(artifactPath string) firmwarecheck.FirmwareBuil
 		PlatformIOBoard: "m5stack-cores3",
 		SourcePath:      filepath.Join(filepath.Dir(filepath.Dir(artifactPath)), ".pio", "build", "a21_stackchan_cores3", "firmware.bin"),
 		SourceName:      "firmware.bin",
+	}
+}
+
+func writeNamespaceAuditGitScript(t *testing.T, dir string, files string) {
+	t.Helper()
+	path := filepath.Join(dir, "git")
+	content := "#!/bin/sh\nif [ \"$1\" = \"ls-files\" ]; then\ncat <<'EOF'\n" + files + "EOF\nelse\nexit 2\nfi\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
 

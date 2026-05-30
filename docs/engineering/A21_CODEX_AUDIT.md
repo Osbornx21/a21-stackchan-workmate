@@ -85,6 +85,8 @@ Intentional X21/V21 references exist in:
 
 No new runtime package, command, process, or service name uses X21/V21 identity.
 
+`a21 namespace-audit` now scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. `make release-check` runs it before latency and firmware gates.
+
 Firmware-specific protections now include:
 
 - `firmware_id` must be `a21-stackchan`.

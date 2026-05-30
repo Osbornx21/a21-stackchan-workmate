@@ -72,6 +72,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runGateway(args[1:], stdout, stderr)
 	case "preflight":
 		return runPreflight(stdout, stderr)
+	case "namespace-audit":
+		return runNamespaceAudit(stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
@@ -432,6 +434,39 @@ func runPreflight(stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func runNamespaceAudit(stdout io.Writer, stderr io.Writer) int {
+	paths, err := gitTrackedFiles()
+	if err != nil {
+		fmt.Fprintf(stderr, "namespace audit failed: %v\n", err)
+		return 1
+	}
+	report := runtimeguard.AuditNamespacePaths(paths)
+	if err := writeJSONNamespaceAudit(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode namespace audit report: %v\n", err)
+		return 1
+	}
+	if !report.Result.OK {
+		return 1
+	}
+	return 0
+}
+
+func gitTrackedFiles() ([]string, error) {
+	output, err := exec.Command("git", "ls-files").Output()
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(output), "\n")
+	paths := make([]string, 0, len(lines))
+	for _, line := range lines {
+		path := strings.TrimSpace(line)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 func validateA21ReportDir(outputDir string) error {
@@ -865,6 +900,12 @@ func buildPreflightReport(stderr io.Writer) (runtimeguard.PreflightReport, int) 
 }
 
 func writeJSONReport(writer io.Writer, report runtimeguard.PreflightReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONNamespaceAudit(writer io.Writer, report runtimeguard.NamespaceAuditReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

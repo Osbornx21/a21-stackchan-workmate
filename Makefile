@@ -4,13 +4,16 @@ A21_DEVICE_MAX_AGE_MS ?= 300000
 A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight namespace-audit doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
 
 preflight:
 	go run ./cmd/a21 preflight
+
+namespace-audit:
+	go run ./cmd/a21 namespace-audit
 
 doctor:
 	go run ./cmd/a21 doctor
@@ -46,7 +49,7 @@ audio-front-end-eval:
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5
 
-release-check: verify latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package doctor
+release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package doctor
 
 firmware-tools:
 	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh

@@ -138,7 +138,7 @@ Phase 1 has the first runtime fingerprint. Current Gateway observability include
 
 Phase 0: repository governance and engineering docs. Completed by this document set plus `AGENTS.md`, `PORTS.md`, `NETWORK.md`, `LATENCY_BUDGET.md`, `OBSERVABILITY.md`, `PROTOCOL.md`, and `V21_INTEGRATION.md`.
 
-Phase 1: Go core foundation. Current baseline includes build identity, runtime guardrails, preflight/doctor, protocol contracts, provider contracts, a root README entrypoint, GitHub Actions release-check CI, and verification.
+Phase 1: Go core foundation. Current baseline includes build identity, runtime guardrails, preflight/doctor, tracked-path namespace audit, protocol contracts, provider contracts, a root README entrypoint, GitHub Actions release-check CI, and verification.
 
 Phase 2: gateway mock and simulator. Current baseline includes HTTP health, audio/control WebSocket boundaries, deterministic mock voice provider, session/trace propagation, state transitions, device registry, in-memory trace waterfall, office visibility mode indicators, and a built-in browser simulator that can show Gateway audio downlink chunk counts, buffer depth, and active stream ID.
 

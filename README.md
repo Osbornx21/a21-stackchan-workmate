@@ -24,10 +24,13 @@ The current foundation is Go-first:
 
 ```bash
 make verify
+make namespace-audit
 make firmware-tools
 make firmware-test
 make release-check
 ```
+
+`make namespace-audit` rejects tracked file paths that introduce X21/V21 runtime identity outside the explicit V21 adapter/docs boundary.
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO environment pinned to `platformio==6.1.19`.
 
