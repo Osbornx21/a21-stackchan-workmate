@@ -1830,6 +1830,58 @@ func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testi
 	}
 }
 
+func TestDeviceControlIdleClearsPlaybackStreamFromRegistry(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	speakingBody := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"speaking","mode":"workmate","trace_id":"a21-trace-clear-stream","session_id":"a21-session-clear-stream","stream_id":"a21-clear-stream","mock_audio_chunks":1}`)
+	speakingResp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", speakingBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	speakingResp.Body.Close()
+	readControlEvents(t, ctx, conn, 1)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+
+	idleBody := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"idle","mode":"workmate","trace_id":"a21-trace-clear-stream","session_id":"a21-session-clear-stream","stream_id":"a21-clear-stream"}`)
+	idleResp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", idleBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idleResp.Body.Close()
+	readControlEvents(t, ctx, conn, 1)
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var registry map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	devices := registry["devices"].([]any)
+	device := devices[0].(map[string]any)
+	if device["current_expression"] != string(protocol.ExpressionIdle) {
+		t.Fatalf("current_expression = %#v, want idle; registry=%v", device["current_expression"], device)
+	}
+	if stream, ok := device["playback_stream_id"].(string); ok && stream != "" {
+		t.Fatalf("playback_stream_id = %q, want empty after idle", stream)
+	}
+}
+
 func TestAudioProbeOnlyDeviceControlSuppressesMockPlayback(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())

@@ -1088,13 +1088,17 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 	if payload.State != "" {
 		record.CurrentExpr = payload.State
 	}
-	switch payload.State {
-	case protocol.ExpressionSpeaking:
-		if payload.StreamID != "" {
-			record.PlaybackStream = payload.StreamID
+	if payload.State != "" {
+		streamKey := streamStateKey(traceID, sessionID, deviceID)
+		if payload.State == protocol.ExpressionSpeaking {
+			if payload.StreamID != "" {
+				record.PlaybackStream = payload.StreamID
+				s.activeStreams[streamKey] = payload.StreamID
+			}
+		} else {
+			record.PlaybackStream = ""
+			delete(s.activeStreams, streamKey)
 		}
-	case protocol.ExpressionInterrupted, protocol.ExpressionListening, protocol.ExpressionError:
-		record.PlaybackStream = ""
 	}
 	record.LastTraceID = traceID
 	record.LastSessionID = sessionID
