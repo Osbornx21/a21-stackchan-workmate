@@ -214,14 +214,14 @@ const simulatorHTML = `<!doctype html>
     .badge.private[data-active="true"] { border-color: #82c68f; background: #16231b; }
     .badge.public[data-active="true"] { border-color: #d6b15f; background: #2a2315; }
     .badge.muted[data-active="true"] { border-color: #95a6aa; background: #1c2225; }
-    .registry, .audio-link {
+    .registry, .audio-link, .latency-summary {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       background: #141a1d;
       min-width: 0;
     }
-    .registry h2, .audio-link h2 {
+    .registry h2, .audio-link h2, .latency-summary h2 {
       margin: 0 0 10px;
       font-size: 13px;
       font-weight: 680;
@@ -457,6 +457,15 @@ const simulatorHTML = `<!doctype html>
             <div class="waterfall-row"><span>0 ms</span><span class="waterfall-name">none</span></div>
           </div>
         </section>
+        <section class="latency-summary" aria-label="Latency Summary">
+          <h2>Latency Summary</h2>
+          <div class="registry-grid">
+            <div class="metric"><label>Audio</label><div id="latencyAudioPlayback">n/a</div></div>
+            <div class="metric"><label>V21</label><div id="latencyV21">n/a</div></div>
+            <div class="metric"><label>Barge-in</label><div id="latencyBargeIn">n/a</div></div>
+            <div class="metric"><label>Provider</label><div id="latencyProviderFirstAudio">n/a</div></div>
+          </div>
+        </section>
         <section class="evidence" aria-label="Professional Evidence">
           <h2>Professional Evidence</h2>
           <div class="evidence-list" id="professionalEvidence">
@@ -495,6 +504,10 @@ const simulatorHTML = `<!doctype html>
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
       waterfall: document.getElementById('waterfall'),
+      latencyAudioPlayback: document.getElementById('latencyAudioPlayback'),
+      latencyV21: document.getElementById('latencyV21'),
+      latencyBargeIn: document.getElementById('latencyBargeIn'),
+      latencyProviderFirstAudio: document.getElementById('latencyProviderFirstAudio'),
       professionalEvidence: document.getElementById('professionalEvidence'),
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
@@ -774,9 +787,17 @@ const simulatorHTML = `<!doctype html>
         ui.waterfall.innerHTML = events.map((event) =>
           '<div class="waterfall-row"><span>' + event.offset_ms + ' ms</span><span class="waterfall-name">' + event.name + '</span></div>'
         ).join('');
+        renderLatencySummary(trace.summary || {});
       } catch (err) {
         log('trace waterfall unavailable');
       }
+    }
+    function renderLatencySummary(summary) {
+      const fmt = (value) => typeof value === 'number' ? value + ' ms' : 'n/a';
+      ui.latencyAudioPlayback.textContent = fmt(summary.audio_frame_to_playback_ms);
+      ui.latencyV21.textContent = fmt(summary.v21_query_first_result_ms);
+      ui.latencyBargeIn.textContent = fmt(summary.barge_in_stop_ms);
+      ui.latencyProviderFirstAudio.textContent = fmt(summary.provider_commit_to_first_audio_ms);
     }
     function connect() {
       if (sim.control && sim.control.readyState === WebSocket.OPEN) return;

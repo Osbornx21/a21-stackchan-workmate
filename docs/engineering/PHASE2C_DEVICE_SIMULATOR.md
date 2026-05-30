@@ -35,12 +35,13 @@ http://127.0.0.1:21080/simulator
 - Displays office visibility badges for `PRIVATE`, `PUBLIC`, `PRO`, `MUTED`, `LISTENING`, screen state, and output state
 - Displays Gateway `/v1/devices` registry status for the simulator device
 - Displays Gateway `/v1/traces` waterfall events for the active trace
+- Displays Gateway trace latency summary for audio frame to playback, V21 first result, barge-in stop, and provider commit to first audio
 - Displays professional evidence, confidence, screen cards, and follow-ups returned by the V21 adapter mock path
 - Shows a simple StackChan face state for `idle`, `listening`, `thinking`, `speaking`, `interrupted`, and `error`
 
 ## Boundaries
 
-The simulator is a development surface, not the final A21 device UI. It does not play gateway audio and does not emulate firmware timing or servo/RGB behavior yet.
+The simulator is a development surface, not the final A21 device UI. It does not emulate firmware timing, calibrated speaker output, or servo/RGB hardware behavior yet.
 
 Current microphone support is a simulator aid only: it uses the browser microphone API when the user grants permission, encodes short PCM-style frames, and sends them through the existing A21 `audio.frame` envelope. It is not calibrated ASR input, does not prove real StackChan microphone capture, and does not prove echo cancellation.
 
@@ -50,7 +51,7 @@ The simulator uses a synthetic firmware commit `0000000` so Gateway identity val
 
 Future simulator work should add:
 
-- richer latency waterfall segments and p50/p95 summaries
+- p50/p95 summaries across repeated turns
 - disconnect and reconnect scenarios
 - visible barge-in timing markers
 - wav upload fixtures

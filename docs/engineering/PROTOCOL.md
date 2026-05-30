@@ -138,6 +138,19 @@ It is provider-neutral and returns ordinary A21 `control.event` envelopes. When 
 
 `professional` mode is intentionally rejected by this realtime boundary. Professional work must use the auditable V21 path with explicit evidence, confidence, speech blocks, and screen cards.
 
+## Trace Summary
+
+`GET /v1/traces?trace_id=<trace_id>` returns the ordered trace event list and a small latency summary:
+
+- `event_count`
+- `last_offset_ms`
+- `audio_frame_to_playback_ms`
+- `v21_query_first_result_ms`
+- `barge_in_stop_ms`
+- `provider_commit_to_first_audio_ms`
+
+These values are computed from A21 trace markers and are meant for development diagnosis and simulator visibility. They do not claim physical-device first-audio latency until StackChan capture, LAN jitter, speaker buffer, and playback-start markers are present.
+
 ## Barge-In Requirements
 
 Interrupt is not just stop audio. It must coordinate:

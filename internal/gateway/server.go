@@ -125,9 +125,19 @@ type TraceEvent struct {
 	OffsetMS  int64  `json:"offset_ms"`
 }
 
+type TraceLatencySummary struct {
+	EventCount                   int    `json:"event_count"`
+	LastOffsetMS                 int64  `json:"last_offset_ms"`
+	AudioFrameToPlaybackMS       *int64 `json:"audio_frame_to_playback_ms,omitempty"`
+	V21QueryFirstResultMS        *int64 `json:"v21_query_first_result_ms,omitempty"`
+	BargeInStopMS                *int64 `json:"barge_in_stop_ms,omitempty"`
+	ProviderCommitToFirstAudioMS *int64 `json:"provider_commit_to_first_audio_ms,omitempty"`
+}
+
 type TraceResponse struct {
-	TraceID string       `json:"trace_id"`
-	Events  []TraceEvent `json:"events"`
+	TraceID string              `json:"trace_id"`
+	Events  []TraceEvent        `json:"events"`
+	Summary TraceLatencySummary `json:"summary"`
 }
 
 func NewServer() *Server {
@@ -199,7 +209,8 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace_id is required", http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusOK, TraceResponse{TraceID: traceID, Events: s.traceEvents(traceID)})
+	events := s.traceEvents(traceID)
+	writeJSON(w, http.StatusOK, TraceResponse{TraceID: traceID, Events: events, Summary: traceLatencySummary(events)})
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -780,6 +791,42 @@ func (s *Server) traceEvents(traceID string) []TraceEvent {
 		return events[i].OffsetMS < events[j].OffsetMS
 	})
 	return events
+}
+
+func traceLatencySummary(events []TraceEvent) TraceLatencySummary {
+	summary := TraceLatencySummary{EventCount: len(events)}
+	if len(events) == 0 {
+		return summary
+	}
+	for _, event := range events {
+		if event.OffsetMS > summary.LastOffsetMS {
+			summary.LastOffsetMS = event.OffsetMS
+		}
+	}
+	summary.AudioFrameToPlaybackMS = traceDeltaMS(events, "audio.frame.received", "audio.playback.chunk.sent")
+	summary.V21QueryFirstResultMS = traceDeltaMS(events, "v21.query.start", "v21.query.first_result")
+	summary.BargeInStopMS = traceDeltaMS(events, "barge_in.detected", "playback.stop")
+	summary.ProviderCommitToFirstAudioMS = traceDeltaMS(events, "provider.audio.commit", "provider.audio.first_downlink")
+	return summary
+}
+
+func traceDeltaMS(events []TraceEvent, startName string, endName string) *int64 {
+	var startAtMS int64
+	hasStart := false
+	for _, event := range events {
+		switch {
+		case event.Name == startName && !hasStart:
+			startAtMS = event.AtMS
+			hasStart = true
+		case event.Name == endName && hasStart:
+			delta := event.AtMS - startAtMS
+			if delta < 0 {
+				delta = 0
+			}
+			return &delta
+		}
+	}
+	return nil
 }
 
 func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.DeviceEventPayload) DeviceRecord {

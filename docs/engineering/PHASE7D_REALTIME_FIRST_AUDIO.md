@@ -25,6 +25,8 @@ Trace markers:
 - `provider.audio.first_downlink`
 - `audio.playback.chunk.sent`
 
+`GET /v1/traces?trace_id=<trace_id>` also exposes `provider_commit_to_first_audio_ms` in its summary when both commit and first-downlink markers are present.
+
 Metric:
 
 - `a21_realtime_first_audio_ms`

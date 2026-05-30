@@ -102,6 +102,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/traces",
 		"Device Registry",
 		"Waterfall",
+		"Latency Summary",
 		"Professional Evidence",
 		"Audio Link",
 		"Office Visibility",
@@ -122,6 +123,11 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="playbackBufferedChunks"`,
 		`id="playbackStream"`,
 		`id="playbackScheduledChunks"`,
+		`id="latencyAudioPlayback"`,
+		`id="latencyV21"`,
+		`id="latencyBargeIn"`,
+		`id="latencyProviderFirstAudio"`,
+		"renderLatencySummary",
 		"startMicrophoneStream",
 		"stopMicrophoneStream",
 		"sendMockAudioBurst",
@@ -221,6 +227,45 @@ func TestTraceEndpointRecordsMockTurnWaterfall(t *testing.T) {
 		if response.Events[i].OffsetMS < 0 {
 			t.Fatalf("event %d offset = %d, want non-negative", i, response.Events[i].OffsetMS)
 		}
+	}
+}
+
+func TestTraceEndpointReturnsLatencySummary(t *testing.T) {
+	server := NewServer()
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "audio.frame.received", 1000)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "audio.playback.chunk.sent", 1123)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "v21.query.start", 2000)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "v21.query.first_result", 2456)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "barge_in.detected", 3000)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "playback.stop", 3033)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "provider.audio.commit", 4000)
+	server.recordTrace("a21-trace-summary-001", "a21-session-summary-001", "stackchan-sim-001", "provider.audio.first_downlink", 4088)
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-summary-001", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response TraceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Summary.EventCount != 8 || response.Summary.LastOffsetMS != 3088 {
+		t.Fatalf("summary shape = %+v", response.Summary)
+	}
+	if response.Summary.AudioFrameToPlaybackMS == nil || *response.Summary.AudioFrameToPlaybackMS != 123 {
+		t.Fatalf("audio frame to playback = %v, want 123", response.Summary.AudioFrameToPlaybackMS)
+	}
+	if response.Summary.V21QueryFirstResultMS == nil || *response.Summary.V21QueryFirstResultMS != 456 {
+		t.Fatalf("v21 first result = %v, want 456", response.Summary.V21QueryFirstResultMS)
+	}
+	if response.Summary.BargeInStopMS == nil || *response.Summary.BargeInStopMS != 33 {
+		t.Fatalf("barge-in stop = %v, want 33", response.Summary.BargeInStopMS)
+	}
+	if response.Summary.ProviderCommitToFirstAudioMS == nil || *response.Summary.ProviderCommitToFirstAudioMS != 88 {
+		t.Fatalf("provider commit to first audio = %v, want 88", response.Summary.ProviderCommitToFirstAudioMS)
 	}
 }
 

@@ -20,7 +20,7 @@ The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metric
 
 Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
 
-Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, mock playback chunk sends, audio-path barge-in markers, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
+Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, mock playback chunk sends, audio-path barge-in markers, realtime provider commit/downlink markers, V21 adapter markers, and outgoing control events with millisecond offsets. The response includes a summary for audio-frame-to-playback, V21 first result, barge-in stop, provider-commit-to-first-audio, event count, and last offset. This is a development observability surface, not the final durable trace backend.
 
 The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.
 
@@ -97,6 +97,15 @@ Current mock trace events include:
 - `control.thinking.sent`
 - `control.speaking.sent`
 - `control.interrupted.sent`
+
+Current trace summary fields:
+
+- `event_count`
+- `last_offset_ms`
+- `audio_frame_to_playback_ms`
+- `v21_query_first_result_ms`
+- `barge_in_stop_ms`
+- `provider_commit_to_first_audio_ms`
 
 ## Voice Waterfall Events
 
