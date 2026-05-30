@@ -1460,6 +1460,48 @@ func TestRunFirmwareDeviceCheckRequiresDeviceID(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareDeviceCheckRejectsStaleGatewayReport(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(report, []byte(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": 1000
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-check",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--device-report", report,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "5000",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "stale") {
+		t.Fatalf("stderr = %q, want stale", stderr.String())
+	}
+}
+
 func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {

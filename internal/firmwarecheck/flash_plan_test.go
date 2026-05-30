@@ -81,3 +81,43 @@ func TestBuildFlashPlanRejectsBusyPort(t *testing.T) {
 		t.Fatalf("error = %q, want already in use", err)
 	}
 }
+
+func TestBuildFlashPlanRejectsStaleDeviceReport(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1000
+    }
+  ]
+}`)
+
+	_, err := BuildFlashPlan(FlashPlanOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		Port:              "/dev/cu.usbmodemA21",
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		PortUsage:         PortUsage{Exists: true},
+		MaxDeviceAgeMS:    5000,
+		NowMS:             8000,
+	})
+	if err == nil {
+		t.Fatal("expected stale device report to be rejected")
+	}
+	if !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("error = %q, want stale", err)
+	}
+}

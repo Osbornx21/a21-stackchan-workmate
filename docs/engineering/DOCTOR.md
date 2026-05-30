@@ -97,7 +97,7 @@ The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 
-`firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, and expected git commit. It also does not flash, provision, reset, or open a serial monitor.
+`firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, and optional freshness window. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
 
 ## Exit Codes
 

@@ -1,5 +1,6 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
+A21_DEVICE_MAX_AGE_MS ?= 300000
 
 .PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check firmware-flash-plan
 
@@ -87,14 +88,14 @@ firmware-device-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_DEVICE_REPORT)" || (echo "A21_DEVICE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 firmware-device-check --artifact "$(A21_FIRMWARE_ARTIFACT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD)
+	go run ./cmd/a21 firmware-device-check --artifact "$(A21_FIRMWARE_ARTIFACT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)"
 
 firmware-flash-plan:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_REPORT)" || (echo "A21_DEVICE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 firmware-flash-plan --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD)
+	go run ./cmd/a21 firmware-flash-plan --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)"
 
 verify:
 	go test ./...

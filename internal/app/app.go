@@ -1044,7 +1044,7 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha>")
+			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1081,6 +1081,18 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 			}
 			i++
 			options.ExpectedGitCommit = args[i]
+		case "--max-device-age-ms":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.ParseInt(args[i], 10, 64)
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--max-device-age-ms must be a positive integer")
+				return 2
+			}
+			options.MaxDeviceAgeMS = value
 		default:
 			fmt.Fprintf(stderr, "unknown firmware-device-check option %q\n", args[i])
 			return 2
@@ -1122,7 +1134,7 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha>")
+			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1166,6 +1178,18 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 			}
 			i++
 			options.ExpectedGitCommit = args[i]
+		case "--max-device-age-ms":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.ParseInt(args[i], 10, 64)
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--max-device-age-ms must be a positive integer")
+				return 2
+			}
+			options.MaxDeviceAgeMS = value
 		default:
 			fmt.Fprintf(stderr, "unknown firmware-flash-plan option %q\n", args[i])
 			return 2

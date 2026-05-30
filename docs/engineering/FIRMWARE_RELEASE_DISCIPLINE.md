@@ -242,7 +242,8 @@ go run ./cmd/a21 firmware-device-check \
   --artifact firmware/artifacts/<a21-stackchan...bin> \
   --device-report reports/a21-devices.json \
   --device-id stackchan-001 \
-  --commit <expected-git-sha>
+  --commit <expected-git-sha> \
+  --max-device-age-ms 300000
 ```
 
 or:
@@ -254,6 +255,8 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
+`make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
+
 The guard verifies:
 
 - the artifact still passes `firmware-artifact-check`
@@ -262,6 +265,7 @@ The guard verifies:
 - `identity_status` is `ok`
 - reported firmware ID is `a21-stackchan`
 - reported version, board, and commit match the artifact manifest and filename
+- when `--max-device-age-ms` is set, `last_seen_ms` is present and recent enough
 - device ID and firmware identity contain no forbidden X21/V21 names
 
 Successful output includes:
@@ -283,7 +287,8 @@ go run ./cmd/a21 firmware-flash-plan \
   --port /dev/cu.usbmodemXXXX \
   --device-report reports/a21-devices.json \
   --device-id stackchan-001 \
-  --commit <expected-git-sha>
+  --commit <expected-git-sha> \
+  --max-device-age-ms 300000
 ```
 
 or:
@@ -296,11 +301,14 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-flash-plan
 ```
 
+The Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check`, so a future flash plan cannot quietly reuse an old Gateway capture.
+
 The guard verifies:
 
 - the artifact passes `firmware-artifact-check`
 - the upload port is explicit, exists, and is not busy
 - the Gateway device report contains the explicit `A21_DEVICE_ID`
+- the Gateway device report is fresh when `--max-device-age-ms` is supplied
 - the upload guard and device-identity guard reference the same artifact checksum and commit
 - every identity remains in the A21 namespace
 

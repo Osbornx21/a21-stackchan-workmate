@@ -10,6 +10,8 @@ type FlashPlanOptions struct {
 	ExpectedDeviceID  string
 	ExpectedGitCommit string
 	PortUsage         PortUsage
+	MaxDeviceAgeMS    int64
+	NowMS             int64
 }
 
 type FlashPlanResult struct {
@@ -51,6 +53,8 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 		ReportPath:        options.ReportPath,
 		ExpectedDeviceID:  options.ExpectedDeviceID,
 		ExpectedGitCommit: options.ExpectedGitCommit,
+		MaxDeviceAgeMS:    options.MaxDeviceAgeMS,
+		NowMS:             options.NowMS,
 	})
 	if err != nil {
 		return FlashPlanResult{}, err

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 type DeviceIdentityOptions struct {
@@ -13,6 +14,8 @@ type DeviceIdentityOptions struct {
 	ReportPath        string
 	ExpectedDeviceID  string
 	ExpectedGitCommit string
+	MaxDeviceAgeMS    int64
+	NowMS             int64
 }
 
 type DeviceIdentityFirmware struct {
@@ -36,6 +39,8 @@ type DeviceIdentityResult struct {
 	FlashAllowed             bool                 `json:"flash_allowed"`
 	NextRequiredConfirmation string               `json:"next_required_confirmation"`
 	ExpectedDeviceID         string               `json:"expected_device_id"`
+	DeviceAgeMS              int64                `json:"device_age_ms,omitempty"`
+	MaxDeviceAgeMS           int64                `json:"max_device_age_ms,omitempty"`
 	Device                   DeviceIdentityRecord `json:"device"`
 	Artifact                 ArtifactResult       `json:"artifact"`
 	OK                       bool                 `json:"ok"`
@@ -86,6 +91,10 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 		}
 		return DeviceIdentityResult{}, fmt.Errorf("device identity status %q", device.IdentityStatus)
 	}
+	deviceAgeMS, err := validateDeviceReportAge(device, options)
+	if err != nil {
+		return DeviceIdentityResult{}, err
+	}
 	if device.Firmware.ID != artifact.Manifest.FirmwareID {
 		return DeviceIdentityResult{}, fmt.Errorf("device firmware_id %q does not match artifact %q", device.Firmware.ID, artifact.Manifest.FirmwareID)
 	}
@@ -105,10 +114,33 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 		FlashAllowed:             false,
 		NextRequiredConfirmation: "explicit_guarded_flash_command",
 		ExpectedDeviceID:         options.ExpectedDeviceID,
+		DeviceAgeMS:              deviceAgeMS,
+		MaxDeviceAgeMS:           options.MaxDeviceAgeMS,
 		Device:                   device,
 		Artifact:                 artifact,
 		OK:                       true,
 	}, nil
+}
+
+func validateDeviceReportAge(device DeviceIdentityRecord, options DeviceIdentityOptions) (int64, error) {
+	if options.MaxDeviceAgeMS <= 0 {
+		return 0, nil
+	}
+	if device.LastSeenMS <= 0 {
+		return 0, fmt.Errorf("device report missing last_seen_ms for freshness guard")
+	}
+	nowMS := options.NowMS
+	if nowMS <= 0 {
+		nowMS = time.Now().UnixMilli()
+	}
+	ageMS := nowMS - device.LastSeenMS
+	if ageMS < 0 {
+		return 0, fmt.Errorf("device report last_seen_ms is in the future")
+	}
+	if ageMS > options.MaxDeviceAgeMS {
+		return ageMS, fmt.Errorf("device report stale: last_seen_ms age %dms exceeds max %dms", ageMS, options.MaxDeviceAgeMS)
+	}
+	return ageMS, nil
 }
 
 func readGatewayDeviceReport(path string) (gatewayDeviceReport, error) {
