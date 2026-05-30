@@ -14,6 +14,7 @@ The endpoints use the existing A21 `VoiceProvider` contract. They do not let Sta
 - Gateway can start a realtime voice turn through the selected runtime `VoiceProvider`.
 - Gateway can cancel the active speaking stream by `trace_id`, `session_id`, and `device_id`.
 - Cancel can infer `stream_id` from the active speaking provider event.
+- Provider `VoiceEvent.Audio` deltas are translated into A21 `audio.playback.chunk` envelopes.
 - Realtime start/cancel emit trace markers.
 - Provider start/cancel latency is exposed through Prometheus histograms.
 - `professional` mode is rejected by the realtime fast path so evidence work stays on the V21 professional path.
@@ -24,6 +25,7 @@ The endpoints use the existing A21 `VoiceProvider` contract. They do not let Sta
 - `a21_realtime_session_cancel_total`
 - `a21_voice_provider_start_turn_ms_bucket`
 - `a21_voice_provider_cancel_ms_bucket`
+- `a21_audio_playback_chunk_total`
 
 ## Trace Markers
 
@@ -42,3 +44,5 @@ The endpoints use the existing A21 `VoiceProvider` contract. They do not let Sta
 Gateway remains mock by default. Real provider runtime still requires `A21_GATEWAY_VOICE_PROVIDER=selected`, and real provider credentials must stay in Gateway/provider config only.
 
 This phase does not add real provider network smoke, real provider audio downlink, or firmware flashing.
+
+The audio delta mapping is still provider-neutral. Gateway emits A21 `audio.playback.chunk` envelopes only; StackChan firmware does not receive OpenAI, Doubao, or other provider event names.

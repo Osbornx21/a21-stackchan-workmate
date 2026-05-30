@@ -84,6 +84,11 @@ type RealtimeSessionResponse struct {
 	Events    []protocol.Envelope `json:"events"`
 }
 
+type realtimeVoiceOutput struct {
+	Control protocol.ControlEventPayload
+	Audio   *providers.VoiceAudioChunk
+}
+
 type DeviceFirmwareIdentity struct {
 	ID      string `json:"id,omitempty"`
 	Version string `json:"version,omitempty"`
@@ -245,15 +250,15 @@ func (s *Server) handleRealtimeSessionStart(w http.ResponseWriter, r *http.Reque
 	s.metrics.realtimeSessionTotal.Inc()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "realtime.session.start.received", s.now().UnixMilli())
 
-	payloads, err := s.startRealtimeVoiceTurn(r.Context(), req)
+	outputs, err := s.startRealtimeVoiceTurn(r.Context(), req)
 	status := "completed"
 	code := http.StatusOK
 	if err != nil {
 		status = "error"
 		code = http.StatusBadGateway
-		payloads = []protocol.ControlEventPayload{{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: err.Error(), Final: true}}
+		outputs = []realtimeVoiceOutput{{Control: protocol.ControlEventPayload{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: err.Error(), Final: true}}}
 	}
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	events := s.realtimeOutputSequence(req.DeviceID, traceID, sessionID, outputs)
 	writeJSON(w, code, RealtimeSessionResponse{
 		TraceID:   traceID,
 		SessionID: sessionID,
@@ -264,7 +269,7 @@ func (s *Server) handleRealtimeSessionStart(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionRequest) ([]protocol.ControlEventPayload, error) {
+func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionRequest) ([]realtimeVoiceOutput, error) {
 	started := time.Now()
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.start", s.now().UnixMilli())
 	providerEvents, err := s.voice.StartTurn(ctx, providers.VoiceTurnRequest{
@@ -277,7 +282,7 @@ func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSession
 		s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.error", s.now().UnixMilli())
 		return nil, err
 	}
-	payloads := make([]protocol.ControlEventPayload, 0, 4)
+	outputs := make([]realtimeVoiceOutput, 0, 4)
 	firstEvent := true
 	for event := range providerEvents {
 		if firstEvent {
@@ -288,10 +293,10 @@ func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSession
 		if payload.State == protocol.ExpressionSpeaking && payload.StreamID != "" {
 			s.setActiveStream(req.TraceID, req.SessionID, req.DeviceID, payload.StreamID)
 		}
-		payloads = append(payloads, payload)
+		outputs = append(outputs, realtimeVoiceOutput{Control: payload, Audio: event.Audio})
 	}
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.end", s.now().UnixMilli())
-	return payloads, nil
+	return outputs, nil
 }
 
 func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Request) {
@@ -325,15 +330,15 @@ func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Requ
 	s.metrics.realtimeSessionCancelTotal.Inc()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "realtime.session.cancel.received", s.now().UnixMilli())
 
-	payloads, err := s.cancelRealtimeVoiceTurn(r.Context(), req)
+	outputs, err := s.cancelRealtimeVoiceTurn(r.Context(), req)
 	status := "cancelled"
 	code := http.StatusOK
 	if err != nil {
 		status = "error"
 		code = http.StatusBadGateway
-		payloads = []protocol.ControlEventPayload{{State: protocol.ExpressionInterrupted, Mode: req.Mode, Text: "好，我听新的。", Final: true, StreamID: req.StreamID}}
+		outputs = []realtimeVoiceOutput{{Control: protocol.ControlEventPayload{State: protocol.ExpressionInterrupted, Mode: req.Mode, Text: "好，我听新的。", Final: true, StreamID: req.StreamID}}}
 	}
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	events := s.realtimeOutputSequence(req.DeviceID, traceID, sessionID, outputs)
 	writeJSON(w, code, RealtimeSessionResponse{
 		TraceID:   traceID,
 		SessionID: sessionID,
@@ -344,7 +349,7 @@ func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (s *Server) cancelRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionCancelRequest) ([]protocol.ControlEventPayload, error) {
+func (s *Server) cancelRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionCancelRequest) ([]realtimeVoiceOutput, error) {
 	started := time.Now()
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.start", s.now().UnixMilli())
 	providerEvents, err := s.voice.Cancel(ctx, providers.VoiceCancelRequest{
@@ -357,12 +362,12 @@ func (s *Server) cancelRealtimeVoiceTurn(ctx context.Context, req RealtimeSessio
 		s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.error", s.now().UnixMilli())
 		return nil, err
 	}
-	payloads := make([]protocol.ControlEventPayload, 0, 2)
+	outputs := make([]realtimeVoiceOutput, 0, 2)
 	for event := range providerEvents {
-		payloads = append(payloads, voiceEventToControlPayload(event, req.Mode))
+		outputs = append(outputs, realtimeVoiceOutput{Control: voiceEventToControlPayload(event, req.Mode), Audio: event.Audio})
 	}
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.end", s.now().UnixMilli())
-	return payloads, nil
+	return outputs, nil
 }
 
 func (s *Server) handleMockTurn(w http.ResponseWriter, r *http.Request) {
@@ -876,6 +881,80 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 		s.recordTrace(traceID, sessionID, deviceID, "control."+string(payload.State)+".sent", sentAt+int64(i))
 	}
 	return events
+}
+
+func (s *Server) realtimeOutputSequence(deviceID string, traceID string, sessionID string, outputs []realtimeVoiceOutput) []protocol.Envelope {
+	events := make([]protocol.Envelope, 0, len(outputs)*2)
+	sentAt := s.now().UnixMilli()
+	var seq uint64 = 1
+	for _, output := range outputs {
+		if output.Control.State != "" {
+			data, _ := json.Marshal(output.Control)
+			eventAt := sentAt + int64(seq-1)
+			events = append(events, protocol.Envelope{
+				Protocol:  protocol.ProtocolVersion,
+				DeviceID:  deviceID,
+				Kind:      protocol.KindControlEvent,
+				Seq:       seq,
+				TraceID:   traceID,
+				SessionID: sessionID,
+				SentAtMS:  eventAt,
+				Payload:   data,
+			})
+			s.recordTrace(traceID, sessionID, deviceID, "control."+string(output.Control.State)+".sent", eventAt)
+			seq++
+		}
+		if output.Audio != nil {
+			streamID := output.Control.StreamID
+			if streamID == "" {
+				streamID = "a21-provider-audio-stream"
+			}
+			eventAt := sentAt + int64(seq-1)
+			events = append(events, s.voiceAudioPlaybackChunk(deviceID, traceID, sessionID, seq, eventAt, streamID, output.Audio))
+			seq++
+		}
+	}
+	return events
+}
+
+func (s *Server) voiceAudioPlaybackChunk(deviceID string, traceID string, sessionID string, seq uint64, sentAt int64, streamID string, audio *providers.VoiceAudioChunk) protocol.Envelope {
+	codec := protocol.AudioCodec(audio.Codec)
+	if codec == "" {
+		codec = protocol.AudioCodecPCMS16LE
+	}
+	sampleRateHz := audio.SampleRateHz
+	if sampleRateHz == 0 {
+		sampleRateHz = 16000
+	}
+	channels := audio.Channels
+	if channels == 0 {
+		channels = 1
+	}
+	durationMS := audio.DurationMS
+	if durationMS == 0 {
+		durationMS = 20
+	}
+	payload := protocol.AudioPlaybackChunk{
+		StreamID:     streamID,
+		Codec:        codec,
+		SampleRateHz: sampleRateHz,
+		Channels:     channels,
+		DurationMS:   durationMS,
+		DataBase64:   audio.DataBase64,
+	}
+	data, _ := json.Marshal(payload)
+	s.metrics.audioPlaybackChunkTotal.Inc()
+	s.recordTrace(traceID, sessionID, deviceID, "audio.playback.chunk.sent", sentAt)
+	return protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  deviceID,
+		Kind:      protocol.KindAudioPlaybackChunk,
+		Seq:       seq,
+		TraceID:   traceID,
+		SessionID: sessionID,
+		SentAtMS:  sentAt,
+		Payload:   data,
+	}
 }
 
 func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string, streamID string) protocol.Envelope {

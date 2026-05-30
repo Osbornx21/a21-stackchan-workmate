@@ -329,6 +329,73 @@ func TestRealtimeSessionStartUsesVoiceProviderAndRecordsMetrics(t *testing.T) {
 	}
 }
 
+func TestRealtimeSessionStartMapsProviderAudioToPlaybackChunk(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: scriptedVoiceProvider{
+			events: []providers.VoiceEvent{
+				{
+					Kind:     providers.VoiceEventSpeaking,
+					Final:    true,
+					StreamID: "rt-audio-stream-001",
+					Audio: &providers.VoiceAudioChunk{
+						Codec:        string(protocol.AudioCodecPCMS16LE),
+						SampleRateHz: 16000,
+						Channels:     1,
+						DurationMS:   20,
+						DataBase64:   "AAAA",
+					},
+				},
+			},
+		},
+	})
+	handler := server.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", bytes.NewBufferString(`{"device_id":"stackchan-001","text":"播一小段","mode":"workmate","trace_id":"a21-trace-rt-audio","session_id":"a21-session-rt-audio"}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response RealtimeSessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Events) != 2 {
+		t.Fatalf("events = %d, want control plus playback: %+v", len(response.Events), response.Events)
+	}
+	if response.Events[0].Kind != protocol.KindControlEvent {
+		t.Fatalf("event 0 kind = %q, want control", response.Events[0].Kind)
+	}
+	if response.Events[1].Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("event 1 kind = %q, want audio playback", response.Events[1].Kind)
+	}
+	var playback protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(response.Events[1].Payload, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.StreamID != "rt-audio-stream-001" || playback.Codec != protocol.AudioCodecPCMS16LE || playback.SampleRateHz != 16000 || playback.Channels != 1 || playback.DurationMS != 20 || playback.DataBase64 != "AAAA" {
+		t.Fatalf("playback = %+v", playback)
+	}
+	if response.Events[1].TraceID != "a21-trace-rt-audio" || response.Events[1].SessionID != "a21-session-rt-audio" {
+		t.Fatalf("playback trace/session = %q/%q", response.Events[1].TraceID, response.Events[1].SessionID)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-rt-audio", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), "audio.playback.chunk.sent") {
+		t.Fatalf("trace missing audio playback marker: %s", traceRec.Body.String())
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+	if !strings.Contains(metricsRec.Body.String(), "a21_audio_playback_chunk_total 1") {
+		t.Fatalf("metrics missing playback count:\n%s", metricsRec.Body.String())
+	}
+}
+
 func TestRealtimeSessionCancelUsesActiveStreamAndRecordsMetrics(t *testing.T) {
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{
