@@ -976,6 +976,87 @@ void test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb() {
   TEST_ASSERT_EQUAL_UINT32(1, runtime.sent_device_events);
 }
 
+void test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  A21MotionRuntime motion_runtime;
+  A21RGBRuntime rgb_runtime;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21CopyString(state.mode, A21_MODE_CAP, "workmate");
+  state.render_state = A21_RENDER_LISTENING;
+  a21InitMotionRuntime(&motion_runtime);
+  motion_runtime.has_y = true;
+  motion_runtime.last_y_deg = 38;
+  a21InitRGBRuntime(&rgb_runtime);
+  rgb_runtime.has_color = true;
+  rgb_runtime.last_color = a21RGBColorMake(0, 48, 16);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 2100);
+  A21RuntimeEchoDiagnostics diagnostics = {};
+  diagnostics.enabled = true;
+  diagnostics.mic_frames_captured = 2;
+  diagnostics.mic_driver_errors = 3;
+  diagnostics.mic_skipped_render_state = 5;
+  diagnostics.mic_skipped_speaker_busy = 7;
+  diagnostics.mic_skipped_unavailable = 11;
+  diagnostics.mic_queue_depth = 1;
+  diagnostics.mic_queue_total_frames = 13;
+  diagnostics.mic_queue_dropped_frames = 17;
+  diagnostics.audio_ws_sent_audio_frames = 19;
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      2100));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("listening", doc["payload"]["runtime_echo"]["screen"] | "");
+  TEST_ASSERT_EQUAL_STRING("2", doc["payload"]["runtime_echo"]["mic_frames_captured"] | "");
+  TEST_ASSERT_EQUAL_STRING("3", doc["payload"]["runtime_echo"]["mic_driver_errors"] | "");
+  TEST_ASSERT_EQUAL_STRING("5", doc["payload"]["runtime_echo"]["mic_skipped_render_state"] | "");
+  TEST_ASSERT_EQUAL_STRING("7", doc["payload"]["runtime_echo"]["mic_skipped_speaker_busy"] | "");
+  TEST_ASSERT_EQUAL_STRING("11", doc["payload"]["runtime_echo"]["mic_skipped_unavailable"] | "");
+  TEST_ASSERT_EQUAL_STRING("1", doc["payload"]["runtime_echo"]["mic_queue_depth"] | "");
+  TEST_ASSERT_EQUAL_STRING("13", doc["payload"]["runtime_echo"]["mic_queue_total_frames"] | "");
+  TEST_ASSERT_EQUAL_STRING("17", doc["payload"]["runtime_echo"]["mic_queue_dropped_frames"] | "");
+  TEST_ASSERT_EQUAL_STRING("19", doc["payload"]["runtime_echo"]["audio_ws_sent_audio_frames"] | "");
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      2120));
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+
+  diagnostics.audio_ws_sent_audio_frames = 20;
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      2140));
+  TEST_ASSERT_EQUAL(2, fake.send_count);
+}
+
 void test_audio_ws_runtime_waits_for_gateway_connection() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -2054,6 +2135,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_gateway_ws_send_interrupt_increments_seq);
   RUN_TEST(test_gateway_ws_send_device_event_rejects_when_not_connected);
   RUN_TEST(test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb);
+  RUN_TEST(test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed);
   RUN_TEST(test_audio_ws_runtime_waits_for_gateway_connection);
   RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);

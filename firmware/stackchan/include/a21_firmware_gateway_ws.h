@@ -12,7 +12,20 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1024;
+static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1400;
+
+struct A21RuntimeEchoDiagnostics {
+  bool enabled;
+  uint32_t mic_frames_captured;
+  uint32_t mic_driver_errors;
+  uint32_t mic_skipped_render_state;
+  uint32_t mic_skipped_speaker_busy;
+  uint32_t mic_skipped_unavailable;
+  uint8_t mic_queue_depth;
+  uint32_t mic_queue_total_frames;
+  uint32_t mic_queue_dropped_frames;
+  uint32_t audio_ws_sent_audio_frames;
+};
 
 struct A21GatewayWSDriver {
   void* ctx;
@@ -34,6 +47,8 @@ struct A21GatewayWSRuntime {
   A21RenderState last_runtime_echo_render_state;
   int last_runtime_echo_y_deg;
   A21RGBColor last_runtime_echo_rgb;
+  bool has_runtime_echo_diagnostics;
+  A21RuntimeEchoDiagnostics last_runtime_echo_diagnostics;
 };
 
 inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
@@ -50,6 +65,8 @@ inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
   runtime->last_runtime_echo_render_state = A21_RENDER_ERROR;
   runtime->last_runtime_echo_y_deg = 45;
   runtime->last_runtime_echo_rgb = a21RGBColorMake(0, 0, 0);
+  runtime->has_runtime_echo_diagnostics = false;
+  runtime->last_runtime_echo_diagnostics = {};
 }
 
 inline bool a21GatewayWSDriverReady(const A21GatewayWSDriver* driver) {
@@ -90,6 +107,16 @@ inline bool a21GatewayWSSendRuntimeEchoIfChanged(
     const A21FirmwareState* state,
     const A21MotionRuntime* motion_runtime,
     const A21RGBRuntime* rgb_runtime,
+    uint32_t now_ms);
+
+inline bool a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const A21MotionRuntime* motion_runtime,
+    const A21RGBRuntime* rgb_runtime,
+    const A21RuntimeEchoDiagnostics* diagnostics,
     uint32_t now_ms);
 
 inline bool a21GatewayWSBuildDeviceEvent(
@@ -170,6 +197,7 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     const A21FirmwareState* state,
     const A21MotionRuntime* motion_runtime,
     const A21RGBRuntime* rgb_runtime,
+    const A21RuntimeEchoDiagnostics* diagnostics,
     uint32_t now_ms,
     char* output,
     size_t output_size) {
@@ -219,6 +247,35 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
   echo["screen"] = a21RenderStateProtocolName(state->render_state);
   echo["servo_y"] = servo_y;
   echo["rgb"] = rgb_hex;
+  if (diagnostics != nullptr && diagnostics->enabled) {
+    char mic_frames_captured[12];
+    char mic_driver_errors[12];
+    char mic_skipped_render_state[12];
+    char mic_skipped_speaker_busy[12];
+    char mic_skipped_unavailable[12];
+    char mic_queue_depth[8];
+    char mic_queue_total_frames[12];
+    char mic_queue_dropped_frames[12];
+    char audio_ws_sent_audio_frames[12];
+    snprintf(mic_frames_captured, sizeof(mic_frames_captured), "%lu", static_cast<unsigned long>(diagnostics->mic_frames_captured));
+    snprintf(mic_driver_errors, sizeof(mic_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->mic_driver_errors));
+    snprintf(mic_skipped_render_state, sizeof(mic_skipped_render_state), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_render_state));
+    snprintf(mic_skipped_speaker_busy, sizeof(mic_skipped_speaker_busy), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_speaker_busy));
+    snprintf(mic_skipped_unavailable, sizeof(mic_skipped_unavailable), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_unavailable));
+    snprintf(mic_queue_depth, sizeof(mic_queue_depth), "%u", static_cast<unsigned>(diagnostics->mic_queue_depth));
+    snprintf(mic_queue_total_frames, sizeof(mic_queue_total_frames), "%lu", static_cast<unsigned long>(diagnostics->mic_queue_total_frames));
+    snprintf(mic_queue_dropped_frames, sizeof(mic_queue_dropped_frames), "%lu", static_cast<unsigned long>(diagnostics->mic_queue_dropped_frames));
+    snprintf(audio_ws_sent_audio_frames, sizeof(audio_ws_sent_audio_frames), "%lu", static_cast<unsigned long>(diagnostics->audio_ws_sent_audio_frames));
+    echo["mic_frames_captured"] = mic_frames_captured;
+    echo["mic_driver_errors"] = mic_driver_errors;
+    echo["mic_skipped_render_state"] = mic_skipped_render_state;
+    echo["mic_skipped_speaker_busy"] = mic_skipped_speaker_busy;
+    echo["mic_skipped_unavailable"] = mic_skipped_unavailable;
+    echo["mic_queue_depth"] = mic_queue_depth;
+    echo["mic_queue_total_frames"] = mic_queue_total_frames;
+    echo["mic_queue_dropped_frames"] = mic_queue_dropped_frames;
+    echo["audio_ws_sent_audio_frames"] = audio_ws_sent_audio_frames;
+  }
 
   const size_t written = serializeJson(doc, output, output_size);
   return written > 0 && written < output_size;
@@ -274,13 +331,42 @@ inline bool a21GatewayWSSendDeviceEventWithTouchSource(
   return true;
 }
 
-inline bool a21GatewayWSSendRuntimeEchoIfChanged(
+inline bool a21RuntimeEchoDiagnosticsEqual(
+    const A21RuntimeEchoDiagnostics* left,
+    const A21RuntimeEchoDiagnostics* right) {
+  if (left == nullptr || right == nullptr) {
+    return left == right;
+  }
+  return left->enabled == right->enabled &&
+         left->mic_frames_captured == right->mic_frames_captured &&
+         left->mic_driver_errors == right->mic_driver_errors &&
+         left->mic_skipped_render_state == right->mic_skipped_render_state &&
+         left->mic_skipped_speaker_busy == right->mic_skipped_speaker_busy &&
+         left->mic_skipped_unavailable == right->mic_skipped_unavailable &&
+         left->mic_queue_depth == right->mic_queue_depth &&
+         left->mic_queue_total_frames == right->mic_queue_total_frames &&
+         left->mic_queue_dropped_frames == right->mic_queue_dropped_frames &&
+         left->audio_ws_sent_audio_frames == right->audio_ws_sent_audio_frames;
+}
+
+inline bool a21RuntimeEchoDiagnosticsChanged(
+    const A21GatewayWSRuntime* runtime,
+    const A21RuntimeEchoDiagnostics* diagnostics) {
+  if (runtime == nullptr || diagnostics == nullptr || !diagnostics->enabled) {
+    return false;
+  }
+  return !runtime->has_runtime_echo_diagnostics ||
+         !a21RuntimeEchoDiagnosticsEqual(&runtime->last_runtime_echo_diagnostics, diagnostics);
+}
+
+inline bool a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
     A21GatewayWSRuntime* runtime,
     const A21GatewayWSDriver* driver,
     const A21ConnectionState* connection,
     const A21FirmwareState* state,
     const A21MotionRuntime* motion_runtime,
     const A21RGBRuntime* rgb_runtime,
+    const A21RuntimeEchoDiagnostics* diagnostics,
     uint32_t now_ms) {
   if (runtime == nullptr || !a21GatewayWSDriverReady(driver) || connection == nullptr ||
       state == nullptr || motion_runtime == nullptr || rgb_runtime == nullptr) {
@@ -292,7 +378,8 @@ inline bool a21GatewayWSSendRuntimeEchoIfChanged(
   if (runtime->has_runtime_echo &&
       runtime->last_runtime_echo_render_state == state->render_state &&
       runtime->last_runtime_echo_y_deg == motion_runtime->last_y_deg &&
-      a21RGBColorEquals(runtime->last_runtime_echo_rgb, rgb_runtime->last_color)) {
+      a21RGBColorEquals(runtime->last_runtime_echo_rgb, rgb_runtime->last_color) &&
+      !a21RuntimeEchoDiagnosticsChanged(runtime, diagnostics)) {
     return true;
   }
   if (connection->phase != A21_CONN_GATEWAY_CONNECTED || !driver->connected(driver->ctx)) {
@@ -300,7 +387,7 @@ inline bool a21GatewayWSSendRuntimeEchoIfChanged(
   }
 
   char message[A21_WS_TEXT_MESSAGE_CAP];
-  if (!a21GatewayWSBuildRuntimeEchoEvent(runtime, state, motion_runtime, rgb_runtime, now_ms, message, sizeof(message))) {
+  if (!a21GatewayWSBuildRuntimeEchoEvent(runtime, state, motion_runtime, rgb_runtime, diagnostics, now_ms, message, sizeof(message))) {
     return false;
   }
   if (!driver->send_text(driver->ctx, message)) {
@@ -312,7 +399,30 @@ inline bool a21GatewayWSSendRuntimeEchoIfChanged(
   runtime->last_runtime_echo_render_state = state->render_state;
   runtime->last_runtime_echo_y_deg = motion_runtime->last_y_deg;
   runtime->last_runtime_echo_rgb = rgb_runtime->last_color;
+  if (diagnostics != nullptr && diagnostics->enabled) {
+    runtime->has_runtime_echo_diagnostics = true;
+    runtime->last_runtime_echo_diagnostics = *diagnostics;
+  }
   return true;
+}
+
+inline bool a21GatewayWSSendRuntimeEchoIfChanged(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const A21MotionRuntime* motion_runtime,
+    const A21RGBRuntime* rgb_runtime,
+    uint32_t now_ms) {
+  return a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      runtime,
+      driver,
+      connection,
+      state,
+      motion_runtime,
+      rgb_runtime,
+      nullptr,
+      now_ms);
 }
 
 inline void a21GatewayWSApplyText(

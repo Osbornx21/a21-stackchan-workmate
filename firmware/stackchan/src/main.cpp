@@ -566,13 +566,25 @@ void loop() {
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);
   drawIfChanged();
-  a21GatewayWSSendRuntimeEchoIfChanged(
+  A21RuntimeEchoDiagnostics runtime_diagnostics = {};
+  runtime_diagnostics.enabled = true;
+  runtime_diagnostics.mic_frames_captured = g_mic_capture_runtime.frames_captured;
+  runtime_diagnostics.mic_driver_errors = g_mic_capture_runtime.driver_errors;
+  runtime_diagnostics.mic_skipped_render_state = g_mic_capture_runtime.skipped_render_state;
+  runtime_diagnostics.mic_skipped_speaker_busy = g_mic_capture_runtime.skipped_speaker_busy;
+  runtime_diagnostics.mic_skipped_unavailable = g_mic_capture_runtime.skipped_unavailable;
+  runtime_diagnostics.mic_queue_depth = g_mic_frame_queue.queued_frames;
+  runtime_diagnostics.mic_queue_total_frames = g_mic_frame_queue.total_frames;
+  runtime_diagnostics.mic_queue_dropped_frames = g_mic_frame_queue.dropped_frames;
+  runtime_diagnostics.audio_ws_sent_audio_frames = g_audio_ws_runtime.sent_audio_frames;
+  a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &g_gateway_ws_runtime,
       &g_gateway_ws_driver,
       &g_connection,
       &g_state,
       &g_motion_runtime,
       &g_rgb_runtime,
+      &runtime_diagnostics,
       now_ms);
   delay(20);
 }
