@@ -1497,7 +1497,7 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 		SampleRateHz: 16000,
 		Channels:     1,
 		DurationMS:   20,
-		DataBase64:   mockPCM16SilenceBase64(16000, 20),
+		DataBase64:   mockAudioPlaybackBase64(frame.DeviceID, 16000, 20),
 	}
 	data, _ := json.Marshal(payload)
 	sentAt := s.now().UnixMilli()
@@ -1513,6 +1513,17 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 		SentAtMS:  sentAt,
 		Payload:   data,
 	}
+}
+
+func mockAudioPlaybackBase64(deviceID string, sampleRateHz int, durationMS int) string {
+	if physicalStackChanDeviceID(deviceID) {
+		return mockPCM16SquareWaveBase64(sampleRateHz, durationMS)
+	}
+	return mockPCM16SilenceBase64(sampleRateHz, durationMS)
+}
+
+func physicalStackChanDeviceID(deviceID string) bool {
+	return strings.HasPrefix(deviceID, "stackchan-") && !strings.HasPrefix(deviceID, "stackchan-sim-")
 }
 
 func mockPCM16SilenceBase64(sampleRateHz int, durationMS int) string {

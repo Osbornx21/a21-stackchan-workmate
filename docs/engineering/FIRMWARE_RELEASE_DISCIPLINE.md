@@ -147,6 +147,19 @@ This writes `reports/a21-stackchan-mic-probe-acceptance-YYYYMMDD-HHMMSS.json` wi
 
 The gate requires the device to report microphone capability `diagnostic_probe_m5unified_i2s_capture`, captured/sent frame deltas above threshold, microphone-to-audio-WS and audio-WS-to-Gateway delivery ratios above threshold, zero new driver errors, zero new queue drops, non-zero sample evidence, Gateway audio ingress deltas, no new playback chunks, and optional VAD speech deltas. A passing report means the isolated M5Unified/CoreS3 diagnostic microphone path captured and uplinked real PCM frames during this session. It still does not prove production microphone availability, speaker output, AEC, full-duplex, provider latency, or the release firmware path.
 
+For the first real-device mic-to-speaker loop, use:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+A21_HALF_DUPLEX_WINDOW_MS=1500 \
+A21_HALF_DUPLEX_MIN_MIC_FRAMES=1 \
+A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS=1 \
+A21_HALF_DUPLEX_MIN_DELIVERY_RATIO=0.95 \
+make stackchan-half-duplex-acceptance
+```
+
+This writes `reports/a21-stackchan-half-duplex-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway metrics, sends `LISTENING` without `audio_probe_only`, waits for live microphone frames to trigger Gateway mock downlink, checks microphone capture/send deltas, Gateway ingress/playback deltas, firmware playback-buffer deltas, and speaker-pump deltas, then clears back to `IDLE`. A passing report confirms the connected StackChan can drive a minimal half-duplex A21 loop through Gateway mock playback instrumentation. It still records `physical_sound_observed=false` and does not claim production ASR, LLM, TTS, AEC, full-duplex, or human-accepted audio quality.
+
 For instrumented speaker/downlink evidence, use:
 
 ```bash

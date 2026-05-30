@@ -1751,6 +1751,59 @@ func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketReturnsAudibleMockPlaybackForPhysicalStackChan(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	audio, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       1,
+		TraceID:   "a21-trace-physical-audio",
+		SessionID: "a21-session-physical-audio",
+		Payload:   audio,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	var payload protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(payload.DataBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != 640 || bytes.Equal(decoded, make([]byte, len(decoded))) {
+		t.Fatalf("physical StackChan mock playback should be audible non-silent PCM, got %d bytes", len(decoded))
+	}
+}
+
 func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
