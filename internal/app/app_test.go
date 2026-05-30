@@ -2916,6 +2916,76 @@ func TestRunOfficePreflightFailsWithoutUSBSerialCandidate(t *testing.T) {
 	}
 }
 
+func TestRunOfficePreflightRejectsActivePlaybackDevice(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.usbmodemA21",
+			USBModem: true,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_expression": "speaking",
+      "playback_stream_id": "a21-stream-active",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": ` + fmt.Sprint(time.Now().UnixMilli()) + `
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-preflight",
+		"--manifest", manifest,
+		"--artifact-dir", dir,
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`"ready_for_flash_plan": false`,
+		`"flash_allowed": false`,
+		`"code": "device_not_quiescent"`,
+		"active playback",
+		"office preflight failed",
+	} {
+		if !strings.Contains(stdout.String()+stderr.String(), want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunOfficePreflightRejectsLegacyArtifactDirWithoutEchoingPath(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

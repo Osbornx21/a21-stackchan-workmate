@@ -401,10 +401,11 @@ The command composes:
 - direct no-ambient-proxy Gateway `/v1/devices` capture
 - required Gateway identity: `schema_version=a21.gateway.devices.v1`, `service=a21-gateway`
 - device identity check with `connection_status=online` and `last_seen_ms` freshness
+- device quiescence using the same runtime-state rule as `firmware-flash-plan`
 - serial inventory and available USB serial candidates
 - proxy/fingerprint metadata for the current network
 
-The preflight rejects manifest and artifact input paths that contain forbidden X21/V21 identity before reading them. It writes `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json` plus a paired `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It sets `dry_run=true` and `flash_allowed=false`. A passing office preflight only means the operator has enough evidence to run `firmware-flash-plan` with an explicit USB serial path; it is still not permission to flash.
+The preflight rejects manifest and artifact input paths that contain forbidden X21/V21 identity before reading them. It also refuses `ready_for_flash_plan=true` while the device is speaking, has active playback, is thinking, is in professional mode, or is in error/local fallback. It writes `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json` plus a paired `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It sets `dry_run=true` and `flash_allowed=false`. A passing office preflight only means the operator has enough evidence to run `firmware-flash-plan` with an explicit USB serial path; it is still not permission to flash.
 
 ## Serial Inventory
 

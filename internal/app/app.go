@@ -894,6 +894,9 @@ func buildOfficePreflightReport(options officePreflightOptions) officePreflightR
 					report.addFinding("device_identity_not_ready", identityErr.Error())
 				} else {
 					report.DeviceIdentity = &deviceIdentity
+					if quiescentErr := firmwarecheck.ValidateFlashPlanDeviceQuiescent(deviceIdentity.Device); quiescentErr != nil {
+						report.addFinding("device_not_quiescent", quiescentErr.Error())
+					}
 				}
 			}
 		}

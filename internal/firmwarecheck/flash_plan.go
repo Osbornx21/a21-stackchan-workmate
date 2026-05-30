@@ -71,7 +71,7 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 	if err != nil {
 		return FlashPlanResult{}, err
 	}
-	if err := validateFlashPlanDeviceQuiescent(device.Device); err != nil {
+	if err := ValidateFlashPlanDeviceQuiescent(device.Device); err != nil {
 		return FlashPlanResult{}, err
 	}
 	if upload.FlashAllowed || device.FlashAllowed {
@@ -101,7 +101,7 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 	}, nil
 }
 
-func validateFlashPlanDeviceQuiescent(device DeviceIdentityRecord) error {
+func ValidateFlashPlanDeviceQuiescent(device DeviceIdentityRecord) error {
 	if device.ConnectionStatus != "online" {
 		return fmt.Errorf("device connection_status %q is not flash-plan safe; expected online", device.ConnectionStatus)
 	}
