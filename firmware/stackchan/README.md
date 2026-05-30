@@ -98,6 +98,14 @@ Servo safety currently lives in `a21_firmware_config.h`:
 
 There is still no upload target. Raw PlatformIO upload targets are blocked by `scripts/a21_block_raw_upload.py`; do not bypass it or remove it. A future explicit guarded flash command must require the A21 upload and device-identity receipts before any real hardware write can exist.
 
+The blocker is part of release verification:
+
+```bash
+make firmware-upload-blocker-check
+```
+
+That command intentionally invokes PlatformIO's raw upload target and expects the A21 blocker to fail it before flashing can start.
+
 Phase 5B/5C adds only dry-run guards:
 
 ```bash

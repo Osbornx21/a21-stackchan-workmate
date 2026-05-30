@@ -1,7 +1,7 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 
-.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture latency-bench release-check firmware-check firmware-test firmware-build firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture latency-bench release-check firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -36,7 +36,7 @@ provider-realtime-fixture:
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5
 
-release-check: verify latency-bench firmware-test firmware-package doctor
+release-check: verify latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package doctor
 
 firmware-check:
 	go run ./cmd/a21 firmware-check
@@ -46,6 +46,20 @@ firmware-test: firmware-check
 
 firmware-build: firmware-check
 	$(PIO) run -d firmware/stackchan
+
+firmware-upload-blocker-check:
+	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3 -t upload 2>&1 )"; \
+	code="$$?"; \
+	printf '%s\n' "$$output"; \
+	if [ "$$code" -eq 0 ]; then \
+		echo "A21 raw PlatformIO upload blocker failed: upload target exited 0"; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$output" | grep -q "A21 raw PlatformIO upload is forbidden" || { \
+		echo "A21 raw PlatformIO upload blocker failed: guard message missing"; \
+		exit 1; \
+	}; \
+	echo "A21 raw PlatformIO upload blocker ok"
 
 firmware-clean-check:
 	@test -z "$$(git status --porcelain --untracked-files=all)" || (echo "A21 firmware package requires a clean git worktree"; git status --short; exit 2)

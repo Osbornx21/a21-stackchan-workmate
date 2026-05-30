@@ -83,10 +83,13 @@ The preferred wrapper is:
 ```bash
 make firmware-test
 make firmware-build
+make firmware-upload-blocker-check
 make firmware-package
 ```
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
+
+`firmware-upload-blocker-check` intentionally invokes PlatformIO's raw upload target and expects it to fail with the A21 blocker message before any hardware write can start. A successful raw upload target is a release-blocking failure.
 
 Current native firmware tests cover:
 
@@ -297,7 +300,7 @@ This receipt is the strongest no-flash receipt in the current repository. It is 
 
 ## Current Flashing Status
 
-Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, device-identity dry-run, flash-plan dry-run gates, and a PlatformIO raw-upload blocker. No command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
+Real flashing is intentionally locked. The repository has build, package, artifact-check, upload-check dry-run, device-identity dry-run, flash-plan dry-run gates, and a PlatformIO raw-upload blocker covered by `make firmware-upload-blocker-check`. No command is allowed to write an A21 binary to hardware yet. The next unlock must introduce a separate guarded flash command with a name that cannot be confused with X21 or V21 tooling.
 
 A21 firmware work must continue to use the repository-local `.a21-tools/` PlatformIO environment and `firmware/artifacts/a21-stackchan-...` packages. Do not point A21 upload checks at X21/V21 build directories, generic `firmware.bin` paths, or auto-selected serial ports.
 
