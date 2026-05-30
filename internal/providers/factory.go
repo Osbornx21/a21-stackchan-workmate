@@ -17,6 +17,8 @@ func NewVoiceProviderFromEnv(env []string) VoiceProvider {
 		return NewMockVoiceProvider()
 	case "openai_realtime":
 		return NewOpenAIRealtimeVoiceProviderFromEnv(env, nil)
+	case "doubao_realtime":
+		return NewDoubaoRealtimeVoiceProviderFromEnv(env)
 	case "doubao_tts_realtime":
 		return NewDoubaoRealtimeTTSProviderFromEnv(env, nil)
 	default:

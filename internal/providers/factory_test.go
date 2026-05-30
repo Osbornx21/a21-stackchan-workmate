@@ -46,6 +46,56 @@ func TestVoiceProviderFromEnvSelectsDoubaoRealtimeTTSWithoutLeakingSecrets(t *te
 	}
 }
 
+func TestVoiceProviderFromEnvSelectsDoubaoRealtimeWithoutLeakingSecrets(t *testing.T) {
+	provider := NewVoiceProviderFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_RESOURCE_ID=resource-a21-secret",
+		"A21_DOUBAO_REALTIME_MODEL=doubao-s2s",
+	})
+	if provider.Name() != "a21-doubao-realtime-voice" {
+		t.Fatalf("provider name = %q, want a21-doubao-realtime-voice", provider.Name())
+	}
+	health, err := provider.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != VoiceProviderDegraded || !health.Configured || !health.Realtime {
+		t.Fatalf("health = %#v, want degraded configured realtime", health)
+	}
+	if !strings.Contains(health.Detail, "execution disabled") {
+		t.Fatalf("detail = %q, want explicit execution guard", health.Detail)
+	}
+	rendered := factoryMustJSON(t, health)
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("health leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestVoiceProviderFromEnvDoubaoRealtimeReportsMissingCredentials(t *testing.T) {
+	provider := NewVoiceProviderFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+	})
+	if provider.Name() != "a21-doubao-realtime-voice" {
+		t.Fatalf("provider name = %q, want a21-doubao-realtime-voice", provider.Name())
+	}
+	health, err := provider.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != VoiceProviderUnavailable || health.Configured {
+		t.Fatalf("health = %#v, want unavailable unconfigured", health)
+	}
+	for _, want := range []string{"A21_DOUBAO_API_KEY", "A21_DOUBAO_APP_ID", "A21_DOUBAO_RESOURCE_ID", "A21_DOUBAO_REALTIME_MODEL"} {
+		if !strings.Contains(health.Detail, want) {
+			t.Fatalf("detail = %q, want %s", health.Detail, want)
+		}
+	}
+}
+
 func TestVoiceProviderFromEnvSelectsOpenAIRealtime(t *testing.T) {
 	provider := NewVoiceProviderFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=openai_realtime",

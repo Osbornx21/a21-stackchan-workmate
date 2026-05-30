@@ -79,7 +79,7 @@ A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 A21_LAN_SAMPLES=5 make lan-probe
 
 The voice section includes selected provider local health, Gateway runtime provider, and provider network mode. `direct` means future provider HTTP clients will not inherit environment proxies. `explicit_proxy` means `A21_PROVIDER_PROXY_URL` is configured; doctor reports only the variable name and never prints the proxy URL, host, port, username, or password.
 
-Selected provider health is local configuration health, not external connectivity proof. For example, `A21_PROVIDER_PRIMARY=doubao_tts_realtime` reports the Doubao realtime TTS provider object and missing/present required env state without dialing Volcengine. Gateway runtime remains on its explicit provider configuration path; doctor health alone does not switch Gateway turn handling away from mock.
+Selected provider health is local configuration health, not external connectivity proof. For example, `A21_PROVIDER_PRIMARY=doubao_realtime` reports the Doubao realtime speech-to-speech provider object and missing/present required env state without dialing Volcengine; when configured it remains `degraded` with an execution guard until real S2S smoke is verified. `A21_PROVIDER_PRIMARY=doubao_tts_realtime` reports the separate TTS-only provider object. Gateway runtime remains on its explicit provider configuration path; doctor health alone does not switch Gateway turn handling away from mock.
 
 `voice.gateway_provider` reports what Gateway would use at startup. If `A21_GATEWAY_VOICE_PROVIDER` is unset or `mock`, this remains `a21-mock-voice` even when real provider credentials are configured. `A21_GATEWAY_VOICE_PROVIDER=selected` is required before Gateway injects the provider selected by `A21_PROVIDER_PRIMARY`.
 
@@ -97,7 +97,7 @@ go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
-Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
+Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans, provider health, and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
 
 When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json`. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, or full provider URLs.
 

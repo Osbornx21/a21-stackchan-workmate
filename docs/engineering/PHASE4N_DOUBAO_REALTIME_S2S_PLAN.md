@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Phase 4N makes Doubao end-to-end realtime speech-to-speech a first-class readiness target for A21 without dialing Volcengine and without switching Gateway runtime away from mock by accident.
+Phase 4N makes Doubao end-to-end realtime speech-to-speech a first-class readiness target for A21 without dialing Volcengine and without switching Gateway runtime away from mock by accident. Phase 4O adds a health-checkable provider object on top of this plan, while preserving the same no-network safety boundary.
 
 This matters because Doubao realtime speech-to-speech is A21's China-mainland companion fast-path candidate, while `doubao_tts_realtime` is only a TTS-specific professional/audio output candidate.
 
@@ -36,6 +36,6 @@ The report never prints API key, app id, resource id, model value, auth headers,
 
 This is not provider connectivity proof. It does not open a WebSocket, stream microphone audio, call a paid endpoint, or validate Doubao audio semantics.
 
-Gateway runtime still defaults to mock. Even with all Doubao env configured, Gateway does not use Doubao unless a later explicit runtime adapter is implemented and `A21_GATEWAY_VOICE_PROVIDER=selected` is intentionally set.
+Gateway runtime still defaults to mock. Even with all Doubao env configured, Gateway does not use Doubao unless `A21_GATEWAY_VOICE_PROVIDER=selected` is intentionally set. When selected, the current Doubao S2S provider object reports `degraded` with an execution guard and can accept local cancel acknowledgement, but it still rejects ordinary `StartTurn` execution until the official API shape, credentialed smoke, cancellation behavior, and latency are verified.
 
 StackChan firmware remains provider-neutral and receives no Doubao credentials or Doubao-native events.
