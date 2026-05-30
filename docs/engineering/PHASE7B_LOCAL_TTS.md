@@ -143,7 +143,7 @@ Reports include the redacted timing and delivery receipt:
 reports/a21-stackchan-fast-companion-turn-YYYYMMDD-HHMMSS.json
 ```
 
-The report records local acknowledgement first-audio timing, answer first-audio timing, playback chunk/batch counts, transport, trace/session ids, device identity, M3-candidate status, and findings. It does not record input text, ASR transcript, provider output text, local acknowledgement text, provider credentials, auth headers, proxy values, full provider URLs, full model paths, or full WAV fixture paths.
+The report records local acknowledgement first-audio timing, answer first-audio timing, playback chunk/batch counts, playback clear status, transport, trace/session ids, device identity, M3-candidate status, and findings. It does not record input text, ASR transcript, provider output text, local acknowledgement text, provider credentials, auth headers, proxy values, full provider URLs, full model paths, or full WAV fixture paths.
 
 If Gateway or the device report is unavailable, the command still writes a failed redacted report so the run leaves a diagnosable artifact instead of disappearing into stderr.
 

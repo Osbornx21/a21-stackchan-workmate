@@ -1336,6 +1336,7 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 		}, nil
 	}
 	var audioRequests int
+	var idleRequests int
 	var totalChunks int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1344,6 +1345,7 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 		case "/v1/devices/control":
 			var request struct {
 				DeviceID    string `json:"device_id"`
+				State       string `json:"state"`
 				Text        string `json:"text"`
 				AudioChunks []struct {
 					DataBase64 string `json:"data_base64"`
@@ -1361,6 +1363,8 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 				if request.Text != "A21 LOCAL TTS" {
 					t.Fatalf("audio request text = %q", request.Text)
 				}
+			} else if request.State == "idle" {
+				idleRequests++
 			}
 			fmt.Fprint(w, `{"trace_id":"a21-trace-fast","session_id":"a21-session-fast","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
 		default:
@@ -1380,12 +1384,16 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 	if audioRequests < 2 || totalChunks < 4 {
 		t.Fatalf("audio requests/chunks = %d/%d, want ack and answer playback", audioRequests, totalChunks)
 	}
+	if idleRequests != 1 {
+		t.Fatalf("idle requests = %d, want final playback clear", idleRequests)
+	}
 	for _, want := range []string{
 		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
 		`"status": "passed"`,
 		`"device_online": true`,
 		`"local_ack_playback_chunks": 2`,
 		`"answer_playback_chunks": 2`,
+		`"playback_cleared": true`,
 		`"m3_candidate": false`,
 		`"listen_source": "host_fixture"`,
 		`"report_path"`,

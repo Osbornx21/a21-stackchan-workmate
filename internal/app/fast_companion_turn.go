@@ -52,6 +52,7 @@ type stackChanFastCompanionTurnReceipt struct {
 	LocalAckPlaybackBatches int      `json:"local_ack_playback_batches,omitempty"`
 	AnswerPlaybackChunks    int      `json:"answer_playback_chunks,omitempty"`
 	AnswerPlaybackBatches   int      `json:"answer_playback_batches,omitempty"`
+	PlaybackCleared         bool     `json:"playback_cleared"`
 	DeliveredTransport      string   `json:"delivered_transport,omitempty"`
 	M3Candidate             bool     `json:"m3_candidate"`
 	TraceMarkers            []string `json:"trace_markers,omitempty"`
@@ -352,6 +353,11 @@ func runStackChanFastCompanionSingleTurn(ctx context.Context, options stackChanF
 	receipt.AnswerPlaybackChunks = answerDelivery.Chunks
 	receipt.AnswerPlaybackBatches = answerDelivery.Batches
 	receipt.DeliveredTransport = firstNonEmpty(answerDelivery.DeliveredTransport, ackDelivery.DeliveredTransport)
+	if _, err := postStackChanSpeakerControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, fmt.Sprintf("a21-fast-companion-answer-%d-%02d", generatedAtMS, turn), 0); err != nil {
+		receipt.Findings = append(receipt.Findings, "playback idle delivery failed")
+		return receipt, err
+	}
+	receipt.PlaybackCleared = true
 	if options.ListenSource != "stackchan_mic" {
 		receipt.Findings = append(receipt.Findings, "host fixture listen source is not M3 evidence")
 	}
@@ -387,12 +393,10 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 		}
 		delivery.Batches++
 		delivery.DeliveredTransport = firstNonEmpty(response.DeliveredTransport, delivery.DeliveredTransport)
-		if end < len(pcmChunks) {
-			select {
-			case <-ctx.Done():
-				return delivery, ctx.Err()
-			case <-time.After(time.Duration((end-offset)*20) * time.Millisecond):
-			}
+		select {
+		case <-ctx.Done():
+			return delivery, ctx.Err()
+		case <-time.After(time.Duration((end-offset)*20) * time.Millisecond):
 		}
 	}
 	return delivery, nil
