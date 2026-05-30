@@ -36,6 +36,7 @@ struct A21PhysicalTouchState {
   bool screen_was_down;
   bool top_was_down;
   bool top_press_reported;
+  bool top_ignore_gesture_until_next_press;
 };
 
 inline void a21InitTouchRuntime(A21TouchRuntime* runtime) {
@@ -55,6 +56,7 @@ inline void a21InitPhysicalTouchState(A21PhysicalTouchState* state) {
   state->screen_was_down = false;
   state->top_was_down = false;
   state->top_press_reported = false;
+  state->top_ignore_gesture_until_next_press = false;
 }
 
 inline bool a21TouchDriverReady(const A21TouchDriver* driver) {
@@ -131,18 +133,28 @@ inline bool a21PhysicalTouchReadTopSensor(
       return false;
     }
     state->top_press_reported = true;
+    state->top_ignore_gesture_until_next_press = false;
     sample->source = A21_TOUCH_SOURCE_TOP_SENSOR;
     sample->intent = A21_TOUCH_INTENT_BARGE_IN;
     return true;
   }
 
-  const bool suppress_release_event = state->top_press_reported && (clicked || swiped_forward || swiped_backward);
   state->top_was_down = false;
-  state->top_press_reported = false;
-  if (suppress_release_event || (!clicked && !swiped_forward && !swiped_backward)) {
+  if (state->top_press_reported) {
+    state->top_press_reported = false;
+    state->top_ignore_gesture_until_next_press = true;
     return false;
   }
-
+  if (state->top_ignore_gesture_until_next_press) {
+    if (clicked || swiped_forward || swiped_backward) {
+      return false;
+    }
+    state->top_ignore_gesture_until_next_press = false;
+    return false;
+  }
+  if (!clicked && !swiped_forward && !swiped_backward) {
+    return false;
+  }
   sample->source = A21_TOUCH_SOURCE_TOP_SENSOR;
   sample->intent = A21_TOUCH_INTENT_BARGE_IN;
   return true;

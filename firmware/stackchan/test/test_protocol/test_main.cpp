@@ -1772,6 +1772,8 @@ void test_physical_touch_top_hold_reports_once_until_released() {
   TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, sample.intent);
   TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, true, true, false, false, &sample));
   TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, false, &sample));
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, false, &sample));
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, true, false, &sample));
   TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, true, false, false, false, &sample));
   TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_TOP_SENSOR, sample.source);
   TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, sample.intent);
