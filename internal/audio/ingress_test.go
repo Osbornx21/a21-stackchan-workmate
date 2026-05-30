@@ -87,6 +87,69 @@ func TestIngressDetectsSpeechStartAndEndWithHangover(t *testing.T) {
 	}
 }
 
+func TestIngressUsesConfiguredVADDetector(t *testing.T) {
+	detector := &scriptedVADDetector{
+		decisions: []VADDecision{
+			{SpeechDetected: true, Score: 0.73, Detector: "a21-scripted-vad"},
+			{SpeechDetected: false, Score: 0.01, Detector: "a21-scripted-vad"},
+			{SpeechDetected: false, Score: 0.01, Detector: "a21-scripted-vad"},
+		},
+	}
+	ingress := NewIngress(IngressConfig{
+		MaxBufferedFrames: 8,
+		SilenceHangover:   2,
+		VADDetector:       detector,
+	})
+
+	start := ingress.Push(Frame{
+		DeviceID:     "stackchan-sim-001",
+		SessionID:    "a21-session-custom-vad",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(0),
+	})
+	if !start.SpeechDetected || start.RMS != 0.73 || start.VADDetector != "a21-scripted-vad" {
+		t.Fatalf("start = %+v, want scripted speech decision", start)
+	}
+	if len(start.Events) != 1 || start.Events[0] != EventVADSpeechStart {
+		t.Fatalf("start events = %#v, want vad.speech.start", start.Events)
+	}
+
+	firstSilence := ingress.Push(Frame{
+		DeviceID:     "stackchan-sim-001",
+		SessionID:    "a21-session-custom-vad",
+		Seq:          2,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if firstSilence.SpeechDetected {
+		t.Fatalf("first silence = %+v, want scripted non-speech despite loud input", firstSilence)
+	}
+	if len(firstSilence.Events) != 0 {
+		t.Fatalf("first silence events = %#v, want hangover", firstSilence.Events)
+	}
+
+	secondSilence := ingress.Push(Frame{
+		DeviceID:     "stackchan-sim-001",
+		SessionID:    "a21-session-custom-vad",
+		Seq:          3,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if len(secondSilence.Events) != 1 || secondSilence.Events[0] != EventVADSpeechEnd {
+		t.Fatalf("second silence events = %#v, want vad.speech.end", secondSilence.Events)
+	}
+	if detector.calls != 3 {
+		t.Fatalf("detector calls = %d, want 3", detector.calls)
+	}
+}
+
 func pcm16Base64WithSample(sample int16) string {
 	const samplesPer20MS16K = 320
 	data := make([]byte, samplesPer20MS16K*2)
@@ -95,4 +158,19 @@ func pcm16Base64WithSample(sample int16) string {
 		data[i*2+1] = byte(uint16(sample) >> 8)
 	}
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+type scriptedVADDetector struct {
+	decisions []VADDecision
+	calls     int
+}
+
+func (d *scriptedVADDetector) Detect(frame Frame) VADDecision {
+	d.calls++
+	if len(d.decisions) == 0 {
+		return VADDecision{Detector: "a21-scripted-vad"}
+	}
+	decision := d.decisions[0]
+	d.decisions = d.decisions[1:]
+	return decision
 }

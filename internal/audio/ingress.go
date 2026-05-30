@@ -17,6 +17,7 @@ type IngressConfig struct {
 	MaxBufferedFrames int
 	SpeechThreshold   float64
 	SilenceHangover   int
+	VADDetector       VADDetector
 }
 
 type Frame struct {
@@ -35,15 +36,31 @@ type IngressResult struct {
 	DroppedFrames     int
 	DroppedFrameDelta int
 	RMS               float64
+	VADDetector       string
 	SpeechDetected    bool
 	SpeechActive      bool
 	Events            []Event
 }
 
+type VADDecision struct {
+	SpeechDetected bool
+	Score          float64
+	Detector       string
+}
+
+type VADDetector interface {
+	Detect(frame Frame) VADDecision
+}
+
 type Ingress struct {
 	mu     sync.Mutex
 	config IngressConfig
+	vad    VADDetector
 	state  map[string]*streamState
+}
+
+type RMSVADDetector struct {
+	threshold float64
 }
 
 type streamState struct {
@@ -72,7 +89,11 @@ func NewIngress(config IngressConfig) *Ingress {
 	if config.SilenceHangover <= 0 {
 		config.SilenceHangover = defaults.SilenceHangover
 	}
-	return &Ingress{config: config, state: make(map[string]*streamState)}
+	vad := config.VADDetector
+	if vad == nil {
+		vad = NewRMSVADDetector(config.SpeechThreshold)
+	}
+	return &Ingress{config: config, vad: vad, state: make(map[string]*streamState)}
 }
 
 func (i *Ingress) Push(frame Frame) IngressResult {
@@ -94,8 +115,8 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 		droppedDelta = 1
 	}
 
-	rms := pcm16RMS(frame.DataBase64)
-	speechDetected := rms >= i.config.SpeechThreshold
+	decision := i.vad.Detect(frame)
+	speechDetected := decision.SpeechDetected
 	events := make([]Event, 0, 1)
 	if speechDetected {
 		state.silenceFrames = 0
@@ -116,10 +137,27 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 		BufferedFrames:    len(state.buffer),
 		DroppedFrames:     state.dropped,
 		DroppedFrameDelta: droppedDelta,
-		RMS:               rms,
+		RMS:               decision.Score,
+		VADDetector:       decision.Detector,
 		SpeechDetected:    speechDetected,
 		SpeechActive:      state.speechActive,
 		Events:            events,
+	}
+}
+
+func NewRMSVADDetector(threshold float64) RMSVADDetector {
+	if threshold <= 0 {
+		threshold = DefaultIngressConfig().SpeechThreshold
+	}
+	return RMSVADDetector{threshold: threshold}
+}
+
+func (d RMSVADDetector) Detect(frame Frame) VADDecision {
+	score := pcm16RMS(frame.DataBase64)
+	return VADDecision{
+		SpeechDetected: score >= d.threshold,
+		Score:          score,
+		Detector:       "a21-rms-vad",
 	}
 }
 
