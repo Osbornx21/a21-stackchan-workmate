@@ -8,9 +8,14 @@ Phase 7G turns "use mature wheels" into a concrete A21 gate for VAD, AEC, noise 
 
 ```bash
 go run ./cmd/a21 audio-front-end-plan
+go run ./cmd/a21 audio-front-end-eval --mock
 ```
 
-The command is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
+`audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
+
+`audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, required future metrics, and `promotion_gate: not_production`.
+
+The eval command intentionally requires `--mock`. There is no implicit real evaluation mode yet, so nobody can mistake a synthetic RMS report for office-noise, provider, AEC, full-duplex, or physical StackChan acceptance.
 
 ## Current Candidates
 
@@ -24,6 +29,7 @@ The command is plan-only. It performs no network calls, loads no native audio li
 Before any candidate becomes default, A21 needs:
 
 - mock benchmark preservation
+- `audio-front-end-eval --mock` report preservation
 - recorded Shanghai-office noise benchmark
 - physical StackChan speaker-to-mic echo report
 - barge-in stop timing

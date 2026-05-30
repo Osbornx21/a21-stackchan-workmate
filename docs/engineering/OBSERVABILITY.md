@@ -24,6 +24,8 @@ Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock 
 
 The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.
 
+`audio-front-end-eval --mock` emits a JSON report for the deterministic RMS baseline. This is not a runtime Prometheus endpoint; it is the offline report shape future recorded-office and physical-device VAD/AEC evaluations must preserve.
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:

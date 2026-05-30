@@ -81,6 +81,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderRealtimeFixture(args[1:], stdout, stderr)
 	case "audio-front-end-plan":
 		return runAudioFrontEndPlan(args[1:], stdout, stderr)
+	case "audio-front-end-eval":
+		return runAudioFrontEndEval(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -224,6 +226,34 @@ func runAudioFrontEndPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	}
 	if err := writeJSONAudioFrontEndPlan(stdout, audio.BaselineFrontEndPlan()); err != nil {
 		fmt.Fprintf(stderr, "encode audio front-end plan: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int {
+	mock := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 audio-front-end-eval --mock")
+			return 0
+		case "--mock":
+			mock = true
+		case "--execute":
+			fmt.Fprintln(stderr, "audio-front-end-eval only supports --mock until recorded-office and physical-device fixtures exist")
+			return 2
+		default:
+			fmt.Fprintf(stderr, "unknown audio-front-end-eval option %q\n", args[i])
+			return 2
+		}
+	}
+	if !mock {
+		fmt.Fprintln(stderr, "audio-front-end-eval requires --mock")
+		return 2
+	}
+	if err := writeJSONAudioFrontEndEval(stdout, audio.RunMockFrontEndEval()); err != nil {
+		fmt.Fprintf(stderr, "encode audio front-end eval: %v\n", err)
 		return 1
 	}
 	return 0
@@ -651,6 +681,12 @@ func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeRepo
 }
 
 func writeJSONAudioFrontEndPlan(writer io.Writer, report audio.FrontEndPlan) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONAudioFrontEndEval(writer io.Writer, report audio.FrontEndEvalReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

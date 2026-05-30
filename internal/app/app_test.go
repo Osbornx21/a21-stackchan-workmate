@@ -533,6 +533,41 @@ func TestRunAudioFrontEndPlanListsMatureCandidates(t *testing.T) {
 	}
 }
 
+func TestRunAudioFrontEndEvalMockReportsQualityMetrics(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-eval", "--mock"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"status": "mock_only"`,
+		`"dataset": "a21_mock_vad_fixture_v1"`,
+		`"detector": "a21-rms-vad"`,
+		`"frames_total": 5`,
+		`"true_positive": 2`,
+		`"true_negative": 3`,
+		`"false_positive": 0`,
+		`"false_negative": 0`,
+		`"promotion_gate": "not_production"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunAudioFrontEndEvalRequiresMockFlag(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-eval"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "requires --mock") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
