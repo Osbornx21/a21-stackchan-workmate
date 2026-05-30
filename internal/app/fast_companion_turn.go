@@ -2,10 +2,14 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +17,7 @@ import (
 
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/protocol"
 )
 
@@ -53,6 +58,12 @@ type stackChanFastCompanionTurnReceipt struct {
 	AnswerPlaybackChunks    int      `json:"answer_playback_chunks,omitempty"`
 	AnswerPlaybackBatches   int      `json:"answer_playback_batches,omitempty"`
 	PlaybackCleared         bool     `json:"playback_cleared"`
+	PhysicalMicFrameCount   int      `json:"physical_mic_frame_count,omitempty"`
+	PhysicalMicAudioBytes   int      `json:"physical_mic_audio_bytes,omitempty"`
+	PhysicalMicDurationMS   int      `json:"physical_mic_duration_ms,omitempty"`
+	PhysicalMicCaptureMS    int      `json:"physical_mic_capture_window_ms,omitempty"`
+	PhysicalMicRMSMax       float64  `json:"physical_mic_rms_max,omitempty"`
+	PhysicalMicWAVName      string   `json:"physical_mic_wav_name,omitempty"`
 	DeliveredTransport      string   `json:"delivered_transport,omitempty"`
 	M3Candidate             bool     `json:"m3_candidate"`
 	TraceMarkers            []string `json:"trace_markers,omitempty"`
@@ -74,6 +85,8 @@ type stackChanFastCompanionTurnOptions struct {
 	TextProvider        string
 	ExecuteTextProvider bool
 	ListenSource        string
+	MicWindowMS         int
+	MinMicFrames        int
 	Repeat              int
 	OutputDir           string
 }
@@ -82,6 +95,16 @@ type stackChanAudioDelivery struct {
 	Chunks             int
 	Batches            int
 	DeliveredTransport string
+}
+
+type stackChanPhysicalMicEvidence struct {
+	FrameCount      int
+	AudioBytes      int
+	DurationMS      int
+	CaptureWindowMS int
+	RMSMax          float64
+	WAVPath         string
+	WAVName         string
 }
 
 func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -99,6 +122,8 @@ func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Wr
 		TextProvider: strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TEXT_PROVIDER"), "mock_text_stream")),
 		ListenSource: "host_fixture",
 		Text:         "A21 fast companion turn.",
+		MicWindowMS:  1200,
+		MinMicFrames: 1,
 		Repeat:       1,
 		OutputDir:    "reports",
 	}
@@ -163,6 +188,18 @@ func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Wr
 			if !readStringOption(args, &i, stderr, "--listen-source", &options.ListenSource) {
 				return 2
 			}
+		case "--mic-window-ms":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--mic-window-ms")
+			if !ok {
+				return 2
+			}
+			options.MicWindowMS = value
+		case "--min-mic-frames":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--min-mic-frames")
+			if !ok {
+				return 2
+			}
+			options.MinMicFrames = value
 		case "--repeat":
 			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--repeat")
 			if !ok {
@@ -250,15 +287,12 @@ func buildStackChanFastCompanionTurnReport(ctx context.Context, options stackCha
 		report.Findings = append(report.Findings, "device is not online")
 		return report, nil
 	}
-	if options.ListenSource == "stackchan_mic" {
-		report.Findings = append(report.Findings, "stackchan_mic listen source requires physical mic turn evidence")
-		return report, nil
-	}
 
 	ackSamples := make([]time.Duration, 0, options.Repeat)
 	answerSamples := make([]time.Duration, 0, options.Repeat)
 	bargeSamples := make([]time.Duration, 0, options.Repeat)
 	allPassed := true
+	allM3Candidate := true
 	for turn := 1; turn <= options.Repeat; turn++ {
 		receipt, err := runStackChanFastCompanionSingleTurn(ctx, options, turn, generatedAtMS)
 		if err != nil {
@@ -269,6 +303,9 @@ func buildStackChanFastCompanionTurnReport(ctx context.Context, options stackCha
 		}
 		if len(receipt.Findings) > 0 {
 			allPassed = false
+		}
+		if !receipt.M3Candidate {
+			allM3Candidate = false
 		}
 		report.Turns = append(report.Turns, receipt)
 		if receipt.LocalAckFirstAudioMS > 0 {
@@ -292,7 +329,7 @@ func buildStackChanFastCompanionTurnReport(ctx context.Context, options stackCha
 	if options.ListenSource != "stackchan_mic" {
 		report.Findings = append(report.Findings, "not an M3 candidate: listen source is not stackchan_mic")
 	}
-	report.M3Candidate = allPassed && options.ListenSource == "stackchan_mic" && report.Repeat >= 3 && report.AnswerFirstAudioP95MS > 0 && report.AnswerFirstAudioP95MS < 1500
+	report.M3Candidate = allPassed && allM3Candidate && options.ListenSource == "stackchan_mic" && report.Repeat >= 3 && report.AnswerFirstAudioP95MS > 0 && report.AnswerFirstAudioP95MS < 1500
 	report.Status = "passed"
 	return report, nil
 }
@@ -301,16 +338,34 @@ func runStackChanFastCompanionSingleTurn(ctx context.Context, options stackChanF
 	traceID := fmt.Sprintf("a21-trace-fast-companion-%d-%02d", generatedAtMS, turn)
 	sessionID := fmt.Sprintf("a21-session-fast-companion-%d-%02d", generatedAtMS, turn)
 	receipt := stackChanFastCompanionTurnReceipt{
-		Turn:           turn,
-		TraceID:        traceID,
-		SessionID:      sessionID,
-		ListenSource:   options.ListenSource,
-		ListenDetected: options.ListenSource == "stackchan_mic",
+		Turn:         turn,
+		TraceID:      traceID,
+		SessionID:    sessionID,
+		ListenSource: options.ListenSource,
 		TraceMarkers: []string{
 			"fast_companion.turn.start",
 			"local_ack.playback.start",
 			"answer.playback.start",
 		},
+	}
+	effectiveASRWAVPath := options.ASRWAVPath
+	if options.ListenSource == "stackchan_mic" {
+		micEvidence, err := captureStackChanPhysicalMicEvidence(ctx, options, traceID, sessionID)
+		if err != nil {
+			receipt.Findings = append(receipt.Findings, "physical mic evidence missing")
+			return receipt, err
+		}
+		defer removeStackChanPhysicalMicEvidence(micEvidence)
+		receipt.ListenDetected = true
+		receipt.PhysicalMicFrameCount = micEvidence.FrameCount
+		receipt.PhysicalMicAudioBytes = micEvidence.AudioBytes
+		receipt.PhysicalMicDurationMS = micEvidence.DurationMS
+		receipt.PhysicalMicCaptureMS = micEvidence.CaptureWindowMS
+		receipt.PhysicalMicRMSMax = micEvidence.RMSMax
+		receipt.PhysicalMicWAVName = micEvidence.WAVName
+		effectiveASRWAVPath = micEvidence.WAVPath
+	} else {
+		receipt.ListenDetected = false
 	}
 	loopback, err := buildLocalVoiceLoopbackReport(ctx, localTTSRuntimeOptions{
 		Engine:    options.Engine,
@@ -327,7 +382,7 @@ func runStackChanFastCompanionSingleTurn(ctx context.Context, options stackChanF
 		Provider:  options.ASRProvider,
 		Family:    options.ASRFamily,
 		ModelDir:  options.ASRModelDir,
-		WAVPath:   options.ASRWAVPath,
+		WAVPath:   effectiveASRWAVPath,
 		OutputDir: options.OutputDir,
 	})
 	if err != nil {
@@ -365,8 +420,279 @@ func runStackChanFastCompanionSingleTurn(ctx context.Context, options stackChanF
 	if options.ListenSource != "stackchan_mic" {
 		receipt.Findings = append(receipt.Findings, "host fixture listen source is not M3 evidence")
 	}
-	receipt.M3Candidate = options.ListenSource == "stackchan_mic" && receipt.LocalAckPlaybackChunks > 0 && receipt.AnswerPlaybackChunks > 0 && receipt.AnswerFirstAudioTotalMS < 1500
+	receipt.M3Candidate = options.ListenSource == "stackchan_mic" &&
+		receipt.ListenDetected &&
+		receipt.PhysicalMicFrameCount >= options.MinMicFrames &&
+		receipt.PhysicalMicDurationMS >= 400 &&
+		receipt.LocalAckPlaybackChunks > 0 &&
+		receipt.AnswerPlaybackChunks > 0 &&
+		receipt.AnswerFirstAudioTotalMS < 1500 &&
+		!strings.EqualFold(options.ASRProvider, "mock_asr") &&
+		receipt.TextStreamExecuted
 	return receipt, nil
+}
+
+func captureStackChanPhysicalMicEvidence(ctx context.Context, options stackChanFastCompanionTurnOptions, traceID string, sessionID string) (stackChanPhysicalMicEvidence, error) {
+	windowMS := options.MicWindowMS
+	if windowMS <= 0 {
+		windowMS = 1200
+	}
+	minFrames := options.MinMicFrames
+	if minFrames <= 0 {
+		minFrames = 1
+	}
+	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "A21 MIC", traceID, sessionID, true, false); err != nil {
+		return stackChanPhysicalMicEvidence{}, err
+	}
+	defer func() {
+		_, _ = postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, false, false)
+	}()
+	evidence, err := waitForStackChanPhysicalMicEvidence(ctx, options, sessionID, windowMS, minFrames)
+	if err != nil {
+		return stackChanPhysicalMicEvidence{}, err
+	}
+	tempDir, err := os.MkdirTemp("", "a21-stackchan-mic-")
+	if err != nil {
+		return stackChanPhysicalMicEvidence{}, err
+	}
+	wavPath := filepath.Join(tempDir, fmt.Sprintf("a21-stackchan-mic-%d.wav", time.Now().UnixNano()))
+	if err := writeStackChanPCM16MonoWAV(wavPath, 16000, evidence.pcm); err != nil {
+		_ = os.RemoveAll(tempDir)
+		return stackChanPhysicalMicEvidence{}, err
+	}
+	return stackChanPhysicalMicEvidence{
+		FrameCount:      evidence.frameCount,
+		AudioBytes:      evidence.audioBytes,
+		DurationMS:      evidence.durationMS,
+		CaptureWindowMS: windowMS,
+		RMSMax:          evidence.rmsMax,
+		WAVPath:         wavPath,
+		WAVName:         filepath.Base(wavPath),
+	}, nil
+}
+
+func waitForStackChanPhysicalMicEvidence(ctx context.Context, options stackChanFastCompanionTurnOptions, sessionID string, windowMS int, minFrames int) (stackChanMicPCM, error) {
+	limit := stackChanMicCaptureFrameLimit(windowMS, minFrames)
+	minDurationMS := stackChanMicMinimumDurationMS(windowMS, minFrames)
+	timeout := time.Duration(windowMS+2500) * time.Millisecond
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(120 * time.Millisecond)
+	defer ticker.Stop()
+	var lastErr error
+	for {
+		response, err := fetchStackChanRecentAudio(ctx, options.GatewayURL, options.DeviceID, sessionID, limit)
+		if err != nil {
+			lastErr = err
+		} else if len(response.Frames) == 0 {
+			lastErr = fmt.Errorf("physical mic evidence missing: got 0 frames, want at least %d", minFrames)
+		} else {
+			evidence, err := stackChanRecentAudioToMicEvidence(response.Frames)
+			if err != nil {
+				lastErr = err
+			} else if evidence.frameCount >= minFrames && evidence.durationMS >= minDurationMS {
+				return evidence, nil
+			} else {
+				lastErr = fmt.Errorf("physical mic evidence incomplete: got %d frames / %d ms, want at least %d frames / %d ms", evidence.frameCount, evidence.durationMS, minFrames, minDurationMS)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return stackChanMicPCM{}, ctx.Err()
+		case <-deadline.C:
+			if lastErr != nil {
+				return stackChanMicPCM{}, lastErr
+			}
+			return stackChanMicPCM{}, fmt.Errorf("physical mic evidence missing")
+		case <-ticker.C:
+		}
+	}
+}
+
+func stackChanMicCaptureFrameLimit(windowMS int, minFrames int) int {
+	if windowMS <= 0 {
+		windowMS = 1200
+	}
+	if minFrames <= 0 {
+		minFrames = 1
+	}
+	limit := windowMS/20 + 16
+	if limit < minFrames*4 {
+		limit = minFrames * 4
+	}
+	if limit < 64 {
+		limit = 64
+	}
+	if limit > 512 {
+		limit = 512
+	}
+	return limit
+}
+
+func stackChanMicMinimumDurationMS(windowMS int, minFrames int) int {
+	if windowMS <= 0 {
+		windowMS = 1200
+	}
+	if minFrames <= 0 {
+		minFrames = 1
+	}
+	minDurationMS := minFrames * 20
+	if minDurationMS < 400 {
+		minDurationMS = 400
+	}
+	if minDurationMS > windowMS {
+		minDurationMS = windowMS
+	}
+	return minDurationMS
+}
+
+type stackChanMicPCM struct {
+	frameCount int
+	audioBytes int
+	durationMS int
+	rmsMax     float64
+	pcm        []byte
+}
+
+func stackChanRecentAudioToMicEvidence(frames []gateway.AudioCaptureFrame) (stackChanMicPCM, error) {
+	var evidence stackChanMicPCM
+	for _, frame := range frames {
+		if frame.SampleRateHz != 16000 || frame.Channels != 1 || frame.DurationMS != 20 {
+			return evidence, fmt.Errorf("unsupported physical mic frame format")
+		}
+		if frame.DataBase64 == "" {
+			return evidence, fmt.Errorf("physical mic frame missing audio payload")
+		}
+		data, err := base64.StdEncoding.DecodeString(frame.DataBase64)
+		if err != nil {
+			return evidence, fmt.Errorf("physical mic frame payload invalid: %w", err)
+		}
+		if len(data) != 640 {
+			return evidence, fmt.Errorf("physical mic frame bytes = %d, want 640", len(data))
+		}
+		evidence.pcm = append(evidence.pcm, data...)
+		evidence.frameCount++
+		evidence.audioBytes += len(data)
+		evidence.durationMS += frame.DurationMS
+		if frame.RMS > evidence.rmsMax {
+			evidence.rmsMax = frame.RMS
+		}
+	}
+	if evidence.frameCount == 0 {
+		return evidence, fmt.Errorf("physical mic evidence missing")
+	}
+	return evidence, nil
+}
+
+func fetchStackChanRecentAudio(ctx context.Context, gatewayURL string, deviceID string, sessionID string, limit int) (gateway.AudioRecentResponse, error) {
+	if limit <= 0 {
+		limit = 64
+	}
+	query := url.Values{}
+	query.Set("device_id", deviceID)
+	query.Set("session_id", sessionID)
+	query.Set("include_audio", "1")
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/audio/recent", query)
+	if err != nil {
+		return gateway.AudioRecentResponse{}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return gateway.AudioRecentResponse{}, err
+	}
+	client := http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return gateway.AudioRecentResponse{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 256))
+		return gateway.AudioRecentResponse{}, fmt.Errorf("gateway audio recent returned status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var decoded gateway.AudioRecentResponse
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		return gateway.AudioRecentResponse{}, err
+	}
+	if decoded.SchemaVersion != gateway.AudioRecentSchemaVersion {
+		return gateway.AudioRecentResponse{}, fmt.Errorf("gateway audio recent has unexpected schema")
+	}
+	if decoded.DeviceID != "" && decoded.DeviceID != deviceID {
+		return gateway.AudioRecentResponse{}, fmt.Errorf("gateway audio recent device mismatch")
+	}
+	return decoded, nil
+}
+
+func writeStackChanPCM16MonoWAV(path string, sampleRateHz int, pcm []byte) error {
+	if sampleRateHz != 16000 {
+		return fmt.Errorf("wav sample rate must be 16000 Hz")
+	}
+	if len(pcm) == 0 {
+		return fmt.Errorf("wav pcm data is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	dataSize := uint32(len(pcm))
+	riffSize := uint32(36 + len(pcm))
+	if _, err := file.Write([]byte("RIFF")); err != nil {
+		return err
+	}
+	for _, value := range []uint32{riffSize} {
+		if err := binary.Write(file, binary.LittleEndian, value); err != nil {
+			return err
+		}
+	}
+	if _, err := file.Write([]byte("WAVEfmt ")); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint32(16)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint16(1)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint16(1)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint32(sampleRateHz)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint32(sampleRateHz*2)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint16(2)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint16(16)); err != nil {
+		return err
+	}
+	if _, err := file.Write([]byte("data")); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, dataSize); err != nil {
+		return err
+	}
+	_, err = file.Write(pcm)
+	return err
+}
+
+func removeStackChanPhysicalMicEvidence(evidence stackChanPhysicalMicEvidence) {
+	if evidence.WAVPath == "" {
+		return
+	}
+	tempDir := filepath.Dir(evidence.WAVPath)
+	if strings.Contains(filepath.Base(tempDir), "a21-stackchan-mic-") {
+		_ = os.RemoveAll(tempDir)
+		return
+	}
+	_ = os.Remove(evidence.WAVPath)
 }
 
 func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID string, traceID string, sessionID string, streamID string, wavPath string) (stackChanAudioDelivery, error) {
@@ -378,8 +704,9 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 		return stackChanAudioDelivery{}, err
 	}
 	delivery := stackChanAudioDelivery{Chunks: len(pcmChunks)}
-	for offset := 0; offset < len(pcmChunks); offset += stackChanSpeakerProbeBatchChunks {
-		end := int(math.Min(float64(offset+stackChanSpeakerProbeBatchChunks), float64(len(pcmChunks))))
+	for offset := 0; offset < len(pcmChunks); {
+		batchChunks := stackChanPlaybackBatchSize(offset, len(pcmChunks))
+		end := int(math.Min(float64(offset+batchChunks), float64(len(pcmChunks))))
 		batch := make([]protocol.AudioPlaybackChunk, 0, end-offset)
 		for _, chunk := range pcmChunks[offset:end] {
 			batch = append(batch, protocol.AudioPlaybackChunk{
@@ -400,10 +727,36 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 		select {
 		case <-ctx.Done():
 			return delivery, ctx.Err()
-		case <-time.After(time.Duration((end-offset)*20) * time.Millisecond):
+		case <-time.After(stackChanPlaybackBatchDelay(offset, end-offset)):
 		}
+		offset = end
 	}
 	return delivery, nil
+}
+
+func stackChanPlaybackBatchSize(offset int, totalChunks int) int {
+	if offset == 0 && totalChunks > stackChanSpeakerProbeBatchChunks {
+		if totalChunks < stackChanSpeakerPrerollBatchChunks {
+			return totalChunks
+		}
+		return stackChanSpeakerPrerollBatchChunks
+	}
+	remaining := totalChunks - offset
+	if remaining < stackChanSpeakerProbeBatchChunks {
+		return remaining
+	}
+	return stackChanSpeakerProbeBatchChunks
+}
+
+func stackChanPlaybackBatchDelay(offset int, batchChunks int) time.Duration {
+	if batchChunks <= 0 {
+		return 0
+	}
+	delayChunks := batchChunks
+	if offset == 0 && batchChunks > stackChanSpeakerProbeBatchChunks {
+		delayChunks = stackChanSpeakerProbeBatchChunks
+	}
+	return time.Duration(delayChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond
 }
 
 func normalizeFastCompanionListenSource(raw string) string {

@@ -76,6 +76,8 @@ Gateway validates `audio.frame` payloads before buffering, VAD, mock playback, b
 
 Device uplink uses `audio.frame`.
 
+Gateway keeps a bounded in-memory recent-audio capture for development diagnostics and mic-driven fast-companion evidence. `GET /v1/audio/recent` is loopback-only and must reject LAN callers; the default response redacts `data_base64` and returns only metadata such as frame count, byte count, RMS, VAD decision, and trace/session IDs. A local CLI may request `include_audio=1` over `127.0.0.1` to build a temporary ASR WAV, but saved A21 reports must not include raw audio or `data_base64`.
+
 Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a playback payload:
 
 - `stream_id`: stable playback stream identifier
@@ -178,7 +180,7 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; accepted `pcm_s16le`, 16 kHz, mono, 20 ms payloads are decoded into fixed 640-byte PCM frames before they enter the buffer. The CoreS3 speaker pump copies decoded frames into stable slots before handing them to M5Unified playback. The buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
+Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; accepted `pcm_s16le`, 16 kHz, mono, 20 ms payloads are decoded into fixed 640-byte PCM frames before they enter the buffer. The CoreS3 speaker pump coalesces up to four contiguous 20 ms frames into one stable playback block before handing it to M5Unified playback. This preserves the low-latency protocol frame size while reducing audible boundary noise from tiny repeated `playRaw` calls. The buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
 
 Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 

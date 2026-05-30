@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +44,7 @@ type Server struct {
 	realtimeArmedSessions      map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
+	audioCaptureFrames         []AudioCaptureFrame
 }
 
 type ServerOptions struct {
@@ -163,7 +166,41 @@ type DeviceRegistryResponse struct {
 const (
 	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName   = "a21-gateway"
+	AudioRecentSchemaVersion    = "a21.gateway.audio_recent.v1"
+	maxAudioCaptureFrames       = 512
 )
+
+type AudioRecentResponse struct {
+	SchemaVersion string              `json:"schema_version"`
+	DeviceID      string              `json:"device_id,omitempty"`
+	TraceID       string              `json:"trace_id,omitempty"`
+	SessionID     string              `json:"session_id,omitempty"`
+	IncludeAudio  bool                `json:"include_audio"`
+	Frames        []AudioCaptureFrame `json:"frames"`
+}
+
+type AudioCaptureFrame struct {
+	DeviceID            string  `json:"device_id"`
+	TraceID             string  `json:"trace_id"`
+	SessionID           string  `json:"session_id"`
+	Seq                 uint64  `json:"seq"`
+	SentAtMS            int64   `json:"sent_at_ms,omitempty"`
+	ReceivedAtMS        int64   `json:"received_at_ms"`
+	SampleRateHz        int     `json:"sample_rate_hz"`
+	Channels            int     `json:"channels"`
+	DurationMS          int     `json:"duration_ms"`
+	CaptureStartedAtMS  int64   `json:"capture_started_at_ms,omitempty"`
+	CaptureEndedAtMS    int64   `json:"capture_ended_at_ms,omitempty"`
+	DataBytes           int     `json:"data_bytes"`
+	DataBase64          string  `json:"data_base64,omitempty"`
+	RMS                 float64 `json:"rms"`
+	VADDetector         string  `json:"vad_detector"`
+	SpeechDetected      bool    `json:"speech_detected"`
+	SpeechActive        bool    `json:"speech_active"`
+	DroppedFrames       int     `json:"dropped_frames,omitempty"`
+	DroppedFrameDelta   int     `json:"dropped_frame_delta,omitempty"`
+	IngressBufferFrames int     `json:"ingress_buffer_frames"`
+}
 
 type TraceEvent struct {
 	Name      string `json:"name"`
@@ -224,6 +261,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeArmedSessions:      make(map[string]bool),
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
+		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 	}
 }
 
@@ -234,6 +272,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
+	mux.HandleFunc("/v1/audio/recent", s.handleAudioRecent)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
 	mux.HandleFunc("/v1/realtime/session", s.handleRealtimeSessionStart)
@@ -343,6 +382,55 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	}
 	events := s.traceEvents(traceID)
 	writeJSON(w, http.StatusOK, TraceResponse{TraceID: traceID, Events: events, Summary: traceLatencySummary(events)})
+}
+
+func (s *Server) handleAudioRecent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !loopbackHTTPRemote(r.RemoteAddr) {
+		http.Error(w, "audio capture is available only from loopback", http.StatusForbidden)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	traceID := strings.TrimSpace(r.URL.Query().Get("trace_id"))
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	if deviceID != "" && !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	if traceID == "" && sessionID == "" {
+		http.Error(w, "trace_id or session_id is required", http.StatusBadRequest)
+		return
+	}
+	limit := 64
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 || parsed > maxAudioCaptureFrames {
+			http.Error(w, "limit must be between 1 and 512", http.StatusBadRequest)
+			return
+		}
+		limit = parsed
+	}
+	includeAudio := r.URL.Query().Get("include_audio") == "1"
+	writeJSON(w, http.StatusOK, AudioRecentResponse{
+		SchemaVersion: AudioRecentSchemaVersion,
+		DeviceID:      deviceID,
+		TraceID:       traceID,
+		SessionID:     sessionID,
+		IncludeAudio:  includeAudio,
+		Frames:        s.recentAudioFrames(deviceID, traceID, sessionID, limit, includeAudio),
+	})
+}
+
+func loopbackHTTPRemote(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -725,6 +813,7 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		DurationMS:   chunk.DurationMS,
 		DataBase64:   chunk.DataBase64,
 	})
+	s.recordAudioCaptureFrame(frame, chunk, result, traceID, sessionID)
 	s.metrics.audioIngressFramesTotal.Inc()
 	if result.DroppedFrameDelta > 0 {
 		s.metrics.audioIngressDroppedTotal.Add(float64(result.DroppedFrameDelta))
@@ -743,6 +832,67 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		s.recordTrace(traceID, sessionID, frame.DeviceID, string(event), s.now().UnixMilli())
 	}
 	return result, true
+}
+
+func (s *Server) recordAudioCaptureFrame(frame protocol.Envelope, chunk protocol.AudioChunk, ingress audio.IngressResult, traceID string, sessionID string) {
+	dataBytes := 0
+	if data, err := base64.StdEncoding.DecodeString(chunk.DataBase64); err == nil {
+		dataBytes = len(data)
+	}
+	capture := AudioCaptureFrame{
+		DeviceID:            frame.DeviceID,
+		TraceID:             traceID,
+		SessionID:           sessionID,
+		Seq:                 frame.Seq,
+		SentAtMS:            frame.SentAtMS,
+		ReceivedAtMS:        s.now().UnixMilli(),
+		SampleRateHz:        chunk.SampleRateHz,
+		Channels:            chunk.Channels,
+		DurationMS:          chunk.DurationMS,
+		CaptureStartedAtMS:  chunk.CaptureStartedAtMS,
+		CaptureEndedAtMS:    chunk.CaptureEndedAtMS,
+		DataBytes:           dataBytes,
+		DataBase64:          chunk.DataBase64,
+		RMS:                 ingress.RMS,
+		VADDetector:         ingress.VADDetector,
+		SpeechDetected:      ingress.SpeechDetected,
+		SpeechActive:        ingress.SpeechActive,
+		DroppedFrames:       ingress.DroppedFrames,
+		DroppedFrameDelta:   ingress.DroppedFrameDelta,
+		IngressBufferFrames: ingress.BufferedFrames,
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audioCaptureFrames = append(s.audioCaptureFrames, capture)
+	if len(s.audioCaptureFrames) > maxAudioCaptureFrames {
+		s.audioCaptureFrames = s.audioCaptureFrames[len(s.audioCaptureFrames)-maxAudioCaptureFrames:]
+	}
+}
+
+func (s *Server) recentAudioFrames(deviceID string, traceID string, sessionID string, limit int, includeAudio bool) []AudioCaptureFrame {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	matches := make([]AudioCaptureFrame, 0, limit)
+	for i := len(s.audioCaptureFrames) - 1; i >= 0 && len(matches) < limit; i-- {
+		frame := s.audioCaptureFrames[i]
+		if deviceID != "" && frame.DeviceID != deviceID {
+			continue
+		}
+		if traceID != "" && frame.TraceID != traceID {
+			continue
+		}
+		if sessionID != "" && frame.SessionID != sessionID {
+			continue
+		}
+		if !includeAudio {
+			frame.DataBase64 = ""
+		}
+		matches = append(matches, frame)
+	}
+	for left, right := 0, len(matches)-1; left < right; left, right = left+1, right-1 {
+		matches[left], matches[right] = matches[right], matches[left]
+	}
+	return matches
 }
 
 func vadDetectorLabel(detector string) string {

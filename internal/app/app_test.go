@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1315,6 +1316,60 @@ func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
 	}
 }
 
+func TestRunStackChanLocalTTSPlaybackPrerollsInitialAudioBuffer(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	var batchSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.AudioChunks) > 0 {
+			batchSizes = append(batchSizes, len(request.AudioChunks))
+		}
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, "a21-sherpa-playback-preroll-test.wav")
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 320*10))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "sherpa_onnx",
+			Engine:          "vits_icefall_zh_aishell3",
+			Voice:           "sid_21",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     6400,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      33,
+			TTSFirstAudioMS: 33,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-local-tts-playback", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "sherpa_onnx", "--text", "不要写进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if got, want := fmt.Sprint(batchSizes), "[8 2]"; got != want {
+		t.Fatalf("audio batch sizes = %s, want %s", got, want)
+	}
+}
+
 func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })
@@ -1467,15 +1522,155 @@ func TestRunStackChanFastCompanionTurnWritesFailedReportWhenGatewayUnavailable(t
 	}
 }
 
+func TestRunStackChanFastCompanionTurnConsumesStackChanMicEvidenceWithoutLeakingAudio(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, fmt.Sprintf("a21-fast-companion-mic-%d.wav", time.Now().UnixNano()))
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 640))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     1280,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      11,
+			TTSFirstAudioMS: 11,
+		}, nil
+	}
+	payload := appTestPCM16Base64(12000)
+	frames := make([]string, 0, 20)
+	for seq := 1; seq <= 20; seq++ {
+		rms := 0.21
+		if seq == 1 {
+			rms = 0.23
+		}
+		frames = append(frames, fmt.Sprintf(`{"device_id":"stackchan-001","trace_id":"a21-trace-audio-%06d","session_id":"%%s","seq":%d,"sample_rate_hz":16000,"channels":1,"duration_ms":20,"data_bytes":640,"data_base64":"%s","rms":%.2f,"vad_detector":"a21-rms-vad","speech_detected":true,"speech_active":true,"ingress_buffer_frames":%d}`, seq, seq, payload, rms, seq))
+	}
+	var sawListening bool
+	var sawIdle bool
+	var audioRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices":
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","rgb":"available","servo_y":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/v1/audio/recent":
+			if r.URL.Query().Get("include_audio") != "1" {
+				t.Fatalf("recent audio request missing include_audio=1: %s", r.URL.RawQuery)
+			}
+			if r.URL.Query().Get("device_id") != "stackchan-001" {
+				t.Fatalf("recent audio device = %q", r.URL.Query().Get("device_id"))
+			}
+			limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+			if err != nil || limit < 64 {
+				t.Fatalf("recent audio limit = %q, want enough frames for capture window", r.URL.Query().Get("limit"))
+			}
+			sessionID := r.URL.Query().Get("session_id")
+			responseFrames := strings.ReplaceAll(strings.Join(frames, ","), "%s", sessionID)
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.audio_recent.v1","device_id":"stackchan-001","session_id":"%s","include_audio":true,"frames":[%s]}`, sessionID, responseFrames)
+		case "/v1/devices/control":
+			var request struct {
+				DeviceID       string `json:"device_id"`
+				State          string `json:"state"`
+				Text           string `json:"text"`
+				AudioProbeOnly bool   `json:"audio_probe_only"`
+				AudioChunks    []struct {
+					DataBase64 string `json:"data_base64"`
+				} `json:"audio_chunks"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if request.DeviceID != "stackchan-001" {
+				t.Fatalf("device id = %q", request.DeviceID)
+			}
+			if request.State == "listening" && request.AudioProbeOnly {
+				sawListening = true
+			}
+			if request.State == "idle" {
+				sawIdle = true
+			}
+			if len(request.AudioChunks) > 0 {
+				audioRequests++
+			}
+			fmt.Fprint(w, `{"trace_id":"a21-trace-fast","session_id":"a21-session-fast","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "macos_say", "--listen-source", "stackchan_mic", "--repeat", "1", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s\n%s", code, stderr.String(), stdout.String())
+	}
+	if !sawListening || !sawIdle || audioRequests < 2 {
+		t.Fatalf("listening/idle/audio = %t/%t/%d, want physical listen and ack/answer playback", sawListening, sawIdle, audioRequests)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"listen_source": "stackchan_mic"`,
+		`"listen_detected": true`,
+		`"physical_mic_frame_count": 20`,
+		`"physical_mic_audio_bytes": 12800`,
+		`"physical_mic_duration_ms": 400`,
+		`"physical_mic_capture_window_ms": 1200`,
+		`"physical_mic_rms_max": 0.23`,
+		`"physical_mic_wav_name"`,
+		`"m3_candidate": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-stackchan-fast-companion-turn-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{payload, "data_base64", "Authorization", "Bearer", "sk-"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("stackchan mic report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
 func TestRunStackChanFastCompanionTurnRejectsStackChanMicWithoutPhysicalEvidence(t *testing.T) {
 	var controlRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/devices":
 			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","rgb":"available","servo_y":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/v1/audio/recent":
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.audio_recent.v1","device_id":"stackchan-001","session_id":"%s","include_audio":true,"frames":[]}`, r.URL.Query().Get("session_id"))
 		case "/v1/devices/control":
 			controlRequests++
-			t.Fatalf("stackchan_mic without physical evidence must not deliver synthetic playback")
+			var request struct {
+				State       string `json:"state"`
+				AudioChunks []struct {
+					DataBase64 string `json:"data_base64"`
+				} `json:"audio_chunks"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if len(request.AudioChunks) > 0 {
+				t.Fatalf("stackchan_mic without physical evidence must not deliver synthetic playback")
+			}
 		default:
 			t.Fatalf("unexpected path = %q", r.URL.Path)
 		}
@@ -1490,15 +1685,15 @@ func TestRunStackChanFastCompanionTurnRejectsStackChanMicWithoutPhysicalEvidence
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if controlRequests != 0 {
-		t.Fatalf("control requests = %d, want 0", controlRequests)
+	if controlRequests == 0 {
+		t.Fatalf("control requests = %d, want listening and cleanup controls", controlRequests)
 	}
 	for _, want := range []string{
 		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
 		`"status": "failed"`,
 		`"listen_source": "stackchan_mic"`,
 		`"m3_candidate": false`,
-		`"stackchan_mic listen source requires physical mic turn evidence"`,
+		`"physical mic evidence missing"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())

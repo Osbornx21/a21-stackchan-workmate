@@ -1704,6 +1704,74 @@ func TestAudioWebSocketAcceptsAudioFrame(t *testing.T) {
 	}
 }
 
+func TestAudioRecentEndpointReturnsLoopbackOnlyRedactedFrames(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	payload := pcm16Base64WithSample(12000)
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 7, "a21-trace-physical-capture", "a21-session-physical-capture", payload)
+	readControlEvents(t, ctx, conn, 2)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?device_id=stackchan-001&session_id=a21-session-physical-capture", nil)
+	req.RemoteAddr = "127.0.0.1:45678"
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), payload) {
+		t.Fatalf("default recent audio response leaked raw audio: %s", rec.Body.String())
+	}
+	for _, want := range []string{
+		`"schema_version":"a21.gateway.audio_recent.v1"`,
+		`"device_id":"stackchan-001"`,
+		`"session_id":"a21-session-physical-capture"`,
+		`"frames"`,
+		`"data_bytes":640`,
+		`"speech_detected":true`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("recent response missing %q: %s", want, rec.Body.String())
+		}
+	}
+
+	withAudioReq := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?device_id=stackchan-001&session_id=a21-session-physical-capture&include_audio=1", nil)
+	withAudioReq.RemoteAddr = "127.0.0.1:45678"
+	withAudioRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(withAudioRec, withAudioReq)
+	if withAudioRec.Code != http.StatusOK {
+		t.Fatalf("include audio status = %d: %s", withAudioRec.Code, withAudioRec.Body.String())
+	}
+	if !strings.Contains(withAudioRec.Body.String(), payload) {
+		t.Fatalf("include audio response missing payload: %s", withAudioRec.Body.String())
+	}
+
+	remoteReq := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?device_id=stackchan-001&session_id=a21-session-physical-capture&include_audio=1", nil)
+	remoteReq.RemoteAddr = "192.168.1.42:45678"
+	remoteRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(remoteRec, remoteReq)
+	if remoteRec.Code != http.StatusForbidden {
+		t.Fatalf("remote status = %d, want 403: %s", remoteRec.Code, remoteRec.Body.String())
+	}
+	if strings.Contains(remoteRec.Body.String(), payload) {
+		t.Fatalf("remote rejection leaked raw audio: %s", remoteRec.Body.String())
+	}
+}
+
 func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

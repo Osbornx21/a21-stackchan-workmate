@@ -1806,6 +1806,44 @@ void test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room() {
   TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", runtime.last_stream_id);
 }
 
+void test_speaker_pump_coalesces_contiguous_pcm_frames_for_clean_playback() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  for (uint8_t i = 0; i < A21_SPEAKER_PLAYBACK_BATCH_FRAMES; ++i) {
+    A21AudioPlaybackChunk chunk;
+    a21ResetAudioPlaybackChunk(&chunk);
+    a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-speaker-batch");
+    a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+    a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+    a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+    chunk.sample_rate_hz = 16000;
+    chunk.channels = 1;
+    chunk.duration_ms = 20;
+    TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  }
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(1, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(0, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(A21_SPEAKER_PLAYBACK_BATCH_FRAMES, runtime.frames_played);
+  TEST_ASSERT_EQUAL_UINT32(
+      static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES * A21_SPEAKER_PLAYBACK_BATCH_FRAMES),
+      static_cast<uint32_t>(fake.last_sample_count));
+}
+
 void test_speaker_pump_waits_when_driver_queue_is_full() {
   A21AudioPlaybackBuffer buffer;
   A21SpeakerPumpRuntime runtime;
@@ -2586,6 +2624,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_playback_buffer_peeks_decoded_pcm_frame);
   RUN_TEST(test_audio_playback_buffer_pops_decoded_pcm_frame);
   RUN_TEST(test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room);
+  RUN_TEST(test_speaker_pump_coalesces_contiguous_pcm_frames_for_clean_playback);
   RUN_TEST(test_speaker_pump_waits_when_driver_queue_is_full);
   RUN_TEST(test_speaker_pump_does_not_play_when_not_speaking);
   RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);

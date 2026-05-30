@@ -44,6 +44,7 @@ var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 const (
 	stackChanSpeakerProbeChunkDurationMS = 20
 	stackChanSpeakerProbeBatchChunks     = 4
+	stackChanSpeakerPrerollBatchChunks   = 8
 	stackChanSpeakerProbeMaxChunks       = 64
 )
 
@@ -1662,8 +1663,9 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 	}
 	report.PlaybackChunks = len(pcmChunks)
 	report.ExpectedAudioDurationMS = len(pcmChunks) * 20
-	for offset := 0; offset < len(pcmChunks); offset += stackChanSpeakerProbeBatchChunks {
-		end := offset + stackChanSpeakerProbeBatchChunks
+	for offset := 0; offset < len(pcmChunks); {
+		batchChunks := stackChanPlaybackBatchSize(offset, len(pcmChunks))
+		end := offset + batchChunks
 		if end > len(pcmChunks) {
 			end = len(pcmChunks)
 		}
@@ -1684,8 +1686,9 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 		}
 		report.PlaybackBatches++
 		if end < len(pcmChunks) {
-			time.Sleep(time.Duration((end-offset)*20) * time.Millisecond)
+			time.Sleep(stackChanPlaybackBatchDelay(offset, end-offset))
 		}
+		offset = end
 	}
 	if _, err := postStackChanSpeakerControl(gatewayURL, deviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, streamID, 0); err != nil {
 		report.Findings = append(report.Findings, "device playback idle delivery failed")

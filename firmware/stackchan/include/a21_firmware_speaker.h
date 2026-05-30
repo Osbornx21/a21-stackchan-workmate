@@ -9,6 +9,9 @@
 static constexpr uint8_t A21_SPEAKER_CHANNEL = 0;
 static constexpr uint8_t A21_SPEAKER_SLOT_COUNT = 3;
 static constexpr uint8_t A21_SPEAKER_MAX_DRIVER_QUEUE = 2;
+static constexpr uint8_t A21_SPEAKER_PLAYBACK_BATCH_FRAMES = 4;
+static constexpr uint16_t A21_SPEAKER_PLAYBACK_BATCH_SAMPLES =
+    A21_AUDIO_PCM_FRAME_SAMPLES * A21_SPEAKER_PLAYBACK_BATCH_FRAMES;
 
 struct A21SpeakerDriver {
   void* ctx;
@@ -17,7 +20,7 @@ struct A21SpeakerDriver {
 };
 
 struct A21SpeakerPumpRuntime {
-  int16_t slots[A21_SPEAKER_SLOT_COUNT][A21_AUDIO_PCM_FRAME_SAMPLES];
+  int16_t slots[A21_SPEAKER_SLOT_COUNT][A21_SPEAKER_PLAYBACK_BATCH_SAMPLES];
   uint8_t next_slot;
   uint32_t frames_played;
   uint32_t busy_ticks;
@@ -35,7 +38,7 @@ inline void a21InitSpeakerPumpRuntime(A21SpeakerPumpRuntime* runtime) {
     return;
   }
   for (uint8_t slot = 0; slot < A21_SPEAKER_SLOT_COUNT; ++slot) {
-    for (uint16_t sample = 0; sample < A21_AUDIO_PCM_FRAME_SAMPLES; ++sample) {
+    for (uint16_t sample = 0; sample < A21_SPEAKER_PLAYBACK_BATCH_SAMPLES; ++sample) {
       runtime->slots[slot][sample] = 0;
     }
   }
@@ -58,6 +61,35 @@ inline void a21SpeakerCopyPCM16Frame(const A21AudioPCMFrame* frame, int16_t* out
                            (static_cast<uint16_t>(frame->data[byte_index + 1]) << 8);
     output[i] = static_cast<int16_t>(value);
   }
+}
+
+inline uint8_t a21SpeakerCopyPlaybackBatch(
+    const A21AudioPlaybackBuffer* buffer,
+    const char* stream_id,
+    int16_t* output,
+    size_t output_samples) {
+  if (buffer == nullptr || stream_id == nullptr || output == nullptr || output_samples == 0) {
+    return 0;
+  }
+  const uint8_t max_frames_by_output =
+      static_cast<uint8_t>(output_samples / A21_AUDIO_PCM_FRAME_SAMPLES);
+  const uint8_t max_frames =
+      max_frames_by_output < A21_SPEAKER_PLAYBACK_BATCH_FRAMES ? max_frames_by_output : A21_SPEAKER_PLAYBACK_BATCH_FRAMES;
+  uint8_t copied_frames = 0;
+  while (copied_frames < max_frames && copied_frames < buffer->queued_chunks) {
+    const uint8_t frame_index =
+        static_cast<uint8_t>((buffer->read_index + copied_frames) % A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP);
+    const A21AudioPCMFrame* frame = &buffer->frames[frame_index];
+    if (!a21StringEquals(frame->stream_id, stream_id)) {
+      break;
+    }
+    a21SpeakerCopyPCM16Frame(
+        frame,
+        output + (copied_frames * A21_AUDIO_PCM_FRAME_SAMPLES),
+        A21_AUDIO_PCM_FRAME_SAMPLES);
+    copied_frames += 1;
+  }
+  return copied_frames;
 }
 
 inline bool a21SpeakerPumpTick(
@@ -85,11 +117,20 @@ inline bool a21SpeakerPumpTick(
   }
 
   const uint8_t slot = runtime->next_slot;
-  a21SpeakerCopyPCM16Frame(frame, runtime->slots[slot], A21_AUDIO_PCM_FRAME_SAMPLES);
+  const uint8_t playback_frames = a21SpeakerCopyPlaybackBatch(
+      buffer,
+      state->stream_id,
+      runtime->slots[slot],
+      A21_SPEAKER_PLAYBACK_BATCH_SAMPLES);
+  if (playback_frames == 0) {
+    return true;
+  }
+  const size_t playback_samples =
+      static_cast<size_t>(playback_frames) * A21_AUDIO_PCM_FRAME_SAMPLES;
   if (!driver->play_pcm16(
           driver->ctx,
           runtime->slots[slot],
-          A21_AUDIO_PCM_FRAME_SAMPLES,
+          playback_samples,
           A21_AUDIO_PCM_SAMPLE_RATE_HZ,
           A21_SPEAKER_CHANNEL)) {
     runtime->driver_errors += 1;
@@ -97,8 +138,13 @@ inline bool a21SpeakerPumpTick(
   }
 
   runtime->next_slot = static_cast<uint8_t>((runtime->next_slot + 1) % A21_SPEAKER_SLOT_COUNT);
-  runtime->frames_played += 1;
+  runtime->frames_played += playback_frames;
   a21CopyString(runtime->last_trace_id, A21_TRACE_ID_CAP, frame->trace_id);
   a21CopyString(runtime->last_stream_id, A21_STREAM_ID_CAP, frame->stream_id);
-  return a21AudioPlaybackBufferPop(buffer, nullptr);
+  for (uint8_t i = 0; i < playback_frames; ++i) {
+    if (!a21AudioPlaybackBufferPop(buffer, nullptr)) {
+      return false;
+    }
+  }
+  return true;
 }
