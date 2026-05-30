@@ -79,11 +79,13 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_touch.h` keeps touch as a semantic runtime (`wake_or_listen`, `barge_in`) instead of exposing coordinates or hardware registers to Gateway. Real screen touch and top-sensor calibration remain future hardware work; this slice only proves the tested intent pipeline and preserves the source label.
 
-`a21_firmware_playback.h` owns the first playback state machine. It starts a stream when the local state becomes `speaking` with a `stream_id`, writes only once for the same stream, and immediately stops plus clears pending audio when the state changes to `interrupted`, `listening`, `error`, `local_fallback`, or another non-speaking state. The CoreS3 main loop currently uses a no-op playback driver, so this proves cancellation semantics without driving the speaker.
+`a21_firmware_playback.h` owns the first playback state machine. It starts a stream when the local state becomes `speaking` with a `stream_id`, writes only once for the same stream, and immediately stops plus clears pending audio when the state changes to `interrupted`, `listening`, `error`, `local_fallback`, or another non-speaking state. On CoreS3 the stop/clear callbacks now call `M5.Speaker.stop(...)` for the A21 speaker channel.
 
 `a21_firmware_audio_playback.h` owns the hardware-free playback chunk parser and bounded buffer. It accepts only A21 `audio.playback.chunk` envelopes for the current device, validates current Phase 5 PCM mono chunk metadata (`pcm_s16le`, 16 kHz, 20 ms), decodes each accepted payload into a fixed 640-byte PCM frame, tracks queue depth/drop counts, and clears the buffer when render state leaves `speaking`.
 
-The firmware still does not capture microphone audio, play Gateway audio samples, run VAD, or claim full-duplex behavior. The current audio WebSocket and playback paths are disciplined transport/control probes only.
+`a21_firmware_speaker.h` owns the first real speaker pump boundary. It consumes decoded PCM frames only while the render state is `speaking`, waits when the M5Unified speaker channel already has two queued buffers, copies each 20 ms frame into one of three stable slots, and then calls `M5.Speaker.playRaw(...)`. This avoids handing M5Unified a pointer to buffer memory that may be cleared on barge-in.
+
+The firmware still does not capture microphone audio, run VAD, prove acoustic echo cancellation, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path and still needs physical hardware acceptance before it counts as real user-facing playback.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

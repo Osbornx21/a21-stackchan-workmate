@@ -11,6 +11,7 @@
 #include "a21_firmware_network.h"
 #include "a21_firmware_playback.h"
 #include "a21_firmware_rgb.h"
+#include "a21_firmware_speaker.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_touch.h"
 #include "a21_firmware_wifi.h"
@@ -102,6 +103,7 @@ A21RGBRuntime g_rgb_runtime;
 A21TouchRuntime g_touch_runtime;
 A21PlaybackRuntime g_playback_runtime;
 A21AudioPlaybackBuffer g_audio_playback_buffer;
+A21SpeakerPumpRuntime g_speaker_pump_runtime;
 
 static constexpr size_t A21_ARDUINO_WS_TEXT_MESSAGE_CAP =
     A21_AUDIO_WS_TEXT_MESSAGE_CAP > A21_WS_TEXT_MESSAGE_CAP ? A21_AUDIO_WS_TEXT_MESSAGE_CAP : A21_WS_TEXT_MESSAGE_CAP;
@@ -306,17 +308,22 @@ A21TouchDriver g_touch_driver = {
 bool arduinoPlaybackStart(void* ctx, const char* stream_id) {
   (void)ctx;
   (void)stream_id;
-  return true;
+  if (!M5.Speaker.isEnabled()) {
+    return true;
+  }
+  return M5.Speaker.begin();
 }
 
 bool arduinoPlaybackStop(void* ctx, const char* reason) {
   (void)ctx;
   (void)reason;
+  M5.Speaker.stop(A21_SPEAKER_CHANNEL);
   return true;
 }
 
 bool arduinoPlaybackClear(void* ctx) {
   (void)ctx;
+  M5.Speaker.stop(A21_SPEAKER_CHANNEL);
   return true;
 }
 
@@ -325,6 +332,28 @@ A21PlaybackDriver g_playback_driver = {
     arduinoPlaybackStart,
     arduinoPlaybackStop,
     arduinoPlaybackClear,
+};
+
+size_t arduinoSpeakerQueued(void* ctx, uint8_t channel) {
+  (void)ctx;
+  return M5.Speaker.isPlaying(channel);
+}
+
+bool arduinoSpeakerPlayPCM16(void* ctx, const int16_t* samples, size_t sample_count, uint32_t sample_rate_hz, uint8_t channel) {
+  (void)ctx;
+  if (samples == nullptr || sample_count == 0 || !M5.Speaker.isEnabled()) {
+    return false;
+  }
+  if (!M5.Speaker.begin()) {
+    return false;
+  }
+  return M5.Speaker.playRaw(samples, sample_count, sample_rate_hz, false, 1, channel, false);
+}
+
+A21SpeakerDriver g_speaker_driver = {
+    nullptr,
+    arduinoSpeakerQueued,
+    arduinoSpeakerPlayPCM16,
 };
 
 void handleLocalControls(uint32_t now_ms) {
@@ -370,7 +399,10 @@ void drawIfChanged() {
 
 void setup() {
   auto config = M5.config();
+  config.internal_spk = true;
   M5.begin(config);
+  M5.Speaker.setVolume(96);
+  M5.Speaker.begin();
   a21InitFirmwareState(&g_state, A21_DEVICE_ID);
   a21InitNetworkConfig(&g_network);
   a21InitWiFiConfig(&g_wifi);
@@ -383,6 +415,7 @@ void setup() {
   a21InitTouchRuntime(&g_touch_runtime);
   a21InitPlaybackRuntime(&g_playback_runtime);
   a21InitAudioPlaybackBuffer(&g_audio_playback_buffer);
+  a21InitSpeakerPumpRuntime(&g_speaker_pump_runtime);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
@@ -407,6 +440,7 @@ void loop() {
       &g_audio_playback_buffer,
       now_ms);
   a21PlaybackRuntimeApplyState(&g_playback_runtime, &g_playback_driver, &g_state);
+  a21SpeakerPumpTick(&g_speaker_pump_runtime, &g_speaker_driver, &g_state, &g_audio_playback_buffer);
   a21AudioPlaybackBufferApplyState(&g_audio_playback_buffer, &g_state);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);

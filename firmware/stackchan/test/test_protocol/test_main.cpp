@@ -9,6 +9,7 @@
 #include "a21_firmware_playback.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_rgb.h"
+#include "a21_firmware_speaker.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_touch.h"
 #include "a21_firmware_gateway_ws.h"
@@ -261,6 +262,48 @@ void initFakePlaybackDriver(FakePlaybackDriver* fake, A21PlaybackDriver* driver)
   driver->start = fakePlaybackStart;
   driver->stop = fakePlaybackStop;
   driver->clear = fakePlaybackClear;
+}
+
+struct FakeSpeakerDriver {
+  int play_count;
+  uint8_t queued_count;
+  const int16_t* last_samples;
+  size_t last_sample_count;
+  uint32_t last_sample_rate_hz;
+  uint8_t last_channel;
+  bool fail_play;
+};
+
+size_t fakeSpeakerQueued(void* ctx, uint8_t channel) {
+  (void)channel;
+  FakeSpeakerDriver* driver = static_cast<FakeSpeakerDriver*>(ctx);
+  return driver->queued_count;
+}
+
+bool fakeSpeakerPlayPCM16(void* ctx, const int16_t* samples, size_t sample_count, uint32_t sample_rate_hz, uint8_t channel) {
+  FakeSpeakerDriver* driver = static_cast<FakeSpeakerDriver*>(ctx);
+  if (driver->fail_play) {
+    return false;
+  }
+  driver->play_count += 1;
+  driver->last_samples = samples;
+  driver->last_sample_count = sample_count;
+  driver->last_sample_rate_hz = sample_rate_hz;
+  driver->last_channel = channel;
+  return true;
+}
+
+void initFakeSpeakerDriver(FakeSpeakerDriver* fake, A21SpeakerDriver* driver) {
+  fake->play_count = 0;
+  fake->queued_count = 0;
+  fake->last_samples = nullptr;
+  fake->last_sample_count = 0;
+  fake->last_sample_rate_hz = 0;
+  fake->last_channel = 255;
+  fake->fail_play = false;
+  driver->ctx = fake;
+  driver->queued = fakeSpeakerQueued;
+  driver->play_pcm16 = fakeSpeakerPlayPCM16;
 }
 
 void fillPCM16SilenceBase64(char* output, size_t output_size) {
@@ -1107,6 +1150,142 @@ void test_audio_playback_buffer_pops_decoded_pcm_frame() {
   TEST_ASSERT_FALSE(a21AudioPlaybackBufferPop(&buffer, &frame));
 }
 
+void test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-speaker-pump");
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(1, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(0, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.frames_played);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES), static_cast<uint32_t>(fake.last_sample_count));
+  TEST_ASSERT_EQUAL_UINT32(A21_AUDIO_PCM_SAMPLE_RATE_HZ, fake.last_sample_rate_hz);
+  TEST_ASSERT_EQUAL_UINT8(A21_SPEAKER_CHANNEL, fake.last_channel);
+  TEST_ASSERT_NOT_NULL(fake.last_samples);
+  TEST_ASSERT_EQUAL_INT16(0, fake.last_samples[0]);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-speaker-pump", runtime.last_trace_id);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", runtime.last_stream_id);
+}
+
+void test_speaker_pump_waits_when_driver_queue_is_full() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+  fake.queued_count = A21_SPEAKER_MAX_DRIVER_QUEUE;
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(1, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_played);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.busy_ticks);
+}
+
+void test_speaker_pump_does_not_play_when_not_speaking() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  state.render_state = A21_RENDER_INTERRUPTED;
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(1, buffer.queued_chunks);
+}
+
+void test_speaker_pump_keeps_frame_when_stream_id_mismatches_state() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-other");
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(1, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_played);
+}
+
 void test_audio_ws_buffers_playback_chunk_without_error_state() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1512,6 +1691,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_playback_buffer_tracks_bounded_stream_chunks);
   RUN_TEST(test_audio_playback_buffer_peeks_decoded_pcm_frame);
   RUN_TEST(test_audio_playback_buffer_pops_decoded_pcm_frame);
+  RUN_TEST(test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room);
+  RUN_TEST(test_speaker_pump_waits_when_driver_queue_is_full);
+  RUN_TEST(test_speaker_pump_does_not_play_when_not_speaking);
+  RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);
   RUN_TEST(test_audio_ws_buffers_playback_chunk_without_error_state);
   RUN_TEST(test_audio_playback_buffer_clears_on_barge_in_state);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
