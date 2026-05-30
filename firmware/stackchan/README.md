@@ -37,7 +37,7 @@ Gateway configuration is currently compile-time and A21-only:
 - control path `/ws/control`
 - audio path `/ws/audio`
 
-Local hardware bring-up can override the Gateway host and Wi-Fi credentials through ignored `include/a21_firmware_secrets.local.h`. That header is included early enough to override the compile-time `A21_GATEWAY_HOST` macro, which is useful when a home Mac is at a temporary LAN address such as `192.168.1.20`. Do not put local SSID/password values in `platformio.ini`, docs, commits, or artifact names.
+Local hardware bring-up can override the Gateway host and Wi-Fi credentials through ignored `include/a21_firmware_secrets.local.h`. That header is included early enough to override the compile-time `A21_GATEWAY_HOST` macro, which is useful when a home Mac is at a temporary LAN address such as `192.168.1.20`. The native test environment defines `A21_IGNORE_LOCAL_SECRETS=1`, so local provisioning cannot change baseline unit-test expectations. Do not put local SSID/password values in `platformio.ini`, docs, commits, or artifact names.
 
 `a21_firmware_connection.h` owns the hardware-free connection lifecycle model:
 

@@ -58,6 +58,7 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `links2004/WebSockets @ 2.7.3`
 - native unit-test environment: `a21_stackchan_native` with Unity
 - `A21_GATEWAY_HOST` and `A21_GATEWAY_PORT=21080` build flags
+- `A21_IGNORE_LOCAL_SECRETS=1` in the native test environment, so ignored hardware bring-up credentials cannot change baseline tests
 - `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags
 - `scripts/a21_block_raw_upload.py` PlatformIO pre-build script for failing raw upload targets before flashing can start
 - `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata

@@ -28,7 +28,7 @@
 #define A21_DEVICE_ID "stackchan-001"
 #endif
 
-#if __has_include("a21_firmware_secrets.local.h")
+#if !defined(A21_IGNORE_LOCAL_SECRETS) && __has_include("a21_firmware_secrets.local.h")
 #include "a21_firmware_secrets.local.h"
 #endif
 
