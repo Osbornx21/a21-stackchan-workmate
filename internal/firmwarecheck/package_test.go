@@ -11,18 +11,17 @@ import (
 func TestPackageArtifactWritesReleaseIndexEntry(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
-	input := filepath.Join(dir, "firmware.bin")
-	if err := os.WriteFile(input, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	input := writePackageInput(t, dir, "a21-stackchan 0.1.0 m5stack-cores3 abcdef123456")
 	outputDir := filepath.Join(dir, "artifacts")
 
 	result, err := PackageArtifact(PackageOptions{
-		ManifestPath: manifest,
-		InputPath:    input,
-		OutputDir:    outputDir,
-		Commit:       "abcdef123456",
-		Timestamp:    "20260530-073000",
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       outputDir,
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
 	})
 	if err != nil {
 		t.Fatalf("PackageArtifact returned error: %v", err)
@@ -61,18 +60,17 @@ func TestPackageArtifactWritesReleaseIndexEntry(t *testing.T) {
 func TestPackageArtifactWritesPerArtifactReleaseManifest(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
-	input := filepath.Join(dir, "firmware.bin")
-	if err := os.WriteFile(input, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	input := writePackageInput(t, dir, "a21-stackchan 0.1.0 m5stack-cores3 abcdef123456")
 	outputDir := filepath.Join(dir, "artifacts")
 
 	result, err := PackageArtifact(PackageOptions{
-		ManifestPath: manifest,
-		InputPath:    input,
-		OutputDir:    outputDir,
-		Commit:       "abcdef123456",
-		Timestamp:    "20260530-073000",
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       outputDir,
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
 	})
 	if err != nil {
 		t.Fatalf("PackageArtifact returned error: %v", err)
@@ -107,20 +105,73 @@ func TestPackageArtifactWritesPerArtifactReleaseManifest(t *testing.T) {
 	}
 }
 
-func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
+func TestPackageArtifactWritesBuildProvenance(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
-	input := filepath.Join(dir, "firmware.bin")
+	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(input, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	outputDir := filepath.Join(dir, "artifacts")
+
+	result, err := PackageArtifact(PackageOptions{
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       outputDir,
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
+	})
+	if err != nil {
+		t.Fatalf("PackageArtifact returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(result.ReleaseManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var releaseManifest FirmwareReleaseManifest
+	if err := json.Unmarshal(data, &releaseManifest); err != nil {
+		t.Fatal(err)
+	}
+	if releaseManifest.Build.BuildSystem != "platformio" ||
+		releaseManifest.Build.PlatformIOEnv != "a21_stackchan_cores3" ||
+		releaseManifest.Build.PlatformIOBoard != "m5stack-cores3" ||
+		releaseManifest.Build.SourcePath != input ||
+		releaseManifest.Build.SourceName != "firmware.bin" {
+		t.Fatalf("release manifest build provenance mismatch: %#v", releaseManifest.Build)
+	}
+
+	indexData, err := os.ReadFile(result.ReleaseIndexPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry ReleaseIndexEntry
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(indexData))), &entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Build != releaseManifest.Build {
+		t.Fatalf("release index build provenance = %#v, want %#v", entry.Build, releaseManifest.Build)
+	}
+}
+
+func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	input := writePackageInput(t, dir, "a21-stackchan 0.1.0 m5stack-cores3 abcdef123456")
 
 	_, err := PackageArtifact(PackageOptions{
-		ManifestPath: manifest,
-		InputPath:    input,
-		OutputDir:    filepath.Join(dir, "x21-artifacts"),
-		Commit:       "abcdef123456",
-		Timestamp:    "20260530-073000",
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       filepath.Join(dir, "x21-artifacts"),
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
 	})
 	if err == nil {
 		t.Fatal("expected legacy output directory to be rejected")
@@ -128,4 +179,16 @@ func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
 	if !strings.Contains(err.Error(), "forbidden legacy identity") {
 		t.Fatalf("error = %q, want forbidden legacy identity", err)
 	}
+}
+
+func writePackageInput(t *testing.T, dir string, content string) string {
+	t.Helper()
+	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(input, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return input
 }

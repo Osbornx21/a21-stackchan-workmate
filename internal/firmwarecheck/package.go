@@ -14,13 +14,16 @@ import (
 
 const ReleaseIndexFileName = "a21-firmware-release-index.jsonl"
 const ReleaseManifestSchemaVersion = "a21.firmware.artifact_manifest.v1"
+const StackChanPlatformIOEnv = "a21_stackchan_cores3"
 
 type PackageOptions struct {
-	ManifestPath string
-	InputPath    string
-	OutputDir    string
-	Commit       string
-	Timestamp    string
+	ManifestPath    string
+	InputPath       string
+	OutputDir       string
+	Commit          string
+	Timestamp       string
+	PlatformIOEnv   string
+	PlatformIOBoard string
 }
 
 type PackageResult struct {
@@ -32,29 +35,39 @@ type PackageResult struct {
 }
 
 type ReleaseIndexEntry struct {
-	SchemaVersion string `json:"schema_version"`
-	FirmwareID    string `json:"firmware_id"`
-	Version       string `json:"version"`
-	Board         string `json:"board"`
-	Commit        string `json:"commit"`
-	Timestamp     string `json:"timestamp"`
-	ArtifactPath  string `json:"artifact_path"`
-	SHA256Path    string `json:"sha256_path"`
-	SHA256        string `json:"sha256"`
+	SchemaVersion string                  `json:"schema_version"`
+	FirmwareID    string                  `json:"firmware_id"`
+	Version       string                  `json:"version"`
+	Board         string                  `json:"board"`
+	Commit        string                  `json:"commit"`
+	Timestamp     string                  `json:"timestamp"`
+	ArtifactPath  string                  `json:"artifact_path"`
+	SHA256Path    string                  `json:"sha256_path"`
+	SHA256        string                  `json:"sha256"`
+	Build         FirmwareBuildProvenance `json:"build"`
 }
 
 type FirmwareReleaseManifest struct {
-	SchemaVersion string `json:"schema_version"`
-	Project       string `json:"project"`
-	FirmwareID    string `json:"firmware_id"`
-	Version       string `json:"version"`
-	Board         string `json:"board"`
-	Commit        string `json:"commit"`
-	Timestamp     string `json:"timestamp"`
-	ArtifactPath  string `json:"artifact_path"`
-	ArtifactName  string `json:"artifact_name"`
-	SHA256Path    string `json:"sha256_path"`
-	SHA256        string `json:"sha256"`
+	SchemaVersion string                  `json:"schema_version"`
+	Project       string                  `json:"project"`
+	FirmwareID    string                  `json:"firmware_id"`
+	Version       string                  `json:"version"`
+	Board         string                  `json:"board"`
+	Commit        string                  `json:"commit"`
+	Timestamp     string                  `json:"timestamp"`
+	ArtifactPath  string                  `json:"artifact_path"`
+	ArtifactName  string                  `json:"artifact_name"`
+	SHA256Path    string                  `json:"sha256_path"`
+	SHA256        string                  `json:"sha256"`
+	Build         FirmwareBuildProvenance `json:"build"`
+}
+
+type FirmwareBuildProvenance struct {
+	BuildSystem     string `json:"build_system"`
+	PlatformIOEnv   string `json:"platformio_env"`
+	PlatformIOBoard string `json:"platformio_board"`
+	SourcePath      string `json:"source_path"`
+	SourceName      string `json:"source_name"`
 }
 
 func PackageArtifact(options PackageOptions) (PackageResult, error) {
@@ -81,6 +94,10 @@ func PackageArtifact(options PackageOptions) (PackageResult, error) {
 		return PackageResult{}, err
 	}
 	manifest := manifestResult.Manifest
+	build, err := packageBuildProvenance(options, manifest)
+	if err != nil {
+		return PackageResult{}, err
+	}
 	artifactName := fmt.Sprintf("%s-%s-%s-%s-%s.bin", manifest.ArtifactPrefix, manifest.Version, manifest.Board, options.Commit, options.Timestamp)
 	artifactPath := filepath.Join(options.OutputDir, artifactName)
 	checksum, err := copyWithSHA256(options.InputPath, artifactPath)
@@ -101,6 +118,7 @@ func PackageArtifact(options PackageOptions) (PackageResult, error) {
 		ArtifactPath:  artifactPath,
 		SHA256Path:    shaPath,
 		SHA256:        checksum,
+		Build:         build,
 	}
 	releaseManifestPath := artifactPath + ".manifest.json"
 	if err := writeFirmwareReleaseManifest(releaseManifestPath, manifest, entry); err != nil {
@@ -132,12 +150,71 @@ func writeFirmwareReleaseManifest(path string, manifest Manifest, entry ReleaseI
 		ArtifactName:  filepath.Base(entry.ArtifactPath),
 		SHA256Path:    entry.SHA256Path,
 		SHA256:        entry.SHA256,
+		Build:         entry.Build,
 	}
 	data, err := json.MarshalIndent(releaseManifest, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+func packageBuildProvenance(options PackageOptions, manifest Manifest) (FirmwareBuildProvenance, error) {
+	if options.PlatformIOEnv == "" {
+		return FirmwareBuildProvenance{}, fmt.Errorf("platformio env is required for firmware package provenance")
+	}
+	if options.PlatformIOEnv != StackChanPlatformIOEnv {
+		return FirmwareBuildProvenance{}, fmt.Errorf("platformio env %q does not match A21 StackChan env %q", options.PlatformIOEnv, StackChanPlatformIOEnv)
+	}
+	if options.PlatformIOBoard == "" {
+		return FirmwareBuildProvenance{}, fmt.Errorf("platformio board is required for firmware package provenance")
+	}
+	if options.PlatformIOBoard != manifest.Board {
+		return FirmwareBuildProvenance{}, fmt.Errorf("platformio board %q does not match manifest board %q", options.PlatformIOBoard, manifest.Board)
+	}
+	sourceName := filepath.Base(options.InputPath)
+	build := FirmwareBuildProvenance{
+		BuildSystem:     "platformio",
+		PlatformIOEnv:   options.PlatformIOEnv,
+		PlatformIOBoard: options.PlatformIOBoard,
+		SourcePath:      options.InputPath,
+		SourceName:      sourceName,
+	}
+	if err := validateFirmwareBuildProvenance(build, manifest); err != nil {
+		return FirmwareBuildProvenance{}, err
+	}
+	return build, nil
+}
+
+func validateFirmwareBuildProvenance(build FirmwareBuildProvenance, manifest Manifest) error {
+	joined := strings.ToLower(strings.Join([]string{
+		build.BuildSystem,
+		build.PlatformIOEnv,
+		build.PlatformIOBoard,
+		build.SourcePath,
+		build.SourceName,
+	}, " "))
+	if strings.Contains(joined, "x21") || strings.Contains(joined, "v21") {
+		return fmt.Errorf("firmware build provenance contains forbidden legacy identity")
+	}
+	if build.BuildSystem != "platformio" {
+		return fmt.Errorf("firmware build system must be platformio")
+	}
+	if build.PlatformIOEnv != StackChanPlatformIOEnv {
+		return fmt.Errorf("firmware platformio env %q does not match %q", build.PlatformIOEnv, StackChanPlatformIOEnv)
+	}
+	if build.PlatformIOBoard != manifest.Board {
+		return fmt.Errorf("firmware platformio board %q does not match manifest board %q", build.PlatformIOBoard, manifest.Board)
+	}
+	if build.SourceName != "firmware.bin" || filepath.Base(build.SourcePath) != build.SourceName {
+		return fmt.Errorf("firmware build source must be PlatformIO firmware.bin")
+	}
+	normalizedSource := filepath.ToSlash(filepath.Clean(build.SourcePath))
+	requiredSegment := "/.pio/build/" + build.PlatformIOEnv + "/" + build.SourceName
+	if !strings.HasSuffix(normalizedSource, requiredSegment) && normalizedSource != strings.TrimPrefix(requiredSegment, "/") {
+		return fmt.Errorf("firmware build source must come from .pio/build/%s/firmware.bin", build.PlatformIOEnv)
+	}
+	return nil
 }
 
 func appendReleaseIndexEntry(path string, entry ReleaseIndexEntry) error {

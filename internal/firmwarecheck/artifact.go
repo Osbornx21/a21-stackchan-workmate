@@ -21,15 +21,16 @@ type ArtifactOptions struct {
 }
 
 type ArtifactResult struct {
-	Manifest            Manifest `json:"manifest"`
-	ArtifactPath        string   `json:"artifact_path"`
-	SHA256Path          string   `json:"sha256_path"`
-	SHA256              string   `json:"sha256"`
-	Commit              string   `json:"commit"`
-	Timestamp           string   `json:"timestamp"`
-	ReleaseManifestPath string   `json:"release_manifest_path,omitempty"`
-	ReleaseIndexPath    string   `json:"release_index_path,omitempty"`
-	OK                  bool     `json:"ok"`
+	Manifest            Manifest                 `json:"manifest"`
+	ArtifactPath        string                   `json:"artifact_path"`
+	SHA256Path          string                   `json:"sha256_path"`
+	SHA256              string                   `json:"sha256"`
+	Commit              string                   `json:"commit"`
+	Timestamp           string                   `json:"timestamp"`
+	Build               *FirmwareBuildProvenance `json:"build,omitempty"`
+	ReleaseManifestPath string                   `json:"release_manifest_path,omitempty"`
+	ReleaseIndexPath    string                   `json:"release_index_path,omitempty"`
+	OK                  bool                     `json:"ok"`
 }
 
 type UploadCheckOptions struct {
@@ -100,16 +101,23 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 	}
 	if options.RequireReleaseIndex {
 		releaseIndexPath := filepath.Join(filepath.Dir(options.ArtifactPath), ReleaseIndexFileName)
-		if err := validateReleaseIndexEntry(releaseIndexPath, result); err != nil {
+		build, err := validateReleaseIndexEntry(releaseIndexPath, result)
+		if err != nil {
 			return ArtifactResult{}, err
 		}
+		result.Build = &build
 		result.ReleaseIndexPath = releaseIndexPath
 	}
 	if options.RequireReleaseManifest {
 		releaseManifestPath := options.ArtifactPath + ".manifest.json"
-		if err := validateArtifactReleaseManifest(releaseManifestPath, result); err != nil {
+		build, err := validateArtifactReleaseManifest(releaseManifestPath, result)
+		if err != nil {
 			return ArtifactResult{}, err
 		}
+		if result.Build != nil && *result.Build != build {
+			return ArtifactResult{}, fmt.Errorf("release index and artifact release manifest build provenance mismatch")
+		}
+		result.Build = &build
 		result.ReleaseManifestPath = releaseManifestPath
 	}
 	return result, nil
@@ -167,10 +175,10 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 	}, nil
 }
 
-func validateReleaseIndexEntry(path string, artifact ArtifactResult) error {
+func validateReleaseIndexEntry(path string, artifact ArtifactResult) (FirmwareBuildProvenance, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("release index missing or unreadable: %w", err)
+		return FirmwareBuildProvenance{}, fmt.Errorf("release index missing or unreadable: %w", err)
 	}
 	expectedArtifactName := filepath.Base(artifact.ArtifactPath)
 	expectedSHAName := filepath.Base(artifact.SHA256Path)
@@ -181,7 +189,7 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) error {
 		}
 		var entry ReleaseIndexEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			return fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
+			return FirmwareBuildProvenance{}, fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
 		}
 		if filepath.Base(entry.ArtifactPath) != expectedArtifactName {
 			continue
@@ -194,21 +202,24 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) error {
 			entry.Timestamp != artifact.Timestamp ||
 			filepath.Base(entry.SHA256Path) != expectedSHAName ||
 			!strings.EqualFold(entry.SHA256, artifact.SHA256) {
-			return fmt.Errorf("release index entry for %q does not match artifact identity or checksum", expectedArtifactName)
+			return FirmwareBuildProvenance{}, fmt.Errorf("release index entry for %q does not match artifact identity or checksum", expectedArtifactName)
 		}
-		return nil
+		if err := validateFirmwareBuildProvenance(entry.Build, artifact.Manifest); err != nil {
+			return FirmwareBuildProvenance{}, fmt.Errorf("release index build provenance invalid: %w", err)
+		}
+		return entry.Build, nil
 	}
-	return fmt.Errorf("release index has no entry for artifact %q", expectedArtifactName)
+	return FirmwareBuildProvenance{}, fmt.Errorf("release index has no entry for artifact %q", expectedArtifactName)
 }
 
-func validateArtifactReleaseManifest(path string, artifact ArtifactResult) error {
+func validateArtifactReleaseManifest(path string, artifact ArtifactResult) (FirmwareBuildProvenance, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("artifact release manifest missing or unreadable: %w", err)
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest missing or unreadable: %w", err)
 	}
 	var releaseManifest FirmwareReleaseManifest
 	if err := json.Unmarshal(data, &releaseManifest); err != nil {
-		return fmt.Errorf("artifact release manifest is invalid: %w", err)
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest is invalid: %w", err)
 	}
 	expectedArtifactName := filepath.Base(artifact.ArtifactPath)
 	expectedSHAName := filepath.Base(artifact.SHA256Path)
@@ -223,7 +234,7 @@ func validateArtifactReleaseManifest(path string, artifact ArtifactResult) error
 		filepath.Base(releaseManifest.ArtifactPath) != expectedArtifactName ||
 		filepath.Base(releaseManifest.SHA256Path) != expectedSHAName ||
 		!strings.EqualFold(releaseManifest.SHA256, artifact.SHA256) {
-		return fmt.Errorf("artifact release manifest for %q does not match artifact identity or checksum", expectedArtifactName)
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest for %q does not match artifact identity or checksum", expectedArtifactName)
 	}
 	joined := strings.ToLower(strings.Join([]string{
 		releaseManifest.Project,
@@ -234,9 +245,12 @@ func validateArtifactReleaseManifest(path string, artifact ArtifactResult) error
 		releaseManifest.ArtifactName,
 	}, " "))
 	if strings.Contains(joined, "x21") || strings.Contains(joined, "v21") {
-		return fmt.Errorf("artifact release manifest contains forbidden legacy identity")
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest contains forbidden legacy identity")
 	}
-	return nil
+	if err := validateFirmwareBuildProvenance(releaseManifest.Build, artifact.Manifest); err != nil {
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest build provenance invalid: %w", err)
+	}
+	return releaseManifest.Build, nil
 }
 
 type parsedArtifactName struct {

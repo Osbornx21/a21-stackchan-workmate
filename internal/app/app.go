@@ -695,11 +695,13 @@ func runFirmwareCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func runFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := firmwarecheck.PackageOptions{
-		ManifestPath: "firmware/stackchan/a21-firmware.json",
-		InputPath:    "firmware/stackchan/.pio/build/a21_stackchan_cores3/firmware.bin",
-		OutputDir:    "firmware/artifacts",
-		Commit:       "unknown",
-		Timestamp:    time.Now().Format("20060102-150405"),
+		ManifestPath:    "firmware/stackchan/a21-firmware.json",
+		InputPath:       "firmware/stackchan/.pio/build/a21_stackchan_cores3/firmware.bin",
+		OutputDir:       "firmware/artifacts",
+		Commit:          "unknown",
+		Timestamp:       time.Now().Format("20060102-150405"),
+		PlatformIOEnv:   firmwarecheck.StackChanPlatformIOEnv,
+		PlatformIOBoard: "m5stack-cores3",
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -741,6 +743,20 @@ func runFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
 			}
 			i++
 			options.Timestamp = args[i]
+		case "--platformio-env":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--platformio-env requires a value")
+				return 2
+			}
+			i++
+			options.PlatformIOEnv = args[i]
+		case "--platformio-board":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--platformio-board requires a value")
+				return 2
+			}
+			i++
+			options.PlatformIOBoard = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown firmware-package option %q\n", args[i])
 			return 2

@@ -250,6 +250,7 @@ func writeDeviceIdentityArtifact(t *testing.T, artifactPath string, content []by
 		ArtifactPath:  artifactPath,
 		SHA256Path:    artifactPath + ".sha256",
 		SHA256:        checksum,
+		Build:         testBuildProvenance(artifactPath),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +266,7 @@ func writeDeviceIdentityArtifact(t *testing.T, artifactPath string, content []by
 		ArtifactName:  filepath.Base(artifactPath),
 		SHA256Path:    artifactPath + ".sha256",
 		SHA256:        checksum,
+		Build:         testBuildProvenance(artifactPath),
 	}, "", "  ")
 	if err != nil {
 		t.Fatal(err)

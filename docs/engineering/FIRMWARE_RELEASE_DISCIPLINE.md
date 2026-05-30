@@ -143,16 +143,24 @@ Only packaged artifacts should be considered candidates for future upload.
 firmware/artifacts/a21-firmware-release-index.jsonl
 ```
 
-Each line records the A21 firmware ID, version, board, git commit, build timestamp, artifact path, checksum path, and SHA-256. The index is a traceability ledger, not flash permission. It makes wrong-package investigations concrete: the candidate binary must be explainable by an A21 package record rather than by a loose PlatformIO `firmware.bin`.
+Each line records the A21 firmware ID, version, board, git commit, build timestamp, artifact path, checksum path, SHA-256, and build provenance. The index is a traceability ledger, not flash permission. It makes wrong-package investigations concrete: the candidate binary must be explainable by an A21 package record rather than by a loose PlatformIO `firmware.bin`.
 
-The per-artifact `.manifest.json` records the same identity and checksum beside the binary. Upload-path guards require it so the release candidate is self-describing even before consulting the directory-level index.
+The per-artifact `.manifest.json` records the same identity, checksum, and build provenance beside the binary. Upload-path guards require it so the release candidate is self-describing even before consulting the directory-level index.
+
+Build provenance must say:
+
+- `build_system`: `platformio`
+- `platformio_env`: `a21_stackchan_cores3`
+- `platformio_board`: `m5stack-cores3`
+- `source_path`: the PlatformIO source binary under `.pio/build/a21_stackchan_cores3/firmware.bin`
+- `source_name`: `firmware.bin`
 
 Packaging rejects input or output paths containing forbidden X21/V21 identities so A21 release candidates cannot be produced from legacy build folders or written into legacy artifact directories.
 
 Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless:
 
-- the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256
-- the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256
+- the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
+- the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 
 ## Artifact Guard
 
@@ -180,8 +188,9 @@ The guard verifies:
 - artifact filename does not contain forbidden X21/V21 identities
 - upload-path guards require a matching `a21-firmware-release-index.jsonl` entry in the artifact directory
 - upload-path guards require a matching sibling `.manifest.json` artifact manifest
+- upload-path guards require both release records to agree on PlatformIO build provenance
 
-The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. A package is not a valid A21 candidate unless the filename, checksum, artifact manifest, release index, firmware manifest, and binary identity all agree.
+The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. Build-provenance checks close the next gap: a package is not a valid A21 candidate unless the filename, checksum, artifact manifest, release index, firmware manifest, binary identity, PlatformIO environment, and PlatformIO board all agree.
 
 ## Upload Guard
 
