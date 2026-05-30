@@ -452,7 +452,9 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 	realtimeAudioKeys := make(map[string]struct{})
 	defer s.closeRealtimeAudioSessions(context.Background(), realtimeAudioKeys)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writeMu := &sync.Mutex{}
 	for {
 		var frame protocol.Envelope
 		if err := wsjson.Read(ctx, conn, &frame); err != nil {
@@ -467,15 +469,15 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		if s.shouldBargeIn(frame, traceID, sessionID, ingress) {
 			events := s.audioBargeInEvents(frame, traceID, sessionID)
 			for _, event := range events {
-				if err := wsjson.Write(ctx, conn, event); err != nil {
+				if err := writeAudioEnvelope(ctx, conn, writeMu, event); err != nil {
 					return
 				}
 			}
 			continue
 		}
-		if events, handled := s.realtimeAudioEvents(ctx, frame, traceID, sessionID, ingress, realtimeAudioKeys); handled {
+		if events, handled := s.realtimeAudioEvents(ctx, conn, writeMu, frame, traceID, sessionID, ingress, realtimeAudioKeys); handled {
 			for _, event := range events {
-				if err := wsjson.Write(ctx, conn, event); err != nil {
+				if err := writeAudioEnvelope(ctx, conn, writeMu, event); err != nil {
 					return
 				}
 			}
@@ -487,12 +489,12 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 			{State: protocol.ExpressionSpeaking, Mode: protocol.ModeWorkmate, Text: "mock playback chunk", Final: true, StreamID: streamID},
 		})
 		for _, event := range events {
-			if err := wsjson.Write(ctx, conn, event); err != nil {
+			if err := writeAudioEnvelope(ctx, conn, writeMu, event); err != nil {
 				return
 			}
 		}
 		playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID, streamID)
-		if err := wsjson.Write(ctx, conn, playback); err != nil {
+		if err := writeAudioEnvelope(ctx, conn, writeMu, playback); err != nil {
 			return
 		}
 		s.setActiveStream(traceID, sessionID, frame.DeviceID, streamID)
@@ -536,7 +538,7 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 	return result
 }
 
-func (s *Server) realtimeAudioEvents(ctx context.Context, frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult, connectionSessionKeys map[string]struct{}) ([]protocol.Envelope, bool) {
+func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult, connectionSessionKeys map[string]struct{}) ([]protocol.Envelope, bool) {
 	provider, ok := s.voice.(providers.RealtimeVoiceProvider)
 	if !ok || frame.Kind != protocol.KindAudioFrame {
 		return nil, false
@@ -584,6 +586,7 @@ func (s *Server) realtimeAudioEvents(ctx context.Context, frame protocol.Envelop
 		session = created
 		s.setRealtimeAudioSession(traceID, sessionID, frame.DeviceID, session)
 		connectionSessionKeys[key] = struct{}{}
+		s.startRealtimeAudioDownlinkPump(ctx, conn, writeMu, frame.DeviceID, traceID, sessionID, session)
 		started = true
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.realtime_session.start", s.now().UnixMilli())
 	} else {
@@ -603,6 +606,42 @@ func (s *Server) realtimeAudioEvents(ctx context.Context, frame protocol.Envelop
 		}), true
 	}
 	return nil, true
+}
+
+func (s *Server) startRealtimeAudioDownlinkPump(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, deviceID string, traceID string, sessionID string, session providers.RealtimeVoiceSession) {
+	events := session.Events()
+	if events == nil {
+		return
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				outputTraceID := firstNonEmpty(event.Session.TraceID, traceID)
+				outputSessionID := firstNonEmpty(event.Session.SessionID, sessionID)
+				outputDeviceID := firstNonEmpty(event.Session.DeviceID, deviceID)
+				payload := voiceEventToControlPayload(event, protocol.ModeWorkmate)
+				if payload.State == protocol.ExpressionSpeaking && payload.StreamID != "" {
+					s.setActiveStream(outputTraceID, outputSessionID, outputDeviceID, payload.StreamID)
+				}
+				s.metrics.realtimeAudioDownlinkEvents.Inc()
+				s.recordTrace(outputTraceID, outputSessionID, outputDeviceID, "provider.audio.downlink", s.now().UnixMilli())
+				envelopes := s.realtimeOutputSequence(outputDeviceID, outputTraceID, outputSessionID, []realtimeVoiceOutput{
+					{Control: payload, Audio: event.Audio},
+				})
+				for _, envelope := range envelopes {
+					if err := writeAudioEnvelope(ctx, conn, writeMu, envelope); err != nil {
+						return
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (s *Server) shouldBargeIn(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) bool {
@@ -1167,6 +1206,21 @@ func streamStateKey(traceID string, sessionID string, deviceID string) string {
 	default:
 		return "a21-audio-stream-default"
 	}
+}
+
+func writeAudioEnvelope(ctx context.Context, conn *websocket.Conn, mu *sync.Mutex, event protocol.Envelope) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return wsjson.Write(ctx, conn, event)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

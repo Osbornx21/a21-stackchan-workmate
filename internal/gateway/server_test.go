@@ -1435,6 +1435,81 @@ func TestAudioWebSocketClosesRealtimeProviderSessionWhenSocketCloses(t *testing.
 	}
 }
 
+func TestAudioWebSocketStreamsRealtimeProviderOutputEventsAfterCommit(t *testing.T) {
+	provider := &capturingRealtimeAudioProvider{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeAudioFrameEnvelope(t, ctx, conn, 1, "a21-trace-realtime-downlink", "a21-session-realtime-downlink", pcm16Base64WithSample(12000))
+	readControlEvents(t, ctx, conn, 1)
+	writeAudioFrameEnvelope(t, ctx, conn, 2, "a21-trace-realtime-downlink", "a21-session-realtime-downlink", pcm16Base64WithSample(0))
+	writeAudioFrameEnvelope(t, ctx, conn, 3, "a21-trace-realtime-downlink", "a21-session-realtime-downlink", pcm16Base64WithSample(0))
+	readControlEvents(t, ctx, conn, 1)
+
+	provider.sessionHandle.events <- providers.VoiceEvent{
+		Session:  provider.session,
+		Kind:     providers.VoiceEventSpeaking,
+		Final:    false,
+		StreamID: "a21-provider-stream-001",
+		Audio: &providers.VoiceAudioChunk{
+			Codec:        string(protocol.AudioCodecPCMS16LE),
+			SampleRateHz: 16000,
+			Channels:     1,
+			DurationMS:   20,
+			DataBase64:   "AAAA",
+		},
+	}
+
+	events := readControlEvents(t, ctx, conn, 1)
+	var speaking protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &speaking); err != nil {
+		t.Fatal(err)
+	}
+	if speaking.State != protocol.ExpressionSpeaking || speaking.StreamID != "a21-provider-stream-001" {
+		t.Fatalf("speaking payload = %+v", speaking)
+	}
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("playback kind = %q, want audio.playback.chunk", playback.Kind)
+	}
+	var chunk protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
+		t.Fatal(err)
+	}
+	if chunk.StreamID != "a21-provider-stream-001" || chunk.DataBase64 != "AAAA" {
+		t.Fatalf("chunk = %+v", chunk)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-realtime-downlink", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"provider.audio.downlink", "audio.playback.chunk.sent"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	if !strings.Contains(metricsRec.Body.String(), "a21_realtime_audio_downlink_events_total 1") {
+		t.Fatalf("metrics missing realtime downlink count:\n%s", metricsRec.Body.String())
+	}
+}
+
 func writeDeviceEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope, payload protocol.DeviceEventPayload) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -1657,7 +1732,7 @@ func (p *capturingRealtimeAudioProvider) Name() string {
 func (p *capturingRealtimeAudioProvider) StartRealtimeSession(ctx context.Context, session providers.VoiceSession) (providers.RealtimeVoiceSession, error) {
 	p.startCalls++
 	p.session = session
-	p.sessionHandle = &capturingRealtimeVoiceSession{closed: p.closed}
+	p.sessionHandle = &capturingRealtimeVoiceSession{closed: p.closed, events: make(chan providers.VoiceEvent, 4)}
 	return p.sessionHandle, ctx.Err()
 }
 
@@ -1670,6 +1745,7 @@ type capturingRealtimeVoiceSession struct {
 	commitCalls int
 	cancelCalls int
 	closed      chan struct{}
+	events      chan providers.VoiceEvent
 }
 
 func (s *capturingRealtimeVoiceSession) SendAudio(ctx context.Context, chunk protocol.AudioChunk) error {
@@ -1695,6 +1771,10 @@ func (s *capturingRealtimeVoiceSession) Close(ctx context.Context) error {
 		}
 	}
 	return ctx.Err()
+}
+
+func (s *capturingRealtimeVoiceSession) Events() <-chan providers.VoiceEvent {
+	return s.events
 }
 
 type countingV21Client struct {

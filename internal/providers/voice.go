@@ -94,5 +94,6 @@ type RealtimeVoiceSession interface {
 	SendAudio(ctx context.Context, chunk protocol.AudioChunk) error
 	CommitAndCreateResponse(ctx context.Context) error
 	Cancel(ctx context.Context, req VoiceCancelRequest) error
+	Events() <-chan VoiceEvent
 	Close(ctx context.Context) error
 }

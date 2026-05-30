@@ -31,6 +31,8 @@ Gateway now exposes the first provider-neutral realtime session boundary:
 
 These endpoints still run through the A21 `VoiceProvider` interface and are safe with the default mock Gateway provider. They add session/cancel trace markers and provider latency histograms without allowing professional-mode evidence work to disappear into an opaque realtime provider.
 
+The audio WebSocket realtime path now records provider audio uplink and downlink separately. Uplink covers VAD-driven provider session start, speech-frame append, and commit on speech end. Downlink covers provider `VoiceEvent` output streaming back to A21 `control.event` and `audio.playback.chunk` envelopes.
+
 ## Trace Fields
 
 Future runtime spans should include:
@@ -74,6 +76,13 @@ Current mock trace events include:
 - `provider.cancel.start`
 - `provider.cancel.end`
 - `provider.cancel.error`
+- `provider.realtime_session.start`
+- `provider.realtime_session.error`
+- `provider.audio.append`
+- `provider.audio.append.error`
+- `provider.audio.commit`
+- `provider.audio.commit.error`
+- `provider.audio.downlink`
 - `audio.playback.chunk.sent`
 - `v21.query.start`
 - `v21.query.first_result`
@@ -121,6 +130,9 @@ Current Prometheus metrics:
 - `a21_device_identity_invalid_total`
 - `a21_realtime_session_total`
 - `a21_realtime_session_cancel_total`
+- `a21_realtime_audio_uplink_frames_total`
+- `a21_realtime_audio_commit_total`
+- `a21_realtime_audio_downlink_events_total`
 - `a21_voice_provider_start_turn_ms_bucket`
 - `a21_voice_provider_cancel_ms_bucket`
 - `a21_v21_query_ms_bucket`
@@ -133,8 +145,6 @@ Future Prometheus metrics should include:
 - `a21_first_audio_ms_bucket`
 - `a21_audio_uplink_ms_bucket`
 - `a21_audio_downlink_ms_bucket`
-- `a21_realtime_audio_uplink_frames_total`
-- `a21_realtime_audio_commit_total`
 - `a21_vad_duration_ms_bucket`
 - `a21_tts_first_chunk_ms_bucket`
 - `a21_barge_in_total`

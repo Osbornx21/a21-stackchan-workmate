@@ -13,6 +13,7 @@ Gateway now detects whether the selected voice provider implements the A21 realt
 - `CommitAndCreateResponse`
 - `Cancel`
 - `Close`
+- `Events` is consumed by the follow-on downlink slice
 
 When that interface exists, Gateway `/ws/audio`:
 
@@ -43,6 +44,6 @@ Metrics:
 
 ## Boundaries
 
-This phase does not read provider output events yet and does not claim real first-audio latency. Provider audio downlink still enters A21 only through existing `VoiceEvent.Audio` to `audio.playback.chunk` mapping when a provider path produces those events.
+Phase 7C now reads provider output events through the same A21 realtime session interface. This Phase 7B document remains the uplink contract: it establishes provider-neutral audio append and commit. It still does not claim real first-audio latency by itself.
 
 This phase does not prove real StackChan microphone capture, acoustic echo cancellation, speaker playback, or hardware full-duplex. It only establishes the provider-neutral uplink control point that those future slices must use.

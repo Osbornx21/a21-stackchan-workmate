@@ -97,6 +97,7 @@ Phase 2B supports:
 - device event `touch.barge_in` -> same interruption path as `interrupt`, with optional `touch_source`
 - audio frame -> mock listening ack, mock speaking state with `stream_id`, then `audio.playback.chunk`
 - audio frame with a realtime-capable provider -> Gateway starts or reuses a provider realtime session, forwards detected speech frames, and commits on `vad.speech.end`
+- realtime provider output event -> Gateway emits A21 `control.event` and, when audio exists, A21 `audio.playback.chunk`
 
 Firmware-originated `device.event` payloads may also carry build identity:
 
@@ -125,6 +126,8 @@ Future control events should still cover explicit playback start/stop, subtitle 
 Provider audio deltas are translated back into A21 voice/audio events before any Gateway or device-facing code sees them. For example, OpenAI `response.output_audio.delta` is mapped inside `internal/providers` to an A21 `VoiceEvent` with `VoiceAudioChunk`; firmware still receives only A21 downlink playback chunks and semantic control events.
 
 Provider audio uplink is also provider-neutral. Gateway `/ws/audio` may forward `audio.frame` payloads to a provider that implements the A21 realtime session interface, but firmware still sends only A21 `audio.frame` envelopes and never receives provider-specific session commands.
+
+Provider audio downlink uses the same provider-neutral session interface. Gateway consumes `VoiceEvent` values from `Events()` and serializes them back to the audio WebSocket as A21 envelopes. OpenAI realtime `response.output_audio.delta` is currently read and mapped inside the provider adapter before Gateway sees it.
 
 The first realtime session HTTP boundary is:
 

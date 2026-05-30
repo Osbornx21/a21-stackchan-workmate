@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"a21.local/a21/internal/protocol"
 )
@@ -106,6 +107,47 @@ func TestOpenAIRealtimeVoiceProviderSessionWritesUpdateAudioCommitAndCancel(t *t
 				t.Fatalf("provider event leaked %q: %s", forbidden, rendered)
 			}
 		}
+	}
+}
+
+func TestOpenAIRealtimeVoiceProviderSessionReadsAudioDeltaEvents(t *testing.T) {
+	payload := base64.StdEncoding.EncodeToString([]byte{7, 8, 9})
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{
+			{
+				"type":        "response.output_audio.delta",
+				"delta":       payload,
+				"response_id": "a21-openai-response-001",
+			},
+		},
+	}
+	provider := NewOpenAIRealtimeVoiceProvider(OpenAIRealtimeVoiceProviderConfig{
+		APIKey: "sk-a21-secret",
+		Model:  "gpt-realtime-2",
+	}, fakeRealtimeDialer{conn: conn})
+
+	session, err := provider.StartRealtimeSession(context.Background(), VoiceSession{
+		TraceID:   "a21-trace-openai-events",
+		SessionID: "a21-session-openai-events",
+		DeviceID:  "stackchan-001",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case event := <-session.Events():
+		if event.Kind != VoiceEventSpeaking || event.StreamID != "a21-openai-response-001" {
+			t.Fatalf("event = %+v", event)
+		}
+		if event.Audio == nil || event.Audio.DataBase64 != payload || event.Audio.SampleRateHz != 24000 {
+			t.Fatalf("audio = %+v", event.Audio)
+		}
+		if event.Session.TraceID != "a21-trace-openai-events" || event.Session.DeviceID != "stackchan-001" {
+			t.Fatalf("session = %+v", event.Session)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for provider audio delta event")
 	}
 }
 

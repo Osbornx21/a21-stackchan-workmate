@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -186,8 +187,10 @@ func TestRealtimeWebSocketAdapterPassesHeadersToDialerOnly(t *testing.T) {
 }
 
 type fakeRealtimeConn struct {
-	messages []map[string]any
-	closed   bool
+	messages       []map[string]any
+	serverMessages []map[string]any
+	readIndex      int
+	closed         bool
 }
 
 func (c *fakeRealtimeConn) WriteJSON(_ context.Context, value any) error {
@@ -201,6 +204,18 @@ func (c *fakeRealtimeConn) WriteJSON(_ context.Context, value any) error {
 	}
 	c.messages = append(c.messages, message)
 	return nil
+}
+
+func (c *fakeRealtimeConn) ReadJSON(_ context.Context, value any) error {
+	if c.readIndex >= len(c.serverMessages) {
+		return io.EOF
+	}
+	encoded, err := json.Marshal(c.serverMessages[c.readIndex])
+	if err != nil {
+		return err
+	}
+	c.readIndex++
+	return json.Unmarshal(encoded, value)
 }
 
 func (c *fakeRealtimeConn) Close(_ context.Context) error {

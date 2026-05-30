@@ -8,25 +8,26 @@ import (
 )
 
 type metrics struct {
-	registry                   *prometheus.Registry
-	mockTurnTotal              prometheus.Counter
-	bargeInTotal               prometheus.Counter
-	audioFrameTotal            prometheus.Counter
-	audioPlaybackChunkTotal    prometheus.Counter
-	audioIngressFramesTotal    prometheus.Counter
-	audioIngressDroppedTotal   prometheus.Counter
-	audioIngressBufferDepth    prometheus.Gauge
-	vadSpeechStartTotal        prometheus.Counter
-	vadSpeechEndTotal          prometheus.Counter
-	deviceIdentityInvalidTotal prometheus.Counter
-	realtimeSessionTotal       prometheus.Counter
-	realtimeSessionCancelTotal prometheus.Counter
-	realtimeAudioUplinkFrames  prometheus.Counter
-	realtimeAudioCommitTotal   prometheus.Counter
-	voiceProviderStartTurnMS   prometheus.Histogram
-	voiceProviderCancelMS      prometheus.Histogram
-	v21QueryMS                 prometheus.Histogram
-	wsConnections              *prometheus.GaugeVec
+	registry                    *prometheus.Registry
+	mockTurnTotal               prometheus.Counter
+	bargeInTotal                prometheus.Counter
+	audioFrameTotal             prometheus.Counter
+	audioPlaybackChunkTotal     prometheus.Counter
+	audioIngressFramesTotal     prometheus.Counter
+	audioIngressDroppedTotal    prometheus.Counter
+	audioIngressBufferDepth     prometheus.Gauge
+	vadSpeechStartTotal         prometheus.Counter
+	vadSpeechEndTotal           prometheus.Counter
+	deviceIdentityInvalidTotal  prometheus.Counter
+	realtimeSessionTotal        prometheus.Counter
+	realtimeSessionCancelTotal  prometheus.Counter
+	realtimeAudioUplinkFrames   prometheus.Counter
+	realtimeAudioCommitTotal    prometheus.Counter
+	realtimeAudioDownlinkEvents prometheus.Counter
+	voiceProviderStartTurnMS    prometheus.Histogram
+	voiceProviderCancelMS       prometheus.Histogram
+	v21QueryMS                  prometheus.Histogram
+	wsConnections               *prometheus.GaugeVec
 }
 
 func newMetrics() *metrics {
@@ -89,6 +90,10 @@ func newMetrics() *metrics {
 			Name: "a21_realtime_audio_commit_total",
 			Help: "Total A21 realtime provider audio commits triggered by Gateway VAD speech-end.",
 		}),
+		realtimeAudioDownlinkEvents: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_realtime_audio_downlink_events_total",
+			Help: "Total realtime provider output events streamed back to A21 audio WebSocket clients.",
+		}),
 		voiceProviderStartTurnMS: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "a21_voice_provider_start_turn_ms",
 			Help:    "A21 voice provider StartTurn latency in milliseconds.",
@@ -124,6 +129,7 @@ func newMetrics() *metrics {
 		m.realtimeSessionCancelTotal,
 		m.realtimeAudioUplinkFrames,
 		m.realtimeAudioCommitTotal,
+		m.realtimeAudioDownlinkEvents,
 		m.voiceProviderStartTurnMS,
 		m.voiceProviderCancelMS,
 		m.v21QueryMS,

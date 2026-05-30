@@ -113,6 +113,13 @@ func (c *realtimeFixtureConn) WriteJSON(ctx context.Context, value any) error {
 	return nil
 }
 
+func (c *realtimeFixtureConn) ReadJSON(ctx context.Context, value any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return fmt.Errorf("realtime fixture connection has no server events")
+}
+
 func (c *realtimeFixtureConn) Close(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

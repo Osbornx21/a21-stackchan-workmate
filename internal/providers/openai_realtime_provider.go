@@ -24,6 +24,8 @@ type OpenAIRealtimeVoiceProvider struct {
 type OpenAIRealtimeProviderSession struct {
 	session *RealtimeWebSocketSession
 	voice   VoiceSession
+	events  chan VoiceEvent
+	cancel  context.CancelFunc
 }
 
 func NewOpenAIRealtimeVoiceProvider(config OpenAIRealtimeVoiceProviderConfig, dialer RealtimeDialer) *OpenAIRealtimeVoiceProvider {
@@ -102,7 +104,15 @@ func (p *OpenAIRealtimeVoiceProvider) StartRealtimeSession(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	return &OpenAIRealtimeProviderSession{session: session, voice: voiceSession}, nil
+	eventsCtx, cancel := context.WithCancel(context.Background())
+	providerSession := &OpenAIRealtimeProviderSession{
+		session: session,
+		voice:   voiceSession,
+		events:  make(chan VoiceEvent, 16),
+		cancel:  cancel,
+	}
+	providerSession.startEventReader(eventsCtx)
+	return providerSession, nil
 }
 
 func (p *OpenAIRealtimeVoiceProvider) StartTurn(ctx context.Context, req VoiceTurnRequest) (<-chan VoiceEvent, error) {
@@ -153,11 +163,57 @@ func (s *OpenAIRealtimeProviderSession) Cancel(ctx context.Context, req VoiceCan
 	return s.session.Cancel(ctx, req)
 }
 
+func (s *OpenAIRealtimeProviderSession) Events() <-chan VoiceEvent {
+	if s == nil {
+		return nil
+	}
+	return s.events
+}
+
 func (s *OpenAIRealtimeProviderSession) Close(ctx context.Context) error {
 	if s == nil || s.session == nil {
 		return nil
 	}
+	if s.cancel != nil {
+		s.cancel()
+	}
 	return s.session.Close(ctx)
+}
+
+func (s *OpenAIRealtimeProviderSession) startEventReader(ctx context.Context) {
+	go func() {
+		defer close(s.events)
+		for {
+			raw, err := s.session.ReadEvent(ctx)
+			if err != nil {
+				return
+			}
+			event, ok, err := OpenAIRealtimeServerEventToVoiceEvent(s.voice, raw)
+			if err != nil {
+				if !s.emitEvent(ctx, VoiceEvent{
+					Session: s.voice,
+					Kind:    VoiceEventError,
+					Text:    err.Error(),
+					Final:   true,
+				}) {
+					return
+				}
+				continue
+			}
+			if ok && !s.emitEvent(ctx, event) {
+				return
+			}
+		}
+	}()
+}
+
+func (s *OpenAIRealtimeProviderSession) emitEvent(ctx context.Context, event VoiceEvent) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case s.events <- event:
+		return true
+	}
 }
 
 func (p *OpenAIRealtimeVoiceProvider) configured() bool {

@@ -27,6 +27,7 @@ type RealtimeDialer interface {
 
 type RealtimeConn interface {
 	WriteJSON(ctx context.Context, value any) error
+	ReadJSON(ctx context.Context, value any) error
 	Close(ctx context.Context) error
 }
 
@@ -198,6 +199,17 @@ func (s *RealtimeWebSocketSession) Cancel(ctx context.Context, _ VoiceCancelRequ
 	})
 }
 
+func (s *RealtimeWebSocketSession) ReadEvent(ctx context.Context) (map[string]any, error) {
+	if s == nil || s.conn == nil {
+		return nil, fmt.Errorf("realtime websocket session is not connected")
+	}
+	var event map[string]any
+	if err := s.conn.ReadJSON(ctx, &event); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
 func (s *RealtimeWebSocketSession) Close(ctx context.Context) error {
 	if s == nil || s.conn == nil {
 		return nil
@@ -228,6 +240,10 @@ type coderRealtimeConn struct {
 
 func (c coderRealtimeConn) WriteJSON(ctx context.Context, value any) error {
 	return wsjson.Write(ctx, c.conn, value)
+}
+
+func (c coderRealtimeConn) ReadJSON(ctx context.Context, value any) error {
+	return wsjson.Read(ctx, c.conn, value)
 }
 
 func (c coderRealtimeConn) Close(_ context.Context) error {
