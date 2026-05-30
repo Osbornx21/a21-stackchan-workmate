@@ -3824,6 +3824,174 @@ func TestRunStackChanCapabilityAcceptanceRejectsLegacyEvidencePathWithoutEchoing
 	}
 }
 
+func TestRunStackChanPhysicalEvidenceWritesPendingTemplateFromIdentity(t *testing.T) {
+	dir := t.TempDir()
+	artifactSHA := strings.Repeat("c", 64)
+	identityPath := writeTestStackChanIdentityAcceptanceReport(t, dir, artifactSHA)
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-physical-evidence",
+		"--identity-acceptance", identityPath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_physical_evidence.v1"`,
+		`"identity_acceptance_report_path": "` + identityPath + `"`,
+		`"device_id": "stackchan-001"`,
+		`"commit": "abcdef1"`,
+		`"artifact_sha256": "` + artifactSHA + `"`,
+		`"capability": "microphone"`,
+		`"capability": "rgb"`,
+		`"status": "pending"`,
+		`"evidence_type": "operator_observation_required"`,
+		`"flash_allowed": false`,
+		"stackchan physical evidence template written (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-physical-evidence-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("physical evidence reports = %d, want 1: %v", len(matches), matches)
+	}
+}
+
+func TestRunStackChanPhysicalEvidenceCanFeedCapabilityAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	artifactSHA := strings.Repeat("d", 64)
+	identityPath := writeTestStackChanIdentityAcceptanceReport(t, dir, artifactSHA)
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	args := []string{
+		"stackchan-physical-evidence",
+		"--identity-acceptance", identityPath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}
+	for _, pass := range []string{
+		"microphone=gateway_audio_frame",
+		"speaker=audible_playback",
+		"screen=operator_visible_state",
+		"screen_touch=touch_event",
+		"top_touch=touch_event",
+		"servo_y=servo_clamped_motion",
+		"rgb=operator_visible_state",
+	} {
+		args = append(args, "--pass", pass)
+	}
+	code := Run(args, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("physical evidence code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	evidencePath := newestGlob(t, filepath.Join(outputDir, "a21-stackchan-physical-evidence-*.json"))
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"stackchan-capability-acceptance",
+		"--identity-acceptance", identityPath,
+		"--evidence", evidencePath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("capability acceptance code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"capability_acceptance_status": "confirmed"`) {
+		t.Fatalf("capability acceptance not confirmed: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanPhysicalEvidenceRejectsLegacyPassWithoutEchoingIt(t *testing.T) {
+	dir := t.TempDir()
+	identityPath := writeTestStackChanIdentityAcceptanceReport(t, dir, strings.Repeat("e", 64))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-physical-evidence",
+		"--identity-acceptance", identityPath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--pass", "microphone=x21_probe",
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21_probe") {
+		t.Fatalf("legacy pass leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func writeTestStackChanIdentityAcceptanceReport(t *testing.T, dir string, artifactSHA string) string {
+	t.Helper()
+	identityPath := filepath.Join(dir, "a21-stackchan-identity-acceptance.json")
+	artifactPath := filepath.Join(dir, "artifacts", "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(identityPath, []byte(`{
+  "schema_version": "a21.stackchan_identity_acceptance.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "hardware_acceptance_scope": "identity_only",
+  "identity_acceptance_status": "identity_confirmed",
+  "device_id": "stackchan-001",
+  "commit": "abcdef1",
+  "artifact_path": "`+artifactPath+`",
+  "artifact_sha256": "`+artifactSHA+`",
+  "device_identity": {
+    "device_identity_confirmed": true,
+    "device": {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": "workmate",
+      "current_expression": "idle",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "capabilities": {
+        "microphone": "available",
+        "speaker": "available",
+        "screen": "available",
+        "screen_touch": "available",
+        "top_touch": "available",
+        "servo_y": "available",
+        "rgb": "available"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return identityPath
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

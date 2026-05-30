@@ -528,11 +528,42 @@ It reuses the release-ledger artifact guard, takes a fresh direct Gateway `/v1/d
 
 ## StackChan Capability Acceptance
 
-After identity-only acceptance passes, physical capability acceptance is a separate no-flash evidence gate:
+After identity-only acceptance passes, generate a standard physical evidence template:
 
 ```bash
 A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
-A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-physical-evidence
+```
+
+or, when the operator already has physical observations, use explicit `--pass capability=evidence_type` entries:
+
+```bash
+go run ./cmd/a21 stackchan-physical-evidence \
+  --identity-acceptance reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha> \
+  --pass microphone=gateway_audio_frame \
+  --pass speaker=audible_playback \
+  --pass screen=operator_visible_state \
+  --pass screen_touch=touch_event \
+  --pass top_touch=touch_event \
+  --pass servo_y=servo_clamped_motion \
+  --pass rgb=operator_visible_state \
+  --output-dir reports
+```
+
+This command writes:
+
+```text
+reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json
+```
+
+Capability acceptance then consumes that evidence file:
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json \
 A21_DEVICE_ID=stackchan-001 \
 make stackchan-capability-acceptance
 ```

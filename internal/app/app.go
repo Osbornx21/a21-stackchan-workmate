@@ -118,6 +118,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runOfficeAcceptance(args[1:], stdout, stderr)
 	case "stackchan-identity-acceptance":
 		return runStackChanIdentityAcceptance(args[1:], stdout, stderr)
+	case "stackchan-physical-evidence":
+		return runStackChanPhysicalEvidence(args[1:], stdout, stderr)
 	case "stackchan-capability-acceptance":
 		return runStackChanCapabilityAcceptance(args[1:], stdout, stderr)
 	case "latency-bench":
@@ -847,16 +849,28 @@ type stackChanCapabilityAcceptanceOptions struct {
 	OutputDir              string
 }
 
+type stackChanPhysicalEvidenceOptions struct {
+	IdentityAcceptancePath string
+	DeviceID               string
+	Commit                 string
+	OutputDir              string
+	Passed                 map[string]string
+}
+
 type stackChanPhysicalEvidenceReport struct {
-	SchemaVersion  string                                 `json:"schema_version"`
-	GeneratedAtMS  int64                                  `json:"generated_at_ms,omitempty"`
-	DryRun         bool                                   `json:"dry_run,omitempty"`
-	FlashAllowed   bool                                   `json:"flash_allowed,omitempty"`
-	DeleteAllowed  bool                                   `json:"delete_allowed,omitempty"`
-	DeviceID       string                                 `json:"device_id"`
-	Commit         string                                 `json:"commit"`
-	ArtifactSHA256 string                                 `json:"artifact_sha256,omitempty"`
-	Observations   []stackChanPhysicalEvidenceObservation `json:"observations"`
+	SchemaVersion                string                                 `json:"schema_version"`
+	GeneratedAtMS                int64                                  `json:"generated_at_ms,omitempty"`
+	DryRun                       bool                                   `json:"dry_run,omitempty"`
+	FlashAllowed                 bool                                   `json:"flash_allowed"`
+	DeleteAllowed                bool                                   `json:"delete_allowed"`
+	IdentityAcceptanceReportPath string                                 `json:"identity_acceptance_report_path,omitempty"`
+	DeviceID                     string                                 `json:"device_id"`
+	Commit                       string                                 `json:"commit"`
+	ArtifactSHA256               string                                 `json:"artifact_sha256,omitempty"`
+	RequiredCapabilities         []string                               `json:"required_capabilities,omitempty"`
+	Observations                 []stackChanPhysicalEvidenceObservation `json:"observations"`
+	ReportPath                   string                                 `json:"report_path,omitempty"`
+	Findings                     []officePreflightFinding               `json:"findings,omitempty"`
 }
 
 type stackChanPhysicalEvidenceObservation struct {
@@ -1484,6 +1498,221 @@ var requiredStackChanCapabilities = []string{
 	"top_touch",
 	"servo_y",
 	"rgb",
+}
+
+func runStackChanPhysicalEvidence(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := defaultStackChanPhysicalEvidenceOptions()
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-physical-evidence --identity-acceptance reports/a21-stackchan-identity-acceptance-...json --device-id stackchan-001 --commit <git-sha> [--pass capability=evidence_type] [--output-dir reports]")
+			return 0
+		case "--identity-acceptance":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--identity-acceptance requires a value")
+				return 2
+			}
+			i++
+			options.IdentityAcceptancePath = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.DeviceID = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		case "--pass":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--pass requires capability=evidence_type")
+				return 2
+			}
+			i++
+			capability, evidenceType, err := parseStackChanPhysicalEvidencePass(args[i])
+			if err != nil {
+				fmt.Fprintf(stderr, "stackchan physical evidence pass invalid: %v\n", err)
+				return 1
+			}
+			options.Passed[capability] = evidenceType
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan-physical-evidence option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.IdentityAcceptancePath == "" {
+		fmt.Fprintln(stderr, "--identity-acceptance requires a value")
+		return 2
+	}
+	if options.DeviceID == "" {
+		fmt.Fprintln(stderr, "--device-id requires a value")
+		return 2
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	if err := validateA21InputPath(options.IdentityAcceptancePath); err != nil {
+		fmt.Fprintf(stderr, "stackchan physical evidence path invalid: %v\n", err)
+		return 1
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "stackchan physical evidence report dir invalid: %v\n", err)
+		return 1
+	}
+	report := buildStackChanPhysicalEvidenceReport(options)
+	reportPath, err := writeStackChanPhysicalEvidenceReport(options.OutputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write stackchan physical evidence report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanPhysicalEvidence(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode stackchan physical evidence report: %v\n", err)
+		return 1
+	}
+	if len(report.Findings) > 0 {
+		fmt.Fprintln(stdout, "stackchan physical evidence blocked (no flash performed)")
+		return 1
+	}
+	fmt.Fprintln(stdout, "stackchan physical evidence template written (no flash performed)")
+	return 0
+}
+
+func defaultStackChanPhysicalEvidenceOptions() stackChanPhysicalEvidenceOptions {
+	cwd, _ := os.Getwd()
+	projectRoot := findProjectRoot(cwd)
+	deviceID := strings.TrimSpace(os.Getenv("A21_DEVICE_ID"))
+	return stackChanPhysicalEvidenceOptions{
+		DeviceID:  deviceID,
+		Commit:    currentGitCommit(projectRoot),
+		OutputDir: "reports",
+		Passed:    map[string]string{},
+	}
+}
+
+func parseStackChanPhysicalEvidencePass(value string) (string, string, error) {
+	if containsLegacyIdentity(value) {
+		return "", "", fmt.Errorf("contains forbidden legacy identity")
+	}
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("must use capability=evidence_type")
+	}
+	capability := strings.TrimSpace(parts[0])
+	evidenceType := strings.TrimSpace(parts[1])
+	if capability == "" || evidenceType == "" {
+		return "", "", fmt.Errorf("capability and evidence_type are required")
+	}
+	if !isRequiredStackChanCapability(capability) {
+		return "", "", fmt.Errorf("unknown StackChan capability")
+	}
+	return capability, evidenceType, nil
+}
+
+func buildStackChanPhysicalEvidenceReport(options stackChanPhysicalEvidenceOptions) stackChanPhysicalEvidenceReport {
+	nowMS := time.Now().UnixMilli()
+	report := stackChanPhysicalEvidenceReport{
+		SchemaVersion:                "a21.stackchan_physical_evidence.v1",
+		GeneratedAtMS:                nowMS,
+		DryRun:                       true,
+		FlashAllowed:                 false,
+		DeleteAllowed:                false,
+		IdentityAcceptanceReportPath: options.IdentityAcceptancePath,
+		DeviceID:                     options.DeviceID,
+		Commit:                       options.Commit,
+		RequiredCapabilities:         append([]string(nil), requiredStackChanCapabilities...),
+	}
+	var identity stackChanIdentityAcceptanceReport
+	if err := readJSONFile(options.IdentityAcceptancePath, &identity); err != nil {
+		report.addFinding("identity_acceptance_unreadable", err.Error())
+	} else {
+		validateIdentityAcceptanceForPhysicalEvidence(&report, identity)
+	}
+	declared := map[string]string{}
+	if identity.DeviceIdentity != nil {
+		declared = identity.DeviceIdentity.Device.Capabilities
+	}
+	for _, capability := range requiredStackChanCapabilities {
+		observation := stackChanPhysicalEvidenceObservation{
+			Capability:   capability,
+			Status:       "pending",
+			EvidenceType: "operator_observation_required",
+		}
+		if evidenceType, ok := options.Passed[capability]; ok {
+			observation.Status = "passed"
+			observation.EvidenceType = evidenceType
+			observation.ObservedAtMS = nowMS
+		}
+		if declared[capability] != "available" {
+			report.addFinding("capability_not_declared_available", "required StackChan capability is not declared available by the identity acceptance report")
+		}
+		report.Observations = append(report.Observations, observation)
+	}
+	return report
+}
+
+func validateIdentityAcceptanceForPhysicalEvidence(report *stackChanPhysicalEvidenceReport, identity stackChanIdentityAcceptanceReport) {
+	if identity.SchemaVersion != "a21.stackchan_identity_acceptance.v1" {
+		report.addFinding("identity_acceptance_schema_invalid", "identity acceptance report schema is not a21.stackchan_identity_acceptance.v1")
+	}
+	if identity.FlashAllowed || identity.DeleteAllowed {
+		report.addFinding("unsafe_permission", "identity acceptance unexpectedly allowed flash/delete")
+	}
+	if identity.IdentityAcceptanceStatus != "identity_confirmed" || len(identity.Findings) > 0 {
+		report.addFinding("identity_acceptance_not_confirmed", "identity acceptance report is not confirmed")
+	}
+	if identity.DeviceID != "" && identity.DeviceID != report.DeviceID {
+		report.addFinding("identity_acceptance_device_mismatch", "identity acceptance device differs from expected device")
+	}
+	if identity.Commit != "" && !sameCLICommit(identity.Commit, report.Commit) {
+		report.addFinding("identity_acceptance_commit_mismatch", "identity acceptance commit differs from expected commit")
+	}
+	if identity.ArtifactSHA256 != "" {
+		report.ArtifactSHA256 = identity.ArtifactSHA256
+	}
+	if identity.DeviceIdentity == nil || !identity.DeviceIdentity.DeviceIdentityConfirmed {
+		report.addFinding("device_identity_missing", "identity acceptance report is missing confirmed device identity")
+		return
+	}
+	device := identity.DeviceIdentity.Device
+	for _, value := range []string{device.DeviceID, device.Firmware.ID, device.Firmware.Version, device.Firmware.Board, device.Firmware.Commit} {
+		if containsLegacyIdentity(value) {
+			report.addFinding("identity_acceptance_legacy_identity", "identity acceptance contains forbidden legacy identity")
+			return
+		}
+	}
+	for key, value := range device.Capabilities {
+		if containsLegacyIdentity(key) || containsLegacyIdentity(value) {
+			report.addFinding("identity_acceptance_legacy_identity", "identity acceptance contains forbidden legacy identity")
+			return
+		}
+	}
+}
+
+func isRequiredStackChanCapability(capability string) bool {
+	for _, required := range requiredStackChanCapabilities {
+		if capability == required {
+			return true
+		}
+	}
+	return false
+}
+
+func (report *stackChanPhysicalEvidenceReport) addFinding(code string, message string) {
+	report.Findings = append(report.Findings, officePreflightFinding{Code: code, Message: message})
 }
 
 func runStackChanCapabilityAcceptance(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -2291,6 +2520,23 @@ func writeStackChanIdentityAcceptanceReport(outputDir string, report stackChanId
 	return reportPath, nil
 }
 
+func writeStackChanPhysicalEvidenceReport(outputDir string, report stackChanPhysicalEvidenceReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-stackchan-physical-evidence-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanPhysicalEvidence(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeStackChanCapabilityAcceptanceReport(outputDir string, report stackChanCapabilityAcceptanceReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -2914,6 +3160,12 @@ func writeJSONOfficeAcceptance(writer io.Writer, report officeAcceptanceReport) 
 }
 
 func writeJSONStackChanIdentityAcceptance(writer io.Writer, report stackChanIdentityAcceptanceReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanPhysicalEvidence(writer io.Writer, report stackChanPhysicalEvidenceReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

@@ -6,11 +6,42 @@ Status: implemented as a no-flash evidence gate.
 
 Move StackChan acceptance beyond identity-only confirmation without pretending that a firmware declaration is a physical test. The Gateway device registry can say which hardware surfaces the firmware exposes; `stackchan-capability-acceptance` requires separate per-capability evidence before those surfaces are accepted.
 
-## Command
+## Evidence Template Command
 
 ```bash
 A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
-A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-physical-evidence
+```
+
+This writes:
+
+```text
+reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json
+```
+
+The template starts with each capability as `pending`. When observations are already available, generate a passed evidence file with explicit entries:
+
+```bash
+go run ./cmd/a21 stackchan-physical-evidence \
+  --identity-acceptance reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha> \
+  --pass microphone=gateway_audio_frame \
+  --pass speaker=audible_playback \
+  --pass screen=operator_visible_state \
+  --pass screen_touch=touch_event \
+  --pass top_touch=touch_event \
+  --pass servo_y=servo_clamped_motion \
+  --pass rgb=operator_visible_state \
+  --output-dir reports
+```
+
+## Acceptance Command
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json \
 A21_DEVICE_ID=stackchan-001 \
 make stackchan-capability-acceptance
 ```
@@ -20,7 +51,7 @@ Direct CLI:
 ```bash
 go run ./cmd/a21 stackchan-capability-acceptance \
   --identity-acceptance reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
-  --evidence reports/a21-stackchan-physical-evidence.json \
+  --evidence reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json \
   --device-id stackchan-001 \
   --commit <expected-git-sha> \
   --output-dir reports
