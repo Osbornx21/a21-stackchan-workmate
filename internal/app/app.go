@@ -404,6 +404,9 @@ func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error)
 	if parsed.Host == "" {
 		return "", "", fmt.Errorf("gateway URL must include a host")
 	}
+	if parsed.User != nil {
+		return "", "", fmt.Errorf("gateway URL must not include credentials")
+	}
 	if strings.Contains(strings.ToLower(parsed.String()), "x21") || strings.Contains(strings.ToLower(parsed.String()), "v21") {
 		return "", "", fmt.Errorf("gateway URL contains forbidden legacy identity")
 	}

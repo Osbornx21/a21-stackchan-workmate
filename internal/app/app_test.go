@@ -744,6 +744,24 @@ func TestRunFirmwareDeviceReportRejectsLegacyOutputDirWithoutEchoingPath(t *test
 	}
 }
 
+func TestRunFirmwareDeviceReportRejectsGatewayCredentialsWithoutEchoingSecret(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", "http://user:secret@127.0.0.1:21080",
+		"--output-dir", t.TempDir(),
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "must not include credentials") {
+		t.Fatalf("stderr = %q, want credential rejection", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "secret") || strings.Contains(stderr.String(), "user:") {
+		t.Fatalf("stderr leaked gateway credentials: %q", stderr.String())
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
