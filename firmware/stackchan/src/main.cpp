@@ -2,6 +2,9 @@
 #include <M5StackChan.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
+#if defined(A21_ENABLE_M5STACK_AVATAR_SPIKE) && A21_ENABLE_M5STACK_AVATAR_SPIKE
+#include <Avatar.h>
+#endif
 
 #include "a21_firmware_config.h"
 #include "a21_firmware_audio_playback.h"
@@ -46,26 +49,124 @@ uint32_t state_color(A21RenderState state) {
   }
 }
 
+float a21ClampUnit(float value) {
+  if (value < 0.0f) {
+    return 0.0f;
+  }
+  if (value > 1.0f) {
+    return 1.0f;
+  }
+  return value;
+}
+
+int a21RatioToRange(float ratio, int min_value, int max_value) {
+  const float clamped = a21ClampUnit(ratio);
+  return min_value + static_cast<int>((max_value - min_value) * clamped);
+}
+
+int a21GazeToOffset(float gaze, int range_px) {
+  if (gaze < -1.0f) {
+    gaze = -1.0f;
+  }
+  if (gaze > 1.0f) {
+    gaze = 1.0f;
+  }
+  return static_cast<int>(gaze * range_px);
+}
+
+#if defined(A21_ENABLE_M5STACK_AVATAR_SPIKE) && A21_ENABLE_M5STACK_AVATAR_SPIKE
+m5avatar::Expression a21AvatarSpikeExpression(A21AvatarExpression expression) {
+  switch (expression) {
+    case A21_AVATAR_EXPRESSION_HAPPY:
+      return m5avatar::Expression::Happy;
+    case A21_AVATAR_EXPRESSION_ANGRY:
+      return m5avatar::Expression::Angry;
+    case A21_AVATAR_EXPRESSION_SAD:
+      return m5avatar::Expression::Sad;
+    case A21_AVATAR_EXPRESSION_DOUBT:
+      return m5avatar::Expression::Doubt;
+    case A21_AVATAR_EXPRESSION_SLEEPY:
+      return m5avatar::Expression::Sleepy;
+    case A21_AVATAR_EXPRESSION_NEUTRAL:
+    default:
+      return m5avatar::Expression::Neutral;
+  }
+}
+
+m5avatar::Avatar g_a21_avatar_spike;
+
+void a21ApplyAvatarSpikeFrame(const A21FaceFrame& face) {
+  g_a21_avatar_spike.setExpression(a21AvatarSpikeExpression(face.expression));
+  g_a21_avatar_spike.setEyeOpenRatio(a21ClampUnit(face.eye_open_ratio));
+  g_a21_avatar_spike.setLeftGaze(face.gaze_vertical, face.gaze_horizontal);
+  g_a21_avatar_spike.setRightGaze(face.gaze_vertical, face.gaze_horizontal);
+  g_a21_avatar_spike.setBreath(a21ClampUnit(face.breath_ratio));
+  g_a21_avatar_spike.setIsAutoBlink(face.auto_blink);
+  g_a21_avatar_spike.setMouthOpenRatio(a21ClampUnit(face.mouth_open_ratio));
+}
+#endif
+
+void drawA21FallbackFace(const A21FaceFrame& face, uint32_t accent) {
+  const int display_height = M5.Display.height();
+  const int center_x = M5.Display.width() / 2;
+  const int center_y = (display_height / 2) + 4;
+  const int eye_y = center_y - 42 + a21GazeToOffset(face.gaze_vertical, 12);
+  const int eye_x_offset = 46 + a21GazeToOffset(face.gaze_horizontal, 8);
+  const int eye_width = a21RatioToRange(face.eye_open_ratio, 16, 30);
+  const int eye_height = a21RatioToRange(face.eye_open_ratio, 3, 14);
+  const int eye_radius = eye_height > 3 ? eye_height / 2 : 1;
+  const int left_eye_x = center_x - eye_x_offset - (eye_width / 2);
+  const int right_eye_x = center_x + eye_x_offset - (eye_width / 2);
+
+  M5.Display.fillRoundRect(left_eye_x, eye_y, eye_width, eye_height, eye_radius, accent);
+  M5.Display.fillRoundRect(right_eye_x, eye_y, eye_width, eye_height, eye_radius, accent);
+
+  const int mouth_width = a21RatioToRange(face.mouth_open_ratio, 18, 46);
+  const int mouth_height = a21RatioToRange(face.mouth_open_ratio, 3, 20);
+  const int mouth_x = center_x - (mouth_width / 2);
+  const int mouth_y = center_y + 24;
+  const int mouth_radius = mouth_height > 4 ? mouth_height / 2 : 1;
+  if (face.mouth_open_ratio > 0.10f) {
+    M5.Display.fillRoundRect(mouth_x, mouth_y, mouth_width, mouth_height, mouth_radius, accent);
+    if (mouth_height > 8 && mouth_width > 12) {
+      M5.Display.fillRoundRect(mouth_x + 4, mouth_y + 4, mouth_width - 8, mouth_height - 8, mouth_radius / 2, TFT_BLACK);
+    }
+    return;
+  }
+  M5.Display.fillRoundRect(mouth_x, mouth_y + 7, mouth_width, mouth_height, mouth_radius, accent);
+}
+
 void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& network, const A21ConnectionState& connection) {
   const uint32_t accent = state_color(state.render_state);
+  const A21FaceFrame face = a21FaceFrameForState(state.render_state);
+#if defined(A21_ENABLE_M5STACK_AVATAR_SPIKE) && A21_ENABLE_M5STACK_AVATAR_SPIKE
+  a21ApplyAvatarSpikeFrame(face);
+#endif
   char firmware_label[A21_FIRMWARE_LABEL_CAP];
   if (!a21BuildFirmwareLabel(firmware_label, sizeof(firmware_label))) {
     a21ConfigCopyString(firmware_label, sizeof(firmware_label), A21_FIRMWARE_VERSION);
   }
   M5.Display.fillScreen(TFT_BLACK);
-  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-  M5.Display.setTextDatum(middle_center);
   M5.Display.setFont(&fonts::Font2);
-  M5.Display.drawString("A21", M5.Display.width() / 2, M5.Display.height() / 2 - 28);
-  M5.Display.drawString(firmware_label, M5.Display.width() / 2, M5.Display.height() / 2);
-  M5.Display.setTextColor(accent, TFT_BLACK);
-  M5.Display.drawString(a21DisplayStateLabel(state.render_state), M5.Display.width() / 2, M5.Display.height() / 2 + 28);
   M5.Display.setTextDatum(top_center);
   M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   char gateway_line[96];
   snprintf(gateway_line, sizeof(gateway_line), "%s:%u", network.gateway_host, network.gateway_port);
   M5.Display.drawString(gateway_line, M5.Display.width() / 2, 8);
   M5.Display.drawString(connection.status_text, M5.Display.width() / 2, 28);
+
+  M5.Display.setTextDatum(top_left);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.drawString("A21", 12, 8);
+  M5.Display.drawString(firmware_label, 12, 28);
+
+  drawA21FallbackFace(face, accent);
+
+  M5.Display.setTextDatum(middle_center);
+  M5.Display.setTextColor(accent, TFT_BLACK);
+  M5.Display.drawString(face.label, M5.Display.width() / 2, M5.Display.height() - 58);
+  M5.Display.setTextDatum(top_center);
+  M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   M5.Display.drawString(state.text, M5.Display.width() / 2, M5.Display.height() - 36);
 }
 

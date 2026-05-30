@@ -461,6 +461,48 @@ void test_display_state_label_makes_professional_mode_explicit() {
   TEST_ASSERT_EQUAL_STRING("LOCAL", a21DisplayStateLabel(A21_RENDER_LOCAL));
 }
 
+void test_face_frame_maps_speaking_to_open_mouth_expression() {
+  A21FaceFrame speaking = a21FaceFrameForState(A21_RENDER_SPEAKING);
+
+  TEST_ASSERT_EQUAL_STRING("SPEAKING", speaking.label);
+  TEST_ASSERT_EQUAL(A21_AVATAR_EXPRESSION_NEUTRAL, speaking.expression);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, speaking.eye_open_ratio);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, speaking.gaze_vertical);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.82f, speaking.mouth_open_ratio);
+  TEST_ASSERT_TRUE(speaking.auto_blink);
+  TEST_ASSERT_TRUE(speaking.show_status_label);
+}
+
+void test_face_frame_distinguishes_listening_thinking_and_professional() {
+  A21FaceFrame listening = a21FaceFrameForState(A21_RENDER_LISTENING);
+  A21FaceFrame thinking = a21FaceFrameForState(A21_RENDER_THINKING);
+  A21FaceFrame professional = a21FaceFrameForState(A21_RENDER_PROFESSIONAL);
+
+  TEST_ASSERT_EQUAL_STRING("LISTENING", listening.label);
+  TEST_ASSERT_EQUAL(A21_AVATAR_EXPRESSION_NEUTRAL, listening.expression);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.95f, listening.eye_open_ratio);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.25f, listening.gaze_vertical);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, listening.gaze_horizontal);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, listening.mouth_open_ratio);
+  TEST_ASSERT_TRUE(listening.auto_blink);
+
+  TEST_ASSERT_EQUAL_STRING("THINKING", thinking.label);
+  TEST_ASSERT_EQUAL(A21_AVATAR_EXPRESSION_DOUBT, thinking.expression);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.72f, thinking.eye_open_ratio);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.45f, thinking.gaze_vertical);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.12f, thinking.gaze_horizontal);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, thinking.mouth_open_ratio);
+  TEST_ASSERT_TRUE(thinking.auto_blink);
+
+  TEST_ASSERT_EQUAL_STRING("PRO MODE", professional.label);
+  TEST_ASSERT_EQUAL(A21_AVATAR_EXPRESSION_NEUTRAL, professional.expression);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.78f, professional.eye_open_ratio);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, professional.gaze_vertical);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.05f, professional.mouth_open_ratio);
+  TEST_ASSERT_TRUE(professional.auto_blink);
+  TEST_ASSERT_TRUE(professional.show_status_label);
+}
+
 void test_network_config_defaults_to_a21_gateway() {
   A21NetworkConfig config;
   a21InitNetworkConfig(&config);
@@ -2197,6 +2239,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_apply_control_event_updates_runtime_state);
   RUN_TEST(test_apply_invalid_control_event_enters_error_state);
   RUN_TEST(test_display_state_label_makes_professional_mode_explicit);
+  RUN_TEST(test_face_frame_maps_speaking_to_open_mouth_expression);
+  RUN_TEST(test_face_frame_distinguishes_listening_thinking_and_professional);
   RUN_TEST(test_network_config_defaults_to_a21_gateway);
   RUN_TEST(test_network_config_builds_control_and_audio_urls);
   RUN_TEST(test_network_config_rejects_legacy_ports_and_names);

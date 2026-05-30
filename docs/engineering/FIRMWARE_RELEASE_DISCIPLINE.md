@@ -102,6 +102,10 @@ make office-handoff
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
+Firmware expression changes must keep the avatar contract testable without hardware. `a21_firmware_display.h` maps render states into an `A21FaceFrame` with avatar-engine concepts such as expression, gaze, eye-open ratio, breath, and mouth-open ratio. This contract is intentionally compatible with a future pinned `m5stack-avatar` adapter and prevents the product expression layer from being buried as one-off drawing logic.
+
+`firmware-avatar-spike-build` compiles the isolated `a21_stackchan_cores3_avatar_spike` environment with `meganetaaan/M5Stack-Avatar @ 0.10.0`. It is a compatibility spike for a mature avatar engine only. It is not a production firmware lane, not a package source, and not a flashing command.
+
 `firmware-mic-probe-build` compiles only the isolated CoreS3 microphone diagnostic environment. It is for I2S/microphone bring-up evidence and must not be treated as a release package or production firmware unless a later ADR explicitly promotes the path.
 
 `firmware-upload-blocker-check` intentionally invokes PlatformIO's raw upload target and expects it to fail with the A21 blocker message before any hardware write can start. A successful raw upload target is a release-blocking failure.
