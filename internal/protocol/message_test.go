@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -170,6 +171,32 @@ func TestAudioChunkPayloadShape(t *testing.T) {
 	}
 }
 
+func TestValidateAudioChunkAcceptsFullPCM16Frame(t *testing.T) {
+	chunk := AudioChunk{
+		Codec:        AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   testPCM16Base64WithSample(0),
+	}
+	if err := ValidateAudioChunk(chunk); err != nil {
+		t.Fatalf("ValidateAudioChunk() error = %v", err)
+	}
+}
+
+func TestValidateAudioChunkRejectsShortPCMFrame(t *testing.T) {
+	chunk := AudioChunk{
+		Codec:        AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	}
+	if err := ValidateAudioChunk(chunk); err == nil {
+		t.Fatal("ValidateAudioChunk() error = nil, want short PCM rejection")
+	}
+}
+
 func TestAudioPlaybackChunkPayloadShape(t *testing.T) {
 	chunk := AudioPlaybackChunk{
 		StreamID:     "a21-mock-stream-001",
@@ -196,4 +223,14 @@ func TestAudioPlaybackChunkPayloadShape(t *testing.T) {
 			t.Fatalf("playback chunk json missing %q: %s", want, text)
 		}
 	}
+}
+
+func testPCM16Base64WithSample(sample int16) string {
+	const samplesPer20MS16K = 320
+	data := make([]byte, samplesPer20MS16K*2)
+	for i := 0; i < samplesPer20MS16K; i++ {
+		data[i*2] = byte(sample)
+		data[i*2+1] = byte(uint16(sample) >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }

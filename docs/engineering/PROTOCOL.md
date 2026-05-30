@@ -72,6 +72,8 @@ Current mock audio payload:
 
 The firmware supports two uplink sources with the same A21 `audio.frame` shape. The debug/mock path emits a complete deterministic silence payload: `pcm_s16le`, 16 kHz, mono, 20 ms. The guarded mic path records one capture-safe PCM16 frame, puts it through a bounded firmware queue, base64-encodes the real samples, and sends the same envelope shape. Each frame contains 640 raw PCM bytes encoded as an 856-character base64 string, so Gateway ingress, VAD, and WebSocket sizing are exercised with real frame dimensions instead of a tiny placeholder payload.
 
+Gateway validates `audio.frame` payloads before buffering, VAD, mock playback, barge-in, or provider forwarding. Current accepted PCM frames must decode to the exact byte count implied by `sample_rate_hz * duration_ms * channels * 2 / 1000`; for example, 16 kHz mono 20 ms must be exactly 640 bytes. Invalid frames record `audio.ingress.invalid` and return an `error` control event instead of pretending playback succeeded.
+
 Device uplink uses `audio.frame`.
 
 Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a playback payload:

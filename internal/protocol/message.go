@@ -1,6 +1,10 @@
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+)
 
 const ProtocolVersion = "a21.device.v1"
 
@@ -123,6 +127,37 @@ type AudioChunk struct {
 	CaptureStartedAtMS int64      `json:"capture_started_at_ms,omitempty"`
 	CaptureEndedAtMS   int64      `json:"capture_ended_at_ms,omitempty"`
 	DataBase64         string     `json:"data_base64"`
+}
+
+func ValidateAudioChunk(chunk AudioChunk) error {
+	if chunk.Codec != AudioCodecPCMS16LE {
+		return fmt.Errorf("audio codec %q is unsupported", chunk.Codec)
+	}
+	switch chunk.SampleRateHz {
+	case 16000, 24000, 48000:
+	default:
+		return fmt.Errorf("audio sample_rate_hz %d is unsupported", chunk.SampleRateHz)
+	}
+	if chunk.Channels != 1 {
+		return fmt.Errorf("audio channels %d is unsupported", chunk.Channels)
+	}
+	switch chunk.DurationMS {
+	case 20, 40:
+	default:
+		return fmt.Errorf("audio duration_ms %d is unsupported", chunk.DurationMS)
+	}
+	if chunk.DataBase64 == "" {
+		return fmt.Errorf("audio data_base64 is required")
+	}
+	data, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+	if err != nil {
+		return fmt.Errorf("audio data_base64 is invalid: %w", err)
+	}
+	expectedBytes := chunk.SampleRateHz * chunk.DurationMS * chunk.Channels * 2 / 1000
+	if len(data) != expectedBytes {
+		return fmt.Errorf("audio pcm byte length %d does not match expected %d", len(data), expectedBytes)
+	}
+	return nil
 }
 
 type AudioPlaybackChunk struct {

@@ -783,7 +783,7 @@ func TestMetricsEndpointRecordsAudioFrame(t *testing.T) {
 		SampleRateHz: 16000,
 		Channels:     1,
 		DurationMS:   20,
-		DataBase64:   "AAAA",
+		DataBase64:   pcm16Base64WithSample(0),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1266,7 +1266,7 @@ func TestAudioWebSocketAcceptsAudioFrame(t *testing.T) {
 		SampleRateHz: 16000,
 		Channels:     1,
 		DurationMS:   20,
-		DataBase64:   "AAAA",
+		DataBase64:   pcm16Base64WithSample(0),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1314,7 +1314,7 @@ func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 		SampleRateHz: 16000,
 		Channels:     1,
 		DurationMS:   20,
-		DataBase64:   "AAAA",
+		DataBase64:   pcm16Base64WithSample(0),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1405,6 +1405,69 @@ func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 		if !strings.Contains(metricsRec.Body.String(), want) {
 			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
 		}
+	}
+}
+
+func TestAudioWebSocketRejectsInvalidPCMFrame(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	audio, err := json.Marshal(protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-sim-001",
+		Kind:      protocol.KindAudioFrame,
+		Seq:       1,
+		TraceID:   "a21-trace-audio-invalid",
+		SessionID: "a21-session-audio-invalid",
+		Payload:   audio,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	events := readControlEvents(t, ctx, conn, 1)
+	var payload protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.State != protocol.ExpressionError || !strings.Contains(payload.Text, "invalid audio frame") {
+		t.Fatalf("payload = %+v, want invalid audio frame error", payload)
+	}
+
+	readCtx, readCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer readCancel()
+	var unexpected protocol.Envelope
+	if err := wsjson.Read(readCtx, conn, &unexpected); err == nil {
+		t.Fatalf("unexpected envelope after invalid audio: %+v", unexpected)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-audio-invalid", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), "audio.ingress.invalid") {
+		t.Fatalf("trace missing invalid marker: %s", traceRec.Body.String())
+	}
+	if strings.Contains(traceRec.Body.String(), "audio.playback.chunk.sent") {
+		t.Fatalf("invalid audio should not emit playback trace: %s", traceRec.Body.String())
 	}
 }
 
@@ -1689,7 +1752,7 @@ func writeDeviceEvent(t *testing.T, ctx context.Context, conn *websocket.Conn, e
 
 func writeAudioFrame(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string) protocol.AudioPlaybackChunk {
 	t.Helper()
-	return writeAudioFrameWithPayload(t, ctx, conn, seq, traceID, sessionID, "AAAA")
+	return writeAudioFrameWithPayload(t, ctx, conn, seq, traceID, sessionID, pcm16Base64WithSample(0))
 }
 
 func writeAudioFrameWithPayload(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string, payloadBase64 string) protocol.AudioPlaybackChunk {

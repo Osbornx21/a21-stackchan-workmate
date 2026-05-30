@@ -68,7 +68,7 @@ go run ./cmd/a21 serial-list
 - `internal/app`: CLI dispatch for version, preflight, doctor, gateway, serial inventory, and firmware release guards.
 - `internal/audio`: Gateway audio ingress buffer plus RMS-based mock VAD transition detector.
 - `internal/firmwarecheck`: A21 firmware manifest validation, artifact packaging, sha256 validation, serial inventory, upload dry-run checks, and Gateway device-identity dry-run checks.
-- `internal/gateway`: mock Gateway HTTP/WebSocket server, bounded audio ingress observability, active playback stream tracking for audio-path barge-in, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
+- `internal/gateway`: mock Gateway HTTP/WebSocket server, validated audio-frame ingress, bounded audio ingress observability, active playback stream tracking for audio-path barge-in, real-sized mock PCM downlink chunks, metrics, device registry, trace waterfall, provider health endpoint, and built-in simulator HTML.
 - `internal/runtimeguard`: env, endpoint, cwd, port, proxy/no-proxy, and fingerprint guardrails.
 - `internal/protocol`: versioned A21 envelopes, audio chunks, control events, device events, modes, and expression states.
 - `internal/providers`: provider-neutral voice contracts, deterministic mock/cascade behavior, explicit provider HTTP network policy, provider readiness registry, and redacted provider smoke boundary.

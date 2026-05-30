@@ -485,7 +485,18 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		traceID, sessionID := s.ids(frame.TraceID, frame.SessionID)
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.frame.received", s.now().UnixMilli())
-		ingress := s.observeAudioIngress(frame, traceID, sessionID)
+		ingress, validAudio := s.observeAudioIngress(frame, traceID, sessionID)
+		if frame.Kind == protocol.KindAudioFrame && !validAudio {
+			events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+				{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: "invalid audio frame", Final: true},
+			})
+			for _, event := range events {
+				if err := writeAudioEnvelope(ctx, conn, writeMu, event); err != nil {
+					return
+				}
+			}
+			continue
+		}
 		if s.shouldBargeIn(frame, traceID, sessionID, ingress) {
 			events := s.audioBargeInEvents(frame, traceID, sessionID)
 			for _, event := range events {
@@ -521,14 +532,18 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) audio.IngressResult {
+func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) (audio.IngressResult, bool) {
 	if frame.Kind != protocol.KindAudioFrame {
-		return audio.IngressResult{}
+		return audio.IngressResult{}, true
 	}
 	var chunk protocol.AudioChunk
 	if err := json.Unmarshal(frame.Payload, &chunk); err != nil {
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.invalid", s.now().UnixMilli())
-		return audio.IngressResult{}
+		return audio.IngressResult{}, false
+	}
+	if err := protocol.ValidateAudioChunk(chunk); err != nil {
+		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.invalid", s.now().UnixMilli())
+		return audio.IngressResult{}, false
 	}
 	result := s.audioIngress.Push(audio.Frame{
 		DeviceID:     frame.DeviceID,
@@ -556,7 +571,7 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		}
 		s.recordTrace(traceID, sessionID, frame.DeviceID, string(event), s.now().UnixMilli())
 	}
-	return result
+	return result, true
 }
 
 func vadDetectorLabel(detector string) string {
