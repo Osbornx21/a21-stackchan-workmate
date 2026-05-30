@@ -14,6 +14,7 @@ import (
 type TextStreamCompletionOptions struct {
 	ProviderName string
 	Prompt       string
+	MaxTokens    int
 	Client       *http.Client
 }
 
@@ -70,12 +71,16 @@ func RunTextStreamCompletionFromEnv(ctx context.Context, env []string, options T
 	if prompt == "" {
 		prompt = "A21 local voice loopback. Reply briefly."
 	}
+	maxTokens := options.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 48
+	}
 	body := map[string]any{
 		"model": providerSmokeModel(env, spec),
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-		"max_tokens": 48,
+		"max_tokens": maxTokens,
 		"stream":     true,
 	}
 	payload, err := json.Marshal(body)

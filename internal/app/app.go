@@ -1388,7 +1388,8 @@ func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options
 		}
 		result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
 			ProviderName: "deepseek",
-			Prompt:       prompt,
+			Prompt:       fastCompanionTextStreamPrompt(prompt),
+			MaxTokens:    20,
 			Client:       options.Client,
 		})
 		if err != nil {
@@ -1408,6 +1409,14 @@ func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options
 		report.Findings = append(report.Findings, "unsupported local text provider")
 		return "", fmt.Errorf("unsupported local text provider")
 	}
+}
+
+func fastCompanionTextStreamPrompt(transcript string) string {
+	cleaned := strings.TrimSpace(transcript)
+	if cleaned == "" {
+		cleaned = "我在。"
+	}
+	return "你是 A21 桌面伙伴。用中文不超过12个字自然回应，不要解释，不要列点。用户说：" + cleaned
 }
 
 func runMockLocalVoiceLoopbackTextStream(report *localVoiceLoopbackReport) (string, error) {

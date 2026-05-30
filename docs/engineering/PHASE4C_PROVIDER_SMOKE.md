@@ -59,7 +59,7 @@ Later realtime planning phases add lower-level realtime WebSocket readiness repo
 DeepSeek smoke:
 
 - `A21_LAB_DEEPSEEK_API_KEY`
-- optional `A21_DEEPSEEK_MODEL`, default `deepseek-v4-flash`
+- optional `A21_DEEPSEEK_MODEL`, default `deepseek-chat`
 - optional `A21_DEEPSEEK_BASE_URL`, default `https://api.deepseek.com`
 
 No other provider env is required for Phase 4C provider smoke.

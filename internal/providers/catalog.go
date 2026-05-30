@@ -9,7 +9,7 @@ const (
 	ProviderFamilyTextStream ProviderFamily = "text_stream"
 )
 
-const DeepSeekDefaultModel = "deepseek-v4-flash"
+const DeepSeekDefaultModel = "deepseek-chat"
 
 type ProviderProfile struct {
 	Name           string         `json:"name"`

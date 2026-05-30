@@ -48,7 +48,7 @@ func TestProviderSmokeDryRunReportsReadyWithoutLeakingSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := string(data)
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("smoke report leaked %q: %s", forbidden, rendered)
 		}
@@ -74,7 +74,7 @@ func TestProviderSmokeExecutesOpenAICompatibleRequest(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		sawModel = body.Model == "deepseek-v4-flash"
+		sawModel = body.Model == "deepseek-chat"
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"}}]}`))
 	}))
@@ -99,7 +99,7 @@ func TestProviderSmokeExecutesOpenAICompatibleRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "sk-a21-secret") || strings.Contains(string(data), "deepseek-v4-flash") {
+	if strings.Contains(string(data), "sk-a21-secret") || strings.Contains(string(data), "deepseek-chat") {
 		t.Fatalf("smoke report leaked secret or model: %s", data)
 	}
 }
@@ -114,7 +114,7 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		sawStream = body.Stream && body.Model == "deepseek-v4-flash"
+		sawStream = body.Stream && body.Model == "deepseek-chat"
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(strings.Join([]string{
 			`data: {"choices":[{"delta":{"reasoning":"先想"}}]}`,
@@ -165,7 +165,7 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := string(data)
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "先想", "OK"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "先想", "OK"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("stream report leaked %q: %s", forbidden, rendered)
 		}
@@ -174,7 +174,7 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 
 func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `bad key sk-a21-secret for deepseek-v4-flash`, http.StatusUnauthorized)
+		http.Error(w, `bad key sk-a21-secret for deepseek-chat`, http.StatusUnauthorized)
 	}))
 	defer server.Close()
 
@@ -204,7 +204,7 @@ func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing
 		t.Fatal(err)
 	}
 	rendered := string(data)
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "bad key"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "bad key"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("failure report leaked %q: %s", forbidden, rendered)
 		}

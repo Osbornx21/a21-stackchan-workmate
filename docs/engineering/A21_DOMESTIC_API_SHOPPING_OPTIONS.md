@@ -31,7 +31,7 @@ The current executable provider-smoke registry is deliberately narrow:
 
 | A21 provider | Capability | Required env |
 | --- | --- | --- |
-| `deepseek` | text LLM / professional reasoning | `A21_LAB_DEEPSEEK_API_KEY`; optional `A21_DEEPSEEK_MODEL`, default `deepseek-v4-flash` |
+| `deepseek` | text LLM / professional reasoning | `A21_LAB_DEEPSEEK_API_KEY`; optional `A21_DEEPSEEK_MODEL`, default `deepseek-chat` |
 
 Candidate providers below remain procurement/research inputs, not current executable P0 provider-smoke profiles:
 
@@ -148,7 +148,7 @@ This category supports A21's non-realtime brain, professional summarization, fal
 
 | Vendor | Product / capability | API shape | Buy / ask for | A21 fit | Current repo state | Official source |
 | --- | --- | --- | --- | --- | --- | --- |
-| DeepSeek | DeepSeek API | OpenAI/Anthropic-compatible; `https://api.deepseek.com`; models `deepseek-v4-flash`, `deepseek-v4-pro` | API key, prepaid balance, model access, rate limit | P0 text reasoning and current executable smoke | `deepseek` smoke execution exists | [DeepSeek quick start](https://api-docs.deepseek.com/), [pricing/models](https://api-docs.deepseek.com/quick_start/pricing) |
+| DeepSeek | DeepSeek API | OpenAI/Anthropic-compatible; `https://api.deepseek.com`; models `deepseek-chat`, `deepseek-v4-pro` | API key, prepaid balance, model access, rate limit | P0 text reasoning and current executable smoke | `deepseek` smoke execution exists | [DeepSeek quick start](https://api-docs.deepseek.com/), [pricing/models](https://api-docs.deepseek.com/quick_start/pricing) |
 | Alibaba Bailian/DashScope | Qwen models via Model Studio | OpenAI-compatible `https://dashscope.aliyuncs.com/compatible-mode/v1` | API key, Qwen model access, Beijing region, rate limits | P0 broad domestic text baseline | `bailian_dashscope` smoke execution exists | [DashScope OpenAI-compatible](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) |
 | Volcengine Ark / Doubao | Doubao text models | Ark / OpenAI-compatible style in Ark ecosystem | Ark API key, model endpoints, quota, data retention terms | P1 if voice stack also uses Volcengine | No adapter yet | [Volcengine docs portal](https://www.volcengine.com/docs) |
 | Tencent Cloud | Hunyuan / TokenHub | OpenAI-compatible and Tencent API forms | Hunyuan/TokenHub key, model access, rate limits | P1/P2 enterprise fallback | No adapter yet | [Tencent Hunyuan OpenAI-compatible](https://cloud.tencent.com/document/product/1729/111007) |

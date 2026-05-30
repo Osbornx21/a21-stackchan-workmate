@@ -78,11 +78,13 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 	var sawAuth bool
 	var sawModel bool
 	var sawPrompt bool
+	var sawMaxTokens bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sawAuth = r.Header.Get("Authorization") == "Bearer sk-a21-secret"
 		var body struct {
-			Model    string `json:"model"`
-			Messages []struct {
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
+			Messages  []struct {
 				Content string `json:"content"`
 			} `json:"messages"`
 			Stream bool `json:"stream"`
@@ -90,7 +92,8 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		sawModel = body.Model == "deepseek-v4-flash"
+		sawModel = body.Model == "deepseek-chat"
+		sawMaxTokens = body.MaxTokens == 16
 		sawPrompt = len(body.Messages) == 1 && body.Messages[0].Content == "不要进报告"
 		if !body.Stream {
 			t.Fatal("stream = false, want true")
@@ -111,14 +114,15 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 	}, TextStreamCompletionOptions{
 		ProviderName: "deepseek",
 		Prompt:       "不要进报告",
+		MaxTokens:    16,
 		Client:       server.Client(),
 	})
 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sawAuth || !sawModel || !sawPrompt {
-		t.Fatalf("saw auth/model/prompt = %v/%v/%v, want true/true/true", sawAuth, sawModel, sawPrompt)
+	if !sawAuth || !sawModel || !sawPrompt || !sawMaxTokens {
+		t.Fatalf("saw auth/model/prompt/max_tokens = %v/%v/%v/%v, want all true", sawAuth, sawModel, sawPrompt, sawMaxTokens)
 	}
 	if result.Provider != "deepseek" || result.Family != ProviderFamilyTextStream {
 		t.Fatalf("provider/family = %q/%q", result.Provider, result.Family)
@@ -133,7 +137,7 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "不要进报告", "给 StackChan 一个短回复", "先想一下"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "不要进报告", "给 StackChan 一个短回复", "先想一下"} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("text stream result leaked %q: %s", forbidden, data)
 		}

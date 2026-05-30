@@ -385,7 +385,7 @@ func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked provider value %q: %s", forbidden, stdout.String())
 		}
@@ -572,7 +572,7 @@ func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
 		}
@@ -616,7 +616,7 @@ func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T)
 			t.Fatalf("provider smoke report missing %q: %s", want, reportJSON)
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("provider smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
 		}
@@ -661,7 +661,7 @@ func TestRunProviderSmokeAcceptsStreamRepeatFlags(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
 		}
@@ -993,6 +993,21 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 		}, nil
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			MaxTokens int `json:"max_tokens"`
+			Messages  []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.MaxTokens != 20 {
+			t.Fatalf("max_tokens = %d, want 20", body.MaxTokens)
+		}
+		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "12个字") || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
+			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(strings.Join([]string{
 			`data: {"choices":[{"delta":{"reasoning":"先识别情绪"}}]}`,
@@ -1039,7 +1054,7 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "用户原文不要进报告", "这是来自 DeepSeek 的回复", "先识别情绪", "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "用户原文不要进报告", "这是来自 DeepSeek 的回复", "先识别情绪", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
