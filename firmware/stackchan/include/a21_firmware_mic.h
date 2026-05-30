@@ -12,16 +12,32 @@ static constexpr uint8_t A21_MIC_FRAME_QUEUE_CAP = 4;
 #define A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE 0
 #endif
 
+#ifndef A21_ENABLE_MIC_DIAGNOSTIC_PROBE
+#define A21_ENABLE_MIC_DIAGNOSTIC_PROBE 0
+#endif
+
 inline bool a21CoreS3MicCaptureEnabled() {
   return A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE == 1;
 }
 
-inline const char* a21MicrophoneCapabilityStatus() {
-#if A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE == 1
+inline bool a21MicDiagnosticProbeBuild() {
+  return A21_ENABLE_MIC_DIAGNOSTIC_PROBE == 1;
+}
+
+inline const char* a21MicrophoneCapabilityStatusForPolicy(bool capture_enabled, bool diagnostic_probe) {
+  if (!capture_enabled) {
+    return "disabled_m5unified_i2s_stop_crash_guard";
+  }
+  if (diagnostic_probe) {
+    return "diagnostic_probe_m5unified_i2s_capture";
+  }
   return "available";
-#else
-  return "disabled_m5unified_i2s_stop_crash_guard";
-#endif
+}
+
+inline const char* a21MicrophoneCapabilityStatus() {
+  return a21MicrophoneCapabilityStatusForPolicy(
+      a21CoreS3MicCaptureEnabled(),
+      a21MicDiagnosticProbeBuild());
 }
 
 struct A21MicDriver {

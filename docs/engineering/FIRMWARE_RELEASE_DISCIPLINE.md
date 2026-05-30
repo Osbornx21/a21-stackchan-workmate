@@ -62,8 +62,11 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags
 - `scripts/a21_block_raw_upload.py` PlatformIO pre-build script for failing raw upload targets before flashing can start
 - `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata
+- diagnostic-only microphone probe environment: `a21_stackchan_cores3_mic_probe`
 
 `firmware-check` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. It also treats `firmware/stackchan/a21-firmware.json` as the firmware release identity source of truth: every `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flag in the CoreS3 and native test environments must exactly match the manifest. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
+
+The microphone probe environment is deliberately not the release environment. It enables `A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE=1` and `A21_ENABLE_MIC_DIAGNOSTIC_PROBE=1`, causing the device capability status to report `diagnostic_probe_m5unified_i2s_capture` rather than production `available`. Existing firmware package and upload guards continue to accept only the production `a21_stackchan_cores3` release provenance, so a probe build cannot be silently wrapped as a formal A21 release artifact.
 
 The generated commit header is ignored:
 
@@ -88,7 +91,9 @@ The preferred wrapper is:
 ```bash
 make firmware-test
 make firmware-build
+make firmware-mic-probe-build
 make firmware-upload-blocker-check
+make firmware-mic-probe-upload-blocker-check
 make firmware-package
 make firmware-current-artifact-check
 make firmware-artifact-prune-plan
@@ -97,7 +102,11 @@ make office-handoff
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
+`firmware-mic-probe-build` compiles only the isolated CoreS3 microphone diagnostic environment. It is for I2S/microphone bring-up evidence and must not be treated as a release package or production firmware unless a later ADR explicitly promotes the path.
+
 `firmware-upload-blocker-check` intentionally invokes PlatformIO's raw upload target and expects it to fail with the A21 blocker message before any hardware write can start. A successful raw upload target is a release-blocking failure.
+
+`firmware-mic-probe-upload-blocker-check` repeats the same raw-upload negative test for `a21_stackchan_cores3_mic_probe`. The diagnostic build may compile for lab evidence, but it must not create an unguarded flashing lane.
 
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
@@ -125,7 +134,7 @@ Current native firmware tests cover:
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 - audio WebSocket begin gating after Gateway connection, full 640-byte mock `audio.frame` envelope construction, queued mic PCM `audio.frame` uplink construction, ack control-event parsing, mock `audio.playback.chunk` downlink parsing, full 20 ms 16 kHz PCM base64 payload capacity, fixed 640-byte PCM encode/decode, bounded playback buffering, M5 speaker pump queue gating, and send rejection while disconnected
-- microphone capture policy and four-frame uplink queue that record one PCM16 frame only when the render state is capture-safe and the speaker queue is idle in hardware-free tests; physical CoreS3 M5Unified microphone capture is currently disabled by a crash guard and reports `disabled_m5unified_i2s_stop_crash_guard`
+- microphone capture policy and four-frame uplink queue that record one PCM16 frame only when the render state is capture-safe and the speaker queue is idle in hardware-free tests; physical CoreS3 release microphone capture is currently disabled by a crash guard, while `a21_stackchan_cores3_mic_probe` exposes the isolated diagnostic status `diagnostic_probe_m5unified_i2s_capture`
 - semantic touch intent runtime for `wake_or_listen` and `barge_in`, preserving `screen` vs `top_sensor` source metadata through Gateway `device.event` envelopes
 - playback state-machine behavior for starting a speaking stream once, replacing streams with stop/clear, clearing buffered chunks, and stopping plus clearing immediately on barge-in
 - StackChan Y-axis servo clamp to 5 to 85 degrees

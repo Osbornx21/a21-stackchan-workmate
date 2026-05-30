@@ -20,11 +20,17 @@ make firmware-tools
 go run ./cmd/a21 firmware-check
 make firmware-test
 make firmware-build
+make firmware-mic-probe-build
+make firmware-mic-probe-upload-blocker-check
 ```
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
 
 `firmware-check` treats `a21-firmware.json` as the release identity source of truth. The CoreS3 and native PlatformIO environments must use matching `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags, or the build gate fails before packaging.
+
+`make firmware-mic-probe-build` compiles `a21_stackchan_cores3_mic_probe`, an isolated diagnostic build that turns on M5Unified microphone capture with `A21_ENABLE_MIC_DIAGNOSTIC_PROBE=1`. It is not the default environment and must not be packaged as a production release artifact.
+
+`make firmware-mic-probe-upload-blocker-check` proves the diagnostic environment also fails raw PlatformIO upload targets before a flash can start.
 
 ## Runtime Surface
 
@@ -91,7 +97,9 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_speaker.h` owns the first real speaker pump boundary. It consumes decoded PCM frames only while the render state is `speaking`, waits when the M5Unified speaker channel already has two queued buffers, copies each 20 ms frame into one of three stable slots, and then calls `M5.Speaker.playRaw(...)`. This avoids handing M5Unified a pointer to buffer memory that may be cleared on barge-in.
 
-`a21_firmware_mic.h` owns the first microphone capture policy boundary and a bounded four-frame uplink queue. The hardware-free policy still records one 20 ms / 16 kHz / mono PCM16 frame only when the render state is capture-safe and the speaker channel queue is empty, then the audio WebSocket runtime can encode that frame into an A21 `audio.frame`. On physical CoreS3 builds, the M5Unified mic capture path is currently guarded off by default because it can crash inside `Mic_Class::mic_task` / ESP-IDF `i2s_stop`; firmware reports the microphone capability as `disabled_m5unified_i2s_stop_crash_guard` until a dedicated microphone spike replaces or stabilizes that path.
+`a21_firmware_mic.h` owns the first microphone capture policy boundary and a bounded four-frame uplink queue. The hardware-free policy still records one 20 ms / 16 kHz / mono PCM16 frame only when the render state is capture-safe and the speaker channel queue is empty, then the audio WebSocket runtime can encode that frame into an A21 `audio.frame`. On the default physical CoreS3 release build, the M5Unified mic capture path is still guarded off because earlier repeated I2S stop/start behavior could crash inside `Mic_Class::mic_task` / ESP-IDF `i2s_stop`; firmware reports the microphone capability as `disabled_m5unified_i2s_stop_crash_guard`.
+
+The dedicated `a21_stackchan_cores3_mic_probe` environment enables the same M5Unified mic path only for diagnosis. Its capability status is `diagnostic_probe_m5unified_i2s_capture`, not production `available`. The CoreS3 driver now switches I2S based on real M5Unified task state (`isRunning`) instead of pin-configuration state (`isEnabled`) so probe builds do not end/restart speaker or mic on every capture frame.
 
 The firmware still does not run VAD on device, prove acoustic echo cancellation, prove physical microphone quality, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path, while physical microphone uplink is intentionally disabled behind the crash guard and must not be counted as real user-facing audio until hardware acceptance passes.
 

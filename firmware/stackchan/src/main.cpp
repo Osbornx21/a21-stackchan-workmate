@@ -299,7 +299,7 @@ void queueTouchSample(A21TouchSample sample) {
 }
 
 void arduinoEndMicForSpeaker() {
-  if (!M5.Mic.isEnabled()) {
+  if (!M5.Mic.isRunning()) {
     return;
   }
   while (M5.Mic.isRecording()) {
@@ -366,6 +366,31 @@ bool arduinoMicEnabled(void* ctx) {
   return !M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL);
 }
 
+bool arduinoWaitMicIdle(uint32_t timeout_ms) {
+  const uint32_t started_at_ms = millis();
+  while (M5.Mic.isRecording()) {
+    delay(1);
+    if (millis() - started_at_ms > timeout_ms) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool arduinoStartMicForCapture(uint32_t sample_rate_hz) {
+  if (M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL)) {
+    return false;
+  }
+  if (M5.Speaker.isRunning()) {
+    M5.Speaker.end();
+  }
+  M5.Mic.setSampleRate(sample_rate_hz);
+  if (M5.Mic.isRunning()) {
+    return true;
+  }
+  return M5.Mic.begin();
+}
+
 bool arduinoMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uint32_t sample_rate_hz) {
   (void)ctx;
   if (samples == nullptr || sample_count != A21_AUDIO_PCM_FRAME_SAMPLES ||
@@ -373,10 +398,10 @@ bool arduinoMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uin
       M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL)) {
     return false;
   }
-  if (M5.Speaker.isEnabled()) {
-    M5.Speaker.end();
+  if (!arduinoStartMicForCapture(sample_rate_hz)) {
+    return false;
   }
-  if (!M5.Mic.isEnabled() && !M5.Mic.begin()) {
+  if (!arduinoWaitMicIdle(80)) {
     return false;
   }
   if (!M5.Mic.record(samples, sample_count, sample_rate_hz, false)) {

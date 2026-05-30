@@ -5,7 +5,7 @@ A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_LAN_SAMPLES ?= 5
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute
 
 test:
 	go test ./...
@@ -75,6 +75,9 @@ firmware-test: firmware-tools firmware-check
 firmware-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan
 
+firmware-mic-probe-build: firmware-tools firmware-check
+	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_mic_probe
+
 firmware-upload-blocker-check: firmware-tools
 	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3 -t upload 2>&1 )"; \
 	code="$$?"; \
@@ -88,6 +91,20 @@ firmware-upload-blocker-check: firmware-tools
 		exit 1; \
 	}; \
 	echo "A21 raw PlatformIO upload blocker ok"
+
+firmware-mic-probe-upload-blocker-check: firmware-tools
+	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_mic_probe -t upload 2>&1 )"; \
+	code="$$?"; \
+	printf '%s\n' "$$output"; \
+	if [ "$$code" -eq 0 ]; then \
+		echo "A21 mic probe raw PlatformIO upload blocker failed: upload target exited 0"; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$output" | grep -q "A21 raw PlatformIO upload is forbidden" || { \
+		echo "A21 mic probe raw PlatformIO upload blocker failed: guard message missing"; \
+		exit 1; \
+	}; \
+	echo "A21 mic probe raw PlatformIO upload blocker ok"
 
 firmware-clean-check:
 	@test -z "$$(git status --porcelain --untracked-files=all)" || (echo "A21 firmware package requires a clean git worktree"; git status --short; exit 2)

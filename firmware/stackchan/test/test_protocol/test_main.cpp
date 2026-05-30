@@ -1418,7 +1418,18 @@ void test_mic_capture_records_one_frame_when_listening_and_speaker_idle() {
 
 void test_core_s3_mic_capture_defaults_to_crash_guard_disabled() {
   TEST_ASSERT_FALSE(a21CoreS3MicCaptureEnabled());
+  TEST_ASSERT_FALSE(a21MicDiagnosticProbeBuild());
   TEST_ASSERT_EQUAL_STRING("disabled_m5unified_i2s_stop_crash_guard", a21MicrophoneCapabilityStatus());
+}
+
+void test_mic_capability_status_distinguishes_probe_from_production_available() {
+  TEST_ASSERT_EQUAL_STRING(
+      "disabled_m5unified_i2s_stop_crash_guard",
+      a21MicrophoneCapabilityStatusForPolicy(false, false));
+  TEST_ASSERT_EQUAL_STRING(
+      "diagnostic_probe_m5unified_i2s_capture",
+      a21MicrophoneCapabilityStatusForPolicy(true, true));
+  TEST_ASSERT_EQUAL_STRING("available", a21MicrophoneCapabilityStatusForPolicy(true, false));
 }
 
 void test_mic_capture_skips_when_speaker_queue_is_active() {
@@ -2060,6 +2071,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);
   RUN_TEST(test_mic_capture_records_one_frame_when_listening_and_speaker_idle);
   RUN_TEST(test_core_s3_mic_capture_defaults_to_crash_guard_disabled);
+  RUN_TEST(test_mic_capability_status_distinguishes_probe_from_production_available);
   RUN_TEST(test_mic_capture_skips_when_speaker_queue_is_active);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_speaking);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_thinking);
