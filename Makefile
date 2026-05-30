@@ -10,6 +10,10 @@ A21_MIC_PROBE_MIN_NONZERO_SAMPLES ?= 1
 A21_MIC_PROBE_MIN_VAD_SPEECH ?= 0
 A21_MIC_PROBE_MIN_DELIVERY_RATIO ?= 0.95
 A21_MIC_PROBE_WINDOW_MS ?= 0
+A21_IMU_PROBE_MAX_READ_ERRORS ?= 0
+A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG ?= 500
+A21_IMU_PROBE_MIN_SAMPLES ?= 10
+A21_IMU_PROBE_WINDOW_MS ?= 1500
 A21_HALF_DUPLEX_MIN_DELIVERY_RATIO ?= 0.95
 A21_HALF_DUPLEX_MIN_MIC_FRAMES ?= 1
 A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS ?= 1
@@ -19,7 +23,7 @@ A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
 A21_SPEAKER_MIN_PLAYED_FRAMES ?= 50
 A21_SPEAKER_WINDOW_MS ?= 1000
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-voice-loopback stackchan-local-tts-playback latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-voice-loopback stackchan-local-tts-playback latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute
 
 test:
 	go test ./...
@@ -213,6 +217,10 @@ stackchan-mic-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --min-delivery-ratio "$(A21_MIC_PROBE_MIN_DELIVERY_RATIO)" --output-dir reports
 
+stackchan-imu-probe-acceptance:
+	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
+	go run ./cmd/a21 stackchan-imu-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_IMU_PROBE_WINDOW_MS)" --min-samples "$(A21_IMU_PROBE_MIN_SAMPLES)" --min-accel-total-mg "$(A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG)" --max-read-errors "$(A21_IMU_PROBE_MAX_READ_ERRORS)" --output-dir reports
+
 stackchan-half-duplex-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_HALF_DUPLEX_WINDOW_MS)" --min-mic-frames "$(A21_HALF_DUPLEX_MIN_MIC_FRAMES)" --min-playback-chunks "$(A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS)" --min-delivery-ratio "$(A21_HALF_DUPLEX_MIN_DELIVERY_RATIO)" --output-dir reports
@@ -262,6 +270,15 @@ firmware-mic-probe-flash-execute: firmware-mic-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_MIC_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE" || (echo "A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE is required"; exit 2)
 	go run ./cmd/a21 firmware-mic-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_MIC_PROBE_FLASH_CONFIRM)" --output-dir reports
+
+firmware-imu-probe-flash-plan: firmware-imu-probe-build
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	go run ./cmd/a21 firmware-imu-probe-flash-plan --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+
+firmware-imu-probe-flash-execute: firmware-imu-probe-build
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test "$(A21_IMU_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE" || (echo "A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required"; exit 2)
+	go run ./cmd/a21 firmware-imu-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_IMU_PROBE_FLASH_CONFIRM)" --output-dir reports
 
 verify:
 	go test ./...

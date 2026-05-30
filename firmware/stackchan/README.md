@@ -25,6 +25,7 @@ make firmware-imu-probe-build
 make firmware-mic-probe-upload-blocker-check
 make firmware-imu-probe-upload-blocker-check
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
 ```
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
@@ -40,6 +41,8 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 `make firmware-imu-probe-upload-blocker-check` provides the same no-raw-upload proof for the IMU diagnostic environment.
 
 `make firmware-mic-probe-flash-plan` and `make firmware-mic-probe-flash-execute` are the only diagnostic microphone flash lane. They rebuild the probe firmware, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_i2s_capture` marker, and require `A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE` before any write. Use this only for microphone bring-up, not for production release packaging.
+
+`make firmware-imu-probe-flash-plan` and `make firmware-imu-probe-flash-execute` are the matching read-only diagnostic IMU flash lane. They rebuild `a21_stackchan_cores3_imu_probe`, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_imu` marker, and require `A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE` before any write. Use this only for IMU bring-up evidence, not for production release packaging.
 
 ## Runtime Surface
 

@@ -10,6 +10,8 @@ import (
 
 const StackChanMicProbePlatformIOEnv = "a21_stackchan_cores3_mic_probe"
 const MicProbeCapabilityStatus = "diagnostic_probe_m5unified_i2s_capture"
+const StackChanIMUProbePlatformIOEnv = "a21_stackchan_cores3_imu_probe"
+const IMUProbeCapabilityStatus = "diagnostic_probe_m5unified_imu"
 
 type MicProbeFlashPlanOptions struct {
 	ManifestPath      string
@@ -39,7 +41,38 @@ type MicProbeFlashPlanResult struct {
 	ReportPath               string               `json:"report_path,omitempty"`
 }
 
+type IMUProbeFlashPlanOptions = MicProbeFlashPlanOptions
+type IMUProbeFlashPlanResult = MicProbeFlashPlanResult
+
+type diagnosticProbeFlashConfig struct {
+	Label                    string
+	PlatformIOEnv            string
+	CapabilityStatus         string
+	GuardID                  string
+	NextRequiredConfirmation string
+}
+
 func BuildMicProbeFlashPlan(options MicProbeFlashPlanOptions) (MicProbeFlashPlanResult, error) {
+	return buildDiagnosticProbeFlashPlan(options, diagnosticProbeFlashConfig{
+		Label:                    "mic probe",
+		PlatformIOEnv:            StackChanMicProbePlatformIOEnv,
+		CapabilityStatus:         MicProbeCapabilityStatus,
+		GuardID:                  "a21.firmware.mic_probe_flash_plan.v1",
+		NextRequiredConfirmation: "firmware-mic-probe-flash-execute_with_confirmation_token",
+	})
+}
+
+func BuildIMUProbeFlashPlan(options IMUProbeFlashPlanOptions) (IMUProbeFlashPlanResult, error) {
+	return buildDiagnosticProbeFlashPlan(options, diagnosticProbeFlashConfig{
+		Label:                    "IMU probe",
+		PlatformIOEnv:            StackChanIMUProbePlatformIOEnv,
+		CapabilityStatus:         IMUProbeCapabilityStatus,
+		GuardID:                  "a21.firmware.imu_probe_flash_plan.v1",
+		NextRequiredConfirmation: "firmware-imu-probe-flash-execute_with_confirmation_token",
+	})
+}
+
+func buildDiagnosticProbeFlashPlan(options MicProbeFlashPlanOptions, config diagnosticProbeFlashConfig) (MicProbeFlashPlanResult, error) {
 	generatedAtMS := options.NowMS
 	if generatedAtMS <= 0 {
 		generatedAtMS = time.Now().UnixMilli()
@@ -63,7 +96,7 @@ func BuildMicProbeFlashPlan(options MicProbeFlashPlanOptions) (MicProbeFlashPlan
 	}
 	buildDir := options.BuildDir
 	if buildDir == "" {
-		buildDir = filepath.Join("firmware", "stackchan", ".pio", "build", StackChanMicProbePlatformIOEnv)
+		buildDir = filepath.Join("firmware", "stackchan", ".pio", "build", config.PlatformIOEnv)
 	}
 	coreDir := options.CoreDir
 	if coreDir == "" {
@@ -73,16 +106,16 @@ func BuildMicProbeFlashPlan(options MicProbeFlashPlanOptions) (MicProbeFlashPlan
 	if artifactPath == "" {
 		artifactPath = filepath.Join(buildDir, "firmware.bin")
 	}
-	if err := validateMicProbeBuildPath(buildDir, artifactPath); err != nil {
+	if err := validateDiagnosticProbeBuildPath(config.Label, config.PlatformIOEnv, buildDir, artifactPath); err != nil {
 		return MicProbeFlashPlanResult{}, err
 	}
 	if containsForbiddenPackagePathIdentity(artifactPath) || containsForbiddenPackagePathIdentity(buildDir) || containsForbiddenPackagePathIdentity(coreDir) {
-		return MicProbeFlashPlanResult{}, fmt.Errorf("mic probe flash path contains forbidden legacy identity")
+		return MicProbeFlashPlanResult{}, fmt.Errorf("%s flash path contains forbidden legacy identity", config.Label)
 	}
 	if err := validateEmbeddedArtifactIdentity(artifactPath, manifestResult.Manifest, options.ExpectedGitCommit); err != nil {
-		return MicProbeFlashPlanResult{}, fmt.Errorf("mic probe firmware identity invalid: %w", err)
+		return MicProbeFlashPlanResult{}, fmt.Errorf("%s firmware identity invalid: %w", config.Label, err)
 	}
-	if err := validateMicProbeDiagnosticMarker(artifactPath); err != nil {
+	if err := validateDiagnosticProbeMarker(config.Label, config.CapabilityStatus, artifactPath); err != nil {
 		return MicProbeFlashPlanResult{}, err
 	}
 	checksum, err := fileSHA256(artifactPath)
@@ -94,16 +127,16 @@ func BuildMicProbeFlashPlan(options MicProbeFlashPlanOptions) (MicProbeFlashPlan
 		return MicProbeFlashPlanResult{}, err
 	}
 	return MicProbeFlashPlanResult{
-		GuardID:                  "a21.firmware.mic_probe_flash_plan.v1",
+		GuardID:                  config.GuardID,
 		GeneratedAtMS:            generatedAtMS,
 		DryRun:                   true,
 		FlashAllowed:             false,
-		NextRequiredConfirmation: "firmware-mic-probe-flash-execute_with_confirmation_token",
+		NextRequiredConfirmation: config.NextRequiredConfirmation,
 		Port:                     options.Port,
 		ArtifactPath:             artifactPath,
 		ArtifactSHA256:           checksum,
 		Commit:                   options.ExpectedGitCommit,
-		PlatformIOEnv:            StackChanMicProbePlatformIOEnv,
+		PlatformIOEnv:            config.PlatformIOEnv,
 		BuildDir:                 buildDir,
 		Parts:                    parts,
 		OK:                       true,
@@ -111,11 +144,15 @@ func BuildMicProbeFlashPlan(options MicProbeFlashPlanOptions) (MicProbeFlashPlan
 }
 
 func validateMicProbeBuildPath(buildDir string, artifactPath string) error {
-	if filepath.Base(filepath.Clean(buildDir)) != StackChanMicProbePlatformIOEnv {
-		return fmt.Errorf("mic probe build dir must end with %s", StackChanMicProbePlatformIOEnv)
+	return validateDiagnosticProbeBuildPath("mic probe", StackChanMicProbePlatformIOEnv, buildDir, artifactPath)
+}
+
+func validateDiagnosticProbeBuildPath(label string, platformIOEnv string, buildDir string, artifactPath string) error {
+	if filepath.Base(filepath.Clean(buildDir)) != platformIOEnv {
+		return fmt.Errorf("%s build dir must end with %s", label, platformIOEnv)
 	}
 	if filepath.Base(filepath.Clean(artifactPath)) != "firmware.bin" {
-		return fmt.Errorf("mic probe artifact must be PlatformIO firmware.bin")
+		return fmt.Errorf("%s artifact must be PlatformIO firmware.bin", label)
 	}
 	expectedParent, err := filepath.Abs(filepath.Clean(buildDir))
 	if err != nil {
@@ -126,18 +163,22 @@ func validateMicProbeBuildPath(buildDir string, artifactPath string) error {
 		artifactParent = filepath.Dir(filepath.Clean(artifactPath))
 	}
 	if expectedParent != artifactParent {
-		return fmt.Errorf("mic probe artifact must be inside the mic probe build dir")
+		return fmt.Errorf("%s artifact must be inside the diagnostic probe build dir", label)
 	}
 	return nil
 }
 
 func validateMicProbeDiagnosticMarker(path string) error {
+	return validateDiagnosticProbeMarker("mic probe", MicProbeCapabilityStatus, path)
+}
+
+func validateDiagnosticProbeMarker(label string, capabilityStatus string, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if !bytes.Contains(data, []byte(MicProbeCapabilityStatus)) {
-		return fmt.Errorf("mic probe firmware missing diagnostic status marker")
+	if !bytes.Contains(data, []byte(capabilityStatus)) {
+		return fmt.Errorf("%s firmware missing diagnostic status marker", label)
 	}
 	return nil
 }

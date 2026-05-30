@@ -123,6 +123,17 @@ make firmware-mic-probe-flash-execute
 
 The plan and execute commands rebuild `a21_stackchan_cores3_mic_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_mic_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require the `diagnostic_probe_m5unified_i2s_capture` marker, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-mic-probe-flash-*.json` receipts. This lane is for microphone diagnosis only; it does not promote microphone capability to production `available`.
 
+The IMU diagnostic lane mirrors that discipline with its own build, marker, confirmation token, and reports:
+
+```bash
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE \
+make firmware-imu-probe-flash-execute
+```
+
+The IMU plan and execute commands rebuild `a21_stackchan_cores3_imu_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require the `diagnostic_probe_m5unified_imu` marker, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-imu-probe-flash-*.json` receipts. This lane is read-only diagnostic telemetry only; it does not promote IMU gestures, posture behavior, or production `available`.
+
 After a mic-probe flash and a live `audio_probe_only` Gateway validation window, freeze the evidence with:
 
 ```bash
@@ -150,6 +161,19 @@ make stackchan-mic-probe-acceptance
 This writes `reports/a21-stackchan-mic-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_microphone_only`, `production_capability_promoted=false`, firmware identity, runtime mic counters, latest sample evidence, Gateway metrics, capture/send/ingress rates, and delivery ratios. With `A21_MIC_PROBE_WINDOW_MS>0`, the command first snapshots Gateway/device state, sends a `LISTENING` control event with `audio_probe_only=true`, waits the requested window, snapshots again, sends `IDLE`, and validates deltas. That avoids false failures from cumulative Gateway counters that existed before the probe window.
 
 The gate requires the device to report microphone capability `diagnostic_probe_m5unified_i2s_capture`, captured/sent frame deltas above threshold, microphone-to-audio-WS and audio-WS-to-Gateway delivery ratios above threshold, zero new driver errors, zero new queue drops, non-zero sample evidence, Gateway audio ingress deltas, no new playback chunks, and optional VAD speech deltas. A passing report means the isolated M5Unified/CoreS3 diagnostic microphone path captured and uplinked real PCM frames during this session. It still does not prove production microphone availability, speaker output, AEC, full-duplex, provider latency, or the release firmware path.
+
+After an IMU-probe flash, freeze read-only posture telemetry evidence with:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+A21_IMU_PROBE_WINDOW_MS=1500 \
+A21_IMU_PROBE_MIN_SAMPLES=10 \
+A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG=500 \
+A21_IMU_PROBE_MAX_READ_ERRORS=0 \
+make stackchan-imu-probe-acceptance
+```
+
+This writes `reports/a21-stackchan-imu-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_imu_only`, `production_capability_promoted=false`, firmware identity, capability status, runtime IMU counters, acceleration, gyro, posture, sample-rate evidence, and sample/read-error deltas. A passing report means the isolated M5Unified/CoreS3 IMU diagnostic path is alive and useful as telemetry; it still does not approve product gestures, motion reactions, privacy behavior, or release-firmware IMU promotion.
 
 For the first real-device mic-to-speaker loop, use:
 

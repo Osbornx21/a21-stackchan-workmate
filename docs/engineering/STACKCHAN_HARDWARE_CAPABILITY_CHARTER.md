@@ -104,4 +104,6 @@ IMU diagnostic discipline:
 - `a21_stackchan_cores3_imu_probe` is the only current IMU diagnostic build;
 - `make firmware-imu-probe-build` must pass before any physical IMU test window;
 - `make firmware-imu-probe-upload-blocker-check` must continue proving raw PlatformIO uploads are blocked;
+- `make firmware-imu-probe-flash-plan` and `make firmware-imu-probe-flash-execute` are the only guarded IMU diagnostic flash lane;
+- `make stackchan-imu-probe-acceptance` is required before treating IMU telemetry as live diagnostic evidence;
 - IMU runtime echo is telemetry, not product promotion.

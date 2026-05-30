@@ -3626,6 +3626,148 @@ func TestRunFirmwareMicProbeFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T)
 	}
 }
 
+func TestRunFirmwareIMUProbeFlashPlanWritesNoFlashReport(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestIMUProbeFlashImages(t, dir, "abcdef1")
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-imu-probe-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"guard_id": "a21.firmware.imu_probe_flash_plan.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"platformio_env": "a21_stackchan_cores3_imu_probe"`,
+		"firmware IMU probe flash plan ok",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-imu-probe-flash-plan-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("plan reports = %d, want 1", len(matches))
+	}
+}
+
+func TestRunFirmwareIMUProbeFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestIMUProbeFlashImages(t, dir, "abcdef1")
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-imu-probe-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunStackChanIMUProbeAcceptanceConfirmsReadOnlySamples(t *testing.T) {
+	after := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			if after {
+				fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"imu":"diagnostic_probe_m5unified_imu","screen":"available","rgb":"available"},"runtime_echo":{"imu_available":"1","imu_samples":"27","imu_read_errors":"0","imu_accel_mg_x":"5","imu_accel_mg_y":"996","imu_accel_mg_z":"80","imu_gyro_mdps_x":"0","imu_gyro_mdps_y":"0","imu_gyro_mdps_z":"0","imu_posture":"upright"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+				return
+			}
+			after = true
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"imu":"diagnostic_probe_m5unified_imu","screen":"available","rgb":"available"},"runtime_echo":{"imu_available":"1","imu_samples":"10","imu_read_errors":"0","imu_accel_mg_x":"4","imu_accel_mg_y":"997","imu_accel_mg_z":"75","imu_gyro_mdps_x":"0","imu_gyro_mdps_y":"0","imu_gyro_mdps_z":"0","imu_posture":"upright"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		default:
+			t.Fatalf("path = %q, want /v1/devices", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-imu-probe-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--window-ms", "1",
+		"--min-samples", "10",
+		"--min-accel-total-mg", "500",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_imu_probe_acceptance.v1"`,
+		`"imu_probe_acceptance_status": "confirmed"`,
+		`"imu": "diagnostic_probe_m5unified_imu"`,
+		`"imu_samples_delta": 17`,
+		`"imu_posture": "upright"`,
+		"stackchan IMU probe acceptance ok",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-imu-probe-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %v, want one IMU probe report", matches)
+	}
+}
+
 func TestRunOfficePreflightBuildsNoFlashReport(t *testing.T) {
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
@@ -5844,6 +5986,27 @@ func writeTestMicProbeFlashImages(t *testing.T, dir string, commit string) (stri
 		filepath.Join(buildDir, "partitions.bin"): []byte("a21 mic probe partitions"),
 		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 mic probe boot app"),
 		artifact: []byte("a21-stackchan\n0.1.0\nm5stack-cores3\n" + commit + "\ndiagnostic_probe_m5unified_i2s_capture\n"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buildDir, coreDir, artifact
+}
+
+func writeTestIMUProbeFlashImages(t *testing.T, dir string, commit string) (string, string, string) {
+	t.Helper()
+	buildDir := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3_imu_probe")
+	coreDir := filepath.Join(dir, "platformio-core")
+	artifact := filepath.Join(buildDir, "firmware.bin")
+	for path, content := range map[string][]byte{
+		filepath.Join(buildDir, "bootloader.bin"): []byte("a21 IMU probe bootloader"),
+		filepath.Join(buildDir, "partitions.bin"): []byte("a21 IMU probe partitions"),
+		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 IMU probe boot app"),
+		artifact: []byte("a21-stackchan\n0.1.0\nm5stack-cores3\n" + commit + "\ndiagnostic_probe_m5unified_imu\n"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

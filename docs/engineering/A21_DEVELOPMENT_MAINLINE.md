@@ -97,7 +97,7 @@ go run ./cmd/a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:2108
 
 The command is a planning and diagnostic gate only. It must not flash firmware, delete artifacts, or promote a planned capability to `available`.
 
-Current progress: the IMU track now has a guarded native runtime boundary and isolated `a21_stackchan_cores3_imu_probe` build lane. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior.
+Current progress: the IMU track now has a guarded native runtime boundary, isolated `a21_stackchan_cores3_imu_probe` build lane, raw-upload blocker, guarded flash plan/execute lane, and `stackchan-imu-probe-acceptance` report gate. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior.
 
 Provider spine progress: DeepSeek is now the first P0 `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule.
 
