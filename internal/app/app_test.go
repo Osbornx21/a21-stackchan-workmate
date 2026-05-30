@@ -590,6 +590,8 @@ func TestRunAudioFrontEndEvalMockReportsQualityMetrics(t *testing.T) {
 		`"true_negative": 3`,
 		`"false_positive": 0`,
 		`"false_negative": 0`,
+		`"speech_start_lag_ms": 0`,
+		`"speech_end_lag_ms": 20`,
 		`"promotion_gate": "not_production"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -642,6 +644,8 @@ func TestRunAudioFrontEndEvalFixtureReportsQualityMetrics(t *testing.T) {
 		`"frames_total": 4`,
 		`"true_positive": 1`,
 		`"true_negative": 3`,
+		`"speech_start_lag_ms": 0`,
+		`"speech_end_lag_ms": 20`,
 		`"promotion_gate": "requires_recorded_office_and_physical_acceptance"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -672,7 +676,7 @@ func TestRunAudioFrontEndEvalWritesReportArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"schema_version": "a21.audio.frontend_eval.v1"`, `"status": "mock_only"`} {
+	for _, want := range []string{`"schema_version": "a21.audio.frontend_eval.v1"`, `"status": "mock_only"`, `"speech_start_lag_ms": 0`, `"speech_end_lag_ms": 20`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("report file missing %q: %s", want, data)
 		}

@@ -28,6 +28,12 @@ func TestRunMockFrontEndEvalReportsDeterministicRMSQuality(t *testing.T) {
 	if report.SpeechStartEvents != 1 || report.SpeechEndEvents != 1 {
 		t.Fatalf("speech events = start %d end %d, want 1/1", report.SpeechStartEvents, report.SpeechEndEvents)
 	}
+	if report.SpeechStartLagMS == nil || *report.SpeechStartLagMS != 0 {
+		t.Fatalf("SpeechStartLagMS = %v, want 0", report.SpeechStartLagMS)
+	}
+	if report.SpeechEndLagMS == nil || *report.SpeechEndLagMS != 20 {
+		t.Fatalf("SpeechEndLagMS = %v, want 20", report.SpeechEndLagMS)
+	}
 	if report.PromotionGate != "not_production" {
 		t.Fatalf("PromotionGate = %q, want not_production", report.PromotionGate)
 	}
@@ -69,6 +75,12 @@ func TestRunFrontEndEvalFromFixtureReportsFrameMetrics(t *testing.T) {
 	}
 	if report.SpeechStartEvents != 1 || report.SpeechEndEvents != 1 {
 		t.Fatalf("speech events = start %d end %d, want 1/1", report.SpeechStartEvents, report.SpeechEndEvents)
+	}
+	if report.SpeechStartLagMS == nil || *report.SpeechStartLagMS != 0 {
+		t.Fatalf("SpeechStartLagMS = %v, want 0", report.SpeechStartLagMS)
+	}
+	if report.SpeechEndLagMS == nil || *report.SpeechEndLagMS != 20 {
+		t.Fatalf("SpeechEndLagMS = %v, want 20", report.SpeechEndLagMS)
 	}
 	if report.PromotionGate != "requires_recorded_office_and_physical_acceptance" {
 		t.Fatalf("PromotionGate = %q", report.PromotionGate)

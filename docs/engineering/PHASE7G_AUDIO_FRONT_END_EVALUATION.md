@@ -16,7 +16,7 @@ make audio-front-end-eval
 
 `audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
 
-`audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, required future metrics, and `promotion_gate: not_production`.
+`audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, speech start/end lag in milliseconds when measurable, required future metrics, and `promotion_gate: not_production`.
 
 `audio-front-end-eval --fixture <path>` runs the same report shape over an A21 labelled PCM fixture. `--mock` and `--fixture` are mutually exclusive. There is no implicit real evaluation mode, so nobody can mistake a synthetic or labelled-frame report for provider, AEC, full-duplex, or physical StackChan acceptance.
 
@@ -27,6 +27,8 @@ reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
 ```
 
 Report artifacts contain aggregate metrics and metadata only. They do not include raw PCM, base64 audio frames, provider secrets, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected.
+
+`speech_start_lag_ms` and `speech_end_lag_ms` compare the first expected speech transition in the labelled fixture with the first detector event emitted by A21. A positive value means the detector was late; a negative value means it fired early. The current RMS mock baseline reports `speech_start_lag_ms: 0` and `speech_end_lag_ms: 20` because the two-frame silence hangover delays speech-end by one 20 ms frame.
 
 `make audio-front-end-eval` writes the mock report by default. Set `A21_AUDIO_FIXTURE=<path>` to evaluate a labelled fixture and write the report to `reports/`.
 
@@ -79,6 +81,7 @@ Before any candidate becomes default, A21 needs:
 - labelled fixture preservation through `audio-front-end-eval --fixture`
 - recorded Shanghai-office noise benchmark
 - physical StackChan speaker-to-mic echo report
+- speech start/end lag evidence
 - barge-in stop timing
 - first-audio waterfall impact
 - CPU and memory profile on the target Gateway machines

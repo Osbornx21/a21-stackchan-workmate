@@ -27,6 +27,8 @@ type FrontEndEvalReport struct {
 	Recall               float64  `json:"recall"`
 	SpeechStartEvents    int      `json:"speech_start_events"`
 	SpeechEndEvents      int      `json:"speech_end_events"`
+	SpeechStartLagMS     *int     `json:"speech_start_lag_ms,omitempty"`
+	SpeechEndLagMS       *int     `json:"speech_end_lag_ms,omitempty"`
 	RequiredMetrics      []string `json:"required_metrics"`
 	PromotionGate        string   `json:"promotion_gate"`
 	Notes                []string `json:"notes"`
@@ -162,7 +164,20 @@ func runFrontEndEval(input frontEndEvalInput) FrontEndEvalReport {
 		Notes: input.notes,
 	}
 
+	var expectedSpeechStartIndex *int
+	var expectedSpeechEndIndex *int
+	var detectedSpeechStartIndex *int
+	var detectedSpeechEndIndex *int
+	previousExpectedSpeech := false
 	for index, frame := range input.frames {
+		if frame.expectedSpeech && !previousExpectedSpeech && expectedSpeechStartIndex == nil {
+			expectedSpeechStartIndex = intPointer(index)
+		}
+		if !frame.expectedSpeech && previousExpectedSpeech && expectedSpeechEndIndex == nil {
+			expectedSpeechEndIndex = intPointer(index)
+		}
+		previousExpectedSpeech = frame.expectedSpeech
+
 		if frame.expectedSpeech {
 			report.ExpectedSpeechFrames++
 		}
@@ -197,10 +212,22 @@ func runFrontEndEval(input frontEndEvalInput) FrontEndEvalReport {
 			switch event {
 			case EventVADSpeechStart:
 				report.SpeechStartEvents++
+				if detectedSpeechStartIndex == nil {
+					detectedSpeechStartIndex = intPointer(index)
+				}
 			case EventVADSpeechEnd:
 				report.SpeechEndEvents++
+				if detectedSpeechEndIndex == nil {
+					detectedSpeechEndIndex = intPointer(index)
+				}
 			}
 		}
+	}
+	if expectedSpeechStartIndex != nil && detectedSpeechStartIndex != nil {
+		report.SpeechStartLagMS = intPointer(frameIndexLagMS(input.frames, *expectedSpeechStartIndex, *detectedSpeechStartIndex))
+	}
+	if expectedSpeechEndIndex != nil && detectedSpeechEndIndex != nil {
+		report.SpeechEndLagMS = intPointer(frameIndexLagMS(input.frames, *expectedSpeechEndIndex, *detectedSpeechEndIndex))
 	}
 
 	report.Accuracy = roundedRatio(report.TruePositive+report.TrueNegative, report.FramesTotal)
@@ -246,6 +273,29 @@ func roundedRatio(numerator int, denominator int) float64 {
 		return 0
 	}
 	return math.Round((float64(numerator)/float64(denominator))*10000) / 10000
+}
+
+func frameIndexLagMS(frames []frontEndEvalFrame, expectedIndex int, detectedIndex int) int {
+	switch {
+	case detectedIndex == expectedIndex:
+		return 0
+	case detectedIndex > expectedIndex:
+		lagMS := 0
+		for index := expectedIndex; index < detectedIndex && index < len(frames); index++ {
+			lagMS += frames[index].durationMS
+		}
+		return lagMS
+	default:
+		lagMS := 0
+		for index := detectedIndex; index < expectedIndex && index < len(frames); index++ {
+			lagMS += frames[index].durationMS
+		}
+		return -lagMS
+	}
+}
+
+func intPointer(value int) *int {
+	return &value
 }
 
 func frontEndEvalPCM16Base64(sample int16) string {
