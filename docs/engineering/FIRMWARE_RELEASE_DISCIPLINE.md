@@ -275,7 +275,7 @@ make firmware-device-check
 
 `make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
 
-The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id` when present. These fields help prove what the office operator was looking at during acceptance, but the flash guard still uses explicit identity, artifact, commit, port, and freshness checks rather than trusting display state alone.
+The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id` when present. These fields help prove what the office operator was looking at during acceptance, but the flash guard still uses explicit identity, artifact, commit, port, and freshness checks rather than trusting display state alone. If `connection_status` is present, `firmware-device-check` requires it to be `online`; stale or unknown Gateway state is a hard stop.
 
 The guard verifies:
 

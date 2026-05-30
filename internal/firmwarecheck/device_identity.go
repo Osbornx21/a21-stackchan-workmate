@@ -96,6 +96,9 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 		}
 		return DeviceIdentityResult{}, fmt.Errorf("device identity status %q", device.IdentityStatus)
 	}
+	if err := validateDeviceConnectionStatus(device); err != nil {
+		return DeviceIdentityResult{}, err
+	}
 	deviceAgeMS, err := validateDeviceReportAge(device, options)
 	if err != nil {
 		return DeviceIdentityResult{}, err
@@ -125,6 +128,16 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 		Artifact:                 artifact,
 		OK:                       true,
 	}, nil
+}
+
+func validateDeviceConnectionStatus(device DeviceIdentityRecord) error {
+	if device.ConnectionStatus == "" {
+		return nil
+	}
+	if device.ConnectionStatus != "online" {
+		return fmt.Errorf("device connection_status %q is not online", device.ConnectionStatus)
+	}
+	return nil
 }
 
 func validateDeviceReportAge(device DeviceIdentityRecord, options DeviceIdentityOptions) (int64, error) {

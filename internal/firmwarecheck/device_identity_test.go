@@ -131,6 +131,46 @@ func TestValidateDeviceIdentityRejectsStaleDeviceReportWhenMaxAgeSet(t *testing.
 	}
 }
 
+func TestValidateDeviceIdentityRejectsGatewayStaleConnectionStatus(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "stale",
+      "device_age_ms": 300001,
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected stale Gateway connection status to be rejected")
+	}
+	if !strings.Contains(err.Error(), "connection_status") || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("error = %q, want connection_status stale", err)
+	}
+}
+
 func TestValidateDeviceIdentityRejectsLegacyDeviceID(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeDeviceIdentityManifest(t, dir)
