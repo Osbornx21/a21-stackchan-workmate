@@ -101,7 +101,7 @@ Current progress: the IMU track now has a guarded native runtime boundary and is
 
 Provider spine progress: DeepSeek is now the first P0 `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule.
 
-Local audio progress: macOS `say + afconvert` is now the first local TTS boundary for loopback work. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-voice-loopback` now stitches mock VAD, mock ASR, mock OpenAI-compatible text-stream parsing, local TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt.
+Local audio progress: macOS `say + afconvert` is now a diagnostic local TTS fallback for loopback work. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-voice-loopback` now stitches mock VAD, mock ASR, mock OpenAI-compatible text-stream parsing, local TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt. The selected M2 real local TTS candidate is `sherpa-onnx`, but its isolated `.a21-tools` install is currently blocked by repeated `sherpa-onnx-core` wheel download timeouts on the current network; M2 is not promoted until that succeeds.
 
 ### P0. Professional V21 Evidence Lane
 

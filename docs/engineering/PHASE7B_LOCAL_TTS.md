@@ -6,6 +6,8 @@ Phase 7B adds the first local TTS adapter boundary for the fast companion hybrid
 
 This is not the final A21 voice or voice-clone solution. It is the replaceable local TTS seam that later Piper, sherpa-onnx, CosyVoice, Doubao TTS, or another accepted voice engine can implement behind the same reporting and redaction discipline.
 
+The current selected real local TTS candidate for M2 is `sherpa-onnx`. macOS `say` is only a diagnostic fallback. It must not be counted as the PRD-grade local TTS lane.
+
 ## Current Implementation
 
 `internal/audio.SynthesizeMacOSSay` uses:
@@ -77,3 +79,9 @@ This phase proves only local synthesis and WAV conversion. It does not prove:
 - full-duplex AEC
 
 Physical speaker acceptance remains under the guarded StackChan hardware path.
+
+## Current Blocker
+
+`sherpa-onnx` installation was attempted in an isolated `.a21-tools/sherpa-onnx-venv` with `uv` against the default PyPI source, Tsinghua PyPI mirror, and Aliyun PyPI mirror. The Python package resolver succeeded, but the `sherpa-onnx-core` wheel download timed out repeatedly on the current network.
+
+Until that toolchain install succeeds, M2 remains open. The macOS fallback loopback may continue to validate host-side timing and report redaction, but it is not promoted to the selected local TTS implementation.
