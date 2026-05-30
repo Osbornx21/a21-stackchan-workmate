@@ -12,8 +12,10 @@ go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
 go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports
 go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
+go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --output-dir reports
 make doctor
 make lan-probe
+make stackchan-mic-probe-acceptance
 make provider-realtime-plan
 make v21-adapter-smoke
 make v21-adapter-smoke-execute
@@ -146,6 +148,8 @@ The firmware section's `current_artifact_path` is populated only through the sam
 `office-acceptance` reads an `a21-office-handoff` report and an `a21-office-preflight` report, plus an optional `a21-firmware-flash-plan` report. It writes `reports/a21-office-acceptance-YYYYMMDD-HHMMSS.json` and cross-checks schema, no-flash/no-delete state, commit, artifact, SHA, and device consistency. A passing status is `ready_for_physical_acceptance`; it still does not flash or claim the physical device has been accepted.
 
 `stackchan-identity-acceptance` reads an `a21-office-acceptance` report, then takes a fresh direct Gateway `/v1/devices` capture and serial inventory. It writes `reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=identity_only` and cross-checks the current release-ledger artifact, device ID, firmware identity, freshness, quiescent state, and available USB serial candidate. A passing status is `identity_confirmed`; it still does not prove microphone, speaker, screen, servo, RGB, OTA, latency, or real flashing acceptance.
+
+`stackchan-mic-probe-acceptance` is a diagnostic-only physical microphone gate for the isolated `a21_stackchan_cores3_mic_probe` firmware lane. It fetches Gateway `/v1/devices` and `/metrics` with direct no-proxy HTTP, requires the device to report `microphone=diagnostic_probe_m5unified_i2s_capture`, checks firmware identity and commit, validates runtime mic counters/sample evidence, verifies Gateway ingress/VAD metrics, and writes `reports/a21-stackchan-mic-probe-acceptance-YYYYMMDD-HHMMSS.json`. The success status is `mic_probe_acceptance_status=confirmed` with `production_capability_promoted=false`; it does not claim production microphone availability, AEC, full-duplex, provider latency, or speaker acceptance.
 
 `firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, required A21 Gateway identity, required online status, and required freshness window. It accepts the raw Gateway identity fields or the `gateway_schema_version` / `gateway_service` fields written by `firmware-device-report`; it rejects naked hand-written `devices` JSON. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale or offline device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
 

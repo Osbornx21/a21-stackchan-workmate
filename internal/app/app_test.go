@@ -4253,6 +4253,72 @@ func TestRunStackChanCapabilityAcceptanceRejectsLegacyEvidencePathWithoutEchoing
 	}
 }
 
+func TestRunStackChanMicProbeAcceptanceConfirmsDiagnosticMicPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"listening","servo_y":"38deg","rgb":"#003010","mic_frames_captured":"321","audio_ws_sent_audio_frames":"321","mic_driver_errors":"0","mic_queue_depth":"0","mic_queue_dropped_frames":"0","mic_last_abs_peak":"1052","mic_last_nonzero_samples":"320"},"identity_status":"ok","connection_status":"online","current_expression":"listening","last_session_id":"a21-session-mic-probe","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/metrics":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, strings.Join([]string{
+				"a21_audio_frame_total 374",
+				"a21_audio_ingress_frames_total 374",
+				"a21_audio_ingress_rms 0.01296457627255574",
+				"a21_audio_playback_chunk_total 0",
+				`a21_vad_detector_decisions_total{detector="a21-rms-vad",result="speech"} 99`,
+			}, "\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-mic-probe-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--min-frames", "300",
+		"--min-abs-peak", "100",
+		"--min-nonzero-samples", "300",
+		"--min-gateway-rms", "0.001",
+		"--min-vad-speech", "1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_mic_probe_acceptance.v1"`,
+		`"mic_probe_acceptance_status": "confirmed"`,
+		`"hardware_acceptance_scope": "diagnostic_microphone_only"`,
+		`"production_capability_promoted": false`,
+		`"microphone": "diagnostic_probe_m5unified_i2s_capture"`,
+		`"mic_frames_captured": 321`,
+		`"mic_last_abs_peak": 1052`,
+		`"mic_last_nonzero_samples": 320`,
+		`"gateway_audio_frame_total": 374`,
+		`"gateway_audio_ingress_rms": 0.01296457627255574`,
+		`"gateway_vad_speech_total": 99`,
+		"stackchan mic probe acceptance ok (diagnostic only, no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-mic-probe-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("mic probe acceptance reports = %d, want 1: %v", len(matches), matches)
+	}
+}
+
 func TestRunStackChanTouchAcceptancePassesTopTapWithGatewayTrace(t *testing.T) {
 	var armed bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -119,6 +119,26 @@ make firmware-mic-probe-flash-execute
 
 The plan and execute commands rebuild `a21_stackchan_cores3_mic_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_mic_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require the `diagnostic_probe_m5unified_i2s_capture` marker, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-mic-probe-flash-*.json` receipts. This lane is for microphone diagnosis only; it does not promote microphone capability to production `available`.
 
+After a mic-probe flash and a live `audio_probe_only` Gateway validation window, freeze the evidence with:
+
+```bash
+A21_DEVICE_ID=stackchan-001 make stackchan-mic-probe-acceptance
+```
+
+For stricter live checks, override the thresholds:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+A21_MIC_PROBE_MIN_FRAMES=300 \
+A21_MIC_PROBE_MIN_ABS_PEAK=100 \
+A21_MIC_PROBE_MIN_NONZERO_SAMPLES=300 \
+A21_MIC_PROBE_MIN_GATEWAY_RMS=0.001 \
+A21_MIC_PROBE_MIN_VAD_SPEECH=1 \
+make stackchan-mic-probe-acceptance
+```
+
+This writes `reports/a21-stackchan-mic-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_microphone_only`, `production_capability_promoted=false`, firmware identity, runtime mic counters, latest sample evidence, and Gateway metrics. It requires the device to report microphone capability `diagnostic_probe_m5unified_i2s_capture`, captured/sent frame counts above threshold, zero driver errors, zero queue drops, non-zero sample evidence, Gateway audio ingress metrics, no playback chunks, and optional VAD speech evidence. A passing report means the isolated M5Unified/CoreS3 diagnostic microphone path captured and uplinked real PCM frames during this session. It still does not prove production microphone availability, speaker output, AEC, full-duplex, provider latency, or the release firmware path.
+
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
