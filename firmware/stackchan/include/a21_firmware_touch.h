@@ -144,12 +144,13 @@ inline bool a21PhysicalTouchReadTopSensor(
   if (state == nullptr || sample == nullptr) {
     return false;
   }
-  if (!top_down && state->top_ignore_gesture_until_next_press) {
-    if (clicked || swiped_forward || swiped_backward) {
+  if (state->top_ignore_gesture_until_next_press) {
+    if (!top_down) {
       return false;
     }
     state->top_ignore_gesture_until_next_press = false;
-    return false;
+    state->top_press_reported = false;
+    state->top_gesture_reported = false;
   }
   if (!state->top_press_reported && !state->top_gesture_reported && swiped_forward) {
     state->top_gesture_reported = true;

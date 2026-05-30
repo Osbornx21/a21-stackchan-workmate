@@ -1788,6 +1788,23 @@ void test_physical_touch_top_swipes_report_direction_when_not_speaking() {
   TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_TOP_SWIPE_BACKWARD, sample.intent);
 }
 
+void test_physical_touch_top_swipe_suppresses_delayed_release_click() {
+  A21PhysicalTouchState physical_touch;
+  A21TouchSample sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
+  a21InitPhysicalTouchState(&physical_touch);
+
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, false, false, &sample));
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, true, false, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_TOP_SWIPE_FORWARD, sample.intent);
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, false, false, false, &sample));
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, true, false, false, &sample));
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, false, false, true, &sample));
+
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, false, false, &sample));
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, true, false, false, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_TOP_TAP, sample.intent);
+}
+
 void test_physical_touch_top_hold_reports_once_until_released() {
   A21PhysicalTouchState physical_touch;
   A21TouchSample sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
@@ -2058,6 +2075,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_physical_touch_top_click_reports_barge_in);
   RUN_TEST(test_physical_touch_top_tap_reports_tap_when_not_speaking);
   RUN_TEST(test_physical_touch_top_swipes_report_direction_when_not_speaking);
+  RUN_TEST(test_physical_touch_top_swipe_suppresses_delayed_release_click);
   RUN_TEST(test_physical_touch_top_hold_reports_once_until_released);
   RUN_TEST(test_playback_runtime_starts_once_for_speaking_stream);
   RUN_TEST(test_playback_runtime_stops_and_clears_on_barge_in);
