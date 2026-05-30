@@ -24,6 +24,13 @@ Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock 
 
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
+Gateway now exposes the first provider-neutral realtime session boundary:
+
+- `POST /v1/realtime/session`
+- `POST /v1/realtime/session/cancel`
+
+These endpoints still run through the A21 `VoiceProvider` interface and are safe with the default mock Gateway provider. They add session/cancel trace markers and provider latency histograms without allowing professional-mode evidence work to disappear into an opaque realtime provider.
+
 ## Trace Fields
 
 Future runtime spans should include:
@@ -58,6 +65,15 @@ Current mock trace events include:
 - `barge_in.detected`
 - `playback.stop`
 - `provider.cancel`
+- `realtime.session.start.received`
+- `provider.start_turn.start`
+- `provider.start_turn.first_event`
+- `provider.start_turn.end`
+- `provider.start_turn.error`
+- `realtime.session.cancel.received`
+- `provider.cancel.start`
+- `provider.cancel.end`
+- `provider.cancel.error`
 - `audio.playback.chunk.sent`
 - `v21.query.start`
 - `v21.query.first_result`
@@ -103,6 +119,10 @@ Current Prometheus metrics:
 - `a21_vad_speech_start_total`
 - `a21_vad_speech_end_total`
 - `a21_device_identity_invalid_total`
+- `a21_realtime_session_total`
+- `a21_realtime_session_cancel_total`
+- `a21_voice_provider_start_turn_ms_bucket`
+- `a21_voice_provider_cancel_ms_bucket`
 - `a21_v21_query_ms_bucket`
 - `a21_ws_connections_active`
 

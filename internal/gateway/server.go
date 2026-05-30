@@ -58,6 +58,32 @@ type MockTurnResponse struct {
 	Events    []protocol.Envelope `json:"events"`
 }
 
+type RealtimeSessionRequest struct {
+	DeviceID  string        `json:"device_id"`
+	Text      string        `json:"text,omitempty"`
+	Mode      protocol.Mode `json:"mode,omitempty"`
+	TraceID   string        `json:"trace_id,omitempty"`
+	SessionID string        `json:"session_id,omitempty"`
+}
+
+type RealtimeSessionCancelRequest struct {
+	DeviceID  string                      `json:"device_id"`
+	Mode      protocol.Mode               `json:"mode,omitempty"`
+	TraceID   string                      `json:"trace_id,omitempty"`
+	SessionID string                      `json:"session_id,omitempty"`
+	StreamID  string                      `json:"stream_id,omitempty"`
+	Reason    providers.VoiceCancelReason `json:"reason,omitempty"`
+}
+
+type RealtimeSessionResponse struct {
+	TraceID   string              `json:"trace_id"`
+	SessionID string              `json:"session_id"`
+	DeviceID  string              `json:"device_id"`
+	Provider  string              `json:"provider"`
+	Status    string              `json:"status"`
+	Events    []protocol.Envelope `json:"events"`
+}
+
 type DeviceFirmwareIdentity struct {
 	ID      string `json:"id,omitempty"`
 	Version string `json:"version,omitempty"`
@@ -135,6 +161,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
+	mux.HandleFunc("/v1/realtime/session", s.handleRealtimeSessionStart)
+	mux.HandleFunc("/v1/realtime/session/cancel", s.handleRealtimeSessionCancel)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -188,6 +216,153 @@ func (s *Server) handleVoiceProviderHealth(w http.ResponseWriter, r *http.Reques
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, health)
+}
+
+func (s *Server) handleRealtimeSessionStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req RealtimeSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.DeviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = protocol.ModeWorkmate
+	}
+	if req.Mode == protocol.ModeProfessional {
+		http.Error(w, "professional mode must use the professional path with V21 evidence", http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	s.metrics.realtimeSessionTotal.Inc()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "realtime.session.start.received", s.now().UnixMilli())
+
+	payloads, err := s.startRealtimeVoiceTurn(r.Context(), req)
+	status := "completed"
+	code := http.StatusOK
+	if err != nil {
+		status = "error"
+		code = http.StatusBadGateway
+		payloads = []protocol.ControlEventPayload{{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: err.Error(), Final: true}}
+	}
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	writeJSON(w, code, RealtimeSessionResponse{
+		TraceID:   traceID,
+		SessionID: sessionID,
+		DeviceID:  req.DeviceID,
+		Provider:  s.voice.Name(),
+		Status:    status,
+		Events:    events,
+	})
+}
+
+func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionRequest) ([]protocol.ControlEventPayload, error) {
+	started := time.Now()
+	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.start", s.now().UnixMilli())
+	providerEvents, err := s.voice.StartTurn(ctx, providers.VoiceTurnRequest{
+		Session: providers.VoiceSession{TraceID: req.TraceID, SessionID: req.SessionID, DeviceID: req.DeviceID},
+		Text:    req.Text,
+		Mode:    string(req.Mode),
+	})
+	s.metrics.voiceProviderStartTurnMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
+	if err != nil {
+		s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.error", s.now().UnixMilli())
+		return nil, err
+	}
+	payloads := make([]protocol.ControlEventPayload, 0, 4)
+	firstEvent := true
+	for event := range providerEvents {
+		if firstEvent {
+			s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.first_event", s.now().UnixMilli())
+			firstEvent = false
+		}
+		payload := voiceEventToControlPayload(event, req.Mode)
+		if payload.State == protocol.ExpressionSpeaking && payload.StreamID != "" {
+			s.setActiveStream(req.TraceID, req.SessionID, req.DeviceID, payload.StreamID)
+		}
+		payloads = append(payloads, payload)
+	}
+	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.end", s.now().UnixMilli())
+	return payloads, nil
+}
+
+func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req RealtimeSessionCancelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.DeviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = protocol.ModeWorkmate
+	}
+	if req.Reason == "" {
+		req.Reason = providers.CancelBargeIn
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	if req.StreamID == "" {
+		req.StreamID = s.clearActiveStream(traceID, sessionID, req.DeviceID)
+	} else {
+		s.clearActiveStream(traceID, sessionID, req.DeviceID)
+	}
+	s.metrics.realtimeSessionCancelTotal.Inc()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "realtime.session.cancel.received", s.now().UnixMilli())
+
+	payloads, err := s.cancelRealtimeVoiceTurn(r.Context(), req)
+	status := "cancelled"
+	code := http.StatusOK
+	if err != nil {
+		status = "error"
+		code = http.StatusBadGateway
+		payloads = []protocol.ControlEventPayload{{State: protocol.ExpressionInterrupted, Mode: req.Mode, Text: "好，我听新的。", Final: true, StreamID: req.StreamID}}
+	}
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	writeJSON(w, code, RealtimeSessionResponse{
+		TraceID:   traceID,
+		SessionID: sessionID,
+		DeviceID:  req.DeviceID,
+		Provider:  s.voice.Name(),
+		Status:    status,
+		Events:    events,
+	})
+}
+
+func (s *Server) cancelRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionCancelRequest) ([]protocol.ControlEventPayload, error) {
+	started := time.Now()
+	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.start", s.now().UnixMilli())
+	providerEvents, err := s.voice.Cancel(ctx, providers.VoiceCancelRequest{
+		Session:  providers.VoiceSession{TraceID: req.TraceID, SessionID: req.SessionID, DeviceID: req.DeviceID},
+		Reason:   req.Reason,
+		StreamID: req.StreamID,
+	})
+	s.metrics.voiceProviderCancelMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
+	if err != nil {
+		s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.error", s.now().UnixMilli())
+		return nil, err
+	}
+	payloads := make([]protocol.ControlEventPayload, 0, 2)
+	for event := range providerEvents {
+		payloads = append(payloads, voiceEventToControlPayload(event, req.Mode))
+	}
+	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.end", s.now().UnixMilli())
+	return payloads, nil
 }
 
 func (s *Server) handleMockTurn(w http.ResponseWriter, r *http.Request) {

@@ -270,6 +270,150 @@ func TestMockTurnUsesVoiceProviderEvents(t *testing.T) {
 	}
 }
 
+func TestRealtimeSessionStartUsesVoiceProviderAndRecordsMetrics(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: scriptedVoiceProvider{
+			events: []providers.VoiceEvent{
+				{Kind: providers.VoiceEventThinking, Text: "provider realtime thinking"},
+				{Kind: providers.VoiceEventSpeaking, Text: "provider realtime speaking", Final: true, StreamID: "rt-stream-001"},
+			},
+		},
+	})
+	handler := server.Handler()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","text":"先说，我在","mode":"workmate","trace_id":"a21-trace-rt-001","session_id":"a21-session-rt-001"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response RealtimeSessionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Provider != "scripted" || response.Status != "completed" {
+		t.Fatalf("response provider/status = %q/%q", response.Provider, response.Status)
+	}
+	if response.TraceID != "a21-trace-rt-001" || response.SessionID != "a21-session-rt-001" || response.DeviceID != "stackchan-001" {
+		t.Fatalf("response identity = %+v", response)
+	}
+	if len(response.Events) != 2 {
+		t.Fatalf("events = %d, want 2", len(response.Events))
+	}
+	var speaking protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[1].Payload, &speaking); err != nil {
+		t.Fatal(err)
+	}
+	if speaking.State != protocol.ExpressionSpeaking || speaking.StreamID != "rt-stream-001" {
+		t.Fatalf("speaking payload = %+v", speaking)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-rt-001", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"realtime.session.start.received", "provider.start_turn.start", "provider.start_turn.first_event", "provider.start_turn.end"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+	for _, want := range []string{"a21_realtime_session_total 1", "a21_voice_provider_start_turn_ms_count 1"} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+}
+
+func TestRealtimeSessionCancelUsesActiveStreamAndRecordsMetrics(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "provider realtime speaking", Final: true, StreamID: "rt-stream-002"},
+		},
+	}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider})
+	handler := server.Handler()
+	startReq := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", bytes.NewBufferString(`{"device_id":"stackchan-001","text":"先说，我在","mode":"workmate","trace_id":"a21-trace-rt-002","session_id":"a21-session-rt-002"}`))
+	handler.ServeHTTP(httptest.NewRecorder(), startReq)
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/v1/realtime/session/cancel", bytes.NewBufferString(`{"device_id":"stackchan-001","mode":"workmate","trace_id":"a21-trace-rt-002","session_id":"a21-session-rt-002","reason":"barge_in"}`))
+	cancelRec := httptest.NewRecorder()
+	handler.ServeHTTP(cancelRec, cancelReq)
+
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", cancelRec.Code, cancelRec.Body.String())
+	}
+	if provider.cancelRequest.StreamID != "rt-stream-002" {
+		t.Fatalf("cancel stream = %q, want active stream", provider.cancelRequest.StreamID)
+	}
+	if provider.cancelRequest.Reason != providers.CancelBargeIn {
+		t.Fatalf("cancel reason = %q", provider.cancelRequest.Reason)
+	}
+	var response RealtimeSessionResponse
+	if err := json.Unmarshal(cancelRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "cancelled" || len(response.Events) != 1 {
+		t.Fatalf("response = %+v", response)
+	}
+	var interrupted protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[0].Payload, &interrupted); err != nil {
+		t.Fatal(err)
+	}
+	if interrupted.State != protocol.ExpressionInterrupted || interrupted.StreamID != "rt-stream-002" {
+		t.Fatalf("interrupted payload = %+v", interrupted)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-rt-002", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"realtime.session.cancel.received", "provider.cancel.start", "provider.cancel.end"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+	for _, want := range []string{"a21_realtime_session_cancel_total 1", "a21_voice_provider_cancel_ms_count 1"} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+}
+
+func TestRealtimeSessionStartRejectsProfessionalModeWithoutCallingProviders(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true, StreamID: "rt-stream-pro"},
+		},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
+	req := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", bytes.NewBufferString(`{"device_id":"stackchan-001","text":"查一下证据","mode":"professional"}`))
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if provider.startCalls != 0 {
+		t.Fatalf("provider start calls = %d, want 0", provider.startCalls)
+	}
+	if v21.calls != 0 {
+		t.Fatalf("v21 calls = %d, want 0", v21.calls)
+	}
+	if !strings.Contains(rec.Body.String(), "professional path") {
+		t.Fatalf("body = %q, want professional path guidance", rec.Body.String())
+	}
+}
+
 func TestProfessionalModeUsesV21AdapterEvidence(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		V21Client: v21adapter.NewMockClient(),
@@ -1276,6 +1420,49 @@ func (p unavailableVoiceProvider) Health(ctx context.Context) (providers.VoicePr
 }
 
 func (p unavailableVoiceProvider) Close(ctx context.Context) error {
+	return ctx.Err()
+}
+
+type capturingVoiceProvider struct {
+	startEvents   []providers.VoiceEvent
+	startCalls    int
+	cancelRequest providers.VoiceCancelRequest
+}
+
+func (p *capturingVoiceProvider) Name() string {
+	return "capturing"
+}
+
+func (p *capturingVoiceProvider) StartTurn(ctx context.Context, req providers.VoiceTurnRequest) (<-chan providers.VoiceEvent, error) {
+	p.startCalls++
+	events := make(chan providers.VoiceEvent, len(p.startEvents))
+	defer close(events)
+	for _, event := range p.startEvents {
+		event.Session = req.Session
+		events <- event
+	}
+	return events, nil
+}
+
+func (p *capturingVoiceProvider) Cancel(ctx context.Context, req providers.VoiceCancelRequest) (<-chan providers.VoiceEvent, error) {
+	p.cancelRequest = req
+	events := make(chan providers.VoiceEvent, 1)
+	defer close(events)
+	events <- providers.VoiceEvent{
+		Session:  req.Session,
+		Kind:     providers.VoiceEventCancelled,
+		Text:     "capturing cancelled",
+		Final:    true,
+		StreamID: req.StreamID,
+	}
+	return events, nil
+}
+
+func (p *capturingVoiceProvider) Health(ctx context.Context) (providers.VoiceProviderHealth, error) {
+	return providers.VoiceProviderHealth{Provider: p.Name(), Status: providers.VoiceProviderHealthy, Configured: true, Realtime: true}, ctx.Err()
+}
+
+func (p *capturingVoiceProvider) Close(ctx context.Context) error {
 	return ctx.Err()
 }
 

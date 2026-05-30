@@ -123,6 +123,15 @@ Future control events should still cover explicit playback start/stop, subtitle 
 
 Provider audio deltas are translated back into A21 voice/audio events before any Gateway or device-facing code sees them. For example, OpenAI `response.output_audio.delta` is mapped inside `internal/providers` to an A21 `VoiceEvent` with `VoiceAudioChunk`; firmware still receives only A21 downlink playback chunks and semantic control events.
 
+The first realtime session HTTP boundary is:
+
+- `POST /v1/realtime/session`
+- `POST /v1/realtime/session/cancel`
+
+It is provider-neutral and returns ordinary A21 `control.event` envelopes. The start endpoint accepts `device_id`, optional `text`, `mode`, `trace_id`, and `session_id`; the cancel endpoint accepts `device_id`, optional `mode`, `trace_id`, `session_id`, `stream_id`, and `reason`. If `stream_id` is omitted during cancel, Gateway uses the active stream recorded from the prior speaking provider event for that trace/session/device.
+
+`professional` mode is intentionally rejected by this realtime boundary. Professional work must use the auditable V21 path with explicit evidence, confidence, speech blocks, and screen cards.
+
 ## Barge-In Requirements
 
 Interrupt is not just stop audio. It must coordinate:

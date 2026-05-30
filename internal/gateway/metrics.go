@@ -19,6 +19,10 @@ type metrics struct {
 	vadSpeechStartTotal        prometheus.Counter
 	vadSpeechEndTotal          prometheus.Counter
 	deviceIdentityInvalidTotal prometheus.Counter
+	realtimeSessionTotal       prometheus.Counter
+	realtimeSessionCancelTotal prometheus.Counter
+	voiceProviderStartTurnMS   prometheus.Histogram
+	voiceProviderCancelMS      prometheus.Histogram
 	v21QueryMS                 prometheus.Histogram
 	wsConnections              *prometheus.GaugeVec
 }
@@ -67,6 +71,24 @@ func newMetrics() *metrics {
 			Name: "a21_device_identity_invalid_total",
 			Help: "Total A21 device events rejected because firmware identity was invalid.",
 		}),
+		realtimeSessionTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_realtime_session_total",
+			Help: "Total A21 realtime voice sessions started through the Gateway session boundary.",
+		}),
+		realtimeSessionCancelTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_realtime_session_cancel_total",
+			Help: "Total A21 realtime voice session cancellations requested through the Gateway session boundary.",
+		}),
+		voiceProviderStartTurnMS: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "a21_voice_provider_start_turn_ms",
+			Help:    "A21 voice provider StartTurn latency in milliseconds.",
+			Buckets: []float64{25, 50, 100, 250, 500, 750, 1000, 1500, 2500, 5000},
+		}),
+		voiceProviderCancelMS: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "a21_voice_provider_cancel_ms",
+			Help:    "A21 voice provider Cancel latency in milliseconds.",
+			Buckets: []float64{5, 10, 25, 50, 100, 250, 500, 1000},
+		}),
 		v21QueryMS: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "a21_v21_query_ms",
 			Help:    "A21 professional-mode V21 adapter query latency in milliseconds.",
@@ -88,6 +110,10 @@ func newMetrics() *metrics {
 		m.vadSpeechStartTotal,
 		m.vadSpeechEndTotal,
 		m.deviceIdentityInvalidTotal,
+		m.realtimeSessionTotal,
+		m.realtimeSessionCancelTotal,
+		m.voiceProviderStartTurnMS,
+		m.voiceProviderCancelMS,
 		m.v21QueryMS,
 		m.wsConnections,
 	)
