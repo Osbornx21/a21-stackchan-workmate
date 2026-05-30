@@ -2,6 +2,7 @@
 
 #include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
+#include "a21_firmware_mic.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_rgb.h"
@@ -146,7 +147,7 @@ inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
   payload["firmware_board"] = A21_FIRMWARE_BOARD;
   payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
   JsonObject capabilities = payload["capabilities"].to<JsonObject>();
-  capabilities["microphone"] = "available";
+  capabilities["microphone"] = a21MicrophoneCapabilityStatus();
   capabilities["speaker"] = "available";
   capabilities["screen"] = "available";
   capabilities["screen_touch"] = "available";
@@ -207,7 +208,7 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
   payload["firmware_board"] = A21_FIRMWARE_BOARD;
   payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
   JsonObject capabilities = payload["capabilities"].to<JsonObject>();
-  capabilities["microphone"] = "available";
+  capabilities["microphone"] = a21MicrophoneCapabilityStatus();
   capabilities["speaker"] = "available";
   capabilities["screen"] = "available";
   capabilities["screen_touch"] = "available";

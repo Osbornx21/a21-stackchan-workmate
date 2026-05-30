@@ -8,6 +8,22 @@
 
 static constexpr uint8_t A21_MIC_FRAME_QUEUE_CAP = 4;
 
+#ifndef A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE
+#define A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE 0
+#endif
+
+inline bool a21CoreS3MicCaptureEnabled() {
+  return A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE == 1;
+}
+
+inline const char* a21MicrophoneCapabilityStatus() {
+#if A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE == 1
+  return "available";
+#else
+  return "disabled_m5unified_i2s_stop_crash_guard";
+#endif
+}
+
 struct A21MicDriver {
   void* ctx;
   bool (*enabled)(void* ctx);

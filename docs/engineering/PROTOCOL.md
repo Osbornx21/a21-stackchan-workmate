@@ -110,7 +110,7 @@ Firmware-originated `device.event` payloads may also carry build identity:
 - `firmware_version`: semver-like A21 firmware version
 - `firmware_board`: must be `m5stack-cores3` when present
 - `firmware_commit`: git SHA embedded by the A21 PlatformIO pre-build script
-- `capabilities`: semantic StackChan hardware capability map. Current firmware and simulator report `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` as `available`.
+- `capabilities`: semantic StackChan hardware capability map. Current simulator reports `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` as `available`. Current physical CoreS3 firmware reports `microphone` as `disabled_m5unified_i2s_stop_crash_guard` because the M5Unified mic task can crash in ESP-IDF `i2s_stop`; the other visible/control surfaces remain reported as `available` when initialized.
 - `touch_source`: `screen` or `top_sensor` for semantic touch-origin events
 - `runtime_echo`: device-applied runtime echo map. Current firmware reports `screen` as the applied render state, `servo_y` as the clamped applied Y-axis angle, and `rgb` as the applied RGB color. Gateway records this for diagnostics and capability evidence derivation, but it is still not a substitute for physical operator observation.
 

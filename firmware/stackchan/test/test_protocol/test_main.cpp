@@ -858,7 +858,7 @@ void test_gateway_ws_send_mock_turn_builds_a21_device_event() {
   TEST_ASSERT_EQUAL_STRING("0.1.0", doc["payload"]["firmware_version"] | "");
   TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
   TEST_ASSERT_NOT_EQUAL('\0', (doc["payload"]["firmware_commit"] | "")[0]);
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["microphone"] | "");
+  TEST_ASSERT_EQUAL_STRING("disabled_m5unified_i2s_stop_crash_guard", doc["payload"]["capabilities"]["microphone"] | "");
   TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["speaker"] | "");
   TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen"] | "");
   TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen_touch"] | "");
@@ -1409,6 +1409,11 @@ void test_mic_capture_records_one_frame_when_listening_and_speaker_idle() {
   TEST_ASSERT_EQUAL_UINT32(4020, runtime.capture_ended_at_ms);
 }
 
+void test_core_s3_mic_capture_defaults_to_crash_guard_disabled() {
+  TEST_ASSERT_FALSE(a21CoreS3MicCaptureEnabled());
+  TEST_ASSERT_EQUAL_STRING("disabled_m5unified_i2s_stop_crash_guard", a21MicrophoneCapabilityStatus());
+}
+
 void test_mic_capture_skips_when_speaker_queue_is_active() {
   A21MicCaptureRuntime runtime;
   A21FirmwareState state;
@@ -1957,6 +1962,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_speaker_pump_does_not_play_when_not_speaking);
   RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);
   RUN_TEST(test_mic_capture_records_one_frame_when_listening_and_speaker_idle);
+  RUN_TEST(test_core_s3_mic_capture_defaults_to_crash_guard_disabled);
   RUN_TEST(test_mic_capture_skips_when_speaker_queue_is_active);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_speaking);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_thinking);

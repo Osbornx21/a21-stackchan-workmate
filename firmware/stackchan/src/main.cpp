@@ -375,6 +375,9 @@ A21SpeakerDriver g_speaker_driver = {
 
 bool arduinoMicEnabled(void* ctx) {
   (void)ctx;
+  if (!a21CoreS3MicCaptureEnabled()) {
+    return false;
+  }
   return !M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL);
 }
 
