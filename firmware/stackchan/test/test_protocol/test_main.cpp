@@ -1008,6 +1008,8 @@ void test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed() {
   diagnostics.mic_queue_total_frames = 13;
   diagnostics.mic_queue_dropped_frames = 17;
   diagnostics.audio_ws_sent_audio_frames = 19;
+  diagnostics.mic_last_abs_peak = 1234;
+  diagnostics.mic_last_nonzero_samples = 319;
 
   TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &runtime,
@@ -1032,6 +1034,8 @@ void test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed() {
   TEST_ASSERT_EQUAL_STRING("13", doc["payload"]["runtime_echo"]["mic_queue_total_frames"] | "");
   TEST_ASSERT_EQUAL_STRING("17", doc["payload"]["runtime_echo"]["mic_queue_dropped_frames"] | "");
   TEST_ASSERT_EQUAL_STRING("19", doc["payload"]["runtime_echo"]["audio_ws_sent_audio_frames"] | "");
+  TEST_ASSERT_EQUAL_STRING("1234", doc["payload"]["runtime_echo"]["mic_last_abs_peak"] | "");
+  TEST_ASSERT_EQUAL_STRING("319", doc["payload"]["runtime_echo"]["mic_last_nonzero_samples"] | "");
 
   TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &runtime,
@@ -1044,7 +1048,7 @@ void test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed() {
       2120));
   TEST_ASSERT_EQUAL(1, fake.send_count);
 
-  diagnostics.audio_ws_sent_audio_frames = 20;
+  diagnostics.mic_last_abs_peak = 2048;
   TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &runtime,
       &driver,
@@ -1493,6 +1497,8 @@ void test_mic_capture_records_one_frame_when_listening_and_speaker_idle() {
   TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES), static_cast<uint32_t>(fake.last_sample_count));
   TEST_ASSERT_EQUAL_UINT32(A21_AUDIO_PCM_SAMPLE_RATE_HZ, fake.last_sample_rate_hz);
   TEST_ASSERT_EQUAL_INT16(1234, runtime.samples[0]);
+  TEST_ASSERT_EQUAL_INT16(1234, runtime.last_abs_peak);
+  TEST_ASSERT_EQUAL_UINT16(A21_AUDIO_PCM_FRAME_SAMPLES, runtime.last_nonzero_samples);
   TEST_ASSERT_EQUAL_UINT32(4000, runtime.capture_started_at_ms);
   TEST_ASSERT_EQUAL_UINT32(4020, runtime.capture_ended_at_ms);
 }

@@ -70,6 +70,8 @@ struct A21MicCaptureRuntime {
   uint32_t driver_errors;
   uint32_t capture_started_at_ms;
   uint32_t capture_ended_at_ms;
+  int16_t last_abs_peak;
+  uint16_t last_nonzero_samples;
 };
 
 inline bool a21MicDriverReady(const A21MicDriver* driver) {
@@ -115,6 +117,8 @@ inline void a21InitMicCaptureRuntime(A21MicCaptureRuntime* runtime) {
   runtime->driver_errors = 0;
   runtime->capture_started_at_ms = 0;
   runtime->capture_ended_at_ms = 0;
+  runtime->last_abs_peak = 0;
+  runtime->last_nonzero_samples = 0;
 }
 
 inline bool a21MicCaptureRenderStateAllowed(A21RenderState state) {
@@ -160,7 +164,22 @@ inline bool a21MicCaptureTick(
     return false;
   }
 
+  int16_t peak = 0;
+  uint16_t nonzero_samples = 0;
+  for (uint16_t i = 0; i < A21_AUDIO_PCM_FRAME_SAMPLES; ++i) {
+    const int16_t sample = runtime->samples[i];
+    if (sample != 0) {
+      nonzero_samples += 1;
+    }
+    const int16_t abs_sample = sample == INT16_MIN ? INT16_MAX : static_cast<int16_t>(sample < 0 ? -sample : sample);
+    if (abs_sample > peak) {
+      peak = abs_sample;
+    }
+  }
+
   runtime->frames_captured += 1;
+  runtime->last_abs_peak = peak;
+  runtime->last_nonzero_samples = nonzero_samples;
   runtime->capture_ended_at_ms = now_ms;
   runtime->capture_started_at_ms = now_ms >= A21_AUDIO_PCM_DURATION_MS ? now_ms - A21_AUDIO_PCM_DURATION_MS : 0;
   return true;

@@ -564,6 +564,8 @@ void loop() {
   runtime_diagnostics.mic_queue_total_frames = g_mic_frame_queue.total_frames;
   runtime_diagnostics.mic_queue_dropped_frames = g_mic_frame_queue.dropped_frames;
   runtime_diagnostics.audio_ws_sent_audio_frames = g_audio_ws_runtime.sent_audio_frames;
+  runtime_diagnostics.mic_last_abs_peak = g_mic_capture_runtime.last_abs_peak;
+  runtime_diagnostics.mic_last_nonzero_samples = g_mic_capture_runtime.last_nonzero_samples;
   a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &g_gateway_ws_runtime,
       &g_gateway_ws_driver,
