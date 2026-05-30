@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -589,6 +590,86 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	for _, forbidden := range []string{"语音唤醒", "历史讨论", server.URL} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("v21 adapter smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestRunLANProbeWritesDirectRedactedReport(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://user:secret@example.invalid:8080")
+	t.Setenv("A21_PROVIDER_PROXY_URL", "http://provider-secret@example.invalid:9000")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}()
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"lan-probe",
+		"--target", "a21-gateway=" + listener.Addr().String(),
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.lan_probe.v1"`,
+		`"ok": true`,
+		`"name": "a21-gateway"`,
+		`"status": "passed"`,
+		`"direct": true`,
+		`"metadata"`,
+		`"proxy"`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-lan-probe-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("lan probe reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, forbidden := range []string{"secret", "example.invalid", "8080", "9000", "x21"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("lan probe leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestRunLANProbeRejectsCredentialTargetWithoutEchoingSecret(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"lan-probe",
+		"--target", "a21-gateway=http://user:secret-token@127.0.0.1:21080",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "must not include credentials") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	for _, forbidden := range []string{"secret-token", "user:", "127.0.0.1:21080"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("lan probe leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
 		}
 	}
 }

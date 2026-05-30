@@ -55,11 +55,38 @@ Phase 1 already records:
 - external DNS probe IP
 - proxy env variable names without values
 - proxy/no-proxy coverage for the direct-connect set
+- explicit LAN TCP probe receipts through `a21 lan-probe`
+
+## LAN Probe
+
+`lan-probe` is an explicit office/home reachability command. It does not run as a default doctor side effect because StackChan and office-only endpoints may legitimately be offline during home development.
+
+```bash
+go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
+A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 make lan-probe
+go run ./cmd/a21 lan-probe --target a21-v21-adapter=127.0.0.1:21121 --timeout-ms 1000 --output-dir reports
+```
+
+The command performs direct TCP dials and writes:
+
+```text
+reports/a21-lan-probe-YYYYMMDD-HHMMSS.json
+```
+
+The report includes generated timestamp, current commit, network/DNS fingerprint, redacted proxy-policy metadata, target name, normalized `host:port`, direct flag, status, duration, and a coarse error code. It must not include proxy URLs, proxy hosts/ports, proxy credentials, API keys, URL credentials, or X21 identities.
+
+Use it to compare:
+
+- home development network
+- Shanghai office authenticated Wi-Fi
+- `wang301` Wi-Fi
+- wired LAN Gateway host
+- A21 V21 adapter boundary
 
 Future `a21 doctor` expansion must add:
 
 - raw LAN ping and jitter
-- StackChan reachability or mDNS
+- StackChan reachability or mDNS beyond explicit TCP probes
 - V21 adapter health
 - provider endpoint connectivity by adapter
 - warning when DNS maps external domains to `198.18.0.x`
@@ -75,6 +102,7 @@ Before real office acceptance, record:
 - proxy on/off and split-tunnel behavior
 - provider latency from office network
 - LAN jitter between gateway host and device
+- `lan-probe` reports for Gateway, adapter, and any StackChan-adjacent listening endpoint
 
 ## Failure Copy
 

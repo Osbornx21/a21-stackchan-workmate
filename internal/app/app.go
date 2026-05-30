@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -85,6 +86,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderRealtimeFixture(args[1:], stdout, stderr)
 	case "v21-adapter-smoke":
 		return runV21AdapterSmoke(args[1:], stdout, stderr)
+	case "lan-probe":
+		return runLANProbe(args[1:], stdout, stderr)
 	case "audio-front-end-plan":
 		return runAudioFrontEndPlan(args[1:], stdout, stderr)
 	case "audio-front-end-eval":
@@ -304,6 +307,174 @@ func runV21AdapterSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+type lanProbeReport struct {
+	SchemaVersion string                 `json:"schema_version"`
+	OK            bool                   `json:"ok"`
+	Metadata      latencyBenchMetadata   `json:"metadata"`
+	Targets       []lanProbeTargetReport `json:"targets"`
+	ReportPath    string                 `json:"report_path,omitempty"`
+}
+
+type lanProbeTargetReport struct {
+	Name       string  `json:"name"`
+	Endpoint   string  `json:"endpoint,omitempty"`
+	Host       string  `json:"host,omitempty"`
+	Port       string  `json:"port,omitempty"`
+	Status     string  `json:"status"`
+	Direct     bool    `json:"direct"`
+	DurationMS float64 `json:"duration_ms,omitempty"`
+	ErrorCode  string  `json:"error_code,omitempty"`
+}
+
+type lanProbeTarget struct {
+	name     string
+	endpoint string
+	host     string
+	port     string
+}
+
+func runLANProbe(args []string, stdout io.Writer, stderr io.Writer) int {
+	targets := make([]lanProbeTarget, 0)
+	outputDir := ""
+	timeout := time.Second
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 lan-probe --target a21-gateway=127.0.0.1:21080 [--target a21-v21-adapter=127.0.0.1:21121] [--timeout-ms 1000] [--output-dir reports]")
+			return 0
+		case "--target":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--target requires a value")
+				return 2
+			}
+			i++
+			target, err := parseLANProbeTarget(args[i])
+			if err != nil {
+				fmt.Fprintf(stderr, "lan probe target invalid: %v\n", err)
+				return 2
+			}
+			targets = append(targets, target)
+		case "--timeout-ms":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--timeout-ms requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--timeout-ms must be a positive integer")
+				return 2
+			}
+			timeout = time.Duration(value) * time.Millisecond
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown lan-probe option %q\n", args[i])
+			return 2
+		}
+	}
+	if len(targets) == 0 {
+		fmt.Fprintln(stderr, "lan-probe requires at least one --target")
+		return 2
+	}
+	report := runLANProbeTargets(targets, timeout)
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "lan probe report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeLANProbeReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write lan probe report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONLANProbe(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode lan probe report: %v\n", err)
+		return 1
+	}
+	if !report.OK {
+		return 1
+	}
+	return 0
+}
+
+func parseLANProbeTarget(raw string) (lanProbeTarget, error) {
+	name, endpoint, ok := strings.Cut(strings.TrimSpace(raw), "=")
+	if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(endpoint) == "" {
+		return lanProbeTarget{}, fmt.Errorf("expected name=host:port")
+	}
+	name = strings.TrimSpace(name)
+	endpoint = strings.TrimSpace(endpoint)
+	if strings.Contains(strings.ToLower(name), "x21") || strings.Contains(strings.ToLower(endpoint), "x21") {
+		return lanProbeTarget{}, fmt.Errorf("target contains forbidden legacy identity")
+	}
+	if strings.Contains(endpoint, "@") {
+		return lanProbeTarget{}, fmt.Errorf("target endpoint must not include credentials")
+	}
+	if strings.Contains(endpoint, "://") {
+		parsed, err := url.Parse(endpoint)
+		if err != nil {
+			return lanProbeTarget{}, fmt.Errorf("target endpoint is invalid")
+		}
+		if parsed.User != nil {
+			return lanProbeTarget{}, fmt.Errorf("target endpoint must not include credentials")
+		}
+		endpoint = parsed.Host
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil || strings.TrimSpace(host) == "" || strings.TrimSpace(port) == "" {
+		return lanProbeTarget{}, fmt.Errorf("expected host:port endpoint")
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber <= 0 || portNumber > 65535 {
+		return lanProbeTarget{}, fmt.Errorf("target port is invalid")
+	}
+	return lanProbeTarget{
+		name:     name,
+		endpoint: net.JoinHostPort(host, port),
+		host:     host,
+		port:     port,
+	}, nil
+}
+
+func runLANProbeTargets(targets []lanProbeTarget, timeout time.Duration) lanProbeReport {
+	report := lanProbeReport{
+		SchemaVersion: "a21.lan_probe.v1",
+		OK:            true,
+		Metadata:      buildLatencyBenchMetadata(),
+		Targets:       make([]lanProbeTargetReport, 0, len(targets)),
+	}
+	for _, target := range targets {
+		targetReport := lanProbeTargetReport{
+			Name:     target.name,
+			Endpoint: target.endpoint,
+			Host:     target.host,
+			Port:     target.port,
+			Status:   "failed",
+			Direct:   true,
+		}
+		started := time.Now()
+		conn, err := (&net.Dialer{Timeout: timeout}).Dial("tcp", target.endpoint)
+		targetReport.DurationMS = float64(time.Since(started).Microseconds()) / 1000
+		if err != nil {
+			report.OK = false
+			targetReport.ErrorCode = "tcp_dial_failed"
+		} else {
+			_ = conn.Close()
+			targetReport.Status = "passed"
+		}
+		report.Targets = append(report.Targets, targetReport)
+	}
+	return report
 }
 
 func runAudioFrontEndPlan(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -661,6 +832,23 @@ func writeV21AdapterSmokeReport(outputDir string, report v21adapter.SmokeReport)
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONV21AdapterSmoke(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeLANProbeReport(outputDir string, report lanProbeReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-lan-probe-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONLANProbe(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -1139,6 +1327,12 @@ func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeRepo
 }
 
 func writeJSONV21AdapterSmoke(writer io.Writer, report v21adapter.SmokeReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONLANProbe(writer io.Writer, report lanProbeReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
