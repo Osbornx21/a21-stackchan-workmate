@@ -233,13 +233,21 @@ func runAudioFrontEndPlan(args []string, stdout io.Writer, stderr io.Writer) int
 
 func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int {
 	mock := false
+	fixturePath := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 audio-front-end-eval --mock")
+			fmt.Fprintln(stdout, "a21 audio-front-end-eval --mock | --fixture reports/a21-audio-fixture.json")
 			return 0
 		case "--mock":
 			mock = true
+		case "--fixture":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--fixture requires a value")
+				return 2
+			}
+			i++
+			fixturePath = args[i]
 		case "--execute":
 			fmt.Fprintln(stderr, "audio-front-end-eval only supports --mock until recorded-office and physical-device fixtures exist")
 			return 2
@@ -248,11 +256,26 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 			return 2
 		}
 	}
-	if !mock {
-		fmt.Fprintln(stderr, "audio-front-end-eval requires --mock")
+	if mock && fixturePath != "" {
+		fmt.Fprintln(stderr, "audio-front-end-eval accepts either --mock or --fixture, not both")
 		return 2
 	}
-	if err := writeJSONAudioFrontEndEval(stdout, audio.RunMockFrontEndEval()); err != nil {
+	if !mock && fixturePath == "" {
+		fmt.Fprintln(stderr, "audio-front-end-eval requires --mock or --fixture")
+		return 2
+	}
+	var report audio.FrontEndEvalReport
+	if mock {
+		report = audio.RunMockFrontEndEval()
+	} else {
+		var err error
+		report, err = audio.RunFrontEndEvalFromFixture(fixturePath)
+		if err != nil {
+			fmt.Fprintf(stderr, "audio front-end fixture eval failed: %v\n", err)
+			return 1
+		}
+	}
+	if err := writeJSONAudioFrontEndEval(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode audio front-end eval: %v\n", err)
 		return 1
 	}

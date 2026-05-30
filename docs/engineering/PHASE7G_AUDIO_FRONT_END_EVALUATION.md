@@ -9,13 +9,47 @@ Phase 7G turns "use mature wheels" into a concrete A21 gate for VAD, AEC, noise 
 ```bash
 go run ./cmd/a21 audio-front-end-plan
 go run ./cmd/a21 audio-front-end-eval --mock
+go run ./cmd/a21 audio-front-end-eval --fixture reports/a21-audio-fixture.json
 ```
 
 `audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
 
 `audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, required future metrics, and `promotion_gate: not_production`.
 
-The eval command intentionally requires `--mock`. There is no implicit real evaluation mode yet, so nobody can mistake a synthetic RMS report for office-noise, provider, AEC, full-duplex, or physical StackChan acceptance.
+`audio-front-end-eval --fixture <path>` runs the same report shape over an A21 labelled PCM fixture. `--mock` and `--fixture` are mutually exclusive. There is no implicit real evaluation mode, so nobody can mistake a synthetic or labelled-frame report for provider, AEC, full-duplex, or physical StackChan acceptance.
+
+## Fixture Contract
+
+Fixture files use JSON:
+
+```json
+{
+  "schema_version": "a21.audio.frontend_fixture.v1",
+  "dataset": "a21_shanghai_office_noise_sample_001",
+  "detector": "a21-rms-vad",
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "duration_ms": 20,
+  "frames": [
+    {
+      "seq": 1,
+      "expected_speech": false,
+      "pcm_s16le_base64": "..."
+    }
+  ]
+}
+```
+
+Current constraints:
+
+- `detector` must be `a21-rms-vad` until a mature adapter is actually implemented.
+- `sample_rate_hz` must be `16000`.
+- `channels` must be `1`.
+- `duration_ms` must be `20`.
+- Each `pcm_s16le_base64` frame must decode to 640 bytes.
+- `dataset` and `detector` must not contain X21/V21 legacy identity.
+
+This fixture is an evaluation intermediate, not the preferred long-term audio asset format. Future recorders/converters can use mature WAV/Opus tooling and emit this labelled frame format for A21 evaluation.
 
 ## Current Candidates
 
@@ -30,6 +64,7 @@ Before any candidate becomes default, A21 needs:
 
 - mock benchmark preservation
 - `audio-front-end-eval --mock` report preservation
+- labelled fixture preservation through `audio-front-end-eval --fixture`
 - recorded Shanghai-office noise benchmark
 - physical StackChan speaker-to-mic echo report
 - barge-in stop timing

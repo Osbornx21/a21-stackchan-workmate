@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -565,6 +566,47 @@ func TestRunAudioFrontEndEvalRequiresMockFlag(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "requires --mock") {
 		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestRunAudioFrontEndEvalFixtureReportsQualityMetrics(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-front-end-fixture.json")
+	data := `{
+  "schema_version": "a21.audio.frontend_fixture.v1",
+  "dataset": "a21_cli_fixture_test",
+  "detector": "a21-rms-vad",
+  "sample_rate_hz": 16000,
+  "channels": 1,
+  "duration_ms": 20,
+  "frames": [
+    {"seq": 1, "expected_speech": false, "pcm_s16le_base64": "` + appTestPCM16Base64(0) + `"},
+    {"seq": 2, "expected_speech": true, "pcm_s16le_base64": "` + appTestPCM16Base64(12000) + `"},
+    {"seq": 3, "expected_speech": false, "pcm_s16le_base64": "` + appTestPCM16Base64(0) + `"},
+    {"seq": 4, "expected_speech": false, "pcm_s16le_base64": "` + appTestPCM16Base64(0) + `"}
+  ]
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-eval", "--fixture", fixture}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"status": "fixture"`,
+		`"dataset": "a21_cli_fixture_test"`,
+		`"frames_total": 4`,
+		`"true_positive": 1`,
+		`"true_negative": 3`,
+		`"promotion_gate": "requires_recorded_office_and_physical_acceptance"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
 	}
 }
 
@@ -1575,4 +1617,14 @@ func testArtifactTimestampFromName(t *testing.T, artifactPath string) string {
 		t.Fatalf("artifact name %q lacks timestamp field", name)
 	}
 	return parts[len(parts)-2] + "-" + parts[len(parts)-1]
+}
+
+func appTestPCM16Base64(sample int16) string {
+	const samplesPer20MS16K = 320
+	data := make([]byte, samplesPer20MS16K*2)
+	for i := 0; i < samplesPer20MS16K; i++ {
+		data[i*2] = byte(sample)
+		data[i*2+1] = byte(uint16(sample) >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
