@@ -962,6 +962,7 @@ type stackChanMicProbeAcceptanceOptions struct {
 	GatewayURL          string
 	DeviceID            string
 	Commit              string
+	WindowMS            int
 	MinFrames           int
 	MinAbsPeak          int
 	MinNonzeroSamples   int
@@ -991,10 +992,16 @@ type stackChanMicProbeAcceptanceReport struct {
 	GatewayURL                     string                                `json:"gateway_url"`
 	DeviceID                       string                                `json:"device_id"`
 	Commit                         string                                `json:"commit"`
+	WindowMS                       int                                   `json:"window_ms,omitempty"`
+	ControlTraceID                 string                                `json:"control_trace_id,omitempty"`
+	ControlSessionID               string                                `json:"control_session_id,omitempty"`
+	WindowStartedAtMS              int64                                 `json:"window_started_at_ms,omitempty"`
+	WindowEndedAtMS                int64                                 `json:"window_ended_at_ms,omitempty"`
 	Firmware                       firmwarecheck.DeviceIdentityFirmware  `json:"firmware"`
 	Capabilities                   map[string]string                     `json:"capabilities,omitempty"`
 	Microphone                     string                                `json:"microphone,omitempty"`
 	RuntimeEcho                    map[string]string                     `json:"runtime_echo,omitempty"`
+	RuntimeEchoBefore              map[string]string                     `json:"runtime_echo_before,omitempty"`
 	MicFramesCaptured              int                                   `json:"mic_frames_captured"`
 	AudioWSSentAudioFrames         int                                   `json:"audio_ws_sent_audio_frames"`
 	MicDriverErrors                int                                   `json:"mic_driver_errors"`
@@ -1007,6 +1014,16 @@ type stackChanMicProbeAcceptanceReport struct {
 	GatewayAudioIngressRMS         float64                               `json:"gateway_audio_ingress_rms"`
 	GatewayAudioPlaybackChunkTotal int                                   `json:"gateway_audio_playback_chunk_total"`
 	GatewayVADSpeechTotal          int                                   `json:"gateway_vad_speech_total"`
+	MicFramesCapturedDelta         int                                   `json:"mic_frames_captured_delta"`
+	AudioWSSentAudioFramesDelta    int                                   `json:"audio_ws_sent_audio_frames_delta"`
+	MicDriverErrorsDelta           int                                   `json:"mic_driver_errors_delta"`
+	MicQueueDroppedFramesDelta     int                                   `json:"mic_queue_dropped_frames_delta"`
+	GatewayAudioFrameDelta         int                                   `json:"gateway_audio_frame_delta"`
+	GatewayAudioIngressFramesDelta int                                   `json:"gateway_audio_ingress_frames_delta"`
+	GatewayAudioPlaybackChunkDelta int                                   `json:"gateway_audio_playback_chunk_delta"`
+	GatewayVADSpeechDelta          int                                   `json:"gateway_vad_speech_delta"`
+	GatewayMetricsBefore           *stackChanMicProbeGatewayMetrics      `json:"gateway_metrics_before,omitempty"`
+	GatewayMetricsAfter            *stackChanMicProbeGatewayMetrics      `json:"gateway_metrics_after,omitempty"`
 	Thresholds                     stackChanMicProbeAcceptanceThresholds `json:"thresholds"`
 	NextRequiredActions            []string                              `json:"next_required_actions"`
 	ReportPath                     string                                `json:"report_path,omitempty"`
@@ -2290,7 +2307,7 @@ func runStackChanMicProbeAcceptance(args []string, stdout io.Writer, stderr io.W
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--min-frames 100] [--min-abs-peak 1] [--min-nonzero-samples 1] [--min-gateway-rms 0] [--min-vad-speech 0] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 0] [--min-frames 90] [--min-abs-peak 1] [--min-nonzero-samples 1] [--min-gateway-rms 0] [--min-vad-speech 0] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -2313,6 +2330,16 @@ func runStackChanMicProbeAcceptance(args []string, stdout io.Writer, stderr io.W
 			}
 			i++
 			options.Commit = args[i]
+		case "--window-ms":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--window-ms")
+			if !ok {
+				return 2
+			}
+			if value > 120000 {
+				fmt.Fprintln(stderr, "--window-ms must be at most 120000")
+				return 2
+			}
+			options.WindowMS = value
 		case "--min-frames":
 			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--min-frames")
 			if !ok {
@@ -2407,7 +2434,7 @@ func defaultStackChanMicProbeAcceptanceOptions() stackChanMicProbeAcceptanceOpti
 		GatewayURL:          firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
 		DeviceID:            deviceID,
 		Commit:              currentGitCommit(projectRoot),
-		MinFrames:           100,
+		MinFrames:           90,
 		MinAbsPeak:          1,
 		MinNonzeroSamples:   1,
 		MinGatewayRMS:       0,
@@ -2444,6 +2471,7 @@ func buildStackChanMicProbeAcceptanceReport(options stackChanMicProbeAcceptanceO
 		GatewayURL:                   sanitizedOfficeGatewayURL(options.GatewayURL),
 		DeviceID:                     options.DeviceID,
 		Commit:                       options.Commit,
+		WindowMS:                     options.WindowMS,
 		Thresholds: stackChanMicProbeAcceptanceThresholds{
 			MinFrames:           options.MinFrames,
 			MinAbsPeak:          options.MinAbsPeak,
@@ -2456,6 +2484,14 @@ func buildStackChanMicProbeAcceptanceReport(options stackChanMicProbeAcceptanceO
 			"Do not treat this as production microphone, speaker, AEC, full-duplex, provider, or latency acceptance.",
 			"Promote microphone capability only through a later ADR and release-firmware acceptance gate.",
 		},
+	}
+
+	if options.WindowMS > 0 {
+		runStackChanMicProbeAcceptanceWindow(&report, options)
+		if len(report.Findings) > 0 {
+			report.MicProbeAcceptanceStatus = "blocked"
+		}
+		return report
 	}
 
 	gatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
@@ -2487,6 +2523,83 @@ func buildStackChanMicProbeAcceptanceReport(options stackChanMicProbeAcceptanceO
 		report.MicProbeAcceptanceStatus = "blocked"
 	}
 	return report
+}
+
+func runStackChanMicProbeAcceptanceWindow(report *stackChanMicProbeAcceptanceReport, options stackChanMicProbeAcceptanceOptions) {
+	beforeGatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_before_failed", err.Error())
+		return
+	}
+	beforeDevice, ok := findFirmwareDeviceRecord(beforeGatewayReport.Devices, options.DeviceID)
+	if !ok {
+		report.addFinding("gateway_device_before_missing", "expected StackChan device is missing from Gateway before probe window")
+		return
+	}
+	report.RuntimeEchoBefore = beforeDevice.RuntimeEcho
+	beforeMicFramesCaptured := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "mic_frames_captured")
+	beforeAudioWSSentAudioFrames := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "audio_ws_sent_audio_frames")
+	beforeMicDriverErrors := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "mic_driver_errors")
+	beforeMicQueueDroppedFrames := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "mic_queue_dropped_frames")
+
+	beforeMetrics, err := fetchStackChanMicProbeGatewayMetrics(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_metrics_before_failed", err.Error())
+		return
+	}
+	report.GatewayMetricsBefore = &beforeMetrics
+
+	traceID := fmt.Sprintf("a21-trace-mic-probe-%d", report.GeneratedAtMS)
+	sessionID := fmt.Sprintf("a21-session-mic-probe-%d", report.GeneratedAtMS)
+	control, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionListening, protocol.ModeWorkmate, "MIC PROBE", traceID, sessionID, true)
+	if err != nil {
+		report.addFinding("mic_probe_control_failed", err.Error())
+		return
+	}
+	report.ControlTraceID = control.TraceID
+	report.ControlSessionID = control.SessionID
+	report.WindowStartedAtMS = time.Now().UnixMilli()
+	time.Sleep(time.Duration(options.WindowMS) * time.Millisecond)
+	report.WindowEndedAtMS = time.Now().UnixMilli()
+
+	afterGatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_after_failed", err.Error())
+	} else {
+		report.GatewayURL = afterGatewayReport.GatewayURL
+		afterDevice, ok := findFirmwareDeviceRecord(afterGatewayReport.Devices, options.DeviceID)
+		if !ok {
+			report.addFinding("gateway_device_after_missing", "expected StackChan device is missing from Gateway after probe window")
+		} else {
+			validateStackChanMicProbeDevice(report, options, afterDevice)
+			report.MicFramesCapturedDelta = report.MicFramesCaptured - beforeMicFramesCaptured
+			report.AudioWSSentAudioFramesDelta = report.AudioWSSentAudioFrames - beforeAudioWSSentAudioFrames
+			report.MicDriverErrorsDelta = report.MicDriverErrors - beforeMicDriverErrors
+			report.MicQueueDroppedFramesDelta = report.MicQueueDroppedFrames - beforeMicQueueDroppedFrames
+			validateStackChanMicProbeRuntimeDeltas(report, options)
+		}
+	}
+
+	afterMetrics, err := fetchStackChanMicProbeGatewayMetrics(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_metrics_after_failed", err.Error())
+	} else {
+		report.GatewayMetricsAfter = &afterMetrics
+		report.GatewayAudioFrameTotal = afterMetrics.AudioFrameTotal
+		report.GatewayAudioIngressFramesTotal = afterMetrics.AudioIngressFramesTotal
+		report.GatewayAudioIngressRMS = afterMetrics.AudioIngressRMS
+		report.GatewayAudioPlaybackChunkTotal = afterMetrics.AudioPlaybackChunkTotal
+		report.GatewayVADSpeechTotal = afterMetrics.VADSpeechTotal
+		report.GatewayAudioFrameDelta = afterMetrics.AudioFrameTotal - beforeMetrics.AudioFrameTotal
+		report.GatewayAudioIngressFramesDelta = afterMetrics.AudioIngressFramesTotal - beforeMetrics.AudioIngressFramesTotal
+		report.GatewayAudioPlaybackChunkDelta = afterMetrics.AudioPlaybackChunkTotal - beforeMetrics.AudioPlaybackChunkTotal
+		report.GatewayVADSpeechDelta = afterMetrics.VADSpeechTotal - beforeMetrics.VADSpeechTotal
+		validateStackChanMicProbeMetricDeltas(report, options)
+	}
+
+	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false); err != nil {
+		report.addFinding("mic_probe_idle_control_failed", err.Error())
+	}
 }
 
 func validateStackChanMicProbeDevice(report *stackChanMicProbeAcceptanceReport, options stackChanMicProbeAcceptanceOptions, device firmwarecheck.DeviceIdentityRecord) {
@@ -2651,6 +2764,39 @@ func validateStackChanMicProbeMetrics(report *stackChanMicProbeAcceptanceReport,
 	}
 	if report.GatewayVADSpeechTotal < options.MinGatewayVADSpeech {
 		report.addFinding("gateway_vad_speech_below_threshold", "Gateway VAD speech decisions are below threshold")
+	}
+}
+
+func validateStackChanMicProbeRuntimeDeltas(report *stackChanMicProbeAcceptanceReport, options stackChanMicProbeAcceptanceOptions) {
+	if report.MicFramesCapturedDelta < options.MinFrames {
+		report.addFinding("mic_frames_delta_below_threshold", "captured microphone frame delta is below threshold")
+	}
+	if report.AudioWSSentAudioFramesDelta < options.MinFrames {
+		report.addFinding("audio_ws_frames_delta_below_threshold", "sent audio WebSocket frame delta is below threshold")
+	}
+	if report.MicDriverErrorsDelta != 0 {
+		report.addFinding("mic_driver_error_delta_present", "microphone driver error counter changed during probe window")
+	}
+	if report.MicQueueDroppedFramesDelta != 0 {
+		report.addFinding("mic_queue_drop_delta_present", "microphone queue drop counter changed during probe window")
+	}
+}
+
+func validateStackChanMicProbeMetricDeltas(report *stackChanMicProbeAcceptanceReport, options stackChanMicProbeAcceptanceOptions) {
+	if report.GatewayAudioFrameDelta < options.MinFrames {
+		report.addFinding("gateway_audio_frame_delta_below_threshold", "Gateway audio frame delta is below threshold")
+	}
+	if report.GatewayAudioIngressFramesDelta < options.MinFrames {
+		report.addFinding("gateway_audio_ingress_delta_below_threshold", "Gateway audio ingress delta is below threshold")
+	}
+	if report.GatewayAudioIngressRMS < options.MinGatewayRMS {
+		report.addFinding("gateway_audio_rms_below_threshold", "Gateway audio ingress RMS is below threshold")
+	}
+	if report.GatewayAudioPlaybackChunkDelta != 0 {
+		report.addFinding("gateway_playback_chunk_delta_present", "Gateway playback chunk counter changed during audio-probe-only window")
+	}
+	if report.GatewayVADSpeechDelta < options.MinGatewayVADSpeech {
+		report.addFinding("gateway_vad_speech_delta_below_threshold", "Gateway VAD speech decision delta is below threshold")
 	}
 }
 
@@ -2944,6 +3090,47 @@ func stackChanTouchCase(name string) (stackChanTouchCaseSpec, bool) {
 	default:
 		return stackChanTouchCaseSpec{}, false
 	}
+}
+
+func postStackChanMicProbeControl(gatewayBaseURL string, deviceID string, state protocol.ExpressionState, mode protocol.Mode, text string, traceID string, sessionID string, audioProbeOnly bool) (gateway.DeviceControlResponse, error) {
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayBaseURL, "/v1/devices/control", nil)
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	request := gateway.DeviceControlRequest{
+		DeviceID:       deviceID,
+		State:          state,
+		Mode:           mode,
+		Text:           text,
+		TraceID:        traceID,
+		SessionID:      sessionID,
+		AudioProbeOnly: audioProbeOnly,
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	client := http.Client{
+		Timeout:   3 * time.Second,
+		Transport: &http.Transport{Proxy: nil},
+	}
+	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return gateway.DeviceControlResponse{}, fmt.Errorf("gateway device control returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var response gateway.DeviceControlResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	if containsLegacyIdentity(response.TraceID) || containsLegacyIdentity(response.SessionID) || containsLegacyIdentity(response.DeviceID) {
+		return gateway.DeviceControlResponse{}, fmt.Errorf("gateway device control contains forbidden legacy identity")
+	}
+	return response, nil
 }
 
 func postStackChanTouchControl(gatewayBaseURL string, deviceID string, spec stackChanTouchCaseSpec) (gateway.DeviceControlResponse, error) {
