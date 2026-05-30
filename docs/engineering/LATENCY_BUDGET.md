@@ -73,7 +73,9 @@ The report currently measures in-process Gateway paths for:
 
 `audio_ws_barge_in_stop_ms` opens the same mock audio WebSocket, establishes an active playback stream with a silent frame, then sends a voiced PCM16 frame that triggers mock VAD `vad.speech.start`. The measurement starts when the voiced frame is written and stops when Gateway returns `interrupted`. This protects the audio-channel interruption contract without claiming hardware microphone, speaker, AEC, or provider-cancel latency.
 
-When `--output-dir reports` is provided, the CLI writes a timestamped `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` file and includes `report_path` in stdout. The Makefile `latency-bench` target uses this path so every local/release run can leave an ignored evidence artifact for comparing home, office, LAN, proxy, and future provider/device results.
+When `--output-dir reports` is provided, the CLI writes a timestamped `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` file and includes `report_path` in stdout. The Makefile `latency-bench` target uses this path so every local/release run can leave an ignored evidence artifact for comparing home, Shanghai office, LAN, proxy, and future provider/device results.
+
+Each latency report includes a `metadata` block with `generated_at`, `current_commit`, a minimum network/DNS `fingerprint`, and the redacted proxy-policy report reused by doctor. Proxy metadata records only variable names, direct-connect coverage, and mode labels. It must not print proxy URLs, hosts, ports, usernames, passwords, or provider API credentials.
 
 The Gateway audio ingress path now has a small bounded frame buffer and an explicit VAD detector boundary with deterministic RMS default. It records `audio.ingress.buffered`, `vad.speech.start`, and `vad.speech.end` trace markers and exposes ingress/VAD Prometheus metrics, including `a21_vad_detector_decisions_total{detector,result}` for speech/silence frame decisions by detector. This is a control-point and observability baseline for future tuning; it is not production VAD, echo cancellation, full-duplex validation, or LAN jitter characterization.
 
@@ -83,7 +85,7 @@ When the selected Gateway voice provider exposes an explicit realtime session in
 
 The browser simulator decodes and schedules those mock PCM chunks with WebAudio and stops scheduled sources on interruption, but mock results still do not represent real provider, LAN, microphone, speaker, or StackChan hardware latency. They only protect report shape, Gateway baseline behavior, and the client-side playback/cancellation development surface.
 
-Future real-provider/device benchmarks must add environment fingerprint and store a report artifact before their results count for release decisions.
+Future real-provider/device benchmarks must preserve the same commit, fingerprint, and proxy metadata before their results count for release decisions.
 
 ## Current Firmware Playback Control
 

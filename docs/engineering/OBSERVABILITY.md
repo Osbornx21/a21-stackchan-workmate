@@ -26,6 +26,8 @@ The Gateway VAD path exposes detector-labelled Prometheus counters for each fram
 
 `audio-front-end-eval --mock` emits a JSON report for the deterministic RMS baseline. `audio-front-end-eval --fixture <path>` emits the same report shape for labelled PCM frame fixtures. With `--output-dir reports`, it also writes `reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json`. These are not runtime Prometheus endpoints; they are offline report shapes future recorded-office and physical-device VAD/AEC evaluations must preserve.
 
+`latency-bench --mock --output-dir reports` emits `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` with the current commit, generated timestamp, network/DNS fingerprint, and redacted proxy-policy metadata. This makes latency runs comparable across home, Shanghai office, LAN, and proxy configurations without logging proxy URLs or credentials.
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:

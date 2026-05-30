@@ -598,11 +598,19 @@ func runSerialList(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 type latencyBenchReport struct {
-	Mode       string              `json:"mode"`
-	Iterations int                 `json:"iterations"`
-	Summary    latencyBenchSummary `json:"summary"`
-	OK         bool                `json:"ok"`
-	ReportPath string              `json:"report_path,omitempty"`
+	Mode       string               `json:"mode"`
+	Iterations int                  `json:"iterations"`
+	Metadata   latencyBenchMetadata `json:"metadata"`
+	Summary    latencyBenchSummary  `json:"summary"`
+	OK         bool                 `json:"ok"`
+	ReportPath string               `json:"report_path,omitempty"`
+}
+
+type latencyBenchMetadata struct {
+	GeneratedAt   string                         `json:"generated_at"`
+	CurrentCommit string                         `json:"current_commit,omitempty"`
+	Fingerprint   runtimeguard.Fingerprint       `json:"fingerprint"`
+	Proxy         runtimeguard.ProxyPolicyReport `json:"proxy"`
 }
 
 type latencyBenchSummary struct {
@@ -727,6 +735,7 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 	return latencyBenchReport{
 		Mode:       "mock",
 		Iterations: iterations,
+		Metadata:   buildLatencyBenchMetadata(),
 		Summary: latencyBenchSummary{
 			MockTurnMS:        latencySeries(mockTurn),
 			ProfessionalMS:    latencySeries(professional),
@@ -736,6 +745,17 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 		},
 		OK: true,
 	}, nil
+}
+
+func buildLatencyBenchMetadata() latencyBenchMetadata {
+	cwd, _ := os.Getwd()
+	projectRoot := findProjectRoot(cwd)
+	return latencyBenchMetadata{
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		CurrentCommit: currentGitCommit(projectRoot),
+		Fingerprint:   runtimeguard.DetectFingerprint(context.Background(), runtimeguard.OSRunner{}, os.Environ()),
+		Proxy:         runtimeguard.EvaluateProxyPolicy(os.Environ()),
+	}
 }
 
 func writeLatencyBenchReport(outputDir string, report latencyBenchReport) (string, error) {

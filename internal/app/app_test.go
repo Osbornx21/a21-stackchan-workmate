@@ -1079,6 +1079,69 @@ func TestRunLatencyBenchWritesReportWhenOutputDirProvided(t *testing.T) {
 	}
 }
 
+func TestRunLatencyBenchReportIncludesTraceableEnvironmentMetadataWithoutProxySecrets(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://user:secret@example.invalid:8080")
+	t.Setenv("A21_PROVIDER_PROXY_URL", "http://provider-secret@example.invalid:9000")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"latency-bench", "--mock", "--iterations", "1", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"metadata"`,
+		`"generated_at"`,
+		`"current_commit"`,
+		`"fingerprint"`,
+		`"proxy"`,
+		`"global_proxy_env"`,
+		`"HTTPS_PROXY"`,
+		`"provider_proxy_env"`,
+		`"A21_PROVIDER_PROXY_URL"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"secret", "example.invalid", "8080", "9000"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked proxy value fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-latency-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("report files = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, want := range []string{
+		`"metadata"`,
+		`"current_commit"`,
+		`"fingerprint"`,
+		`"proxy"`,
+		`"global_proxy_env"`,
+		`"provider_proxy_env"`,
+	} {
+		if !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: %s", want, reportJSON)
+		}
+	}
+	for _, forbidden := range []string{"secret", "example.invalid", "8080", "9000"} {
+		if strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report leaked proxy value fragment %q: %s", forbidden, reportJSON)
+		}
+	}
+}
+
 func TestRunLatencyBenchRequiresMockMode(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"latency-bench"}, &bytes.Buffer{}, &stderr)
