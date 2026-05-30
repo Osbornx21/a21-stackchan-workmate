@@ -1125,6 +1125,44 @@ func TestRunFirmwareDeviceReportRejectsGatewayCredentialsWithoutEchoingSecret(t 
 	}
 }
 
+func TestRunFirmwareDeviceReportRejectsLegacyGatewayDeviceWithoutEchoingIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "devices": [
+    {
+      "device_id": "x21-stackchan",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      }
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", server.URL,
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy identity rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-stackchan") {
+		t.Fatalf("legacy identity leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")

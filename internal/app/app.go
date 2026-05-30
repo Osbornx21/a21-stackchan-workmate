@@ -702,12 +702,38 @@ func fetchFirmwareDeviceReport(gatewayBaseURL string) (firmwareDeviceReport, err
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return firmwareDeviceReport{}, err
 	}
+	if err := validateFirmwareDeviceReportDevices(payload.Devices); err != nil {
+		return firmwareDeviceReport{}, err
+	}
 	return firmwareDeviceReport{
 		SchemaVersion: "a21.firmware.device_report.v1",
 		CapturedAtMS:  time.Now().UnixMilli(),
 		GatewayURL:    safeGatewayURL,
 		Devices:       payload.Devices,
 	}, nil
+}
+
+func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityRecord) error {
+	for _, device := range devices {
+		values := []string{
+			device.DeviceID,
+			device.Firmware.ID,
+			device.Firmware.Version,
+			device.Firmware.Board,
+			device.Firmware.Commit,
+		}
+		for _, value := range values {
+			if containsLegacyIdentity(value) {
+				return fmt.Errorf("gateway device report contains forbidden legacy identity")
+			}
+		}
+	}
+	return nil
+}
+
+func containsLegacyIdentity(value string) bool {
+	lower := strings.ToLower(value)
+	return strings.Contains(lower, "x21") || strings.Contains(lower, "v21")
 }
 
 func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error) {
