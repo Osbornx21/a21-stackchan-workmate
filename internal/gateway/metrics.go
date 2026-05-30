@@ -16,6 +16,7 @@ type metrics struct {
 	audioIngressFramesTotal     prometheus.Counter
 	audioIngressDroppedTotal    prometheus.Counter
 	audioIngressBufferDepth     prometheus.Gauge
+	audioIngressRMS             prometheus.Gauge
 	vadSpeechStartTotal         prometheus.Counter
 	vadSpeechEndTotal           prometheus.Counter
 	vadDetectorDecisions        *prometheus.CounterVec
@@ -63,6 +64,10 @@ func newMetrics() *metrics {
 		audioIngressBufferDepth: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "a21_audio_ingress_buffer_depth",
 			Help: "Current A21 audio ingress buffer depth for the most recently handled stream.",
+		}),
+		audioIngressRMS: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "a21_audio_ingress_rms",
+			Help: "RMS score for the most recently handled A21 audio ingress frame.",
 		}),
 		vadSpeechStartTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_vad_speech_start_total",
@@ -133,6 +138,7 @@ func newMetrics() *metrics {
 		m.audioIngressFramesTotal,
 		m.audioIngressDroppedTotal,
 		m.audioIngressBufferDepth,
+		m.audioIngressRMS,
 		m.vadSpeechStartTotal,
 		m.vadSpeechEndTotal,
 		m.vadDetectorDecisions,

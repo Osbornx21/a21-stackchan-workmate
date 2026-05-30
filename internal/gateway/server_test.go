@@ -1797,6 +1797,7 @@ func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 	server.Handler().ServeHTTP(metricsRec, metricsReq)
 	for _, want := range []string{
 		"a21_audio_ingress_frames_total 1",
+		"a21_audio_ingress_rms",
 		"a21_vad_speech_start_total 1",
 		`a21_vad_detector_decisions_total{detector="a21-rms-vad",result="speech"} 1`,
 	} {
