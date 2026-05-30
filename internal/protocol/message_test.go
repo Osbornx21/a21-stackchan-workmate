@@ -144,8 +144,11 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 
 func TestDeviceEventPayloadKindsCoverTouchSemantics(t *testing.T) {
 	tests := map[DeviceEventKind]string{
-		DeviceEventTouchWakeOrListen: "touch.wake_or_listen",
-		DeviceEventTouchBargeIn:      "touch.barge_in",
+		DeviceEventTouchWakeOrListen:     "touch.wake_or_listen",
+		DeviceEventTouchBargeIn:          "touch.barge_in",
+		DeviceEventTouchTopTap:           "touch.top.tap",
+		DeviceEventTouchTopSwipeForward:  "touch.top.swipe_forward",
+		DeviceEventTouchTopSwipeBackward: "touch.top.swipe_backward",
 	}
 	for got, want := range tests {
 		if string(got) != want {

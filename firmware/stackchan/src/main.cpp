@@ -428,6 +428,7 @@ void handleLocalControls(uint32_t now_ms) {
   auto& top_touch = M5StackChan.TouchSensor;
   if (a21PhysicalTouchReadTopSensor(
           &g_physical_touch_state,
+          g_state.render_state == A21_RENDER_SPEAKING,
           top_touch.isPressed(),
           top_touch.wasClicked(),
           top_touch.wasSwipedForward(),

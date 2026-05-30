@@ -88,11 +88,14 @@ type ScreenCard struct {
 type DeviceEventKind string
 
 const (
-	DeviceEventMockTurn          DeviceEventKind = "mock.turn"
-	DeviceEventInterrupt         DeviceEventKind = "interrupt"
-	DeviceEventTouchWakeOrListen DeviceEventKind = "touch.wake_or_listen"
-	DeviceEventTouchBargeIn      DeviceEventKind = "touch.barge_in"
-	DeviceEventRuntimeEcho       DeviceEventKind = "runtime.echo"
+	DeviceEventMockTurn              DeviceEventKind = "mock.turn"
+	DeviceEventInterrupt             DeviceEventKind = "interrupt"
+	DeviceEventTouchWakeOrListen     DeviceEventKind = "touch.wake_or_listen"
+	DeviceEventTouchBargeIn          DeviceEventKind = "touch.barge_in"
+	DeviceEventTouchTopTap           DeviceEventKind = "touch.top.tap"
+	DeviceEventTouchTopSwipeForward  DeviceEventKind = "touch.top.swipe_forward"
+	DeviceEventTouchTopSwipeBackward DeviceEventKind = "touch.top.swipe_backward"
+	DeviceEventRuntimeEcho           DeviceEventKind = "runtime.echo"
 )
 
 type TouchSource string

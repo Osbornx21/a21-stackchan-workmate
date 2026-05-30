@@ -1552,6 +1552,85 @@ func TestControlWebSocketTouchBargeInMapsToInterrupt(t *testing.T) {
 	}
 }
 
+func TestControlWebSocketTopTouchGesturesStayDistinct(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	gestureCases := []struct {
+		name      string
+		seq       uint64
+		traceID   string
+		event     protocol.DeviceEventKind
+		wantState protocol.ExpressionState
+		wantMode  protocol.Mode
+	}{
+		{
+			name:      "tap",
+			seq:       5,
+			traceID:   "a21-trace-touch-top-tap",
+			event:     protocol.DeviceEventTouchTopTap,
+			wantState: protocol.ExpressionListening,
+			wantMode:  protocol.ModeWorkmate,
+		},
+		{
+			name:      "swipe forward",
+			seq:       6,
+			traceID:   "a21-trace-touch-top-forward",
+			event:     protocol.DeviceEventTouchTopSwipeForward,
+			wantState: protocol.ExpressionThinking,
+			wantMode:  protocol.ModeCoCreation,
+		},
+		{
+			name:      "swipe backward",
+			seq:       7,
+			traceID:   "a21-trace-touch-top-backward",
+			event:     protocol.DeviceEventTouchTopSwipeBackward,
+			wantState: protocol.ExpressionIdle,
+			wantMode:  protocol.ModeFocus,
+		},
+	}
+
+	for _, tc := range gestureCases {
+		writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+			Protocol:  protocol.ProtocolVersion,
+			DeviceID:  "stackchan-001",
+			Kind:      protocol.KindDeviceEvent,
+			Seq:       tc.seq,
+			TraceID:   tc.traceID,
+			SessionID: "a21-session-touch-top",
+		}, protocol.DeviceEventPayload{
+			Event:       tc.event,
+			Mode:        protocol.ModeWorkmate,
+			TouchSource: protocol.TouchSourceTopSensor,
+		})
+
+		events := readControlEvents(t, ctx, conn, 1)
+		var payload protocol.ControlEventPayload
+		if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.State != tc.wantState || payload.Mode != tc.wantMode {
+			t.Fatalf("%s control = %+v, want state=%q mode=%q", tc.name, payload, tc.wantState, tc.wantMode)
+		}
+
+		traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id="+tc.traceID, nil)
+		traceRec := httptest.NewRecorder()
+		httpServer.Config.Handler.ServeHTTP(traceRec, traceReq)
+		if !strings.Contains(traceRec.Body.String(), "device."+string(tc.event)+".received") {
+			t.Fatalf("%s trace missing device event marker: %s", tc.name, traceRec.Body.String())
+		}
+	}
+}
+
 func TestAudioWebSocketAcceptsAudioFrame(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

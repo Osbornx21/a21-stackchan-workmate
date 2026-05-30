@@ -896,6 +896,18 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 		return s.mockTurnResponse(req).Events
 	case protocol.DeviceEventInterrupt, protocol.DeviceEventTouchBargeIn:
 		return s.mockInterruptResponse(req).Events
+	case protocol.DeviceEventTouchTopTap:
+		return s.controlSequence(event.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "我在。", Final: true},
+		})
+	case protocol.DeviceEventTouchTopSwipeForward:
+		return s.controlSequence(event.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+			{State: protocol.ExpressionThinking, Mode: protocol.ModeCoCreation, Text: "往前推一步。", Final: true},
+		})
+	case protocol.DeviceEventTouchTopSwipeBackward:
+		return s.controlSequence(event.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+			{State: protocol.ExpressionIdle, Mode: protocol.ModeFocus, Text: "我先收一收。", Final: true},
+		})
 	case protocol.DeviceEventRuntimeEcho:
 		return nil
 	default:
