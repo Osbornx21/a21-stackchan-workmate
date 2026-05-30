@@ -14,20 +14,22 @@ import (
 )
 
 type ArtifactOptions struct {
-	ManifestPath        string
-	ArtifactPath        string
-	RequireReleaseIndex bool
+	ManifestPath           string
+	ArtifactPath           string
+	RequireReleaseIndex    bool
+	RequireReleaseManifest bool
 }
 
 type ArtifactResult struct {
-	Manifest         Manifest `json:"manifest"`
-	ArtifactPath     string   `json:"artifact_path"`
-	SHA256Path       string   `json:"sha256_path"`
-	SHA256           string   `json:"sha256"`
-	Commit           string   `json:"commit"`
-	Timestamp        string   `json:"timestamp"`
-	ReleaseIndexPath string   `json:"release_index_path,omitempty"`
-	OK               bool     `json:"ok"`
+	Manifest            Manifest `json:"manifest"`
+	ArtifactPath        string   `json:"artifact_path"`
+	SHA256Path          string   `json:"sha256_path"`
+	SHA256              string   `json:"sha256"`
+	Commit              string   `json:"commit"`
+	Timestamp           string   `json:"timestamp"`
+	ReleaseManifestPath string   `json:"release_manifest_path,omitempty"`
+	ReleaseIndexPath    string   `json:"release_index_path,omitempty"`
+	OK                  bool     `json:"ok"`
 }
 
 type UploadCheckOptions struct {
@@ -103,6 +105,13 @@ func ValidateArtifact(options ArtifactOptions) (ArtifactResult, error) {
 		}
 		result.ReleaseIndexPath = releaseIndexPath
 	}
+	if options.RequireReleaseManifest {
+		releaseManifestPath := options.ArtifactPath + ".manifest.json"
+		if err := validateArtifactReleaseManifest(releaseManifestPath, result); err != nil {
+			return ArtifactResult{}, err
+		}
+		result.ReleaseManifestPath = releaseManifestPath
+	}
 	return result, nil
 }
 
@@ -136,9 +145,10 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 		return UploadCheckResult{}, err
 	}
 	artifact, err := ValidateArtifact(ArtifactOptions{
-		ManifestPath:        options.ManifestPath,
-		ArtifactPath:        options.ArtifactPath,
-		RequireReleaseIndex: true,
+		ManifestPath:           options.ManifestPath,
+		ArtifactPath:           options.ArtifactPath,
+		RequireReleaseIndex:    true,
+		RequireReleaseManifest: true,
 	})
 	if err != nil {
 		return UploadCheckResult{}, err
@@ -189,6 +199,44 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) error {
 		return nil
 	}
 	return fmt.Errorf("release index has no entry for artifact %q", expectedArtifactName)
+}
+
+func validateArtifactReleaseManifest(path string, artifact ArtifactResult) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("artifact release manifest missing or unreadable: %w", err)
+	}
+	var releaseManifest FirmwareReleaseManifest
+	if err := json.Unmarshal(data, &releaseManifest); err != nil {
+		return fmt.Errorf("artifact release manifest is invalid: %w", err)
+	}
+	expectedArtifactName := filepath.Base(artifact.ArtifactPath)
+	expectedSHAName := filepath.Base(artifact.SHA256Path)
+	if releaseManifest.SchemaVersion != ReleaseManifestSchemaVersion ||
+		releaseManifest.Project != artifact.Manifest.Project ||
+		releaseManifest.FirmwareID != artifact.Manifest.FirmwareID ||
+		releaseManifest.Version != artifact.Manifest.Version ||
+		releaseManifest.Board != artifact.Manifest.Board ||
+		!sameGitCommit(releaseManifest.Commit, artifact.Commit) ||
+		releaseManifest.Timestamp != artifact.Timestamp ||
+		releaseManifest.ArtifactName != expectedArtifactName ||
+		filepath.Base(releaseManifest.ArtifactPath) != expectedArtifactName ||
+		filepath.Base(releaseManifest.SHA256Path) != expectedSHAName ||
+		!strings.EqualFold(releaseManifest.SHA256, artifact.SHA256) {
+		return fmt.Errorf("artifact release manifest for %q does not match artifact identity or checksum", expectedArtifactName)
+	}
+	joined := strings.ToLower(strings.Join([]string{
+		releaseManifest.Project,
+		releaseManifest.FirmwareID,
+		releaseManifest.Version,
+		releaseManifest.Board,
+		releaseManifest.Commit,
+		releaseManifest.ArtifactName,
+	}, " "))
+	if strings.Contains(joined, "x21") || strings.Contains(joined, "v21") {
+		return fmt.Errorf("artifact release manifest contains forbidden legacy identity")
+	}
+	return nil
 }
 
 type parsedArtifactName struct {

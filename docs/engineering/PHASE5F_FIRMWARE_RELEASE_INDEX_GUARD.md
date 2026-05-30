@@ -21,4 +21,6 @@ The guard validates that the release index entry matches the candidate artifact'
 
 This blocks hand-assembled `.bin + .sha256` pairs from entering the upload planning path. A binary can still pass the lower-level `firmware-artifact-check` for inspection, but it cannot become an upload or flash-plan candidate unless it came through the A21 packaging ledger.
 
+Phase 5G further requires a sibling per-artifact `.manifest.json` with schema `a21.firmware.artifact_manifest.v1`. The release index proves the artifact is in the package ledger; the per-artifact manifest makes the candidate self-describing beside the binary. Upload-path guards require both records to agree with the filename, checksum, embedded identity, A21 manifest, and expected git commit.
+
 Real flashing remains locked. The guard only strengthens dry-run receipts and does not add any command that writes to hardware.

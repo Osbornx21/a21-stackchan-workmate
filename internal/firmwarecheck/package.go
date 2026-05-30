@@ -13,6 +13,7 @@ import (
 )
 
 const ReleaseIndexFileName = "a21-firmware-release-index.jsonl"
+const ReleaseManifestSchemaVersion = "a21.firmware.artifact_manifest.v1"
 
 type PackageOptions struct {
 	ManifestPath string
@@ -23,10 +24,11 @@ type PackageOptions struct {
 }
 
 type PackageResult struct {
-	ArtifactPath     string `json:"artifact_path"`
-	SHA256Path       string `json:"sha256_path"`
-	SHA256           string `json:"sha256"`
-	ReleaseIndexPath string `json:"release_index_path"`
+	ArtifactPath        string `json:"artifact_path"`
+	SHA256Path          string `json:"sha256_path"`
+	SHA256              string `json:"sha256"`
+	ReleaseManifestPath string `json:"release_manifest_path"`
+	ReleaseIndexPath    string `json:"release_index_path"`
 }
 
 type ReleaseIndexEntry struct {
@@ -37,6 +39,20 @@ type ReleaseIndexEntry struct {
 	Commit        string `json:"commit"`
 	Timestamp     string `json:"timestamp"`
 	ArtifactPath  string `json:"artifact_path"`
+	SHA256Path    string `json:"sha256_path"`
+	SHA256        string `json:"sha256"`
+}
+
+type FirmwareReleaseManifest struct {
+	SchemaVersion string `json:"schema_version"`
+	Project       string `json:"project"`
+	FirmwareID    string `json:"firmware_id"`
+	Version       string `json:"version"`
+	Board         string `json:"board"`
+	Commit        string `json:"commit"`
+	Timestamp     string `json:"timestamp"`
+	ArtifactPath  string `json:"artifact_path"`
+	ArtifactName  string `json:"artifact_name"`
 	SHA256Path    string `json:"sha256_path"`
 	SHA256        string `json:"sha256"`
 }
@@ -75,8 +91,7 @@ func PackageArtifact(options PackageOptions) (PackageResult, error) {
 	if err := os.WriteFile(shaPath, []byte(checksum+"  "+artifactName+"\n"), 0o644); err != nil {
 		return PackageResult{}, err
 	}
-	releaseIndexPath := filepath.Join(options.OutputDir, ReleaseIndexFileName)
-	if err := appendReleaseIndexEntry(releaseIndexPath, ReleaseIndexEntry{
+	entry := ReleaseIndexEntry{
 		SchemaVersion: "a21.firmware.release.v1",
 		FirmwareID:    manifest.FirmwareID,
 		Version:       manifest.Version,
@@ -86,15 +101,43 @@ func PackageArtifact(options PackageOptions) (PackageResult, error) {
 		ArtifactPath:  artifactPath,
 		SHA256Path:    shaPath,
 		SHA256:        checksum,
-	}); err != nil {
+	}
+	releaseManifestPath := artifactPath + ".manifest.json"
+	if err := writeFirmwareReleaseManifest(releaseManifestPath, manifest, entry); err != nil {
+		return PackageResult{}, err
+	}
+	releaseIndexPath := filepath.Join(options.OutputDir, ReleaseIndexFileName)
+	if err := appendReleaseIndexEntry(releaseIndexPath, entry); err != nil {
 		return PackageResult{}, err
 	}
 	return PackageResult{
-		ArtifactPath:     artifactPath,
-		SHA256Path:       shaPath,
-		SHA256:           checksum,
-		ReleaseIndexPath: releaseIndexPath,
+		ArtifactPath:        artifactPath,
+		SHA256Path:          shaPath,
+		SHA256:              checksum,
+		ReleaseManifestPath: releaseManifestPath,
+		ReleaseIndexPath:    releaseIndexPath,
 	}, nil
+}
+
+func writeFirmwareReleaseManifest(path string, manifest Manifest, entry ReleaseIndexEntry) error {
+	releaseManifest := FirmwareReleaseManifest{
+		SchemaVersion: ReleaseManifestSchemaVersion,
+		Project:       manifest.Project,
+		FirmwareID:    entry.FirmwareID,
+		Version:       entry.Version,
+		Board:         entry.Board,
+		Commit:        entry.Commit,
+		Timestamp:     entry.Timestamp,
+		ArtifactPath:  entry.ArtifactPath,
+		ArtifactName:  filepath.Base(entry.ArtifactPath),
+		SHA256Path:    entry.SHA256Path,
+		SHA256:        entry.SHA256,
+	}
+	data, err := json.MarshalIndent(releaseManifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 func appendReleaseIndexEntry(path string, entry ReleaseIndexEntry) error {

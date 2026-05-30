@@ -3,6 +3,7 @@ package firmwarecheck
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,44 @@ func TestValidateDeviceIdentityRejectsLegacyDeviceID(t *testing.T) {
 	}
 }
 
+func TestValidateDeviceIdentityRequiresPerArtifactReleaseManifest(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	if err := os.Remove(artifact + ".manifest.json"); err != nil {
+		t.Fatal(err)
+	}
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      }
+    }
+  ]
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected device identity guard to reject artifact without release manifest")
+	}
+	if !strings.Contains(err.Error(), "artifact release manifest") {
+		t.Fatalf("error = %q, want artifact release manifest", err)
+	}
+}
+
 func writeDeviceIdentityManifest(t *testing.T, dir string) string {
 	t.Helper()
 	manifest := filepath.Join(dir, "a21-firmware.json")
@@ -212,6 +251,25 @@ func writeDeviceIdentityArtifact(t *testing.T, artifactPath string, content []by
 		SHA256Path:    artifactPath + ".sha256",
 		SHA256:        checksum,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	manifestData, err := json.MarshalIndent(FirmwareReleaseManifest{
+		SchemaVersion: ReleaseManifestSchemaVersion,
+		Project:       "A21",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        commit,
+		Timestamp:     deviceIdentityArtifactTimestampFromName(t, artifactPath),
+		ArtifactPath:  artifactPath,
+		ArtifactName:  filepath.Base(artifactPath),
+		SHA256Path:    artifactPath + ".sha256",
+		SHA256:        checksum,
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath+".manifest.json", append(manifestData, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

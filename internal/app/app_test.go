@@ -805,8 +805,14 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 	if _, err := os.Stat(artifact + ".sha256"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(artifact + ".manifest.json"); err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(stdout.String(), filepath.Base(artifact)) {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "release_manifest_path") {
+		t.Fatalf("stdout missing release_manifest_path: %s", stdout.String())
 	}
 }
 
@@ -1345,6 +1351,25 @@ func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, conten
 		ArtifactPath:  artifactPath,
 		SHA256Path:    artifactPath + ".sha256",
 		SHA256:        checksum,
+	}
+	manifestData, err := json.MarshalIndent(firmwarecheck.FirmwareReleaseManifest{
+		SchemaVersion: firmwarecheck.ReleaseManifestSchemaVersion,
+		Project:       "A21",
+		FirmwareID:    entry.FirmwareID,
+		Version:       entry.Version,
+		Board:         entry.Board,
+		Commit:        entry.Commit,
+		Timestamp:     entry.Timestamp,
+		ArtifactPath:  artifactPath,
+		ArtifactName:  filepath.Base(artifactPath),
+		SHA256Path:    artifactPath + ".sha256",
+		SHA256:        checksum,
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath+".manifest.json", append(manifestData, '\n'), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	data, err := json.Marshal(entry)
 	if err != nil {

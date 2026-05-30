@@ -57,9 +57,10 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 	}
 
 	artifact, err := ValidateArtifact(ArtifactOptions{
-		ManifestPath:        options.ManifestPath,
-		ArtifactPath:        options.ArtifactPath,
-		RequireReleaseIndex: true,
+		ManifestPath:           options.ManifestPath,
+		ArtifactPath:           options.ArtifactPath,
+		RequireReleaseIndex:    true,
+		RequireReleaseManifest: true,
 	})
 	if err != nil {
 		return DeviceIdentityResult{}, err

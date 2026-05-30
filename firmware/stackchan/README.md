@@ -107,8 +107,8 @@ go run ./cmd/a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackc
 go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <expected-git-sha>
 ```
 
-These commands inventory serial devices and validate artifact identity, board, version, checksum, expected git commit, embedded binary identity, explicit serial target, port existence, serial-like path form, whether another process is already holding the serial path, and whether the A21 Gateway has seen the expected device ID with matching A21 firmware identity. They do not flash the device.
+These commands inventory serial devices and validate artifact identity, board, version, checksum, sibling artifact manifest, release-index record, expected git commit, embedded binary identity, explicit serial target, port existence, serial-like path form, whether another process is already holding the serial path, and whether the A21 Gateway has seen the expected device ID with matching A21 firmware identity. They do not flash the device.
 
 Successful upload-check and device-check output are dry-run receipts with `flash_allowed: false`. They are preflight records, not permission to run `pio run -t upload`, and the PlatformIO blocker is expected to fail raw upload attempts.
 
-`make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source.
+`make firmware-package` refuses to run when the git worktree is dirty. This is intentional: a firmware binary must not be packaged under a commit SHA that does not fully describe its source. It writes the A21-named `.bin`, sibling `.sha256`, sibling `.manifest.json`, and `a21-firmware-release-index.jsonl`; upload-path dry-run guards require all of them to agree.

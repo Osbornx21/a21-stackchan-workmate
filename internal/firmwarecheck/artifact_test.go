@@ -3,6 +3,7 @@ package firmwarecheck
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,40 @@ func TestValidateUploadCandidateRequiresReleaseIndexEntry(t *testing.T) {
 	}
 }
 
+func TestValidateUploadCandidateRequiresPerArtifactReleaseManifest(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeArtifactWithChecksum(t, artifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, artifact+".sha256")
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  artifact,
+		SHA256Path:    artifact + ".sha256",
+		SHA256:        checksum,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: artifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected upload candidate without per-artifact release manifest to be rejected")
+	}
+	if !strings.Contains(err.Error(), "artifact release manifest") {
+		t.Fatalf("error = %q, want artifact release manifest", err)
+	}
+}
+
 func TestValidateUploadCandidateAcceptsReleaseIndexEntry(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
@@ -79,6 +114,7 @@ func TestValidateUploadCandidateAcceptsReleaseIndexEntry(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	writeArtifactReleaseManifest(t, artifact, checksum)
 
 	result, err := ValidateUploadCandidate(UploadCheckOptions{
 		ManifestPath: manifest,
@@ -203,4 +239,27 @@ func readTestChecksum(t *testing.T, path string) string {
 		t.Fatalf("checksum file %q is empty", path)
 	}
 	return fields[0]
+}
+
+func writeArtifactReleaseManifest(t *testing.T, artifactPath string, checksum string) {
+	t.Helper()
+	data, err := json.MarshalIndent(FirmwareReleaseManifest{
+		SchemaVersion: ReleaseManifestSchemaVersion,
+		Project:       "A21",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  artifactPath,
+		ArtifactName:  filepath.Base(artifactPath),
+		SHA256Path:    artifactPath + ".sha256",
+		SHA256:        checksum,
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifactPath+".manifest.json", append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }

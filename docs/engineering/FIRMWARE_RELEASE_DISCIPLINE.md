@@ -9,6 +9,7 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 - A21 firmware lives under `firmware/stackchan/`.
 - A21 firmware build artifacts must be named with `a21`, target board, firmware version, git commit, and build timestamp.
 - A21 firmware binaries must embed an A21 build identity containing firmware ID, version, board, and git commit.
+- Each packaged firmware binary must have a sibling `.sha256` file and `.manifest.json` artifact manifest.
 - Gateway must record and validate firmware build identity from device events before real hardware acceptance.
 - A21 firmware may not use X21 or V21 project names, service names, artifact names, namespaces, or upload targets.
 - Firmware upload is forbidden unless a preflight command verifies manifest identity, board ID, version, git commit, and explicit upload port.
@@ -123,7 +124,13 @@ Current Gateway tests cover:
 a21-stackchan-<version>-m5stack-cores3-<git-sha>-<YYYYMMDD-HHMMSS>.bin
 ```
 
-It also writes a sibling `.sha256` file. Only packaged artifacts should be considered candidates for future upload.
+It also writes a sibling `.sha256` file and a per-artifact release manifest:
+
+```text
+a21-stackchan-<version>-m5stack-cores3-<git-sha>-<YYYYMMDD-HHMMSS>.bin.manifest.json
+```
+
+Only packaged artifacts should be considered candidates for future upload.
 
 `make firmware-package` first runs a clean-worktree guard. This prevents a binary built from uncommitted sources from being packaged under a misleading git commit.
 
@@ -135,9 +142,14 @@ firmware/artifacts/a21-firmware-release-index.jsonl
 
 Each line records the A21 firmware ID, version, board, git commit, build timestamp, artifact path, checksum path, and SHA-256. The index is a traceability ledger, not flash permission. It makes wrong-package investigations concrete: the candidate binary must be explainable by an A21 package record rather than by a loose PlatformIO `firmware.bin`.
 
+The per-artifact `.manifest.json` records the same identity and checksum beside the binary. Upload-path guards require it so the release candidate is self-describing even before consulting the directory-level index.
+
 Packaging rejects input or output paths containing forbidden X21/V21 identities so A21 release candidates cannot be produced from legacy build folders or written into legacy artifact directories.
 
-Upload-path dry-run guards now require this release index record. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256.
+Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless:
+
+- the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256
+- the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, and SHA-256
 
 ## Artifact Guard
 
@@ -164,8 +176,9 @@ The guard verifies:
 - binary content embeds the same A21 firmware ID, version, board, and git commit
 - artifact filename does not contain forbidden X21/V21 identities
 - upload-path guards require a matching `a21-firmware-release-index.jsonl` entry in the artifact directory
+- upload-path guards require a matching sibling `.manifest.json` artifact manifest
 
-The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. A package is not a valid A21 candidate unless the filename, checksum, manifest, and binary identity all agree.
+The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. A package is not a valid A21 candidate unless the filename, checksum, artifact manifest, release index, firmware manifest, and binary identity all agree.
 
 ## Upload Guard
 
