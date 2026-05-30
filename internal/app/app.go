@@ -4437,7 +4437,7 @@ func defaultStackChanSpeakerAcceptanceOptions() stackChanSpeakerAcceptanceOption
 		GatewayURL:      firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
 		DeviceID:        deviceID,
 		Commit:          currentGitCommit(projectRoot),
-		WindowMS:        1000,
+		WindowMS:        1500,
 		MockAudioChunks: 50,
 		MinPlayedFrames: 50,
 		OutputDir:       "reports",

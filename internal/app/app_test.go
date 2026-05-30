@@ -5271,6 +5271,14 @@ func TestRunStackChanSpeakerAcceptanceBatchesAudibleProbe(t *testing.T) {
 	}
 }
 
+func TestDefaultStackChanSpeakerAcceptanceWindowLeavesPlaybackMargin(t *testing.T) {
+	options := defaultStackChanSpeakerAcceptanceOptions()
+	expectedAudioDurationMS := options.MockAudioChunks * stackChanSpeakerProbeChunkDurationMS
+	if options.WindowMS < expectedAudioDurationMS+500 {
+		t.Fatalf("default speaker window = %dms, want at least %dms for playback and runtime echo margin", options.WindowMS, expectedAudioDurationMS+500)
+	}
+}
+
 func TestRunStackChanSpeakerAcceptanceBlocksBeforePlaybackOnFirmwareMismatch(t *testing.T) {
 	controlCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
