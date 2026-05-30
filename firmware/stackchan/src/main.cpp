@@ -408,31 +408,18 @@ bool arduinoMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uin
     return false;
   }
   const uint32_t started_at_ms = millis();
-  bool recording_started = false;
-  while (M5.Mic.isRecording()) {
-    recording_started = true;
+  const uint32_t min_capture_wait_ms = A21_AUDIO_PCM_DURATION_MS + 5;
+  const uint32_t max_capture_wait_ms = A21_AUDIO_PCM_DURATION_MS + 120;
+  while (millis() - started_at_ms < min_capture_wait_ms) {
     delay(1);
-    if (millis() - started_at_ms > 80) {
-      return false;
-    }
-  }
-  while (!recording_started) {
-    if (M5.Mic.isRecording()) {
-      recording_started = true;
-      break;
-    }
-    delay(1);
-    if (millis() - started_at_ms > 80) {
-      return false;
-    }
   }
   while (M5.Mic.isRecording()) {
     delay(1);
-    if (millis() - started_at_ms > 80) {
+    if (millis() - started_at_ms > max_capture_wait_ms) {
       return false;
     }
   }
-  return recording_started;
+  return true;
 }
 
 A21MicDriver g_mic_driver = {
