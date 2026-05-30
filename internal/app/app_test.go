@@ -797,6 +797,111 @@ func TestRunLocalTTSSmokeRejectsLegacyReportDir(t *testing.T) {
 	}
 }
 
+func TestRunLocalASRSmokeWritesRedactedReport(t *testing.T) {
+	original := runSherpaONNXASRSmoke
+	t.Cleanup(func() { runSherpaONNXASRSmoke = original })
+	runSherpaONNXASRSmoke = func(ctx context.Context, options audio.LocalASROptions) (audio.LocalASRReport, error) {
+		if options.ModelDir != "/tmp/a21-asr-model" || options.Family != "paraformer" || options.WAVPath != "/tmp/a21-asr-model/test_wavs/private.wav" {
+			t.Fatalf("asr options = %+v", options)
+		}
+		return audio.LocalASRReport{
+			SchemaVersion:    "a21.audio.local_asr.v1",
+			GeneratedAtMS:    time.Now().UnixMilli(),
+			Status:           "passed",
+			Provider:         "sherpa_onnx",
+			Engine:           "paraformer",
+			ModelDir:         "a21-asr-model",
+			WAVName:          "private.wav",
+			InputDurationMS:  1200,
+			DecodeDurationMS: 90,
+			RealTimeFactor:   0.075,
+			TextChars:        8,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-asr-smoke", "--engine", "sherpa_onnx", "--family", "paraformer", "--model-dir", "/tmp/a21-asr-model", "--wav", "/tmp/a21-asr-model/test_wavs/private.wav", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.audio.local_asr.v1"`,
+		`"status": "passed"`,
+		`"provider": "sherpa_onnx"`,
+		`"engine": "paraformer"`,
+		`"model_dir": "a21-asr-model"`,
+		`"wav_name": "private.wav"`,
+		`"text_chars": 8`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-asr-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"private transcript", "/tmp/a21-asr-model", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("local ASR smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunLocalASRSmokeRejectsLegacyReportDir(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-asr-smoke", "--output-dir", filepath.Join(t.TempDir(), "v21-reports")}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+}
+
+func TestWriteLocalASRSmokeReportUsesUniqueNamesForRapidWrites(t *testing.T) {
+	dir := t.TempDir()
+	report := audio.LocalASRReport{
+		SchemaVersion:    "a21.audio.local_asr.v1",
+		GeneratedAtMS:    time.Now().UnixMilli(),
+		Status:           "passed",
+		Provider:         "sherpa_onnx",
+		Engine:           "paraformer",
+		TranscriptPolicy: "transcript_not_recorded",
+	}
+
+	first, err := writeLocalASRSmokeReport(dir, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := writeLocalASRSmokeReport(dir, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if first == second {
+		t.Fatalf("rapid report writes used the same path: %s", first)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-asr-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("reports = %d, want 2: %v", len(matches), matches)
+	}
+}
+
 func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

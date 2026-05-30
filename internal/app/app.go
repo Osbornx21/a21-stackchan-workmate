@@ -38,6 +38,7 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
+var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 
 const (
 	stackChanSpeakerProbeChunkDurationMS = 20
@@ -179,6 +180,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAudioFrontEndEval(args[1:], stdout, stderr)
 	case "local-tts-smoke":
 		return runLocalTTSSmoke(args[1:], stdout, stderr)
+	case "local-asr-smoke":
+		return runLocalASRSmoke(args[1:], stdout, stderr)
 	case "local-voice-loopback":
 		return runLocalVoiceLoopback(args[1:], stdout, stderr)
 	case "firmware-device-report":
@@ -903,6 +906,105 @@ func normalizeLocalTTSEngine(raw string) (string, error) {
 		return "macos_say", nil
 	default:
 		return "", fmt.Errorf("unsupported local TTS engine")
+	}
+}
+
+func runLocalASRSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
+	engine := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_ENGINE"), "sherpa_onnx"))
+	family := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_FAMILY"))
+	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_MODEL_DIR"))
+	wavPath := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_WAV"))
+	outputDir := "reports"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 local-asr-smoke [--engine sherpa_onnx] [--family paraformer|sense_voice|streaming_zipformer] [--model-dir <dir>] [--wav <path>] [--output-dir reports]")
+			return 0
+		case "--engine":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--engine requires a value")
+				return 2
+			}
+			i++
+			engine = args[i]
+		case "--family":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--family requires a value")
+				return 2
+			}
+			i++
+			family = args[i]
+		case "--model-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--model-dir requires a value")
+				return 2
+			}
+			i++
+			modelDir = args[i]
+		case "--wav":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--wav requires a value")
+				return 2
+			}
+			i++
+			wavPath = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown local-asr-smoke option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(outputDir); err != nil {
+		fmt.Fprintf(stderr, "local ASR report dir invalid: %v\n", err)
+		return 1
+	}
+	if engine, err := normalizeLocalASREngine(engine); err != nil {
+		fmt.Fprintf(stderr, "local ASR engine invalid: %v\n", err)
+		return 1
+	} else if engine != "sherpa_onnx" {
+		fmt.Fprintln(stderr, "unsupported local ASR engine")
+		return 1
+	}
+	report, err := runSherpaONNXASRSmoke(context.Background(), audio.LocalASROptions{
+		OutputDir: outputDir,
+		ModelDir:  modelDir,
+		Family:    family,
+		WAVPath:   wavPath,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "local ASR smoke failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeLocalASRSmokeReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write local ASR smoke report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONLocalASRSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode local ASR smoke report: %v\n", err)
+		return 1
+	}
+	if report.Status != "passed" {
+		return 1
+	}
+	return 0
+}
+
+func normalizeLocalASREngine(raw string) (string, error) {
+	engine := strings.ToLower(strings.TrimSpace(firstNonEmpty(raw, "sherpa_onnx")))
+	engine = strings.ReplaceAll(engine, "-", "_")
+	switch engine {
+	case "sherpa", "sherpa_onnx":
+		return "sherpa_onnx", nil
+	default:
+		return "", fmt.Errorf("unsupported local ASR engine")
 	}
 }
 
@@ -6348,6 +6450,24 @@ func writeLocalTTSSmokeReport(outputDir string, report audio.LocalTTSReport) (st
 	return reportPath, nil
 }
 
+func writeLocalASRSmokeReport(outputDir string, report audio.LocalASRReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-local-asr-smoke-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONLocalASRSmoke(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeLocalVoiceLoopbackReport(outputDir string, report localVoiceLoopbackReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -7359,6 +7479,12 @@ func writeJSONAudioFrontEndEval(writer io.Writer, report audioFrontEndEvalCLIRep
 }
 
 func writeJSONLocalTTSSmoke(writer io.Writer, report audio.LocalTTSReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONLocalASRSmoke(writer io.Writer, report audio.LocalASRReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

@@ -30,6 +30,8 @@ The CLI command is:
 ```bash
 go run ./cmd/a21 local-tts-smoke --output-dir reports
 make local-tts-smoke
+go run ./cmd/a21 local-asr-smoke --output-dir reports
+make local-asr-smoke
 go run ./cmd/a21 local-voice-loopback --repeat 3 --output-dir reports
 go run ./cmd/a21 local-voice-loopback --text-provider deepseek --execute-text-provider --repeat 3 --output-dir reports
 make local-voice-loopback
@@ -42,6 +44,7 @@ Optional:
 ```bash
 go run ./cmd/a21 local-tts-smoke --engine sherpa_onnx --speaker-id 21 --text "A21 本地语音链路测试。" --output-dir reports
 go run ./cmd/a21 local-tts-smoke --engine macos_say --voice Tingting --text "A21 本地语音链路测试。" --output-dir reports
+go run ./cmd/a21 local-asr-smoke --family paraformer --model-dir .a21-tools/sherpa-onnx-asr-models/sherpa-onnx-paraformer-zh-small-2024-03-09 --wav .a21-tools/sherpa-onnx-asr-models/sherpa-onnx-paraformer-zh-small-2024-03-09/test_wavs/0.wav --output-dir reports
 ```
 
 Environment variables:
@@ -50,6 +53,10 @@ Environment variables:
 - `A21_LOCAL_TTS_VOICE`: macOS fallback voice name.
 - `A21_SHERPA_ONNX_MODEL_DIR`: optional override for the local sherpa model directory.
 - `A21_SHERPA_ONNX_SPEAKER_ID`: optional VITS speaker id, default `21`.
+- `A21_LOCAL_ASR_ENGINE`: `sherpa_onnx` by default.
+- `A21_SHERPA_ONNX_ASR_MODEL_DIR`: optional override for the local sherpa ASR model directory.
+- `A21_SHERPA_ONNX_ASR_FAMILY`: optional ASR family, one of `paraformer`, `sense_voice`, or `streaming_zipformer`.
+- `A21_SHERPA_ONNX_ASR_WAV`: optional local ASR WAV fixture.
 - `A21_LOCAL_VOICE_LOOPBACK_REPEAT`: optional repeat count for loopback P50/P95 timing evidence.
 
 ## Report Contract
@@ -88,6 +95,18 @@ reports/a21-local-voice-loopback-YYYYMMDD-HHMMSS.json
 ```
 
 The report records byte counts, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, mock ASR transcript, provider output text, reasoning text, provider credentials, model value, proxy value, full URL, or full model path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
+
+## Local ASR Smoke
+
+`local-asr-smoke` is the tracked A21 entry point for local sherpa-onnx ASR evaluation. It uses the isolated `.a21-tools/sherpa-onnx-venv` runtime and the repository script `scripts/a21_sherpa_onnx_asr_smoke.py`, not the sherpa CLI. This avoids coupling A21 to optional CLI packaging while still using the mature sherpa-onnx recognizer APIs.
+
+The command writes:
+
+```text
+reports/a21-local-asr-smoke-YYYYMMDD-HHMMSS-NANO.json
+```
+
+The report records decode time, input duration, real-time factor, transcript character count, model directory basename, and WAV basename. It does not record transcript text, full model path, full WAV path, provider credentials, proxy values, auth headers, or raw audio.
 
 ## StackChan Local TTS Playback
 
