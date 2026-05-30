@@ -36,6 +36,7 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 }
 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
+var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 
 const (
 	stackChanSpeakerProbeChunkDurationMS = 20
@@ -145,6 +146,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAudioFrontEndPlan(args[1:], stdout, stderr)
 	case "audio-front-end-eval":
 		return runAudioFrontEndEval(args[1:], stdout, stderr)
+	case "local-tts-smoke":
+		return runLocalTTSSmoke(args[1:], stdout, stderr)
+	case "local-voice-loopback":
+		return runLocalVoiceLoopback(args[1:], stdout, stderr)
 	case "firmware-device-report":
 		return runFirmwareDeviceReport(args[1:], stdout, stderr)
 	case "office-preflight":
@@ -714,6 +719,235 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 		return 1
 	}
 	return 0
+}
+
+func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
+	text := "A21 本地语音链路测试。"
+	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
+	outputDir := "reports"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 local-tts-smoke [--text <text>] [--voice Tingting] [--output-dir reports]")
+			return 0
+		case "--text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--text requires a value")
+				return 2
+			}
+			i++
+			text = args[i]
+		case "--voice":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice requires a value")
+				return 2
+			}
+			i++
+			voice = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown local-tts-smoke option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(outputDir); err != nil {
+		fmt.Fprintf(stderr, "local TTS report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := synthesizeMacOSSay(context.Background(), audio.LocalTTSOptions{
+		Text:      text,
+		Voice:     voice,
+		OutputDir: outputDir,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "local TTS smoke failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeLocalTTSSmokeReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write local TTS smoke report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONLocalTTSSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode local TTS smoke report: %v\n", err)
+		return 1
+	}
+	if report.Status != "passed" {
+		return 1
+	}
+	return 0
+}
+
+type localVoiceLoopbackReport struct {
+	SchemaVersion             string               `json:"schema_version"`
+	GeneratedAtMS             int64                `json:"generated_at_ms"`
+	Metadata                  latencyBenchMetadata `json:"metadata"`
+	Status                    string               `json:"status"`
+	InputTextBytes            int                  `json:"input_text_bytes"`
+	VADStatus                 string               `json:"vad_status"`
+	VADDetector               string               `json:"vad_detector"`
+	VADSpeechStartEvents      int                  `json:"vad_speech_start_events"`
+	VADSpeechEndEvents        int                  `json:"vad_speech_end_events"`
+	ASRProvider               string               `json:"asr_provider"`
+	ASRFirstPartialMS         float64              `json:"asr_first_partial_ms"`
+	TextStreamProvider        string               `json:"text_stream_provider"`
+	TextStreamFamily          string               `json:"text_stream_family"`
+	TextStreamFirstContentMS  float64              `json:"text_stream_first_content_ms"`
+	TextStreamContentDeltas   int                  `json:"text_stream_content_delta_count"`
+	TextStreamReasoningDeltas int                  `json:"text_stream_reasoning_delta_count"`
+	TextStreamDone            bool                 `json:"text_stream_done"`
+	TTSProvider               string               `json:"tts_provider"`
+	TTSVoice                  string               `json:"tts_voice"`
+	TTSOutputFormat           string               `json:"tts_output_format"`
+	TTSAudioPath              string               `json:"tts_audio_path,omitempty"`
+	TTSFirstAudioMS           float64              `json:"tts_first_audio_ms"`
+	TotalDurationMS           float64              `json:"total_duration_ms"`
+	BargeInStatus             string               `json:"barge_in_status"`
+	BargeInStopP95MS          float64              `json:"barge_in_stop_p95_ms,omitempty"`
+	ReportPath                string               `json:"report_path,omitempty"`
+	Findings                  []string             `json:"findings,omitempty"`
+}
+
+func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) int {
+	inputText := "A21 本地语音 loopback 测试。"
+	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
+	outputDir := "reports"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--text <text>] [--voice Tingting] [--output-dir reports]")
+			return 0
+		case "--text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--text requires a value")
+				return 2
+			}
+			i++
+			inputText = args[i]
+		case "--voice":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice requires a value")
+				return 2
+			}
+			i++
+			voice = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown local-voice-loopback option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(outputDir); err != nil {
+		fmt.Fprintf(stderr, "local voice loopback report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := buildLocalVoiceLoopbackReport(context.Background(), inputText, voice, outputDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "local voice loopback failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeLocalVoiceLoopbackReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write local voice loopback report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONLocalVoiceLoopback(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode local voice loopback report: %v\n", err)
+		return 1
+	}
+	if report.Status != "passed" {
+		return 1
+	}
+	return 0
+}
+
+func buildLocalVoiceLoopbackReport(ctx context.Context, inputText string, voice string, outputDir string) (localVoiceLoopbackReport, error) {
+	start := time.Now()
+	frontEnd := audio.RunMockFrontEndEval()
+	report := localVoiceLoopbackReport{
+		SchemaVersion:        "a21.audio.local_voice_loopback.v1",
+		GeneratedAtMS:        time.Now().UnixMilli(),
+		Metadata:             buildLatencyBenchMetadata(),
+		Status:               "failed",
+		InputTextBytes:       len([]byte(inputText)),
+		VADStatus:            frontEnd.Status,
+		VADDetector:          frontEnd.Detector,
+		VADSpeechStartEvents: frontEnd.SpeechStartEvents,
+		VADSpeechEndEvents:   frontEnd.SpeechEndEvents,
+		ASRProvider:          "mock_asr",
+		TextStreamProvider:   "mock_text_stream",
+		TextStreamFamily:     string(providers.ProviderFamilyTextStream),
+		BargeInStatus:        "not_run",
+	}
+
+	asrStart := time.Now()
+	mockTranscript := "a21 mock transcript"
+	report.ASRFirstPartialMS = elapsedReportMS(asrStart)
+	if strings.TrimSpace(mockTranscript) == "" {
+		report.Findings = append(report.Findings, "mock ASR did not produce text")
+		return report, nil
+	}
+
+	providerStart := time.Now()
+	streamResult, err := providers.ParseOpenAICompatibleTextStream(strings.NewReader(strings.Join([]string{
+		`data: {"choices":[{"delta":{"reasoning":"classify loopback"}}]}`,
+		`data: {"choices":[{"delta":{"content":"A21 loopback response"}}]}`,
+		`data: [DONE]`,
+		``,
+	}, "\n")))
+	if err != nil {
+		report.Findings = append(report.Findings, "mock text stream parse failed")
+		return report, err
+	}
+	report.TextStreamFirstContentMS = elapsedReportMS(providerStart)
+	report.TextStreamContentDeltas = streamResult.ContentDeltaCount
+	report.TextStreamReasoningDeltas = streamResult.ReasoningDeltaCount
+	report.TextStreamDone = streamResult.Done
+	ttsText := streamResult.ContentText()
+	if ttsText == "" {
+		report.Findings = append(report.Findings, "mock text stream produced no content")
+		return report, nil
+	}
+
+	ttsReport, err := synthesizeMacOSSay(ctx, audio.LocalTTSOptions{Text: ttsText, Voice: voice, OutputDir: outputDir})
+	if err != nil {
+		report.Findings = append(report.Findings, "local TTS failed")
+		return report, err
+	}
+	report.TTSProvider = ttsReport.Provider
+	report.TTSVoice = ttsReport.Voice
+	report.TTSOutputFormat = ttsReport.OutputFormat
+	report.TTSAudioPath = ttsReport.OutputPath
+	report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
+	if ttsReport.Status != "passed" {
+		report.Findings = append(report.Findings, "local TTS did not pass")
+		return report, nil
+	}
+
+	bench, err := runMockLatencyBench(1)
+	if err != nil {
+		report.Findings = append(report.Findings, "barge-in latency bench failed")
+		return report, err
+	}
+	report.BargeInStatus = "benchmarked"
+	report.BargeInStopP95MS = bench.Summary.AudioWSBargeInMS.P95MS
+	report.TotalDurationMS = elapsedReportMS(start)
+	report.Status = "passed"
+	return report, nil
 }
 
 type audioFrontEndEvalCLIReport struct {
@@ -4923,6 +5157,40 @@ func writeAudioFrontEndEvalReport(outputDir string, report audioFrontEndEvalCLIR
 	return reportPath, nil
 }
 
+func writeLocalTTSSmokeReport(outputDir string, report audio.LocalTTSReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-local-tts-smoke-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONLocalTTSSmoke(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeLocalVoiceLoopbackReport(outputDir string, report localVoiceLoopbackReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-local-voice-loopback-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONLocalVoiceLoopback(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeFirmwareDeviceReport(outputDir string, report firmwareDeviceReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -5697,6 +5965,10 @@ func percentileMS(samples []time.Duration, quantile float64) float64 {
 	return float64(sorted[rank].Microseconds()) / 1000
 }
 
+func elapsedReportMS(start time.Time) float64 {
+	return float64(time.Since(start).Microseconds()) / 1000
+}
+
 func jitterMS(samples []time.Duration) float64 {
 	if len(samples) == 0 {
 		return 0
@@ -5771,6 +6043,18 @@ func writeJSONAudioFrontEndPlan(writer io.Writer, report audio.FrontEndPlan) err
 }
 
 func writeJSONAudioFrontEndEval(writer io.Writer, report audioFrontEndEvalCLIReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONLocalTTSSmoke(writer io.Writer, report audio.LocalTTSReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONLocalVoiceLoopback(writer io.Writer, report localVoiceLoopbackReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

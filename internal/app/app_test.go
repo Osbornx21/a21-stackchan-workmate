@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/providers"
 )
@@ -660,6 +661,137 @@ func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) 
 	}
 	if strings.Contains(stdout.String(), "x21_voice") || strings.Contains(stderr.String(), "x21_voice") {
 		t.Fatalf("legacy provider leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunLocalTTSSmokeWritesRedactedReport(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		if options.Text != "这句话不应该出现在报告里" {
+			t.Fatalf("text = %q", options.Text)
+		}
+		outputPath := filepath.Join(options.OutputDir, "a21-local-tts-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12.5,
+			TTSFirstAudioMS: 12.5,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-tts-smoke", "--text", "这句话不应该出现在报告里", "--voice", "Tingting", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"schema_version": "a21.audio.local_tts.v1"`, `"status": "passed"`, `"provider": "macos_say"`, `"report_path"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-tts-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"这句话不应该出现在报告里", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("local TTS smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunLocalTTSSmokeRejectsLegacyReportDir(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-tts-smoke", "--output-dir", filepath.Join(t.TempDir(), "v21-reports")}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+}
+
+func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      10,
+			TTSFirstAudioMS: 10,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--text", "真实输入不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.audio.local_voice_loopback.v1"`,
+		`"status": "passed"`,
+		`"vad_status": "mock_only"`,
+		`"asr_provider": "mock_asr"`,
+		`"text_stream_provider": "mock_text_stream"`,
+		`"tts_provider": "macos_say"`,
+		`"barge_in_status": "benchmarked"`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"真实输入不要进报告", "A21 loopback response", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
 	}
 }
 
