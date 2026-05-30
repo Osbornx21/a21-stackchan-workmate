@@ -85,7 +85,9 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_speaker.h` owns the first real speaker pump boundary. It consumes decoded PCM frames only while the render state is `speaking`, waits when the M5Unified speaker channel already has two queued buffers, copies each 20 ms frame into one of three stable slots, and then calls `M5.Speaker.playRaw(...)`. This avoids handing M5Unified a pointer to buffer memory that may be cleared on barge-in.
 
-The firmware still does not capture microphone audio, run VAD, prove acoustic echo cancellation, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path and still needs physical hardware acceptance before it counts as real user-facing playback.
+`a21_firmware_mic.h` owns the first microphone capture policy boundary. It records one 20 ms / 16 kHz / mono PCM16 frame only when the render state is capture-safe and the speaker channel queue is empty. This encodes the current M5Unified internal mic/speaker constraint directly in firmware tests instead of pretending full-duplex is solved.
+
+The firmware still does not send real microphone samples to Gateway, run VAD on device, prove acoustic echo cancellation, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path and still needs physical hardware acceptance before it counts as real user-facing playback.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

@@ -6,6 +6,7 @@
 #include "a21_firmware_config.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_motion.h"
+#include "a21_firmware_mic.h"
 #include "a21_firmware_playback.h"
 #include "a21_firmware_protocol.h"
 #include "a21_firmware_rgb.h"
@@ -304,6 +305,46 @@ void initFakeSpeakerDriver(FakeSpeakerDriver* fake, A21SpeakerDriver* driver) {
   driver->ctx = fake;
   driver->queued = fakeSpeakerQueued;
   driver->play_pcm16 = fakeSpeakerPlayPCM16;
+}
+
+struct FakeMicDriver {
+  int record_count;
+  bool enabled;
+  bool fail_record;
+  int16_t fill_sample;
+  size_t last_sample_count;
+  uint32_t last_sample_rate_hz;
+};
+
+bool fakeMicEnabled(void* ctx) {
+  FakeMicDriver* driver = static_cast<FakeMicDriver*>(ctx);
+  return driver->enabled;
+}
+
+bool fakeMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uint32_t sample_rate_hz) {
+  FakeMicDriver* driver = static_cast<FakeMicDriver*>(ctx);
+  if (driver->fail_record || samples == nullptr) {
+    return false;
+  }
+  driver->record_count += 1;
+  driver->last_sample_count = sample_count;
+  driver->last_sample_rate_hz = sample_rate_hz;
+  for (size_t i = 0; i < sample_count; ++i) {
+    samples[i] = driver->fill_sample;
+  }
+  return true;
+}
+
+void initFakeMicDriver(FakeMicDriver* fake, A21MicDriver* driver) {
+  fake->record_count = 0;
+  fake->enabled = true;
+  fake->fail_record = false;
+  fake->fill_sample = 0;
+  fake->last_sample_count = 0;
+  fake->last_sample_rate_hz = 0;
+  driver->ctx = fake;
+  driver->enabled = fakeMicEnabled;
+  driver->record_pcm16 = fakeMicRecordPCM16;
 }
 
 void fillPCM16SilenceBase64(char* output, size_t output_size) {
@@ -1279,6 +1320,79 @@ void test_speaker_pump_keeps_frame_when_stream_id_mismatches_state() {
   TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_played);
 }
 
+void test_mic_capture_records_one_frame_when_listening_and_speaker_idle() {
+  A21MicCaptureRuntime runtime;
+  A21FirmwareState state;
+  FakeMicDriver fake;
+  A21MicDriver driver;
+  a21InitMicCaptureRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMicDriver(&fake, &driver);
+  fake.fill_sample = 1234;
+  state.render_state = A21_RENDER_LISTENING;
+
+  TEST_ASSERT_TRUE(a21MicCaptureTick(&runtime, &driver, &state, 0, 4020));
+
+  TEST_ASSERT_EQUAL_INT(1, fake.record_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.frames_captured);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES), static_cast<uint32_t>(fake.last_sample_count));
+  TEST_ASSERT_EQUAL_UINT32(A21_AUDIO_PCM_SAMPLE_RATE_HZ, fake.last_sample_rate_hz);
+  TEST_ASSERT_EQUAL_INT16(1234, runtime.samples[0]);
+  TEST_ASSERT_EQUAL_UINT32(4000, runtime.capture_started_at_ms);
+  TEST_ASSERT_EQUAL_UINT32(4020, runtime.capture_ended_at_ms);
+}
+
+void test_mic_capture_skips_when_speaker_queue_is_active() {
+  A21MicCaptureRuntime runtime;
+  A21FirmwareState state;
+  FakeMicDriver fake;
+  A21MicDriver driver;
+  a21InitMicCaptureRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMicDriver(&fake, &driver);
+  state.render_state = A21_RENDER_LISTENING;
+
+  TEST_ASSERT_TRUE(a21MicCaptureTick(&runtime, &driver, &state, 1, 4020));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.record_count);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_captured);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.skipped_speaker_busy);
+}
+
+void test_mic_capture_skips_when_render_state_is_speaking() {
+  A21MicCaptureRuntime runtime;
+  A21FirmwareState state;
+  FakeMicDriver fake;
+  A21MicDriver driver;
+  a21InitMicCaptureRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMicDriver(&fake, &driver);
+  state.render_state = A21_RENDER_SPEAKING;
+
+  TEST_ASSERT_TRUE(a21MicCaptureTick(&runtime, &driver, &state, 0, 4020));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.record_count);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_captured);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.skipped_render_state);
+}
+
+void test_mic_capture_reports_driver_failure() {
+  A21MicCaptureRuntime runtime;
+  A21FirmwareState state;
+  FakeMicDriver fake;
+  A21MicDriver driver;
+  a21InitMicCaptureRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMicDriver(&fake, &driver);
+  fake.fail_record = true;
+  state.render_state = A21_RENDER_LISTENING;
+
+  TEST_ASSERT_FALSE(a21MicCaptureTick(&runtime, &driver, &state, 0, 4020));
+
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_captured);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.driver_errors);
+}
+
 void test_audio_ws_buffers_playback_chunk_without_error_state() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1688,6 +1802,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_speaker_pump_waits_when_driver_queue_is_full);
   RUN_TEST(test_speaker_pump_does_not_play_when_not_speaking);
   RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);
+  RUN_TEST(test_mic_capture_records_one_frame_when_listening_and_speaker_idle);
+  RUN_TEST(test_mic_capture_skips_when_speaker_queue_is_active);
+  RUN_TEST(test_mic_capture_skips_when_render_state_is_speaking);
+  RUN_TEST(test_mic_capture_reports_driver_failure);
   RUN_TEST(test_audio_ws_buffers_playback_chunk_without_error_state);
   RUN_TEST(test_audio_playback_buffer_clears_on_barge_in_state);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);

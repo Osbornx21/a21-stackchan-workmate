@@ -116,6 +116,7 @@ Current native firmware tests cover:
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
 - audio WebSocket begin gating after Gateway connection, full 640-byte mock `audio.frame` envelope construction, ack control-event parsing, mock `audio.playback.chunk` downlink parsing, full 20 ms 16 kHz PCM base64 payload capacity, fixed 640-byte PCM decode, bounded playback buffering, M5 speaker pump queue gating, and send rejection while disconnected
+- microphone capture policy that records one PCM16 frame only when the render state is capture-safe and the speaker queue is idle; this protects the current M5Unified internal mic/speaker half-duplex constraint
 - semantic touch intent runtime for `wake_or_listen` and `barge_in`, preserving `screen` vs `top_sensor` source metadata through Gateway `device.event` envelopes
 - playback state-machine behavior for starting a speaking stream once, replacing streams with stop/clear, clearing buffered chunks, and stopping plus clearing immediately on barge-in
 - StackChan Y-axis servo clamp to 5 to 85 degrees
