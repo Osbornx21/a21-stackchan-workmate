@@ -1707,7 +1707,7 @@ func buildStackChanPhysicalEvidenceReport(options stackChanPhysicalEvidenceOptio
 			observation = derived
 		}
 		if declared[capability] != "available" {
-			report.addFinding("capability_not_declared_available", "required StackChan capability is not declared available by the identity acceptance report")
+			report.addFinding("capability_not_declared_available", fmt.Sprintf("required StackChan capability %q is not declared available by the identity acceptance report", capability))
 		}
 		report.Observations = append(report.Observations, observation)
 	}
@@ -2103,11 +2103,11 @@ func validatePhysicalEvidenceForStackChanCapability(report *stackChanCapabilityA
 			DeclaredStatus: declared[capability],
 		}
 		if result.DeclaredStatus != "available" {
-			report.addFinding("capability_not_declared_available", "required StackChan capability is not declared available by the fresh device identity")
+			report.addFinding("capability_not_declared_available", fmt.Sprintf("required StackChan capability %q is not declared available by the fresh device identity", capability))
 		}
 		observation, ok := observations[capability]
 		if !ok {
-			report.addFinding("capability_evidence_missing", "physical evidence missing for required StackChan capability")
+			report.addFinding("capability_evidence_missing", fmt.Sprintf("physical evidence missing for required StackChan capability %q", capability))
 			report.CapabilityResults = append(report.CapabilityResults, result)
 			continue
 		}
@@ -2115,13 +2115,13 @@ func validatePhysicalEvidenceForStackChanCapability(report *stackChanCapabilityA
 		result.EvidenceType = observation.EvidenceType
 		result.ObservedAtMS = observation.ObservedAtMS
 		if observation.Status != "passed" {
-			report.addFinding("capability_evidence_not_passed", "physical evidence for required StackChan capability is not passed")
+			report.addFinding("capability_evidence_not_passed", fmt.Sprintf("physical evidence for required StackChan capability %q is not passed", capability))
 		}
 		if strings.TrimSpace(observation.EvidenceType) == "" {
-			report.addFinding("capability_evidence_type_missing", "physical evidence for required StackChan capability is missing evidence_type")
+			report.addFinding("capability_evidence_type_missing", fmt.Sprintf("physical evidence for required StackChan capability %q is missing evidence_type", capability))
 		}
 		if observation.ObservedAtMS <= 0 {
-			report.addFinding("capability_evidence_time_missing", "physical evidence for required StackChan capability is missing observed_at_ms")
+			report.addFinding("capability_evidence_time_missing", fmt.Sprintf("physical evidence for required StackChan capability %q is missing observed_at_ms", capability))
 		}
 		result.Accepted = result.DeclaredStatus == "available" &&
 			result.EvidenceStatus == "passed" &&

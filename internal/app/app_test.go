@@ -4062,7 +4062,7 @@ func TestRunStackChanCapabilityAcceptanceBlocksMissingCapabilityEvidence(t *test
 		`"schema_version": "a21.stackchan_capability_acceptance.v1"`,
 		`"capability_acceptance_status": "blocked"`,
 		`"code": "capability_evidence_missing"`,
-		`"message": "physical evidence missing for required StackChan capability"`,
+		`"message": "physical evidence missing for required StackChan capability \"speaker\""`,
 		"stackchan capability acceptance failed",
 	} {
 		if !strings.Contains(stdout.String()+stderr.String(), want) {
