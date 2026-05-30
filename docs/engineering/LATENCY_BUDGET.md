@@ -91,6 +91,6 @@ Future real-provider/device benchmarks must preserve the same commit, fingerprin
 
 The StackChan firmware now has a hardware-free playback state machine. It records the local transition from `speaking` plus `stream_id` to playback started, and it stops plus clears pending playback when the state leaves `speaking`, especially `interrupted`.
 
-The audio WebSocket also accepts mock Gateway `audio.playback.chunk` downlink envelopes and stores them in a bounded firmware playback buffer keyed by `stream_id`. The buffer has a small fixed chunk cap and clears when the render state leaves `speaking`, so future real speaker playback has an explicit cancellation boundary instead of an unbounded queue.
+The audio WebSocket also accepts mock Gateway `audio.playback.chunk` downlink envelopes and stores them in a bounded firmware playback buffer keyed by `stream_id`. The buffer decodes accepted 20 ms / 16 kHz / mono `pcm_s16le` payloads into fixed 640-byte PCM frames, has a small fixed chunk cap, and clears when the render state leaves `speaking`, so future real speaker playback has an explicit cancellation boundary instead of an unbounded queue.
 
 This does not prove speaker output latency yet. It establishes the device-side control points that future real audio playback, mouth sync, and barge-in measurements must instrument as `device_downlink_first_frame_ms`, `device_playback_start_ms`, and `playback_stop_ms`.

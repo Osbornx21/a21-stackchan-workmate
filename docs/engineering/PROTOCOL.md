@@ -131,7 +131,7 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; the buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
+Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; accepted `pcm_s16le`, 16 kHz, mono, 20 ms payloads are decoded into fixed 640-byte PCM frames before they enter the buffer. The buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
 
 Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 

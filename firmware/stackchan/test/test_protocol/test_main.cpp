@@ -263,6 +263,23 @@ void initFakePlaybackDriver(FakePlaybackDriver* fake, A21PlaybackDriver* driver)
   driver->clear = fakePlaybackClear;
 }
 
+void fillPCM16SilenceBase64(char* output, size_t output_size) {
+  if (output == nullptr || output_size == 0) {
+    return;
+  }
+  const size_t payload_chars = 856;
+  if (output_size <= payload_chars) {
+    output[0] = '\0';
+    return;
+  }
+  for (size_t i = 0; i < 854; ++i) {
+    output[i] = 'A';
+  }
+  output[854] = '=';
+  output[855] = '=';
+  output[856] = '\0';
+}
+
 void test_firmware_build_identity_contains_a21_release_fields() {
   A21FirmwareBuildIdentity identity;
   a21GetFirmwareBuildIdentity(&identity);
@@ -948,10 +965,7 @@ void test_parse_audio_playback_chunk_accepts_a21_downlink() {
 
 void test_parse_audio_playback_chunk_keeps_full_20ms_pcm_base64_payload() {
   char data[900];
-  for (int i = 0; i < 856; ++i) {
-    data[i] = 'A';
-  }
-  data[856] = '\0';
+  fillPCM16SilenceBase64(data, sizeof(data));
 
   char json[1400];
   snprintf(
@@ -970,15 +984,58 @@ void test_parse_audio_playback_chunk_keeps_full_20ms_pcm_base64_payload() {
   TEST_ASSERT_EQUAL_STRING(data, chunk.data_base64);
 }
 
+void test_audio_playback_chunk_decodes_full_pcm16_frame() {
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-playback-pcm");
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+
+  A21AudioPCMFrame frame;
+  TEST_ASSERT_TRUE(a21DecodeAudioPlaybackChunkPCM(&chunk, &frame));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BYTES), static_cast<uint32_t>(frame.byte_count));
+  TEST_ASSERT_EQUAL_UINT16(A21_AUDIO_PCM_FRAME_SAMPLES, frame.sample_count);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", frame.stream_id);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-playback-pcm", frame.trace_id);
+  for (size_t i = 0; i < frame.byte_count; ++i) {
+    TEST_ASSERT_EQUAL_UINT8(0, frame.data[i]);
+  }
+}
+
+void test_audio_playback_chunk_rejects_invalid_base64_payload() {
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, "not-a21-pcm");
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+
+  A21AudioPCMFrame frame;
+  TEST_ASSERT_FALSE(a21DecodeAudioPlaybackChunkPCM(&chunk, &frame));
+  TEST_ASSERT_EQUAL_STRING("base64", frame.error);
+}
+
 void test_audio_playback_buffer_tracks_bounded_stream_chunks() {
   A21AudioPlaybackBuffer buffer;
   a21InitAudioPlaybackBuffer(&buffer);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
 
   A21AudioPlaybackChunk chunk;
   a21ResetAudioPlaybackChunk(&chunk);
   a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
   a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
-  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, "AAAA");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
   chunk.sample_rate_hz = 16000;
   chunk.channels = 1;
   chunk.duration_ms = 20;
@@ -994,6 +1051,62 @@ void test_audio_playback_buffer_tracks_bounded_stream_chunks() {
   TEST_ASSERT_EQUAL_UINT16(20, buffer.last_duration_ms);
 }
 
+void test_audio_playback_buffer_peeks_decoded_pcm_frame() {
+  A21AudioPlaybackBuffer buffer;
+  a21InitAudioPlaybackBuffer(&buffer);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-playback-buffer");
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  const A21AudioPCMFrame* frame = a21AudioPlaybackBufferPeek(&buffer);
+  TEST_ASSERT_NOT_NULL(frame);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BYTES), static_cast<uint32_t>(frame->byte_count));
+  TEST_ASSERT_EQUAL_UINT16(A21_AUDIO_PCM_FRAME_SAMPLES, frame->sample_count);
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", frame->stream_id);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-playback-buffer", frame->trace_id);
+}
+
+void test_audio_playback_buffer_pops_decoded_pcm_frame() {
+  A21AudioPlaybackBuffer buffer;
+  a21InitAudioPlaybackBuffer(&buffer);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+
+  A21AudioPlaybackChunk chunk;
+  a21ResetAudioPlaybackChunk(&chunk);
+  a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-playback-pop");
+  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+  chunk.sample_rate_hz = 16000;
+  chunk.channels = 1;
+  chunk.duration_ms = 20;
+
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+
+  A21AudioPCMFrame frame;
+  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPop(&buffer, &frame));
+  TEST_ASSERT_EQUAL_UINT8(0, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BYTES), static_cast<uint32_t>(frame.byte_count));
+  TEST_ASSERT_EQUAL_STRING("a21-audio-stream-000001", frame.stream_id);
+  TEST_ASSERT_EQUAL_STRING("a21-trace-playback-pop", frame.trace_id);
+  TEST_ASSERT_NULL(a21AudioPlaybackBufferPeek(&buffer));
+  TEST_ASSERT_FALSE(a21AudioPlaybackBufferPop(&buffer, &frame));
+}
+
 void test_audio_ws_buffers_playback_chunk_without_error_state() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1004,6 +1117,19 @@ void test_audio_ws_buffers_playback_chunk_without_error_state() {
   A21AudioWSDriver driver;
   initFakeAudioWSDriver(&fake, &driver);
   fake.connected = true;
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  char playback_json[1400];
+  snprintf(
+      playback_json,
+      sizeof(playback_json),
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"audio.playback.chunk\","
+      "\"trace_id\":\"a21-trace-playback-002\","
+      "\"session_id\":\"a21-session-playback-002\","
+      "\"payload\":{\"stream_id\":\"a21-audio-stream-000001\",\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,\"channels\":1,\"duration_ms\":20,\"data_base64\":\"%s\"}}",
+      data);
   fake.pending_texts[0] =
       "{\"protocol\":\"a21.device.v1\","
       "\"device_id\":\"stackchan-001\","
@@ -1011,13 +1137,7 @@ void test_audio_ws_buffers_playback_chunk_without_error_state() {
       "\"trace_id\":\"a21-trace-playback-002\","
       "\"session_id\":\"a21-session-playback-002\","
       "\"payload\":{\"state\":\"speaking\",\"mode\":\"workmate\",\"text\":\"mock playback chunk\",\"stream_id\":\"a21-audio-stream-000001\",\"final\":true}}";
-  fake.pending_texts[1] =
-      "{\"protocol\":\"a21.device.v1\","
-      "\"device_id\":\"stackchan-001\","
-      "\"kind\":\"audio.playback.chunk\","
-      "\"trace_id\":\"a21-trace-playback-002\","
-      "\"session_id\":\"a21-session-playback-002\","
-      "\"payload\":{\"stream_id\":\"a21-audio-stream-000001\",\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,\"channels\":1,\"duration_ms\":20,\"data_base64\":\"AAAA\"}}";
+  fake.pending_texts[1] = playback_json;
   fake.pending_text_count = 2;
   a21InitAudioWSRuntime(&runtime);
   a21InitNetworkConfig(&network);
@@ -1042,11 +1162,14 @@ void test_audio_playback_buffer_clears_on_barge_in_state() {
   a21InitAudioPlaybackBuffer(&buffer);
   a21InitFirmwareState(&state, "stackchan-001");
 
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+
   A21AudioPlaybackChunk chunk;
   a21ResetAudioPlaybackChunk(&chunk);
   a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
   a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
-  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, "AAAA");
+  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
   chunk.sample_rate_hz = 16000;
   chunk.channels = 1;
   chunk.duration_ms = 20;
@@ -1384,7 +1507,11 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_applies_gateway_ack_control_event);
   RUN_TEST(test_parse_audio_playback_chunk_accepts_a21_downlink);
   RUN_TEST(test_parse_audio_playback_chunk_keeps_full_20ms_pcm_base64_payload);
+  RUN_TEST(test_audio_playback_chunk_decodes_full_pcm16_frame);
+  RUN_TEST(test_audio_playback_chunk_rejects_invalid_base64_payload);
   RUN_TEST(test_audio_playback_buffer_tracks_bounded_stream_chunks);
+  RUN_TEST(test_audio_playback_buffer_peeks_decoded_pcm_frame);
+  RUN_TEST(test_audio_playback_buffer_pops_decoded_pcm_frame);
   RUN_TEST(test_audio_ws_buffers_playback_chunk_without_error_state);
   RUN_TEST(test_audio_playback_buffer_clears_on_barge_in_state);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);

@@ -81,7 +81,7 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_playback.h` owns the first playback state machine. It starts a stream when the local state becomes `speaking` with a `stream_id`, writes only once for the same stream, and immediately stops plus clears pending audio when the state changes to `interrupted`, `listening`, `error`, `local_fallback`, or another non-speaking state. The CoreS3 main loop currently uses a no-op playback driver, so this proves cancellation semantics without driving the speaker.
 
-`a21_firmware_audio_playback.h` owns the hardware-free playback chunk parser and bounded buffer. It accepts only A21 `audio.playback.chunk` envelopes for the current device, validates current Phase 5 PCM mono chunk metadata (`pcm_s16le`, 16 kHz, 20 ms), tracks queue depth/drop counts, and clears the buffer when render state leaves `speaking`.
+`a21_firmware_audio_playback.h` owns the hardware-free playback chunk parser and bounded buffer. It accepts only A21 `audio.playback.chunk` envelopes for the current device, validates current Phase 5 PCM mono chunk metadata (`pcm_s16le`, 16 kHz, 20 ms), decodes each accepted payload into a fixed 640-byte PCM frame, tracks queue depth/drop counts, and clears the buffer when render state leaves `speaking`.
 
 The firmware still does not capture microphone audio, play Gateway audio samples, run VAD, or claim full-duplex behavior. The current audio WebSocket and playback paths are disciplined transport/control probes only.
 

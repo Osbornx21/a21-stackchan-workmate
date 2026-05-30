@@ -115,7 +115,7 @@ Current native firmware tests cover:
 - Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
 - Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
-- audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, mock `audio.playback.chunk` downlink parsing, full 20 ms 16 kHz PCM base64 payload capacity, bounded playback buffering, and send rejection while disconnected
+- audio WebSocket begin gating after Gateway connection, mock `audio.frame` envelope construction, ack control-event parsing, mock `audio.playback.chunk` downlink parsing, full 20 ms 16 kHz PCM base64 payload capacity, fixed 640-byte PCM decode, bounded playback buffering, and send rejection while disconnected
 - semantic touch intent runtime for `wake_or_listen` and `barge_in`, preserving `screen` vs `top_sensor` source metadata through Gateway `device.event` envelopes
 - playback state-machine behavior for starting a speaking stream once, replacing streams with stop/clear, clearing buffered chunks, and stopping plus clearing immediately on barge-in
 - StackChan Y-axis servo clamp to 5 to 85 degrees
