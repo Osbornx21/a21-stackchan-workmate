@@ -1733,6 +1733,38 @@ void test_touch_runtime_sends_barge_in_from_top_sensor() {
   TEST_ASSERT_FALSE(doc["payload"]["text"].is<const char*>());
 }
 
+void test_physical_touch_screen_reports_only_rising_edge() {
+  A21PhysicalTouchState physical_touch;
+  A21TouchSample sample = {A21_TOUCH_SOURCE_TOP_SENSOR, A21_TOUCH_INTENT_NONE};
+  a21InitPhysicalTouchState(&physical_touch);
+
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadScreen(&physical_touch, true, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_SCREEN, sample.source);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_WAKE_OR_LISTEN, sample.intent);
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadScreen(&physical_touch, true, &sample));
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadScreen(&physical_touch, false, &sample));
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadScreen(&physical_touch, true, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_SCREEN, sample.source);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_WAKE_OR_LISTEN, sample.intent);
+}
+
+void test_physical_touch_top_click_reports_barge_in() {
+  A21PhysicalTouchState physical_touch;
+  A21TouchSample sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
+  a21InitPhysicalTouchState(&physical_touch);
+
+  TEST_ASSERT_FALSE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, false, &sample));
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, true, false, false, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_TOP_SENSOR, sample.source);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, sample.intent);
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, false, true, false, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_TOP_SENSOR, sample.source);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, sample.intent);
+  TEST_ASSERT_TRUE(a21PhysicalTouchReadTopSensor(&physical_touch, false, false, true, &sample));
+  TEST_ASSERT_EQUAL(A21_TOUCH_SOURCE_TOP_SENSOR, sample.source);
+  TEST_ASSERT_EQUAL(A21_TOUCH_INTENT_BARGE_IN, sample.intent);
+}
+
 void test_playback_runtime_starts_once_for_speaking_stream() {
   A21PlaybackRuntime runtime;
   A21FirmwareState state;
@@ -1982,6 +2014,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);
   RUN_TEST(test_touch_runtime_sends_wake_or_listen_with_semantic_source);
   RUN_TEST(test_touch_runtime_sends_barge_in_from_top_sensor);
+  RUN_TEST(test_physical_touch_screen_reports_only_rising_edge);
+  RUN_TEST(test_physical_touch_top_click_reports_barge_in);
   RUN_TEST(test_playback_runtime_starts_once_for_speaking_stream);
   RUN_TEST(test_playback_runtime_stops_and_clears_on_barge_in);
   RUN_TEST(test_playback_runtime_replaces_stream_with_stop_and_clear);

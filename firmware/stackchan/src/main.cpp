@@ -276,6 +276,7 @@ struct A21ArduinoTouchState {
 };
 
 A21ArduinoTouchState g_touch_state;
+A21PhysicalTouchState g_physical_touch_state;
 
 bool arduinoTouchRead(void* ctx, A21TouchSample* sample) {
   A21ArduinoTouchState* state = static_cast<A21ArduinoTouchState*>(ctx);
@@ -291,6 +292,11 @@ A21TouchDriver g_touch_driver = {
     &g_touch_state,
     arduinoTouchRead,
 };
+
+void queueTouchSample(A21TouchSample sample) {
+  g_touch_state.sample = sample;
+  g_touch_state.has_sample = true;
+}
 
 void arduinoEndMicForSpeaker() {
   if (!M5.Mic.isEnabled()) {
@@ -411,13 +417,29 @@ A21MicDriver g_mic_driver = {
 };
 
 void handleLocalControls(uint32_t now_ms) {
+  int16_t touch_x = 0;
+  int16_t touch_y = 0;
+  const bool screen_touching = M5StackChan.Display().getTouch(&touch_x, &touch_y);
+  A21TouchSample physical_sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
+  if (a21PhysicalTouchReadScreen(&g_physical_touch_state, screen_touching, &physical_sample)) {
+    queueTouchSample(physical_sample);
+  }
+
+  auto& top_touch = M5StackChan.TouchSensor;
+  if (a21PhysicalTouchReadTopSensor(
+          &g_physical_touch_state,
+          top_touch.wasClicked(),
+          top_touch.wasSwipedForward(),
+          top_touch.wasSwipedBackward(),
+          &physical_sample)) {
+    queueTouchSample(physical_sample);
+  }
+
   if (M5.BtnA.wasClicked()) {
-    g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_WAKE_OR_LISTEN};
-    g_touch_state.has_sample = true;
+    queueTouchSample({A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_WAKE_OR_LISTEN});
   }
   if (M5.BtnB.wasClicked()) {
-    g_touch_state.sample = {A21_TOUCH_SOURCE_TOP_SENSOR, A21_TOUCH_INTENT_BARGE_IN};
-    g_touch_state.has_sample = true;
+    queueTouchSample({A21_TOUCH_SOURCE_TOP_SENSOR, A21_TOUCH_INTENT_BARGE_IN});
   }
   if (M5.BtnC.wasClicked()) {
     a21AudioWSSendMockFrame(
@@ -473,6 +495,7 @@ void setup() {
   a21InitSpeakerPumpRuntime(&g_speaker_pump_runtime);
   a21InitMicCaptureRuntime(&g_mic_capture_runtime);
   a21InitMicFrameQueue(&g_mic_frame_queue);
+  a21InitPhysicalTouchState(&g_physical_touch_state);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
@@ -484,7 +507,7 @@ void setup() {
 }
 
 void loop() {
-  M5.update();
+  M5StackChan.update();
   const uint32_t now_ms = millis();
   a21WiFiRuntimeTick(&g_wifi_runtime, &g_wifi_driver, &g_connection, &g_wifi, now_ms);
   a21GatewayWSRuntimeTick(&g_gateway_ws_runtime, &g_gateway_ws_driver, &g_connection, &g_network, &g_state, now_ms);
