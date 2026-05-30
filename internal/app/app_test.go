@@ -4512,6 +4512,52 @@ func TestRunStackChanMicProbeAcceptanceBlocksLowDeliveryRatio(t *testing.T) {
 	}
 }
 
+func TestRunStackChanMicProbeAcceptanceTreatsMissingSpeechSeriesAsZero(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle","servo_y":"45deg","rgb":"#101010","mic_frames_captured":"90","audio_ws_sent_audio_frames":"90","mic_driver_errors":"0","mic_queue_depth":"0","mic_queue_dropped_frames":"0","mic_last_abs_peak":"120","mic_last_nonzero_samples":"300"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-mic-probe","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/metrics":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, strings.Join([]string{
+				"a21_audio_frame_total 90",
+				"a21_audio_ingress_frames_total 90",
+				"a21_audio_ingress_rms 0.0042",
+				"a21_audio_playback_chunk_total 0",
+			}, "\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-mic-probe-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--min-frames", "90",
+		"--min-vad-speech", "0",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"gateway_vad_speech_total": 0`,
+		`"mic_probe_acceptance_status": "confirmed"`,
+		"stackchan mic probe acceptance ok (diagnostic only, no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanSpeakerAcceptanceConfirmsInstrumentedDownlink(t *testing.T) {
 	probeStarted := false
 	probeStopped := false

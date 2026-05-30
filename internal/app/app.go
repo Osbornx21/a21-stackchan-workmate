@@ -2848,7 +2848,6 @@ func parseStackChanMicProbeGatewayMetrics(data string) (stackChanMicProbeGateway
 		"a21_audio_ingress_frames_total",
 		"a21_audio_ingress_rms",
 		"a21_audio_playback_chunk_total",
-		"a21_vad_detector_decisions_total_speech",
 	} {
 		if !seen[required] {
 			return stackChanMicProbeGatewayMetrics{}, fmt.Errorf("gateway metrics missing %s", required)
