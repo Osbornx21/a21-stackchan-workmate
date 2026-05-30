@@ -21,6 +21,9 @@ struct A21ControlEvent {
   char text[A21_TEXT_CAP];
   char stream_id[A21_STREAM_ID_CAP];
   char error[A21_ERROR_CAP];
+  uint16_t diagnostic_tone_hz;
+  uint16_t diagnostic_tone_duration_ms;
+  uint8_t diagnostic_tone_volume;
   bool final;
 };
 
@@ -46,6 +49,9 @@ inline void a21ResetControlEvent(A21ControlEvent* event) {
   a21CopyString(event->text, A21_TEXT_CAP, "");
   a21CopyString(event->stream_id, A21_STREAM_ID_CAP, "");
   a21CopyString(event->error, A21_ERROR_CAP, "");
+  event->diagnostic_tone_hz = 0;
+  event->diagnostic_tone_duration_ms = 0;
+  event->diagnostic_tone_volume = 0;
   event->final = false;
 }
 
@@ -110,6 +116,9 @@ inline bool a21ParseControlEvent(const char* json, const char* expected_device_i
   a21CopyString(event->mode, A21_MODE_CAP, mode);
   a21CopyString(event->text, A21_TEXT_CAP, payload["text"] | "");
   a21CopyString(event->stream_id, A21_STREAM_ID_CAP, payload["stream_id"] | "");
+  event->diagnostic_tone_hz = payload["diagnostic_tone_hz"] | 0;
+  event->diagnostic_tone_duration_ms = payload["diagnostic_tone_duration_ms"] | 0;
+  event->diagnostic_tone_volume = payload["diagnostic_tone_volume"] | 0;
   event->final = payload["final"] | false;
   return true;
 }

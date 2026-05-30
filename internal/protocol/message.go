@@ -60,16 +60,19 @@ const (
 )
 
 type ControlEventPayload struct {
-	State        ExpressionState `json:"state"`
-	Mode         Mode            `json:"mode"`
-	Text         string          `json:"text,omitempty"`
-	Final        bool            `json:"final,omitempty"`
-	StreamID     string          `json:"stream_id,omitempty"`
-	Confidence   float64         `json:"confidence,omitempty"`
-	Evidence     []EvidenceItem  `json:"evidence,omitempty"`
-	SpeechBlocks []string        `json:"speech_blocks,omitempty"`
-	ScreenCards  []ScreenCard    `json:"screen_cards,omitempty"`
-	FollowUps    []string        `json:"follow_ups,omitempty"`
+	State                    ExpressionState `json:"state"`
+	Mode                     Mode            `json:"mode"`
+	Text                     string          `json:"text,omitempty"`
+	Final                    bool            `json:"final,omitempty"`
+	StreamID                 string          `json:"stream_id,omitempty"`
+	DiagnosticToneHz         int             `json:"diagnostic_tone_hz,omitempty"`
+	DiagnosticToneDurationMS int             `json:"diagnostic_tone_duration_ms,omitempty"`
+	DiagnosticToneVolume     int             `json:"diagnostic_tone_volume,omitempty"`
+	Confidence               float64         `json:"confidence,omitempty"`
+	Evidence                 []EvidenceItem  `json:"evidence,omitempty"`
+	SpeechBlocks             []string        `json:"speech_blocks,omitempty"`
+	ScreenCards              []ScreenCard    `json:"screen_cards,omitempty"`
+	FollowUps                []string        `json:"follow_ups,omitempty"`
 }
 
 type EvidenceItem struct {

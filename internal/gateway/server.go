@@ -102,6 +102,9 @@ type DeviceControlRequest struct {
 	TraceID                      string                        `json:"trace_id,omitempty"`
 	SessionID                    string                        `json:"session_id,omitempty"`
 	StreamID                     string                        `json:"stream_id,omitempty"`
+	DiagnosticToneHz             int                           `json:"diagnostic_tone_hz,omitempty"`
+	DiagnosticToneDurationMS     int                           `json:"diagnostic_tone_duration_ms,omitempty"`
+	DiagnosticToneVolume         int                           `json:"diagnostic_tone_volume,omitempty"`
 	MockAudioChunks              int                           `json:"mock_audio_chunks,omitempty"`
 	AudioChunks                  []protocol.AudioPlaybackChunk `json:"audio_chunks,omitempty"`
 	AudioProbeOnly               bool                          `json:"audio_probe_only,omitempty"`
@@ -325,6 +328,13 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.AudioChunks) > 8 {
 		http.Error(w, "audio_chunks must contain at most 8 chunks", http.StatusBadRequest)
+		return
+	}
+	if (req.DiagnosticToneHz != 0 || req.DiagnosticToneDurationMS != 0 || req.DiagnosticToneVolume != 0) &&
+		(req.DiagnosticToneHz < 50 || req.DiagnosticToneHz > 8000 ||
+			req.DiagnosticToneDurationMS < 1 || req.DiagnosticToneDurationMS > 10000 ||
+			req.DiagnosticToneVolume < 1 || req.DiagnosticToneVolume > 255) {
+		http.Error(w, "diagnostic tone must set hz 50-8000, duration 1-10000ms, and volume 1-255", http.StatusBadRequest)
 		return
 	}
 	for i := range req.AudioChunks {
@@ -1425,11 +1435,14 @@ func validA21DeviceID(deviceID string) bool {
 
 func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelope {
 	payload := protocol.ControlEventPayload{
-		State:    req.State,
-		Mode:     req.Mode,
-		Text:     req.Text,
-		Final:    req.State != protocol.ExpressionListening && req.State != protocol.ExpressionThinking,
-		StreamID: req.StreamID,
+		State:                    req.State,
+		Mode:                     req.Mode,
+		Text:                     req.Text,
+		Final:                    req.State != protocol.ExpressionListening && req.State != protocol.ExpressionThinking,
+		StreamID:                 req.StreamID,
+		DiagnosticToneHz:         req.DiagnosticToneHz,
+		DiagnosticToneDurationMS: req.DiagnosticToneDurationMS,
+		DiagnosticToneVolume:     req.DiagnosticToneVolume,
 	}
 	events := s.controlSequence(req.DeviceID, req.TraceID, req.SessionID, []protocol.ControlEventPayload{payload})
 	if len(req.AudioChunks) > 0 {

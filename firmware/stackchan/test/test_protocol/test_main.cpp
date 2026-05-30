@@ -473,6 +473,34 @@ void test_parse_control_event_listening() {
   TEST_ASSERT_FALSE(event.final);
 }
 
+void test_parse_control_event_diagnostic_speaker_tone() {
+  const char* json =
+      "{\"protocol\":\"a21.device.v1\","
+      "\"device_id\":\"stackchan-001\","
+      "\"kind\":\"control.event\","
+      "\"seq\":1,"
+      "\"trace_id\":\"a21-trace-tone-000001\","
+      "\"session_id\":\"a21-session-tone-000001\","
+      "\"payload\":{\"state\":\"speaking\",\"mode\":\"workmate\",\"text\":\"TONE\","
+      "\"diagnostic_tone_hz\":1000,"
+      "\"diagnostic_tone_duration_ms\":3000,"
+      "\"diagnostic_tone_volume\":160,"
+      "\"final\":true}}";
+
+  A21ControlEvent event;
+  TEST_ASSERT_TRUE(a21ParseControlEvent(json, "stackchan-001", &event));
+  TEST_ASSERT_EQUAL_UINT16(1000, event.diagnostic_tone_hz);
+  TEST_ASSERT_EQUAL_UINT16(3000, event.diagnostic_tone_duration_ms);
+  TEST_ASSERT_EQUAL_UINT8(160, event.diagnostic_tone_volume);
+
+  A21FirmwareState state;
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21ApplyControlEvent(&state, &event, 1234);
+  TEST_ASSERT_EQUAL_UINT16(1000, state.pending_diagnostic_tone_hz);
+  TEST_ASSERT_EQUAL_UINT16(3000, state.pending_diagnostic_tone_duration_ms);
+  TEST_ASSERT_EQUAL_UINT8(160, state.pending_diagnostic_tone_volume);
+}
+
 void test_parse_control_event_rejects_wrong_protocol() {
   const char* json =
       "{\"protocol\":\"x21.device.v1\","
@@ -2573,6 +2601,7 @@ int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_firmware_build_identity_contains_a21_release_fields);
   RUN_TEST(test_parse_control_event_listening);
+  RUN_TEST(test_parse_control_event_diagnostic_speaker_tone);
   RUN_TEST(test_parse_control_event_rejects_wrong_protocol);
   RUN_TEST(test_parse_control_event_rejects_wrong_device);
   RUN_TEST(test_apply_control_event_updates_runtime_state);

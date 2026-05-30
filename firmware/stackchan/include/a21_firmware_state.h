@@ -25,6 +25,9 @@ struct A21FirmwareState {
   char last_error[A21_ERROR_CAP];
   A21RenderState render_state;
   uint32_t updated_at_ms;
+  uint16_t pending_diagnostic_tone_hz;
+  uint16_t pending_diagnostic_tone_duration_ms;
+  uint8_t pending_diagnostic_tone_volume;
   bool final;
 };
 
@@ -41,6 +44,9 @@ inline void a21InitFirmwareState(A21FirmwareState* state, const char* device_id)
   a21CopyString(state->last_error, A21_ERROR_CAP, "");
   state->render_state = A21_RENDER_LOCAL;
   state->updated_at_ms = 0;
+  state->pending_diagnostic_tone_hz = 0;
+  state->pending_diagnostic_tone_duration_ms = 0;
+  state->pending_diagnostic_tone_volume = 0;
   state->final = false;
 }
 
@@ -114,6 +120,9 @@ inline void a21ApplyControlEvent(A21FirmwareState* state, const A21ControlEvent*
   a21CopyString(state->mode, A21_MODE_CAP, event->mode);
   a21CopyString(state->text, A21_TEXT_CAP, event->text);
   a21CopyString(state->stream_id, A21_STREAM_ID_CAP, event->stream_id);
+  state->pending_diagnostic_tone_hz = event->diagnostic_tone_hz;
+  state->pending_diagnostic_tone_duration_ms = event->diagnostic_tone_duration_ms;
+  state->pending_diagnostic_tone_volume = event->diagnostic_tone_volume;
   state->final = event->final;
   state->updated_at_ms = now_ms;
 

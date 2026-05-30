@@ -2058,6 +2058,61 @@ func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testi
 	}
 }
 
+func TestDeviceControlEndpointDeliversDiagnosticSpeakerTone(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"speaking","mode":"workmate","text":"TONE","trace_id":"a21-trace-speaker-tone","session_id":"a21-session-speaker-tone","diagnostic_tone_hz":1000,"diagnostic_tone_duration_ms":3000,"diagnostic_tone_volume":160}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	events := readControlEvents(t, ctx, conn, 1)
+	var control protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &control); err != nil {
+		t.Fatal(err)
+	}
+	if control.DiagnosticToneHz != 1000 || control.DiagnosticToneDurationMS != 3000 || control.DiagnosticToneVolume != 160 {
+		t.Fatalf("diagnostic tone payload = %+v", control)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+		var delivered DeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&delivered); err != nil {
+			t.Fatal(err)
+		}
+		if delivered.Status != "delivered" || len(delivered.Events) != 1 {
+			t.Fatalf("delivered = %+v", delivered)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 func TestDeviceControlEndpointDeliversProvidedAudioChunks(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

@@ -1521,11 +1521,12 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
 	gatewayURL := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080")
 	deviceID := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001")
+	wavPath := ""
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--wav <a21-16k-mono-wav>] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1575,6 +1576,13 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 				return 2
 			}
 			speakerID = value
+		case "--wav":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--wav requires a value")
+				return 2
+			}
+			i++
+			wavPath = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -1598,7 +1606,7 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 		ModelDir:  modelDir,
 		SpeakerID: speakerID,
 		OutputDir: outputDir,
-	}, gatewayURL, deviceID)
+	}, gatewayURL, deviceID, wavPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "stackchan local TTS playback failed: %v\n", err)
 		return 1
@@ -1619,7 +1627,7 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 	return 0
 }
 
-func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, gatewayURL string, deviceID string) (stackChanLocalTTSPlaybackReport, error) {
+func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, gatewayURL string, deviceID string, wavPath string) (stackChanLocalTTSPlaybackReport, error) {
 	generatedAtMS := time.Now().UnixMilli()
 	traceID := fmt.Sprintf("a21-trace-local-tts-playback-%d", generatedAtMS)
 	sessionID := fmt.Sprintf("a21-session-local-tts-playback-%d", generatedAtMS)
@@ -1641,22 +1649,35 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 		report.Findings = append(report.Findings, err.Error())
 		return report, nil
 	}
-	ttsReport, err := synthesizeLocalTTS(ctx, ttsOptions)
-	if err != nil {
-		report.Findings = append(report.Findings, "local TTS failed")
-		return report, err
+	playbackWAVPath := strings.TrimSpace(wavPath)
+	if playbackWAVPath == "" {
+		ttsReport, err := synthesizeLocalTTS(ctx, ttsOptions)
+		if err != nil {
+			report.Findings = append(report.Findings, "local TTS failed")
+			return report, err
+		}
+		report.TTSProvider = ttsReport.Provider
+		report.TTSEngine = ttsReport.Engine
+		report.TTSVoice = ttsReport.Voice
+		report.TTSOutputFormat = ttsReport.OutputFormat
+		report.TTSAudioPath = ttsReport.OutputPath
+		report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
+		if ttsReport.Status != "passed" {
+			report.Findings = append(report.Findings, "local TTS did not pass")
+			return report, nil
+		}
+		playbackWAVPath = ttsReport.OutputPath
+	} else {
+		if containsLegacyIdentity(playbackWAVPath) {
+			report.Findings = append(report.Findings, "playback WAV path contains forbidden legacy project identity")
+			return report, fmt.Errorf("playback WAV path contains forbidden legacy project identity")
+		}
+		report.TTSProvider = "wav_file"
+		report.TTSVoice = "diagnostic_wav"
+		report.TTSOutputFormat = "wav_pcm_s16le_16000_mono"
+		report.TTSAudioPath = filepath.Base(playbackWAVPath)
 	}
-	report.TTSProvider = ttsReport.Provider
-	report.TTSEngine = ttsReport.Engine
-	report.TTSVoice = ttsReport.Voice
-	report.TTSOutputFormat = ttsReport.OutputFormat
-	report.TTSAudioPath = ttsReport.OutputPath
-	report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
-	if ttsReport.Status != "passed" {
-		report.Findings = append(report.Findings, "local TTS did not pass")
-		return report, nil
-	}
-	pcmChunks, err := audio.ReadPCM16MonoWAVChunks(ttsReport.OutputPath, 20)
+	pcmChunks, err := audio.ReadPCM16MonoWAVChunks(playbackWAVPath, 20)
 	if err != nil {
 		report.Findings = append(report.Findings, "local TTS wav parse failed")
 		return report, err

@@ -160,6 +160,7 @@ Request fields:
 - `text`: optional short screen/status text
 - `trace_id` and `session_id`: optional explicit trace/session IDs
 - `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation
+- `diagnostic_tone_hz`, `diagnostic_tone_duration_ms`, `diagnostic_tone_volume`: optional physical speaker diagnostic tone. This is a device-local M5Unified tone path for isolating speaker/I2S/amplifier behavior from Gateway WAV/base64/playback-buffer streaming. It must not be used as product TTS.
 - `mock_audio_chunks`: 0-8 non-silent chunks for physical speaker validation
 - `audio_chunks`: 0-8 caller-provided playback chunks. Each chunk must be `pcm_s16le`, mono, 16/24/48 kHz, 20 or 40 ms, and its `stream_id` must match the request `stream_id`.
 - `audio_probe_only`: optional diagnostic flag for the requested trace/session. When true, Gateway keeps accepting and measuring matching `audio.frame` uplink frames but suppresses mock listening/speaking/playback responses. Use this for physical microphone probes so Gateway does not force StackChan into `speaking` while measuring capture.
@@ -180,7 +181,7 @@ Professional `control.event` payloads can now include explicit evidence fields:
 
 This keeps V21 professional evidence visible to the client without pretending it is ordinary chat text.
 
-Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; accepted `pcm_s16le`, 16 kHz, mono, 20 ms payloads are decoded into fixed 640-byte PCM frames before they enter the buffer. The CoreS3 speaker pump coalesces up to four contiguous 20 ms frames into one stable playback block before handing it to M5Unified playback. This preserves the low-latency protocol frame size while reducing audible boundary noise from tiny repeated `playRaw` calls. The buffer is cleared when the render state leaves `speaking`, especially on `interrupted`.
+Current firmware derives playback start/stop from `control.event` state plus `stream_id`: `speaking` starts the stream, and non-speaking states stop and clear pending playback. The audio WebSocket can also parse `audio.playback.chunk` into a bounded firmware buffer keyed by `stream_id`; accepted `pcm_s16le`, 16 kHz, mono, 20 ms payloads are decoded into fixed 640-byte PCM frames before they enter the buffer. The CoreS3 speaker pump coalesces up to four contiguous 20 ms frames into one stable playback block before handing it to M5Unified playback. This preserves the low-latency protocol frame size while reducing audible boundary noise from tiny repeated `playRaw` calls. The buffer is cleared when the render state leaves `speaking`, especially on `interrupted`. For hardware diagnosis, a `control.event` may carry the `diagnostic_tone_*` fields above; firmware plays that tone locally through M5Unified and reports `speaker_tone_requests`, `speaker_tone_driver_errors`, and last tone parameters in `runtime_echo`.
 
 Future control events should still cover explicit playback start/stop, subtitle deltas, mode update event kinds, device status, and trace markers when real audio chunks are present.
 

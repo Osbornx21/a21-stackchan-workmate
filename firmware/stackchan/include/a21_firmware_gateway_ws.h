@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1800;
+static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 2400;
 
 struct A21RuntimeEchoDiagnostics {
   bool enabled;
@@ -37,6 +37,11 @@ struct A21RuntimeEchoDiagnostics {
   uint32_t speaker_busy_ticks;
   uint32_t speaker_driver_errors;
   char speaker_last_stream_id[A21_STREAM_ID_CAP];
+  uint32_t speaker_tone_requests;
+  uint32_t speaker_tone_driver_errors;
+  uint16_t speaker_last_tone_hz;
+  uint16_t speaker_last_tone_duration_ms;
+  uint8_t speaker_last_tone_volume;
   bool imu_enabled;
   bool imu_available;
   uint32_t imu_samples;
@@ -288,6 +293,11 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     char speaker_frames_played[12];
     char speaker_busy_ticks[12];
     char speaker_driver_errors[12];
+    char speaker_tone_requests[12];
+    char speaker_tone_driver_errors[12];
+    char speaker_last_tone_hz[8];
+    char speaker_last_tone_duration_ms[8];
+    char speaker_last_tone_volume[8];
     char imu_available[2];
     char imu_samples[12];
     char imu_read_errors[12];
@@ -322,6 +332,11 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     snprintf(speaker_frames_played, sizeof(speaker_frames_played), "%lu", static_cast<unsigned long>(diagnostics->speaker_frames_played));
     snprintf(speaker_busy_ticks, sizeof(speaker_busy_ticks), "%lu", static_cast<unsigned long>(diagnostics->speaker_busy_ticks));
     snprintf(speaker_driver_errors, sizeof(speaker_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->speaker_driver_errors));
+    snprintf(speaker_tone_requests, sizeof(speaker_tone_requests), "%lu", static_cast<unsigned long>(diagnostics->speaker_tone_requests));
+    snprintf(speaker_tone_driver_errors, sizeof(speaker_tone_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->speaker_tone_driver_errors));
+    snprintf(speaker_last_tone_hz, sizeof(speaker_last_tone_hz), "%u", static_cast<unsigned>(diagnostics->speaker_last_tone_hz));
+    snprintf(speaker_last_tone_duration_ms, sizeof(speaker_last_tone_duration_ms), "%u", static_cast<unsigned>(diagnostics->speaker_last_tone_duration_ms));
+    snprintf(speaker_last_tone_volume, sizeof(speaker_last_tone_volume), "%u", static_cast<unsigned>(diagnostics->speaker_last_tone_volume));
     echo["mic_frames_captured"] = mic_frames_captured;
     echo["mic_driver_errors"] = mic_driver_errors;
     echo["mic_skipped_render_state"] = mic_skipped_render_state;
@@ -341,6 +356,11 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     echo["speaker_busy_ticks"] = speaker_busy_ticks;
     echo["speaker_driver_errors"] = speaker_driver_errors;
     echo["speaker_last_stream_id"] = diagnostics->speaker_last_stream_id;
+    echo["speaker_tone_requests"] = speaker_tone_requests;
+    echo["speaker_tone_driver_errors"] = speaker_tone_driver_errors;
+    echo["speaker_last_tone_hz"] = speaker_last_tone_hz;
+    echo["speaker_last_tone_duration_ms"] = speaker_last_tone_duration_ms;
+    echo["speaker_last_tone_volume"] = speaker_last_tone_volume;
     if (diagnostics->imu_enabled) {
       snprintf(imu_available, sizeof(imu_available), "%u", diagnostics->imu_available ? 1U : 0U);
       snprintf(imu_samples, sizeof(imu_samples), "%lu", static_cast<unsigned long>(diagnostics->imu_samples));
@@ -466,6 +486,11 @@ inline bool a21RuntimeEchoDiagnosticsEqual(
          left->speaker_busy_ticks == right->speaker_busy_ticks &&
          left->speaker_driver_errors == right->speaker_driver_errors &&
          a21StringEquals(left->speaker_last_stream_id, right->speaker_last_stream_id) &&
+         left->speaker_tone_requests == right->speaker_tone_requests &&
+         left->speaker_tone_driver_errors == right->speaker_tone_driver_errors &&
+         left->speaker_last_tone_hz == right->speaker_last_tone_hz &&
+         left->speaker_last_tone_duration_ms == right->speaker_last_tone_duration_ms &&
+         left->speaker_last_tone_volume == right->speaker_last_tone_volume &&
          left->imu_enabled == right->imu_enabled &&
          left->imu_available == right->imu_available &&
          left->imu_samples == right->imu_samples &&

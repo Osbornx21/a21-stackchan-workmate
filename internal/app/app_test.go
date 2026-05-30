@@ -1370,6 +1370,51 @@ func TestRunStackChanLocalTTSPlaybackPrerollsInitialAudioBuffer(t *testing.T) {
 	}
 }
 
+func TestRunStackChanLocalTTSPlaybackCanSendExistingA21WAV(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		t.Fatal("existing WAV playback must not synthesize TTS")
+		return audio.LocalTTSReport{}, nil
+	}
+	var receivedChunks int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		receivedChunks += len(request.AudioChunks)
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	wavPath := filepath.Join(dir, "a21-existing-playback.wav")
+	writeAppTestWAV(t, wavPath, 16000, bytes.Repeat([]byte{1, 0}, 320*3))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-local-tts-playback", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--wav", wavPath, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if receivedChunks != 3 {
+		t.Fatalf("received chunks = %d, want 3", receivedChunks)
+	}
+	for _, want := range []string{`"tts_provider": "wav_file"`, `"tts_audio_path": "a21-existing-playback.wav"`, `"playback_chunks": 3`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

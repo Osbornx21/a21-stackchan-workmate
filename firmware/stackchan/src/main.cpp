@@ -191,6 +191,11 @@ A21TouchRuntime g_touch_runtime;
 A21PlaybackRuntime g_playback_runtime;
 A21AudioPlaybackBuffer g_audio_playback_buffer;
 A21SpeakerPumpRuntime g_speaker_pump_runtime;
+uint32_t g_diagnostic_tone_requests = 0;
+uint32_t g_diagnostic_tone_driver_errors = 0;
+uint16_t g_diagnostic_tone_last_hz = 0;
+uint16_t g_diagnostic_tone_last_duration_ms = 0;
+uint8_t g_diagnostic_tone_last_volume = 0;
 A21MicCaptureRuntime g_mic_capture_runtime;
 A21MicFrameQueue g_mic_frame_queue;
 A21IMUDiagnosticRuntime g_imu_runtime;
@@ -541,6 +546,40 @@ A21SpeakerDriver g_speaker_driver = {
     arduinoSpeakerPlayPCM16,
 };
 
+bool arduinoSpeakerDiagnosticTone(uint16_t hz, uint16_t duration_ms, uint8_t volume) {
+  if (hz < 50 || duration_ms == 0 || volume == 0) {
+    return false;
+  }
+  arduinoEndMicForSpeaker();
+  M5.Speaker.stop(A21_SPEAKER_CHANNEL);
+  M5.Speaker.setVolume(volume);
+  if (!M5.Speaker.begin()) {
+    return false;
+  }
+  return M5.Speaker.tone(static_cast<float>(hz), duration_ms, A21_SPEAKER_CHANNEL, true);
+}
+
+void handleDiagnosticSpeakerTone() {
+  if (g_state.pending_diagnostic_tone_hz == 0 ||
+      g_state.pending_diagnostic_tone_duration_ms == 0 ||
+      g_state.pending_diagnostic_tone_volume == 0) {
+    return;
+  }
+  const uint16_t hz = g_state.pending_diagnostic_tone_hz;
+  const uint16_t duration_ms = g_state.pending_diagnostic_tone_duration_ms;
+  const uint8_t volume = g_state.pending_diagnostic_tone_volume;
+  g_state.pending_diagnostic_tone_hz = 0;
+  g_state.pending_diagnostic_tone_duration_ms = 0;
+  g_state.pending_diagnostic_tone_volume = 0;
+  g_diagnostic_tone_requests += 1;
+  g_diagnostic_tone_last_hz = hz;
+  g_diagnostic_tone_last_duration_ms = duration_ms;
+  g_diagnostic_tone_last_volume = volume;
+  if (!arduinoSpeakerDiagnosticTone(hz, duration_ms, volume)) {
+    g_diagnostic_tone_driver_errors += 1;
+  }
+}
+
 bool arduinoMicEnabled(void* ctx) {
   (void)ctx;
   if (!a21CoreS3MicCaptureEnabled()) {
@@ -720,6 +759,7 @@ void loop() {
       &g_audio_playback_buffer,
       now_ms);
   a21PlaybackRuntimeApplyState(&g_playback_runtime, &g_playback_driver, &g_state);
+  handleDiagnosticSpeakerTone();
   a21SpeakerPumpTick(&g_speaker_pump_runtime, &g_speaker_driver, &g_state, &g_audio_playback_buffer);
   a21AudioPlaybackBufferApplyState(&g_audio_playback_buffer, &g_state);
   const size_t speaker_queue_depth = g_speaker_driver.queued(g_speaker_driver.ctx, A21_SPEAKER_CHANNEL);
@@ -765,6 +805,11 @@ void loop() {
       runtime_diagnostics.speaker_last_stream_id,
       A21_STREAM_ID_CAP,
       g_speaker_pump_runtime.last_stream_id);
+  runtime_diagnostics.speaker_tone_requests = g_diagnostic_tone_requests;
+  runtime_diagnostics.speaker_tone_driver_errors = g_diagnostic_tone_driver_errors;
+  runtime_diagnostics.speaker_last_tone_hz = g_diagnostic_tone_last_hz;
+  runtime_diagnostics.speaker_last_tone_duration_ms = g_diagnostic_tone_last_duration_ms;
+  runtime_diagnostics.speaker_last_tone_volume = g_diagnostic_tone_last_volume;
   runtime_diagnostics.imu_enabled = g_imu_runtime.enabled;
   runtime_diagnostics.imu_available = g_imu_runtime.available;
   runtime_diagnostics.imu_samples = g_imu_runtime.samples;
