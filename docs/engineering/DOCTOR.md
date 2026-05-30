@@ -100,6 +100,8 @@ The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 
+Upload and flash-plan guards accept only explicit USB serial-looking ports. On macOS that means `cu.*`/`tty.*` names containing `usbmodem` or `usbserial`; Bluetooth and debug-console paths are intentionally rejected even though they appear in the serial inventory.
+
 `namespace-audit` scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. It is part of `make release-check` so path-level project identity drift is caught before merge.
 
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit from `a21-firmware-release-index.jsonl`, then re-runs artifact, release-index, and per-artifact manifest checks. It is part of `make release-check` immediately after `firmware-package`.

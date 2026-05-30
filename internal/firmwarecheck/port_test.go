@@ -65,3 +65,28 @@ func TestSerialDevicesFromPathsSortsAndClassifiesUSBModem(t *testing.T) {
 		t.Fatal("expected usage to propagate")
 	}
 }
+
+func TestValidateUploadPortRejectsNonUSBMacSerialPath(t *testing.T) {
+	for _, port := range []string{
+		"/dev/cu.Bluetooth-Incoming-Port",
+		"/dev/cu.debug-console",
+		"/dev/tty.debug-console",
+	} {
+		if err := validateUploadPort(port); err == nil {
+			t.Fatalf("validateUploadPort(%q) returned nil, want error", port)
+		}
+	}
+}
+
+func TestValidateUploadPortAcceptsExplicitUSBSerialPath(t *testing.T) {
+	for _, port := range []string{
+		"/dev/cu.usbmodem1101",
+		"/dev/tty.usbmodem1101",
+		"/dev/ttyUSB0",
+		"/dev/ttyACM0",
+	} {
+		if err := validateUploadPort(port); err != nil {
+			t.Fatalf("validateUploadPort(%q) returned error: %v", port, err)
+		}
+	}
+}

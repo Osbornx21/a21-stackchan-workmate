@@ -231,7 +231,7 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
 make firmware-upload-check
 ```
 
-This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, non-`/dev/` paths, and non-serial `/dev/*` paths such as `/dev/null`. Accepted serial path forms are macOS `cu.*`/`tty.*` and Linux `ttyUSB*`/`ttyACM*`. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
+This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, non-`/dev/` paths, and non-serial `/dev/*` paths such as `/dev/null`. Accepted upload paths are deliberately narrow: macOS `cu.*`/`tty.*` names must contain `usbmodem` or `usbserial`, and Linux names must be `ttyUSB*` or `ttyACM*`. Bluetooth, debug-console, and other generic serial-looking ports are rejected before process-ownership checks. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
 
 Successful `firmware-upload-check` output is intentionally a dry-run receipt. The JSON must include:
 
@@ -376,5 +376,7 @@ Before choosing an upload port, inspect the current serial state:
 ```bash
 go run ./cmd/a21 serial-list
 ```
+
+Only USB-looking candidates from that inventory should be used with `firmware-upload-check` or `firmware-flash-plan`. A visible `/dev/cu.*` path is not enough by itself.
 
 The inventory lists `/dev/cu.*` paths, marks `usbmodem` candidates, and reports whether `lsof` sees another process holding the path. A busy port is a hard stop for `firmware-upload-check`.
