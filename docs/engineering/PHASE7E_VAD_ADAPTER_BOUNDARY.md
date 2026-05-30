@@ -21,6 +21,8 @@ Phase 7E separates A21 audio ingress buffering from voice activity detection. Th
 
 The default detector is `a21-rms-vad`, which preserves the existing mock behavior and keeps tests deterministic. Tests can inject a scripted detector to prove Gateway-facing ingress behavior does not depend on RMS internals.
 
+Gateway records each frame decision as `a21_vad_detector_decisions_total{detector,result}`. `detector` comes from the active `VADDetector` implementation and `result` is `speech` or `silence`. This metric is the comparison point for future mature VAD adapters and should stay stable even when the default detector changes.
+
 ## Boundaries
 
 This is not a production VAD claim. The RMS detector is a development baseline only.

@@ -529,6 +529,7 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		s.metrics.audioIngressDroppedTotal.Add(float64(result.DroppedFrameDelta))
 	}
 	s.metrics.audioIngressBufferDepth.Set(float64(result.BufferedFrames))
+	s.metrics.vadDetectorDecisions.WithLabelValues(vadDetectorLabel(result.VADDetector), vadDecisionLabel(result.SpeechDetected)).Inc()
 	s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.ingress.buffered", s.now().UnixMilli())
 	for _, event := range result.Events {
 		switch event {
@@ -540,6 +541,20 @@ func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, se
 		s.recordTrace(traceID, sessionID, frame.DeviceID, string(event), s.now().UnixMilli())
 	}
 	return result
+}
+
+func vadDetectorLabel(detector string) string {
+	if detector == "" {
+		return "unknown"
+	}
+	return detector
+}
+
+func vadDecisionLabel(speechDetected bool) string {
+	if speechDetected {
+		return "speech"
+	}
+	return "silence"
 }
 
 func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult, connectionSessionKeys map[string]struct{}) ([]protocol.Envelope, bool) {

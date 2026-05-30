@@ -22,6 +22,8 @@ Gateway now also exposes `GET /v1/devices` for the current in-memory device regi
 
 Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, mock playback chunk sends, audio-path barge-in markers, and outgoing control events with millisecond offsets. This is a development observability surface, not the final durable trace backend.
 
+The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:
@@ -128,6 +130,7 @@ Current Prometheus metrics:
 - `a21_audio_ingress_buffer_depth`
 - `a21_vad_speech_start_total`
 - `a21_vad_speech_end_total`
+- `a21_vad_detector_decisions_total{detector,result}`
 - `a21_device_identity_invalid_total`
 - `a21_realtime_session_total`
 - `a21_realtime_session_cancel_total`

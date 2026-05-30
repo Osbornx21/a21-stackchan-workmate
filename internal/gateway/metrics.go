@@ -18,6 +18,7 @@ type metrics struct {
 	audioIngressBufferDepth     prometheus.Gauge
 	vadSpeechStartTotal         prometheus.Counter
 	vadSpeechEndTotal           prometheus.Counter
+	vadDetectorDecisions        *prometheus.CounterVec
 	deviceIdentityInvalidTotal  prometheus.Counter
 	realtimeSessionTotal        prometheus.Counter
 	realtimeSessionCancelTotal  prometheus.Counter
@@ -71,6 +72,10 @@ func newMetrics() *metrics {
 			Name: "a21_vad_speech_end_total",
 			Help: "Total mock VAD speech-end transitions detected at Gateway ingress.",
 		}),
+		vadDetectorDecisions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "a21_vad_detector_decisions_total",
+			Help: "Total A21 VAD detector frame decisions by detector and result.",
+		}, []string{"detector", "result"}),
 		deviceIdentityInvalidTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_device_identity_invalid_total",
 			Help: "Total A21 device events rejected because firmware identity was invalid.",
@@ -130,6 +135,7 @@ func newMetrics() *metrics {
 		m.audioIngressBufferDepth,
 		m.vadSpeechStartTotal,
 		m.vadSpeechEndTotal,
+		m.vadDetectorDecisions,
 		m.deviceIdentityInvalidTotal,
 		m.realtimeSessionTotal,
 		m.realtimeSessionCancelTotal,

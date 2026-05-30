@@ -1244,7 +1244,11 @@ func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(metricsRec, metricsReq)
-	for _, want := range []string{"a21_audio_ingress_frames_total 1", "a21_vad_speech_start_total 1"} {
+	for _, want := range []string{
+		"a21_audio_ingress_frames_total 1",
+		"a21_vad_speech_start_total 1",
+		`a21_vad_detector_decisions_total{detector="a21-rms-vad",result="speech"} 1`,
+	} {
 		if !strings.Contains(metricsRec.Body.String(), want) {
 			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
 		}
