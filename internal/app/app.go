@@ -851,6 +851,8 @@ type stackChanCapabilityAcceptanceOptions struct {
 
 type stackChanPhysicalEvidenceOptions struct {
 	IdentityAcceptancePath string
+	GatewayURL             string
+	DeriveGateway          bool
 	DeviceID               string
 	Commit                 string
 	OutputDir              string
@@ -864,6 +866,8 @@ type stackChanPhysicalEvidenceReport struct {
 	FlashAllowed                 bool                                   `json:"flash_allowed"`
 	DeleteAllowed                bool                                   `json:"delete_allowed"`
 	IdentityAcceptanceReportPath string                                 `json:"identity_acceptance_report_path,omitempty"`
+	GatewayURL                   string                                 `json:"gateway_url,omitempty"`
+	GatewayTraceID               string                                 `json:"gateway_trace_id,omitempty"`
 	DeviceID                     string                                 `json:"device_id"`
 	Commit                       string                                 `json:"commit"`
 	ArtifactSHA256               string                                 `json:"artifact_sha256,omitempty"`
@@ -1505,7 +1509,7 @@ func runStackChanPhysicalEvidence(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-physical-evidence --identity-acceptance reports/a21-stackchan-identity-acceptance-...json --device-id stackchan-001 --commit <git-sha> [--pass capability=evidence_type] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-physical-evidence --identity-acceptance reports/a21-stackchan-identity-acceptance-...json --device-id stackchan-001 --commit <git-sha> [--derive-gateway --gateway-url http://127.0.0.1:21080] [--pass capability=evidence_type] [--output-dir reports]")
 			return 0
 		case "--identity-acceptance":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1514,6 +1518,15 @@ func runStackChanPhysicalEvidence(args []string, stdout io.Writer, stderr io.Wri
 			}
 			i++
 			options.IdentityAcceptancePath = args[i]
+		case "--gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--gateway-url requires a value")
+				return 2
+			}
+			i++
+			options.GatewayURL = args[i]
+		case "--derive-gateway":
+			options.DeriveGateway = true
 		case "--device-id":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--device-id requires a value")
@@ -1568,6 +1581,12 @@ func runStackChanPhysicalEvidence(args []string, stdout io.Writer, stderr io.Wri
 		fmt.Fprintf(stderr, "stackchan physical evidence path invalid: %v\n", err)
 		return 1
 	}
+	if options.DeriveGateway {
+		if _, _, err := firmwareGatewayEndpoint(options.GatewayURL, "/v1/devices", nil); err != nil {
+			fmt.Fprintf(stderr, "stackchan physical evidence gateway URL invalid: %v\n", err)
+			return 1
+		}
+	}
 	if err := validateA21ReportDir(options.OutputDir); err != nil {
 		fmt.Fprintf(stderr, "stackchan physical evidence report dir invalid: %v\n", err)
 		return 1
@@ -1596,10 +1615,11 @@ func defaultStackChanPhysicalEvidenceOptions() stackChanPhysicalEvidenceOptions 
 	projectRoot := findProjectRoot(cwd)
 	deviceID := strings.TrimSpace(os.Getenv("A21_DEVICE_ID"))
 	return stackChanPhysicalEvidenceOptions{
-		DeviceID:  deviceID,
-		Commit:    currentGitCommit(projectRoot),
-		OutputDir: "reports",
-		Passed:    map[string]string{},
+		GatewayURL: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DeviceID:   deviceID,
+		Commit:     currentGitCommit(projectRoot),
+		OutputDir:  "reports",
+		Passed:     map[string]string{},
 	}
 }
 
@@ -1645,16 +1665,26 @@ func buildStackChanPhysicalEvidenceReport(options stackChanPhysicalEvidenceOptio
 	if identity.DeviceIdentity != nil {
 		declared = identity.DeviceIdentity.Device.Capabilities
 	}
+	observed := map[string]stackChanPhysicalEvidenceObservation{}
+	if options.DeriveGateway {
+		deriveGatewayPhysicalEvidence(&report, options, observed)
+	}
+	for capability, evidenceType := range options.Passed {
+		observed[capability] = stackChanPhysicalEvidenceObservation{
+			Capability:   capability,
+			Status:       "passed",
+			EvidenceType: evidenceType,
+			ObservedAtMS: nowMS,
+		}
+	}
 	for _, capability := range requiredStackChanCapabilities {
 		observation := stackChanPhysicalEvidenceObservation{
 			Capability:   capability,
 			Status:       "pending",
 			EvidenceType: "operator_observation_required",
 		}
-		if evidenceType, ok := options.Passed[capability]; ok {
-			observation.Status = "passed"
-			observation.EvidenceType = evidenceType
-			observation.ObservedAtMS = nowMS
+		if derived, ok := observed[capability]; ok {
+			observation = derived
 		}
 		if declared[capability] != "available" {
 			report.addFinding("capability_not_declared_available", "required StackChan capability is not declared available by the identity acceptance report")
@@ -1662,6 +1692,89 @@ func buildStackChanPhysicalEvidenceReport(options stackChanPhysicalEvidenceOptio
 		report.Observations = append(report.Observations, observation)
 	}
 	return report
+}
+
+func deriveGatewayPhysicalEvidence(report *stackChanPhysicalEvidenceReport, options stackChanPhysicalEvidenceOptions, observed map[string]stackChanPhysicalEvidenceObservation) {
+	gatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_failed", err.Error())
+		return
+	}
+	report.GatewayURL = gatewayReport.GatewayURL
+	device, ok := findFirmwareDeviceRecord(gatewayReport.Devices, options.DeviceID)
+	if !ok {
+		report.addFinding("gateway_device_missing", "expected device is missing from Gateway report")
+		return
+	}
+	if device.CurrentExpression != "" || device.CurrentMode != "" {
+		observed["screen"] = stackChanPhysicalEvidenceObservation{
+			Capability:   "screen",
+			Status:       "passed",
+			EvidenceType: "gateway_render_state",
+			ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+		}
+	}
+	if strings.HasPrefix(device.LastEvent, "touch.") {
+		switch device.LastTouchSource {
+		case "screen":
+			observed["screen_touch"] = stackChanPhysicalEvidenceObservation{
+				Capability:   "screen_touch",
+				Status:       "passed",
+				EvidenceType: "gateway_touch_event",
+				ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+			}
+		case "top_sensor":
+			observed["top_touch"] = stackChanPhysicalEvidenceObservation{
+				Capability:   "top_touch",
+				Status:       "passed",
+				EvidenceType: "gateway_touch_event",
+				ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+			}
+		}
+	}
+	if device.LastTraceID == "" {
+		return
+	}
+	trace, err := fetchGatewayTrace(options.GatewayURL, device.LastTraceID)
+	if err != nil {
+		report.addFinding("gateway_trace_fetch_failed", err.Error())
+		return
+	}
+	report.GatewayTraceID = trace.TraceID
+	for _, event := range trace.Events {
+		switch event.Name {
+		case "audio.frame.received":
+			observed["microphone"] = stackChanPhysicalEvidenceObservation{
+				Capability:   "microphone",
+				Status:       "passed",
+				EvidenceType: "gateway_audio_frame",
+				ObservedAtMS: bestObservedAtMS(event.AtMS, report.GeneratedAtMS),
+			}
+		case "audio.playback.chunk.sent":
+			observed["speaker"] = stackChanPhysicalEvidenceObservation{
+				Capability:   "speaker",
+				Status:       "passed",
+				EvidenceType: "gateway_audio_downlink",
+				ObservedAtMS: bestObservedAtMS(event.AtMS, report.GeneratedAtMS),
+			}
+		}
+	}
+}
+
+func findFirmwareDeviceRecord(devices []firmwarecheck.DeviceIdentityRecord, deviceID string) (firmwarecheck.DeviceIdentityRecord, bool) {
+	for _, device := range devices {
+		if device.DeviceID == deviceID {
+			return device, true
+		}
+	}
+	return firmwarecheck.DeviceIdentityRecord{}, false
+}
+
+func bestObservedAtMS(candidate int64, fallback int64) int64 {
+	if candidate > 0 {
+		return candidate
+	}
+	return fallback
 }
 
 func validateIdentityAcceptanceForPhysicalEvidence(report *stackChanPhysicalEvidenceReport, identity stackChanIdentityAcceptanceReport) {
@@ -2281,6 +2394,46 @@ func fetchFirmwareDeviceReport(gatewayBaseURL string) (firmwareDeviceReport, err
 	}, nil
 }
 
+func fetchGatewayTrace(gatewayBaseURL string, traceID string) (gateway.TraceResponse, error) {
+	if strings.TrimSpace(traceID) == "" {
+		return gateway.TraceResponse{}, fmt.Errorf("trace_id is required")
+	}
+	if containsLegacyIdentity(traceID) {
+		return gateway.TraceResponse{}, fmt.Errorf("trace_id contains forbidden legacy identity")
+	}
+	query := url.Values{}
+	query.Set("trace_id", traceID)
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayBaseURL, "/v1/traces", query)
+	if err != nil {
+		return gateway.TraceResponse{}, err
+	}
+	client := http.Client{
+		Timeout:   3 * time.Second,
+		Transport: &http.Transport{Proxy: nil},
+	}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return gateway.TraceResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return gateway.TraceResponse{}, fmt.Errorf("gateway trace returned status %d", resp.StatusCode)
+	}
+	var response gateway.TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return gateway.TraceResponse{}, err
+	}
+	if containsLegacyIdentity(response.TraceID) {
+		return gateway.TraceResponse{}, fmt.Errorf("gateway trace contains forbidden legacy identity")
+	}
+	for _, event := range response.Events {
+		if containsLegacyIdentity(event.TraceID) || containsLegacyIdentity(event.SessionID) || containsLegacyIdentity(event.DeviceID) {
+			return gateway.TraceResponse{}, fmt.Errorf("gateway trace contains forbidden legacy identity")
+		}
+	}
+	return response, nil
+}
+
 func validateFirmwareDeviceReportGatewayIdentity(schemaVersion string, service string) error {
 	if containsLegacyIdentity(schemaVersion) || containsLegacyIdentity(service) {
 		return fmt.Errorf("gateway device report contains forbidden legacy identity")
@@ -2299,6 +2452,10 @@ func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityR
 			device.Firmware.Version,
 			device.Firmware.Board,
 			device.Firmware.Commit,
+			device.LastEvent,
+			device.LastTouchSource,
+			device.LastTraceID,
+			device.LastSessionID,
 		}
 		for _, value := range values {
 			if containsLegacyIdentity(value) {
@@ -2320,6 +2477,10 @@ func containsLegacyIdentity(value string) bool {
 }
 
 func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error) {
+	return firmwareGatewayEndpoint(gatewayBaseURL, "/v1/devices", nil)
+}
+
+func firmwareGatewayEndpoint(gatewayBaseURL string, endpointPath string, query url.Values) (string, string, error) {
 	parsed, err := url.Parse(gatewayBaseURL)
 	if err != nil {
 		return "", "", fmt.Errorf("gateway URL is invalid")
@@ -2350,7 +2511,10 @@ func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error)
 	basePath := strings.TrimRight(parsed.Path, "/")
 	parsed.Path = basePath
 	safeGatewayURL := parsed.String()
-	parsed.Path = basePath + "/v1/devices"
+	parsed.Path = basePath + endpointPath
+	if query != nil {
+		parsed.RawQuery = query.Encode()
+	}
 	return parsed.String(), safeGatewayURL, nil
 }
 

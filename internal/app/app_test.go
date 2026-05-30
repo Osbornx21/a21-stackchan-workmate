@@ -3917,6 +3917,100 @@ func TestRunStackChanPhysicalEvidenceCanFeedCapabilityAcceptance(t *testing.T) {
 	}
 }
 
+func TestRunStackChanPhysicalEvidenceDerivesGatewayObservableSignals(t *testing.T) {
+	dir := t.TempDir()
+	artifactSHA := strings.Repeat("f", 64)
+	identityPath := writeTestStackChanIdentityAcceptanceReport(t, dir, artifactSHA)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": "workmate",
+      "current_expression": "speaking",
+      "last_event": "touch.wake_or_listen",
+      "last_touch_source": "screen",
+      "last_trace_id": "a21-trace-physical-auto",
+      "firmware": {"id": "a21-stackchan", "version": "0.1.0", "board": "m5stack-cores3", "commit": "abcdef1"},
+      "capabilities": {
+        "microphone": "available",
+        "speaker": "available",
+        "screen": "available",
+        "screen_touch": "available",
+        "top_touch": "available",
+        "servo_y": "available",
+        "rgb": "available"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`))
+		case "/v1/traces":
+			if r.URL.Query().Get("trace_id") != "a21-trace-physical-auto" {
+				t.Fatalf("trace id = %q, want a21-trace-physical-auto", r.URL.Query().Get("trace_id"))
+			}
+			_, _ = w.Write([]byte(`{
+  "trace_id": "a21-trace-physical-auto",
+  "events": [
+    {"name": "audio.frame.received", "trace_id": "a21-trace-physical-auto", "device_id": "stackchan-001", "at_ms": 1780000001000},
+    {"name": "audio.playback.chunk.sent", "trace_id": "a21-trace-physical-auto", "device_id": "stackchan-001", "at_ms": 1780000002000}
+  ],
+  "summary": {"event_count": 2}
+}`))
+		default:
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := filepath.Join(dir, "reports")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-physical-evidence",
+		"--identity-acceptance", identityPath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--derive-gateway",
+		"--gateway-url", server.URL,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	evidencePath := newestGlob(t, filepath.Join(outputDir, "a21-stackchan-physical-evidence-*.json"))
+	data, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		`"gateway_url": "` + server.URL + `"`,
+		`"gateway_trace_id": "a21-trace-physical-auto"`,
+		`"capability": "microphone"`,
+		`"evidence_type": "gateway_audio_frame"`,
+		`"capability": "speaker"`,
+		`"evidence_type": "gateway_audio_downlink"`,
+		`"capability": "screen"`,
+		`"evidence_type": "gateway_render_state"`,
+		`"capability": "screen_touch"`,
+		`"evidence_type": "gateway_touch_event"`,
+		`"capability": "top_touch"`,
+		`"status": "pending"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("evidence missing %q: %s", want, text)
+		}
+	}
+}
+
 func TestRunStackChanPhysicalEvidenceRejectsLegacyPassWithoutEchoingIt(t *testing.T) {
 	dir := t.TempDir()
 	identityPath := writeTestStackChanIdentityAcceptanceReport(t, dir, strings.Repeat("e", 64))

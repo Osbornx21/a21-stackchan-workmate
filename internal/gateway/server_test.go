@@ -1333,6 +1333,9 @@ func TestControlWebSocketTouchWakeOrListenMapsToMockTurn(t *testing.T) {
 	if registry.Devices[0].LastEvent != protocol.DeviceEventTouchWakeOrListen {
 		t.Fatalf("last event = %q, want touch wake", registry.Devices[0].LastEvent)
 	}
+	if registry.Devices[0].LastTouchSource != protocol.TouchSourceScreen {
+		t.Fatalf("last touch source = %q, want screen", registry.Devices[0].LastTouchSource)
+	}
 }
 
 func TestControlWebSocketTouchBargeInMapsToInterrupt(t *testing.T) {

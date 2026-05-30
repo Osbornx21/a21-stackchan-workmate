@@ -137,7 +137,11 @@ stackchan-identity-acceptance:
 stackchan-physical-evidence:
 	@test -n "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" || (echo "A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	@if [ "$(A21_DERIVE_GATEWAY_EVIDENCE)" = "1" ]; then \
+		go run ./cmd/a21 stackchan-physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --derive-gateway --gateway-url "$(A21_GATEWAY_URL)" --output-dir reports; \
+	else \
+		go run ./cmd/a21 stackchan-physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports; \
+	fi
 
 stackchan-capability-acceptance:
 	@test -n "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" || (echo "A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT is required"; exit 2)

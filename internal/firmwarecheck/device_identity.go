@@ -36,6 +36,10 @@ type DeviceIdentityRecord struct {
 	CurrentMode       string                 `json:"current_mode,omitempty"`
 	CurrentExpression string                 `json:"current_expression,omitempty"`
 	PlaybackStreamID  string                 `json:"playback_stream_id,omitempty"`
+	LastEvent         string                 `json:"last_event,omitempty"`
+	LastTouchSource   string                 `json:"last_touch_source,omitempty"`
+	LastTraceID       string                 `json:"last_trace_id,omitempty"`
+	LastSessionID     string                 `json:"last_session_id,omitempty"`
 	LastSeenMS        int64                  `json:"last_seen_ms,omitempty"`
 }
 

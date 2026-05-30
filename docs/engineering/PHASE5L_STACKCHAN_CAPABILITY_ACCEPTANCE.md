@@ -37,6 +37,17 @@ go run ./cmd/a21 stackchan-physical-evidence \
   --output-dir reports
 ```
 
+Gateway-observable evidence can be derived from A21 runtime state:
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+A21_DEVICE_ID=stackchan-001 \
+A21_DERIVE_GATEWAY_EVIDENCE=1 \
+make stackchan-physical-evidence
+```
+
+This mode reads the A21 Gateway directly with no ambient proxy. It can mark `microphone` when the latest trace has `audio.frame.received`, `speaker` when Gateway sent `audio.playback.chunk`, `screen` when Gateway knows the current render state, and `screen_touch` or `top_touch` when the latest touch event includes the source. It leaves servo/RGB and any truly physical audible/visible proof pending until those have explicit observations or future firmware echo probes.
+
 ## Acceptance Command
 
 ```bash

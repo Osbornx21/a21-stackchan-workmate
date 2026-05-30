@@ -111,6 +111,7 @@ type DeviceRecord struct {
 	CurrentExpr      protocol.ExpressionState `json:"current_expression,omitempty"`
 	PlaybackStream   string                   `json:"playback_stream_id,omitempty"`
 	LastEvent        protocol.DeviceEventKind `json:"last_event,omitempty"`
+	LastTouchSource  protocol.TouchSource     `json:"last_touch_source,omitempty"`
 	LastSeq          uint64                   `json:"last_seq,omitempty"`
 	LastTraceID      string                   `json:"last_trace_id,omitempty"`
 	LastSessionID    string                   `json:"last_session_id,omitempty"`
@@ -892,6 +893,9 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	record.IdentityStatus = status
 	record.IdentityError = identityError
 	record.LastEvent = payload.Event
+	if payload.TouchSource != "" {
+		record.LastTouchSource = payload.TouchSource
+	}
 	record.LastSeq = event.Seq
 	record.LastTraceID = event.TraceID
 	record.LastSessionID = event.SessionID

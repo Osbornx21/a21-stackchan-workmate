@@ -128,6 +128,8 @@ A21_DEVICE_ID=stackchan-001 \
 make stackchan-capability-acceptance
 ```
 
+To let A21 derive Gateway-observable evidence from `/v1/devices` and the latest trace, add `A21_DERIVE_GATEWAY_EVIDENCE=1`. This can prefill microphone, audio downlink, render-state, and last touch-source observations when the Gateway has fresh events. Servo/RGB and true audible/visible confirmation still need physical evidence.
+
 The generated evidence report uses `schema_version: a21.stackchan_physical_evidence.v1`. It must include passed observations for `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` before capability acceptance can pass. The acceptance report still sets `flash_allowed: false`; it proves capability evidence, not flashing, OTA, latency, or full-duplex quality.
 
 ## Required Reading

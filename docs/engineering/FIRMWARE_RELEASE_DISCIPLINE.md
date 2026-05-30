@@ -559,6 +559,25 @@ This command writes:
 reports/a21-stackchan-physical-evidence-YYYYMMDD-HHMMSS.json
 ```
 
+To derive Gateway-observable observations from A21 runtime state and traces:
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+A21_DEVICE_ID=stackchan-001 \
+A21_DERIVE_GATEWAY_EVIDENCE=1 \
+make stackchan-physical-evidence
+```
+
+Gateway-derived evidence is intentionally limited:
+
+- `microphone`: latest trace includes `audio.frame.received`
+- `speaker`: latest trace includes `audio.playback.chunk.sent`
+- `screen`: device registry has a current mode or expression
+- `screen_touch`: latest touch event source is `screen`
+- `top_touch`: latest touch event source is `top_sensor`
+
+It does not prove physical audibility, screen visibility, servo movement, RGB output, OTA, AEC, or full-duplex quality. Those still require explicit physical observations or future firmware echo probes.
+
 Capability acceptance then consumes that evidence file:
 
 ```bash
