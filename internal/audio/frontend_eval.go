@@ -14,6 +14,7 @@ type FrontEndEvalReport struct {
 	Status               string   `json:"status"`
 	Dataset              string   `json:"dataset"`
 	Detector             string   `json:"detector"`
+	ReportPath           string   `json:"report_path,omitempty"`
 	FramesTotal          int      `json:"frames_total"`
 	ExpectedSpeechFrames int      `json:"expected_speech_frames"`
 	DetectedSpeechFrames int      `json:"detected_speech_frames"`

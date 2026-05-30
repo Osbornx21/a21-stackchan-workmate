@@ -1,7 +1,7 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 
-.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture latency-bench release-check firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -32,6 +32,13 @@ provider-realtime-plan:
 provider-realtime-fixture:
 	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
 	go run ./cmd/a21 provider-realtime-fixture --provider "$(A21_PROVIDER)" --execute
+
+audio-front-end-eval:
+	@if [ -n "$(A21_AUDIO_FIXTURE)" ]; then \
+		go run ./cmd/a21 audio-front-end-eval --fixture "$(A21_AUDIO_FIXTURE)" --output-dir reports; \
+	else \
+		go run ./cmd/a21 audio-front-end-eval --mock --output-dir reports; \
+	fi
 
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5

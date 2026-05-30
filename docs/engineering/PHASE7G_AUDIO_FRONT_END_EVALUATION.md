@@ -10,6 +10,8 @@ Phase 7G turns "use mature wheels" into a concrete A21 gate for VAD, AEC, noise 
 go run ./cmd/a21 audio-front-end-plan
 go run ./cmd/a21 audio-front-end-eval --mock
 go run ./cmd/a21 audio-front-end-eval --fixture reports/a21-audio-fixture.json
+go run ./cmd/a21 audio-front-end-eval --mock --output-dir reports
+make audio-front-end-eval
 ```
 
 `audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
@@ -17,6 +19,16 @@ go run ./cmd/a21 audio-front-end-eval --fixture reports/a21-audio-fixture.json
 `audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, required future metrics, and `promotion_gate: not_production`.
 
 `audio-front-end-eval --fixture <path>` runs the same report shape over an A21 labelled PCM fixture. `--mock` and `--fixture` are mutually exclusive. There is no implicit real evaluation mode, so nobody can mistake a synthetic or labelled-frame report for provider, AEC, full-duplex, or physical StackChan acceptance.
+
+`--output-dir reports` writes a timestamped report:
+
+```text
+reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
+```
+
+Report artifacts contain aggregate metrics and metadata only. They do not include raw PCM, base64 audio frames, provider secrets, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected.
+
+`make audio-front-end-eval` writes the mock report by default. Set `A21_AUDIO_FIXTURE=<path>` to evaluate a labelled fixture and write the report to `reports/`.
 
 ## Fixture Contract
 

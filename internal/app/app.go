@@ -234,10 +234,11 @@ func runAudioFrontEndPlan(args []string, stdout io.Writer, stderr io.Writer) int
 func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int {
 	mock := false
 	fixturePath := ""
+	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 audio-front-end-eval --mock | --fixture reports/a21-audio-fixture.json")
+			fmt.Fprintln(stdout, "a21 audio-front-end-eval (--mock | --fixture reports/a21-audio-fixture.json) [--output-dir reports]")
 			return 0
 		case "--mock":
 			mock = true
@@ -248,6 +249,13 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 			}
 			i++
 			fixturePath = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
 		case "--execute":
 			fmt.Fprintln(stderr, "audio-front-end-eval only supports --mock until recorded-office and physical-device fixtures exist")
 			return 2
@@ -275,6 +283,18 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 			return 1
 		}
 	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "audio front-end report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeAudioFrontEndEvalReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write audio front-end eval report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
 	if err := writeJSONAudioFrontEndEval(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode audio front-end eval: %v\n", err)
 		return 1
@@ -295,6 +315,31 @@ func runPreflight(stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func validateA21ReportDir(outputDir string) error {
+	lowerPath := strings.ToLower(filepath.Clean(outputDir))
+	if strings.Contains(lowerPath, "x21") || strings.Contains(lowerPath, "v21") {
+		return fmt.Errorf("report directory contains forbidden legacy identity")
+	}
+	return nil
+}
+
+func writeAudioFrontEndEvalReport(outputDir string, report audio.FrontEndEvalReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-audio-front-end-eval-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONAudioFrontEndEval(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
 }
 
 func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {

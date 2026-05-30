@@ -19,6 +19,21 @@ make provider-realtime-plan
 reports/a21-doctor-YYYYMMDD-HHMMSS.json
 ```
 
+Audio front-end evaluation has a matching report artifact path:
+
+```bash
+make audio-front-end-eval
+A21_AUDIO_FIXTURE=reports/a21-audio-fixture.json make audio-front-end-eval
+```
+
+It writes:
+
+```text
+reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
+```
+
+These reports are evidence artifacts for VAD/AEC evaluation. They do not contain raw audio frames.
+
 It checks what the current foundation can truthfully check:
 
 - legacy env variable prefixes

@@ -610,6 +610,55 @@ func TestRunAudioFrontEndEvalFixtureReportsQualityMetrics(t *testing.T) {
 	}
 }
 
+func TestRunAudioFrontEndEvalWritesReportArtifact(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-eval", "--mock", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-audio-front-end-eval-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("report files = %d, want 1", len(matches))
+	}
+	if !strings.Contains(stdout.String(), `"report_path":`) || !strings.Contains(stdout.String(), filepath.Base(matches[0])) {
+		t.Fatalf("stdout missing report path: %s", stdout.String())
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"schema_version": "a21.audio.frontend_eval.v1"`, `"status": "mock_only"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("report file missing %q: %s", want, data)
+		}
+	}
+	for _, forbidden := range []string{"pcm_s16le_base64", "x21", "v21"} {
+		if strings.Contains(strings.ToLower(string(data)), forbidden) {
+			t.Fatalf("report file leaked %q: %s", forbidden, data)
+		}
+	}
+}
+
+func TestRunAudioFrontEndEvalRejectsLegacyReportDirWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-eval", "--mock", "--output-dir", filepath.Join("reports", "x21-audio")}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21") {
+		t.Fatalf("legacy report path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
