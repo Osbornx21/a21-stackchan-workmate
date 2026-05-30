@@ -102,6 +102,7 @@ type DeviceFirmwareIdentity struct {
 type DeviceRecord struct {
 	DeviceID         string                   `json:"device_id"`
 	Firmware         DeviceFirmwareIdentity   `json:"firmware,omitempty"`
+	Capabilities     map[string]string        `json:"capabilities,omitempty"`
 	IdentityStatus   string                   `json:"identity_status"`
 	IdentityError    string                   `json:"identity_error,omitempty"`
 	ConnectionStatus string                   `json:"connection_status,omitempty"`
@@ -869,6 +870,15 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 		Commit:  payload.FirmwareCommit,
 	}
 	status, identityError := validateFirmwareIdentity(firmware)
+	capabilities, capabilityError := sanitizeDeviceCapabilities(payload.Capabilities)
+	if capabilityError != "" {
+		status = "invalid"
+		if identityError != "" {
+			identityError += "; " + capabilityError
+		} else {
+			identityError = capabilityError
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -878,6 +888,7 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 		record.FirstSeenMS = nowMS
 	}
 	record.Firmware = firmware
+	record.Capabilities = capabilities
 	record.IdentityStatus = status
 	record.IdentityError = identityError
 	record.LastEvent = payload.Event
@@ -887,6 +898,28 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	record.LastSeenMS = nowMS
 	s.devices[event.DeviceID] = record
 	return record
+}
+
+func sanitizeDeviceCapabilities(input map[string]string) (map[string]string, string) {
+	if len(input) == 0 {
+		return nil, ""
+	}
+	output := make(map[string]string, len(input))
+	for key, value := range input {
+		cleanKey := strings.TrimSpace(key)
+		cleanValue := strings.TrimSpace(value)
+		if cleanKey == "" || cleanValue == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(cleanKey), "x21") ||
+			strings.Contains(strings.ToLower(cleanKey), "v21") ||
+			strings.Contains(strings.ToLower(cleanValue), "x21") ||
+			strings.Contains(strings.ToLower(cleanValue), "v21") {
+			return nil, "device capabilities contain forbidden legacy identity"
+		}
+		output[cleanKey] = cleanValue
+	}
+	return output, ""
 }
 
 func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID string, payload protocol.ControlEventPayload, atMS int64) {

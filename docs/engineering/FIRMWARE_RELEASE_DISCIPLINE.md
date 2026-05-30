@@ -135,6 +135,7 @@ Current Gateway tests cover:
 
 - `/v1/devices` registration from firmware-originated `device.event` payloads
 - A21 firmware identity validation for `a21-stackchan`, semver version, `m5stack-cores3`, and git SHA commit
+- StackChan capability visibility for microphone, speaker, screen, screen touch, top touch, Y-axis servo, and RGB
 - rejection and metrics for forbidden X21/V21 firmware identity
 
 `make firmware-package` copies PlatformIO's generic `firmware.bin` into `firmware/artifacts/` with an A21-specific filename:

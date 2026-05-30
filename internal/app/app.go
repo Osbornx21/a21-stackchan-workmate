@@ -1745,6 +1745,11 @@ func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityR
 				return fmt.Errorf("gateway device report contains forbidden legacy identity")
 			}
 		}
+		for key, value := range device.Capabilities {
+			if containsLegacyIdentity(key) || containsLegacyIdentity(value) {
+				return fmt.Errorf("gateway device report contains forbidden legacy identity")
+			}
+		}
 	}
 	return nil
 }

@@ -858,6 +858,13 @@ void test_gateway_ws_send_mock_turn_builds_a21_device_event() {
   TEST_ASSERT_EQUAL_STRING("0.1.0", doc["payload"]["firmware_version"] | "");
   TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
   TEST_ASSERT_NOT_EQUAL('\0', (doc["payload"]["firmware_commit"] | "")[0]);
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["microphone"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["speaker"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen_touch"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["top_touch"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["servo_y"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["rgb"] | "");
 }
 
 void test_gateway_ws_send_interrupt_increments_seq() {

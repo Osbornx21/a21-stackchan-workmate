@@ -126,6 +126,14 @@ inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
   payload["firmware_version"] = A21_FIRMWARE_VERSION;
   payload["firmware_board"] = A21_FIRMWARE_BOARD;
   payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
+  JsonObject capabilities = payload["capabilities"].to<JsonObject>();
+  capabilities["microphone"] = "available";
+  capabilities["speaker"] = "available";
+  capabilities["screen"] = "available";
+  capabilities["screen_touch"] = "available";
+  capabilities["top_touch"] = "available";
+  capabilities["servo_y"] = "available";
+  capabilities["rgb"] = "available";
   if (text != nullptr && text[0] != '\0') {
     payload["text"] = text;
   }

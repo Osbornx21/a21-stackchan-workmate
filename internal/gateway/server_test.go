@@ -931,6 +931,109 @@ func TestControlWebSocketRegistersFirmwareIdentity(t *testing.T) {
 	}
 }
 
+func TestControlWebSocketRegistersStackChanCapabilities(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       8,
+		TraceID:   "a21-trace-device-000008",
+		SessionID: "a21-session-device",
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventMockTurn,
+		Mode:            protocol.ModeWorkmate,
+		Text:            "能力上报",
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
+		Capabilities: map[string]string{
+			"microphone":   "available",
+			"speaker":      "available",
+			"screen":       "available",
+			"screen_touch": "available",
+			"top_touch":    "available",
+			"servo_y":      "available",
+			"rgb":          "available",
+		},
+	})
+	readControlEvents(t, ctx, conn, 3)
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var registry DeviceRegistryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(registry.Devices))
+	}
+	capabilities := registry.Devices[0].Capabilities
+	for _, key := range []string{"microphone", "speaker", "screen", "screen_touch", "top_touch", "servo_y", "rgb"} {
+		if capabilities[key] != "available" {
+			t.Fatalf("capability %s = %q, want available; all=%#v", key, capabilities[key], capabilities)
+		}
+	}
+}
+
+func TestControlWebSocketRejectsLegacyCapabilityIdentity(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol: protocol.ProtocolVersion,
+		DeviceID: "stackchan-001",
+		Kind:     protocol.KindDeviceEvent,
+		Seq:      1,
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventMockTurn,
+		Mode:            protocol.ModeWorkmate,
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "abcdef1",
+		Capabilities: map[string]string{
+			"screen": "x21-compatible",
+		},
+	})
+
+	events := readControlEvents(t, ctx, conn, 1)
+	var payload protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.State != protocol.ExpressionError {
+		t.Fatalf("state = %q, want error", payload.State)
+	}
+	if !strings.Contains(payload.Text, "invalid device firmware identity") {
+		t.Fatalf("text = %q", payload.Text)
+	}
+}
+
 func TestDevicesEndpointDeclaresA21GatewayIdentity(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

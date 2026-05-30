@@ -102,14 +102,15 @@ const (
 )
 
 type DeviceEventPayload struct {
-	Event           DeviceEventKind `json:"event"`
-	Mode            Mode            `json:"mode,omitempty"`
-	Text            string          `json:"text,omitempty"`
-	TouchSource     TouchSource     `json:"touch_source,omitempty"`
-	FirmwareID      string          `json:"firmware_id,omitempty"`
-	FirmwareVersion string          `json:"firmware_version,omitempty"`
-	FirmwareBoard   string          `json:"firmware_board,omitempty"`
-	FirmwareCommit  string          `json:"firmware_commit,omitempty"`
+	Event           DeviceEventKind   `json:"event"`
+	Mode            Mode              `json:"mode,omitempty"`
+	Text            string            `json:"text,omitempty"`
+	TouchSource     TouchSource       `json:"touch_source,omitempty"`
+	FirmwareID      string            `json:"firmware_id,omitempty"`
+	FirmwareVersion string            `json:"firmware_version,omitempty"`
+	FirmwareBoard   string            `json:"firmware_board,omitempty"`
+	FirmwareCommit  string            `json:"firmware_commit,omitempty"`
+	Capabilities    map[string]string `json:"capabilities,omitempty"`
 }
 
 type AudioCodec string

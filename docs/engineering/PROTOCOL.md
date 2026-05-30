@@ -109,9 +109,10 @@ Firmware-originated `device.event` payloads may also carry build identity:
 - `firmware_version`: semver-like A21 firmware version
 - `firmware_board`: must be `m5stack-cores3` when present
 - `firmware_commit`: git SHA embedded by the A21 PlatformIO pre-build script
+- `capabilities`: semantic StackChan hardware capability map. Current firmware and simulator report `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` as `available`.
 - `touch_source`: `screen` or `top_sensor` for semantic touch-origin events
 
-Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
+Gateway records this identity and capability map in the device registry and rejects events whose firmware identity or capability values contain forbidden X21/V21 naming or mismatched A21 board/firmware fields. Capability values are evidence of the declared device surface, not proof that physical microphone, speaker, touch, servo, RGB, or screen acceptance has passed.
 
 The `/v1/devices` registry response must identify the serving process before any device list is trusted:
 
@@ -125,6 +126,7 @@ Gateway also records the device's current control state for office acceptance:
 - `current_mode`: latest semantic mode from A21 `control.event`
 - `current_expression`: latest expression/render state from A21 `control.event`
 - `playback_stream_id`: active speaking stream when one is present
+- `capabilities`: latest semantic device capability map reported by firmware or simulator
 
 The current online window is 300000 ms. Anything older is `stale`; this is aligned with the default firmware device identity freshness guard. This field is an operator acceptance aid, not flash permission.
 

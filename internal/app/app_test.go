@@ -1169,6 +1169,15 @@ func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
         "board": "m5stack-cores3",
         "commit": "abcdef1"
       },
+      "capabilities": {
+        "microphone": "available",
+        "speaker": "available",
+        "screen": "available",
+        "screen_touch": "available",
+        "top_touch": "available",
+        "servo_y": "available",
+        "rgb": "available"
+      },
       "connection_status": "online",
       "device_age_ms": 42,
       "current_mode": "workmate",
@@ -1198,6 +1207,9 @@ func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
 		`"device_report_path":`,
 		`"gateway_url":`,
 		`"device_id": "stackchan-001"`,
+		`"capabilities":`,
+		`"screen_touch": "available"`,
+		`"servo_y": "available"`,
 		`"connection_status": "online"`,
 		`"device_age_ms": 42`,
 		`"current_mode": "workmate"`,
@@ -1389,6 +1401,49 @@ func TestRunFirmwareDeviceReportRejectsLegacyGatewayDeviceWithoutEchoingIt(t *te
 	}
 	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-stackchan") {
 		t.Fatalf("legacy identity leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunFirmwareDeviceReportRejectsLegacyCapabilityWithoutEchoingIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "capabilities": {
+        "screen": "x21-compatible"
+      }
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", server.URL,
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy identity rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-compatible") {
+		t.Fatalf("legacy capability leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }
 

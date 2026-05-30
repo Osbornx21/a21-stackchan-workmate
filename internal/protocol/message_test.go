@@ -111,6 +111,15 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 		FirmwareVersion: "0.1.0",
 		FirmwareBoard:   "m5stack-cores3",
 		FirmwareCommit:  "082eb938b713",
+		Capabilities: map[string]string{
+			"microphone":   "available",
+			"speaker":      "available",
+			"screen":       "available",
+			"screen_touch": "available",
+			"top_touch":    "available",
+			"servo_y":      "available",
+			"rgb":          "available",
+		},
 	}
 	if event.Event != "mock.turn" {
 		t.Fatalf("Event = %q, want mock.turn", event.Event)
@@ -120,6 +129,16 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 	}
 	if event.FirmwareID != "a21-stackchan" {
 		t.Fatalf("FirmwareID = %q, want a21-stackchan", event.FirmwareID)
+	}
+	if event.Capabilities["screen_touch"] != "available" {
+		t.Fatalf("screen_touch capability = %q, want available", event.Capabilities["screen_touch"])
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"capabilities":{"microphone":"available"`) {
+		t.Fatalf("json missing capabilities: %s", data)
 	}
 }
 

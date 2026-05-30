@@ -544,7 +544,16 @@ const simulatorHTML = `<!doctype html>
       firmware_id: 'a21-stackchan',
       firmware_version: '0.1.0',
       firmware_board: 'm5stack-cores3',
-      firmware_commit: '0000000'
+      firmware_commit: '0000000',
+      capabilities: {
+        microphone: 'available',
+        speaker: 'available',
+        screen: 'available',
+        screen_touch: 'available',
+        top_touch: 'available',
+        servo_y: 'available',
+        rgb: 'available'
+      }
     };
 
     function wsURL(path) {

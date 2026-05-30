@@ -62,6 +62,7 @@ Gateway configuration is currently compile-time and A21-only:
 - applies incoming `control.event` envelopes through the tested parser
 - sends A21 `device.event` envelopes with deterministic seq/trace IDs
 - includes firmware id, version, board, and commit in outgoing `device.event` payloads
+- includes semantic capability status for microphone, speaker, screen, screen touch, top touch, Y-axis servo, and RGB in outgoing `device.event` payloads
 - enters reconnect wait when the control socket disconnects
 - uses `links2004/WebSockets @ 2.7.3` behind a small driver interface on CoreS3
 
