@@ -931,6 +931,27 @@ func TestControlWebSocketRegistersFirmwareIdentity(t *testing.T) {
 	}
 }
 
+func TestDevicesEndpointDeclaresA21GatewayIdentity(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["schema_version"] != "a21.gateway.devices.v1" {
+		t.Fatalf("schema_version = %#v, want a21.gateway.devices.v1", payload["schema_version"])
+	}
+	if payload["service"] != "a21-gateway" {
+		t.Fatalf("service = %#v, want a21-gateway", payload["service"])
+	}
+}
+
 func TestControlWebSocketRegistryExposesCurrentModeAndExpressionWithoutText(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -971,11 +992,13 @@ func TestControlWebSocketRegistryExposesCurrentModeAndExpressionWithoutText(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	var registry map[string][]map[string]any
+	var registry struct {
+		Devices []map[string]any `json:"devices"`
+	}
 	if err := json.Unmarshal(body, &registry); err != nil {
 		t.Fatal(err)
 	}
-	devices := registry["devices"]
+	devices := registry.Devices
 	if len(devices) != 1 {
 		t.Fatalf("devices = %d, want 1: %s", len(devices), string(body))
 	}
@@ -1834,11 +1857,13 @@ func fetchSingleDeviceRegistryItem(t *testing.T, serverURL string) map[string]an
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("device registry status = %d, want 200", resp.StatusCode)
 	}
-	var registry map[string][]map[string]any
+	var registry struct {
+		Devices []map[string]any `json:"devices"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
 		t.Fatal(err)
 	}
-	devices := registry["devices"]
+	devices := registry.Devices
 	if len(devices) != 1 {
 		t.Fatalf("devices = %d, want 1", len(devices))
 	}

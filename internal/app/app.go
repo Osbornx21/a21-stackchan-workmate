@@ -623,11 +623,13 @@ func buildAudioFrontEndEvalCLIReport(report audio.FrontEndEvalReport) audioFront
 }
 
 type firmwareDeviceReport struct {
-	SchemaVersion    string                               `json:"schema_version"`
-	CapturedAtMS     int64                                `json:"captured_at_ms"`
-	GatewayURL       string                               `json:"gateway_url"`
-	DeviceReportPath string                               `json:"device_report_path,omitempty"`
-	Devices          []firmwarecheck.DeviceIdentityRecord `json:"devices"`
+	SchemaVersion        string                               `json:"schema_version"`
+	GatewaySchemaVersion string                               `json:"gateway_schema_version"`
+	GatewayService       string                               `json:"gateway_service"`
+	CapturedAtMS         int64                                `json:"captured_at_ms"`
+	GatewayURL           string                               `json:"gateway_url"`
+	DeviceReportPath     string                               `json:"device_report_path,omitempty"`
+	Devices              []firmwarecheck.DeviceIdentityRecord `json:"devices"`
 }
 
 func runFirmwareDeviceReport(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -697,20 +699,37 @@ func fetchFirmwareDeviceReport(gatewayBaseURL string) (firmwareDeviceReport, err
 		return firmwareDeviceReport{}, fmt.Errorf("gateway device report returned status %d", resp.StatusCode)
 	}
 	var payload struct {
-		Devices []firmwarecheck.DeviceIdentityRecord `json:"devices"`
+		SchemaVersion string                               `json:"schema_version"`
+		Service       string                               `json:"service"`
+		Devices       []firmwarecheck.DeviceIdentityRecord `json:"devices"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	if err := validateFirmwareDeviceReportGatewayIdentity(payload.SchemaVersion, payload.Service); err != nil {
 		return firmwareDeviceReport{}, err
 	}
 	if err := validateFirmwareDeviceReportDevices(payload.Devices); err != nil {
 		return firmwareDeviceReport{}, err
 	}
 	return firmwareDeviceReport{
-		SchemaVersion: "a21.firmware.device_report.v1",
-		CapturedAtMS:  time.Now().UnixMilli(),
-		GatewayURL:    safeGatewayURL,
-		Devices:       payload.Devices,
+		SchemaVersion:        "a21.firmware.device_report.v1",
+		GatewaySchemaVersion: payload.SchemaVersion,
+		GatewayService:       payload.Service,
+		CapturedAtMS:         time.Now().UnixMilli(),
+		GatewayURL:           safeGatewayURL,
+		Devices:              payload.Devices,
 	}, nil
+}
+
+func validateFirmwareDeviceReportGatewayIdentity(schemaVersion string, service string) error {
+	if containsLegacyIdentity(schemaVersion) || containsLegacyIdentity(service) {
+		return fmt.Errorf("gateway device report contains forbidden legacy identity")
+	}
+	if strings.TrimSpace(schemaVersion) != gateway.DeviceRegistrySchemaVersion || strings.TrimSpace(service) != gateway.DeviceRegistryServiceName {
+		return fmt.Errorf("gateway device report is missing required A21 Gateway identity")
+	}
+	return nil
 }
 
 func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityRecord) error {

@@ -118,8 +118,15 @@ type DeviceRecord struct {
 }
 
 type DeviceRegistryResponse struct {
-	Devices []DeviceRecord `json:"devices"`
+	SchemaVersion string         `json:"schema_version"`
+	Service       string         `json:"service"`
+	Devices       []DeviceRecord `json:"devices"`
 }
+
+const (
+	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
+	DeviceRegistryServiceName   = "a21-gateway"
+)
 
 type TraceEvent struct {
 	Name      string `json:"name"`
@@ -201,7 +208,11 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	writeJSON(w, http.StatusOK, DeviceRegistryResponse{Devices: s.deviceRecords()})
+	writeJSON(w, http.StatusOK, DeviceRegistryResponse{
+		SchemaVersion: DeviceRegistrySchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Devices:       s.deviceRecords(),
+	})
 }
 
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {

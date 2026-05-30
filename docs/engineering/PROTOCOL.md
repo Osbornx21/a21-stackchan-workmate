@@ -113,6 +113,11 @@ Firmware-originated `device.event` payloads may also carry build identity:
 
 Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
 
+The `/v1/devices` registry response must identify the serving process before any device list is trusted:
+
+- `schema_version`: `a21.gateway.devices.v1`
+- `service`: `a21-gateway`
+
 Gateway also records the device's current control state for office acceptance:
 
 - `connection_status`: computed at `/v1/devices` read time as `online`, `stale`, or `unknown`
