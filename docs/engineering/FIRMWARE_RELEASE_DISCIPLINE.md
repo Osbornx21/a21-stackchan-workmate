@@ -495,6 +495,36 @@ The gate cross-checks:
 
 The success status is `ready_for_physical_acceptance`, not "flashed" or "launched". This preserves the difference between software evidence and physical StackChan acceptance.
 
+## StackChan Identity Acceptance
+
+When the StackChan is physically present and the office acceptance receipt is ready, run a fresh identity-only acceptance gate:
+
+```bash
+A21_OFFICE_ACCEPTANCE_REPORT=reports/a21-office-acceptance-YYYYMMDD-HHMMSS.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-identity-acceptance
+```
+
+or:
+
+```bash
+go run ./cmd/a21 stackchan-identity-acceptance \
+  --office-acceptance reports/a21-office-acceptance-YYYYMMDD-HHMMSS.json \
+  --gateway-url http://127.0.0.1:21080 \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha> \
+  --max-device-age-ms 300000 \
+  --output-dir reports
+```
+
+The command writes:
+
+```text
+reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json
+```
+
+It reuses the release-ledger artifact guard, takes a fresh direct Gateway `/v1/devices` capture, validates A21 firmware identity and freshness, checks device quiescence, and records serial inventory plus USB serial candidates. The report uses `hardware_acceptance_scope=identity_only` and `identity_acceptance_status=identity_confirmed` only when all checks pass. It still sets `flash_allowed=false` and does not claim microphone, speaker, screen, servo, RGB, OTA, latency, or flashing acceptance.
+
 ## Serial Inventory
 
 Before choosing an upload port, inspect the current serial state:

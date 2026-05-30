@@ -3391,6 +3391,185 @@ func TestRunOfficeAcceptanceRejectsLegacyReportPathWithoutEchoingPath(t *testing
 	}
 }
 
+func TestRunStackChanIdentityAcceptanceConfirmsFreshDevice(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.usbmodemA21",
+			USBModem: true,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifactDir := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	artifactSHA := readTestSHA256(t, artifact+".sha256")
+	officeAcceptancePath := filepath.Join(dir, "a21-office-acceptance.json")
+	if err := os.WriteFile(officeAcceptancePath, []byte(`{
+  "schema_version": "a21.office_acceptance.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "physical_acceptance_status": "ready_for_physical_acceptance",
+  "commit": "abcdef1",
+  "artifact_path": "`+artifact+`",
+  "artifact_sha256": "`+artifactSHA+`",
+  "device_id": "stackchan-001"
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			t.Fatalf("path = %q, want /v1/devices", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": "workmate",
+      "current_expression": "idle",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": ` + fmt.Sprint(time.Now().UnixMilli()) + `
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	outputDir := filepath.Join(dir, "reports")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-identity-acceptance",
+		"--office-acceptance", officeAcceptancePath,
+		"--manifest", manifest,
+		"--artifact-dir", artifactDir,
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_identity_acceptance.v1"`,
+		`"hardware_acceptance_scope": "identity_only"`,
+		`"identity_acceptance_status": "identity_confirmed"`,
+		`"flash_allowed": false`,
+		`"office_acceptance_report_path": "` + officeAcceptancePath + `"`,
+		`"artifact_path": "` + artifact + `"`,
+		`"artifact_sha256": "` + artifactSHA + `"`,
+		`"device_id": "stackchan-001"`,
+		`"device_identity_confirmed": true`,
+		`"/dev/cu.usbmodemA21"`,
+		"stackchan identity acceptance ok (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-identity-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("identity acceptance reports = %d, want 1: %v", len(matches), matches)
+	}
+	deviceReports, err := filepath.Glob(filepath.Join(outputDir, "a21-devices-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deviceReports) != 1 {
+		t.Fatalf("device reports = %d, want 1: %v", len(deviceReports), deviceReports)
+	}
+}
+
+func TestRunStackChanIdentityAcceptanceRejectsBlockedOfficeAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	officeAcceptancePath := filepath.Join(dir, "a21-office-acceptance.json")
+	if err := os.WriteFile(officeAcceptancePath, []byte(`{
+  "schema_version": "a21.office_acceptance.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "physical_acceptance_status": "blocked",
+  "commit": "abcdef1",
+  "device_id": "stackchan-001"
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-identity-acceptance",
+		"--office-acceptance", officeAcceptancePath,
+		"--gateway-url", "http://127.0.0.1:1",
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_identity_acceptance.v1"`,
+		`"identity_acceptance_status": "blocked"`,
+		`"flash_allowed": false`,
+		`"code": "office_acceptance_not_ready"`,
+		"stackchan identity acceptance failed",
+	} {
+		if !strings.Contains(stdout.String()+stderr.String(), want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestRunStackChanIdentityAcceptanceRejectsLegacyReportPathWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-identity-acceptance",
+		"--office-acceptance", filepath.Join(t.TempDir(), "x21-office-acceptance.json"),
+		"--gateway-url", "http://127.0.0.1:21080",
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-office") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -3534,6 +3713,19 @@ func writeFirmwareArtifactWithChecksum(t *testing.T, artifactPath string, conten
 	if _, err := file.Write(append(data, '\n')); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func readTestSHA256(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		t.Fatalf("sha256 file %q is empty", path)
+	}
+	return fields[0]
 }
 
 func testFirmwareBuildProvenance(artifactPath string) firmwarecheck.FirmwareBuildProvenance {

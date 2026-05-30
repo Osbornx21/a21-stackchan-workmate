@@ -101,6 +101,16 @@ make office-acceptance
 
 If a no-flash `firmware-flash-plan` report also exists, add `A21_FIRMWARE_FLASH_PLAN=reports/a21-firmware-flash-plan-<timestamp>.json`. The acceptance gate checks commit, artifact, device, and no-flash/no-delete invariants across receipts.
 
+After the device is physically present and Gateway can see it, confirm fresh StackChan identity without claiming audio/screen/motion acceptance:
+
+```bash
+A21_OFFICE_ACCEPTANCE_REPORT=reports/a21-office-acceptance-<timestamp>.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-identity-acceptance
+```
+
+It writes `reports/a21-stackchan-identity-acceptance-*.json`, checks the office acceptance receipt against a fresh Gateway `/v1/devices` capture and USB serial inventory, and still sets `flash_allowed: false`.
+
 ## Required Reading
 
 - [AGENTS.md](AGENTS.md)

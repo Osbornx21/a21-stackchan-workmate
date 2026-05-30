@@ -5,7 +5,7 @@ A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_LAN_SAMPLES ?= 5
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -128,6 +128,11 @@ office-acceptance:
 	else \
 		go run ./cmd/a21 office-acceptance --handoff "$(A21_HANDOFF_REPORT)" --office-preflight "$(A21_OFFICE_PREFLIGHT_REPORT)" --output-dir reports; \
 	fi
+
+stackchan-identity-acceptance:
+	@test -n "$(A21_OFFICE_ACCEPTANCE_REPORT)" || (echo "A21_OFFICE_ACCEPTANCE_REPORT is required"; exit 2)
+	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
+	go run ./cmd/a21 stackchan-identity-acceptance --office-acceptance "$(A21_OFFICE_ACCEPTANCE_REPORT)" --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)" --output-dir reports
 
 firmware-device-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
