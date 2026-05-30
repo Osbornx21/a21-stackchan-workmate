@@ -38,6 +38,7 @@ type Server struct {
 	realtimeAudioCommitAt      map[string]time.Time
 	realtimeAudioFirstDownlink map[string]bool
 	audioIngress               *audio.Ingress
+	audioSockets               map[string]*deviceSocket
 }
 
 type ServerOptions struct {
@@ -85,6 +86,32 @@ type RealtimeSessionResponse struct {
 	Provider  string              `json:"provider"`
 	Status    string              `json:"status"`
 	Events    []protocol.Envelope `json:"events"`
+}
+
+type DeviceControlRequest struct {
+	DeviceID        string                   `json:"device_id"`
+	State           protocol.ExpressionState `json:"state,omitempty"`
+	Mode            protocol.Mode            `json:"mode,omitempty"`
+	Text            string                   `json:"text,omitempty"`
+	TraceID         string                   `json:"trace_id,omitempty"`
+	SessionID       string                   `json:"session_id,omitempty"`
+	StreamID        string                   `json:"stream_id,omitempty"`
+	MockAudioChunks int                      `json:"mock_audio_chunks,omitempty"`
+}
+
+type DeviceControlResponse struct {
+	TraceID            string              `json:"trace_id"`
+	SessionID          string              `json:"session_id"`
+	DeviceID           string              `json:"device_id"`
+	Status             string              `json:"status"`
+	DeliveredTransport string              `json:"delivered_transport"`
+	Events             []protocol.Envelope `json:"events"`
+}
+
+type deviceSocket struct {
+	conn      *websocket.Conn
+	writeMu   *sync.Mutex
+	connected int64
 }
 
 type realtimeVoiceOutput struct {
@@ -186,6 +213,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeAudioCommitAt:      make(map[string]time.Time),
 		realtimeAudioFirstDownlink: make(map[string]bool),
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
+		audioSockets:               make(map[string]*deviceSocket),
 	}
 }
 
@@ -195,6 +223,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/simulator", s.handleSimulator)
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
+	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
 	mux.HandleFunc("/v1/realtime/session", s.handleRealtimeSessionStart)
@@ -215,6 +244,60 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		SchemaVersion: DeviceRegistrySchemaVersion,
 		Service:       DeviceRegistryServiceName,
 		Devices:       s.deviceRecords(),
+	})
+}
+
+func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req DeviceControlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = protocol.ModeWorkmate
+	}
+	if req.State == "" {
+		req.State = protocol.ExpressionListening
+	}
+	if req.StreamID == "" && req.State == protocol.ExpressionSpeaking {
+		req.StreamID = "a21-device-command-stream-000001"
+	}
+	if req.MockAudioChunks < 0 || req.MockAudioChunks > 8 {
+		http.Error(w, "mock_audio_chunks must be between 0 and 8", http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	socket, ok := s.audioSocket(req.DeviceID)
+	if !ok {
+		http.Error(w, "device audio websocket is not connected", http.StatusConflict)
+		return
+	}
+
+	events := s.deviceControlEvents(req)
+	for _, event := range events {
+		if err := writeAudioEnvelope(r.Context(), socket.conn, socket.writeMu, event); err != nil {
+			http.Error(w, "device command delivery failed", http.StatusBadGateway)
+			return
+		}
+	}
+	s.recordTrace(traceID, sessionID, req.DeviceID, "device.command.delivered", s.now().UnixMilli())
+	writeJSON(w, http.StatusOK, DeviceControlResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "audio_ws",
+		Events:             events,
 	})
 }
 
@@ -476,6 +559,11 @@ func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
+	queryDeviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if queryDeviceID != "" && !validA21DeviceID(queryDeviceID) {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
 	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
 	if err != nil {
 		return
@@ -489,10 +577,23 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	writeMu := &sync.Mutex{}
+	registeredDeviceID := queryDeviceID
+	if registeredDeviceID != "" {
+		s.registerAudioSocket(registeredDeviceID, conn, writeMu)
+	}
+	defer func() {
+		if registeredDeviceID != "" {
+			s.unregisterAudioSocket(registeredDeviceID, conn)
+		}
+	}()
 	for {
 		var frame protocol.Envelope
 		if err := wsjson.Read(ctx, conn, &frame); err != nil {
 			return
+		}
+		if registeredDeviceID == "" && validA21DeviceID(frame.DeviceID) {
+			registeredDeviceID = frame.DeviceID
+			s.registerAudioSocket(registeredDeviceID, conn, writeMu)
 		}
 		if frame.Kind == protocol.KindAudioFrame {
 			s.metrics.audioFrameTotal.Inc()
@@ -980,6 +1081,34 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 	s.devices[deviceID] = record
 }
 
+func (s *Server) registerAudioSocket(deviceID string, conn *websocket.Conn, writeMu *sync.Mutex) {
+	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audioSockets[deviceID] = &deviceSocket{conn: conn, writeMu: writeMu, connected: s.now().UnixMilli()}
+}
+
+func (s *Server) unregisterAudioSocket(deviceID string, conn *websocket.Conn) {
+	if deviceID == "" || conn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.audioSockets[deviceID]
+	if socket != nil && socket.conn == conn {
+		delete(s.audioSockets, deviceID)
+	}
+}
+
+func (s *Server) audioSocket(deviceID string) (*deviceSocket, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.audioSockets[deviceID]
+	return socket, socket != nil
+}
+
 func (s *Server) deviceRecords() []DeviceRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1040,6 +1169,49 @@ func validateFirmwareIdentity(identity DeviceFirmwareIdentity) (string, string) 
 		return "invalid", "firmware_commit must be a git sha"
 	}
 	return "ok", ""
+}
+
+func validA21DeviceID(deviceID string) bool {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return false
+	}
+	lower := strings.ToLower(deviceID)
+	return !strings.Contains(lower, "x21") && !strings.Contains(lower, "v21")
+}
+
+func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelope {
+	payload := protocol.ControlEventPayload{
+		State:    req.State,
+		Mode:     req.Mode,
+		Text:     req.Text,
+		Final:    req.State != protocol.ExpressionListening && req.State != protocol.ExpressionThinking,
+		StreamID: req.StreamID,
+	}
+	events := s.controlSequence(req.DeviceID, req.TraceID, req.SessionID, []protocol.ControlEventPayload{payload})
+	if req.MockAudioChunks <= 0 || req.StreamID == "" {
+		return events
+	}
+	s.setActiveStream(req.TraceID, req.SessionID, req.DeviceID, req.StreamID)
+	sentAt := s.now().UnixMilli()
+	for i := 0; i < req.MockAudioChunks; i++ {
+		events = append(events, s.voiceAudioPlaybackChunk(
+			req.DeviceID,
+			req.TraceID,
+			req.SessionID,
+			uint64(len(events)+1),
+			sentAt+int64(i+1),
+			req.StreamID,
+			&providers.VoiceAudioChunk{
+				Codec:        string(protocol.AudioCodecPCMS16LE),
+				SampleRateHz: 16000,
+				Channels:     1,
+				DurationMS:   20,
+				DataBase64:   mockPCM16SquareWaveBase64(16000, 20),
+			},
+		))
+	}
+	return events
 }
 
 func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
@@ -1324,6 +1496,23 @@ func mockPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
 	}
 	byteCount := sampleRateHz * durationMS * 2 / 1000
 	return base64.StdEncoding.EncodeToString(make([]byte, byteCount))
+}
+
+func mockPCM16SquareWaveBase64(sampleRateHz int, durationMS int) string {
+	if sampleRateHz <= 0 || durationMS <= 0 {
+		return ""
+	}
+	samples := sampleRateHz * durationMS / 1000
+	data := make([]byte, samples*2)
+	for i := 0; i < samples; i++ {
+		sample := int16(9000)
+		if (i/8)%2 == 1 {
+			sample = -9000
+		}
+		data[i*2] = byte(sample)
+		data[i*2+1] = byte(uint16(sample) >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func (s *Server) setActiveStream(traceID string, sessionID string, deviceID string, streamID string) {

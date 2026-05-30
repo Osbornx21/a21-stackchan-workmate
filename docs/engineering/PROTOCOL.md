@@ -116,6 +116,14 @@ Firmware-originated `device.event` payloads may also carry build identity:
 
 Gateway records this identity, capability map, and runtime echo in the device registry and rejects events whose firmware identity, capability values, or runtime echo values contain forbidden X21/V21 naming or mismatched A21 board/firmware fields. Capability values are evidence of the declared device surface; runtime echo values are evidence that firmware applied a state to its runtime drivers. Neither is proof that physical microphone, speaker, touch, servo, RGB, or screen acceptance has passed.
 
+Firmware audio WebSocket connections include the A21 device identity as a query parameter:
+
+- default path: `/ws/audio?device_id=stackchan-001`
+- Gateway rejects legacy-looking device IDs in this registration path
+- the connection can still be registered from the first valid `audio.frame` for simulator and older client compatibility
+
+This lets Gateway deliver validation commands to a connected physical StackChan without guessing which anonymous audio socket belongs to which device.
+
 The `/v1/devices` registry response must identify the serving process before any device list is trusted:
 
 - `schema_version`: `a21.gateway.devices.v1`
@@ -134,6 +142,22 @@ Gateway also records the device's current control state for office acceptance:
 The current online window is 300000 ms. Anything older is `stale`; this is aligned with the default firmware device identity freshness guard. This field is an operator acceptance aid, not flash permission.
 
 The registry intentionally does not persist utterance text, professional answer text, evidence summaries, or screen-card content. It is an operational state surface for "is this device listening, speaking, professional, private, muted, local, or in error", not a conversation transcript.
+
+## Device Validation Control
+
+`POST /v1/devices/control` is an A21-only physical validation surface for a connected StackChan. It writes semantic `control.event` envelopes to the registered device audio WebSocket and can optionally append up to eight non-silent 20 ms PCM chunks for speaker/playback smoke testing.
+
+Request fields:
+
+- `device_id`: required A21 device ID
+- `state`: optional expression state, default `listening`
+- `mode`: optional A21 mode, default `workmate`
+- `text`: optional short screen/status text
+- `trace_id` and `session_id`: optional explicit trace/session IDs
+- `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation
+- `mock_audio_chunks`: 0-8 non-silent chunks for physical speaker validation
+
+This endpoint is not a provider path, not a conversation transcript API, and not a replacement for real VAD/STT/LLM/TTS. It exists so office acceptance can command a real device into `listening` or play a bounded validation beep while preserving trace/session evidence.
 
 Professional `control.event` payloads can now include explicit evidence fields:
 

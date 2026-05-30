@@ -1672,6 +1672,100 @@ func TestAudioWebSocketReturnsMockPlaybackChunk(t *testing.T) {
 	}
 }
 
+func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"speaking","mode":"workmate","text":"beep","trace_id":"a21-trace-device-control","session_id":"a21-session-device-control","stream_id":"a21-device-command-stream-001","mock_audio_chunks":2}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	events := readControlEvents(t, ctx, conn, 1)
+	var control protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &control); err != nil {
+		t.Fatal(err)
+	}
+	if control.State != protocol.ExpressionSpeaking || control.StreamID != "a21-device-command-stream-001" {
+		t.Fatalf("control = %+v", control)
+	}
+
+	for i := 0; i < 2; i++ {
+		var playback protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &playback); err != nil {
+			t.Fatal(err)
+		}
+		if playback.Kind != protocol.KindAudioPlaybackChunk {
+			t.Fatalf("playback %d kind = %q", i, playback.Kind)
+		}
+		var chunk protocol.AudioPlaybackChunk
+		if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
+			t.Fatal(err)
+		}
+		if chunk.StreamID != "a21-device-command-stream-001" || chunk.DataBase64 == "" {
+			t.Fatalf("chunk = %+v", chunk)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded) != 640 || bytes.Equal(decoded, make([]byte, len(decoded))) {
+			t.Fatalf("expected non-silent 640-byte validation audio, got len=%d", len(decoded))
+		}
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+		var delivered DeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&delivered); err != nil {
+			t.Fatal(err)
+		}
+		if delivered.Status != "delivered" || delivered.DeliveredTransport != "audio_ws" || len(delivered.Events) != 3 {
+			t.Fatalf("delivered = %+v", delivered)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestDeviceControlEndpointRequiresConnectedAudioSocket(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+}
+
 func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())

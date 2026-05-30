@@ -461,7 +461,7 @@ void test_network_config_defaults_to_a21_gateway() {
   TEST_ASSERT_EQUAL_STRING("10.21.0.1", config.gateway_host);
   TEST_ASSERT_EQUAL_UINT16(21080, config.gateway_port);
   TEST_ASSERT_EQUAL_STRING("/ws/control", config.control_path);
-  TEST_ASSERT_EQUAL_STRING("/ws/audio", config.audio_path);
+  TEST_ASSERT_EQUAL_STRING("/ws/audio?device_id=stackchan-001", config.audio_path);
   TEST_ASSERT_TRUE(a21ValidateNetworkConfig(&config));
 }
 
@@ -475,7 +475,7 @@ void test_network_config_builds_control_and_audio_urls() {
   TEST_ASSERT_TRUE(a21BuildControlWSURL(&config, control_url, sizeof(control_url)));
   TEST_ASSERT_TRUE(a21BuildAudioWSURL(&config, audio_url, sizeof(audio_url)));
   TEST_ASSERT_EQUAL_STRING("ws://192.168.31.50:21080/ws/control", control_url);
-  TEST_ASSERT_EQUAL_STRING("ws://192.168.31.50:21080/ws/audio", audio_url);
+  TEST_ASSERT_EQUAL_STRING("ws://192.168.31.50:21080/ws/audio?device_id=stackchan-001", audio_url);
 }
 
 void test_network_config_rejects_legacy_ports_and_names() {
@@ -1008,7 +1008,7 @@ void test_audio_ws_runtime_begins_audio_socket_once() {
   TEST_ASSERT_EQUAL(1, fake.begin_count);
   TEST_ASSERT_EQUAL_STRING("10.21.0.1", fake.last_host);
   TEST_ASSERT_EQUAL_UINT16(21080, fake.last_port);
-  TEST_ASSERT_EQUAL_STRING("/ws/audio", fake.last_path);
+  TEST_ASSERT_EQUAL_STRING("/ws/audio?device_id=stackchan-001", fake.last_path);
   TEST_ASSERT_TRUE(runtime.begin_sent);
   TEST_ASSERT_FALSE(runtime.was_connected);
 }

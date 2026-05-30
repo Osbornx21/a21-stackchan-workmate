@@ -21,11 +21,11 @@
 #endif
 
 #ifndef A21_AUDIO_WS_PATH
-#define A21_AUDIO_WS_PATH "/ws/audio"
+#define A21_AUDIO_WS_PATH "/ws/audio?device_id=" A21_DEVICE_ID
 #endif
 
 static constexpr size_t A21_GATEWAY_HOST_CAP = 64;
-static constexpr size_t A21_WS_PATH_CAP = 32;
+static constexpr size_t A21_WS_PATH_CAP = 64;
 static constexpr size_t A21_WS_URL_CAP = 128;
 
 struct A21NetworkConfig {
