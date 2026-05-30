@@ -3034,6 +3034,7 @@ func buildStackChanSpeakerAcceptanceReport(options stackChanSpeakerAcceptanceOpt
 		report.SpeakerAcceptanceStatus = "blocked"
 		return report
 	}
+	validateStackChanSpeakerDeviceIdentity(&report, options, beforeDevice)
 	report.RuntimeEchoBefore = beforeDevice.RuntimeEcho
 	beforePlaybackTotal := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "playback_buffer_total_chunks")
 	beforePlaybackDropped := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "playback_buffer_dropped_chunks")
@@ -3108,9 +3109,24 @@ func buildStackChanSpeakerAcceptanceReport(options stackChanSpeakerAcceptanceOpt
 }
 
 func validateStackChanSpeakerDevice(report *stackChanSpeakerAcceptanceReport, options stackChanSpeakerAcceptanceOptions, device firmwarecheck.DeviceIdentityRecord) {
+	validateStackChanSpeakerDeviceIdentity(report, options, device)
+	report.RuntimeEcho = device.RuntimeEcho
+	report.PlaybackBufferQueuedChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_queued_chunks")
+	report.PlaybackBufferTotalChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_total_chunks")
+	report.PlaybackBufferDroppedChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_dropped_chunks")
+	report.PlaybackBufferClearCount = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_clear_count")
+	report.SpeakerFramesPlayed = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_frames_played")
+	report.SpeakerBusyTicks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_busy_ticks")
+	report.SpeakerDriverErrors = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_driver_errors")
+	report.SpeakerLastStreamID = stackChanRuntimeEchoString(&report.Findings, device.RuntimeEcho, "speaker_last_stream_id")
+	if report.SpeakerLastStreamID != report.StreamID {
+		report.addFinding("speaker_stream_id_mismatch", "speaker runtime echo does not match the commanded stream id")
+	}
+}
+
+func validateStackChanSpeakerDeviceIdentity(report *stackChanSpeakerAcceptanceReport, options stackChanSpeakerAcceptanceOptions, device firmwarecheck.DeviceIdentityRecord) {
 	report.Firmware = device.Firmware
 	report.Capabilities = device.Capabilities
-	report.RuntimeEcho = device.RuntimeEcho
 	report.Speaker = device.Capabilities["speaker"]
 	if device.DeviceID != options.DeviceID {
 		report.addFinding("device_id_mismatch", "Gateway device id differs from expected StackChan device")
@@ -3132,17 +3148,6 @@ func validateStackChanSpeakerDevice(report *stackChanSpeakerAcceptanceReport, op
 	}
 	if report.Speaker != "available" {
 		report.addFinding("speaker_not_available", "device speaker capability is not available")
-	}
-	report.PlaybackBufferQueuedChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_queued_chunks")
-	report.PlaybackBufferTotalChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_total_chunks")
-	report.PlaybackBufferDroppedChunks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_dropped_chunks")
-	report.PlaybackBufferClearCount = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "playback_buffer_clear_count")
-	report.SpeakerFramesPlayed = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_frames_played")
-	report.SpeakerBusyTicks = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_busy_ticks")
-	report.SpeakerDriverErrors = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "speaker_driver_errors")
-	report.SpeakerLastStreamID = stackChanRuntimeEchoString(&report.Findings, device.RuntimeEcho, "speaker_last_stream_id")
-	if report.SpeakerLastStreamID != report.StreamID {
-		report.addFinding("speaker_stream_id_mismatch", "speaker runtime echo does not match the commanded stream id")
 	}
 }
 

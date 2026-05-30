@@ -4540,6 +4540,53 @@ func TestRunStackChanSpeakerAcceptanceConfirmsInstrumentedDownlink(t *testing.T)
 	}
 }
 
+func TestRunStackChanSpeakerAcceptanceBlocksBeforePlaybackOnFirmwareMismatch(t *testing.T) {
+	controlCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices/control":
+			controlCalled = true
+			http.Error(w, "control should not be called", http.StatusInternalServerError)
+		case "/v1/devices":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"older123"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle","servo_y":"45deg","rgb":"#101010","playback_buffer_queued_chunks":"0","playback_buffer_total_chunks":"10","playback_buffer_dropped_chunks":"0","playback_buffer_clear_count":"1","speaker_frames_played":"20","speaker_busy_ticks":"0","speaker_driver_errors":"0","speaker_last_stream_id":"a21-old-stream"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/metrics":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "a21_audio_playback_chunk_total 9\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-speaker-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "5a4936f9a993",
+		"--window-ms", "1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code = 0, want blocked: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if controlCalled {
+		t.Fatalf("speaker control was called despite firmware commit mismatch")
+	}
+	for _, want := range []string{
+		`"speaker_acceptance_status": "blocked"`,
+		`"code": "firmware_commit_mismatch"`,
+		"stackchan speaker acceptance blocked (instrumented only, no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanTouchAcceptancePassesTopTapWithGatewayTrace(t *testing.T) {
 	var armed bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
