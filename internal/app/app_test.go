@@ -2479,6 +2479,31 @@ func TestRunFirmwareUploadCheckRejectsMissingPort(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareUploadCheckRejectsLegacyArtifactPathWithoutEchoingPath(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	legacyArtifact := filepath.Join(dir, "x21-artifacts", "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-upload-check",
+		"--manifest", manifest,
+		"--artifact", legacyArtifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-artifacts") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunFirmwareDeviceCheckAcceptsMatchingGatewayReport(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeTestFirmwareManifest(t, dir)
@@ -2526,6 +2551,35 @@ func TestRunFirmwareDeviceCheckAcceptsMatchingGatewayReport(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+}
+
+func TestRunFirmwareDeviceCheckRejectsLegacyReportPathWithoutEchoingPath(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	legacyReport := filepath.Join(dir, "x21-reports", "devices.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-check",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--device-report", legacyReport,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-reports") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }
 
@@ -2733,6 +2787,44 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+}
+
+func TestRunFirmwareFlashPlanRejectsLegacyInputPathWithoutEchoingPath(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	legacyReport := filepath.Join(dir, "v21-reports", "devices.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-report", legacyReport,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "v21") || strings.Contains(strings.ToLower(stderr.String()), "v21-reports") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }
 

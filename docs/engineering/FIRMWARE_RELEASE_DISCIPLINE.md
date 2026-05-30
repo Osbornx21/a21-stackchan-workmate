@@ -176,7 +176,7 @@ Packaging rejects input outside the A21 StackChan firmware lane and rejects inpu
 
 Packaging also validates the source PlatformIO `firmware.bin` before copying it. The source binary must already embed the expected A21 firmware ID, version, board, and git commit. This prevents a stale or wrong-board build from being wrapped in a correct-looking A21 artifact name.
 
-Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass `firmware-upload-check`, `firmware-device-check`, or `firmware-flash-plan` unless:
+Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. `firmware-upload-check`, `firmware-device-check`, and `firmware-flash-plan` also reject manifest, artifact, and device-report input paths containing forbidden X21/V21 identity before opening those paths, and they do not echo the polluted path back to the operator. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass upload or flash-planning gates unless:
 
 - the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance

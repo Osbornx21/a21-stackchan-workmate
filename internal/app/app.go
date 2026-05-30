@@ -3796,6 +3796,12 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 		fmt.Fprintln(stderr, "--commit requires a value")
 		return 2
 	}
+	for _, path := range []string{options.ManifestPath, options.ArtifactPath} {
+		if err := validateA21InputPath(path); err != nil {
+			fmt.Fprintf(stderr, "firmware upload check path invalid: %v\n", err)
+			return 1
+		}
+	}
 	result, err := firmwarecheck.ValidateUploadCandidate(options)
 	if err != nil {
 		fmt.Fprintf(stderr, "firmware upload check failed: %v\n", err)
@@ -3903,6 +3909,12 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	if options.MaxDeviceAgeMS <= 0 {
 		fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
 		return 2
+	}
+	for _, path := range []string{options.ManifestPath, options.ArtifactPath, options.ReportPath} {
+		if err := validateA21InputPath(path); err != nil {
+			fmt.Fprintf(stderr, "firmware device check path invalid: %v\n", err)
+			return 1
+		}
 	}
 	result, err := firmwarecheck.ValidateDeviceIdentity(options)
 	if err != nil {
@@ -4017,6 +4029,18 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 		fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
 		return 2
 	}
+	for _, path := range []string{options.ManifestPath, options.ArtifactPath, options.ReportPath} {
+		if err := validateA21InputPath(path); err != nil {
+			fmt.Fprintf(stderr, "firmware flash plan path invalid: %v\n", err)
+			return 1
+		}
+	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "firmware flash plan report dir invalid: %v\n", err)
+			return 1
+		}
+	}
 	portUsage, err := detectFirmwareUploadPortUsage(options.Port)
 	if err != nil {
 		fmt.Fprintf(stderr, "firmware flash plan failed: upload port ownership check failed: %v\n", err)
@@ -4029,10 +4053,6 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 		return 1
 	}
 	if outputDir != "" {
-		if err := validateA21ReportDir(outputDir); err != nil {
-			fmt.Fprintf(stderr, "firmware flash plan report dir invalid: %v\n", err)
-			return 1
-		}
 		reportPath, err := writeFirmwareFlashPlanReport(outputDir, result)
 		if err != nil {
 			fmt.Fprintf(stderr, "write firmware flash plan report: %v\n", err)
