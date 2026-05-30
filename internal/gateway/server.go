@@ -452,7 +452,7 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
 	if err != nil {
 		return
 	}
@@ -476,7 +476,7 @@ func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
 	if err != nil {
 		return
 	}
@@ -759,6 +759,13 @@ func (s *Server) audioBargeInEvents(frame protocol.Envelope, traceID string, ses
 	}
 	payloads = append(payloads, protocol.ControlEventPayload{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "你说。"})
 	return s.controlSequence(frame.DeviceID, traceID, sessionID, payloads)
+}
+
+func a21WebSocketAcceptOptions() *websocket.AcceptOptions {
+	return &websocket.AcceptOptions{
+		Subprotocols:   []string{"arduino"},
+		OriginPatterns: []string{"file://"},
+	}
 }
 
 func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol.Envelope {

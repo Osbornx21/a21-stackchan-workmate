@@ -867,6 +867,67 @@ func TestControlWebSocketMockTurn(t *testing.T) {
 	}
 }
 
+func TestControlWebSocketAcceptsArduinoClientHandshake(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, resp, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), &websocket.DialOptions{
+		HTTPHeader:   http.Header{"Origin": []string{"file://"}},
+		Subprotocols: []string{"arduino"},
+	})
+	if err != nil {
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+		}
+		t.Fatalf("arduino websocket dial failed status=%d err=%v", status, err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	if conn.Subprotocol() != "arduino" {
+		t.Fatalf("subprotocol = %q, want arduino", conn.Subprotocol())
+	}
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       11,
+		TraceID:   "a21-trace-arduino",
+		SessionID: "a21-session-arduino",
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventRuntimeEcho,
+		Mode:            protocol.ModeWorkmate,
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
+		RuntimeEcho: map[string]string{
+			"screen":  "local_fallback",
+			"servo_y": "45deg",
+			"rgb":     "#080808",
+		},
+	})
+
+	resp, err = http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var registry DeviceRegistryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(registry.Devices))
+	}
+	if registry.Devices[0].LastEvent != protocol.DeviceEventRuntimeEcho {
+		t.Fatalf("last event = %q, want runtime echo", registry.Devices[0].LastEvent)
+	}
+}
+
 func TestControlWebSocketRegistersFirmwareIdentity(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
