@@ -101,7 +101,8 @@ Phase 2B supports:
 - device event `touch.barge_in` -> same interruption path as `interrupt`, with optional `touch_source`
 - device event `runtime.echo` -> registry-only acknowledgement that firmware applied current screen/motion/RGB state
 - audio frame -> mock listening ack, mock speaking state with `stream_id`, then `audio.playback.chunk`
-- audio frame with a realtime-capable provider -> Gateway starts or reuses a provider realtime session, forwards detected speech frames, and commits on `vad.speech.end`
+- simulator/bench audio frame with a realtime-capable provider -> Gateway starts or reuses a provider realtime session, forwards detected speech frames, and commits on `vad.speech.end`
+- physical StackChan audio frame with a realtime-capable provider -> Gateway requires an explicit `realtime_on_next_speech` arm before it starts a provider realtime session; unarmed physical speech frames are measured and suppressed instead of creating paid/external provider traffic
 - realtime provider output event -> Gateway emits A21 `control.event` and, when audio exists, A21 `audio.playback.chunk`
 
 Firmware-originated `device.event` payloads may also carry build identity:
@@ -160,6 +161,7 @@ Request fields:
 - `mock_audio_chunks`: 0-8 non-silent chunks for physical speaker validation
 - `audio_probe_only`: optional diagnostic flag for the requested trace/session. When true, Gateway keeps accepting and measuring matching `audio.frame` uplink frames but suppresses mock listening/speaking/playback responses. Use this for physical microphone probes so Gateway does not force StackChan into `speaking` while measuring capture.
 - `mock_playback_on_next_audio_frame`: optional physical validation flag for the requested trace/session. When true, Gateway arms exactly one mock playback response for the next matching physical StackChan `audio.frame`, then immediately disarms it.
+- `realtime_on_next_speech`: optional physical provider flag for the requested trace/session. When true, Gateway arms exactly one provider realtime-session start for the next matching physical StackChan speech frame. This is separate from mock playback validation and prevents ambient office audio from opening realtime provider sessions by accident.
 
 The audio WebSocket mock path keeps simulator devices silent by default, but physical `stackchan-*` devices can receive a short non-silent PCM chunk after an explicit one-shot validation arm or after the VAD `speech_start` uplink frame. Later frames in the same speech segment are measured but do not produce more mock playback. That distinction lets the half-duplex acceptance prove a real microphone-to-Gateway-to-speaker loop without creating a mic/playback feedback loop, changing simulator expectations, or claiming a real provider response.
 
@@ -181,7 +183,7 @@ Future control events should still cover explicit playback start/stop, subtitle 
 
 Provider audio deltas are translated back into A21 voice/audio events before any Gateway or device-facing code sees them. For example, OpenAI `response.output_audio.delta` is mapped inside `internal/providers` to an A21 `VoiceEvent` with `VoiceAudioChunk`; firmware still receives only A21 downlink playback chunks and semantic control events.
 
-Provider audio uplink is also provider-neutral. Gateway `/ws/audio` may forward `audio.frame` payloads to a provider that implements the A21 realtime session interface, but firmware still sends only A21 `audio.frame` envelopes and never receives provider-specific session commands.
+Provider audio uplink is also provider-neutral. Gateway `/ws/audio` may forward `audio.frame` payloads to a provider that implements the A21 realtime session interface, but firmware still sends only A21 `audio.frame` envelopes and never receives provider-specific session commands. For physical StackChan devices, provider realtime startup is opt-in per trace/session through `realtime_on_next_speech`; simulator and benchmark devices keep automatic behavior for deterministic development tests.
 
 Provider audio downlink uses the same provider-neutral session interface. Gateway consumes `VoiceEvent` values from `Events()` and serializes them back to the audio WebSocket as A21 envelopes. OpenAI realtime `response.output_audio.delta` is currently read and mapped inside the provider adapter before Gateway sees it.
 

@@ -72,6 +72,8 @@ Current mock trace events include:
 - `audio.ingress.buffered`
 - `audio.ingress.invalid`
 - `audio.probe.frame.accepted`
+- `provider.realtime_audio.physical_armed`
+- `provider.realtime_audio.physical_suppressed`
 - `vad.speech.start`
 - `vad.speech.end`
 - `barge_in.detected`

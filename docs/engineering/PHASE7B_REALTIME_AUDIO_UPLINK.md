@@ -24,6 +24,21 @@ When that interface exists, Gateway `/ws/audio`:
 - returns semantic A21 control events (`listening`, then `thinking`)
 - closes any provider realtime session owned by the audio WebSocket when that socket disconnects
 
+For physical `stackchan-*` devices, provider realtime startup now requires an explicit one-shot control arm:
+
+```json
+{
+  "device_id": "stackchan-001",
+  "state": "listening",
+  "mode": "workmate",
+  "trace_id": "a21-trace-...",
+  "session_id": "a21-session-...",
+  "realtime_on_next_speech": true
+}
+```
+
+Unarmed physical speech frames are still ingested, traced, and metered, but Gateway records `provider.realtime_audio.physical_suppressed` and does not start a provider session. When the arm is consumed, Gateway records `provider.realtime_audio.physical_armed`, starts the realtime provider session, forwards that speech frame, and removes the arm. Simulator and benchmark devices keep automatic realtime startup so deterministic development tests do not need a physical-control ceremony.
+
 The default mock provider path is unchanged: non-realtime providers still receive the deterministic mock playback path used by simulator and firmware buffer tests.
 
 ## Observability
@@ -36,6 +51,8 @@ Trace markers:
 - `provider.audio.append.error`
 - `provider.audio.commit`
 - `provider.audio.commit.error`
+- `provider.realtime_audio.physical_armed`
+- `provider.realtime_audio.physical_suppressed`
 
 Metrics:
 

@@ -39,6 +39,7 @@ type Server struct {
 	realtimeAudioFirstDownlink map[string]bool
 	audioProbeSessions         map[string]bool
 	mockPlaybackArmedSessions  map[string]bool
+	realtimeArmedSessions      map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
 }
@@ -101,6 +102,7 @@ type DeviceControlRequest struct {
 	MockAudioChunks              int                      `json:"mock_audio_chunks,omitempty"`
 	AudioProbeOnly               bool                     `json:"audio_probe_only,omitempty"`
 	MockPlaybackOnNextAudioFrame bool                     `json:"mock_playback_on_next_audio_frame,omitempty"`
+	RealtimeOnNextSpeech         bool                     `json:"realtime_on_next_speech,omitempty"`
 }
 
 type DeviceControlResponse struct {
@@ -218,6 +220,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeAudioFirstDownlink: make(map[string]bool),
 		audioProbeSessions:         make(map[string]bool),
 		mockPlaybackArmedSessions:  make(map[string]bool),
+		realtimeArmedSessions:      make(map[string]bool),
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
 	}
@@ -285,6 +288,7 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	req.SessionID = sessionID
 	s.setAudioProbeOnly(req.DeviceID, traceID, sessionID, req.AudioProbeOnly)
 	s.setMockPlaybackOnNextAudioFrame(req.DeviceID, traceID, sessionID, req.MockPlaybackOnNextAudioFrame)
+	s.setRealtimeOnNextSpeech(req.DeviceID, traceID, sessionID, req.RealtimeOnNextSpeech)
 	socket, ok := s.audioSocket(req.DeviceID)
 	if !ok {
 		http.Error(w, "device audio websocket is not connected", http.StatusConflict)
@@ -743,6 +747,9 @@ func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, 
 		return nil, false
 	}
 	key := streamStateKey(traceID, sessionID, frame.DeviceID)
+	if s.shouldSuppressUnarmedPhysicalRealtimeAudio(frame, traceID, sessionID, ingress) {
+		return nil, true
+	}
 	if containsAudioIngressEvent(ingress.Events, audio.EventVADSpeechEnd) {
 		session := s.realtimeAudioSession(traceID, sessionID, frame.DeviceID)
 		if session == nil {
@@ -806,6 +813,24 @@ func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, 
 		}), true
 	}
 	return nil, true
+}
+
+func (s *Server) shouldSuppressUnarmedPhysicalRealtimeAudio(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) bool {
+	if !physicalStackChanDeviceID(frame.DeviceID) {
+		return false
+	}
+	if s.realtimeAudioSession(traceID, sessionID, frame.DeviceID) != nil {
+		return false
+	}
+	if !ingress.SpeechDetected {
+		return false
+	}
+	if s.consumeRealtimeOnNextSpeech(frame.DeviceID, traceID, sessionID) {
+		s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.realtime_audio.physical_armed", s.now().UnixMilli())
+		return false
+	}
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.realtime_audio.physical_suppressed", s.now().UnixMilli())
+	return true
 }
 
 func (s *Server) startRealtimeAudioDownlinkPump(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, deviceID string, traceID string, sessionID string, session providers.RealtimeVoiceSession) {
@@ -1641,6 +1666,28 @@ func (s *Server) consumeMockPlaybackOnNextAudioFrame(deviceID string, traceID st
 		return false
 	}
 	delete(s.mockPlaybackArmedSessions, key)
+	return true
+}
+
+func (s *Server) setRealtimeOnNextSpeech(deviceID string, traceID string, sessionID string, enabled bool) {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enabled {
+		s.realtimeArmedSessions[key] = true
+		return
+	}
+	delete(s.realtimeArmedSessions, key)
+}
+
+func (s *Server) consumeRealtimeOnNextSpeech(deviceID string, traceID string, sessionID string) bool {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.realtimeArmedSessions[key] {
+		return false
+	}
+	delete(s.realtimeArmedSessions, key)
 	return true
 }
 

@@ -2332,6 +2332,98 @@ func TestAudioWebSocketForwardsSpeechToRealtimeProviderAndCommitsOnVADEnd(t *tes
 	}
 }
 
+func TestAudioWebSocketDoesNotStartRealtimeProviderForUnarmedPhysicalStackChan(t *testing.T) {
+	provider := &capturingRealtimeAudioProvider{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-physical-realtime-unarmed", "a21-session-physical-realtime-unarmed", pcm16Base64WithSample(12000))
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+
+	if provider.startCalls != 0 {
+		t.Fatalf("realtime provider startCalls = %d, want 0 for unarmed physical StackChan audio", provider.startCalls)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-physical-realtime-unarmed", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	body := traceRec.Body.String()
+	for _, want := range []string{"audio.ingress.buffered", "vad.speech.start", "provider.realtime_audio.physical_suppressed"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("trace missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "provider.realtime_session.start") {
+		t.Fatalf("unarmed physical audio should not start realtime provider: %s", body)
+	}
+}
+
+func TestDeviceControlArmsRealtimeProviderForNextPhysicalSpeech(t *testing.T) {
+	provider := &capturingRealtimeAudioProvider{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-physical-realtime-armed","session_id":"a21-session-physical-realtime-armed","realtime_on_next_speech":true}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-physical-realtime-armed", "a21-session-physical-realtime-armed", pcm16Base64WithSample(12000))
+	events := readControlEvents(t, ctx, conn, 1)
+	var listening protocol.ControlEventPayload
+	if err := json.Unmarshal(events[0].Payload, &listening); err != nil {
+		t.Fatal(err)
+	}
+	if listening.State != protocol.ExpressionListening {
+		t.Fatalf("state = %q, want listening", listening.State)
+	}
+	if provider.startCalls != 1 {
+		t.Fatalf("realtime provider startCalls = %d, want 1 after explicit arm", provider.startCalls)
+	}
+	if provider.session.DeviceID != "stackchan-001" || provider.session.SessionID != "a21-session-physical-realtime-armed" {
+		t.Fatalf("provider session = %+v", provider.session)
+	}
+	if got := len(provider.sessionHandle.audioChunks); got != 1 {
+		t.Fatalf("provider audio chunks = %d, want 1", got)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-physical-realtime-armed", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"provider.realtime_audio.physical_armed", "provider.realtime_session.start", "provider.audio.append"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
 func TestAudioWebSocketClosesRealtimeProviderSessionWhenSocketCloses(t *testing.T) {
 	provider := &capturingRealtimeAudioProvider{closed: make(chan struct{}, 1)}
 	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider})
