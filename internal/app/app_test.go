@@ -132,6 +132,40 @@ func TestGatewayServerFromEnvUsesSelectedProviderOnlyWhenExplicit(t *testing.T) 
 	}
 }
 
+func TestGatewayServerFromEnvUsesSelectedDoubaoRealtimeAsDegradedBoundary(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_GATEWAY_VOICE_PROVIDER=selected",
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_RESOURCE_ID=resource-a21-secret",
+		"A21_DOUBAO_REALTIME_MODEL=doubao-s2s",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"provider":"a21-doubao-realtime-voice"`,
+		`"status":"degraded"`,
+		`"configured":true`,
+		`"detail":"execution disabled pending verified Doubao realtime speech-to-speech adapter"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("health missing %q: %s", want, rec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("health leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
 func TestGatewayServerSelectedRealtimeProviderKeepsTextTurnGuarded(t *testing.T) {
 	server := newGatewayServerFromEnv([]string{
 		"A21_GATEWAY_VOICE_PROVIDER=selected",
@@ -153,6 +187,41 @@ func TestGatewayServerSelectedRealtimeProviderKeepsTextTurnGuarded(t *testing.T)
 		t.Fatalf("response missing guarded realtime-session guidance: %s", rec.Body.String())
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func TestGatewayServerSelectedDoubaoRealtimeRejectsRealtimeSessionWithoutSecrets(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_GATEWAY_VOICE_PROVIDER=selected",
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_RESOURCE_ID=resource-a21-secret",
+		"A21_DOUBAO_REALTIME_MODEL=doubao-s2s",
+	})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"先不要真的连接豆包","mode":"workmate","trace_id":"a21-trace-doubao-guard","session_id":"a21-session-doubao-guard"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"provider":"a21-doubao-realtime-voice"`,
+		`"status":"error"`,
+		`"trace_id":"a21-trace-doubao-guard"`,
+		`"text":"Doubao realtime speech-to-speech execution is disabled until the A21 adapter has verified official API shape, credentialed smoke, cancellation, and latency behavior"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("response missing %q: %s", want, rec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("response leaked %q: %s", forbidden, rec.Body.String())
 		}
@@ -353,6 +422,42 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 	}
 }
 
+func TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
+	t.Setenv("A21_DOUBAO_RESOURCE_ID", "resource-a21-secret")
+	t.Setenv("A21_DOUBAO_REALTIME_MODEL", "doubao-s2s")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "a21-doubao-realtime-voice"`,
+		`"gateway_provider": "a21-mock-voice"`,
+		`"status": "degraded"`,
+		`"healthy": false`,
+		`"configured": true`,
+		`"detail": "execution disabled pending verified Doubao realtime speech-to-speech adapter"`,
+		`"primary": "doubao_realtime"`,
+		`"provider": "doubao_realtime"`,
+		`"status": "unsupported"`,
+		`"status": "ready"`,
+		`"endpoint_host": "ai-gateway.vei.volces.com"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime(t *testing.T) {
 	t.Setenv("A21_GATEWAY_VOICE_PROVIDER", "selected")
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
@@ -369,6 +474,36 @@ func TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime(t *testing.T) {
 		t.Fatalf("stdout missing explicit gateway provider: %s", stdout.String())
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunDoctorReportsExplicitGatewayDoubaoRealtimeRuntimeAsDegraded(t *testing.T) {
+	t.Setenv("A21_GATEWAY_VOICE_PROVIDER", "selected")
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
+	t.Setenv("A21_DOUBAO_RESOURCE_ID", "resource-a21-secret")
+	t.Setenv("A21_DOUBAO_REALTIME_MODEL", "doubao-s2s")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "a21-doubao-realtime-voice"`,
+		`"gateway_provider": "a21-doubao-realtime-voice"`,
+		`"status": "degraded"`,
+		`"detail": "execution disabled pending verified Doubao realtime speech-to-speech adapter"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
 		}
