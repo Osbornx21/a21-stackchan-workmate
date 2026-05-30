@@ -637,6 +637,9 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		if !s.shouldEmitMockAudioPlayback(frame, traceID, sessionID, ingress) {
+			continue
+		}
 		streamID := s.mockAudioStreamID(frame, traceID, sessionID)
 		events := s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: protocol.ModeWorkmate, Text: "audio frame accepted"},
@@ -653,6 +656,20 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 		}
 		s.setActiveStream(traceID, sessionID, frame.DeviceID, streamID)
 	}
+}
+
+func (s *Server) shouldEmitMockAudioPlayback(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) bool {
+	if frame.Kind != protocol.KindAudioFrame {
+		return true
+	}
+	if !physicalStackChanDeviceID(frame.DeviceID) {
+		return true
+	}
+	if containsAudioIngressEvent(ingress.Events, audio.EventVADSpeechStart) {
+		return true
+	}
+	s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.mock_physical.suppressed", s.now().UnixMilli())
+	return false
 }
 
 func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) (audio.IngressResult, bool) {
@@ -1523,7 +1540,9 @@ func mockAudioPlaybackBase64(deviceID string, sampleRateHz int, durationMS int) 
 }
 
 func physicalStackChanDeviceID(deviceID string) bool {
-	return strings.HasPrefix(deviceID, "stackchan-") && !strings.HasPrefix(deviceID, "stackchan-sim-")
+	return strings.HasPrefix(deviceID, "stackchan-") &&
+		!strings.HasPrefix(deviceID, "stackchan-sim-") &&
+		!strings.HasPrefix(deviceID, "stackchan-bench-")
 }
 
 func mockPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
