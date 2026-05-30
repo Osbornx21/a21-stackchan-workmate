@@ -133,11 +133,11 @@ It blocks startup reports when the minimum fingerprint is missing. It also block
 
 Provider HTTP clients default to `direct` mode and do not inherit environment proxies. `A21_PROVIDER_PROXY_URL` switches future HTTP provider adapters to `explicit_proxy` mode, while doctor still reports only env variable names and never prints proxy values.
 
-Provider registry readiness currently audits `mock`, `doubao_realtime`, `doubao_tts_realtime`, `openai_realtime`, `bailian_dashscope`, and `deepseek`. It reports selected provider, capability labels, required env names, present env names, and missing env names only. Unknown and legacy-looking primary provider values are redacted to safe sentinel strings before doctor output is serialized.
+Provider registry readiness currently audits only the P0 executable registry: `mock` and `deepseek`. It reports selected provider, capability labels, required env names, present env names, and missing env names only. Unknown, blocked, and legacy-looking primary provider values are redacted to safe sentinel strings before doctor output is serialized. Existing OpenAI/Doubao realtime code remains a guarded plan/fixture boundary rather than a P0 registry member.
 
 Doubao realtime speech-to-speech now has an A21 voice provider boundary for selected-provider health, missing-env diagnostics, cancellation acknowledgements, and runtime selection tests. When configured, it reports `degraded` with an explicit execution guard rather than pretending to be an executable realtime path. It does not dial Volcengine and ordinary `StartTurn` execution is deliberately blocked until the official API shape, credentialed smoke, cancellation behavior, and latency are verified.
 
-Provider smoke currently supports dry-run reports for all registered providers and explicit `--execute` smoke for `deepseek` and `bailian_dashscope` via OpenAI-compatible Chat Completions. Realtime WebSocket providers are reported as `unsupported` for HTTP smoke until dedicated realtime adapters exist.
+Provider smoke currently supports dry-run and explicit `--execute` smoke only for `deepseek` via OpenAI-compatible Chat Completions. Realtime WebSocket providers stay outside `provider-smoke` until dedicated explicit smoke and latency evidence exist.
 
 ## Verification Evidence
 

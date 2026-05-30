@@ -16,6 +16,7 @@
 #include "a21_firmware_touch.h"
 #include "a21_firmware_gateway_ws.h"
 #include "a21_firmware_imu.h"
+#include "a21_firmware_sensors.h"
 #include "a21_firmware_wifi.h"
 #include "a21_firmware_wifi_runtime.h"
 
@@ -246,6 +247,37 @@ void initFakeIMUDriver(FakeIMUDriver* fake, A21IMUDriver* driver) {
   fake->sample.gyro_z_dps = 0.3f;
   driver->ctx = fake;
   driver->read = fakeIMURead;
+}
+
+struct FakeSensorDriver {
+  int read_count;
+  bool read_ok;
+  A21SensorSample sample;
+};
+
+bool fakeSensorRead(void* ctx, A21SensorSample* sample) {
+  FakeSensorDriver* driver = static_cast<FakeSensorDriver*>(ctx);
+  driver->read_count += 1;
+  if (!driver->read_ok || sample == nullptr) {
+    return false;
+  }
+  *sample = driver->sample;
+  return true;
+}
+
+void initFakeSensorDriver(FakeSensorDriver* fake, A21SensorDriver* driver) {
+  fake->read_count = 0;
+  fake->read_ok = true;
+  fake->sample = {};
+  fake->sample.has_ambient_light = true;
+  fake->sample.ambient_light_raw = 1234;
+  fake->sample.has_proximity = true;
+  fake->sample.proximity_raw = 321;
+  fake->sample.has_battery = true;
+  fake->sample.battery_mv = 3920;
+  fake->sample.battery_ma = -120;
+  driver->ctx = fake;
+  driver->read = fakeSensorRead;
 }
 
 struct FakeTouchDriver {
@@ -1343,6 +1375,115 @@ void test_gateway_ws_runtime_echo_reports_imu_diagnostics_when_changed() {
   TEST_ASSERT_EQUAL(2, fake.send_count);
 }
 
+void test_sensor_capability_status_defaults_to_planned() {
+  TEST_ASSERT_EQUAL_STRING("planned_ambient_light_sensor", a21AmbientLightCapabilityStatus());
+  TEST_ASSERT_EQUAL_STRING("planned_proximity_sensor", a21ProximityCapabilityStatus());
+  TEST_ASSERT_EQUAL_STRING("planned_550mah_battery", a21BatteryCapabilityStatus());
+}
+
+void test_sensor_diagnostic_runtime_samples_driver() {
+  A21SensorDiagnosticRuntime runtime;
+  FakeSensorDriver fake;
+  A21SensorDriver driver;
+  initFakeSensorDriver(&fake, &driver);
+  a21InitSensorDiagnosticRuntime(&runtime);
+  runtime.enabled = true;
+
+  TEST_ASSERT_TRUE(a21SensorDiagnosticTick(&runtime, &driver, 4100));
+
+  TEST_ASSERT_EQUAL(1, fake.read_count);
+  TEST_ASSERT_TRUE(runtime.available);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.samples);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.read_errors);
+  TEST_ASSERT_TRUE(runtime.has_ambient_light);
+  TEST_ASSERT_EQUAL_UINT16(1234, runtime.ambient_light_raw);
+  TEST_ASSERT_TRUE(runtime.has_proximity);
+  TEST_ASSERT_EQUAL_UINT16(321, runtime.proximity_raw);
+  TEST_ASSERT_TRUE(runtime.has_battery);
+  TEST_ASSERT_EQUAL_INT16(3920, runtime.battery_mv);
+  TEST_ASSERT_EQUAL_INT16(-120, runtime.battery_ma);
+}
+
+void test_gateway_ws_runtime_echo_reports_sensor_diagnostics_when_changed() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  A21MotionRuntime motion_runtime;
+  A21RGBRuntime rgb_runtime;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21CopyString(state.mode, A21_MODE_CAP, "workmate");
+  state.render_state = A21_RENDER_IDLE;
+  a21InitMotionRuntime(&motion_runtime);
+  motion_runtime.has_y = true;
+  motion_runtime.last_y_deg = 45;
+  a21InitRGBRuntime(&rgb_runtime);
+  rgb_runtime.has_color = true;
+  rgb_runtime.last_color = a21RGBColorMake(16, 16, 16);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 4100);
+  A21RuntimeEchoDiagnostics diagnostics = {};
+  diagnostics.enabled = true;
+  diagnostics.sensor_enabled = true;
+  diagnostics.sensor_available = true;
+  diagnostics.sensor_samples = 2;
+  diagnostics.sensor_read_errors = 0;
+  diagnostics.sensor_has_ambient_light = true;
+  diagnostics.sensor_ambient_light_raw = 4567;
+  diagnostics.sensor_has_proximity = true;
+  diagnostics.sensor_proximity_raw = 234;
+  diagnostics.sensor_has_battery = true;
+  diagnostics.sensor_battery_mv = 3890;
+  diagnostics.sensor_battery_ma = 80;
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      4100));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("1", doc["payload"]["runtime_echo"]["sensor_available"] | "");
+  TEST_ASSERT_EQUAL_STRING("2", doc["payload"]["runtime_echo"]["sensor_samples"] | "");
+  TEST_ASSERT_EQUAL_STRING("0", doc["payload"]["runtime_echo"]["sensor_read_errors"] | "");
+  TEST_ASSERT_EQUAL_STRING("4567", doc["payload"]["runtime_echo"]["ambient_light_raw"] | "");
+  TEST_ASSERT_EQUAL_STRING("234", doc["payload"]["runtime_echo"]["proximity_raw"] | "");
+  TEST_ASSERT_EQUAL_STRING("3890", doc["payload"]["runtime_echo"]["battery_mv"] | "");
+  TEST_ASSERT_EQUAL_STRING("80", doc["payload"]["runtime_echo"]["battery_ma"] | "");
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      4120));
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+
+  diagnostics.sensor_samples = 3;
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      4140));
+  TEST_ASSERT_EQUAL(2, fake.send_count);
+}
+
 void test_audio_ws_runtime_waits_for_gateway_connection() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -2430,6 +2571,9 @@ int main(int argc, char** argv) {
   RUN_TEST(test_imu_capability_status_defaults_to_planned);
   RUN_TEST(test_imu_diagnostic_runtime_samples_driver_and_classifies_posture);
   RUN_TEST(test_gateway_ws_runtime_echo_reports_imu_diagnostics_when_changed);
+  RUN_TEST(test_sensor_capability_status_defaults_to_planned);
+  RUN_TEST(test_sensor_diagnostic_runtime_samples_driver);
+  RUN_TEST(test_gateway_ws_runtime_echo_reports_sensor_diagnostics_when_changed);
   RUN_TEST(test_audio_ws_runtime_waits_for_gateway_connection);
   RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);

@@ -12,6 +12,10 @@ const StackChanMicProbePlatformIOEnv = "a21_stackchan_cores3_mic_probe"
 const MicProbeCapabilityStatus = "diagnostic_probe_m5unified_i2s_capture"
 const StackChanIMUProbePlatformIOEnv = "a21_stackchan_cores3_imu_probe"
 const IMUProbeCapabilityStatus = "diagnostic_probe_m5unified_imu"
+const StackChanSensorProbePlatformIOEnv = "a21_stackchan_cores3_sensor_probe"
+const SensorProbeAmbientLightCapabilityStatus = "diagnostic_probe_ltr553_ambient_light"
+const SensorProbeProximityCapabilityStatus = "diagnostic_probe_ltr553_proximity"
+const SensorProbeBatteryCapabilityStatus = "diagnostic_probe_ina226_battery"
 
 type MicProbeFlashPlanOptions struct {
 	ManifestPath      string
@@ -43,11 +47,14 @@ type MicProbeFlashPlanResult struct {
 
 type IMUProbeFlashPlanOptions = MicProbeFlashPlanOptions
 type IMUProbeFlashPlanResult = MicProbeFlashPlanResult
+type SensorProbeFlashPlanOptions = MicProbeFlashPlanOptions
+type SensorProbeFlashPlanResult = MicProbeFlashPlanResult
 
 type diagnosticProbeFlashConfig struct {
 	Label                    string
 	PlatformIOEnv            string
 	CapabilityStatus         string
+	CapabilityStatuses       []string
 	GuardID                  string
 	NextRequiredConfirmation string
 }
@@ -69,6 +76,20 @@ func BuildIMUProbeFlashPlan(options IMUProbeFlashPlanOptions) (IMUProbeFlashPlan
 		CapabilityStatus:         IMUProbeCapabilityStatus,
 		GuardID:                  "a21.firmware.imu_probe_flash_plan.v1",
 		NextRequiredConfirmation: "firmware-imu-probe-flash-execute_with_confirmation_token",
+	})
+}
+
+func BuildSensorProbeFlashPlan(options SensorProbeFlashPlanOptions) (SensorProbeFlashPlanResult, error) {
+	return buildDiagnosticProbeFlashPlan(options, diagnosticProbeFlashConfig{
+		Label:         "sensor probe",
+		PlatformIOEnv: StackChanSensorProbePlatformIOEnv,
+		CapabilityStatuses: []string{
+			SensorProbeAmbientLightCapabilityStatus,
+			SensorProbeProximityCapabilityStatus,
+			SensorProbeBatteryCapabilityStatus,
+		},
+		GuardID:                  "a21.firmware.sensor_probe_flash_plan.v1",
+		NextRequiredConfirmation: "firmware-sensor-probe-flash-execute_with_confirmation_token",
 	})
 }
 
@@ -115,7 +136,7 @@ func buildDiagnosticProbeFlashPlan(options MicProbeFlashPlanOptions, config diag
 	if err := validateEmbeddedArtifactIdentity(artifactPath, manifestResult.Manifest, options.ExpectedGitCommit); err != nil {
 		return MicProbeFlashPlanResult{}, fmt.Errorf("%s firmware identity invalid: %w", config.Label, err)
 	}
-	if err := validateDiagnosticProbeMarker(config.Label, config.CapabilityStatus, artifactPath); err != nil {
+	if err := validateDiagnosticProbeMarkers(config.Label, config.capabilityStatuses(), artifactPath); err != nil {
 		return MicProbeFlashPlanResult{}, err
 	}
 	checksum, err := fileSHA256(artifactPath)
@@ -173,12 +194,28 @@ func validateMicProbeDiagnosticMarker(path string) error {
 }
 
 func validateDiagnosticProbeMarker(label string, capabilityStatus string, path string) error {
+	return validateDiagnosticProbeMarkers(label, []string{capabilityStatus}, path)
+}
+
+func (config diagnosticProbeFlashConfig) capabilityStatuses() []string {
+	if len(config.CapabilityStatuses) > 0 {
+		return config.CapabilityStatuses
+	}
+	if config.CapabilityStatus != "" {
+		return []string{config.CapabilityStatus}
+	}
+	return nil
+}
+
+func validateDiagnosticProbeMarkers(label string, capabilityStatuses []string, path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	if !bytes.Contains(data, []byte(capabilityStatus)) {
-		return fmt.Errorf("%s firmware missing diagnostic status marker", label)
+	for _, capabilityStatus := range capabilityStatuses {
+		if !bytes.Contains(data, []byte(capabilityStatus)) {
+			return fmt.Errorf("%s firmware missing diagnostic status marker", label)
+		}
 	}
 	return nil
 }

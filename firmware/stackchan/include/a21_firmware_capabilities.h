@@ -2,6 +2,7 @@
 
 #include "a21_firmware_imu.h"
 #include "a21_firmware_mic.h"
+#include "a21_firmware_sensors.h"
 
 #include <ArduinoJson.h>
 
@@ -16,9 +17,9 @@ inline void a21WriteStackChanHardwareCapabilities(JsonObject capabilities) {
   capabilities["rgb"] = "available";
   capabilities["camera"] = "planned_core_s3_camera";
   capabilities["imu"] = a21IMUCapabilityStatus();
-  capabilities["ambient_light"] = "planned_ambient_light_sensor";
-  capabilities["proximity"] = "planned_proximity_sensor";
-  capabilities["battery"] = "planned_550mah_battery";
+  capabilities["ambient_light"] = a21AmbientLightCapabilityStatus();
+  capabilities["proximity"] = a21ProximityCapabilityStatus();
+  capabilities["battery"] = a21BatteryCapabilityStatus();
   capabilities["nfc"] = "planned_nfc";
   capabilities["infrared"] = "planned_infrared_tx_rx";
 }

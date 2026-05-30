@@ -36,14 +36,14 @@ Current active slice: finish the StackChan hardware mainline before moving deepe
 
 ### P0. Provider Spine / Text Stream Hot Plug
 
-Goal: make provider selection profile-driven and hot-pluggable without changing Gateway business logic.
+Goal: make provider selection profile-driven without changing Gateway business logic, but keep the current P0 execution path narrow until the vertical StackChan experience has evidence.
 
 Required shape:
 
-- provider families: `text_stream`, `voice_realtime`, `voice_hybrid`, `agent_task`, `local_audio`;
-- built-in profile coverage for `siliconflow`, `deepseek`, `stepfun`, `bailian_dashscope`, `moonshot`, `volcengine_ark`, `local_ollama`, `local_vllm`, `openai_realtime`, `doubao_realtime`, `doubao_tts_realtime`, `hermes_agent`, and `mimo_agent`;
+- provider family vocabulary remains `text_stream`, `voice_realtime`, `voice_hybrid`, `agent_task`, and `local_audio`;
+- the current P0 executable registry is deliberately narrow: `mock` plus `deepseek`;
 - Baidu and Huawei are blocked provider names, not candidates;
-- local overrides through `A21_PROVIDER_PROFILES_PATH` are allowed only after secret, legacy-name, and blocked-provider validation;
+- local overrides through `A21_PROVIDER_PROFILES_PATH` are deferred until the single DeepSeek route has clean smoke and latency evidence;
 - provider smoke and doctor output show env names, host, status, timing, and redacted findings only.
 
 ### P0. Fast Companion Hybrid Lane
@@ -97,11 +97,11 @@ go run ./cmd/a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:2108
 
 The command is a planning and diagnostic gate only. It must not flash firmware, delete artifacts, or promote a planned capability to `available`.
 
-Current progress: the IMU track now has a guarded native runtime boundary, isolated `a21_stackchan_cores3_imu_probe` build lane, raw-upload blocker, guarded flash plan/execute lane, and `stackchan-imu-probe-acceptance` report gate. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior.
+Current progress: the IMU track now has a guarded native runtime boundary, isolated `a21_stackchan_cores3_imu_probe` build lane, raw-upload blocker, guarded flash plan/execute lane, and `stackchan-imu-probe-acceptance` report gate. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior. The sensor track now has a guarded `a21_stackchan_cores3_sensor_probe` build lane using the mature M5CoreS3 LTR553 path for ambient/proximity telemetry and StackChan-BSP INA226 for battery voltage/current telemetry, raw-upload blocker, guarded flash plan/execute lane requiring all three diagnostic markers, and `stackchan-sensor-probe-acceptance` report gate. Release firmware still declares those capabilities as planned until physical evidence proves product value.
 
-Provider spine progress: DeepSeek is now the first P0 `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule.
+Provider spine progress: `ProviderProfile` is now the single registry shape, but P0 built-ins are intentionally limited to `mock` and `deepseek`. Baidu/Huawei candidates remain blocked and redacted. DeepSeek is the only P0 route-eligible `text_stream` profile with an OpenAI-compatible streaming smoke/parser boundary, a default `deepseek-v4-flash` model, and the lab key name `A21_LAB_DEEPSEEK_API_KEY`. `provider-smoke --provider deepseek --stream --repeat N` records redacted first-byte, first-content, total-duration, fallback, trace, and metric evidence while preserving the existing no-network-without-`--execute` rule. Other provider families and profiles stay as future plan/fixture boundaries until the vertical M0-M3 evidence is clean.
 
-Local audio progress: `sherpa-onnx` is now the selected M2 local TTS lane, with macOS `say + afconvert` retained only as a diagnostic fallback. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-voice-loopback` now stitches mock VAD, mock ASR, mock OpenAI-compatible text-stream parsing, selected local TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt with P50/P95 timing fields. `stackchan-local-tts-playback` sends selected local TTS PCM chunks through Gateway to the real StackChan playback path. The isolated `.a21-tools` sherpa runtime and selected Chinese VITS model are installed; M2 is host-evidence-passed, while physical microphone capture remains blocked by the current firmware mic stop-crash guard.
+Local audio progress: `sherpa-onnx` is now the selected M2 local TTS lane, with macOS `say + afconvert` retained only as a diagnostic fallback. `local-tts-smoke` produces redacted evidence and a 16 kHz mono PCM WAV without provider keys, global proxy dependence, firmware changes, or final-voice claims. `local-voice-loopback` now stitches mock VAD, mock ASR, mock OpenAI-compatible text-stream parsing or explicit DeepSeek text-stream execution, selected local TTS, and existing Gateway barge-in bench into one host-side redacted timing receipt with P50/P95 timing fields. The explicit DeepSeek path requires `--text-provider deepseek --execute-text-provider`, consumes `A21_LAB_DEEPSEEK_API_KEY`, feeds provider content to TTS, and still keeps input/provider output/reasoning/model/secret values out of reports. `stackchan-local-tts-playback` sends selected local TTS PCM chunks through Gateway to the real StackChan playback path. The isolated `.a21-tools` sherpa runtime and selected Chinese VITS model are installed; M2 mock host evidence passes, while physical microphone capture remains blocked by the current firmware mic stop-crash guard and real DeepSeek timing evidence requires the lab key to be exported in the shell.
 
 ### P0. Professional V21 Evidence Lane
 

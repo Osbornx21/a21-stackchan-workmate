@@ -111,6 +111,21 @@ type firmwareIMUProbeFlashExecutionReport struct {
 	ReportPath     string                                `json:"report_path,omitempty"`
 }
 
+type firmwareSensorProbeFlashExecutionReport struct {
+	SchemaVersion  string                                   `json:"schema_version"`
+	GeneratedAtMS  int64                                    `json:"generated_at_ms"`
+	DryRun         bool                                     `json:"dry_run"`
+	FlashExecuted  bool                                     `json:"flash_executed"`
+	Port           string                                   `json:"port"`
+	ArtifactPath   string                                   `json:"artifact_path"`
+	ArtifactSHA256 string                                   `json:"artifact_sha256"`
+	Commit         string                                   `json:"commit"`
+	PlatformIOEnv  string                                   `json:"platformio_env"`
+	Plan           firmwarecheck.SensorProbeFlashPlanResult `json:"plan"`
+	Command        []string                                 `json:"command"`
+	ReportPath     string                                   `json:"report_path,omitempty"`
+}
+
 var detectFirmwareSourceState = detectGitFirmwareSourceState
 
 func detectGitFirmwareSourceState() (firmwareSourceState, error) {
@@ -184,6 +199,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanMicProbeAcceptance(args[1:], stdout, stderr)
 	case "stackchan-imu-probe-acceptance":
 		return runStackChanIMUProbeAcceptance(args[1:], stdout, stderr)
+	case "stackchan-sensor-probe-acceptance":
+		return runStackChanSensorProbeAcceptance(args[1:], stdout, stderr)
 	case "stackchan-half-duplex-acceptance":
 		return runStackChanHalfDuplexAcceptance(args[1:], stdout, stderr)
 	case "stackchan-speaker-acceptance":
@@ -226,6 +243,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareIMUProbeFlashPlan(args[1:], stdout, stderr)
 	case "firmware-imu-probe-flash-execute":
 		return runFirmwareIMUProbeFlashExecute(args[1:], stdout, stderr)
+	case "firmware-sensor-probe-flash-plan":
+		return runFirmwareSensorProbeFlashPlan(args[1:], stdout, stderr)
+	case "firmware-sensor-probe-flash-execute":
+		return runFirmwareSensorProbeFlashExecute(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
@@ -900,6 +921,8 @@ type localVoiceLoopbackReport struct {
 	ASRFirstPartialMS         float64              `json:"asr_first_partial_ms"`
 	TextStreamProvider        string               `json:"text_stream_provider"`
 	TextStreamFamily          string               `json:"text_stream_family"`
+	TextStreamExecuted        bool                 `json:"text_stream_executed"`
+	TextStreamEndpointHost    string               `json:"text_stream_endpoint_host,omitempty"`
 	TextStreamFirstContentMS  float64              `json:"text_stream_first_content_ms"`
 	TextStreamContentDeltas   int                  `json:"text_stream_content_delta_count"`
 	TextStreamReasoningDeltas int                  `json:"text_stream_reasoning_delta_count"`
@@ -951,12 +974,14 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
 	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	textProvider := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TEXT_PROVIDER"), "mock_text_stream"))
+	executeTextProvider := false
 	repeat := parsePositiveIntOrDefault(os.Getenv("A21_LOCAL_VOICE_LOOPBACK_REPEAT"), 1)
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--text-provider mock_text_stream|deepseek] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -998,6 +1023,15 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 				return 2
 			}
 			speakerID = value
+		case "--text-provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--text-provider requires a value")
+				return 2
+			}
+			i++
+			textProvider = args[i]
+		case "--execute-text-provider":
+			executeTextProvider = true
 		case "--repeat":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--repeat requires a value")
@@ -1033,7 +1067,11 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 		ModelDir:  modelDir,
 		SpeakerID: speakerID,
 		OutputDir: outputDir,
-	}, repeat)
+	}, repeat, localVoiceLoopbackTextStreamOptions{
+		Provider: textProvider,
+		Execute:  executeTextProvider,
+		Env:      os.Environ(),
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "local voice loopback failed: %v\n", err)
 		return 1
@@ -1054,7 +1092,14 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	return 0
 }
 
-func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, repeat int) (localVoiceLoopbackReport, error) {
+type localVoiceLoopbackTextStreamOptions struct {
+	Provider string
+	Execute  bool
+	Env      []string
+	Client   *http.Client
+}
+
+func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, repeat int, textOptions localVoiceLoopbackTextStreamOptions) (localVoiceLoopbackReport, error) {
 	if repeat <= 0 {
 		repeat = 1
 	}
@@ -1085,24 +1130,12 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 		return report, nil
 	}
 
-	providerStart := time.Now()
-	streamResult, err := providers.ParseOpenAICompatibleTextStream(strings.NewReader(strings.Join([]string{
-		`data: {"choices":[{"delta":{"reasoning":"classify loopback"}}]}`,
-		`data: {"choices":[{"delta":{"content":"A21 loopback response"}}]}`,
-		`data: [DONE]`,
-		``,
-	}, "\n")))
+	ttsText, err := runLocalVoiceLoopbackTextStream(ctx, mockTranscript, textOptions, &report)
 	if err != nil {
-		report.Findings = append(report.Findings, "mock text stream parse failed")
 		return report, err
 	}
-	report.TextStreamFirstContentMS = elapsedReportMS(providerStart)
-	report.TextStreamContentDeltas = streamResult.ContentDeltaCount
-	report.TextStreamReasoningDeltas = streamResult.ReasoningDeltaCount
-	report.TextStreamDone = streamResult.Done
-	ttsText := streamResult.ContentText()
 	if ttsText == "" {
-		report.Findings = append(report.Findings, "mock text stream produced no content")
+		report.Findings = append(report.Findings, "text stream produced no content")
 		return report, nil
 	}
 
@@ -1142,6 +1175,62 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 	report.TotalDurationMS = elapsedReportMS(start)
 	report.Status = "passed"
 	return report, nil
+}
+
+func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options localVoiceLoopbackTextStreamOptions, report *localVoiceLoopbackReport) (string, error) {
+	provider := strings.ToLower(strings.TrimSpace(options.Provider))
+	switch provider {
+	case "", "mock", "mock_text_stream":
+		return runMockLocalVoiceLoopbackTextStream(report)
+	case "deepseek":
+		if !options.Execute {
+			report.Findings = append(report.Findings, "deepseek text stream not executed; mock text stream used")
+			return runMockLocalVoiceLoopbackTextStream(report)
+		}
+		result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
+			ProviderName: "deepseek",
+			Prompt:       prompt,
+			Client:       options.Client,
+		})
+		if err != nil {
+			report.Findings = append(report.Findings, "deepseek text stream failed")
+			return "", err
+		}
+		report.TextStreamProvider = result.Provider
+		report.TextStreamFamily = string(result.Family)
+		report.TextStreamExecuted = true
+		report.TextStreamEndpointHost = result.EndpointHost
+		report.TextStreamFirstContentMS = result.FirstContentMS
+		report.TextStreamContentDeltas = result.ContentDeltaCount
+		report.TextStreamReasoningDeltas = result.ReasoningDeltaCount
+		report.TextStreamDone = result.Done
+		return result.ContentText, nil
+	default:
+		report.Findings = append(report.Findings, "unsupported local text provider")
+		return "", fmt.Errorf("unsupported local text provider")
+	}
+}
+
+func runMockLocalVoiceLoopbackTextStream(report *localVoiceLoopbackReport) (string, error) {
+	providerStart := time.Now()
+	streamResult, err := providers.ParseOpenAICompatibleTextStream(strings.NewReader(strings.Join([]string{
+		`data: {"choices":[{"delta":{"reasoning":"classify loopback"}}]}`,
+		`data: {"choices":[{"delta":{"content":"A21 loopback response"}}]}`,
+		`data: [DONE]`,
+		``,
+	}, "\n")))
+	if err != nil {
+		report.Findings = append(report.Findings, "mock text stream parse failed")
+		return "", err
+	}
+	report.TextStreamProvider = "mock_text_stream"
+	report.TextStreamFamily = string(providers.ProviderFamilyTextStream)
+	report.TextStreamExecuted = false
+	report.TextStreamFirstContentMS = elapsedReportMS(providerStart)
+	report.TextStreamContentDeltas = streamResult.ContentDeltaCount
+	report.TextStreamReasoningDeltas = streamResult.ReasoningDeltaCount
+	report.TextStreamDone = streamResult.Done
+	return streamResult.ContentText(), nil
 }
 
 func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1745,6 +1834,62 @@ type stackChanIMUProbeAcceptanceReport struct {
 	NextRequiredActions          []string                              `json:"next_required_actions"`
 	ReportPath                   string                                `json:"report_path,omitempty"`
 	Findings                     []officePreflightFinding              `json:"findings,omitempty"`
+}
+
+type stackChanSensorProbeAcceptanceOptions struct {
+	GatewayURL    string
+	DeviceID      string
+	Commit        string
+	WindowMS      int
+	MinSamples    int
+	MinBatteryMV  int
+	MaxReadErrors int
+	OutputDir     string
+}
+
+type stackChanSensorProbeAcceptanceThresholds struct {
+	MinSamples    int `json:"min_samples"`
+	MinBatteryMV  int `json:"min_battery_mv"`
+	MaxReadErrors int `json:"max_read_errors"`
+}
+
+type stackChanSensorProbeAcceptanceReport struct {
+	SchemaVersion                string                                   `json:"schema_version"`
+	GeneratedAtMS                int64                                    `json:"generated_at_ms"`
+	Metadata                     latencyBenchMetadata                     `json:"metadata"`
+	DryRun                       bool                                     `json:"dry_run"`
+	FlashAllowed                 bool                                     `json:"flash_allowed"`
+	DeleteAllowed                bool                                     `json:"delete_allowed"`
+	HardwareAcceptanceScope      string                                   `json:"hardware_acceptance_scope"`
+	SensorProbeAcceptanceStatus  string                                   `json:"sensor_probe_acceptance_status"`
+	ProductionCapabilityPromoted bool                                     `json:"production_capability_promoted"`
+	GatewayURL                   string                                   `json:"gateway_url"`
+	DeviceID                     string                                   `json:"device_id"`
+	Commit                       string                                   `json:"commit"`
+	WindowMS                     int                                      `json:"window_ms"`
+	WindowStartedAtMS            int64                                    `json:"window_started_at_ms,omitempty"`
+	WindowEndedAtMS              int64                                    `json:"window_ended_at_ms,omitempty"`
+	Firmware                     firmwarecheck.DeviceIdentityFirmware     `json:"firmware"`
+	Capabilities                 map[string]string                        `json:"capabilities,omitempty"`
+	AmbientLight                 string                                   `json:"ambient_light,omitempty"`
+	Proximity                    string                                   `json:"proximity,omitempty"`
+	Battery                      string                                   `json:"battery,omitempty"`
+	RuntimeEcho                  map[string]string                        `json:"runtime_echo,omitempty"`
+	RuntimeEchoBefore            map[string]string                        `json:"runtime_echo_before,omitempty"`
+	SensorAvailable              int                                      `json:"sensor_available"`
+	SensorSamples                int                                      `json:"sensor_samples"`
+	SensorReadErrors             int                                      `json:"sensor_read_errors"`
+	AmbientLightRaw              int                                      `json:"ambient_light_raw"`
+	ProximityRaw                 int                                      `json:"proximity_raw"`
+	BatteryMV                    int                                      `json:"battery_mv"`
+	BatteryMA                    int                                      `json:"battery_ma"`
+	SensorSamplesDelta           int                                      `json:"sensor_samples_delta"`
+	SensorReadErrorsDelta        int                                      `json:"sensor_read_errors_delta"`
+	SampleRateHz                 float64                                  `json:"sample_rate_hz,omitempty"`
+	Thresholds                   stackChanSensorProbeAcceptanceThresholds `json:"thresholds"`
+	NextRequiredActions          []string                                 `json:"next_required_actions"`
+	ReportPath                   string                                   `json:"report_path,omitempty"`
+	Findings                     []officePreflightFinding                 `json:"findings,omitempty"`
 }
 
 type stackChanHalfDuplexAcceptanceOptions struct {
@@ -4008,6 +4153,275 @@ func (report *stackChanIMUProbeAcceptanceReport) addFinding(code string, message
 	report.Findings = append(report.Findings, officePreflightFinding{Code: code, Message: message})
 }
 
+func runStackChanSensorProbeAcceptance(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := defaultStackChanSensorProbeAcceptanceOptions()
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-sensor-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-samples 10] [--min-battery-mv 3000] [--max-read-errors 0] [--output-dir reports]")
+			return 0
+		case "--gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--gateway-url requires a value")
+				return 2
+			}
+			i++
+			options.GatewayURL = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.DeviceID = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		case "--window-ms":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--window-ms")
+			if !ok {
+				return 2
+			}
+			if value > 120000 {
+				fmt.Fprintln(stderr, "--window-ms must be at most 120000")
+				return 2
+			}
+			options.WindowMS = value
+		case "--min-samples":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--min-samples")
+			if !ok {
+				return 2
+			}
+			options.MinSamples = value
+		case "--min-battery-mv":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--min-battery-mv")
+			if !ok {
+				return 2
+			}
+			options.MinBatteryMV = value
+		case "--max-read-errors":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--max-read-errors")
+			if !ok {
+				return 2
+			}
+			options.MaxReadErrors = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan-sensor-probe-acceptance option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.DeviceID == "" {
+		fmt.Fprintln(stderr, "--device-id requires a value")
+		return 2
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	if _, _, err := firmwareGatewayEndpoint(options.GatewayURL, "/v1/devices", nil); err != nil {
+		fmt.Fprintf(stderr, "stackchan sensor probe acceptance gateway URL invalid: %v\n", err)
+		return 1
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "stackchan sensor probe acceptance report dir invalid: %v\n", err)
+		return 1
+	}
+	report := buildStackChanSensorProbeAcceptanceReport(options)
+	reportPath, err := writeStackChanSensorProbeAcceptanceReport(options.OutputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write stackchan sensor probe acceptance report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanSensorProbeAcceptance(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode stackchan sensor probe acceptance report: %v\n", err)
+		return 1
+	}
+	if len(report.Findings) > 0 {
+		fmt.Fprintln(stdout, "stackchan sensor probe acceptance blocked (diagnostic only, no flash performed)")
+		return 1
+	}
+	fmt.Fprintln(stdout, "stackchan sensor probe acceptance ok (diagnostic only, no flash performed)")
+	return 0
+}
+
+func defaultStackChanSensorProbeAcceptanceOptions() stackChanSensorProbeAcceptanceOptions {
+	cwd, _ := os.Getwd()
+	projectRoot := findProjectRoot(cwd)
+	deviceID := strings.TrimSpace(os.Getenv("A21_DEVICE_ID"))
+	if deviceID == "" {
+		deviceID = "stackchan-001"
+	}
+	return stackChanSensorProbeAcceptanceOptions{
+		GatewayURL:    firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DeviceID:      deviceID,
+		Commit:        currentGitCommit(projectRoot),
+		WindowMS:      1500,
+		MinSamples:    10,
+		MinBatteryMV:  3000,
+		MaxReadErrors: 0,
+		OutputDir:     "reports",
+	}
+}
+
+func buildStackChanSensorProbeAcceptanceReport(options stackChanSensorProbeAcceptanceOptions) stackChanSensorProbeAcceptanceReport {
+	report := stackChanSensorProbeAcceptanceReport{
+		SchemaVersion:                "a21.stackchan_sensor_probe_acceptance.v1",
+		GeneratedAtMS:                time.Now().UnixMilli(),
+		Metadata:                     buildLatencyBenchMetadata(),
+		DryRun:                       true,
+		FlashAllowed:                 false,
+		DeleteAllowed:                false,
+		HardwareAcceptanceScope:      "diagnostic_sensor_only",
+		SensorProbeAcceptanceStatus:  "confirmed",
+		ProductionCapabilityPromoted: false,
+		GatewayURL:                   sanitizedOfficeGatewayURL(options.GatewayURL),
+		DeviceID:                     options.DeviceID,
+		Commit:                       options.Commit,
+		WindowMS:                     options.WindowMS,
+		Thresholds: stackChanSensorProbeAcceptanceThresholds{
+			MinSamples:    options.MinSamples,
+			MinBatteryMV:  options.MinBatteryMV,
+			MaxReadErrors: options.MaxReadErrors,
+		},
+		NextRequiredActions: []string{
+			"Keep this report with the sensor-probe flash receipt and Gateway device report.",
+			"Treat ambient/proximity/battery telemetry as read-only diagnostic evidence, not product behavior acceptance.",
+			"Promote adaptive brightness, presence behavior, or power-state UI only through a later ADR and release-firmware acceptance gate.",
+		},
+	}
+
+	beforeGatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_before_failed", err.Error())
+		report.SensorProbeAcceptanceStatus = "blocked"
+		return report
+	}
+	beforeDevice, ok := findFirmwareDeviceRecord(beforeGatewayReport.Devices, options.DeviceID)
+	if !ok {
+		report.addFinding("gateway_device_before_missing", "expected StackChan device is missing from Gateway before sensor probe")
+		report.SensorProbeAcceptanceStatus = "blocked"
+		return report
+	}
+	validateStackChanSensorProbeIdentity(&report, options, beforeDevice)
+	report.RuntimeEchoBefore = beforeDevice.RuntimeEcho
+	beforeSamples := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "sensor_samples")
+	beforeReadErrors := stackChanRuntimeEchoInt(&report.Findings, beforeDevice.RuntimeEcho, "sensor_read_errors")
+	if len(report.Findings) > 0 {
+		report.SensorProbeAcceptanceStatus = "blocked"
+		return report
+	}
+
+	report.WindowStartedAtMS = time.Now().UnixMilli()
+	if options.WindowMS > 0 {
+		time.Sleep(time.Duration(options.WindowMS) * time.Millisecond)
+	}
+	report.WindowEndedAtMS = time.Now().UnixMilli()
+
+	afterGatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_after_failed", err.Error())
+	} else {
+		report.GatewayURL = afterGatewayReport.GatewayURL
+		afterDevice, ok := findFirmwareDeviceRecord(afterGatewayReport.Devices, options.DeviceID)
+		if !ok {
+			report.addFinding("gateway_device_after_missing", "expected StackChan device is missing from Gateway after sensor probe")
+		} else {
+			validateStackChanSensorProbeDevice(&report, options, afterDevice)
+			report.SensorSamplesDelta = report.SensorSamples - beforeSamples
+			report.SensorReadErrorsDelta = report.SensorReadErrors - beforeReadErrors
+			if report.WindowEndedAtMS > report.WindowStartedAtMS {
+				report.SampleRateHz = roundedStackChanDiagnosticValue(float64(report.SensorSamplesDelta) * 1000 / float64(report.WindowEndedAtMS-report.WindowStartedAtMS))
+			}
+			validateStackChanSensorProbeDeltas(&report, options)
+		}
+	}
+	if len(report.Findings) > 0 {
+		report.SensorProbeAcceptanceStatus = "blocked"
+	}
+	return report
+}
+
+func validateStackChanSensorProbeIdentity(report *stackChanSensorProbeAcceptanceReport, options stackChanSensorProbeAcceptanceOptions, device firmwarecheck.DeviceIdentityRecord) {
+	report.Firmware = device.Firmware
+	report.Capabilities = device.Capabilities
+	report.AmbientLight = device.Capabilities["ambient_light"]
+	report.Proximity = device.Capabilities["proximity"]
+	report.Battery = device.Capabilities["battery"]
+	if device.DeviceID != options.DeviceID {
+		report.addFinding("device_id_mismatch", "Gateway device id differs from expected StackChan device")
+	}
+	if device.IdentityStatus != "ok" {
+		report.addFinding("device_identity_not_ok", "Gateway device identity is not ok")
+	}
+	if device.ConnectionStatus != "" && device.ConnectionStatus != "online" {
+		report.addFinding("device_not_online", "Gateway device is not online")
+	}
+	if device.Firmware.ID != "a21-stackchan" {
+		report.addFinding("firmware_id_mismatch", "device firmware id is not a21-stackchan")
+	}
+	if device.Firmware.Board != "m5stack-cores3" {
+		report.addFinding("firmware_board_mismatch", "device firmware board is not m5stack-cores3")
+	}
+	if device.Firmware.Commit == "" || !sameCLICommit(device.Firmware.Commit, options.Commit) {
+		report.addFinding("firmware_commit_mismatch", "device firmware commit differs from expected commit")
+	}
+	if report.AmbientLight != firmwarecheck.SensorProbeAmbientLightCapabilityStatus {
+		report.addFinding("ambient_light_not_diagnostic_probe", "device ambient light capability is not the diagnostic sensor-probe status")
+	}
+	if report.Proximity != firmwarecheck.SensorProbeProximityCapabilityStatus {
+		report.addFinding("proximity_not_diagnostic_probe", "device proximity capability is not the diagnostic sensor-probe status")
+	}
+	if report.Battery != firmwarecheck.SensorProbeBatteryCapabilityStatus {
+		report.addFinding("battery_not_diagnostic_probe", "device battery capability is not the diagnostic sensor-probe status")
+	}
+}
+
+func validateStackChanSensorProbeDevice(report *stackChanSensorProbeAcceptanceReport, options stackChanSensorProbeAcceptanceOptions, device firmwarecheck.DeviceIdentityRecord) {
+	validateStackChanSensorProbeIdentity(report, options, device)
+	report.RuntimeEcho = device.RuntimeEcho
+	report.SensorAvailable = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "sensor_available")
+	report.SensorSamples = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "sensor_samples")
+	report.SensorReadErrors = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "sensor_read_errors")
+	report.AmbientLightRaw = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "ambient_light_raw")
+	report.ProximityRaw = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "proximity_raw")
+	report.BatteryMV = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "battery_mv")
+	report.BatteryMA = stackChanRuntimeEchoInt(&report.Findings, device.RuntimeEcho, "battery_ma")
+	if report.SensorAvailable != 1 {
+		report.addFinding("sensor_not_available", "sensor diagnostic runtime did not report availability")
+	}
+	if report.SensorReadErrors > options.MaxReadErrors {
+		report.addFinding("sensor_read_errors_above_threshold", "sensor read errors exceed threshold")
+	}
+	if report.BatteryMV < options.MinBatteryMV {
+		report.addFinding("battery_mv_below_threshold", "battery voltage evidence is below threshold")
+	}
+}
+
+func validateStackChanSensorProbeDeltas(report *stackChanSensorProbeAcceptanceReport, options stackChanSensorProbeAcceptanceOptions) {
+	if report.SensorSamplesDelta < options.MinSamples {
+		report.addFinding("sensor_samples_delta_below_threshold", "sensor sample delta is below threshold")
+	}
+	if report.SensorReadErrorsDelta > options.MaxReadErrors {
+		report.addFinding("sensor_read_error_delta_above_threshold", "sensor read error delta exceeds threshold")
+	}
+}
+
+func (report *stackChanSensorProbeAcceptanceReport) addFinding(code string, message string) {
+	report.Findings = append(report.Findings, officePreflightFinding{Code: code, Message: message})
+}
+
 func runStackChanHalfDuplexAcceptance(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := defaultStackChanHalfDuplexAcceptanceOptions()
 	for i := 0; i < len(args); i++ {
@@ -6121,6 +6535,23 @@ func writeStackChanIMUProbeAcceptanceReport(outputDir string, report stackChanIM
 	return reportPath, nil
 }
 
+func writeStackChanSensorProbeAcceptanceReport(outputDir string, report stackChanSensorProbeAcceptanceReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-stackchan-sensor-probe-acceptance-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanSensorProbeAcceptance(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeStackChanHalfDuplexAcceptanceReport(outputDir string, report stackChanHalfDuplexAcceptanceReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -6308,14 +6739,65 @@ func writeFirmwareIMUProbeFlashExecutionReport(outputDir string, report firmware
 	return reportPath, nil
 }
 
+func writeFirmwareSensorProbeFlashPlanReport(outputDir string, result firmwarecheck.SensorProbeFlashPlanResult) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-firmware-sensor-probe-flash-plan-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	result.ReportPath = reportPath
+	if err := writeJSONFirmwareSensorProbeFlashPlan(file, result); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeFirmwareSensorProbeFlashExecutionReport(outputDir string, report firmwareSensorProbeFlashExecutionReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-firmware-sensor-probe-flash-execution-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONFirmwareSensorProbeFlashExecution(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
 	}
-	reportPath := filepath.Join(outputDir, "a21-provider-smoke-"+time.Now().Format("20060102-150405")+".json")
-	file, err := os.Create(reportPath)
-	if err != nil {
-		return "", err
+	var reportPath string
+	var file *os.File
+	var err error
+	for attempt := 0; attempt < 100; attempt++ {
+		now := time.Now()
+		stamp := fmt.Sprintf("%s-%09d", now.Format("20060102-150405"), now.Nanosecond())
+		if attempt > 0 {
+			stamp = fmt.Sprintf("%s-%02d", stamp, attempt)
+		}
+		reportPath = filepath.Join(outputDir, "a21-provider-smoke-"+stamp+".json")
+		file, err = os.OpenFile(reportPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		break
+	}
+	if file == nil {
+		return "", fmt.Errorf("could not allocate unique provider smoke report path")
 	}
 	defer file.Close()
 	report.ReportPath = reportPath
@@ -6943,6 +7425,12 @@ func writeJSONStackChanMicProbeAcceptance(writer io.Writer, report stackChanMicP
 }
 
 func writeJSONStackChanIMUProbeAcceptance(writer io.Writer, report stackChanIMUProbeAcceptanceReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanSensorProbeAcceptance(writer io.Writer, report stackChanSensorProbeAcceptanceReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
@@ -8277,6 +8765,210 @@ func runFirmwareIMUProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 	return 0
 }
 
+func runFirmwareSensorProbeFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.SensorProbeFlashPlanOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		ArtifactPath: filepath.Join("firmware", "stackchan", ".pio", "build", firmwarecheck.StackChanSensorProbePlatformIOEnv, "firmware.bin"),
+		BuildDir:     filepath.Join("firmware", "stackchan", ".pio", "build", firmwarecheck.StackChanSensorProbePlatformIOEnv),
+		CoreDir:      filepath.Join(".a21-tools", "platformio-core"),
+	}
+	outputDir := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-sensor-probe-flash-plan --port /dev/cu.usbmodemXXXX --commit <git-sha> [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_sensor_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_sensor_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedGitCommit = args[i]
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--core-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--core-dir requires a value")
+				return 2
+			}
+			i++
+			options.CoreDir = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-sensor-probe-flash-plan option %q\n", args[i])
+			return 2
+		}
+	}
+	result, code := buildFirmwareSensorProbeFlashPlanFromCLI(options, outputDir, stderr)
+	if code != 0 {
+		return code
+	}
+	if err := writeJSONFirmwareSensorProbeFlashPlan(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware sensor probe flash plan: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware sensor probe flash plan ok (no flash performed)")
+	return 0
+}
+
+func runFirmwareSensorProbeFlashExecute(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.SensorProbeFlashPlanOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		ArtifactPath: filepath.Join("firmware", "stackchan", ".pio", "build", firmwarecheck.StackChanSensorProbePlatformIOEnv, "firmware.bin"),
+		BuildDir:     filepath.Join("firmware", "stackchan", ".pio", "build", firmwarecheck.StackChanSensorProbePlatformIOEnv),
+		CoreDir:      filepath.Join(".a21-tools", "platformio-core"),
+	}
+	outputDir := ""
+	confirm := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-sensor-probe-flash-execute --port /dev/cu.usbmodemXXXX --commit <git-sha> --confirm WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_sensor_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_sensor_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactPath = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.ExpectedGitCommit = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE")
+				return 2
+			}
+			i++
+			confirm = args[i]
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--core-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--core-dir requires a value")
+				return 2
+			}
+			i++
+			options.CoreDir = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-sensor-probe-flash-execute option %q\n", args[i])
+			return 2
+		}
+	}
+	if confirm != "WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE" {
+		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE is required")
+		return 2
+	}
+	plan, code := buildFirmwareSensorProbeFlashPlanFromCLI(options, "", stderr)
+	if code != 0 {
+		return code
+	}
+	command, err := firmwareSensorProbeFlashCommand(plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware sensor probe flash execute failed: %v\n", err)
+		return 1
+	}
+	if err := runFirmwareBootstrapFlashCommand(context.Background(), command, stdout, stderr); err != nil {
+		fmt.Fprintf(stderr, "firmware sensor probe flash execute failed: %v\n", err)
+		return 1
+	}
+	report := firmwareSensorProbeFlashExecutionReport{
+		SchemaVersion:  "a21.firmware.sensor_probe_flash_execution.v1",
+		GeneratedAtMS:  time.Now().UnixMilli(),
+		DryRun:         false,
+		FlashExecuted:  true,
+		Port:           plan.Port,
+		ArtifactPath:   plan.ArtifactPath,
+		ArtifactSHA256: plan.ArtifactSHA256,
+		Commit:         plan.Commit,
+		PlatformIOEnv:  plan.PlatformIOEnv,
+		Plan:           plan,
+		Command:        redactBootstrapFlashCommand(command),
+	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "firmware sensor probe flash report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeFirmwareSensorProbeFlashExecutionReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write firmware sensor probe flash execution report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONFirmwareSensorProbeFlashExecution(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode firmware sensor probe flash execution: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware sensor probe flash executed")
+	return 0
+}
+
 func buildFirmwareBootstrapFlashPlanFromCLI(options firmwarecheck.BootstrapFlashPlanOptions, outputDir string, stderr io.Writer) (firmwarecheck.BootstrapFlashPlanResult, int) {
 	if options.ArtifactPath == "" {
 		fmt.Fprintln(stderr, "--artifact requires a value")
@@ -8428,6 +9120,58 @@ func buildFirmwareIMUProbeFlashPlanFromCLI(options firmwarecheck.IMUProbeFlashPl
 	return result, 0
 }
 
+func buildFirmwareSensorProbeFlashPlanFromCLI(options firmwarecheck.SensorProbeFlashPlanOptions, outputDir string, stderr io.Writer) (firmwarecheck.SensorProbeFlashPlanResult, int) {
+	if options.Port == "" {
+		fmt.Fprintln(stderr, "--port requires a value")
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 2
+	}
+	if options.ExpectedGitCommit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 2
+	}
+	for _, path := range []string{options.ManifestPath, options.ArtifactPath, options.BuildDir, options.CoreDir} {
+		if err := validateA21InputPath(path); err != nil {
+			fmt.Fprintf(stderr, "firmware sensor probe flash path invalid: %v\n", err)
+			return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+		}
+	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "firmware sensor probe flash report dir invalid: %v\n", err)
+			return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+		}
+	}
+	sourceState, err := detectFirmwareSourceState()
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware sensor probe flash failed: source tree check failed: %v\n", err)
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+	}
+	if !sourceState.Clean {
+		fmt.Fprintf(stderr, "firmware sensor probe flash failed: source tree is dirty under %s\n%s\n", sourceState.Root, sourceState.Detail)
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+	}
+	portUsage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware sensor probe flash failed: upload port ownership check failed: %v\n", err)
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+	}
+	options.PortUsage = portUsage
+	result, err := firmwarecheck.BuildSensorProbeFlashPlan(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware sensor probe flash failed: %v\n", err)
+		return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+	}
+	if outputDir != "" {
+		reportPath, err := writeFirmwareSensorProbeFlashPlanReport(outputDir, result)
+		if err != nil {
+			fmt.Fprintf(stderr, "write firmware sensor probe flash plan: %v\n", err)
+			return firmwarecheck.SensorProbeFlashPlanResult{}, 1
+		}
+		result.ReportPath = reportPath
+	}
+	return result, 0
+}
+
 func firmwareBootstrapFlashCommand(plan firmwarecheck.BootstrapFlashPlanResult) ([]string, error) {
 	if plan.GuardID != "a21.firmware.bootstrap_flash_plan.v1" || !plan.OK {
 		return nil, fmt.Errorf("invalid bootstrap flash plan")
@@ -8530,6 +9274,41 @@ func firmwareIMUProbeFlashCommand(plan firmwarecheck.IMUProbeFlashPlanResult) ([
 	return args, nil
 }
 
+func firmwareSensorProbeFlashCommand(plan firmwarecheck.SensorProbeFlashPlanResult) ([]string, error) {
+	if plan.GuardID != "a21.firmware.sensor_probe_flash_plan.v1" || !plan.OK {
+		return nil, fmt.Errorf("invalid sensor probe flash plan")
+	}
+	if plan.PlatformIOEnv != firmwarecheck.StackChanSensorProbePlatformIOEnv {
+		return nil, fmt.Errorf("sensor probe flash plan has wrong PlatformIO env")
+	}
+	if plan.Port == "" || len(plan.Parts) != 4 {
+		return nil, fmt.Errorf("sensor probe flash plan missing port or image parts")
+	}
+	pythonPath := filepath.Join(".a21-tools", "platformio-venv", "bin", "python")
+	esptoolPath := filepath.Join(".a21-tools", "platformio-core", "packages", "tool-esptoolpy", "esptool.py")
+	args := []string{
+		pythonPath,
+		esptoolPath,
+		"--chip", "esp32s3",
+		"--port", plan.Port,
+		"--baud", "460800",
+		"--before", "default_reset",
+		"--after", "hard_reset",
+		"write_flash",
+		"-z",
+		"--flash_mode", "dio",
+		"--flash_freq", "80m",
+		"--flash_size", "16MB",
+	}
+	for _, part := range plan.Parts {
+		if part.Offset == "" || part.Path == "" {
+			return nil, fmt.Errorf("sensor probe flash plan contains empty image part")
+		}
+		args = append(args, part.Offset, part.Path)
+	}
+	return args, nil
+}
+
 func runFirmwareBootstrapFlashCommandExec(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("empty bootstrap flash command")
@@ -8623,6 +9402,18 @@ func writeJSONFirmwareIMUProbeFlashPlan(writer io.Writer, result firmwarecheck.I
 }
 
 func writeJSONFirmwareIMUProbeFlashExecution(writer io.Writer, report firmwareIMUProbeFlashExecutionReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONFirmwareSensorProbeFlashPlan(writer io.Writer, result firmwarecheck.SensorProbeFlashPlanResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareSensorProbeFlashExecution(writer io.Writer, report firmwareSensorProbeFlashExecutionReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

@@ -107,3 +107,13 @@ IMU diagnostic discipline:
 - `make firmware-imu-probe-flash-plan` and `make firmware-imu-probe-flash-execute` are the only guarded IMU diagnostic flash lane;
 - `make stackchan-imu-probe-acceptance` is required before treating IMU telemetry as live diagnostic evidence;
 - IMU runtime echo is telemetry, not product promotion.
+
+Sensor diagnostic discipline:
+
+- default release firmware must keep `ambient_light=planned_ambient_light_sensor`, `proximity=planned_proximity_sensor`, and `battery=planned_550mah_battery`;
+- `a21_stackchan_cores3_sensor_probe` is the current read-only diagnostic build for CoreS3 LTR553 ambient/proximity telemetry plus StackChan-BSP INA226 battery telemetry;
+- `make firmware-sensor-probe-build` must pass before any physical sensor test window;
+- `make firmware-sensor-probe-upload-blocker-check` must continue proving raw PlatformIO uploads are blocked;
+- `make firmware-sensor-probe-flash-plan` and `make firmware-sensor-probe-flash-execute` are the only guarded sensor diagnostic flash lane;
+- `make stackchan-sensor-probe-acceptance` is required before treating ambient/proximity/battery telemetry as live diagnostic evidence;
+- sensor runtime echo is telemetry, not product promotion.

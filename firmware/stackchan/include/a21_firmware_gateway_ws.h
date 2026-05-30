@@ -48,6 +48,17 @@ struct A21RuntimeEchoDiagnostics {
   int16_t imu_gyro_mdps_y;
   int16_t imu_gyro_mdps_z;
   char imu_posture[A21_IMU_POSTURE_CAP];
+  bool sensor_enabled;
+  bool sensor_available;
+  uint32_t sensor_samples;
+  uint32_t sensor_read_errors;
+  bool sensor_has_ambient_light;
+  uint16_t sensor_ambient_light_raw;
+  bool sensor_has_proximity;
+  uint16_t sensor_proximity_raw;
+  bool sensor_has_battery;
+  int16_t sensor_battery_mv;
+  int16_t sensor_battery_ma;
 };
 
 struct A21GatewayWSDriver {
@@ -286,6 +297,13 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     char imu_gyro_mdps_x[12];
     char imu_gyro_mdps_y[12];
     char imu_gyro_mdps_z[12];
+    char sensor_available[2];
+    char sensor_samples[12];
+    char sensor_read_errors[12];
+    char sensor_ambient_light_raw[12];
+    char sensor_proximity_raw[12];
+    char sensor_battery_mv[12];
+    char sensor_battery_ma[12];
     snprintf(mic_frames_captured, sizeof(mic_frames_captured), "%lu", static_cast<unsigned long>(diagnostics->mic_frames_captured));
     snprintf(mic_driver_errors, sizeof(mic_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->mic_driver_errors));
     snprintf(mic_skipped_render_state, sizeof(mic_skipped_render_state), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_render_state));
@@ -343,6 +361,28 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
       echo["imu_gyro_mdps_y"] = imu_gyro_mdps_y;
       echo["imu_gyro_mdps_z"] = imu_gyro_mdps_z;
       echo["imu_posture"] = diagnostics->imu_posture;
+    }
+    if (diagnostics->sensor_enabled) {
+      snprintf(sensor_available, sizeof(sensor_available), "%u", diagnostics->sensor_available ? 1U : 0U);
+      snprintf(sensor_samples, sizeof(sensor_samples), "%lu", static_cast<unsigned long>(diagnostics->sensor_samples));
+      snprintf(sensor_read_errors, sizeof(sensor_read_errors), "%lu", static_cast<unsigned long>(diagnostics->sensor_read_errors));
+      echo["sensor_available"] = sensor_available;
+      echo["sensor_samples"] = sensor_samples;
+      echo["sensor_read_errors"] = sensor_read_errors;
+      if (diagnostics->sensor_has_ambient_light) {
+        snprintf(sensor_ambient_light_raw, sizeof(sensor_ambient_light_raw), "%u", static_cast<unsigned>(diagnostics->sensor_ambient_light_raw));
+        echo["ambient_light_raw"] = sensor_ambient_light_raw;
+      }
+      if (diagnostics->sensor_has_proximity) {
+        snprintf(sensor_proximity_raw, sizeof(sensor_proximity_raw), "%u", static_cast<unsigned>(diagnostics->sensor_proximity_raw));
+        echo["proximity_raw"] = sensor_proximity_raw;
+      }
+      if (diagnostics->sensor_has_battery) {
+        snprintf(sensor_battery_mv, sizeof(sensor_battery_mv), "%d", diagnostics->sensor_battery_mv);
+        snprintf(sensor_battery_ma, sizeof(sensor_battery_ma), "%d", diagnostics->sensor_battery_ma);
+        echo["battery_mv"] = sensor_battery_mv;
+        echo["battery_ma"] = sensor_battery_ma;
+      }
     }
   }
 
@@ -436,7 +476,18 @@ inline bool a21RuntimeEchoDiagnosticsEqual(
          left->imu_gyro_mdps_x == right->imu_gyro_mdps_x &&
          left->imu_gyro_mdps_y == right->imu_gyro_mdps_y &&
          left->imu_gyro_mdps_z == right->imu_gyro_mdps_z &&
-         a21StringEquals(left->imu_posture, right->imu_posture);
+         a21StringEquals(left->imu_posture, right->imu_posture) &&
+         left->sensor_enabled == right->sensor_enabled &&
+         left->sensor_available == right->sensor_available &&
+         left->sensor_samples == right->sensor_samples &&
+         left->sensor_read_errors == right->sensor_read_errors &&
+         left->sensor_has_ambient_light == right->sensor_has_ambient_light &&
+         left->sensor_ambient_light_raw == right->sensor_ambient_light_raw &&
+         left->sensor_has_proximity == right->sensor_has_proximity &&
+         left->sensor_proximity_raw == right->sensor_proximity_raw &&
+         left->sensor_has_battery == right->sensor_has_battery &&
+         left->sensor_battery_mv == right->sensor_battery_mv &&
+         left->sensor_battery_ma == right->sensor_battery_ma;
 }
 
 inline bool a21RuntimeEchoDiagnosticsChanged(

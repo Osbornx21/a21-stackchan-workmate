@@ -15,11 +15,13 @@ go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir rep
 go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 5000 --min-delivery-ratio 0.95 --output-dir reports
 go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-mic-frames 1 --min-playback-chunks 1 --min-delivery-ratio 0.95 --output-dir reports
 go run ./cmd/a21 stackchan-speaker-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --mock-audio-chunks 50 --min-played-frames 50 --output-dir reports
+go run ./cmd/a21 stackchan-sensor-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-samples 10 --min-battery-mv 3000 --output-dir reports
 make doctor
 make lan-probe
 make stackchan-mic-probe-acceptance
 make stackchan-half-duplex-acceptance
 make stackchan-imu-probe-acceptance
+make stackchan-sensor-probe-acceptance
 make stackchan-speaker-acceptance
 make provider-realtime-plan
 make v21-adapter-smoke
@@ -102,13 +104,12 @@ Explicit provider smoke execution is a separate command:
 go run ./cmd/a21 provider-smoke --provider deepseek --execute
 go run ./cmd/a21 provider-smoke --provider deepseek --stream --repeat 3
 go run ./cmd/a21 provider-smoke --provider deepseek --execute --stream --repeat 3 --output-dir reports
-go run ./cmd/a21 provider-smoke --provider bailian_dashscope --execute
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
-Only OpenAI-compatible Chat Completions smoke is executable in this phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice are reported as non-executable smoke targets; their realtime plans, provider health, and adapters stay dry-run or fake-connection only until a dedicated explicit smoke command exists.
+Only the DeepSeek OpenAI-compatible Chat Completions smoke path is executable in this P0 phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
 
-When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS.json`. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
+When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 
 `provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.
 
@@ -161,6 +162,8 @@ The firmware section's `current_artifact_path` is populated only through the sam
 `stackchan-half-duplex-acceptance` is the first physical mic-to-speaker loop gate. It snapshots `/v1/devices` and `/metrics`, commands `LISTENING` without `audio_probe_only`, arms exactly one `mock_playback_on_next_audio_frame`, then waits for real StackChan microphone uplink frames to trigger the Gateway mock turn. It requires Gateway audio ingress, Gateway playback chunks, firmware playback-buffer deltas, and speaker-pump deltas to move in the same traced window before clearing back to `IDLE`. It writes `reports/a21-stackchan-half-duplex-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=mic_to_mock_playback` and `physical_sound_observed=false`. Passing means the real device can drive a minimal half-duplex A21 loop through Gateway mock playback instrumentation; it still does not claim real ASR/LLM/TTS, AEC, full-duplex, or human-accepted product audio quality.
 
 `stackchan-imu-probe-acceptance` is the read-only IMU telemetry gate. It snapshots `/v1/devices`, waits a bounded window, snapshots again, and requires the device to report `imu=diagnostic_probe_m5unified_imu`, increasing sample counters, zero new read errors by default, non-zero acceleration evidence, and a concrete posture string. It writes `reports/a21-stackchan-imu-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_imu_only` and `production_capability_promoted=false`. Passing means IMU telemetry is alive in the isolated diagnostic build; it does not approve product gestures or release-firmware IMU promotion.
+
+`stackchan-sensor-probe-acceptance` is the read-only ambient/proximity/battery telemetry gate. It snapshots `/v1/devices`, waits a bounded window, snapshots again, and requires the device to report `ambient_light=diagnostic_probe_ltr553_ambient_light`, `proximity=diagnostic_probe_ltr553_proximity`, and `battery=diagnostic_probe_ina226_battery`, increasing sensor sample counters, zero new read errors by default, and battery voltage above the configured threshold. It writes `reports/a21-stackchan-sensor-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_sensor_only` and `production_capability_promoted=false`. Passing means the isolated sensor diagnostic path is alive; it does not approve adaptive brightness, presence behavior, power-state UI, or release-firmware promotion.
 
 `stackchan-speaker-acceptance` is an instrumented speaker/downlink gate for a connected StackChan. It snapshots `/v1/devices` and `/metrics`, commands `SPEAKING` with bounded non-silent `audio.playback.chunk` frames through `/v1/devices/control`, waits the requested window, checks runtime echo deltas for playback buffer and M5 speaker pump counters, checks Gateway playback-chunk metrics, then sends `IDLE`. Its default `--mock-audio-chunks 50` sends about 1000 ms of 20 ms mock PCM chunks, while the default `--window-ms 1500` leaves margin for the final speaker-pump frame and runtime echo update. The CLI batches that long probe into bounded `/v1/devices/control` requests of at most four chunks each. This keeps the Gateway per-request safety contract intact while making the probe long enough for an operator to hear. It writes `reports/a21-stackchan-speaker-acceptance-YYYYMMDD-HHMMSS.json` with `expected_audio_duration_ms` and `physical_sound_observed=false`: passing means Gateway downlink, firmware buffering, and speaker pump instrumentation moved for the commanded stream, not that a human heard final product-quality audio.
 

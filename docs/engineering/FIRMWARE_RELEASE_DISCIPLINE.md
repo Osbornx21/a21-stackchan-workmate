@@ -92,8 +92,12 @@ The preferred wrapper is:
 make firmware-test
 make firmware-build
 make firmware-mic-probe-build
+make firmware-imu-probe-build
+make firmware-sensor-probe-build
 make firmware-upload-blocker-check
 make firmware-mic-probe-upload-blocker-check
+make firmware-imu-probe-upload-blocker-check
+make firmware-sensor-probe-upload-blocker-check
 make firmware-package
 make firmware-current-artifact-check
 make firmware-artifact-prune-plan
@@ -108,9 +112,15 @@ Firmware expression changes must keep the avatar contract testable without hardw
 
 `firmware-mic-probe-build` compiles only the isolated CoreS3 microphone diagnostic environment. It is for I2S/microphone bring-up evidence and must not be treated as a release package or production firmware unless a later ADR explicitly promotes the path.
 
+`firmware-imu-probe-build` compiles only the isolated CoreS3 IMU diagnostic environment. It is read-only posture telemetry for bring-up evidence and must not be treated as a release package or production firmware.
+
+`firmware-sensor-probe-build` compiles only the isolated CoreS3 sensor diagnostic environment. It uses the mature M5CoreS3 LTR553 implementation for ambient-light/proximity telemetry and StackChan-BSP INA226 battery telemetry. It must not be treated as a release package or production firmware.
+
 `firmware-upload-blocker-check` intentionally invokes PlatformIO's raw upload target and expects it to fail with the A21 blocker message before any hardware write can start. A successful raw upload target is a release-blocking failure.
 
 `firmware-mic-probe-upload-blocker-check` repeats the same raw-upload negative test for `a21_stackchan_cores3_mic_probe`. The diagnostic build may compile for lab evidence, but it must not create an unguarded flashing lane.
+
+`firmware-imu-probe-upload-blocker-check` and `firmware-sensor-probe-upload-blocker-check` repeat the same raw-upload negative test for their diagnostic environments. Passing those checks proves the new hardware tracks cannot bypass the guarded A21 flash lanes.
 
 When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
 
@@ -133,6 +143,17 @@ make firmware-imu-probe-flash-execute
 ```
 
 The IMU plan and execute commands rebuild `a21_stackchan_cores3_imu_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require the `diagnostic_probe_m5unified_imu` marker, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-imu-probe-flash-*.json` receipts. This lane is read-only diagnostic telemetry only; it does not promote IMU gestures, posture behavior, or production `available`.
+
+The sensor diagnostic lane mirrors the same rules and requires all three sensor markers before any write:
+
+```bash
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-sensor-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE \
+make firmware-sensor-probe-flash-execute
+```
+
+The sensor plan and execute commands rebuild `a21_stackchan_cores3_sensor_probe`, require a clean source tree, verify the build output lives under `.pio/build/a21_stackchan_cores3_sensor_probe/firmware.bin`, require the embedded A21 firmware identity and git commit, require `diagnostic_probe_ltr553_ambient_light`, `diagnostic_probe_ltr553_proximity`, and `diagnostic_probe_ina226_battery` markers, reject busy or non-USB serial ports, and write timestamped `reports/a21-firmware-sensor-probe-flash-*.json` receipts. This lane is read-only diagnostic telemetry only; it does not promote environmental sensors, battery telemetry, or production `available`.
 
 After a mic-probe flash and a live `audio_probe_only` Gateway validation window, freeze the evidence with:
 
@@ -174,6 +195,19 @@ make stackchan-imu-probe-acceptance
 ```
 
 This writes `reports/a21-stackchan-imu-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_imu_only`, `production_capability_promoted=false`, firmware identity, capability status, runtime IMU counters, acceleration, gyro, posture, sample-rate evidence, and sample/read-error deltas. A passing report means the isolated M5Unified/CoreS3 IMU diagnostic path is alive and useful as telemetry; it still does not approve product gestures, motion reactions, privacy behavior, or release-firmware IMU promotion.
+
+For read-only ambient/proximity/battery telemetry evidence, use:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+A21_SENSOR_PROBE_WINDOW_MS=1500 \
+A21_SENSOR_PROBE_MIN_SAMPLES=10 \
+A21_SENSOR_PROBE_MIN_BATTERY_MV=3000 \
+A21_SENSOR_PROBE_MAX_READ_ERRORS=0 \
+make stackchan-sensor-probe-acceptance
+```
+
+This writes `reports/a21-stackchan-sensor-probe-acceptance-YYYYMMDD-HHMMSS.json` with `hardware_acceptance_scope=diagnostic_sensor_only`, `production_capability_promoted=false`, firmware identity, ambient/proximity/battery diagnostic capability statuses, runtime sensor counters, LTR553 ambient/proximity values, INA226 battery voltage/current values, sample-rate evidence, and sample/read-error deltas. A passing report means the isolated sensor diagnostic path is alive and useful as telemetry; it still does not approve adaptive brightness, presence behavior, power-state UI, or release-firmware sensor promotion.
 
 For the first real-device mic-to-speaker loop, use:
 

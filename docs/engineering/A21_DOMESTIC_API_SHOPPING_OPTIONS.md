@@ -25,13 +25,18 @@ OpenAI-compatible means only protocol compatibility. It does not mean buying Ope
 - All traffic to StackChan, localhost, LAN, `.local`, and the A21 V21 adapter must stay direct and must not inherit global proxies.
 - For paid smoke tests, buy enough quota for repeated short calls, not a production commitment.
 
-## Current A21 Provider Env Map
+## Current P0 A21 Provider Env Map
 
-The current repo already recognizes these provider families:
+The current executable provider-smoke registry is deliberately narrow:
 
 | A21 provider | Capability | Required env |
 | --- | --- | --- |
-| `deepseek` | text LLM / professional reasoning | `A21_DEEPSEEK_API_KEY`, `A21_DEEPSEEK_MODEL` |
+| `deepseek` | text LLM / professional reasoning | `A21_LAB_DEEPSEEK_API_KEY`; optional `A21_DEEPSEEK_MODEL`, default `deepseek-v4-flash` |
+
+Candidate providers below remain procurement/research inputs, not current executable P0 provider-smoke profiles:
+
+| A21 provider | Capability | Required env when promoted |
+| --- | --- | --- |
 | `bailian_dashscope` | Alibaba Bailian/DashScope LLM, ASR/TTS family, OpenAI-compatible text smoke | `A21_DASHSCOPE_API_KEY`, `A21_DASHSCOPE_MODEL` |
 | `doubao_realtime` | Doubao realtime speech-to-speech candidate | `A21_DOUBAO_API_KEY`, `A21_DOUBAO_APP_ID`, `A21_DOUBAO_RESOURCE_ID`, `A21_DOUBAO_REALTIME_MODEL` |
 | `doubao_tts_realtime` | Doubao realtime TTS / voice output candidate | `A21_DOUBAO_API_KEY`, `A21_DOUBAO_TTS_MODEL`, `A21_DOUBAO_TTS_VOICE` |
@@ -206,7 +211,7 @@ For each shortlisted provider, procurement should reserve a small explicit test 
 | Test | Needs paid capability? | Notes |
 | --- | --- | --- |
 | `provider-smoke --execute deepseek` | yes, tiny | Current repo supports real tiny Chat Completions smoke. |
-| `provider-smoke --execute bailian_dashscope` | yes, tiny | Current repo supports real tiny OpenAI-compatible smoke. |
+| Bailian/DashScope text smoke | yes, future | Procurement candidate only; not in the current P0 executable smoke registry. |
 | Doubao realtime S2S credentialed smoke | yes, future | Not implemented yet; buy only enough for short fixture and cancellation/latency tests. |
 | Doubao realtime TTS credentialed smoke | yes, future | Needs fixture, timeout, output redaction, first-audio metrics. |
 | DashScope Qwen-Omni realtime smoke | yes, future | Needs A21 adapter and fixture. |

@@ -22,10 +22,13 @@ make firmware-test
 make firmware-build
 make firmware-mic-probe-build
 make firmware-imu-probe-build
+make firmware-sensor-probe-build
 make firmware-mic-probe-upload-blocker-check
 make firmware-imu-probe-upload-blocker-check
+make firmware-sensor-probe-upload-blocker-check
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-sensor-probe-flash-plan
 ```
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
@@ -36,13 +39,19 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
 
 `make firmware-imu-probe-build` compiles `a21_stackchan_cores3_imu_probe`, an isolated diagnostic build that turns on read-only M5Unified IMU sampling with `A21_ENABLE_IMU_DIAGNOSTIC_PROBE=1`. It reports IMU sample counters, acceleration, gyro, and coarse posture through runtime echo. It is not the default environment and must not be packaged as a production release artifact.
 
+`make firmware-sensor-probe-build` compiles `a21_stackchan_cores3_sensor_probe`, an isolated read-only diagnostic build that turns on M5CoreS3 LTR553 ambient-light/proximity sampling and StackChan-BSP INA226 battery voltage/current sampling. It reports sensor counters and values through runtime echo. It is not the default environment and must not be packaged as a production release artifact.
+
 `make firmware-mic-probe-upload-blocker-check` proves the diagnostic environment also fails raw PlatformIO upload targets before a flash can start.
 
 `make firmware-imu-probe-upload-blocker-check` provides the same no-raw-upload proof for the IMU diagnostic environment.
 
+`make firmware-sensor-probe-upload-blocker-check` provides the same no-raw-upload proof for the sensor diagnostic environment.
+
 `make firmware-mic-probe-flash-plan` and `make firmware-mic-probe-flash-execute` are the only diagnostic microphone flash lane. They rebuild the probe firmware, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_i2s_capture` marker, and require `A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE` before any write. Use this only for microphone bring-up, not for production release packaging.
 
 `make firmware-imu-probe-flash-plan` and `make firmware-imu-probe-flash-execute` are the matching read-only diagnostic IMU flash lane. They rebuild `a21_stackchan_cores3_imu_probe`, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_imu` marker, and require `A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE` before any write. Use this only for IMU bring-up evidence, not for production release packaging.
+
+`make firmware-sensor-probe-flash-plan` and `make firmware-sensor-probe-flash-execute` are the matching read-only diagnostic sensor flash lane. They rebuild `a21_stackchan_cores3_sensor_probe`, require a clean git source tree, check the embedded A21 identity plus `diagnostic_probe_ltr553_ambient_light`, `diagnostic_probe_ltr553_proximity`, and `diagnostic_probe_ina226_battery` markers, and require `A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE` before any write. Use this only for sensor bring-up evidence, not for production release packaging.
 
 ## Runtime Surface
 
@@ -118,6 +127,8 @@ The dedicated `a21_stackchan_cores3_mic_probe` environment enables the same M5Un
 The firmware still does not run VAD on device, prove acoustic echo cancellation, prove physical microphone quality, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path, while physical microphone uplink is intentionally disabled behind the crash guard and must not be counted as real user-facing audio until hardware acceptance passes.
 
 `a21_firmware_imu.h` owns the first read-only IMU diagnostic boundary. The default release build keeps `imu=planned_9_axis_imu`. The isolated `a21_stackchan_cores3_imu_probe` build reports `imu=diagnostic_probe_m5unified_imu` and samples M5Unified IMU through a small driver interface, producing runtime echo fields for sample count, read errors, acceleration in mg, gyro in mdps, and coarse posture. These fields are diagnostic telemetry only; they do not promote IMU to product `available`.
+
+`a21_firmware_sensors.h` owns the first read-only environmental and power diagnostic boundary. The default release build keeps `ambient_light=planned_ambient_light_sensor`, `proximity=planned_proximity_sensor`, and `battery=planned_550mah_battery`. The isolated `a21_stackchan_cores3_sensor_probe` build reports `diagnostic_probe_ltr553_ambient_light`, `diagnostic_probe_ltr553_proximity`, and `diagnostic_probe_ina226_battery`, then emits sample count, read errors, raw ambient/proximity values, and battery voltage/current through runtime echo. These fields are diagnostic telemetry only; they do not promote sensors to product `available`.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

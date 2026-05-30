@@ -103,62 +103,12 @@ type providerSmokeSpec struct {
 	Protocol       string
 	APIKeyEnv      string
 	ModelEnv       string
+	DefaultModel   string
 	BaseURLEnv     string
 	RequiredEnv    []string
 	DefaultBaseURL string
 	EndpointPath   string
 	Executable     bool
-}
-
-var providerSmokeSpecs = []providerSmokeSpec{
-	{Name: "mock", Family: ProviderFamilyMock, Protocol: "mock", Executable: false},
-	{
-		Name:           "deepseek",
-		Family:         ProviderFamilyTextStream,
-		Protocol:       "openai_chat_completions",
-		APIKeyEnv:      "A21_DEEPSEEK_API_KEY",
-		ModelEnv:       "A21_DEEPSEEK_MODEL",
-		BaseURLEnv:     "A21_DEEPSEEK_BASE_URL",
-		DefaultBaseURL: "https://api.deepseek.com",
-		EndpointPath:   "/chat/completions",
-		Executable:     true,
-	},
-	{
-		Name:           "bailian_dashscope",
-		Family:         ProviderFamilyTextStream,
-		Protocol:       "openai_chat_completions",
-		APIKeyEnv:      "A21_DASHSCOPE_API_KEY",
-		ModelEnv:       "A21_DASHSCOPE_MODEL",
-		BaseURLEnv:     "A21_DASHSCOPE_BASE_URL",
-		DefaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-		EndpointPath:   "/chat/completions",
-		Executable:     true,
-	},
-	{
-		Name:       "openai_realtime",
-		Family:     ProviderFamilyVoiceRealtime,
-		Protocol:   "websocket_realtime",
-		APIKeyEnv:  "A21_OPENAI_API_KEY",
-		ModelEnv:   "A21_OPENAI_REALTIME_MODEL",
-		Executable: false,
-	},
-	{
-		Name:       "doubao_realtime",
-		Family:     ProviderFamilyVoiceRealtime,
-		Protocol:   "websocket_realtime",
-		APIKeyEnv:  "A21_DOUBAO_API_KEY",
-		ModelEnv:   "A21_DOUBAO_REALTIME_MODEL",
-		Executable: false,
-	},
-	{
-		Name:        "doubao_tts_realtime",
-		Family:      ProviderFamilyVoiceRealtime,
-		Protocol:    "websocket_realtime",
-		APIKeyEnv:   "A21_DOUBAO_API_KEY",
-		ModelEnv:    "A21_DOUBAO_TTS_MODEL",
-		RequiredEnv: []string{"A21_DOUBAO_TTS_VOICE"},
-		Executable:  false,
-	},
 }
 
 func ProviderSmokeFromEnv(ctx context.Context, env []string, providerName string, execute bool, client *http.Client) ProviderSmokeReport {
@@ -197,7 +147,17 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 		report.Detail = "provider target rejected"
 		return report
 	}
-	spec, ok := providerSmokeSpecByName(provider)
+	if containsBlockedProviderIdentity(provider) {
+		report.Findings = append(report.Findings, ProviderCatalogFinding{
+			Code:    "provider_blocked",
+			Message: "A21 provider smoke target is blocked by project policy",
+			Detail:  "A21_PROVIDER_PRIMARY",
+		})
+		report.Detail = "provider target rejected"
+		return report
+	}
+	profile, profileFindings, ok := ProviderProfileByNameFromEnv(env, provider)
+	report.Findings = append(report.Findings, profileFindings...)
 	if !ok {
 		report.Findings = append(report.Findings, ProviderCatalogFinding{
 			Code:    "provider_unknown",
@@ -207,6 +167,7 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 		report.Detail = "provider target is unknown"
 		return report
 	}
+	spec := providerSmokeSpecFromProfile(profile)
 	report.Provider = spec.Name
 	report.Family = string(spec.Family)
 	report.Protocol = spec.Protocol
@@ -254,24 +215,34 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 	return executeOpenAICompatibleSmoke(ctx, env, spec, report, client)
 }
 
-func providerSmokeSpecByName(name string) (providerSmokeSpec, bool) {
-	for _, spec := range providerSmokeSpecs {
-		if spec.Name == name {
-			return spec, true
-		}
+func providerSmokeSpecFromProfile(profile ProviderProfile) providerSmokeSpec {
+	return providerSmokeSpec{
+		Name:           profile.Name,
+		Family:         profile.Family,
+		Protocol:       profile.Protocol,
+		APIKeyEnv:      profile.APIKeyEnv,
+		ModelEnv:       profile.ModelEnv,
+		DefaultModel:   profile.DefaultModel,
+		BaseURLEnv:     profile.BaseURLEnv,
+		RequiredEnv:    append([]string(nil), profile.RequiredEnv...),
+		DefaultBaseURL: profile.DefaultBaseURL,
+		EndpointPath:   profile.EndpointPath,
+		Executable:     profile.Family == ProviderFamilyTextStream && profile.Protocol == "openai_chat_completions",
 	}
-	return providerSmokeSpec{}, false
 }
 
 func providerSmokeConfigured(env []string, spec providerSmokeSpec) (bool, []string) {
 	var missing []string
-	for _, name := range []string{spec.APIKeyEnv, spec.ModelEnv} {
+	for _, name := range []string{spec.APIKeyEnv} {
 		if name == "" {
 			continue
 		}
 		if strings.TrimSpace(envValue(env, name)) == "" {
 			missing = append(missing, name)
 		}
+	}
+	if spec.ModelEnv != "" && spec.DefaultModel == "" && strings.TrimSpace(envValue(env, spec.ModelEnv)) == "" {
+		missing = append(missing, spec.ModelEnv)
 	}
 	for _, name := range spec.RequiredEnv {
 		if strings.TrimSpace(envValue(env, name)) == "" {
@@ -282,10 +253,10 @@ func providerSmokeConfigured(env []string, spec providerSmokeSpec) (bool, []stri
 }
 
 func providerSmokeEndpointHost(env []string, spec providerSmokeSpec) string {
-	if spec.DefaultBaseURL == "" {
+	baseURL := strings.TrimSpace(envValue(env, spec.BaseURLEnv))
+	if spec.DefaultBaseURL == "" && baseURL == "" {
 		return ""
 	}
-	baseURL := strings.TrimSpace(envValue(env, spec.BaseURLEnv))
 	if baseURL == "" {
 		baseURL = spec.DefaultBaseURL
 	}
@@ -299,6 +270,15 @@ func providerSmokeEndpointHost(env []string, spec providerSmokeSpec) string {
 	return parsed.Host
 }
 
+func providerSmokeModel(env []string, spec providerSmokeSpec) string {
+	if spec.ModelEnv != "" {
+		if value := strings.TrimSpace(envValue(env, spec.ModelEnv)); value != "" {
+			return value
+		}
+	}
+	return spec.DefaultModel
+}
+
 func executeOpenAICompatibleSmoke(ctx context.Context, env []string, spec providerSmokeSpec, report ProviderSmokeReport, client *http.Client) ProviderSmokeReport {
 	endpoint, err := providerSmokeEndpoint(env, spec)
 	if err != nil {
@@ -307,7 +287,7 @@ func executeOpenAICompatibleSmoke(ctx context.Context, env []string, spec provid
 		return report
 	}
 	body := map[string]any{
-		"model": strings.TrimSpace(envValue(env, spec.ModelEnv)),
+		"model": providerSmokeModel(env, spec),
 		"messages": []map[string]string{
 			{"role": "user", "content": "A21 provider smoke check. Reply OK."},
 		},
@@ -326,7 +306,9 @@ func executeOpenAICompatibleSmoke(ctx context.Context, env []string, spec provid
 		report.Detail = redactProviderSmokeDetail(err.Error())
 		return report
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(envValue(env, spec.APIKeyEnv)))
+	if spec.APIKeyEnv != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(envValue(env, spec.APIKeyEnv)))
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "a21-provider-smoke/0.1")
 	report.Executed = true
@@ -395,7 +377,7 @@ func executeOpenAICompatibleStreamingSmokeAttempt(ctx context.Context, env []str
 		return attempt, err
 	}
 	body := map[string]any{
-		"model": strings.TrimSpace(envValue(env, spec.ModelEnv)),
+		"model": providerSmokeModel(env, spec),
 		"messages": []map[string]string{
 			{"role": "user", "content": "A21 provider smoke check. Reply OK."},
 		},
@@ -410,7 +392,9 @@ func executeOpenAICompatibleStreamingSmokeAttempt(ctx context.Context, env []str
 	if err != nil {
 		return attempt, err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(envValue(env, spec.APIKeyEnv)))
+	if spec.APIKeyEnv != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(envValue(env, spec.APIKeyEnv)))
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("User-Agent", "a21-provider-smoke/0.1")
@@ -544,16 +528,6 @@ func providerSmokeEndpoint(env []string, spec providerSmokeSpec) (string, error)
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
-}
-
-func safeProviderName(name string) string {
-	if containsLegacyProviderIdentity(name) {
-		return "invalid_legacy_provider"
-	}
-	if knownProvider(name) {
-		return name
-	}
-	return "unknown_provider"
 }
 
 var providerSmokeURLCredentialPattern = regexp.MustCompile(`(https?://)[^/\s"']+@`)

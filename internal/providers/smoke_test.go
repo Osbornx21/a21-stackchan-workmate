@@ -21,18 +21,20 @@ func TestProviderSmokeSkipsMissingDeepSeekCredentials(t *testing.T) {
 	if report.Configured {
 		t.Fatal("configured = true, want false")
 	}
-	for _, want := range []string{"A21_DEEPSEEK_API_KEY", "A21_DEEPSEEK_MODEL"} {
+	for _, want := range []string{"A21_LAB_DEEPSEEK_API_KEY"} {
 		if !stringSliceContains(report.MissingEnv, want) {
 			t.Fatalf("missing env lacks %q: %#v", want, report.MissingEnv)
 		}
+	}
+	if stringSliceContains(report.MissingEnv, "A21_DEEPSEEK_MODEL") {
+		t.Fatalf("model should use DeepSeek default for P0 smoke: %#v", report.MissingEnv)
 	}
 }
 
 func TestProviderSmokeDryRunReportsReadyWithoutLeakingSecrets(t *testing.T) {
 	report := ProviderSmokeFromEnv(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
-		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
-		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
 	}, "deepseek", false, nil)
 
 	if report.Status != ProviderSmokeReady {
@@ -80,8 +82,7 @@ func TestProviderSmokeExecutesOpenAICompatibleRequest(t *testing.T) {
 
 	report := ProviderSmokeFromEnv(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
-		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
-		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
 		"A21_DEEPSEEK_BASE_URL=" + server.URL,
 	}, "deepseek", true, server.Client())
 
@@ -126,8 +127,7 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 
 	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
-		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
-		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
 		"A21_DEEPSEEK_BASE_URL=" + server.URL,
 	}, ProviderSmokeOptions{
 		ProviderName: "deepseek",
@@ -180,8 +180,7 @@ func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing
 
 	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
-		"A21_DEEPSEEK_API_KEY=sk-a21-secret",
-		"A21_DEEPSEEK_MODEL=deepseek-v4-flash",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
 		"A21_DEEPSEEK_BASE_URL=" + server.URL,
 	}, ProviderSmokeOptions{
 		ProviderName: "deepseek",
@@ -230,17 +229,17 @@ func TestProviderSmokeRedactsLegacyProviderName(t *testing.T) {
 	}
 }
 
-func TestProviderSmokeMarksRealtimeProvidersUnsupportedForHTTP(t *testing.T) {
+func TestProviderSmokeDoesNotExposeRealtimeProvidersDuringP0(t *testing.T) {
 	report := ProviderSmokeFromEnv(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=openai_realtime",
 		"A21_OPENAI_API_KEY=sk-a21-secret",
 		"A21_OPENAI_REALTIME_MODEL=gpt-realtime",
 	}, "openai_realtime", true, nil)
 
-	if report.Status != ProviderSmokeUnsupported {
-		t.Fatalf("status = %q, want unsupported", report.Status)
+	if report.Provider != "unknown_provider" || report.Status != ProviderSmokeFailed {
+		t.Fatalf("provider/status = %q/%q, want unknown_provider/failed", report.Provider, report.Status)
 	}
 	if report.Executed {
-		t.Fatal("executed = true, want false for realtime websocket provider")
+		t.Fatal("executed = true, want false for non-P0 provider")
 	}
 }

@@ -2,6 +2,9 @@
 #include <M5StackChan.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
+#if defined(A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE) && A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE
+#include <utility/LTR5XX.h>
+#endif
 #if defined(A21_ENABLE_M5STACK_AVATAR_SPIKE) && A21_ENABLE_M5STACK_AVATAR_SPIKE
 #include <Avatar.h>
 #endif
@@ -18,6 +21,7 @@
 #include "a21_firmware_network.h"
 #include "a21_firmware_playback.h"
 #include "a21_firmware_rgb.h"
+#include "a21_firmware_sensors.h"
 #include "a21_firmware_speaker.h"
 #include "a21_firmware_state.h"
 #include "a21_firmware_touch.h"
@@ -190,6 +194,7 @@ A21SpeakerPumpRuntime g_speaker_pump_runtime;
 A21MicCaptureRuntime g_mic_capture_runtime;
 A21MicFrameQueue g_mic_frame_queue;
 A21IMUDiagnosticRuntime g_imu_runtime;
+A21SensorDiagnosticRuntime g_sensor_runtime;
 
 static constexpr size_t A21_ARDUINO_WS_TEXT_MESSAGE_CAP =
     A21_AUDIO_WS_TEXT_MESSAGE_CAP > A21_WS_TEXT_MESSAGE_CAP ? A21_AUDIO_WS_TEXT_MESSAGE_CAP : A21_WS_TEXT_MESSAGE_CAP;
@@ -393,6 +398,59 @@ bool arduinoIMURead(void* ctx, A21IMUSample* sample) {
 A21IMUDriver g_imu_driver = {
     nullptr,
     arduinoIMURead,
+};
+
+#if defined(A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE) && A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE
+LTR5XX g_a21_ltr553;
+bool g_a21_ltr553_ready = false;
+
+void arduinoSensorProbeBegin() {
+  Ltr5xx_Init_Basic_Para params = LTR5XX_BASE_PARA_CONFIG_DEFAULT;
+  params.ps_led_pulse_freq = LTR5XX_LED_PULSE_FREQ_40KHZ;
+  params.ps_measurement_rate = LTR5XX_PS_MEASUREMENT_RATE_50MS;
+  params.als_gain = LTR5XX_ALS_GAIN_48X;
+  g_a21_ltr553_ready = g_a21_ltr553.begin(&params);
+  if (g_a21_ltr553_ready) {
+    g_a21_ltr553.setPsMode(LTR5XX_PS_ACTIVE_MODE);
+    g_a21_ltr553.setAlsMode(LTR5XX_ALS_ACTIVE_MODE);
+  }
+}
+#else
+void arduinoSensorProbeBegin() {}
+#endif
+
+bool arduinoSensorRead(void* ctx, A21SensorSample* sample) {
+  (void)ctx;
+  if (sample == nullptr) {
+    return false;
+  }
+  *sample = {};
+  bool has_sample = false;
+#if defined(A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE) && A21_ENABLE_CORES3_LTR553_DIAGNOSTIC_PROBE
+  if (g_a21_ltr553_ready) {
+    sample->has_ambient_light = true;
+    sample->ambient_light_raw = g_a21_ltr553.getAlsValue();
+    sample->has_proximity = true;
+    sample->proximity_raw = g_a21_ltr553.getPsValue();
+    has_sample = true;
+  }
+#endif
+#if defined(A21_ENABLE_STACKCHAN_BATTERY_DIAGNOSTIC_PROBE) && A21_ENABLE_STACKCHAN_BATTERY_DIAGNOSTIC_PROBE
+  const float battery_voltage_v = M5StackChan.getBatteryVoltage();
+  const float battery_current_a = M5StackChan.getBatteryCurrent();
+  if (battery_voltage_v > 0.0f || battery_current_a != 0.0f) {
+    sample->has_battery = true;
+    sample->battery_mv = a21SensorFloatToInt16(battery_voltage_v, 1000.0f);
+    sample->battery_ma = a21SensorFloatToInt16(battery_current_a, 1000.0f);
+    has_sample = true;
+  }
+#endif
+  return has_sample;
+}
+
+A21SensorDriver g_sensor_driver = {
+    nullptr,
+    arduinoSensorRead,
 };
 
 struct A21ArduinoTouchState {
@@ -619,6 +677,7 @@ void setup() {
   M5StackChan.begin();
   M5.Speaker.setVolume(96);
   M5.Speaker.begin();
+  arduinoSensorProbeBegin();
   a21InitFirmwareState(&g_state, A21_DEVICE_ID);
   a21InitNetworkConfig(&g_network);
   a21InitWiFiConfig(&g_wifi);
@@ -635,6 +694,7 @@ void setup() {
   a21InitMicCaptureRuntime(&g_mic_capture_runtime);
   a21InitMicFrameQueue(&g_mic_frame_queue);
   a21InitIMUDiagnosticRuntime(&g_imu_runtime);
+  a21InitSensorDiagnosticRuntime(&g_sensor_runtime);
   a21InitPhysicalTouchState(&g_physical_touch_state);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
@@ -678,6 +738,7 @@ void loop() {
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   a21IMUDiagnosticTick(&g_imu_runtime, &g_imu_driver, now_ms);
+  a21SensorDiagnosticTick(&g_sensor_runtime, &g_sensor_driver, now_ms);
   handleLocalControls(now_ms);
   drawIfChanged();
   A21RuntimeEchoDiagnostics runtime_diagnostics = {};
@@ -715,6 +776,17 @@ void loop() {
   runtime_diagnostics.imu_gyro_mdps_y = g_imu_runtime.gyro_mdps_y;
   runtime_diagnostics.imu_gyro_mdps_z = g_imu_runtime.gyro_mdps_z;
   a21CopyString(runtime_diagnostics.imu_posture, A21_IMU_POSTURE_CAP, g_imu_runtime.posture);
+  runtime_diagnostics.sensor_enabled = g_sensor_runtime.enabled;
+  runtime_diagnostics.sensor_available = g_sensor_runtime.available;
+  runtime_diagnostics.sensor_samples = g_sensor_runtime.samples;
+  runtime_diagnostics.sensor_read_errors = g_sensor_runtime.read_errors;
+  runtime_diagnostics.sensor_has_ambient_light = g_sensor_runtime.has_ambient_light;
+  runtime_diagnostics.sensor_ambient_light_raw = g_sensor_runtime.ambient_light_raw;
+  runtime_diagnostics.sensor_has_proximity = g_sensor_runtime.has_proximity;
+  runtime_diagnostics.sensor_proximity_raw = g_sensor_runtime.proximity_raw;
+  runtime_diagnostics.sensor_has_battery = g_sensor_runtime.has_battery;
+  runtime_diagnostics.sensor_battery_mv = g_sensor_runtime.battery_mv;
+  runtime_diagnostics.sensor_battery_ma = g_sensor_runtime.battery_ma;
   a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &g_gateway_ws_runtime,
       &g_gateway_ws_driver,

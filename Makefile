@@ -14,6 +14,10 @@ A21_IMU_PROBE_MAX_READ_ERRORS ?= 0
 A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG ?= 500
 A21_IMU_PROBE_MIN_SAMPLES ?= 10
 A21_IMU_PROBE_WINDOW_MS ?= 1500
+A21_SENSOR_PROBE_MAX_READ_ERRORS ?= 0
+A21_SENSOR_PROBE_MIN_BATTERY_MV ?= 3000
+A21_SENSOR_PROBE_MIN_SAMPLES ?= 10
+A21_SENSOR_PROBE_WINDOW_MS ?= 1500
 A21_HALF_DUPLEX_MIN_DELIVERY_RATIO ?= 0.95
 A21_HALF_DUPLEX_MIN_MIC_FRAMES ?= 1
 A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS ?= 1
@@ -23,7 +27,7 @@ A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
 A21_SPEAKER_MIN_PLAYED_FRAMES ?= 50
 A21_SPEAKER_WINDOW_MS ?= 1500
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-voice-loopback stackchan-local-tts-playback latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-voice-loopback stackchan-local-tts-playback latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
 
 test:
 	go test ./...
@@ -108,6 +112,9 @@ firmware-mic-probe-build: firmware-tools firmware-check
 firmware-imu-probe-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_imu_probe
 
+firmware-sensor-probe-build: firmware-tools firmware-check
+	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_sensor_probe
+
 firmware-avatar-spike-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_avatar_spike
 
@@ -152,6 +159,20 @@ firmware-imu-probe-upload-blocker-check: firmware-tools
 		exit 1; \
 	}; \
 	echo "A21 IMU probe raw PlatformIO upload blocker ok"
+
+firmware-sensor-probe-upload-blocker-check: firmware-tools
+	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_sensor_probe -t upload 2>&1 )"; \
+	code="$$?"; \
+	printf '%s\n' "$$output"; \
+	if [ "$$code" -eq 0 ]; then \
+		echo "A21 sensor probe raw PlatformIO upload blocker failed: upload target exited 0"; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$output" | grep -q "A21 raw PlatformIO upload is forbidden" || { \
+		echo "A21 sensor probe raw PlatformIO upload blocker failed: guard message missing"; \
+		exit 1; \
+	}; \
+	echo "A21 sensor probe raw PlatformIO upload blocker ok"
 
 firmware-clean-check:
 	@test -z "$$(git status --porcelain --untracked-files=all)" || (echo "A21 firmware package requires a clean git worktree"; git status --short; exit 2)
@@ -221,6 +242,10 @@ stackchan-imu-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-imu-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_IMU_PROBE_WINDOW_MS)" --min-samples "$(A21_IMU_PROBE_MIN_SAMPLES)" --min-accel-total-mg "$(A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG)" --max-read-errors "$(A21_IMU_PROBE_MAX_READ_ERRORS)" --output-dir reports
 
+stackchan-sensor-probe-acceptance:
+	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
+	go run ./cmd/a21 stackchan-sensor-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SENSOR_PROBE_WINDOW_MS)" --min-samples "$(A21_SENSOR_PROBE_MIN_SAMPLES)" --min-battery-mv "$(A21_SENSOR_PROBE_MIN_BATTERY_MV)" --max-read-errors "$(A21_SENSOR_PROBE_MAX_READ_ERRORS)" --output-dir reports
+
 stackchan-half-duplex-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_HALF_DUPLEX_WINDOW_MS)" --min-mic-frames "$(A21_HALF_DUPLEX_MIN_MIC_FRAMES)" --min-playback-chunks "$(A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS)" --min-delivery-ratio "$(A21_HALF_DUPLEX_MIN_DELIVERY_RATIO)" --output-dir reports
@@ -279,6 +304,15 @@ firmware-imu-probe-flash-execute: firmware-imu-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_IMU_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE" || (echo "A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required"; exit 2)
 	go run ./cmd/a21 firmware-imu-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_IMU_PROBE_FLASH_CONFIRM)" --output-dir reports
+
+firmware-sensor-probe-flash-plan: firmware-sensor-probe-build
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	go run ./cmd/a21 firmware-sensor-probe-flash-plan --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+
+firmware-sensor-probe-flash-execute: firmware-sensor-probe-build
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test "$(A21_SENSOR_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE" || (echo "A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE is required"; exit 2)
+	go run ./cmd/a21 firmware-sensor-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_SENSOR_PROBE_FLASH_CONFIRM)" --output-dir reports
 
 verify:
 	go test ./...

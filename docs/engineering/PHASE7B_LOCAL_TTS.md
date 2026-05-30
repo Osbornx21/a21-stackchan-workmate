@@ -31,6 +31,7 @@ The CLI command is:
 go run ./cmd/a21 local-tts-smoke --output-dir reports
 make local-tts-smoke
 go run ./cmd/a21 local-voice-loopback --repeat 3 --output-dir reports
+go run ./cmd/a21 local-voice-loopback --text-provider deepseek --execute-text-provider --repeat 3 --output-dir reports
 make local-voice-loopback
 go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --output-dir reports
 make stackchan-local-tts-playback
@@ -71,12 +72,14 @@ The report does not store input text, provider credentials, proxy values, auth h
 ```text
 mock VAD fixture
   -> mock ASR boundary
-  -> mock OpenAI-compatible text_stream parser
+  -> mock OpenAI-compatible text_stream parser or explicit DeepSeek text_stream execution
   -> selected local TTS
   -> existing Gateway mock barge-in latency bench
 ```
 
 This command is not a fake product demo. It is a deterministic host loopback receipt that proves A21's current software seams can carry redacted timing evidence across VAD, ASR placeholder, text-stream parsing, local TTS, and barge-in stop measurement before physical StackChan and real provider execution are allowed into the lane.
+
+By default it uses the deterministic mock text stream. `--text-provider deepseek --execute-text-provider` is the explicit paid-network path. It requires `A21_LAB_DEEPSEEK_API_KEY`, uses the P0 DeepSeek profile, sends the mock ASR transcript to the provider, uses the streamed provider content as the TTS input, and still redacts user input, provider content, reasoning content, API key, model value, proxy value, and full URL from stdout and the saved report.
 
 The command writes:
 
@@ -84,7 +87,7 @@ The command writes:
 reports/a21-local-voice-loopback-YYYYMMDD-HHMMSS.json
 ```
 
-The report records byte counts and timings only; it does not record the input utterance, mock ASR transcript, mock provider output text, reasoning text, provider credentials, or full model path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
+The report records byte counts, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, mock ASR transcript, provider output text, reasoning text, provider credentials, model value, proxy value, full URL, or full model path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
 
 ## StackChan Local TTS Playback
 
@@ -104,6 +107,26 @@ This phase proves only local synthesis and WAV conversion. It does not prove:
 - full-duplex AEC
 
 Physical speaker acceptance remains under the guarded StackChan hardware path.
+
+## Local Bakeoff Hook
+
+The local workstation may have an ignored model-cache hook at:
+
+```text
+.a21-tools/a21-local-model-hook/
+```
+
+This hook is not part of the tracked A21 mainline and must not be treated as a product dependency. It is a time-saving pointer for future local ASR/TTS adapter work. Before promoting any candidate, rerun the hook locally and convert the result into a tracked A21 report, adapter plan, or ADR as appropriate.
+
+Useful commands:
+
+```bash
+.a21-tools/a21-local-model-hook/a21-local-model-bakeoff.sh summary
+.a21-tools/a21-local-model-hook/a21-local-model-bakeoff.sh tts
+.a21-tools/a21-local-model-hook/a21-local-model-bakeoff.sh asr
+```
+
+The last local bakeoff kept `vits-icefall-zh-aishell3` as the default local TTS candidate, kept `vits-melo-tts-zh_en` and `kokoro-multi-lang-v1_1` as future voice-quality candidates, rejected `matcha-icefall-zh-baker` for now, and identified Paraformer small, SenseVoice, and streaming Zipformer as local ASR candidates worth formal adapter evaluation.
 
 ## Current Status
 

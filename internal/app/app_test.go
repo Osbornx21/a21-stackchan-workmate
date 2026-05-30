@@ -372,22 +372,23 @@ func TestRunDoctorIncludesProviderNetworkPolicy(t *testing.T) {
 }
 
 func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
-	t.Setenv("A21_PROVIDER_PRIMARY", "openai_realtime")
-	t.Setenv("A21_OPENAI_API_KEY", "sk-a21-secret")
-	t.Setenv("A21_OPENAI_REALTIME_MODEL", "gpt-realtime")
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run([]string{"doctor"}, &stdout, &stderr)
 	if code != 0 && code != 1 {
 		t.Fatalf("code = %d, want 0 or 1", code)
 	}
-	for _, want := range []string{`"providers"`, `"primary": "openai_realtime"`, `"name": "openai_realtime"`, `"configured": true`, `"A21_OPENAI_API_KEY"`} {
+	for _, want := range []string{`"providers"`, `"primary": "deepseek"`, `"name": "deepseek"`, `"family": "text_stream"`, `"configured": true`, `"A21_LAB_DEEPSEEK_API_KEY"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	if strings.Contains(stdout.String(), "sk-a21-secret") {
-		t.Fatalf("stdout leaked provider key: %s", stdout.String())
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked provider value %q: %s", forbidden, stdout.String())
+		}
 	}
 }
 
@@ -407,8 +408,8 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 		`"gateway_provider": "a21-mock-voice"`,
 		`"status": "healthy"`,
 		`"configured": true`,
-		`"primary": "doubao_tts_realtime"`,
-		`"provider": "doubao_tts_realtime"`,
+		`"primary": "unknown_provider"`,
+		`"provider_unknown"`,
 		`"endpoint_host": "ai-gateway.vei.volces.com"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -444,9 +445,8 @@ func TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets(t *test
 		`"healthy": false`,
 		`"configured": true`,
 		`"detail": "execution disabled pending verified Doubao realtime speech-to-speech adapter"`,
-		`"primary": "doubao_realtime"`,
-		`"provider": "doubao_realtime"`,
-		`"status": "unsupported"`,
+		`"primary": "unknown_provider"`,
+		`"provider_unknown"`,
 		`"status": "ready"`,
 		`"endpoint_host": "ai-gateway.vei.volces.com"`,
 	} {
@@ -560,15 +560,14 @@ func TestRunDoctorBlocksLegacyProviderPrimaryWithoutEchoingValue(t *testing.T) {
 
 func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
-	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
-	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run([]string{"provider-smoke", "--provider", "deepseek"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	for _, want := range []string{`"provider": "deepseek"`, `"status": "ready"`, `"executed": false`, `"api_key_env": "A21_DEEPSEEK_API_KEY"`} {
+	for _, want := range []string{`"provider": "deepseek"`, `"status": "ready"`, `"executed": false`, `"api_key_env": "A21_LAB_DEEPSEEK_API_KEY"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
@@ -582,8 +581,7 @@ func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
 
 func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
-	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
-	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
 	dir := t.TempDir()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -625,10 +623,31 @@ func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T)
 	}
 }
 
+func TestWriteProviderSmokeReportDoesNotOverwriteSameSecondReports(t *testing.T) {
+	dir := t.TempDir()
+	first, err := writeProviderSmokeReport(dir, providers.ProviderSmokeReport{Provider: "deepseek", Status: providers.ProviderSmokeReady})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := writeProviderSmokeReport(dir, providers.ProviderSmokeReport{Provider: "deepseek-p0-collision-check", Status: providers.ProviderSmokeReady})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("report paths collided: %s", first)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("provider smoke reports = %d, want 2: %v", len(matches), matches)
+	}
+}
+
 func TestRunProviderSmokeAcceptsStreamRepeatFlags(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
-	t.Setenv("A21_DEEPSEEK_API_KEY", "sk-a21-secret")
-	t.Setenv("A21_DEEPSEEK_MODEL", "deepseek-v4-flash")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
@@ -838,6 +857,84 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{"真实输入不要进报告", "A21 loopback response", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-deepseek-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12,
+			TTSFirstAudioMS: 12,
+		}, nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning":"先识别情绪"}}]}`,
+			`data: {"choices":[{"delta":{"content":"这是来自 DeepSeek 的回复"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DEEPSEEK_BASE_URL", server.URL)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "deepseek", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if ttsInput != "这是来自 DeepSeek 的回复" {
+		t.Fatalf("tts input = %q, want provider content", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"text_stream_provider": "deepseek"`,
+		`"text_stream_executed": true`,
+		`"text_stream_content_delta_count": 1`,
+		`"text_stream_reasoning_delta_count": 1`,
+		`"tts_provider": "macos_say"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-v4-flash", "用户原文不要进报告", "这是来自 DeepSeek 的回复", "先识别情绪", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
@@ -3713,6 +3810,93 @@ func TestRunFirmwareIMUProbeFlashExecuteRequiresConfirmationToken(t *testing.T) 
 	}
 }
 
+func TestRunFirmwareSensorProbeFlashPlanWritesNoFlashReport(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestSensorProbeFlashImages(t, dir, "abcdef1")
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-sensor-probe-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"guard_id": "a21.firmware.sensor_probe_flash_plan.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"platformio_env": "a21_stackchan_cores3_sensor_probe"`,
+		"firmware sensor probe flash plan ok",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-sensor-probe-flash-plan-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("plan reports = %d, want 1", len(matches))
+	}
+}
+
+func TestRunFirmwareSensorProbeFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	originalSourceDetector := detectFirmwareSourceState
+	detectFirmwareSourceState = func() (firmwareSourceState, error) {
+		return firmwareSourceState{Root: "/tmp/a21", Clean: true}, nil
+	}
+	defer func() {
+		detectFirmwareSourceState = originalSourceDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	buildDir, coreDir, artifact := writeTestSensorProbeFlashImages(t, dir, "abcdef1")
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-sensor-probe-flash-execute",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--commit", "abcdef1",
+		"--build-dir", buildDir,
+		"--core-dir", coreDir,
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--confirm WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE is required") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunStackChanIMUProbeAcceptanceConfirmsReadOnlySamples(t *testing.T) {
 	after := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3765,6 +3949,65 @@ func TestRunStackChanIMUProbeAcceptanceConfirmsReadOnlySamples(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("reports = %v, want one IMU probe report", matches)
+	}
+}
+
+func TestRunStackChanSensorProbeAcceptanceConfirmsReadOnlyTelemetry(t *testing.T) {
+	after := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			if after {
+				fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"ambient_light":"diagnostic_probe_ltr553_ambient_light","proximity":"diagnostic_probe_ltr553_proximity","battery":"diagnostic_probe_ina226_battery","screen":"available","rgb":"available"},"runtime_echo":{"sensor_available":"1","sensor_samples":"31","sensor_read_errors":"0","ambient_light_raw":"220","proximity_raw":"7","battery_mv":"4012","battery_ma":"-42"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+				return
+			}
+			after = true
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"ambient_light":"diagnostic_probe_ltr553_ambient_light","proximity":"diagnostic_probe_ltr553_proximity","battery":"diagnostic_probe_ina226_battery","screen":"available","rgb":"available"},"runtime_echo":{"sensor_available":"1","sensor_samples":"12","sensor_read_errors":"0","ambient_light_raw":"180","proximity_raw":"3","battery_mv":"4008","battery_ma":"-40"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		default:
+			t.Fatalf("path = %q, want /v1/devices", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-sensor-probe-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--window-ms", "1",
+		"--min-samples", "10",
+		"--min-battery-mv", "3000",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_sensor_probe_acceptance.v1"`,
+		`"sensor_probe_acceptance_status": "confirmed"`,
+		`"ambient_light": "diagnostic_probe_ltr553_ambient_light"`,
+		`"proximity": "diagnostic_probe_ltr553_proximity"`,
+		`"battery": "diagnostic_probe_ina226_battery"`,
+		`"sensor_samples_delta": 19`,
+		`"ambient_light_raw": 220`,
+		`"proximity_raw": 7`,
+		`"battery_mv": 4012`,
+		"stackchan sensor probe acceptance ok",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-sensor-probe-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %v, want one sensor probe report", matches)
 	}
 }
 
@@ -6015,6 +6258,27 @@ func writeTestIMUProbeFlashImages(t *testing.T, dir string, commit string) (stri
 		filepath.Join(buildDir, "partitions.bin"): []byte("a21 IMU probe partitions"),
 		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 IMU probe boot app"),
 		artifact: []byte("a21-stackchan\n0.1.0\nm5stack-cores3\n" + commit + "\ndiagnostic_probe_m5unified_imu\n"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buildDir, coreDir, artifact
+}
+
+func writeTestSensorProbeFlashImages(t *testing.T, dir string, commit string) (string, string, string) {
+	t.Helper()
+	buildDir := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3_sensor_probe")
+	coreDir := filepath.Join(dir, "platformio-core")
+	artifact := filepath.Join(buildDir, "firmware.bin")
+	for path, content := range map[string][]byte{
+		filepath.Join(buildDir, "bootloader.bin"): []byte("a21 sensor probe bootloader"),
+		filepath.Join(buildDir, "partitions.bin"): []byte("a21 sensor probe partitions"),
+		filepath.Join(coreDir, "packages", "framework-arduinoespressif32", "tools", "partitions", "boot_app0.bin"): []byte("a21 sensor probe boot app"),
+		artifact: []byte("a21-stackchan\n0.1.0\nm5stack-cores3\n" + commit + "\ndiagnostic_probe_ltr553_ambient_light\ndiagnostic_probe_ltr553_proximity\ndiagnostic_probe_ina226_battery\n"),
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

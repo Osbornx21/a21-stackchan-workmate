@@ -21,73 +21,6 @@ func TestProviderCatalogDefaultsToMockPrimary(t *testing.T) {
 	}
 }
 
-func TestProviderCatalogReportsSelectedDoubaoMissingCredentials(t *testing.T) {
-	report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=doubao_realtime"})
-
-	doubao := providerReadinessByName(t, report, "doubao_realtime")
-	if !doubao.Selected {
-		t.Fatal("expected doubao to be selected")
-	}
-	if doubao.Configured {
-		t.Fatal("doubao should not be configured without required env")
-	}
-	for _, want := range []string{"A21_DOUBAO_API_KEY", "A21_DOUBAO_APP_ID", "A21_DOUBAO_RESOURCE_ID", "A21_DOUBAO_REALTIME_MODEL"} {
-		if !stringSliceContains(doubao.MissingEnv, want) {
-			t.Fatalf("doubao missing env lacks %q: %#v", want, doubao.MissingEnv)
-		}
-	}
-}
-
-func TestProviderCatalogReportsDoubaoTTSRealtimeReadiness(t *testing.T) {
-	report := ProviderCatalogFromEnv([]string{
-		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
-		"A21_DOUBAO_API_KEY=sk-a21-secret",
-		"A21_DOUBAO_TTS_MODEL=doubao-tts",
-		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
-	})
-
-	doubao := providerReadinessByName(t, report, "doubao_tts_realtime")
-	if !doubao.Selected || !doubao.Configured || !doubao.Realtime {
-		t.Fatalf("doubao tts readiness = %+v", doubao)
-	}
-	data, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rendered := string(data)
-	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts"} {
-		if strings.Contains(rendered, forbidden) {
-			t.Fatalf("catalog leaked %q: %s", forbidden, rendered)
-		}
-	}
-}
-
-func TestProviderCatalogMarksOpenAIConfiguredWithoutLeakingSecret(t *testing.T) {
-	report := ProviderCatalogFromEnv([]string{
-		"A21_PROVIDER_PRIMARY=openai_realtime",
-		"A21_OPENAI_API_KEY=sk-a21-secret",
-		"A21_OPENAI_REALTIME_MODEL=gpt-realtime",
-	})
-
-	openai := providerReadinessByName(t, report, "openai_realtime")
-	if !openai.Selected || !openai.Configured || !openai.Realtime {
-		t.Fatalf("openai readiness = %+v", openai)
-	}
-	if len(openai.MissingEnv) != 0 {
-		t.Fatalf("openai missing env = %#v", openai.MissingEnv)
-	}
-	data, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "sk-a21-secret") {
-		t.Fatalf("catalog leaked API key: %s", data)
-	}
-	if !strings.Contains(string(data), "A21_OPENAI_API_KEY") {
-		t.Fatalf("catalog should expose env names only: %s", data)
-	}
-}
-
 func TestProviderCatalogFlagsLegacyPrimaryIdentity(t *testing.T) {
 	report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=x21_voice"})
 
@@ -142,6 +75,9 @@ func TestProviderCatalogMarksDeepSeekAsTextStreamFamily(t *testing.T) {
 	report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=deepseek"})
 
 	deepseek := providerReadinessByName(t, report, "deepseek")
+	if !deepseek.Selected {
+		t.Fatal("deepseek should be selected")
+	}
 	if deepseek.Family != string(ProviderFamilyTextStream) {
 		t.Fatalf("deepseek family = %q, want %q", deepseek.Family, ProviderFamilyTextStream)
 	}
@@ -150,6 +86,52 @@ func TestProviderCatalogMarksDeepSeekAsTextStreamFamily(t *testing.T) {
 	}
 	if !stringSliceContains(deepseek.Capabilities, "text_stream") {
 		t.Fatalf("deepseek capabilities lack text_stream: %#v", deepseek.Capabilities)
+	}
+	if deepseek.Configured {
+		t.Fatal("deepseek should require the lab API key before it is configured")
+	}
+	if !stringSliceContains(deepseek.MissingEnv, "A21_LAB_DEEPSEEK_API_KEY") {
+		t.Fatalf("deepseek missing env lacks lab key: %#v", deepseek.MissingEnv)
+	}
+	if stringSliceContains(deepseek.MissingEnv, "A21_DEEPSEEK_MODEL") {
+		t.Fatalf("deepseek model should use a default for P0 smoke: %#v", deepseek.MissingEnv)
+	}
+}
+
+func TestProviderCatalogBlocksBaiduAndHuaweiPrimaryWithoutEchoingValue(t *testing.T) {
+	for _, primary := range []string{"baidu_qianfan", "huawei_pangu"} {
+		report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=" + primary})
+		if report.Primary != "blocked_provider" {
+			t.Fatalf("primary = %q, want blocked_provider for %q", report.Primary, primary)
+		}
+		if len(report.Findings) != 1 || report.Findings[0].Code != "provider_blocked" {
+			t.Fatalf("findings = %#v, want provider_blocked", report.Findings)
+		}
+		data, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), primary) {
+			t.Fatalf("catalog leaked blocked provider value: %s", data)
+		}
+	}
+}
+
+func TestProviderCatalogP0BuiltInsStayNarrow(t *testing.T) {
+	report := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
+	var names []string
+	for _, provider := range report.Providers {
+		names = append(names, provider.Name)
+	}
+	for _, want := range []string{"mock", "deepseek"} {
+		if !stringSliceContains(names, want) {
+			t.Fatalf("providers = %#v, missing %q", names, want)
+		}
+	}
+	for _, forbidden := range []string{"siliconflow", "stepfun", "bailian_dashscope", "moonshot", "volcengine_ark", "local_ollama", "local_vllm", "openai_realtime", "doubao_realtime", "doubao_tts_realtime", "hermes_agent", "mimo_agent"} {
+		if stringSliceContains(names, forbidden) {
+			t.Fatalf("P0 catalog horizontally expanded to %q: %#v", forbidden, names)
+		}
 	}
 }
 
