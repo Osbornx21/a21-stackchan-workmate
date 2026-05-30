@@ -63,8 +63,8 @@ Phase 1 already records:
 
 ```bash
 go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
-A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 make lan-probe
-go run ./cmd/a21 lan-probe --target a21-v21-adapter=127.0.0.1:21121 --timeout-ms 1000 --output-dir reports
+A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 A21_LAN_SAMPLES=5 make lan-probe
+go run ./cmd/a21 lan-probe --target a21-v21-adapter=127.0.0.1:21121 --samples 20 --timeout-ms 1000 --output-dir reports
 ```
 
 The command performs direct TCP dials and writes:
@@ -73,7 +73,7 @@ The command performs direct TCP dials and writes:
 reports/a21-lan-probe-YYYYMMDD-HHMMSS.json
 ```
 
-The report includes generated timestamp, current commit, network/DNS fingerprint, redacted proxy-policy metadata, target name, normalized `host:port`, direct flag, status, duration, and a coarse error code. It must not include proxy URLs, proxy hosts/ports, proxy credentials, API keys, URL credentials, or X21 identities.
+The report includes generated timestamp, current commit, network/DNS fingerprint, redacted proxy-policy metadata, target name, normalized `host:port`, direct flag, status, sample count, passed/failed samples, p50, p95, jitter, and a coarse error code. It must not include proxy URLs, proxy hosts/ports, proxy credentials, API keys, URL credentials, or X21 identities.
 
 Use it to compare:
 

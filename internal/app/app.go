@@ -318,14 +318,20 @@ type lanProbeReport struct {
 }
 
 type lanProbeTargetReport struct {
-	Name       string  `json:"name"`
-	Endpoint   string  `json:"endpoint,omitempty"`
-	Host       string  `json:"host,omitempty"`
-	Port       string  `json:"port,omitempty"`
-	Status     string  `json:"status"`
-	Direct     bool    `json:"direct"`
-	DurationMS float64 `json:"duration_ms,omitempty"`
-	ErrorCode  string  `json:"error_code,omitempty"`
+	Name          string  `json:"name"`
+	Endpoint      string  `json:"endpoint,omitempty"`
+	Host          string  `json:"host,omitempty"`
+	Port          string  `json:"port,omitempty"`
+	Status        string  `json:"status"`
+	Direct        bool    `json:"direct"`
+	Samples       int     `json:"samples"`
+	PassedSamples int     `json:"passed_samples"`
+	FailedSamples int     `json:"failed_samples"`
+	DurationMS    float64 `json:"duration_ms,omitempty"`
+	P50MS         float64 `json:"p50_ms"`
+	P95MS         float64 `json:"p95_ms"`
+	JitterMS      float64 `json:"jitter_ms"`
+	ErrorCode     string  `json:"error_code,omitempty"`
 }
 
 type lanProbeTarget struct {
@@ -339,10 +345,11 @@ func runLANProbe(args []string, stdout io.Writer, stderr io.Writer) int {
 	targets := make([]lanProbeTarget, 0)
 	outputDir := ""
 	timeout := time.Second
+	samples := 1
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 lan-probe --target a21-gateway=127.0.0.1:21080 [--target a21-v21-adapter=127.0.0.1:21121] [--timeout-ms 1000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 lan-probe --target a21-gateway=127.0.0.1:21080 [--target a21-v21-adapter=127.0.0.1:21121] [--samples 5] [--timeout-ms 1000] [--output-dir reports]")
 			return 0
 		case "--target":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -356,6 +363,18 @@ func runLANProbe(args []string, stdout io.Writer, stderr io.Writer) int {
 				return 2
 			}
 			targets = append(targets, target)
+		case "--samples":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--samples requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--samples must be a positive integer")
+				return 2
+			}
+			samples = value
 		case "--timeout-ms":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--timeout-ms requires a value")
@@ -384,7 +403,7 @@ func runLANProbe(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "lan-probe requires at least one --target")
 		return 2
 	}
-	report := runLANProbeTargets(targets, timeout)
+	report := runLANProbeTargets(targets, timeout, samples)
 	if outputDir != "" {
 		if err := validateA21ReportDir(outputDir); err != nil {
 			fmt.Fprintf(stderr, "lan probe report dir invalid: %v\n", err)
@@ -446,7 +465,10 @@ func parseLANProbeTarget(raw string) (lanProbeTarget, error) {
 	}, nil
 }
 
-func runLANProbeTargets(targets []lanProbeTarget, timeout time.Duration) lanProbeReport {
+func runLANProbeTargets(targets []lanProbeTarget, timeout time.Duration, samples int) lanProbeReport {
+	if samples <= 0 {
+		samples = 1
+	}
 	report := lanProbeReport{
 		SchemaVersion: "a21.lan_probe.v1",
 		OK:            true,
@@ -461,16 +483,31 @@ func runLANProbeTargets(targets []lanProbeTarget, timeout time.Duration) lanProb
 			Port:     target.port,
 			Status:   "failed",
 			Direct:   true,
+			Samples:  samples,
 		}
-		started := time.Now()
-		conn, err := (&net.Dialer{Timeout: timeout}).Dial("tcp", target.endpoint)
-		targetReport.DurationMS = float64(time.Since(started).Microseconds()) / 1000
-		if err != nil {
-			report.OK = false
-			targetReport.ErrorCode = "tcp_dial_failed"
-		} else {
+		durations := make([]time.Duration, 0, samples)
+		for sample := 0; sample < samples; sample++ {
+			started := time.Now()
+			conn, err := (&net.Dialer{Timeout: timeout}).Dial("tcp", target.endpoint)
+			duration := time.Since(started)
+			if err != nil {
+				report.OK = false
+				targetReport.FailedSamples++
+				targetReport.ErrorCode = "tcp_dial_failed"
+				continue
+			}
 			_ = conn.Close()
+			targetReport.PassedSamples++
+			durations = append(durations, duration)
+		}
+		if targetReport.FailedSamples == 0 {
 			targetReport.Status = "passed"
+		}
+		if len(durations) > 0 {
+			targetReport.DurationMS = percentileMS(durations, 0.50)
+			targetReport.P50MS = percentileMS(durations, 0.50)
+			targetReport.P95MS = percentileMS(durations, 0.95)
+			targetReport.JitterMS = jitterMS(durations)
 		}
 		report.Targets = append(report.Targets, targetReport)
 	}
@@ -1286,6 +1323,23 @@ func percentileMS(samples []time.Duration, quantile float64) float64 {
 		rank = len(sorted) - 1
 	}
 	return float64(sorted[rank].Microseconds()) / 1000
+}
+
+func jitterMS(samples []time.Duration) float64 {
+	if len(samples) == 0 {
+		return 0
+	}
+	minimum := samples[0]
+	maximum := samples[0]
+	for _, sample := range samples[1:] {
+		if sample < minimum {
+			minimum = sample
+		}
+		if sample > maximum {
+			maximum = sample
+		}
+	}
+	return float64((maximum - minimum).Microseconds()) / 1000
 }
 
 func buildPreflightReport(stderr io.Writer) (runtimeguard.PreflightReport, int) {

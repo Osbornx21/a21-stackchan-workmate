@@ -72,10 +72,10 @@ Explicit LAN reachability is a separate command:
 
 ```bash
 go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
-A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 make lan-probe
+A21_LAN_TARGET=a21-gateway=127.0.0.1:21080 A21_LAN_SAMPLES=5 make lan-probe
 ```
 
-`lan-probe` uses direct TCP dials, not HTTP clients or proxy-aware provider clients. It writes `reports/a21-lan-probe-YYYYMMDD-HHMMSS.json` and includes target status, duration, current commit, network fingerprint, and redacted proxy-policy metadata. It is not part of default `doctor` because home development may not have StackChan or office-only endpoints online. It never stores proxy URLs, proxy credentials, URL credentials, API keys, or raw X21 target values.
+`lan-probe` uses direct TCP dials, not HTTP clients or proxy-aware provider clients. It writes `reports/a21-lan-probe-YYYYMMDD-HHMMSS.json` and includes target status, passed/failed sample counts, p50, p95, jitter, current commit, network fingerprint, and redacted proxy-policy metadata. It is not part of default `doctor` because home development may not have StackChan or office-only endpoints online. It never stores proxy URLs, proxy credentials, URL credentials, API keys, or raw X21 target values.
 
 The voice section includes selected provider local health, Gateway runtime provider, and provider network mode. `direct` means future provider HTTP clients will not inherit environment proxies. `explicit_proxy` means `A21_PROVIDER_PROXY_URL` is configured; doctor reports only the variable name and never prints the proxy URL, host, port, username, or password.
 

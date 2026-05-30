@@ -603,8 +603,11 @@ func TestRunLANProbeWritesDirectRedactedReport(t *testing.T) {
 	}
 	defer listener.Close()
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
 			_ = conn.Close()
 		}
 	}()
@@ -615,6 +618,7 @@ func TestRunLANProbeWritesDirectRedactedReport(t *testing.T) {
 	code := Run([]string{
 		"lan-probe",
 		"--target", "a21-gateway=" + listener.Addr().String(),
+		"--samples", "3",
 		"--output-dir", dir,
 	}, &stdout, &stderr)
 
@@ -627,6 +631,12 @@ func TestRunLANProbeWritesDirectRedactedReport(t *testing.T) {
 		`"name": "a21-gateway"`,
 		`"status": "passed"`,
 		`"direct": true`,
+		`"samples": 3`,
+		`"passed_samples": 3`,
+		`"failed_samples": 0`,
+		`"p50_ms"`,
+		`"p95_ms"`,
+		`"jitter_ms"`,
 		`"metadata"`,
 		`"proxy"`,
 		`"report_path"`,
