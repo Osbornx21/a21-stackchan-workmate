@@ -135,7 +135,7 @@ host fixture or future StackChan mic evidence
   -> StackChan audio.playback.chunk downlink
 ```
 
-The default `listen_source` is `host_fixture`, so the report is not an M3 pass even when all chunks are delivered. It sets `m3_candidate=false` and records a finding explaining that the listen source is not physical StackChan microphone evidence. `--listen-source stackchan_mic` is reserved for the future true mic-driven run after the device path can prove capture, VAD, turn start, acknowledgement playback, answer playback, and barge-in timing in the same traced window.
+The default `listen_source` is `host_fixture`, so the report is not an M3 pass even when all chunks are delivered. It sets `m3_candidate=false` and records a finding explaining that the listen source is not physical StackChan microphone evidence. `--listen-source stackchan_mic` is intentionally rejected until the command consumes real physical mic turn evidence; it is reserved for the future true mic-driven run after the device path can prove capture, VAD, turn start, acknowledgement playback, answer playback, and barge-in timing in the same traced window.
 
 Reports include the redacted timing and delivery receipt:
 

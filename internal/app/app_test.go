@@ -1467,6 +1467,45 @@ func TestRunStackChanFastCompanionTurnWritesFailedReportWhenGatewayUnavailable(t
 	}
 }
 
+func TestRunStackChanFastCompanionTurnRejectsStackChanMicWithoutPhysicalEvidence(t *testing.T) {
+	var controlRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices":
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","rgb":"available","servo_y":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/v1/devices/control":
+			controlRequests++
+			t.Fatalf("stackchan_mic without physical evidence must not deliver synthetic playback")
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--listen-source", "stackchan_mic", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if controlRequests != 0 {
+		t.Fatalf("control requests = %d, want 0", controlRequests)
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
+		`"status": "failed"`,
+		`"listen_source": "stackchan_mic"`,
+		`"m3_candidate": false`,
+		`"stackchan_mic listen source requires physical mic turn evidence"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	var sawProfessionalRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

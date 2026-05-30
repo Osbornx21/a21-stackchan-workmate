@@ -250,6 +250,10 @@ func buildStackChanFastCompanionTurnReport(ctx context.Context, options stackCha
 		report.Findings = append(report.Findings, "device is not online")
 		return report, nil
 	}
+	if options.ListenSource == "stackchan_mic" {
+		report.Findings = append(report.Findings, "stackchan_mic listen source requires physical mic turn evidence")
+		return report, nil
+	}
 
 	ackSamples := make([]time.Duration, 0, options.Repeat)
 	answerSamples := make([]time.Duration, 0, options.Repeat)
