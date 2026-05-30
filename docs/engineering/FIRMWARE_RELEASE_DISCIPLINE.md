@@ -167,6 +167,7 @@ Upload-path dry-run guards now require both the release index record and the sib
 
 - the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
+- the release index and sibling manifest full artifact/checksum paths do not contain forbidden X21/V21 identities
 
 `firmware-upload-check` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.
 
@@ -197,6 +198,7 @@ The guard verifies:
 - upload-path guards require a matching `a21-firmware-release-index.jsonl` entry in the artifact directory
 - upload-path guards require a matching sibling `.manifest.json` artifact manifest
 - upload-path guards require both release records to agree on PlatformIO build provenance
+- upload-path guards reject release ledger or manifest paths containing forbidden X21/V21 identities, even when the artifact filename itself looks correct
 
 The embedded-identity check matters because a wrong `firmware.bin` could otherwise be copied into a correctly named artifact with a matching checksum. Build-provenance checks close the next gap: a package is not a valid A21 candidate unless the filename, checksum, artifact manifest, release index, firmware manifest, binary identity, PlatformIO environment, and PlatformIO board all agree.
 

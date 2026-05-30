@@ -194,6 +194,9 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) (FirmwareBu
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			return FirmwareBuildProvenance{}, fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
 		}
+		if releaseRecordPathContainsForbiddenIdentity(entry.ArtifactPath, entry.SHA256Path) {
+			return FirmwareBuildProvenance{}, fmt.Errorf("release index contains forbidden legacy path identity")
+		}
 		if filepath.Base(entry.ArtifactPath) != expectedArtifactName {
 			continue
 		}
@@ -232,6 +235,9 @@ func validateLatestReleaseIndexArtifact(path string, artifact ArtifactResult) er
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			return fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
 		}
+		if releaseRecordPathContainsForbiddenIdentity(entry.ArtifactPath, entry.SHA256Path) {
+			return fmt.Errorf("release index contains forbidden legacy path identity")
+		}
 		if entry.SchemaVersion != "a21.firmware.release.v1" ||
 			entry.FirmwareID != artifact.Manifest.FirmwareID ||
 			entry.Version != artifact.Manifest.Version ||
@@ -265,6 +271,9 @@ func validateArtifactReleaseManifest(path string, artifact ArtifactResult) (Firm
 	}
 	expectedArtifactName := filepath.Base(artifact.ArtifactPath)
 	expectedSHAName := filepath.Base(artifact.SHA256Path)
+	if releaseRecordPathContainsForbiddenIdentity(releaseManifest.ArtifactPath, releaseManifest.SHA256Path) {
+		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest contains forbidden legacy path identity")
+	}
 	if releaseManifest.SchemaVersion != ReleaseManifestSchemaVersion ||
 		releaseManifest.Project != artifact.Manifest.Project ||
 		releaseManifest.FirmwareID != artifact.Manifest.FirmwareID ||
@@ -293,6 +302,15 @@ func validateArtifactReleaseManifest(path string, artifact ArtifactResult) (Firm
 		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest build provenance invalid: %w", err)
 	}
 	return releaseManifest.Build, nil
+}
+
+func releaseRecordPathContainsForbiddenIdentity(paths ...string) bool {
+	for _, path := range paths {
+		if containsForbiddenPackagePathIdentity(path) {
+			return true
+		}
+	}
+	return false
 }
 
 type parsedArtifactName struct {

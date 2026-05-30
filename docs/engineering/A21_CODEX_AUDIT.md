@@ -94,6 +94,7 @@ Firmware-specific protections now include:
 - artifact names must start with `a21-stackchan-`.
 - artifacts containing X21/V21 names are rejected.
 - upload ports containing X21/V21 names are rejected.
+- release-index and per-artifact manifest paths containing X21/V21 names are rejected before upload-path dry-runs can pass.
 - firmware package requires a clean git worktree.
 - firmware upload remains dry-run only and returns `flash_allowed: false`.
 - raw PlatformIO upload targets are blocked by `scripts/a21_block_raw_upload.py` before any flash action can run.

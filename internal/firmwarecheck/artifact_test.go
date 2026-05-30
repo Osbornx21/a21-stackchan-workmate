@@ -131,6 +131,78 @@ func TestValidateUploadCandidateRejectsMissingBuildProvenance(t *testing.T) {
 	}
 }
 
+func TestValidateUploadCandidateRejectsReleaseIndexLegacyPath(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeArtifactWithChecksum(t, artifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, artifact+".sha256")
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  filepath.Join(dir, "x21-releases", filepath.Base(artifact)),
+		SHA256Path:    filepath.Join(dir, "x21-releases", filepath.Base(artifact)+".sha256"),
+		SHA256:        checksum,
+		Build:         testBuildProvenance(artifact),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactReleaseManifest(t, artifact, checksum)
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: artifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected upload candidate with legacy release index path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "forbidden legacy") {
+		t.Fatalf("error = %q, want forbidden legacy", err)
+	}
+}
+
+func TestValidateUploadCandidateRejectsReleaseManifestLegacyPath(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeArtifactWithChecksum(t, artifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, artifact+".sha256")
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  artifact,
+		SHA256Path:    artifact + ".sha256",
+		SHA256:        checksum,
+		Build:         testBuildProvenance(artifact),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactReleaseManifestWithPaths(t, artifact, checksum, filepath.Join(dir, "x21-releases", filepath.Base(artifact)), filepath.Join(dir, "x21-releases", filepath.Base(artifact)+".sha256"))
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: artifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected upload candidate with legacy release manifest path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "forbidden legacy") {
+		t.Fatalf("error = %q, want forbidden legacy", err)
+	}
+}
+
 func TestValidateUploadCandidateAcceptsReleaseIndexEntry(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
@@ -343,6 +415,16 @@ func writeArtifactReleaseManifest(t *testing.T, artifactPath string, checksum st
 
 func writeArtifactReleaseManifestWithIdentity(t *testing.T, artifactPath string, checksum string, commit string, timestamp string) {
 	t.Helper()
+	writeArtifactReleaseManifestWithPathsAndIdentity(t, artifactPath, checksum, commit, timestamp, artifactPath, artifactPath+".sha256")
+}
+
+func writeArtifactReleaseManifestWithPaths(t *testing.T, artifactPath string, checksum string, manifestArtifactPath string, manifestSHA256Path string) {
+	t.Helper()
+	writeArtifactReleaseManifestWithPathsAndIdentity(t, artifactPath, checksum, "abcdef123456", "20260530-004500", manifestArtifactPath, manifestSHA256Path)
+}
+
+func writeArtifactReleaseManifestWithPathsAndIdentity(t *testing.T, artifactPath string, checksum string, commit string, timestamp string, manifestArtifactPath string, manifestSHA256Path string) {
+	t.Helper()
 	data, err := json.MarshalIndent(FirmwareReleaseManifest{
 		SchemaVersion: ReleaseManifestSchemaVersion,
 		Project:       "A21",
@@ -351,9 +433,9 @@ func writeArtifactReleaseManifestWithIdentity(t *testing.T, artifactPath string,
 		Board:         "m5stack-cores3",
 		Commit:        commit,
 		Timestamp:     timestamp,
-		ArtifactPath:  artifactPath,
+		ArtifactPath:  manifestArtifactPath,
 		ArtifactName:  filepath.Base(artifactPath),
-		SHA256Path:    artifactPath + ".sha256",
+		SHA256Path:    manifestSHA256Path,
 		SHA256:        checksum,
 		Build:         testBuildProvenance(artifactPath),
 	}, "", "  ")
