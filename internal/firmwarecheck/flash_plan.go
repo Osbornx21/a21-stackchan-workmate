@@ -1,6 +1,9 @@
 package firmwarecheck
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type FlashPlanOptions struct {
 	ManifestPath      string
@@ -16,6 +19,7 @@ type FlashPlanOptions struct {
 
 type FlashPlanResult struct {
 	GuardID                  string               `json:"guard_id"`
+	GeneratedAtMS            int64                `json:"generated_at_ms"`
 	DryRun                   bool                 `json:"dry_run"`
 	FlashAllowed             bool                 `json:"flash_allowed"`
 	NextRequiredConfirmation string               `json:"next_required_confirmation"`
@@ -27,9 +31,14 @@ type FlashPlanResult struct {
 	Upload                   UploadCheckResult    `json:"upload"`
 	DeviceIdentity           DeviceIdentityResult `json:"device_identity"`
 	OK                       bool                 `json:"ok"`
+	ReportPath               string               `json:"report_path,omitempty"`
 }
 
 func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
+	generatedAtMS := options.NowMS
+	if generatedAtMS <= 0 {
+		generatedAtMS = time.Now().UnixMilli()
+	}
 	upload, err := ValidateUploadCandidate(UploadCheckOptions{
 		ManifestPath: options.ManifestPath,
 		ArtifactPath: options.ArtifactPath,
@@ -54,7 +63,7 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 		ExpectedDeviceID:  options.ExpectedDeviceID,
 		ExpectedGitCommit: options.ExpectedGitCommit,
 		MaxDeviceAgeMS:    options.MaxDeviceAgeMS,
-		NowMS:             options.NowMS,
+		NowMS:             generatedAtMS,
 	})
 	if err != nil {
 		return FlashPlanResult{}, err
@@ -71,6 +80,7 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 
 	return FlashPlanResult{
 		GuardID:                  "a21.firmware.flash_plan_guard.v1",
+		GeneratedAtMS:            generatedAtMS,
 		DryRun:                   true,
 		FlashAllowed:             false,
 		NextRequiredConfirmation: "future_explicit_guarded_flash_command",

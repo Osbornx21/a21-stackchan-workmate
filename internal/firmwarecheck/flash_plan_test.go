@@ -34,6 +34,7 @@ func TestBuildFlashPlanConfirmsUploadAndDeviceIdentityWithoutEnablingFlash(t *te
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
 		PortUsage:         PortUsage{Exists: true},
+		NowMS:             123456789,
 	})
 	if err != nil {
 		t.Fatalf("BuildFlashPlan returned error: %v", err)
@@ -55,6 +56,9 @@ func TestBuildFlashPlanConfirmsUploadAndDeviceIdentityWithoutEnablingFlash(t *te
 	}
 	if result.Port != "/dev/cu.usbmodemA21" || result.DeviceID != "stackchan-001" {
 		t.Fatalf("port/device = %q/%q", result.Port, result.DeviceID)
+	}
+	if result.GeneratedAtMS != 123456789 {
+		t.Fatalf("GeneratedAtMS = %d, want 123456789", result.GeneratedAtMS)
 	}
 }
 

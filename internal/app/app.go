@@ -513,6 +513,23 @@ func writeFirmwareDeviceReport(outputDir string, report firmwareDeviceReport) (s
 	return reportPath, nil
 }
 
+func writeFirmwareFlashPlanReport(outputDir string, result firmwarecheck.FlashPlanResult) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-firmware-flash-plan-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	result.ReportPath = reportPath
+	if err := writeJSONFirmwareFlashPlan(file, result); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func runDoctor(args []string, stdout io.Writer, stderr io.Writer) int {
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
@@ -1427,10 +1444,11 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	options := firmwarecheck.FlashPlanOptions{
 		ManifestPath: "firmware/stackchan/a21-firmware.json",
 	}
+	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000]")
+			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000] [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1486,6 +1504,13 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 				return 2
 			}
 			options.MaxDeviceAgeMS = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown firmware-flash-plan option %q\n", args[i])
 			return 2
@@ -1521,6 +1546,18 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	if err != nil {
 		fmt.Fprintf(stderr, "firmware flash plan failed: %v\n", err)
 		return 1
+	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "firmware flash plan report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeFirmwareFlashPlanReport(outputDir, result)
+		if err != nil {
+			fmt.Fprintf(stderr, "write firmware flash plan report: %v\n", err)
+			return 1
+		}
+		result.ReportPath = reportPath
 	}
 	if err := writeJSONFirmwareFlashPlan(stdout, result); err != nil {
 		fmt.Fprintf(stderr, "encode firmware flash plan result: %v\n", err)

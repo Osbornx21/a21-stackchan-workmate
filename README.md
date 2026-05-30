@@ -75,6 +75,8 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
+When a fresh device report and explicit serial port are available, `make firmware-flash-plan` writes `reports/a21-firmware-flash-plan-*.json`. This is the strongest current no-flash receipt and still sets `flash_allowed: false`.
+
 ## Required Reading
 
 - [AGENTS.md](AGENTS.md)

@@ -108,6 +108,8 @@ The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor
 
 `firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, and optional freshness window. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
 
+`firmware-flash-plan` composes the artifact, upload-port, and device-identity guards into a single no-flash receipt. The Makefile wrapper writes `reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json`, includes `generated_at_ms` and `report_path`, and still sets `flash_allowed: false`.
+
 ## Exit Codes
 
 Current behavior:

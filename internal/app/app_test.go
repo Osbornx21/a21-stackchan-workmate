@@ -1873,6 +1873,85 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(report, []byte(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      }
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-report", report,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"report_path"`) {
+		t.Fatalf("stdout missing report_path: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-firmware-flash-plan-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("flash plan report files = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, want := range []string{
+		`"guard_id": "a21.firmware.flash_plan_guard.v1"`,
+		`"generated_at_ms"`,
+		`"flash_allowed": false`,
+		`"report_path"`,
+		`"device_id": "stackchan-001"`,
+		`"port": "/dev/cu.usbmodemA21"`,
+	} {
+		if !strings.Contains(reportJSON, want) {
+			t.Fatalf("flash plan report missing %q: %s", want, reportJSON)
+		}
+	}
+	if strings.Contains(reportJSON, `"flash_allowed": true`) {
+		t.Fatalf("flash plan report unexpectedly allows flash: %s", reportJSON)
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

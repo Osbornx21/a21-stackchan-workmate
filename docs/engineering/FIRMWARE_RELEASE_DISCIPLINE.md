@@ -306,7 +306,8 @@ go run ./cmd/a21 firmware-flash-plan \
   --device-report reports/a21-devices.json \
   --device-id stackchan-001 \
   --commit <expected-git-sha> \
-  --max-device-age-ms 300000
+  --max-device-age-ms 300000 \
+  --output-dir reports
 ```
 
 or:
@@ -319,7 +320,13 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-flash-plan
 ```
 
-The Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check`, so a future flash plan cannot quietly reuse an old Gateway capture.
+The Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check` and writes a timestamped no-flash receipt to:
+
+```text
+reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json
+```
+
+This makes flash planning auditable instead of ephemeral stdout. The receipt includes `generated_at_ms` and `report_path`, but it still sets `flash_allowed: false`.
 
 The guard verifies:
 
@@ -333,9 +340,11 @@ The guard verifies:
 Successful output includes:
 
 - `guard_id: a21.firmware.flash_plan_guard.v1`
+- `generated_at_ms`
 - `dry_run: true`
 - `flash_allowed: false`
 - `next_required_confirmation: future_explicit_guarded_flash_command`
+- `report_path` when `--output-dir` is provided
 
 This receipt is the strongest no-flash receipt in the current repository. It is a precondition design for future guarded flashing, not permission to flash.
 
