@@ -68,6 +68,9 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 	if err != nil {
 		return FlashPlanResult{}, err
 	}
+	if err := validateFlashPlanDeviceQuiescent(device.Device); err != nil {
+		return FlashPlanResult{}, err
+	}
 	if upload.FlashAllowed || device.FlashAllowed {
 		return FlashPlanResult{}, fmt.Errorf("upstream guard unexpectedly allowed flashing")
 	}
@@ -93,4 +96,11 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 		DeviceIdentity:           device,
 		OK:                       true,
 	}, nil
+}
+
+func validateFlashPlanDeviceQuiescent(device DeviceIdentityRecord) error {
+	if device.PlaybackStreamID != "" || device.CurrentExpression == "speaking" {
+		return fmt.Errorf("device has active playback; wait for speaking to stop before creating a firmware flash plan")
+	}
+	return nil
 }

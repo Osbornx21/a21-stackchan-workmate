@@ -139,6 +139,8 @@ Upload and flash-plan guards accept only explicit USB serial-looking ports. On m
 
 `firmware-flash-plan` composes the artifact, upload-port, and device-identity guards into a single no-flash receipt. The Makefile wrapper writes `reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json`, includes `generated_at_ms` and `report_path`, and still sets `flash_allowed: false`.
 
+The flash-plan guard also refuses Gateway reports that show `current_expression=speaking` or a non-empty `playback_stream_id`. Fresh identity is not enough; firmware operations must not be planned while the device is actively playing or speaking.
+
 ## Exit Codes
 
 Current behavior:

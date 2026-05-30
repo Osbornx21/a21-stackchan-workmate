@@ -336,6 +336,7 @@ The guard verifies:
 - the upload port is explicit, exists, and is not busy
 - the Gateway device report contains the explicit `A21_DEVICE_ID`
 - the Gateway device report is fresh when `--max-device-age-ms` is supplied
+- the Gateway device report does not show active playback or `current_expression=speaking`
 - the upload guard and device-identity guard reference the same artifact checksum and commit
 - every identity remains in the A21 namespace
 

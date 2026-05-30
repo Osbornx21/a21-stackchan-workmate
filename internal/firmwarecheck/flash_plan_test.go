@@ -125,3 +125,46 @@ func TestBuildFlashPlanRejectsStaleDeviceReport(t *testing.T) {
 		t.Fatalf("error = %q, want stale", err)
 	}
 }
+
+func TestBuildFlashPlanRejectsActivePlaybackDevice(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_expression": "speaking",
+      "playback_stream_id": "a21-stream-active",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`)
+
+	_, err := BuildFlashPlan(FlashPlanOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		Port:              "/dev/cu.usbmodemA21",
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		PortUsage:         PortUsage{Exists: true},
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected active playback device to be rejected")
+	}
+	if !strings.Contains(err.Error(), "active playback") {
+		t.Fatalf("error = %q, want active playback", err)
+	}
+}

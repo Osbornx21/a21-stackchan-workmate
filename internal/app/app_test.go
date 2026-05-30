@@ -2300,6 +2300,63 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareFlashPlanRejectsActivePlaybackDevice(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	reportPayload := map[string]any{
+		"devices": []map[string]any{{
+			"device_id":          "stackchan-001",
+			"identity_status":    "ok",
+			"connection_status":  "online",
+			"current_expression": "speaking",
+			"playback_stream_id": "a21-stream-active",
+			"firmware": map[string]string{
+				"id":      "a21-stackchan",
+				"version": "0.1.0",
+				"board":   "m5stack-cores3",
+				"commit":  "abcdef1",
+			},
+			"last_seen_ms": time.Now().UnixMilli(),
+		}},
+	}
+	reportBytes, err := json.Marshal(reportPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(report, reportBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-report", report,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "active playback") {
+		t.Fatalf("stderr = %q, want active playback", stderr.String())
+	}
+}
+
 func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
