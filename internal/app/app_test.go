@@ -1547,6 +1547,50 @@ func TestBuildFirmwareDoctorReportFindsCurrentArtifact(t *testing.T) {
 	}
 }
 
+func TestBuildFirmwareDoctorReportRejectsLooseCurrentArtifact(t *testing.T) {
+	root := t.TempDir()
+	writeTestFirmwareManifest(t, filepath.Join(root, "firmware", "stackchan"))
+	pioPath := filepath.Join(root, ".a21-tools", "platformio-venv", "bin", "pio")
+	if err := os.MkdirAll(filepath.Dir(pioPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pioPath, []byte("#!/bin/sh\necho 'PlatformIO Core, version 6.1.19'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := filepath.Join(root, "firmware", "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	content := []byte("firmware\na21-stackchan\n0.1.0\nm5stack-cores3\nabcdef1\n")
+	if err := os.WriteFile(artifact, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(content)
+	if err := os.WriteFile(artifact+".sha256", []byte(hex.EncodeToString(sum[:])+"  "+filepath.Base(artifact)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report := buildFirmwareDoctorReport(root, "abcdef1")
+
+	if report.CurrentArtifactPath != "" {
+		t.Fatalf("CurrentArtifactPath = %q, want empty for loose artifact", report.CurrentArtifactPath)
+	}
+	found := false
+	for _, finding := range report.Findings {
+		if finding.Code == "firmware_current_artifact_missing" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("findings missing firmware_current_artifact_missing: %#v", report.Findings)
+	}
+}
+
 func TestBuildFirmwareDoctorReportWarnsOnPlatformIOVersionMismatch(t *testing.T) {
 	root := t.TempDir()
 	writeTestFirmwareManifest(t, filepath.Join(root, "firmware", "stackchan"))

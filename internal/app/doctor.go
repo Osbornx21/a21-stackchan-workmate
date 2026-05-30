@@ -248,31 +248,37 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 		})
 	}
 
+	artifactDir := filepath.Join(projectRoot, "firmware", "artifacts")
 	artifacts := findFirmwareArtifacts(projectRoot)
 	report.ArtifactCount = len(artifacts)
 	for _, artifact := range artifacts {
-		result, err := firmwarecheck.ValidateArtifact(firmwarecheck.ArtifactOptions{
+		if _, err := firmwarecheck.ValidateArtifact(firmwarecheck.ArtifactOptions{
 			ManifestPath: report.ManifestPath,
 			ArtifactPath: artifact,
-		})
-		if err != nil {
+		}); err != nil {
 			report.Findings = append(report.Findings, runtimeguard.Finding{
 				Code:     "firmware_artifact_invalid",
 				Severity: runtimeguard.SeverityWarn,
 				Message:  "A21 firmware artifact failed identity or checksum validation",
 				Detail:   artifact + ": " + err.Error(),
 			})
-			continue
 		}
-		if currentCommit != "" && sameDoctorCommit(currentCommit, result.Commit) {
-			report.CurrentArtifactPath = artifact
+	}
+	if currentCommit != "" {
+		result, err := firmwarecheck.ValidateLatestArtifactForCommit(firmwarecheck.LatestArtifactOptions{
+			ManifestPath: report.ManifestPath,
+			ArtifactDir:  artifactDir,
+			Commit:       currentCommit,
+		})
+		if err == nil {
+			report.CurrentArtifactPath = absolutizeProjectPath(projectRoot, result.ArtifactPath)
 		}
 	}
 	if currentCommit != "" && report.CurrentArtifactPath == "" {
 		report.Findings = append(report.Findings, runtimeguard.Finding{
 			Code:     "firmware_current_artifact_missing",
 			Severity: runtimeguard.SeverityWarn,
-			Message:  "No validated A21 firmware artifact matches the current git commit",
+			Message:  "No release-ledger-validated A21 firmware artifact matches the current git commit",
 			Detail:   currentCommit,
 		})
 	}
@@ -288,6 +294,13 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 		report.SerialDevices = devices
 	}
 	return report
+}
+
+func absolutizeProjectPath(projectRoot string, path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(filepath.Join(projectRoot, path))
 }
 
 func errString(err error, fallback string) string {
@@ -345,10 +358,4 @@ func findFirmwareArtifacts(projectRoot string) []string {
 	}
 	sort.Strings(matches)
 	return matches
-}
-
-func sameDoctorCommit(expected string, actual string) bool {
-	expected = strings.ToLower(expected)
-	actual = strings.ToLower(actual)
-	return expected == actual || strings.HasPrefix(expected, actual) || strings.HasPrefix(actual, expected)
 }
