@@ -386,7 +386,17 @@ bool arduinoMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uin
   if (!M5.Mic.isEnabled() && !M5.Mic.begin()) {
     return false;
   }
-  return M5.Mic.record(samples, sample_count, sample_rate_hz, false);
+  if (!M5.Mic.record(samples, sample_count, sample_rate_hz, false)) {
+    return false;
+  }
+  const uint32_t started_at_ms = millis();
+  while (M5.Mic.isRecording()) {
+    delay(1);
+    if (millis() - started_at_ms > 80) {
+      return false;
+    }
+  }
+  return true;
 }
 
 A21MicDriver g_mic_driver = {
