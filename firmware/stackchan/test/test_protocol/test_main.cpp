@@ -1443,6 +1443,23 @@ void test_mic_capture_skips_when_render_state_is_speaking() {
   TEST_ASSERT_EQUAL_UINT32(1, runtime.skipped_render_state);
 }
 
+void test_mic_capture_skips_when_render_state_is_thinking() {
+  A21MicCaptureRuntime runtime;
+  A21FirmwareState state;
+  FakeMicDriver fake;
+  A21MicDriver driver;
+  a21InitMicCaptureRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeMicDriver(&fake, &driver);
+  state.render_state = A21_RENDER_THINKING;
+
+  TEST_ASSERT_TRUE(a21MicCaptureTick(&runtime, &driver, &state, 0, 4020));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.record_count);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_captured);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.skipped_render_state);
+}
+
 void test_mic_capture_reports_driver_failure() {
   A21MicCaptureRuntime runtime;
   A21FirmwareState state;
@@ -1942,6 +1959,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_mic_capture_records_one_frame_when_listening_and_speaker_idle);
   RUN_TEST(test_mic_capture_skips_when_speaker_queue_is_active);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_speaking);
+  RUN_TEST(test_mic_capture_skips_when_render_state_is_thinking);
   RUN_TEST(test_mic_capture_reports_driver_failure);
   RUN_TEST(test_pcm16_base64_encoder_preserves_nonzero_samples);
   RUN_TEST(test_audio_ws_sends_queued_mic_capture_frame_with_real_pcm_payload);

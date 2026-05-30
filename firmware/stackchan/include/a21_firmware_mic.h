@@ -87,13 +87,13 @@ inline void a21InitMicCaptureRuntime(A21MicCaptureRuntime* runtime) {
 
 inline bool a21MicCaptureRenderStateAllowed(A21RenderState state) {
   switch (state) {
-    case A21_RENDER_IDLE:
     case A21_RENDER_LISTENING:
-    case A21_RENDER_THINKING:
-    case A21_RENDER_PROFESSIONAL:
       return true;
+    case A21_RENDER_IDLE:
+    case A21_RENDER_THINKING:
     case A21_RENDER_SPEAKING:
     case A21_RENDER_INTERRUPTED:
+    case A21_RENDER_PROFESSIONAL:
     case A21_RENDER_ERROR:
     case A21_RENDER_LOCAL:
     default:
