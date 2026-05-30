@@ -1315,6 +1315,150 @@ func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
 	}
 }
 
+func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, fmt.Sprintf("a21-fast-companion-%d.wav", time.Now().UnixNano()))
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 640))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     1280,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      11,
+			TTSFirstAudioMS: 11,
+		}, nil
+	}
+	var audioRequests int
+	var totalChunks int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices":
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"speaker":"available","screen":"available","rgb":"available","servo_y":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/v1/devices/control":
+			var request struct {
+				DeviceID    string `json:"device_id"`
+				Text        string `json:"text"`
+				AudioChunks []struct {
+					DataBase64 string `json:"data_base64"`
+				} `json:"audio_chunks"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if request.DeviceID != "stackchan-001" {
+				t.Fatalf("device id = %q", request.DeviceID)
+			}
+			if len(request.AudioChunks) > 0 {
+				audioRequests++
+				totalChunks += len(request.AudioChunks)
+				if request.Text != "A21 LOCAL TTS" {
+					t.Fatalf("audio request text = %q", request.Text)
+				}
+			}
+			fmt.Fprint(w, `{"trace_id":"a21-trace-fast","session_id":"a21-session-fast","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "macos_say", "--text", "用户输入不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if audioRequests < 2 || totalChunks < 4 {
+		t.Fatalf("audio requests/chunks = %d/%d, want ack and answer playback", audioRequests, totalChunks)
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
+		`"status": "passed"`,
+		`"device_online": true`,
+		`"local_ack_playback_chunks": 2`,
+		`"answer_playback_chunks": 2`,
+		`"m3_candidate": false`,
+		`"listen_source": "host_fixture"`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-stackchan-fast-companion-turn-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"用户输入不要进报告", "A21 loopback response", "嗯，我在", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("fast companion report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunStackChanFastCompanionTurnWritesFailedReportWhenGatewayUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+		http.Error(w, "gateway not ready", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--text", "不要泄漏这句话", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
+		`"status": "failed"`,
+		`"device_online": false`,
+		`"m3_candidate": false`,
+		`"gateway device report failed"`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-stackchan-fast-companion-turn-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"不要泄漏这句话", "Authorization", "Bearer", "sk-"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("failed report leaked %q: stdout=%s stderr=%s report=%s", forbidden, stdout.String(), stderr.String(), reportData)
+		}
+	}
+}
+
 func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	var sawProfessionalRequest bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

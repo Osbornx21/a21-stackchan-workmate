@@ -16,6 +16,7 @@ go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:2
 go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-mic-frames 1 --min-playback-chunks 1 --min-delivery-ratio 0.95 --output-dir reports
 go run ./cmd/a21 stackchan-speaker-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --mock-audio-chunks 50 --min-played-frames 50 --output-dir reports
 go run ./cmd/a21 stackchan-sensor-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-samples 10 --min-battery-mv 3000 --output-dir reports
+go run ./cmd/a21 stackchan-fast-companion-turn --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --repeat 3 --output-dir reports
 make doctor
 make lan-probe
 make stackchan-mic-probe-acceptance
@@ -23,6 +24,7 @@ make stackchan-half-duplex-acceptance
 make stackchan-imu-probe-acceptance
 make stackchan-sensor-probe-acceptance
 make stackchan-speaker-acceptance
+make stackchan-fast-companion-turn
 make provider-realtime-plan
 make v21-adapter-smoke
 make v21-adapter-smoke-execute

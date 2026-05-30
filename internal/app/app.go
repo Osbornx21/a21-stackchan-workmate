@@ -211,6 +211,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanSpeakerAcceptance(args[1:], stdout, stderr)
 	case "stackchan-local-tts-playback":
 		return runStackChanLocalTTSPlayback(args[1:], stdout, stderr)
+	case "stackchan-fast-companion-turn":
+		return runStackChanFastCompanionTurn(args[1:], stdout, stderr)
 	case "stackchan-touch-acceptance":
 		return runStackChanTouchAcceptance(args[1:], stdout, stderr)
 	case "stackchan-hardware-mainline":

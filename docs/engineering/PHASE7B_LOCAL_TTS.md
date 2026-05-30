@@ -40,6 +40,8 @@ go run ./cmd/a21 local-voice-loopback --text-provider deepseek --execute-text-pr
 make local-voice-loopback
 go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --output-dir reports
 make stackchan-local-tts-playback
+go run ./cmd/a21 stackchan-fast-companion-turn --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --repeat 3 --output-dir reports
+make stackchan-fast-companion-turn
 ```
 
 Optional:
@@ -118,6 +120,32 @@ The report records decode time, input duration, real-time factor, transcript cha
 `stackchan-local-tts-playback` is the first real local-TTS-to-device downlink bridge. It synthesizes a local TTS WAV, parses only 16 kHz / 16-bit / mono PCM, splits it into 20 ms chunks, and sends those chunks through Gateway `/v1/devices/control` as `audio.playback.chunk` envelopes. Reports include byte counts, TTS timing, playback chunk count, trace/session/stream ids, and the generated WAV path. They do not include input text or full model paths.
 
 This command proves that selected local TTS audio can enter the same StackChan playback path as Gateway/provider audio. It still does not claim human-audible quality unless an operator separately records physical sound observation.
+
+## StackChan Fast Companion Turn
+
+`stackchan-fast-companion-turn` is the M3-prep vertical receipt. It composes the current host-side `local-voice-loopback` evidence with real StackChan downlink delivery:
+
+```text
+host fixture or future StackChan mic evidence
+  -> selected ASR boundary
+  -> mock or explicit DeepSeek text stream
+  -> local acknowledgement TTS
+  -> selected answer TTS
+  -> Gateway /v1/devices/control
+  -> StackChan audio.playback.chunk downlink
+```
+
+The default `listen_source` is `host_fixture`, so the report is not an M3 pass even when all chunks are delivered. It sets `m3_candidate=false` and records a finding explaining that the listen source is not physical StackChan microphone evidence. `--listen-source stackchan_mic` is reserved for the future true mic-driven run after the device path can prove capture, VAD, turn start, acknowledgement playback, answer playback, and barge-in timing in the same traced window.
+
+Reports include the redacted timing and delivery receipt:
+
+```text
+reports/a21-stackchan-fast-companion-turn-YYYYMMDD-HHMMSS.json
+```
+
+The report records local acknowledgement first-audio timing, answer first-audio timing, playback chunk/batch counts, transport, trace/session ids, device identity, M3-candidate status, and findings. It does not record input text, ASR transcript, provider output text, local acknowledgement text, provider credentials, auth headers, proxy values, full provider URLs, full model paths, or full WAV fixture paths.
+
+If Gateway or the device report is unavailable, the command still writes a failed redacted report so the run leaves a diagnosable artifact instead of disappearing into stderr.
 
 ## Boundary
 
