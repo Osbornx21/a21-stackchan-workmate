@@ -108,7 +108,7 @@ func TestPackageArtifactWritesPerArtifactReleaseManifest(t *testing.T) {
 func TestPackageArtifactWritesBuildProvenance(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
-	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	input := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
 	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +181,37 @@ func TestPackageArtifactRejectsInputWithoutExpectedEmbeddedIdentity(t *testing.T
 	}
 }
 
+func TestPackageArtifactRejectsInputOutsideStackChanFirmwareBuildLane(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(input, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := PackageArtifact(PackageOptions{
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       filepath.Join(dir, "artifacts"),
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
+	})
+	if err == nil {
+		t.Fatal("expected firmware input outside firmware/stackchan lane to be rejected")
+	}
+	if !strings.Contains(err.Error(), "firmware/stackchan/.pio/build") {
+		t.Fatalf("error = %q, want stackchan build lane", err)
+	}
+	if strings.Contains(err.Error(), dir) {
+		t.Fatalf("error leaked raw input path: %q", err)
+	}
+}
+
 func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
@@ -205,7 +236,7 @@ func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
 
 func writePackageInput(t *testing.T, dir string, content string) string {
 	t.Helper()
-	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	input := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
 	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
 		t.Fatal(err)
 	}

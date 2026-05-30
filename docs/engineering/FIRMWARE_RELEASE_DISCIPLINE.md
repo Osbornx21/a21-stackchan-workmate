@@ -159,10 +159,10 @@ Build provenance must say:
 - `build_system`: `platformio`
 - `platformio_env`: `a21_stackchan_cores3`
 - `platformio_board`: `m5stack-cores3`
-- `source_path`: the PlatformIO source binary under `.pio/build/a21_stackchan_cores3/firmware.bin`
+- `source_path`: the PlatformIO source binary under `firmware/stackchan/.pio/build/a21_stackchan_cores3/firmware.bin`
 - `source_name`: `firmware.bin`
 
-Packaging rejects input or output paths containing forbidden X21/V21 identities so A21 release candidates cannot be produced from legacy build folders or written into legacy artifact directories.
+Packaging rejects input outside the A21 StackChan firmware lane and rejects input or output paths containing forbidden X21/V21 identities. A21 release candidates cannot be produced from a lookalike `.pio` build folder or written into legacy artifact directories.
 
 Packaging also validates the source PlatformIO `firmware.bin` before copying it. The source binary must already embed the expected A21 firmware ID, version, board, and git commit. This prevents a stale or wrong-board build from being wrapped in a correct-looking A21 artifact name.
 

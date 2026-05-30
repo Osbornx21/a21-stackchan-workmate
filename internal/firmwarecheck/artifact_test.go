@@ -550,7 +550,7 @@ func testBuildProvenance(artifactPath string) FirmwareBuildProvenance {
 		BuildSystem:     "platformio",
 		PlatformIOEnv:   "a21_stackchan_cores3",
 		PlatformIOBoard: "m5stack-cores3",
-		SourcePath:      filepath.Join(filepath.Dir(filepath.Dir(artifactPath)), ".pio", "build", "a21_stackchan_cores3", "firmware.bin"),
+		SourcePath:      filepath.Join(filepath.Dir(artifactPath), "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3", "firmware.bin"),
 		SourceName:      "firmware.bin",
 	}
 }

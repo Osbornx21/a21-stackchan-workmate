@@ -1563,7 +1563,7 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "platformio.ini"), []byte(testPlatformIOConfig("m5stack-cores3")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	input := filepath.Join(dir, ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
+	input := filepath.Join(dir, "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3", "firmware.bin")
 	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2413,7 +2413,7 @@ func testFirmwareBuildProvenance(artifactPath string) firmwarecheck.FirmwareBuil
 		BuildSystem:     "platformio",
 		PlatformIOEnv:   "a21_stackchan_cores3",
 		PlatformIOBoard: "m5stack-cores3",
-		SourcePath:      filepath.Join(filepath.Dir(filepath.Dir(artifactPath)), ".pio", "build", "a21_stackchan_cores3", "firmware.bin"),
+		SourcePath:      filepath.Join(filepath.Dir(artifactPath), "firmware", "stackchan", ".pio", "build", "a21_stackchan_cores3", "firmware.bin"),
 		SourceName:      "firmware.bin",
 	}
 }

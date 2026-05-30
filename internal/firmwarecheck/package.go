@@ -213,9 +213,10 @@ func validateFirmwareBuildProvenance(build FirmwareBuildProvenance, manifest Man
 		return fmt.Errorf("firmware build source must be PlatformIO firmware.bin")
 	}
 	normalizedSource := filepath.ToSlash(filepath.Clean(build.SourcePath))
-	requiredSegment := "/.pio/build/" + build.PlatformIOEnv + "/" + build.SourceName
-	if !strings.HasSuffix(normalizedSource, requiredSegment) && normalizedSource != strings.TrimPrefix(requiredSegment, "/") {
-		return fmt.Errorf("firmware build source must come from .pio/build/%s/firmware.bin", build.PlatformIOEnv)
+	requiredSegment := "/firmware/stackchan/.pio/build/" + build.PlatformIOEnv + "/" + build.SourceName
+	requiredRelative := strings.TrimPrefix(requiredSegment, "/")
+	if !strings.HasSuffix(normalizedSource, requiredSegment) && normalizedSource != requiredRelative {
+		return fmt.Errorf("firmware build source must come from firmware/stackchan/.pio/build/%s/firmware.bin", build.PlatformIOEnv)
 	}
 	return nil
 }
