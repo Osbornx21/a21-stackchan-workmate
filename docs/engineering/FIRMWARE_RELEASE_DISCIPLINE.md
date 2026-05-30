@@ -150,12 +150,12 @@ For instrumented speaker/downlink evidence, use:
 ```bash
 A21_DEVICE_ID=stackchan-001 \
 A21_SPEAKER_WINDOW_MS=1000 \
-A21_SPEAKER_MOCK_AUDIO_CHUNKS=4 \
-A21_SPEAKER_MIN_PLAYED_FRAMES=4 \
+A21_SPEAKER_MOCK_AUDIO_CHUNKS=50 \
+A21_SPEAKER_MIN_PLAYED_FRAMES=50 \
 make stackchan-speaker-acceptance
 ```
 
-This writes `reports/a21-stackchan-speaker-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway playback metrics, sends a bounded `SPEAKING` control event with non-silent A21 `audio.playback.chunk` frames, waits for runtime echo updates, checks playback-buffer and speaker-pump deltas, and then clears back to `IDLE`. A passing report confirms the commanded stream moved through Gateway downlink, firmware buffer, and speaker-pump instrumentation. It intentionally records `physical_sound_observed=false`; use later operator or instrument evidence before claiming physical audibility or product-quality TTS.
+This writes `reports/a21-stackchan-speaker-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway playback metrics, sends about 1000 ms of non-silent A21 `audio.playback.chunk` frames as bounded `SPEAKING` batches of at most four chunks per `/v1/devices/control` request, waits for runtime echo updates, checks playback-buffer and speaker-pump deltas, and then clears back to `IDLE`. A passing report confirms the commanded stream moved through Gateway downlink, firmware buffer, and speaker-pump instrumentation. It intentionally records `physical_sound_observed=false`; use later operator or instrument evidence before claiming physical audibility or product-quality TTS.
 
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 

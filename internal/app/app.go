@@ -37,6 +37,12 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
 
+const (
+	stackChanSpeakerProbeChunkDurationMS = 20
+	stackChanSpeakerProbeBatchChunks     = 4
+	stackChanSpeakerProbeMaxChunks       = 64
+)
+
 type firmwareSourceState struct {
 	Root   string
 	Clean  bool
@@ -1074,6 +1080,7 @@ type stackChanSpeakerAcceptanceReport struct {
 	Commit                           string                               `json:"commit"`
 	WindowMS                         int                                  `json:"window_ms"`
 	MockAudioChunks                  int                                  `json:"mock_audio_chunks"`
+	ExpectedAudioDurationMS          int                                  `json:"expected_audio_duration_ms"`
 	StreamID                         string                               `json:"stream_id"`
 	ControlTraceID                   string                               `json:"control_trace_id,omitempty"`
 	ControlSessionID                 string                               `json:"control_session_id,omitempty"`
@@ -2879,7 +2886,7 @@ func runStackChanSpeakerAcceptance(args []string, stdout io.Writer, stderr io.Wr
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-speaker-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1000] [--mock-audio-chunks 4] [--min-played-frames 4] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-speaker-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1000] [--mock-audio-chunks 50] [--min-played-frames 50] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -2917,8 +2924,8 @@ func runStackChanSpeakerAcceptance(args []string, stdout io.Writer, stderr io.Wr
 			if !ok {
 				return 2
 			}
-			if value < 1 || value > 8 {
-				fmt.Fprintln(stderr, "--mock-audio-chunks must be between 1 and 8")
+			if value < 1 || value > stackChanSpeakerProbeMaxChunks {
+				fmt.Fprintf(stderr, "--mock-audio-chunks must be between 1 and %d\n", stackChanSpeakerProbeMaxChunks)
 				return 2
 			}
 			options.MockAudioChunks = value
@@ -2987,8 +2994,8 @@ func defaultStackChanSpeakerAcceptanceOptions() stackChanSpeakerAcceptanceOption
 		DeviceID:        deviceID,
 		Commit:          currentGitCommit(projectRoot),
 		WindowMS:        1000,
-		MockAudioChunks: 4,
-		MinPlayedFrames: 4,
+		MockAudioChunks: 50,
+		MinPlayedFrames: 50,
 		OutputDir:       "reports",
 	}
 }
@@ -3010,6 +3017,7 @@ func buildStackChanSpeakerAcceptanceReport(options stackChanSpeakerAcceptanceOpt
 		Commit:                  options.Commit,
 		WindowMS:                options.WindowMS,
 		MockAudioChunks:         options.MockAudioChunks,
+		ExpectedAudioDurationMS: options.MockAudioChunks * stackChanSpeakerProbeChunkDurationMS,
 		StreamID:                streamID,
 		Thresholds: stackChanSpeakerAcceptanceThresholds{
 			MinPlayedFrames:  options.MinPlayedFrames,
@@ -3057,10 +3065,11 @@ func buildStackChanSpeakerAcceptanceReport(options stackChanSpeakerAcceptanceOpt
 
 	traceID := fmt.Sprintf("a21-trace-speaker-acceptance-%d", report.GeneratedAtMS)
 	sessionID := fmt.Sprintf("a21-session-speaker-acceptance-%d", report.GeneratedAtMS)
-	control, err := postStackChanSpeakerControl(options.GatewayURL, options.DeviceID, protocol.ExpressionSpeaking, protocol.ModeWorkmate, "SPEAKER PROBE", traceID, sessionID, streamID, options.MockAudioChunks)
+	control, err := postStackChanSpeakerProbeBatches(options.GatewayURL, options.DeviceID, traceID, sessionID, streamID, options.MockAudioChunks)
 	if err != nil {
 		report.addFinding("speaker_control_failed", err.Error())
 		report.SpeakerAcceptanceStatus = "blocked"
+		_, _ = postStackChanSpeakerControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, streamID, 0)
 		return report
 	}
 	report.ControlTraceID = control.TraceID
@@ -3609,6 +3618,29 @@ func postStackChanSpeakerControl(gatewayBaseURL string, deviceID string, state p
 		return gateway.DeviceControlResponse{}, fmt.Errorf("gateway device control contains forbidden legacy identity")
 	}
 	return response, nil
+}
+
+func postStackChanSpeakerProbeBatches(gatewayBaseURL string, deviceID string, traceID string, sessionID string, streamID string, totalChunks int) (gateway.DeviceControlResponse, error) {
+	remaining := totalChunks
+	var firstControl gateway.DeviceControlResponse
+	for remaining > 0 {
+		batchChunks := stackChanSpeakerProbeBatchChunks
+		if remaining < batchChunks {
+			batchChunks = remaining
+		}
+		control, err := postStackChanSpeakerControl(gatewayBaseURL, deviceID, protocol.ExpressionSpeaking, protocol.ModeWorkmate, "SPEAKER PROBE", traceID, sessionID, streamID, batchChunks)
+		if err != nil {
+			return firstControl, err
+		}
+		if firstControl.TraceID == "" {
+			firstControl = control
+		}
+		remaining -= batchChunks
+		if remaining > 0 {
+			time.Sleep(time.Duration(batchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond)
+		}
+	}
+	return firstControl, nil
 }
 
 func postStackChanTouchControl(gatewayBaseURL string, deviceID string, spec stackChanTouchCaseSpec) (gateway.DeviceControlResponse, error) {

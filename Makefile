@@ -10,8 +10,8 @@ A21_MIC_PROBE_MIN_NONZERO_SAMPLES ?= 1
 A21_MIC_PROBE_MIN_VAD_SPEECH ?= 0
 A21_MIC_PROBE_WINDOW_MS ?= 0
 A21_PLATFORMIO_VERSION ?= 6.1.19
-A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 4
-A21_SPEAKER_MIN_PLAYED_FRAMES ?= 4
+A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
+A21_SPEAKER_MIN_PLAYED_FRAMES ?= 50
 A21_SPEAKER_WINDOW_MS ?= 1000
 
 .PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute

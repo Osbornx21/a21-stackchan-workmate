@@ -147,6 +147,8 @@ The registry intentionally does not persist utterance text, professional answer 
 
 `POST /v1/devices/control` is an A21-only physical validation surface for a connected StackChan. It writes semantic `control.event` envelopes to the registered device audio WebSocket and can optionally append up to eight non-silent 20 ms PCM chunks for speaker/playback smoke testing.
 
+Longer speaker acceptance probes must preserve that per-request cap. The `stackchan-speaker-acceptance` CLI may send about one second of probe audio, but it does so as multiple bounded control requests, each with `mock_audio_chunks <= 4`, sharing the same A21 trace/session/stream identifiers.
+
 Request fields:
 
 - `device_id`: required A21 device ID

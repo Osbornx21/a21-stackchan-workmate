@@ -4540,6 +4540,95 @@ func TestRunStackChanSpeakerAcceptanceConfirmsInstrumentedDownlink(t *testing.T)
 	}
 }
 
+func TestRunStackChanSpeakerAcceptanceBatchesAudibleProbe(t *testing.T) {
+	var totalChunks int
+	var speakingCalls int
+	var idleControlSeen bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices/control":
+			var payload struct {
+				DeviceID        string `json:"device_id"`
+				State           string `json:"state"`
+				TraceID         string `json:"trace_id"`
+				SessionID       string `json:"session_id"`
+				StreamID        string `json:"stream_id"`
+				MockAudioChunks int    `json:"mock_audio_chunks"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.DeviceID != "stackchan-001" {
+				t.Fatalf("device_id = %q", payload.DeviceID)
+			}
+			if payload.State == "speaking" {
+				speakingCalls++
+				totalChunks += payload.MockAudioChunks
+				if payload.MockAudioChunks < 1 || payload.MockAudioChunks > 4 {
+					t.Fatalf("speaker batch mock_audio_chunks = %d, want 1..4", payload.MockAudioChunks)
+				}
+				if payload.StreamID != "a21-speaker-acceptance-stream" {
+					t.Fatalf("stream_id = %q", payload.StreamID)
+				}
+			}
+			if payload.State == "idle" {
+				idleControlSeen = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"trace_id":%q,"session_id":%q,"device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`, payload.TraceID, payload.SessionID)
+		case "/v1/devices":
+			w.Header().Set("Content-Type", "application/json")
+			if totalChunks >= 50 {
+				fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"speaking","servo_y":"48deg","rgb":"#002430","playback_buffer_queued_chunks":"0","playback_buffer_total_chunks":"60","playback_buffer_dropped_chunks":"0","playback_buffer_clear_count":"1","speaker_frames_played":"70","speaker_busy_ticks":"4","speaker_driver_errors":"0","speaker_last_stream_id":"a21-speaker-acceptance-stream"},"identity_status":"ok","connection_status":"online","current_expression":"speaking","playback_stream_id":"a21-speaker-acceptance-stream","last_session_id":"a21-session-speaker-acceptance","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+				return
+			}
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle","servo_y":"45deg","rgb":"#101010","playback_buffer_queued_chunks":"0","playback_buffer_total_chunks":"10","playback_buffer_dropped_chunks":"0","playback_buffer_clear_count":"1","speaker_frames_played":"20","speaker_busy_ticks":"3","speaker_driver_errors":"0","speaker_last_stream_id":"a21-old-stream"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-before","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/metrics":
+			w.Header().Set("Content-Type", "text/plain")
+			if totalChunks >= 50 {
+				fmt.Fprint(w, "a21_audio_playback_chunk_total 59\n")
+				return
+			}
+			fmt.Fprint(w, "a21_audio_playback_chunk_total 9\n")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-speaker-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--window-ms", "1",
+		"--mock-audio-chunks", "50",
+		"--min-played-frames", "50",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if speakingCalls < 2 || totalChunks != 50 || !idleControlSeen {
+		t.Fatalf("speakingCalls=%d totalChunks=%d idleControlSeen=%v", speakingCalls, totalChunks, idleControlSeen)
+	}
+	for _, want := range []string{
+		`"mock_audio_chunks": 50`,
+		`"expected_audio_duration_ms": 1000`,
+		`"playback_buffer_total_chunks_delta": 50`,
+		`"speaker_frames_played_delta": 50`,
+		`"gateway_audio_playback_chunk_delta": 50`,
+		"stackchan speaker acceptance ok (instrumented only, no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanSpeakerAcceptanceBlocksBeforePlaybackOnFirmwareMismatch(t *testing.T) {
 	controlCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
