@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +84,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAudioFrontEndPlan(args[1:], stdout, stderr)
 	case "audio-front-end-eval":
 		return runAudioFrontEndEval(args[1:], stdout, stderr)
+	case "firmware-device-report":
+		return runFirmwareDeviceReport(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -302,6 +305,117 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 	return 0
 }
 
+type firmwareDeviceReport struct {
+	SchemaVersion    string                               `json:"schema_version"`
+	CapturedAtMS     int64                                `json:"captured_at_ms"`
+	GatewayURL       string                               `json:"gateway_url"`
+	DeviceReportPath string                               `json:"device_report_path,omitempty"`
+	Devices          []firmwarecheck.DeviceIdentityRecord `json:"devices"`
+}
+
+func runFirmwareDeviceReport(args []string, stdout io.Writer, stderr io.Writer) int {
+	gatewayURL := "http://127.0.0.1:21080"
+	outputDir := "reports"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-device-report --gateway-url http://127.0.0.1:21080 --output-dir reports")
+			return 0
+		case "--gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--gateway-url requires a value")
+				return 2
+			}
+			i++
+			gatewayURL = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-device-report option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(outputDir); err != nil {
+		fmt.Fprintf(stderr, "firmware device report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := fetchFirmwareDeviceReport(gatewayURL)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware device report failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeFirmwareDeviceReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write firmware device report: %v\n", err)
+		return 1
+	}
+	report.DeviceReportPath = reportPath
+	if err := writeJSONFirmwareDeviceReport(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode firmware device report: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func fetchFirmwareDeviceReport(gatewayBaseURL string) (firmwareDeviceReport, error) {
+	endpoint, safeGatewayURL, err := firmwareDeviceReportEndpoint(gatewayBaseURL)
+	if err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	client := http.Client{
+		Timeout:   3 * time.Second,
+		Transport: &http.Transport{Proxy: nil},
+	}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return firmwareDeviceReport{}, fmt.Errorf("gateway device report returned status %d", resp.StatusCode)
+	}
+	var payload struct {
+		Devices []firmwarecheck.DeviceIdentityRecord `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return firmwareDeviceReport{}, err
+	}
+	return firmwareDeviceReport{
+		SchemaVersion: "a21.firmware.device_report.v1",
+		CapturedAtMS:  time.Now().UnixMilli(),
+		GatewayURL:    safeGatewayURL,
+		Devices:       payload.Devices,
+	}, nil
+}
+
+func firmwareDeviceReportEndpoint(gatewayBaseURL string) (string, string, error) {
+	parsed, err := url.Parse(gatewayBaseURL)
+	if err != nil {
+		return "", "", fmt.Errorf("gateway URL is invalid")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", "", fmt.Errorf("gateway URL must use http or https")
+	}
+	if parsed.Host == "" {
+		return "", "", fmt.Errorf("gateway URL must include a host")
+	}
+	if strings.Contains(strings.ToLower(parsed.String()), "x21") || strings.Contains(strings.ToLower(parsed.String()), "v21") {
+		return "", "", fmt.Errorf("gateway URL contains forbidden legacy identity")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	basePath := strings.TrimRight(parsed.Path, "/")
+	parsed.Path = basePath
+	safeGatewayURL := parsed.String()
+	parsed.Path = basePath + "/v1/devices"
+	return parsed.String(), safeGatewayURL, nil
+}
+
 func runPreflight(stdout io.Writer, stderr io.Writer) int {
 	report, code := buildPreflightReport(stderr)
 	if code != 0 {
@@ -337,6 +451,23 @@ func writeAudioFrontEndEvalReport(outputDir string, report audio.FrontEndEvalRep
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONAudioFrontEndEval(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeFirmwareDeviceReport(outputDir string, report firmwareDeviceReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-devices-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.DeviceReportPath = reportPath
+	if err := writeJSONFirmwareDeviceReport(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -755,6 +886,12 @@ func writeJSONAudioFrontEndPlan(writer io.Writer, report audio.FrontEndPlan) err
 }
 
 func writeJSONAudioFrontEndEval(writer io.Writer, report audio.FrontEndEvalReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONFirmwareDeviceReport(writer io.Writer, report firmwareDeviceReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

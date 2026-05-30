@@ -233,14 +233,16 @@ If multiple A21 packages exist for the same commit, the upload dry-run accepts o
 
 ## Device Identity Guard
 
-Phase 5C adds a physical-device identity dry-run guard. It still does not flash. It validates a Gateway `/v1/devices` JSON capture against the exact packaged firmware candidate:
+Phase 5C adds a physical-device identity dry-run guard. It still does not flash. It validates a Gateway `/v1/devices` JSON capture against the exact packaged firmware candidate. Capture the report through the A21 toolchain rather than a hand-written `curl` redirect:
 
 ```bash
-curl -fsS http://127.0.0.1:21080/v1/devices > reports/a21-devices.json
+go run ./cmd/a21 firmware-device-report \
+  --gateway-url http://127.0.0.1:21080 \
+  --output-dir reports
 
 go run ./cmd/a21 firmware-device-check \
   --artifact firmware/artifacts/<a21-stackchan...bin> \
-  --device-report reports/a21-devices.json \
+  --device-report reports/a21-devices-<timestamp>.json \
   --device-id stackchan-001 \
   --commit <expected-git-sha> \
   --max-device-age-ms 300000
@@ -250,12 +252,12 @@ or:
 
 ```bash
 A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> \
-A21_DEVICE_REPORT=reports/a21-devices.json \
+A21_DEVICE_REPORT=reports/a21-devices-<timestamp>.json \
 A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
-`make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
+`make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
 
 The guard verifies:
 

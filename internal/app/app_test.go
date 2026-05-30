@@ -659,6 +659,91 @@ func TestRunAudioFrontEndEvalRejectsLegacyReportDirWithoutEchoingPath(t *testing
 	}
 }
 
+func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			t.Fatalf("path = %q, want /v1/devices", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", server.URL,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.firmware.device_report.v1"`,
+		`"device_report_path":`,
+		`"gateway_url":`,
+		`"device_id": "stackchan-001"`,
+		`"last_seen_ms": 1780000000000`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-devices-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("device report files = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"devices"`)) {
+		t.Fatalf("report missing devices: %s", string(data))
+	}
+	for _, forbidden := range []string{"x21", "v21"} {
+		if strings.Contains(strings.ToLower(string(data)), forbidden) {
+			t.Fatalf("report contains forbidden identity %q: %s", forbidden, string(data))
+		}
+	}
+}
+
+func TestRunFirmwareDeviceReportRejectsLegacyOutputDirWithoutEchoingPath(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-device-report",
+		"--gateway-url", "http://127.0.0.1:21080",
+		"--output-dir", filepath.Join(t.TempDir(), "x21-reports"),
+	}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want forbidden legacy identity", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stderr.String()), "x21-reports") {
+		t.Fatalf("stderr should not echo legacy path: %q", stderr.String())
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
