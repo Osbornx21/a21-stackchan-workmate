@@ -20,6 +20,7 @@ func TestValidateDeviceIdentityConfirmsMatchingGatewayReport(t *testing.T) {
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
@@ -37,6 +38,8 @@ func TestValidateDeviceIdentityConfirmsMatchingGatewayReport(t *testing.T) {
 		ReportPath:        report,
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
 	})
 	if err != nil {
 		t.Fatalf("ValidateDeviceIdentity returned error: %v", err)
@@ -58,7 +61,45 @@ func TestValidateDeviceIdentityConfirmsMatchingGatewayReport(t *testing.T) {
 	}
 }
 
-func TestValidateDeviceIdentityRejectsMismatchedDeviceCommit(t *testing.T) {
+func TestValidateDeviceIdentityRejectsMissingFreshnessGuard(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected missing freshness guard to be rejected")
+	}
+	if !strings.Contains(err.Error(), "max device age") {
+		t.Fatalf("error = %q, want max device age guard", err)
+	}
+}
+
+func TestValidateDeviceIdentityRequiresOnlineConnectionStatus(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeDeviceIdentityManifest(t, dir)
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
@@ -72,8 +113,9 @@ func TestValidateDeviceIdentityRejectsMismatchedDeviceCommit(t *testing.T) {
         "id": "a21-stackchan",
         "version": "0.1.0",
         "board": "m5stack-cores3",
-        "commit": "123456abcdef"
-      }
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
     }
   ]
 }`)
@@ -84,6 +126,47 @@ func TestValidateDeviceIdentityRejectsMismatchedDeviceCommit(t *testing.T) {
 		ReportPath:        report,
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected missing online connection status to be rejected")
+	}
+	if !strings.Contains(err.Error(), "connection_status") {
+		t.Fatalf("error = %q, want connection_status guard", err)
+	}
+}
+
+func TestValidateDeviceIdentityRejectsMismatchedDeviceCommit(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "123456abcdef"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
 	})
 	if err == nil {
 		t.Fatal("expected mismatched device commit to be rejected")
@@ -103,6 +186,7 @@ func TestValidateDeviceIdentityRejectsStaleDeviceReportWhenMaxAgeSet(t *testing.
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
@@ -219,12 +303,14 @@ func TestValidateDeviceIdentityRequiresPerArtifactReleaseManifest(t *testing.T) 
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
         "board": "m5stack-cores3",
         "commit": "abcdef123456"
-      }
+      },
+      "last_seen_ms": 1780000000000
     }
   ]
 }`)
@@ -235,6 +321,8 @@ func TestValidateDeviceIdentityRequiresPerArtifactReleaseManifest(t *testing.T) 
 		ReportPath:        report,
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
 	})
 	if err == nil {
 		t.Fatal("expected device identity guard to reject artifact without release manifest")

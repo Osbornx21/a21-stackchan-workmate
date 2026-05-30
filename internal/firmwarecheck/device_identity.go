@@ -62,6 +62,9 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 	if err := validateExpectedCommit(options.ExpectedGitCommit); err != nil {
 		return DeviceIdentityResult{}, err
 	}
+	if options.MaxDeviceAgeMS <= 0 {
+		return DeviceIdentityResult{}, fmt.Errorf("max device age guard is required for firmware device identity check")
+	}
 	if options.ReportPath == "" {
 		return DeviceIdentityResult{}, fmt.Errorf("device report path is required")
 	}
@@ -131,9 +134,6 @@ func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult
 }
 
 func validateDeviceConnectionStatus(device DeviceIdentityRecord) error {
-	if device.ConnectionStatus == "" {
-		return nil
-	}
 	if device.ConnectionStatus != "online" {
 		return fmt.Errorf("device connection_status %q is not online", device.ConnectionStatus)
 	}

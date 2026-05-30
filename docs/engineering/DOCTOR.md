@@ -135,7 +135,7 @@ Upload and flash-plan guards accept only explicit USB serial-looking ports. On m
 
 `firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. Use this instead of hand-written curl captures before device identity or flash-plan checks.
 
-`firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, and optional freshness window. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
+`firmware-device-check` validates a captured Gateway `/v1/devices` report against the packaged firmware artifact, expected device ID, expected git commit, required online status, and required freshness window. The Makefile wrapper passes `--max-device-age-ms 300000` by default so a stale or offline device report cannot become part of flash-plan evidence. It also does not flash, provision, reset, or open a serial monitor.
 
 `firmware-flash-plan` composes the artifact, upload-port, and device-identity guards into a single no-flash receipt. The Makefile wrapper writes `reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json`, includes `generated_at_ms` and `report_path`, and still sets `flash_allowed: false`.
 

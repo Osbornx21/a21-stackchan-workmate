@@ -76,7 +76,6 @@ func TestBuildFlashPlanRejectsMissingFreshnessGuard(t *testing.T) {
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
-      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
@@ -181,6 +180,7 @@ func TestBuildFlashPlanRejectsStaleDeviceReport(t *testing.T) {
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",

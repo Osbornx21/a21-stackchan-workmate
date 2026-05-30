@@ -1776,7 +1776,7 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000]")
+			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1844,6 +1844,10 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	}
 	if options.ExpectedGitCommit == "" {
 		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	if options.MaxDeviceAgeMS <= 0 {
+		fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
 		return 2
 	}
 	result, err := firmwarecheck.ValidateDeviceIdentity(options)

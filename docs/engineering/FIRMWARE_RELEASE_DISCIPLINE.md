@@ -274,9 +274,9 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
-`make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. It rejects Gateway device identity fields that contain forbidden X21/V21 naming before writing the report. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
+`firmware-device-check` requires `--max-device-age-ms`; `make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. It rejects Gateway device identity fields that contain forbidden X21/V21 naming before writing the report. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
 
-The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id` when present. These fields help prove what the office operator was looking at during acceptance, but the flash guard still uses explicit identity, artifact, commit, port, and freshness checks rather than trusting display state alone. If `connection_status` is present, `firmware-device-check` requires it to be `online`; stale or unknown Gateway state is a hard stop.
+The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id`. These fields help prove what the office operator was looking at during acceptance, but the guard still uses explicit identity, artifact, commit, and freshness checks rather than trusting display state alone. `firmware-device-check` requires `connection_status=online`; stale or unknown Gateway state is a hard stop.
 
 The guard verifies:
 
@@ -286,7 +286,7 @@ The guard verifies:
 - `identity_status` is `ok`
 - reported firmware ID is `a21-stackchan`
 - reported version, board, and commit match the artifact manifest and filename
-- when `--max-device-age-ms` is set, `last_seen_ms` is present and recent enough
+- `last_seen_ms` is present and recent enough under the required `--max-device-age-ms`
 - device ID and firmware identity contain no forbidden X21/V21 names
 
 Successful output includes:
