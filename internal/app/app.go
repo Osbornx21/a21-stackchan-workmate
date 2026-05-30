@@ -25,6 +25,7 @@ import (
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/runtimeguard"
+	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -82,6 +83,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderRealtimePlan(args[1:], stdout, stderr)
 	case "provider-realtime-fixture":
 		return runProviderRealtimeFixture(args[1:], stdout, stderr)
+	case "v21-adapter-smoke":
+		return runV21AdapterSmoke(args[1:], stdout, stderr)
 	case "audio-front-end-plan":
 		return runAudioFrontEndPlan(args[1:], stdout, stderr)
 	case "audio-front-end-eval":
@@ -232,6 +235,72 @@ func runProviderRealtimeFixture(args []string, stdout io.Writer, stderr io.Write
 		return 1
 	}
 	if execute && report.Status != providers.ProviderSmokePassed {
+		return 1
+	}
+	return 0
+}
+
+func runV21AdapterSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
+	adapterURL := strings.TrimSpace(os.Getenv("A21_V21_ADAPTER_URL"))
+	query := ""
+	execute := false
+	outputDir := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 v21-adapter-smoke [--adapter-url http://127.0.0.1:21121] [--query <professional-query>] [--execute] [--output-dir reports]")
+			return 0
+		case "--adapter-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--adapter-url requires a value")
+				return 2
+			}
+			i++
+			adapterURL = args[i]
+		case "--query":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--query requires a value")
+				return 2
+			}
+			i++
+			query = args[i]
+		case "--execute":
+			execute = true
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown v21-adapter-smoke option %q\n", args[i])
+			return 2
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	report := v21adapter.Smoke(ctx, adapterURL, query, execute, nil)
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "v21 adapter smoke report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeV21AdapterSmokeReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write v21 adapter smoke report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONV21AdapterSmoke(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode v21 adapter smoke report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	if execute && report.Status != "passed" {
 		return 1
 	}
 	return 0
@@ -562,6 +631,23 @@ func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeRe
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONProviderSmoke(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeV21AdapterSmokeReport(outputDir string, report v21adapter.SmokeReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-v21-adapter-smoke-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONV21AdapterSmoke(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -1034,6 +1120,12 @@ func writeJSONDoctorReport(writer io.Writer, report doctorReport) error {
 }
 
 func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONV21AdapterSmoke(writer io.Writer, report v21adapter.SmokeReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

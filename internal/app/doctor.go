@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,7 +24,7 @@ var listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 const expectedPlatformIOVersion = "6.1.19"
 
 var detectPlatformIOVersion = func(path string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, path, "--version").Output()
 	if err != nil {
@@ -35,8 +34,7 @@ var detectPlatformIOVersion = func(path string) (string, error) {
 }
 
 var probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
-	client := &http.Client{Timeout: 1500 * time.Millisecond}
-	return v21adapter.ProbeHealth(ctx, baseURL, client)
+	return v21adapter.ProbeHealth(ctx, baseURL, nil)
 }
 
 var probeVoiceProviderHealth = func(ctx context.Context) (providers.VoiceProviderHealth, error) {

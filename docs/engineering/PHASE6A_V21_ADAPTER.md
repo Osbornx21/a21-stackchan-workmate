@@ -20,8 +20,10 @@ A21 can enter professional mode without becoming a V21 voice shell. The Gateway 
 - Gateway observes professional V21 query latency with `a21_v21_query_ms_bucket`.
 - Gateway applies a 3000 ms default outer timeout around V21 adapter calls.
 - V21 failure returns an honest professional fallback instead of pretending retrieval succeeded.
-- `doctor` reports V21 adapter health when `A21_V21_ADAPTER_URL` is configured.
+- `doctor` reports V21 adapter health through a direct no-ambient-proxy HTTP client when `A21_V21_ADAPTER_URL` is configured.
 - V21 health failure details redact URL credentials.
+- `v21-adapter-smoke` provides a redacted dry-run or explicit execution report for `/a21/v21/query`.
+- V21 adapter smoke uses a direct no-ambient-proxy HTTP client and writes timestamped `reports/a21-v21-adapter-smoke-*.json` receipts when `--output-dir` is supplied.
 
 ## Boundaries
 
@@ -29,6 +31,8 @@ A21 can enter professional mode without becoming a V21 voice shell. The Gateway 
 - A21 does not reuse V21 service names or legacy ports.
 - Companion/workmate/private content is not sent to V21 by default.
 - The mock client is for local development and tests only; it is not evidence retrieval.
+- `doctor` must not execute professional queries as a side effect.
+- V21 smoke reports must not contain query text, response text, evidence content, full adapter URLs, credentials, proxy URLs, API keys, or V21 internals.
 
 ## Verification
 
@@ -46,14 +50,20 @@ Current tests cover:
 - simulator Professional Evidence panel availability
 - doctor V21 health configured/skipped states
 - doctor V21 health credential redaction
+- V21 smoke execution against a local adapter fixture
+- V21 smoke report file creation
+- V21 smoke report redaction for query text, response text, full URL, credentials, and failure URL details
 
 Run:
 
 ```bash
 go test ./internal/v21adapter ./internal/gateway
+go test ./internal/app -run TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport
+go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 make verify
 ```
 
 ## Next
 
-- Add real adapter smoke only after the Shanghai/V21 runtime endpoint is explicitly identified.
+- Run `A21_V21_ADAPTER_URL=<adapter-boundary> make v21-adapter-smoke-execute` only after the Shanghai/V21 runtime endpoint is explicitly identified.
+- Add endpoint-specific latency and permission acceptance once real V21 adapter behavior is available.

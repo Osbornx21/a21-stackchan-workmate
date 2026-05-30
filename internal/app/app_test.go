@@ -501,6 +501,98 @@ func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) 
 	}
 }
 
+func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
+	var sawProfessionalRequest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/a21/v21/query" {
+			t.Fatalf("path = %q, want /a21/v21/query", r.URL.Path)
+		}
+		var request struct {
+			TraceID            string `json:"trace_id"`
+			SessionID          string `json:"session_id"`
+			Mode               string `json:"mode"`
+			Utterance          string `json:"utterance"`
+			PrivacyScope       string `json:"privacy_scope"`
+			MaxFirstResponseMS int    `json:"max_first_response_ms"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		sawProfessionalRequest = request.TraceID != "" &&
+			request.SessionID != "" &&
+			request.Mode == "professional" &&
+			request.Utterance == "查一下语音唤醒误触发" &&
+			request.PrivacyScope == "professional_only" &&
+			request.MaxFirstResponseMS == 1200
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-v21-smoke",
+			"fast_answer":"历史讨论集中在多人说话和相似音节误唤醒。",
+			"confidence":0.82,
+			"evidence":[{"title":"语音唤醒体验复盘","type":"meeting","source_id":"v21-doc-001","summary":"提到多人说话导致误唤醒。"}],
+			"speech_blocks":["我先说结论。"],
+			"screen_cards":[{"label":"结论","text":"误唤醒集中在 2 类场景"}],
+			"follow_ups":["要不要按车型展开？"]
+		}`))
+	}))
+	defer server.Close()
+	dir, err := os.MkdirTemp("", "a21-adapter-smoke-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"v21-adapter-smoke",
+		"--adapter-url", server.URL,
+		"--query", "查一下语音唤醒误触发",
+		"--execute",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !sawProfessionalRequest {
+		t.Fatal("server did not receive professional V21 adapter smoke request")
+	}
+	for _, want := range []string{
+		`"adapter": "a21-v21-adapter"`,
+		`"status": "passed"`,
+		`"executed": true`,
+		`"query_path": "/a21/v21/query"`,
+		`"evidence_count": 1`,
+		`"speech_block_count": 1`,
+		`"screen_card_count": 1`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-v21-adapter-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("v21 adapter smoke reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, forbidden := range []string{"语音唤醒", "历史讨论", server.URL} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("v21 adapter smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
 func TestRunProviderRealtimePlanDoubaoTTSDoesNotLeakSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")

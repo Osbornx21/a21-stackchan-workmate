@@ -4,7 +4,7 @@ A21_DEVICE_MAX_AGE_MS ?= 300000
 A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight namespace-audit doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight namespace-audit doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -38,6 +38,13 @@ provider-realtime-plan:
 provider-realtime-fixture:
 	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
 	go run ./cmd/a21 provider-realtime-fixture --provider "$(A21_PROVIDER)" --execute
+
+v21-adapter-smoke:
+	go run ./cmd/a21 v21-adapter-smoke --output-dir reports
+
+v21-adapter-smoke-execute:
+	@test -n "$(A21_V21_ADAPTER_URL)" || (echo "A21_V21_ADAPTER_URL is required"; exit 2)
+	go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports
 
 audio-front-end-eval:
 	@if [ -n "$(A21_AUDIO_FIXTURE)" ]; then \

@@ -38,6 +38,8 @@ make release-check
 
 `make latency-bench` writes an ignored `reports/a21-latency-bench-*.json` evidence report for mock Gateway and audio WebSocket timing. The report includes current commit, network fingerprint, and redacted proxy-policy metadata so home, Shanghai office, LAN, and proxy runs can be compared without leaking proxy URLs.
 
+`make v21-adapter-smoke` writes an ignored `reports/a21-v21-adapter-smoke-*.json` readiness report. `A21_V21_ADAPTER_URL=<adapter-boundary> make v21-adapter-smoke-execute` is the explicit query smoke; it never stores query text, answer text, evidence content, full adapter URLs, credentials, proxy URLs, or API keys.
+
 `make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, and doctor. It does not flash hardware.
 
 ## Local Gateway

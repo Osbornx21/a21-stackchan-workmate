@@ -3,10 +3,12 @@ package v21adapter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
@@ -76,6 +78,42 @@ func TestHTTPClientRejectsLegacyInternalPorts(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRejectsURLCredentials(t *testing.T) {
+	_, err := NewHTTPClient("http://user:secret-token@127.0.0.1:21121")
+	if err == nil {
+		t.Fatal("expected adapter URL credentials to be rejected")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error leaked credential: %q", err.Error())
+	}
+}
+
+func TestSmokeReportRedactsFailureURLs(t *testing.T) {
+	report := Smoke(context.Background(), "http://127.0.0.1:21121/a21-adapter", "查一下语音唤醒误触发", true, &http.Client{
+		Transport: failingRoundTripper{},
+	})
+	if report.Status != "failed" {
+		t.Fatalf("status = %q, want failed", report.Status)
+	}
+	for _, forbidden := range []string{"http://127.0.0.1:21121", "/a21-adapter", "语音唤醒"} {
+		if strings.Contains(report.Detail, forbidden) {
+			t.Fatalf("detail leaked %q: %+v", forbidden, report)
+		}
+	}
+}
+
+func TestDirectHTTPClientDoesNotUseAmbientProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+	client := directHTTPClient(1500 * time.Millisecond)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("direct HTTP client must not inherit ambient proxy env")
+	}
+}
+
 func TestMockClientReturnsDeterministicEvidence(t *testing.T) {
 	client := NewMockClient()
 	response, err := client.Query(context.Background(), QueryRequest{
@@ -92,4 +130,10 @@ func TestMockClientReturnsDeterministicEvidence(t *testing.T) {
 	if response.FastAnswer == "" || len(response.Evidence) == 0 || len(response.SpeechBlocks) == 0 || len(response.ScreenCards) == 0 {
 		t.Fatalf("mock response missing fields: %+v", response)
 	}
+}
+
+type failingRoundTripper struct{}
+
+func (failingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, errors.New("dial failed for " + req.URL.String())
 }

@@ -9,8 +9,12 @@ go run ./cmd/a21 serial-list
 go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <git-sha>
 go run ./cmd/a21 provider-realtime-plan --provider doubao_realtime
 go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
+go run ./cmd/a21 v21-adapter-smoke --output-dir reports
+go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports
 make doctor
 make provider-realtime-plan
+make v21-adapter-smoke
+make v21-adapter-smoke-execute
 ```
 
 `doctor` emits the preflight report, A21 firmware/tooling status, and also writes a timestamped JSON file:
@@ -99,7 +103,16 @@ It validates provider wrapper event flow without dialing a provider. It is still
 
 `latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons. The report also includes `generated_at`, `current_commit`, network/DNS fingerprint, and doctor-style redacted proxy-policy metadata. It reports env variable names such as `HTTPS_PROXY` or `A21_PROVIDER_PROXY_URL`, but never proxy values, hosts, ports, usernames, passwords, keys, or model IDs.
 
-The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
+The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary through a direct no-ambient-proxy HTTP client and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
+
+V21 adapter query smoke is intentionally a separate command, not a doctor side effect:
+
+```bash
+go run ./cmd/a21 v21-adapter-smoke --output-dir reports
+A21_V21_ADAPTER_URL=http://127.0.0.1:21121 make v21-adapter-smoke-execute
+```
+
+Without `--execute`, it only reports whether an adapter URL is configured and writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json` when requested. With `--execute`, it posts the professional query contract to `/a21/v21/query` through a direct no-ambient-proxy HTTP client. The report records status, endpoint host, fixed paths, duration, confidence, and response counts. It never stores query text, answer text, evidence summaries, document quotes, full adapter URLs, credentials, proxy URLs, or API keys.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const QueryPath = "/a21/v21/query"
@@ -67,6 +68,9 @@ func NewHTTPClient(baseURL string) (*HTTPClient, error) {
 	if parsed.Host == "" {
 		return nil, fmt.Errorf("v21 adapter endpoint host is required")
 	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("v21 adapter endpoint must not include credentials")
+	}
 	if endpointLooksUnsafe(parsed) {
 		return nil, fmt.Errorf("v21 adapter endpoint must target the A21 adapter boundary, not a legacy internal service")
 	}
@@ -112,7 +116,7 @@ func ProbeHealth(ctx context.Context, baseURL string, httpClient *http.Client) e
 		return err
 	}
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = directHTTPClient(1500 * time.Millisecond)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.baseURL+HealthPath, nil)
 	if err != nil {
@@ -127,6 +131,13 @@ func ProbeHealth(ctx context.Context, baseURL string, httpClient *http.Client) e
 		return fmt.Errorf("v21 adapter health failed with status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func directHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{Proxy: nil},
+	}
 }
 
 type MockClient struct{}
