@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--family", required=True, choices=("paraformer", "sense_voice", "streaming_zipformer"))
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--wav", required=True)
+    parser.add_argument("--transcript-output")
     parser.add_argument("--num-threads", type=int, default=1)
     return parser.parse_args()
 
@@ -100,6 +101,8 @@ def main() -> int:
         text = decode_streaming_zipformer(args, sample_rate, samples)
     else:
         text = decode_offline(args, sample_rate, samples)
+    if args.transcript_output:
+        Path(args.transcript_output).write_text(text, encoding="utf-8")
     elapsed_ms = (time.perf_counter() - started) * 1000
     input_ms = len(samples) / sample_rate * 1000
     report = {

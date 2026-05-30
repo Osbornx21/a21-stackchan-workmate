@@ -38,6 +38,11 @@ type LocalASRReport struct {
 	Findings         []string `json:"findings,omitempty"`
 }
 
+type LocalASRResult struct {
+	Report     LocalASRReport `json:"report"`
+	Transcript string         `json:"-"`
+}
+
 type sherpaONNXASRScriptReport struct {
 	Status           string  `json:"status"`
 	InputDurationMS  float64 `json:"input_duration_ms"`
@@ -47,11 +52,19 @@ type sherpaONNXASRScriptReport struct {
 }
 
 func RunSherpaONNXASRSmoke(ctx context.Context, options LocalASROptions) (LocalASRReport, error) {
+	result, err := RunSherpaONNXASR(ctx, options)
+	if err != nil {
+		return result.Report, err
+	}
+	return result.Report, nil
+}
+
+func RunSherpaONNXASR(ctx context.Context, options LocalASROptions) (LocalASRResult, error) {
 	start := time.Now()
 	modelDir, modelDirExplicit := firstNonEmptyLocalTTS(options.ModelDir, defaultSherpaONNXASRModelDir()), strings.TrimSpace(options.ModelDir) != ""
 	family, err := normalizeSherpaONNXASRFamily(firstNonEmptyLocalTTS(options.Family, inferSherpaONNXASRFamily(modelDir)))
 	if err != nil {
-		return LocalASRReport{}, err
+		return LocalASRResult{}, err
 	}
 	wavPath := firstNonEmptyLocalTTS(options.WAVPath, defaultSherpaONNXASRWAVPath(modelDir, family))
 	report := LocalASRReport{
@@ -70,45 +83,61 @@ func RunSherpaONNXASRSmoke(ctx context.Context, options LocalASROptions) (LocalA
 	}
 	if err := validateLocalTTSOutputDir(outputDir); err != nil {
 		report.Findings = append(report.Findings, err.Error())
-		return report, err
+		return LocalASRResult{Report: report}, err
 	}
 	if err := validateSherpaONNXASRModelDir(modelDir, family); err != nil {
 		report.Findings = append(report.Findings, err.Error())
 		if !modelDirExplicit {
 			report.Status = "skipped"
-			return report, nil
+			return LocalASRResult{Report: report}, nil
 		}
-		return report, err
+		return LocalASRResult{Report: report}, err
 	}
 	if err := validateSherpaONNXASRWAVPath(wavPath); err != nil {
 		report.Findings = append(report.Findings, err.Error())
-		return report, err
+		return LocalASRResult{Report: report}, err
 	}
 	pythonPath, ok := resolveLocalTTSPath(options.PythonPath, defaultSherpaONNXPythonPath())
 	if !ok {
 		report.Status = "skipped"
 		report.Findings = append(report.Findings, "isolated sherpa-onnx python is missing")
-		return report, nil
+		return LocalASRResult{Report: report}, nil
 	}
 	scriptPath, ok := resolveLocalTTSPath(options.ScriptPath, defaultSherpaONNXASRScriptPath())
 	if !ok {
 		report.Status = "skipped"
 		report.Findings = append(report.Findings, "a21 sherpa-onnx ASR script is missing")
-		return report, nil
+		return LocalASRResult{Report: report}, nil
 	}
-	output, err := runSherpaONNXASRScript(ctx, pythonPath, scriptPath, family, modelDir, wavPath)
+	tempDir, err := os.MkdirTemp("", "a21-sherpa-onnx-asr-*")
+	if err != nil {
+		report.Findings = append(report.Findings, err.Error())
+		return LocalASRResult{Report: report}, err
+	}
+	defer os.RemoveAll(tempDir)
+	transcriptPath := filepath.Join(tempDir, "a21-asr-transcript.txt")
+	if err := os.WriteFile(transcriptPath, nil, 0o600); err != nil {
+		report.Findings = append(report.Findings, err.Error())
+		return LocalASRResult{Report: report}, err
+	}
+	output, err := runSherpaONNXASRScript(ctx, pythonPath, scriptPath, family, modelDir, wavPath, transcriptPath)
 	if err != nil {
 		report.Findings = append(report.Findings, "sherpa-onnx ASR command failed")
-		return report, err
+		return LocalASRResult{Report: report}, err
 	}
 	var scriptReport sherpaONNXASRScriptReport
 	if err := json.Unmarshal(output, &scriptReport); err != nil {
 		report.Findings = append(report.Findings, "sherpa-onnx ASR output was not valid JSON")
-		return report, err
+		return LocalASRResult{Report: report}, err
 	}
 	if scriptReport.Status != "passed" {
 		report.Findings = append(report.Findings, "sherpa-onnx ASR script did not pass")
-		return report, nil
+		return LocalASRResult{Report: report}, nil
+	}
+	transcriptData, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		report.Findings = append(report.Findings, "sherpa-onnx ASR transcript file missing")
+		return LocalASRResult{Report: report}, err
 	}
 	report.Status = "passed"
 	report.InputDurationMS = scriptReport.InputDurationMS
@@ -118,12 +147,12 @@ func RunSherpaONNXASRSmoke(ctx context.Context, options LocalASROptions) (LocalA
 	if report.DecodeDurationMS == 0 {
 		report.DecodeDurationMS = elapsedLocalTTSMS(start)
 	}
-	return report, nil
+	return LocalASRResult{Report: report, Transcript: strings.TrimSpace(string(transcriptData))}, nil
 }
 
-func runSherpaONNXASRScript(ctx context.Context, pythonPath string, scriptPath string, family string, modelDir string, wavPath string) ([]byte, error) {
+func runSherpaONNXASRScript(ctx context.Context, pythonPath string, scriptPath string, family string, modelDir string, wavPath string, transcriptPath string) ([]byte, error) {
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, pythonPath, scriptPath, "--family", family, "--model-dir", modelDir, "--wav", wavPath)
+	cmd := exec.CommandContext(ctx, pythonPath, scriptPath, "--family", family, "--model-dir", modelDir, "--wav", wavPath, "--transcript-output", transcriptPath)
 	cmd.Stderr = &stderr
 	output, err := cmd.Output()
 	if err != nil {

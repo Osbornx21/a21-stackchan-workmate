@@ -33,6 +33,7 @@ make local-tts-smoke
 go run ./cmd/a21 local-asr-smoke --output-dir reports
 make local-asr-smoke
 go run ./cmd/a21 local-voice-loopback --repeat 3 --output-dir reports
+go run ./cmd/a21 local-voice-loopback --asr-provider sherpa_onnx --engine sherpa_onnx --repeat 3 --output-dir reports
 go run ./cmd/a21 local-voice-loopback --text-provider deepseek --execute-text-provider --repeat 3 --output-dir reports
 make local-voice-loopback
 go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --output-dir reports
@@ -53,7 +54,8 @@ Environment variables:
 - `A21_LOCAL_TTS_VOICE`: macOS fallback voice name.
 - `A21_SHERPA_ONNX_MODEL_DIR`: optional override for the local sherpa model directory.
 - `A21_SHERPA_ONNX_SPEAKER_ID`: optional VITS speaker id, default `21`.
-- `A21_LOCAL_ASR_ENGINE`: `sherpa_onnx` by default.
+- `A21_LOCAL_ASR_ENGINE`: `sherpa_onnx` by default for `local-asr-smoke`.
+- `A21_LOCAL_ASR_PROVIDER`: `mock_asr` by default for `local-voice-loopback`; set `sherpa_onnx` for real local ASR.
 - `A21_SHERPA_ONNX_ASR_MODEL_DIR`: optional override for the local sherpa ASR model directory.
 - `A21_SHERPA_ONNX_ASR_FAMILY`: optional ASR family, one of `paraformer`, `sense_voice`, or `streaming_zipformer`.
 - `A21_SHERPA_ONNX_ASR_WAV`: optional local ASR WAV fixture.
@@ -78,15 +80,15 @@ The report does not store input text, provider credentials, proxy values, auth h
 
 ```text
 mock VAD fixture
-  -> mock ASR boundary
+  -> mock ASR boundary or explicit sherpa-onnx ASR fixture
   -> mock OpenAI-compatible text_stream parser or explicit DeepSeek text_stream execution
   -> selected local TTS
   -> existing Gateway mock barge-in latency bench
 ```
 
-This command is not a fake product demo. It is a deterministic host loopback receipt that proves A21's current software seams can carry redacted timing evidence across VAD, ASR placeholder, text-stream parsing, local TTS, and barge-in stop measurement before physical StackChan and real provider execution are allowed into the lane.
+This command is not a fake product demo. It is a deterministic host loopback receipt that proves A21's current software seams can carry redacted timing evidence across VAD, ASR, text-stream parsing, local TTS, and barge-in stop measurement before physical StackChan and real provider execution are allowed into the lane. The default stays `mock_asr` for stable local development; `--asr-provider sherpa_onnx` runs the tracked local ASR runner and passes the transcript internally to the text-stream step without writing it to stdout or reports.
 
-By default it uses the deterministic mock text stream. `--text-provider deepseek --execute-text-provider` is the explicit paid-network path. It requires `A21_LAB_DEEPSEEK_API_KEY`, uses the P0 DeepSeek profile, sends the mock ASR transcript to the provider, uses the streamed provider content as the TTS input, and still redacts user input, provider content, reasoning content, API key, model value, proxy value, and full URL from stdout and the saved report.
+By default it uses the deterministic mock text stream. `--text-provider deepseek --execute-text-provider` is the explicit paid-network path. It requires `A21_LAB_DEEPSEEK_API_KEY`, uses the P0 DeepSeek profile, sends only the current ASR transcript to the provider, uses the streamed provider content as the TTS input, and still redacts user input, ASR transcript, provider content, reasoning content, API key, model value, proxy value, and full URL from stdout and the saved report.
 
 The command writes:
 
@@ -94,7 +96,7 @@ The command writes:
 reports/a21-local-voice-loopback-YYYYMMDD-HHMMSS.json
 ```
 
-The report records byte counts, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, mock ASR transcript, provider output text, reasoning text, provider credentials, model value, proxy value, full URL, or full model path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
+The report records byte counts, ASR provider/model basename/WAV basename, ASR decode timing, ASR RTF, provider family, execution flag, endpoint host, delta counts, and timings only; it does not record the input utterance, ASR transcript, provider output text, reasoning text, provider credentials, model value, proxy value, full URL, full model path, or full WAV path. With `--repeat N`, it records `tts_first_audio_p50_ms`, `tts_first_audio_p95_ms`, `first_audio_total_p50_ms`, and `first_audio_total_p95_ms`.
 
 ## Local ASR Smoke
 

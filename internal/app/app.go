@@ -38,6 +38,7 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
+var runSherpaONNXASR = audio.RunSherpaONNXASR
 var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 
 const (
@@ -1020,7 +1021,15 @@ type localVoiceLoopbackReport struct {
 	VADSpeechStartEvents      int                  `json:"vad_speech_start_events"`
 	VADSpeechEndEvents        int                  `json:"vad_speech_end_events"`
 	ASRProvider               string               `json:"asr_provider"`
+	ASREngine                 string               `json:"asr_engine,omitempty"`
+	ASRModelDir               string               `json:"asr_model_dir,omitempty"`
+	ASRWAVName                string               `json:"asr_wav_name,omitempty"`
 	ASRFirstPartialMS         float64              `json:"asr_first_partial_ms"`
+	ASRInputDurationMS        float64              `json:"asr_input_duration_ms,omitempty"`
+	ASRDecodeDurationMS       float64              `json:"asr_decode_duration_ms,omitempty"`
+	ASRRealTimeFactor         float64              `json:"asr_real_time_factor,omitempty"`
+	ASRTextChars              int                  `json:"asr_text_chars,omitempty"`
+	ASRTranscriptPolicy       string               `json:"asr_transcript_policy,omitempty"`
 	TextStreamProvider        string               `json:"text_stream_provider"`
 	TextStreamFamily          string               `json:"text_stream_family"`
 	TextStreamExecuted        bool                 `json:"text_stream_executed"`
@@ -1076,6 +1085,10 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
 	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	asrProvider := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_PROVIDER"), "mock_asr"))
+	asrFamily := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_FAMILY"))
+	asrModelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_MODEL_DIR"))
+	asrWAVPath := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_WAV"))
 	textProvider := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TEXT_PROVIDER"), "mock_text_stream"))
 	executeTextProvider := false
 	repeat := parsePositiveIntOrDefault(os.Getenv("A21_LOCAL_VOICE_LOOPBACK_REPEAT"), 1)
@@ -1083,7 +1096,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--text-provider mock_text_stream|deepseek] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1132,6 +1145,34 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 			}
 			i++
 			textProvider = args[i]
+		case "--asr-provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--asr-provider requires a value")
+				return 2
+			}
+			i++
+			asrProvider = args[i]
+		case "--asr-family":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--asr-family requires a value")
+				return 2
+			}
+			i++
+			asrFamily = args[i]
+		case "--asr-model-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--asr-model-dir requires a value")
+				return 2
+			}
+			i++
+			asrModelDir = args[i]
+		case "--asr-wav":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--asr-wav requires a value")
+				return 2
+			}
+			i++
+			asrWAVPath = args[i]
 		case "--execute-text-provider":
 			executeTextProvider = true
 		case "--repeat":
@@ -1173,6 +1214,12 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 		Provider: textProvider,
 		Execute:  executeTextProvider,
 		Env:      os.Environ(),
+	}, localVoiceLoopbackASROptions{
+		Provider:  asrProvider,
+		Family:    asrFamily,
+		ModelDir:  asrModelDir,
+		WAVPath:   asrWAVPath,
+		OutputDir: outputDir,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "local voice loopback failed: %v\n", err)
@@ -1201,7 +1248,15 @@ type localVoiceLoopbackTextStreamOptions struct {
 	Client   *http.Client
 }
 
-func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, repeat int, textOptions localVoiceLoopbackTextStreamOptions) (localVoiceLoopbackReport, error) {
+type localVoiceLoopbackASROptions struct {
+	Provider  string
+	Family    string
+	ModelDir  string
+	WAVPath   string
+	OutputDir string
+}
+
+func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, repeat int, textOptions localVoiceLoopbackTextStreamOptions, asrOptions localVoiceLoopbackASROptions) (localVoiceLoopbackReport, error) {
 	if repeat <= 0 {
 		repeat = 1
 	}
@@ -1224,15 +1279,16 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 		BargeInStatus:        "not_run",
 	}
 
-	asrStart := time.Now()
-	mockTranscript := "a21 mock transcript"
-	report.ASRFirstPartialMS = elapsedReportMS(asrStart)
-	if strings.TrimSpace(mockTranscript) == "" {
-		report.Findings = append(report.Findings, "mock ASR did not produce text")
+	transcript, err := runLocalVoiceLoopbackASR(ctx, asrOptions, &report)
+	if err != nil {
+		return report, err
+	}
+	if strings.TrimSpace(transcript) == "" {
+		report.Findings = append(report.Findings, "ASR did not produce text")
 		return report, nil
 	}
 
-	ttsText, err := runLocalVoiceLoopbackTextStream(ctx, mockTranscript, textOptions, &report)
+	ttsText, err := runLocalVoiceLoopbackTextStream(ctx, transcript, textOptions, &report)
 	if err != nil {
 		return report, err
 	}
@@ -1277,6 +1333,47 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 	report.TotalDurationMS = elapsedReportMS(start)
 	report.Status = "passed"
 	return report, nil
+}
+
+func runLocalVoiceLoopbackASR(ctx context.Context, options localVoiceLoopbackASROptions, report *localVoiceLoopbackReport) (string, error) {
+	provider := strings.ToLower(strings.TrimSpace(firstNonEmpty(options.Provider, "mock_asr")))
+	provider = strings.ReplaceAll(provider, "-", "_")
+	switch provider {
+	case "", "mock", "mock_asr":
+		asrStart := time.Now()
+		report.ASRProvider = "mock_asr"
+		report.ASRFirstPartialMS = elapsedReportMS(asrStart)
+		return "a21 mock transcript", nil
+	case "sherpa", "sherpa_onnx":
+		result, err := runSherpaONNXASR(ctx, audio.LocalASROptions{
+			OutputDir: options.OutputDir,
+			ModelDir:  options.ModelDir,
+			Family:    options.Family,
+			WAVPath:   options.WAVPath,
+		})
+		if err != nil {
+			report.Findings = append(report.Findings, "sherpa-onnx ASR failed")
+			return "", err
+		}
+		report.ASRProvider = result.Report.Provider
+		report.ASREngine = result.Report.Engine
+		report.ASRModelDir = result.Report.ModelDir
+		report.ASRWAVName = result.Report.WAVName
+		report.ASRInputDurationMS = result.Report.InputDurationMS
+		report.ASRDecodeDurationMS = result.Report.DecodeDurationMS
+		report.ASRRealTimeFactor = result.Report.RealTimeFactor
+		report.ASRTextChars = result.Report.TextChars
+		report.ASRTranscriptPolicy = result.Report.TranscriptPolicy
+		report.ASRFirstPartialMS = result.Report.DecodeDurationMS
+		if result.Report.Status != "passed" {
+			report.Findings = append(report.Findings, "sherpa-onnx ASR did not pass")
+			return "", nil
+		}
+		return result.Transcript, nil
+	default:
+		report.Findings = append(report.Findings, "unsupported local ASR provider")
+		return "", fmt.Errorf("unsupported local ASR provider")
+	}
 }
 
 func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options localVoiceLoopbackTextStreamOptions, report *localVoiceLoopbackReport) (string, error) {

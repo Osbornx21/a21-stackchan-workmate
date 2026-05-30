@@ -1046,6 +1046,100 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	}
 }
 
+func TestRunLocalVoiceLoopbackCanUseSherpaASRWithoutLeakingTranscript(t *testing.T) {
+	originalTTS := synthesizeMacOSSay
+	originalASR := runSherpaONNXASR
+	t.Cleanup(func() {
+		synthesizeMacOSSay = originalTTS
+		runSherpaONNXASR = originalASR
+	})
+	runSherpaONNXASR = func(ctx context.Context, options audio.LocalASROptions) (audio.LocalASRResult, error) {
+		if options.ModelDir != "/tmp/a21-asr-model" || options.Family != "paraformer" || options.WAVPath != "/tmp/a21-asr.wav" {
+			t.Fatalf("asr options = %+v", options)
+		}
+		return audio.LocalASRResult{
+			Transcript: "真实转写不要进报告",
+			Report: audio.LocalASRReport{
+				SchemaVersion:    "a21.audio.local_asr.v1",
+				GeneratedAtMS:    time.Now().UnixMilli(),
+				Status:           "passed",
+				Provider:         "sherpa_onnx",
+				Engine:           "paraformer",
+				ModelDir:         "a21-asr-model",
+				WAVName:          "a21-asr.wav",
+				InputDurationMS:  1200,
+				DecodeDurationMS: 88,
+				RealTimeFactor:   0.073,
+				TextChars:        9,
+				TranscriptPolicy: "transcript_not_recorded",
+			},
+		}, nil
+	}
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-asr-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      11,
+			TTSFirstAudioMS: 11,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--asr-provider", "sherpa_onnx", "--asr-family", "paraformer", "--asr-model-dir", "/tmp/a21-asr-model", "--asr-wav", "/tmp/a21-asr.wav", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if ttsInput != "A21 loopback response" {
+		t.Fatalf("tts input = %q, want mock text stream response", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"asr_provider": "sherpa_onnx"`,
+		`"asr_engine": "paraformer"`,
+		`"asr_model_dir": "a21-asr-model"`,
+		`"asr_wav_name": "a21-asr.wav"`,
+		`"asr_text_chars": 9`,
+		`"asr_transcript_policy": "transcript_not_recorded"`,
+		`"tts_provider": "macos_say"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"真实转写不要进报告", "/tmp/a21-asr-model", "/tmp/a21-asr.wav", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
 func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
 	original := synthesizeSherpaONNX
 	t.Cleanup(func() { synthesizeSherpaONNX = original })

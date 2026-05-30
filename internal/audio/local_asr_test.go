@@ -57,6 +57,60 @@ func TestRunSherpaONNXASRSmokeParsesScriptOutputAndRedactsPaths(t *testing.T) {
 	}
 }
 
+func TestRunSherpaONNXASRReturnsTranscriptOutsideReport(t *testing.T) {
+	dir := t.TempDir()
+	modelDir := filepath.Join(dir, "a21-asr-model")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"model.int8.onnx", "tokens.txt"} {
+		if err := os.WriteFile(filepath.Join(modelDir, name), []byte("a21"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wavPath := filepath.Join(modelDir, "input.wav")
+	if err := os.WriteFile(wavPath, []byte("RIFF-a21"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakePython := filepath.Join(dir, "a21-fake-python")
+	if err := os.WriteFile(fakePython, []byte(`#!/bin/sh
+set -eu
+transcript=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--transcript-output" ]; then
+    shift
+    transcript="$1"
+  fi
+  shift || true
+done
+if [ -n "$transcript" ]; then
+  printf '%s' '真实转写不进报告' > "$transcript"
+fi
+printf '%s\n' '{"status":"passed","input_duration_ms":1200,"decode_duration_ms":90,"real_time_factor":0.075,"text_chars":8}'
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := RunSherpaONNXASR(context.Background(), LocalASROptions{
+		OutputDir:  dir,
+		PythonPath: fakePython,
+		ScriptPath: filepath.Join(dir, "unused-script.py"),
+		ModelDir:   modelDir,
+		Family:     "paraformer",
+		WAVPath:    wavPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Transcript != "真实转写不进报告" {
+		t.Fatalf("transcript = %q", result.Transcript)
+	}
+	if result.Report.Status != "passed" || result.Report.TextChars != 8 {
+		t.Fatalf("report = %+v", result.Report)
+	}
+}
+
 func TestValidateSherpaONNXASRModelDirRequiresStreamingFiles(t *testing.T) {
 	modelDir := t.TempDir()
 	for _, name := range []string{"encoder.int8.onnx", "decoder.onnx", "tokens.txt"} {
