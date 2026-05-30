@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -2395,12 +2396,14 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
         "board": "m5stack-cores3",
         "commit": "abcdef1"
-      }
+      },
+      "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
 }`), 0o644); err != nil {
@@ -2417,6 +2420,7 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 		"--device-report", report,
 		"--device-id", "stackchan-001",
 		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
@@ -2432,6 +2436,57 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+}
+
+func TestRunFirmwareFlashPlanRequiresFreshnessGuard(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	report := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(report, []byte(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
+    }
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-flash-plan",
+		"--manifest", manifest,
+		"--artifact", artifact,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-report", report,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+	}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--max-device-age-ms requires a value") {
+		t.Fatalf("stderr = %q, want max device age usage error", stderr.String())
 	}
 }
 
@@ -2511,12 +2566,14 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
         "board": "m5stack-cores3",
         "commit": "abcdef1"
-      }
+      },
+      "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
 }`), 0o644); err != nil {
@@ -2534,6 +2591,7 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
 		"--device-report", report,
 		"--device-id", "stackchan-001",
 		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
 		"--output-dir", outputDir,
 	}, &stdout, &stderr)
 	if code != 0 {

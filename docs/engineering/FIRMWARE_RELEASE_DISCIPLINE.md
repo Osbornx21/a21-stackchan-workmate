@@ -323,7 +323,7 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-flash-plan
 ```
 
-The Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check` and writes a timestamped no-flash receipt to:
+`firmware-flash-plan` requires `--max-device-age-ms`; the Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check` and writes a timestamped no-flash receipt to:
 
 ```text
 reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json
@@ -336,7 +336,8 @@ The guard verifies:
 - the artifact passes `firmware-artifact-check`
 - the upload port is explicit, exists, and is not busy
 - the Gateway device report contains the explicit `A21_DEVICE_ID`
-- the Gateway device report is fresh when `--max-device-age-ms` is supplied
+- the Gateway device report has `connection_status=online`
+- the Gateway device report has `last_seen_ms` and is fresh under the required `--max-device-age-ms`
 - the Gateway device report does not show active playback or `current_expression=speaking`
 - the Gateway device report does not show unsafe runtime states: `current_expression=thinking|professional|error` or `current_mode=professional|local_fallback|error`
 - the upload guard and device-identity guard reference the same artifact checksum and commit

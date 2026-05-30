@@ -1867,7 +1867,7 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> [--max-device-age-ms 300000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 firmware-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000 [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1953,6 +1953,10 @@ func runFirmwareFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int
 	}
 	if options.ExpectedGitCommit == "" {
 		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	if options.MaxDeviceAgeMS <= 0 {
+		fmt.Fprintln(stderr, "--max-device-age-ms requires a value")
 		return 2
 	}
 	portUsage, err := detectFirmwareUploadPortUsage(options.Port)

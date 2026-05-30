@@ -39,6 +39,9 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 	if generatedAtMS <= 0 {
 		generatedAtMS = time.Now().UnixMilli()
 	}
+	if options.MaxDeviceAgeMS <= 0 {
+		return FlashPlanResult{}, fmt.Errorf("max device age guard is required for firmware flash plan")
+	}
 	upload, err := ValidateUploadCandidate(UploadCheckOptions{
 		ManifestPath: options.ManifestPath,
 		ArtifactPath: options.ArtifactPath,
@@ -99,6 +102,9 @@ func BuildFlashPlan(options FlashPlanOptions) (FlashPlanResult, error) {
 }
 
 func validateFlashPlanDeviceQuiescent(device DeviceIdentityRecord) error {
+	if device.ConnectionStatus != "online" {
+		return fmt.Errorf("device connection_status %q is not flash-plan safe; expected online", device.ConnectionStatus)
+	}
 	if device.PlaybackStreamID != "" || device.CurrentExpression == "speaking" {
 		return fmt.Errorf("device has active playback; wait for speaking to stop before creating a firmware flash plan")
 	}

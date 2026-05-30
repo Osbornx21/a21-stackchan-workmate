@@ -17,12 +17,14 @@ func TestBuildFlashPlanConfirmsUploadAndDeviceIdentityWithoutEnablingFlash(t *te
     {
       "device_id": "stackchan-001",
       "identity_status": "ok",
+      "connection_status": "online",
       "firmware": {
         "id": "a21-stackchan",
         "version": "0.1.0",
         "board": "m5stack-cores3",
         "commit": "abcdef123456"
-      }
+      },
+      "last_seen_ms": 123456000
     }
   ]
 }`)
@@ -35,6 +37,7 @@ func TestBuildFlashPlanConfirmsUploadAndDeviceIdentityWithoutEnablingFlash(t *te
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
 		PortUsage:         PortUsage{Exists: true},
+		MaxDeviceAgeMS:    5000,
 		NowMS:             123456789,
 	})
 	if err != nil {
@@ -63,6 +66,86 @@ func TestBuildFlashPlanConfirmsUploadAndDeviceIdentityWithoutEnablingFlash(t *te
 	}
 }
 
+func TestBuildFlashPlanRejectsMissingFreshnessGuard(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 123456000
+    }
+  ]
+}`)
+
+	_, err := BuildFlashPlan(FlashPlanOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		Port:              "/dev/cu.usbmodemA21",
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		PortUsage:         PortUsage{Exists: true},
+		NowMS:             123456789,
+	})
+	if err == nil {
+		t.Fatal("expected missing max device age guard to be rejected")
+	}
+	if !strings.Contains(err.Error(), "max device age") {
+		t.Fatalf("error = %q, want max device age guard", err)
+	}
+}
+
+func TestBuildFlashPlanRequiresOnlineConnectionStatus(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 123456000
+    }
+  ]
+}`)
+
+	_, err := BuildFlashPlan(FlashPlanOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		Port:              "/dev/cu.usbmodemA21",
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		PortUsage:         PortUsage{Exists: true},
+		MaxDeviceAgeMS:    5000,
+		NowMS:             123456789,
+	})
+	if err == nil {
+		t.Fatal("expected missing online connection status to be rejected")
+	}
+	if !strings.Contains(err.Error(), "connection_status") {
+		t.Fatalf("error = %q, want connection_status guard", err)
+	}
+}
+
 func TestBuildFlashPlanRejectsBusyPort(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeDeviceIdentityManifest(t, dir)
@@ -78,6 +161,7 @@ func TestBuildFlashPlanRejectsBusyPort(t *testing.T) {
 		ExpectedDeviceID:  "stackchan-001",
 		ExpectedGitCommit: "abcdef123456",
 		PortUsage:         PortUsage{Exists: true, InUse: true, Detail: "p1234 pio"},
+		MaxDeviceAgeMS:    5000,
 	})
 	if err == nil {
 		t.Fatal("expected busy port to be rejected")
