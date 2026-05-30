@@ -22,7 +22,7 @@ Gateway now also exposes `GET /v1/devices` for the current in-memory device regi
 
 `runtime_echo` is emitted by firmware after it applies screen, motion, and RGB state. Current keys are `screen`, `servo_y`, and `rgb`. This is useful for capability evidence derivation and driver-state debugging, but physical office acceptance still needs separate visible/audible/operator or instrument observations.
 
-Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, mock playback chunk sends, audio-path barge-in markers, realtime provider commit/downlink markers, V21 adapter markers, and outgoing control events with millisecond offsets. The response includes a summary for audio-frame-to-playback, V21 first result, barge-in stop, provider-commit-to-first-audio, event count, and last offset. This is a development observability surface, not the final durable trace backend.
+Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, microphone probe acceptance markers, mock playback chunk sends, audio-path barge-in markers, realtime provider commit/downlink markers, V21 adapter markers, and outgoing control events with millisecond offsets. The response includes a summary for audio-frame-to-playback, V21 first result, barge-in stop, provider-commit-to-first-audio, event count, and last offset. This is a development observability surface, not the final durable trace backend.
 
 The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.
 
@@ -71,6 +71,7 @@ Current mock trace events include:
 - `audio.frame.received`
 - `audio.ingress.buffered`
 - `audio.ingress.invalid`
+- `audio.probe.frame.accepted`
 - `vad.speech.start`
 - `vad.speech.end`
 - `barge_in.detected`

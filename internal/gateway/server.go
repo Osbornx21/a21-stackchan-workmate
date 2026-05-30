@@ -37,6 +37,7 @@ type Server struct {
 	realtimeAudio              map[string]providers.RealtimeVoiceSession
 	realtimeAudioCommitAt      map[string]time.Time
 	realtimeAudioFirstDownlink map[string]bool
+	audioProbeSessions         map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
 }
@@ -97,6 +98,7 @@ type DeviceControlRequest struct {
 	SessionID       string                   `json:"session_id,omitempty"`
 	StreamID        string                   `json:"stream_id,omitempty"`
 	MockAudioChunks int                      `json:"mock_audio_chunks,omitempty"`
+	AudioProbeOnly  bool                     `json:"audio_probe_only,omitempty"`
 }
 
 type DeviceControlResponse struct {
@@ -212,6 +214,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeAudio:              make(map[string]providers.RealtimeVoiceSession),
 		realtimeAudioCommitAt:      make(map[string]time.Time),
 		realtimeAudioFirstDownlink: make(map[string]bool),
+		audioProbeSessions:         make(map[string]bool),
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
 	}
@@ -277,6 +280,7 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
 	req.SessionID = sessionID
+	s.setAudioProbeOnly(req.DeviceID, traceID, sessionID, req.AudioProbeOnly)
 	socket, ok := s.audioSocket(req.DeviceID)
 	if !ok {
 		http.Error(w, "device audio websocket is not connected", http.StatusConflict)
@@ -619,6 +623,10 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			continue
+		}
+		if frame.Kind == protocol.KindAudioFrame && s.audioProbeOnly(frame.DeviceID, traceID, sessionID) {
+			s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.probe.frame.accepted", s.now().UnixMilli())
 			continue
 		}
 		if events, handled := s.realtimeAudioEvents(ctx, conn, writeMu, frame, traceID, sessionID, ingress, realtimeAudioKeys); handled {
@@ -1552,6 +1560,24 @@ func (s *Server) clearActiveStream(traceID string, sessionID string, deviceID st
 	streamID := s.activeStreams[key]
 	delete(s.activeStreams, key)
 	return streamID
+}
+
+func (s *Server) setAudioProbeOnly(deviceID string, traceID string, sessionID string, enabled bool) {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if enabled {
+		s.audioProbeSessions[key] = true
+		return
+	}
+	delete(s.audioProbeSessions, key)
+}
+
+func (s *Server) audioProbeOnly(deviceID string, traceID string, sessionID string) bool {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.audioProbeSessions[key]
 }
 
 func (s *Server) realtimeAudioSession(traceID string, sessionID string, deviceID string) providers.RealtimeVoiceSession {

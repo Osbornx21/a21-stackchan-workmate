@@ -1830,6 +1830,45 @@ func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testi
 	}
 }
 
+func TestAudioProbeOnlyDeviceControlSuppressesMockPlayback(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","text":"probe","trace_id":"a21-trace-probe-control","session_id":"a21-session-probe","audio_probe_only":true}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-probe-audio", "a21-session-probe", pcm16Base64WithSample(12000))
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-probe-audio", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"audio.frame.received", "audio.ingress.buffered", "audio.probe.frame.accepted"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
 func TestDeviceControlEndpointRequiresConnectedAudioSocket(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -2253,6 +2292,11 @@ func writeAudioFrameWithPayload(t *testing.T, ctx context.Context, conn *websock
 
 func writeAudioFrameEnvelope(t *testing.T, ctx context.Context, conn *websocket.Conn, seq uint64, traceID string, sessionID string, payloadBase64 string) {
 	t.Helper()
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-sim-001", seq, traceID, sessionID, payloadBase64)
+}
+
+func writeAudioFrameEnvelopeForDevice(t *testing.T, ctx context.Context, conn *websocket.Conn, deviceID string, seq uint64, traceID string, sessionID string, payloadBase64 string) {
+	t.Helper()
 	audio, err := json.Marshal(protocol.AudioChunk{
 		Codec:        protocol.AudioCodecPCMS16LE,
 		SampleRateHz: 16000,
@@ -2265,7 +2309,7 @@ func writeAudioFrameEnvelope(t *testing.T, ctx context.Context, conn *websocket.
 	}
 	if err := wsjson.Write(ctx, conn, protocol.Envelope{
 		Protocol:  protocol.ProtocolVersion,
-		DeviceID:  "stackchan-sim-001",
+		DeviceID:  deviceID,
 		Kind:      protocol.KindAudioFrame,
 		Seq:       seq,
 		TraceID:   traceID,
