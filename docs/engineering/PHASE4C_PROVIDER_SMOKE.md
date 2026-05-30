@@ -42,10 +42,11 @@ Current non-executable smoke providers:
 
 - `openai_realtime`
 - `doubao_realtime`
+- `doubao_tts_realtime`
 
 They are realtime WebSocket providers, not Chat Completions providers. Phase 4C reports them as `unsupported` for smoke execution instead of pretending an HTTP chat request proves realtime audio readiness.
 
-Phase 4D adds a lower-level realtime WebSocket adapter skeleton in `internal/providers/realtime.go`. That skeleton can build a redacted OpenAI realtime connection plan and send generic `session.update` / `response.cancel` events through an injected WebSocket connection, but it still does not execute realtime provider smoke from `provider-smoke`.
+Later realtime planning phases add lower-level realtime WebSocket readiness reports in `internal/providers/realtime.go`. That path can build redacted OpenAI realtime, Doubao realtime speech-to-speech, and Doubao realtime TTS connection plans and send generic test events through injected fake WebSocket connections, but it still does not execute realtime provider smoke from `provider-smoke`.
 
 ## Env
 
@@ -66,7 +67,11 @@ Realtime providers:
 - `A21_OPENAI_API_KEY`
 - `A21_OPENAI_REALTIME_MODEL`
 - `A21_DOUBAO_API_KEY`
+- `A21_DOUBAO_APP_ID`
+- `A21_DOUBAO_RESOURCE_ID`
 - `A21_DOUBAO_REALTIME_MODEL`
+- `A21_DOUBAO_TTS_MODEL`
+- `A21_DOUBAO_TTS_VOICE`
 
 ## Source Baseline
 

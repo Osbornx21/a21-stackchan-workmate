@@ -7,6 +7,7 @@ Phase 4I adds an explicit realtime provider planning command:
 ```bash
 go run ./cmd/a21 provider-realtime-plan
 go run ./cmd/a21 provider-realtime-plan --provider openai_realtime
+go run ./cmd/a21 provider-realtime-plan --provider doubao_realtime
 go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
 ```
 
@@ -17,7 +18,7 @@ make provider-realtime-plan
 A21_PROVIDER=doubao_tts_realtime make provider-realtime-plan
 ```
 
-This separates realtime WebSocket readiness inspection from the larger `doctor` report. It gives operators a small, redacted, no-network command for checking whether OpenAI Realtime or Doubao realtime TTS is configured enough to be connected by an explicit adapter later.
+This separates realtime WebSocket readiness inspection from the larger `doctor` report. It gives operators a small, redacted, no-network command for checking whether OpenAI Realtime, Doubao end-to-end realtime speech-to-speech, or Doubao realtime TTS is configured enough to be connected by an explicit adapter later.
 
 ## Implemented Boundary
 
@@ -34,6 +35,7 @@ Capabilities:
 - Emits the existing `ProviderSmokeReport` JSON shape from `RealtimeWebSocketPlanFromEnv`.
 - Supports current realtime plan targets:
   - `openai_realtime`
+  - `doubao_realtime`
   - `doubao_tts_realtime`
   - `mock` as skipped
 - Redacts API keys, model values, voice IDs, auth headers, proxy URLs, and full provider URLs.
@@ -55,7 +57,7 @@ Covered by:
 go test ./internal/app -run 'TestRunProviderRealtimePlan' -count=1
 ```
 
-The tests cover Doubao TTS ready output, secret/model/voice/header redaction, legacy provider redaction, and `--execute` rejection.
+The tests cover Doubao S2S ready output, Doubao TTS ready output, secret/model/app/resource/voice/header redaction, legacy provider redaction, and `--execute` rejection.
 
 ## Next Step
 

@@ -447,6 +447,39 @@ func TestRunProviderRealtimePlanDoubaoTTSDoesNotLeakSecrets(t *testing.T) {
 	}
 }
 
+func TestRunProviderRealtimePlanDoubaoS2SDoesNotLeakSecrets(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
+	t.Setenv("A21_DOUBAO_RESOURCE_ID", "resource-a21-secret")
+	t.Setenv("A21_DOUBAO_REALTIME_MODEL", "doubao-s2s")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-realtime-plan", "--provider", "doubao_realtime"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "doubao_realtime"`,
+		`"protocol": "websocket_realtime"`,
+		`"status": "ready"`,
+		`"configured": true`,
+		`"executed": false`,
+		`"endpoint_host": "ai-gateway.vei.volces.com"`,
+		`"api_key_env": "A21_DOUBAO_API_KEY"`,
+		`"model_env": "A21_DOUBAO_REALTIME_MODEL"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("provider realtime plan leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunProviderRealtimePlanRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

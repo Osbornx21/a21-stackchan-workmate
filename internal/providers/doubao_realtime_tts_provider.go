@@ -77,7 +77,7 @@ func (p *DoubaoRealtimeTTSProvider) StartRealtimeTTSSession(ctx context.Context,
 	if missing := p.missingEnv(); len(missing) > 0 {
 		return nil, fmt.Errorf("doubao realtime TTS provider missing %s", strings.Join(missing, ","))
 	}
-	endpoint, err := doubaoRealtimeURL(p.config.Model)
+	endpoint, err := doubaoRealtimeURL(p.config.Model, "A21_DOUBAO_TTS_MODEL")
 	if err != nil {
 		return nil, err
 	}

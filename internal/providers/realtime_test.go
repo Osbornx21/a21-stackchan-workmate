@@ -67,6 +67,51 @@ func TestRealtimeWebSocketPlanFromEnvBuildsDoubaoTTSPlanWithoutLeakingSecrets(t 
 	}
 }
 
+func TestRealtimeWebSocketPlanFromEnvBuildsDoubaoS2SPlanWithoutLeakingSecrets(t *testing.T) {
+	report := RealtimeWebSocketPlanFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_RESOURCE_ID=resource-a21-secret",
+		"A21_DOUBAO_REALTIME_MODEL=doubao-s2s",
+	}, "doubao_realtime")
+
+	if report.Provider != "doubao_realtime" {
+		t.Fatalf("provider = %q, want doubao_realtime", report.Provider)
+	}
+	if report.Status != ProviderSmokeReady {
+		t.Fatalf("status = %q, want ready", report.Status)
+	}
+	if !report.Configured {
+		t.Fatal("configured = false, want true")
+	}
+	if report.EndpointHost != "ai-gateway.vei.volces.com" {
+		t.Fatalf("endpoint host = %q, want ai-gateway.vei.volces.com", report.EndpointHost)
+	}
+	rendered := realtimeMustJSON(t, report)
+	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("plan leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestRealtimeWebSocketPlanFromEnvSkipsDoubaoS2SWhenResourceMissing(t *testing.T) {
+	report := RealtimeWebSocketPlanFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_REALTIME_MODEL=doubao-s2s",
+	}, "doubao_realtime")
+
+	if report.Status != ProviderSmokeSkipped {
+		t.Fatalf("status = %q, want skipped", report.Status)
+	}
+	if !stringSliceContains(report.MissingEnv, "A21_DOUBAO_RESOURCE_ID") {
+		t.Fatalf("missing env lacks resource id: %#v", report.MissingEnv)
+	}
+}
+
 func TestRealtimeWebSocketPlanFromEnvSkipsDoubaoTTSWhenVoiceMissing(t *testing.T) {
 	report := RealtimeWebSocketPlanFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",

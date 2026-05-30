@@ -7,6 +7,7 @@ go run ./cmd/a21 doctor
 go run ./cmd/a21 doctor --output-dir reports
 go run ./cmd/a21 serial-list
 go run ./cmd/a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/a21-devices.json --device-id stackchan-001 --commit <git-sha>
+go run ./cmd/a21 provider-realtime-plan --provider doubao_realtime
 go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
 make doctor
 make provider-realtime-plan
@@ -55,7 +56,7 @@ The voice provider registry is a readiness audit, not a real provider smoke test
 
 The voice smoke section is a dry-run plan inside `doctor`. It reports whether the selected provider has enough env to run a smoke test, which protocol would be used, which env variable names are involved, and which endpoint host would be contacted. It does not execute network calls and never prints key, model, proxy, or full URL values.
 
-The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning and Doubao realtime TTS planning. It reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, model values, voice IDs, auth headers, or full provider URLs, and it does not dial the provider. The same realtime plan can be inspected directly with `provider-realtime-plan` when an operator needs a smaller provider-only report.
+The `voice.realtime_plan` section is also dry-run. It currently supports OpenAI Realtime planning, Doubao end-to-end realtime speech-to-speech planning, and Doubao realtime TTS planning. It reports provider, protocol, readiness status, required env names, network mode, and endpoint host. It never prints API keys, app IDs, resource IDs, model values, voice IDs, auth headers, or full provider URLs, and it does not dial the provider. The same realtime plan can be inspected directly with `provider-realtime-plan` when an operator needs a smaller provider-only report.
 
 Explicit provider smoke execution is a separate command:
 

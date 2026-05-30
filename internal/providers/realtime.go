@@ -90,6 +90,33 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		report.Status = ProviderSmokeReady
 		report.Detail = "realtime websocket plan is configured; explicit adapter connect is required"
 		return report
+	case "doubao_realtime":
+		report.Provider = provider
+		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
+		report.ModelEnv = "A21_DOUBAO_REALTIME_MODEL"
+		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
+			APIKeyEnv: report.APIKeyEnv,
+			ModelEnv:  report.ModelEnv,
+			RequiredEnv: []string{
+				"A21_DOUBAO_APP_ID",
+				"A21_DOUBAO_RESOURCE_ID",
+			},
+		})
+		if !report.Configured {
+			report.Status = ProviderSmokeSkipped
+			report.Detail = "doubao realtime speech-to-speech plan skipped because required env is missing"
+			return report
+		}
+		endpoint, err := doubaoRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)), report.ModelEnv)
+		if err != nil {
+			report.Status = ProviderSmokeFailed
+			report.Detail = redactProviderSmokeDetail(err.Error())
+			return report
+		}
+		report.EndpointHost = endpointHost(endpoint)
+		report.Status = ProviderSmokeReady
+		report.Detail = "doubao realtime speech-to-speech websocket plan is configured; explicit adapter connect is required"
+		return report
 	case "doubao_tts_realtime":
 		report.Provider = provider
 		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
@@ -104,7 +131,7 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 			report.Detail = "doubao realtime TTS plan skipped because required env is missing"
 			return report
 		}
-		endpoint, err := doubaoRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)))
+		endpoint, err := doubaoRealtimeURL(strings.TrimSpace(envValue(env, report.ModelEnv)), report.ModelEnv)
 		if err != nil {
 			report.Status = ProviderSmokeFailed
 			report.Detail = redactProviderSmokeDetail(err.Error())
@@ -275,9 +302,12 @@ func openAIRealtimeURL(model string) (string, error) {
 	return parsed.String(), nil
 }
 
-func doubaoRealtimeURL(model string) (string, error) {
+func doubaoRealtimeURL(model string, modelEnv string) (string, error) {
 	if model == "" {
-		return "", fmt.Errorf("A21_DOUBAO_TTS_MODEL is required")
+		if modelEnv == "" {
+			modelEnv = "A21_DOUBAO_REALTIME_MODEL"
+		}
+		return "", fmt.Errorf("%s is required", modelEnv)
 	}
 	parsed, err := url.Parse(doubaoRealtimeDefaultURL)
 	if err != nil {
