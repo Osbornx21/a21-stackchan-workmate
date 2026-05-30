@@ -552,7 +552,15 @@ const simulatorHTML = `<!doctype html>
         screen_touch: 'available',
         top_touch: 'available',
         servo_y: 'available',
-        rgb: 'available'
+        servo_x: 'planned_continuous_rotation_axis',
+        rgb: 'available',
+        camera: 'planned_core_s3_camera',
+        imu: 'planned_9_axis_imu',
+        ambient_light: 'planned_ambient_light_sensor',
+        proximity: 'planned_proximity_sensor',
+        battery: 'planned_550mah_battery',
+        nfc: 'planned_nfc',
+        infrared: 'planned_infrared_tx_rx'
       }
     };
 

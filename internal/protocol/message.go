@@ -105,6 +105,26 @@ const (
 	TouchSourceTopSensor TouchSource = "top_sensor"
 )
 
+func StackChanHardwareCapabilityKeys() []string {
+	return []string{
+		"microphone",
+		"speaker",
+		"screen",
+		"screen_touch",
+		"top_touch",
+		"servo_y",
+		"servo_x",
+		"rgb",
+		"camera",
+		"imu",
+		"ambient_light",
+		"proximity",
+		"battery",
+		"nfc",
+		"infrared",
+	}
+}
+
 type DeviceEventPayload struct {
 	Event           DeviceEventKind   `json:"event"`
 	Mode            Mode              `json:"mode,omitempty"`

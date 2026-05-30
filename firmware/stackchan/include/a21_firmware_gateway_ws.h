@@ -1,5 +1,6 @@
 #pragma once
 
+#include "a21_firmware_capabilities.h"
 #include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_mic.h"
@@ -184,13 +185,7 @@ inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
   payload["firmware_board"] = A21_FIRMWARE_BOARD;
   payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
   JsonObject capabilities = payload["capabilities"].to<JsonObject>();
-  capabilities["microphone"] = a21MicrophoneCapabilityStatus();
-  capabilities["speaker"] = "available";
-  capabilities["screen"] = "available";
-  capabilities["screen_touch"] = "available";
-  capabilities["top_touch"] = "available";
-  capabilities["servo_y"] = "available";
-  capabilities["rgb"] = "available";
+  a21WriteStackChanHardwareCapabilities(capabilities);
   if (text != nullptr && text[0] != '\0') {
     payload["text"] = text;
   }
@@ -246,13 +241,7 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
   payload["firmware_board"] = A21_FIRMWARE_BOARD;
   payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
   JsonObject capabilities = payload["capabilities"].to<JsonObject>();
-  capabilities["microphone"] = a21MicrophoneCapabilityStatus();
-  capabilities["speaker"] = "available";
-  capabilities["screen"] = "available";
-  capabilities["screen_touch"] = "available";
-  capabilities["top_touch"] = "available";
-  capabilities["servo_y"] = "available";
-  capabilities["rgb"] = "available";
+  a21WriteStackChanHardwareCapabilities(capabilities);
   JsonObject echo = payload["runtime_echo"].to<JsonObject>();
   echo["screen"] = a21RenderStateProtocolName(state->render_state);
   echo["servo_y"] = servo_y;

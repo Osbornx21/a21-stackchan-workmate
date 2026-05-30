@@ -64,7 +64,7 @@ struct FakeGatewayWSDriver {
   const char* last_host;
   uint16_t last_port;
   const char* last_path;
-  char last_sent_text[A21_AUDIO_WS_TEXT_MESSAGE_CAP];
+  char last_sent_text[A21_WS_TEXT_MESSAGE_CAP];
   bool connected;
   const char* pending_text;
   const char* pending_texts[4];
@@ -134,6 +134,24 @@ void initFakeGatewayWSDriver(FakeGatewayWSDriver* fake, A21GatewayWSDriver* driv
   driver->connected = fakeGatewayWSConnected;
   driver->read_text = fakeGatewayWSReadText;
   driver->send_text = fakeGatewayWSSendText;
+}
+
+void assertStackChanHardwareCapabilities(JsonVariantConst capabilities, const char* microphone_status) {
+  TEST_ASSERT_EQUAL_STRING(microphone_status, capabilities["microphone"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["speaker"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["screen"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["screen_touch"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["top_touch"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["servo_y"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_continuous_rotation_axis", capabilities["servo_x"] | "");
+  TEST_ASSERT_EQUAL_STRING("available", capabilities["rgb"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_core_s3_camera", capabilities["camera"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_9_axis_imu", capabilities["imu"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_ambient_light_sensor", capabilities["ambient_light"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_proximity_sensor", capabilities["proximity"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_550mah_battery", capabilities["battery"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_nfc", capabilities["nfc"] | "");
+  TEST_ASSERT_EQUAL_STRING("planned_infrared_tx_rx", capabilities["infrared"] | "");
 }
 
 void initFakeAudioWSDriver(FakeGatewayWSDriver* fake, A21AudioWSDriver* driver) {
@@ -907,13 +925,9 @@ void test_gateway_ws_send_mock_turn_builds_a21_device_event() {
   TEST_ASSERT_EQUAL_STRING("0.1.0", doc["payload"]["firmware_version"] | "");
   TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
   TEST_ASSERT_NOT_EQUAL('\0', (doc["payload"]["firmware_commit"] | "")[0]);
-  TEST_ASSERT_EQUAL_STRING("disabled_m5unified_i2s_stop_crash_guard", doc["payload"]["capabilities"]["microphone"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["speaker"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["screen_touch"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["top_touch"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["servo_y"] | "");
-  TEST_ASSERT_EQUAL_STRING("available", doc["payload"]["capabilities"]["rgb"] | "");
+  assertStackChanHardwareCapabilities(
+      doc["payload"]["capabilities"],
+      "disabled_m5unified_i2s_stop_crash_guard");
 }
 
 void test_gateway_ws_send_interrupt_increments_seq() {
@@ -1005,6 +1019,9 @@ void test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb() {
   TEST_ASSERT_EQUAL_STRING("#002430", doc["payload"]["runtime_echo"]["rgb"] | "");
   TEST_ASSERT_EQUAL_STRING("a21-stackchan", doc["payload"]["firmware_id"] | "");
   TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
+  assertStackChanHardwareCapabilities(
+      doc["payload"]["capabilities"],
+      "disabled_m5unified_i2s_stop_crash_guard");
 
   TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChanged(
       &runtime,

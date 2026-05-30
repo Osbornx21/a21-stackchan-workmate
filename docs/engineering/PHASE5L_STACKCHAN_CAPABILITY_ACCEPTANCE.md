@@ -91,7 +91,7 @@ The physical evidence file must be A21-scoped:
 }
 ```
 
-Required capabilities:
+Current product-available acceptance capabilities:
 
 - `microphone`
 - `speaker`
@@ -102,6 +102,8 @@ Required capabilities:
 - `rgb`
 
 Each capability must be declared `available` in the identity acceptance report and must have a `passed` evidence observation with a non-empty `evidence_type` and `observed_at_ms`.
+
+The broader StackChan hardware inventory also includes planned capability keys such as `servo_x`, `camera`, `imu`, `ambient_light`, `proximity`, `battery`, `nfc`, and `infrared`. These are deliberately excluded from the current `available` acceptance gate until their firmware paths and product behavior are implemented and accepted under `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`.
 
 ## Guardrails
 

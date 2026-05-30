@@ -13,6 +13,7 @@ The A21 architecture and product direction come from the user. External document
 - All new services, ports, environment variables, logs, traces, directories, and containers must use the `a21` / `A21_` namespace.
 - Never introduce new X21 naming in A21 code. X21/V21 strings are allowed only in guardrails, tests, docs, and explicit adapter context.
 - StackChan remains a thin device client. A21 Core/Gateway owns provider keys, proxy policy, V21 access, observability, and network complexity.
+- StackChan is strong hardware, not a disposable ESP32 edge client. A21 must preserve and expose its full hardware surface, including camera, IMU, sensors, screen, touch, RGB, speaker, microphone, battery, NFC, infrared, and servos. Capabilities that are not implemented yet must be marked as planned or unavailable honestly, never hidden by a simplified protocol.
 - No provider API key may be stored in firmware.
 - Firmware builds and uploads require strict A21 identity, board, version, artifact, and upload-target checks. Never add an unguarded firmware upload command.
 - Localhost, LAN, `.local`, StackChan, and V21 adapter traffic must not silently inherit global proxies.
@@ -22,6 +23,7 @@ The A21 architecture and product direction come from the user. External document
 - Prefer mature, proven libraries, SDKs, and framework patterns for transport, metrics, parsing, audio, provider APIs, and firmware tooling. Do not hand-roll established infrastructure unless an ADR explains why A21 needs a custom implementation.
 - Do not rewrite the current Go-first foundation into another stack without an ADR and an approved migration plan.
 - Treat external master documents as proposals to curate, not as authority over the user's own A21 design.
+- Do not ship an A21 hardware effect that is worse than the original StackChan experience. Keep it as a spike or planned capability until implementation and acceptance evidence justify product use.
 
 ## Product Canon
 
@@ -45,6 +47,7 @@ Default stance:
 - `docs/engineering/LATENCY_BUDGET.md`
 - `docs/engineering/OBSERVABILITY.md`
 - `docs/engineering/PROTOCOL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
 - `docs/engineering/V21_INTEGRATION.md`
 - `docs/engineering/DOCTOR.md`
 

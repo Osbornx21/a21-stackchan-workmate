@@ -112,13 +112,21 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 		FirmwareBoard:   "m5stack-cores3",
 		FirmwareCommit:  "082eb938b713",
 		Capabilities: map[string]string{
-			"microphone":   "available",
-			"speaker":      "available",
-			"screen":       "available",
-			"screen_touch": "available",
-			"top_touch":    "available",
-			"servo_y":      "available",
-			"rgb":          "available",
+			"microphone":    "available",
+			"speaker":       "available",
+			"screen":        "available",
+			"screen_touch":  "available",
+			"top_touch":     "available",
+			"servo_y":       "available",
+			"servo_x":       "planned_continuous_rotation_axis",
+			"rgb":           "available",
+			"camera":        "planned_core_s3_camera",
+			"imu":           "planned_9_axis_imu",
+			"ambient_light": "planned_ambient_light_sensor",
+			"proximity":     "planned_proximity_sensor",
+			"battery":       "planned_550mah_battery",
+			"nfc":           "planned_nfc",
+			"infrared":      "planned_infrared_tx_rx",
 		},
 	}
 	if event.Event != "mock.turn" {
@@ -133,12 +141,45 @@ func TestDeviceEventPayloadKinds(t *testing.T) {
 	if event.Capabilities["screen_touch"] != "available" {
 		t.Fatalf("screen_touch capability = %q, want available", event.Capabilities["screen_touch"])
 	}
+	if event.Capabilities["camera"] != "planned_core_s3_camera" {
+		t.Fatalf("camera capability = %q, want planned_core_s3_camera", event.Capabilities["camera"])
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"capabilities":{"microphone":"available"`) {
+	if !strings.Contains(string(data), `"camera":"planned_core_s3_camera"`) {
 		t.Fatalf("json missing capabilities: %s", data)
+	}
+}
+
+func TestStackChanHardwareCapabilityKeysCoverCoreS3AndRobotBody(t *testing.T) {
+	want := []string{
+		"microphone",
+		"speaker",
+		"screen",
+		"screen_touch",
+		"top_touch",
+		"servo_y",
+		"servo_x",
+		"rgb",
+		"camera",
+		"imu",
+		"ambient_light",
+		"proximity",
+		"battery",
+		"nfc",
+		"infrared",
+	}
+	keys := StackChanHardwareCapabilityKeys()
+	got := map[string]bool{}
+	for _, key := range keys {
+		got[key] = true
+	}
+	for _, key := range want {
+		if !got[key] {
+			t.Fatalf("StackChanHardwareCapabilityKeys missing %q; keys=%v", key, keys)
+		}
 	}
 }
 

@@ -1021,13 +1021,21 @@ func TestControlWebSocketRegistersStackChanCapabilities(t *testing.T) {
 		FirmwareBoard:   "m5stack-cores3",
 		FirmwareCommit:  "082eb938b713",
 		Capabilities: map[string]string{
-			"microphone":   "available",
-			"speaker":      "available",
-			"screen":       "available",
-			"screen_touch": "available",
-			"top_touch":    "available",
-			"servo_y":      "available",
-			"rgb":          "available",
+			"microphone":    "available",
+			"speaker":       "available",
+			"screen":        "available",
+			"screen_touch":  "available",
+			"top_touch":     "available",
+			"servo_y":       "available",
+			"servo_x":       "planned_continuous_rotation_axis",
+			"rgb":           "available",
+			"camera":        "planned_core_s3_camera",
+			"imu":           "planned_9_axis_imu",
+			"ambient_light": "planned_ambient_light_sensor",
+			"proximity":     "planned_proximity_sensor",
+			"battery":       "planned_550mah_battery",
+			"nfc":           "planned_nfc",
+			"infrared":      "planned_infrared_tx_rx",
 		},
 	})
 	readControlEvents(t, ctx, conn, 3)
@@ -1045,9 +1053,26 @@ func TestControlWebSocketRegistersStackChanCapabilities(t *testing.T) {
 		t.Fatalf("devices = %d, want 1", len(registry.Devices))
 	}
 	capabilities := registry.Devices[0].Capabilities
-	for _, key := range []string{"microphone", "speaker", "screen", "screen_touch", "top_touch", "servo_y", "rgb"} {
-		if capabilities[key] != "available" {
-			t.Fatalf("capability %s = %q, want available; all=%#v", key, capabilities[key], capabilities)
+	wantCapabilities := map[string]string{
+		"microphone":    "available",
+		"speaker":       "available",
+		"screen":        "available",
+		"screen_touch":  "available",
+		"top_touch":     "available",
+		"servo_y":       "available",
+		"servo_x":       "planned_continuous_rotation_axis",
+		"rgb":           "available",
+		"camera":        "planned_core_s3_camera",
+		"imu":           "planned_9_axis_imu",
+		"ambient_light": "planned_ambient_light_sensor",
+		"proximity":     "planned_proximity_sensor",
+		"battery":       "planned_550mah_battery",
+		"nfc":           "planned_nfc",
+		"infrared":      "planned_infrared_tx_rx",
+	}
+	for key, want := range wantCapabilities {
+		if capabilities[key] != want {
+			t.Fatalf("capability %s = %q, want %q; all=%#v", key, capabilities[key], want, capabilities)
 		}
 	}
 }
