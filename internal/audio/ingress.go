@@ -35,6 +35,7 @@ type IngressResult struct {
 	DroppedFrames     int
 	DroppedFrameDelta int
 	RMS               float64
+	SpeechDetected    bool
 	SpeechActive      bool
 	Events            []Event
 }
@@ -94,8 +95,9 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 	}
 
 	rms := pcm16RMS(frame.DataBase64)
+	speechDetected := rms >= i.config.SpeechThreshold
 	events := make([]Event, 0, 1)
-	if rms >= i.config.SpeechThreshold {
+	if speechDetected {
 		state.silenceFrames = 0
 		if !state.speechActive {
 			state.speechActive = true
@@ -115,6 +117,7 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 		DroppedFrames:     state.dropped,
 		DroppedFrameDelta: droppedDelta,
 		RMS:               rms,
+		SpeechDetected:    speechDetected,
 		SpeechActive:      state.speechActive,
 		Events:            events,
 	}

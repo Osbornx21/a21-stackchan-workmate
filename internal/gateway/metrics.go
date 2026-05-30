@@ -21,6 +21,8 @@ type metrics struct {
 	deviceIdentityInvalidTotal prometheus.Counter
 	realtimeSessionTotal       prometheus.Counter
 	realtimeSessionCancelTotal prometheus.Counter
+	realtimeAudioUplinkFrames  prometheus.Counter
+	realtimeAudioCommitTotal   prometheus.Counter
 	voiceProviderStartTurnMS   prometheus.Histogram
 	voiceProviderCancelMS      prometheus.Histogram
 	v21QueryMS                 prometheus.Histogram
@@ -41,11 +43,11 @@ func newMetrics() *metrics {
 		}),
 		audioFrameTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_audio_frame_total",
-			Help: "Total mock audio frames accepted by the gateway.",
+			Help: "Total A21 audio frames accepted by the Gateway audio WebSocket.",
 		}),
 		audioPlaybackChunkTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_audio_playback_chunk_total",
-			Help: "Total mock playback audio chunks sent by the gateway.",
+			Help: "Total A21 playback audio chunks sent by the Gateway.",
 		}),
 		audioIngressFramesTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_audio_ingress_frames_total",
@@ -78,6 +80,14 @@ func newMetrics() *metrics {
 		realtimeSessionCancelTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "a21_realtime_session_cancel_total",
 			Help: "Total A21 realtime voice session cancellations requested through the Gateway session boundary.",
+		}),
+		realtimeAudioUplinkFrames: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_realtime_audio_uplink_frames_total",
+			Help: "Total A21 audio frames forwarded from Gateway audio ingress to a realtime provider session.",
+		}),
+		realtimeAudioCommitTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_realtime_audio_commit_total",
+			Help: "Total A21 realtime provider audio commits triggered by Gateway VAD speech-end.",
 		}),
 		voiceProviderStartTurnMS: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "a21_voice_provider_start_turn_ms",
@@ -112,6 +122,8 @@ func newMetrics() *metrics {
 		m.deviceIdentityInvalidTotal,
 		m.realtimeSessionTotal,
 		m.realtimeSessionCancelTotal,
+		m.realtimeAudioUplinkFrames,
+		m.realtimeAudioCommitTotal,
 		m.voiceProviderStartTurnMS,
 		m.voiceProviderCancelMS,
 		m.v21QueryMS,

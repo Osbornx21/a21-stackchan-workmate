@@ -133,6 +133,8 @@ Future Prometheus metrics should include:
 - `a21_first_audio_ms_bucket`
 - `a21_audio_uplink_ms_bucket`
 - `a21_audio_downlink_ms_bucket`
+- `a21_realtime_audio_uplink_frames_total`
+- `a21_realtime_audio_commit_total`
 - `a21_vad_duration_ms_bucket`
 - `a21_tts_first_chunk_ms_bucket`
 - `a21_barge_in_total`

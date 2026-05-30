@@ -3,6 +3,8 @@ package providers
 import (
 	"context"
 	"errors"
+
+	"a21.local/a21/internal/protocol"
 )
 
 var ErrVoiceProviderUnavailable = errors.New("a21 voice provider unavailable")
@@ -81,5 +83,16 @@ type VoiceProvider interface {
 	StartTurn(ctx context.Context, req VoiceTurnRequest) (<-chan VoiceEvent, error)
 	Cancel(ctx context.Context, req VoiceCancelRequest) (<-chan VoiceEvent, error)
 	Health(ctx context.Context) (VoiceProviderHealth, error)
+	Close(ctx context.Context) error
+}
+
+type RealtimeVoiceProvider interface {
+	StartRealtimeSession(ctx context.Context, session VoiceSession) (RealtimeVoiceSession, error)
+}
+
+type RealtimeVoiceSession interface {
+	SendAudio(ctx context.Context, chunk protocol.AudioChunk) error
+	CommitAndCreateResponse(ctx context.Context) error
+	Cancel(ctx context.Context, req VoiceCancelRequest) error
 	Close(ctx context.Context) error
 }
