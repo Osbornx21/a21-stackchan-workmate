@@ -976,6 +976,7 @@ type stackChanMicProbeAcceptanceOptions struct {
 	MinNonzeroSamples   int
 	MinGatewayRMS       float64
 	MinGatewayVADSpeech int
+	MinDeliveryRatio    float64
 	OutputDir           string
 }
 
@@ -1017,6 +1018,11 @@ type stackChanMicProbeAcceptanceReport struct {
 	MicQueueDroppedFrames          int                                   `json:"mic_queue_dropped_frames"`
 	MicLastAbsPeak                 int                                   `json:"mic_last_abs_peak"`
 	MicLastNonzeroSamples          int                                   `json:"mic_last_nonzero_samples"`
+	MicCaptureRateHz               float64                               `json:"mic_capture_rate_hz,omitempty"`
+	AudioWSSentRateHz              float64                               `json:"audio_ws_sent_rate_hz,omitempty"`
+	GatewayAudioIngressRateHz      float64                               `json:"gateway_audio_ingress_rate_hz,omitempty"`
+	AudioWSDeliveryRatio           float64                               `json:"audio_ws_delivery_ratio,omitempty"`
+	GatewayIngressDeliveryRatio    float64                               `json:"gateway_ingress_delivery_ratio,omitempty"`
 	GatewayAudioFrameTotal         int                                   `json:"gateway_audio_frame_total"`
 	GatewayAudioIngressFramesTotal int                                   `json:"gateway_audio_ingress_frames_total"`
 	GatewayAudioIngressRMS         float64                               `json:"gateway_audio_ingress_rms"`
@@ -1044,6 +1050,7 @@ type stackChanMicProbeAcceptanceThresholds struct {
 	MinNonzeroSamples   int     `json:"min_nonzero_samples"`
 	MinGatewayRMS       float64 `json:"min_gateway_rms"`
 	MinGatewayVADSpeech int     `json:"min_gateway_vad_speech"`
+	MinDeliveryRatio    float64 `json:"min_delivery_ratio"`
 }
 
 type stackChanSpeakerAcceptanceOptions struct {
@@ -2384,7 +2391,7 @@ func runStackChanMicProbeAcceptance(args []string, stdout io.Writer, stderr io.W
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 0] [--min-frames 90] [--min-abs-peak 1] [--min-nonzero-samples 1] [--min-gateway-rms 0] [--min-vad-speech 0] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 0] [--min-frames 90] [--min-abs-peak 1] [--min-nonzero-samples 1] [--min-gateway-rms 0] [--min-vad-speech 0] [--min-delivery-ratio 0.95] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -2447,6 +2454,12 @@ func runStackChanMicProbeAcceptance(args []string, stdout io.Writer, stderr io.W
 				return 2
 			}
 			options.MinGatewayRMS = value
+		case "--min-delivery-ratio":
+			value, ok := parseRatioCLIOption(args, &i, stderr, "--min-delivery-ratio")
+			if !ok {
+				return 2
+			}
+			options.MinDeliveryRatio = value
 		case "--min-vad-speech":
 			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--min-vad-speech")
 			if !ok {
@@ -2516,8 +2529,23 @@ func defaultStackChanMicProbeAcceptanceOptions() stackChanMicProbeAcceptanceOpti
 		MinNonzeroSamples:   1,
 		MinGatewayRMS:       0,
 		MinGatewayVADSpeech: 0,
+		MinDeliveryRatio:    0.95,
 		OutputDir:           "reports",
 	}
+}
+
+func parseRatioCLIOption(args []string, index *int, stderr io.Writer, option string) (float64, bool) {
+	if *index+1 >= len(args) || strings.HasPrefix(args[*index+1], "-") {
+		fmt.Fprintf(stderr, "%s requires a value\n", option)
+		return 0, false
+	}
+	*index = *index + 1
+	value, err := strconv.ParseFloat(args[*index], 64)
+	if err != nil || value < 0 || value > 1 {
+		fmt.Fprintf(stderr, "%s must be a number between 0 and 1\n", option)
+		return 0, false
+	}
+	return value, true
 }
 
 func parsePositiveIntCLIOption(args []string, index *int, stderr io.Writer, option string) (int, bool) {
@@ -2555,6 +2583,7 @@ func buildStackChanMicProbeAcceptanceReport(options stackChanMicProbeAcceptanceO
 			MinNonzeroSamples:   options.MinNonzeroSamples,
 			MinGatewayRMS:       options.MinGatewayRMS,
 			MinGatewayVADSpeech: options.MinGatewayVADSpeech,
+			MinDeliveryRatio:    options.MinDeliveryRatio,
 		},
 		NextRequiredActions: []string{
 			"Keep this report with the mic-probe flash receipt and Gateway device report.",
@@ -2673,6 +2702,8 @@ func runStackChanMicProbeAcceptanceWindow(report *stackChanMicProbeAcceptanceRep
 		report.GatewayVADSpeechDelta = afterMetrics.VADSpeechTotal - beforeMetrics.VADSpeechTotal
 		validateStackChanMicProbeMetricDeltas(report, options)
 	}
+	populateStackChanMicProbeWindowQuality(report)
+	validateStackChanMicProbeDeliveryRatios(report, options)
 
 	if _, err := postStackChanMicProbeControl(options.GatewayURL, options.DeviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", report.ControlTraceID, report.ControlSessionID, false); err != nil {
 		report.addFinding("mic_probe_idle_control_failed", err.Error())
@@ -2875,6 +2906,37 @@ func validateStackChanMicProbeMetricDeltas(report *stackChanMicProbeAcceptanceRe
 	if report.GatewayVADSpeechDelta < options.MinGatewayVADSpeech {
 		report.addFinding("gateway_vad_speech_delta_below_threshold", "Gateway VAD speech decision delta is below threshold")
 	}
+}
+
+func populateStackChanMicProbeWindowQuality(report *stackChanMicProbeAcceptanceReport) {
+	elapsedMS := report.WindowEndedAtMS - report.WindowStartedAtMS
+	if elapsedMS > 0 {
+		report.MicCaptureRateHz = roundedStackChanDiagnosticValue(float64(report.MicFramesCapturedDelta) * 1000 / float64(elapsedMS))
+		report.AudioWSSentRateHz = roundedStackChanDiagnosticValue(float64(report.AudioWSSentAudioFramesDelta) * 1000 / float64(elapsedMS))
+		report.GatewayAudioIngressRateHz = roundedStackChanDiagnosticValue(float64(report.GatewayAudioIngressFramesDelta) * 1000 / float64(elapsedMS))
+	}
+	report.AudioWSDeliveryRatio = roundedStackChanDiagnosticRatio(report.AudioWSSentAudioFramesDelta, report.MicFramesCapturedDelta)
+	report.GatewayIngressDeliveryRatio = roundedStackChanDiagnosticRatio(report.GatewayAudioIngressFramesDelta, report.AudioWSSentAudioFramesDelta)
+}
+
+func validateStackChanMicProbeDeliveryRatios(report *stackChanMicProbeAcceptanceReport, options stackChanMicProbeAcceptanceOptions) {
+	if report.MicFramesCapturedDelta > 0 && report.AudioWSDeliveryRatio < options.MinDeliveryRatio {
+		report.addFinding("audio_ws_delivery_ratio_below_threshold", "audio WebSocket sent frame ratio is below captured microphone frames")
+	}
+	if report.AudioWSSentAudioFramesDelta > 0 && report.GatewayIngressDeliveryRatio < options.MinDeliveryRatio {
+		report.addFinding("gateway_ingress_delivery_ratio_below_threshold", "Gateway ingress frame ratio is below audio WebSocket sent frames")
+	}
+}
+
+func roundedStackChanDiagnosticRatio(numerator int, denominator int) float64 {
+	if denominator <= 0 {
+		return 0
+	}
+	return roundedStackChanDiagnosticValue(float64(numerator) / float64(denominator))
+}
+
+func roundedStackChanDiagnosticValue(value float64) float64 {
+	return math.Round(value*1000) / 1000
 }
 
 func (report *stackChanMicProbeAcceptanceReport) addFinding(code string, message string) {

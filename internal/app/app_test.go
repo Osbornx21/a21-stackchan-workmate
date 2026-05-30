@@ -4419,13 +4419,92 @@ func TestRunStackChanMicProbeAcceptanceRunsWindowedProbeWithDeltas(t *testing.T)
 		`"window_ms": 1`,
 		`"mic_frames_captured_delta": 310`,
 		`"audio_ws_sent_audio_frames_delta": 310`,
+		`"audio_ws_delivery_ratio": 1`,
 		`"gateway_audio_frame_delta": 330`,
 		`"gateway_audio_ingress_frames_delta": 330`,
+		`"gateway_ingress_delivery_ratio": 1`,
 		`"gateway_audio_playback_chunk_total": 7`,
 		`"gateway_audio_playback_chunk_delta": 0`,
 		`"gateway_vad_speech_delta": 10`,
 		`"mic_probe_acceptance_status": "confirmed"`,
 		"stackchan mic probe acceptance ok (diagnostic only, no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunStackChanMicProbeAcceptanceBlocksLowDeliveryRatio(t *testing.T) {
+	probeStarted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices/control":
+			var payload struct {
+				State string `json:"state"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.State == "listening" {
+				probeStarted = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"trace_id":"a21-trace-mic-probe","session_id":"a21-session-mic-probe","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+		case "/v1/devices":
+			w.Header().Set("Content-Type", "application/json")
+			if probeStarted {
+				fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"listening","servo_y":"38deg","rgb":"#003010","mic_frames_captured":"350","audio_ws_sent_audio_frames":"200","mic_driver_errors":"0","mic_queue_depth":"0","mic_queue_dropped_frames":"0","mic_last_abs_peak":"900","mic_last_nonzero_samples":"319"},"identity_status":"ok","connection_status":"online","current_expression":"listening","last_session_id":"a21-session-mic-probe","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+				return
+			}
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},"capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle","servo_y":"45deg","rgb":"#101010","mic_frames_captured":"40","audio_ws_sent_audio_frames":"40","mic_driver_errors":"0","mic_queue_depth":"0","mic_queue_dropped_frames":"0","mic_last_abs_peak":"20","mic_last_nonzero_samples":"20"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-mic-probe","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		case "/metrics":
+			w.Header().Set("Content-Type", "text/plain")
+			if probeStarted {
+				fmt.Fprint(w, strings.Join([]string{
+					"a21_audio_frame_total 170",
+					"a21_audio_ingress_frames_total 170",
+					"a21_audio_ingress_rms 0.0042",
+					"a21_audio_playback_chunk_total 7",
+					`a21_vad_detector_decisions_total{detector="a21-rms-vad",result="speech"} 11`,
+				}, "\n"))
+				return
+			}
+			fmt.Fprint(w, strings.Join([]string{
+				"a21_audio_frame_total 100",
+				"a21_audio_ingress_frames_total 100",
+				"a21_audio_ingress_rms 0.0001",
+				"a21_audio_playback_chunk_total 7",
+				`a21_vad_detector_decisions_total{detector="a21-rms-vad",result="speech"} 1`,
+			}, "\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-mic-probe-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--window-ms", "1",
+		"--min-frames", "50",
+		"--min-delivery-ratio", "0.95",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"audio_ws_delivery_ratio": 0.516`,
+		`"gateway_ingress_delivery_ratio": 0.438`,
+		`"code": "audio_ws_delivery_ratio_below_threshold"`,
+		`"code": "gateway_ingress_delivery_ratio_below_threshold"`,
+		"stackchan mic probe acceptance blocked (diagnostic only, no flash performed)",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())

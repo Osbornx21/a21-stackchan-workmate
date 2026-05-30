@@ -8,6 +8,7 @@ A21_MIC_PROBE_MIN_FRAMES ?= 90
 A21_MIC_PROBE_MIN_GATEWAY_RMS ?= 0
 A21_MIC_PROBE_MIN_NONZERO_SAMPLES ?= 1
 A21_MIC_PROBE_MIN_VAD_SPEECH ?= 0
+A21_MIC_PROBE_MIN_DELIVERY_RATIO ?= 0.95
 A21_MIC_PROBE_WINDOW_MS ?= 0
 A21_PLATFORMIO_VERSION ?= 6.1.19
 A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
@@ -177,7 +178,7 @@ stackchan-capability-acceptance:
 
 stackchan-mic-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --output-dir reports
+	go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --min-delivery-ratio "$(A21_MIC_PROBE_MIN_DELIVERY_RATIO)" --output-dir reports
 
 stackchan-speaker-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
