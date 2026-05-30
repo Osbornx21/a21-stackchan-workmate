@@ -1,6 +1,7 @@
 package firmwarecheck
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -167,4 +168,69 @@ func TestBuildFlashPlanRejectsActivePlaybackDevice(t *testing.T) {
 	if !strings.Contains(err.Error(), "active playback") {
 		t.Fatalf("error = %q, want active playback", err)
 	}
+}
+
+func TestBuildFlashPlanRejectsUnsafeDeviceRuntimeState(t *testing.T) {
+	tests := []struct {
+		name              string
+		currentMode       string
+		currentExpression string
+		want              string
+	}{
+		{name: "thinking expression", currentExpression: "thinking", want: "current_expression"},
+		{name: "professional expression", currentExpression: "professional", want: "current_expression"},
+		{name: "error expression", currentExpression: "error", want: "current_expression"},
+		{name: "professional mode", currentMode: "professional", want: "current_mode"},
+		{name: "local fallback mode", currentMode: "local_fallback", want: "current_mode"},
+		{name: "error mode", currentMode: "error", want: "current_mode"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			manifest := writeDeviceIdentityManifest(t, dir)
+			artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+			writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+			report := writeDeviceIdentityReportWithRuntimeState(t, dir, tt.currentMode, tt.currentExpression)
+
+			_, err := BuildFlashPlan(FlashPlanOptions{
+				ManifestPath:      manifest,
+				ArtifactPath:      artifact,
+				Port:              "/dev/cu.usbmodemA21",
+				ReportPath:        report,
+				ExpectedDeviceID:  "stackchan-001",
+				ExpectedGitCommit: "abcdef123456",
+				PortUsage:         PortUsage{Exists: true},
+				MaxDeviceAgeMS:    300000,
+				NowMS:             1780000000100,
+			})
+			if err == nil {
+				t.Fatal("expected unsafe runtime state to be rejected")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func writeDeviceIdentityReportWithRuntimeState(t *testing.T, dir string, currentMode string, currentExpression string) string {
+	t.Helper()
+	return writeDeviceIdentityReport(t, dir, fmt.Sprintf(`{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": %q,
+      "current_expression": %q,
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`, currentMode, currentExpression))
 }

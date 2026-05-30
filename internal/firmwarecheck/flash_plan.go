@@ -102,5 +102,13 @@ func validateFlashPlanDeviceQuiescent(device DeviceIdentityRecord) error {
 	if device.PlaybackStreamID != "" || device.CurrentExpression == "speaking" {
 		return fmt.Errorf("device has active playback; wait for speaking to stop before creating a firmware flash plan")
 	}
+	switch device.CurrentExpression {
+	case "thinking", "professional", "error":
+		return fmt.Errorf("device current_expression %q is not flash-plan safe", device.CurrentExpression)
+	}
+	switch device.CurrentMode {
+	case "professional", "local_fallback", "error":
+		return fmt.Errorf("device current_mode %q is not flash-plan safe", device.CurrentMode)
+	}
 	return nil
 }
