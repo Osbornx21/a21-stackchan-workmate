@@ -1189,7 +1189,7 @@ func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
 		"--output-dir", outputDir,
 	}, &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	for _, want := range []string{
 		`"schema_version": "a21.firmware.device_report.v1"`,
@@ -2765,6 +2765,191 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
 	}
 	if strings.Contains(reportJSON, `"flash_allowed": true`) {
 		t.Fatalf("flash plan report unexpectedly allows flash: %s", reportJSON)
+	}
+}
+
+func TestRunOfficePreflightBuildsNoFlashReport(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.usbmodemA21",
+			USBModem: true,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			t.Fatalf("path = %q, want /v1/devices", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": ` + fmt.Sprint(time.Now().UnixMilli()) + `
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	outputDir := filepath.Join(dir, "reports")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-preflight",
+		"--manifest", manifest,
+		"--artifact-dir", dir,
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.office_preflight.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"ready_for_flash_plan": true`,
+		`"next_required_confirmation": "firmware-flash-plan_with_explicit_usb_port"`,
+		`"gateway_schema_version": "a21.gateway.devices.v1"`,
+		`"gateway_service": "a21-gateway"`,
+		`"device_report_path"`,
+		`"report_path"`,
+		`"/dev/cu.usbmodemA21"`,
+		"office preflight ok (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	reportMatches, err := filepath.Glob(filepath.Join(outputDir, "a21-office-preflight-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reportMatches) != 1 {
+		t.Fatalf("office preflight reports = %d, want 1: %v", len(reportMatches), reportMatches)
+	}
+	deviceMatches, err := filepath.Glob(filepath.Join(outputDir, "a21-devices-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deviceMatches) != 1 {
+		t.Fatalf("device reports = %d, want 1: %v", len(deviceMatches), deviceMatches)
+	}
+}
+
+func TestRunOfficePreflightFailsWithoutUSBSerialCandidate(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.Bluetooth-Incoming-Port",
+			USBModem: false,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": ` + fmt.Sprint(time.Now().UnixMilli()) + `
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-preflight",
+		"--manifest", manifest,
+		"--artifact-dir", dir,
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`"ready_for_flash_plan": false`,
+		`"flash_allowed": false`,
+		`"code": "usb_serial_candidate_missing"`,
+		"office preflight failed",
+	} {
+		if !strings.Contains(stdout.String()+stderr.String(), want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "x21") || strings.Contains(stdout.String()+stderr.String(), "v21") {
+		t.Fatalf("office preflight leaked legacy identity stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunOfficePreflightRejectsLegacyArtifactDirWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-preflight",
+		"--artifact-dir", filepath.Join(t.TempDir(), "x21-artifacts"),
+		"--gateway-url", "http://127.0.0.1:21080",
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy artifact dir rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-artifacts") {
+		t.Fatalf("legacy artifact dir leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }
 

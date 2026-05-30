@@ -375,6 +375,37 @@ Before any future firmware upload:
 
 There is intentionally no upload target in Phase 5D.
 
+## Office Preflight
+
+Phase 5J adds a no-flash office preflight receipt for the Shanghai handoff path:
+
+```bash
+A21_DEVICE_ID=stackchan-001 \
+make office-preflight
+```
+
+or:
+
+```bash
+go run ./cmd/a21 office-preflight \
+  --gateway-url http://127.0.0.1:21080 \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha> \
+  --max-device-age-ms 300000 \
+  --output-dir reports
+```
+
+The command composes:
+
+- newest release-indexed firmware artifact for the expected git commit
+- direct no-ambient-proxy Gateway `/v1/devices` capture
+- required Gateway identity: `schema_version=a21.gateway.devices.v1`, `service=a21-gateway`
+- device identity check with `connection_status=online` and `last_seen_ms` freshness
+- serial inventory and available USB serial candidates
+- proxy/fingerprint metadata for the current network
+
+The preflight rejects manifest and artifact input paths that contain forbidden X21/V21 identity before reading them. It writes `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json` plus a paired `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It sets `dry_run=true` and `flash_allowed=false`. A passing office preflight only means the operator has enough evidence to run `firmware-flash-plan` with an explicit USB serial path; it is still not permission to flash.
+
 ## Serial Inventory
 
 Before choosing an upload port, inspect the current serial state:

@@ -56,11 +56,14 @@ go run ./cmd/a21 version
 go run ./cmd/a21 preflight
 go run ./cmd/a21 doctor
 go run ./cmd/a21 serial-list
+go run ./cmd/a21 office-preflight --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000 --output-dir reports
 ```
 
 `doctor` now combines runtime preflight with firmware manifest/toolchain/artifact/serial inventory, voice provider health, provider network mode, provider registry readiness, provider smoke dry-run status, and optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured. It writes JSON reports under `reports/` and verifies that a packaged A21 firmware artifact exists for the current git commit.
 
 `make release-check` is the local high-confidence gate. It runs Go verification, firmware native tests, clean-worktree firmware packaging, and doctor. Because packaging embeds the current git commit, run it only from a clean tree after the intended commit exists.
+
+`office-preflight` is the physical handoff receipt. It is read-only and no-flash: it combines the current firmware artifact, A21 Gateway `/v1/devices` identity, physical device freshness, serial inventory, and proxy/fingerprint metadata before allowing an operator to proceed to a separate `firmware-flash-plan`.
 
 ## Current A21 Code
 
