@@ -164,6 +164,8 @@ Upload-path dry-run guards now require both the release index record and the sib
 - the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 
+`firmware-upload-check` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.
+
 ## Artifact Guard
 
 Every packaged firmware binary must pass:
@@ -226,6 +228,8 @@ Successful `firmware-upload-check` output is intentionally a dry-run receipt. Th
 Any future real flashing command must not reinterpret this receipt as permission to flash. It is evidence that the candidate passed preflight checks, and nothing more.
 
 The `--commit` value must match the git sha encoded in the artifact filename. The Makefile wrapper fills it from `git rev-parse --short=12 HEAD`, so an old firmware package cannot pass the dry-run guard for a newer checkout.
+
+If multiple A21 packages exist for the same commit, the upload dry-run accepts only the newest timestamp recorded in `a21-firmware-release-index.jsonl`.
 
 ## Device Identity Guard
 

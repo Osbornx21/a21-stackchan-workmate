@@ -168,6 +168,63 @@ func TestValidateUploadCandidateAcceptsReleaseIndexEntry(t *testing.T) {
 	}
 }
 
+func TestValidateUploadCandidateRejectsOlderArtifactWhenNewerSameCommitExists(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	oldArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	newArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-005500.bin")
+	writeArtifactWithChecksum(t, oldArtifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456 old"))
+	writeArtifactWithChecksum(t, newArtifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456 new"))
+	oldChecksum := readTestChecksum(t, oldArtifact+".sha256")
+	newChecksum := readTestChecksum(t, newArtifact+".sha256")
+	indexPath := filepath.Join(dir, ReleaseIndexFileName)
+	for _, entry := range []ReleaseIndexEntry{
+		{
+			SchemaVersion: "a21.firmware.release.v1",
+			FirmwareID:    "a21-stackchan",
+			Version:       "0.1.0",
+			Board:         "m5stack-cores3",
+			Commit:        "abcdef123456",
+			Timestamp:     "20260530-004500",
+			ArtifactPath:  oldArtifact,
+			SHA256Path:    oldArtifact + ".sha256",
+			SHA256:        oldChecksum,
+			Build:         testBuildProvenance(oldArtifact),
+		},
+		{
+			SchemaVersion: "a21.firmware.release.v1",
+			FirmwareID:    "a21-stackchan",
+			Version:       "0.1.0",
+			Board:         "m5stack-cores3",
+			Commit:        "abcdef123456",
+			Timestamp:     "20260530-005500",
+			ArtifactPath:  newArtifact,
+			SHA256Path:    newArtifact + ".sha256",
+			SHA256:        newChecksum,
+			Build:         testBuildProvenance(newArtifact),
+		},
+	} {
+		if err := appendReleaseIndexEntry(indexPath, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeArtifactReleaseManifestWithIdentity(t, oldArtifact, oldChecksum, "abcdef123456", "20260530-004500")
+	writeArtifactReleaseManifestWithIdentity(t, newArtifact, newChecksum, "abcdef123456", "20260530-005500")
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: oldArtifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected older upload candidate to be rejected when a newer same-commit artifact exists")
+	}
+	if !strings.Contains(err.Error(), "latest") {
+		t.Fatalf("error = %q, want latest", err)
+	}
+}
+
 func TestValidateUploadCandidateRejectsReleaseIndexChecksumMismatch(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
@@ -281,14 +338,19 @@ func readTestChecksum(t *testing.T, path string) string {
 
 func writeArtifactReleaseManifest(t *testing.T, artifactPath string, checksum string) {
 	t.Helper()
+	writeArtifactReleaseManifestWithIdentity(t, artifactPath, checksum, "abcdef123456", "20260530-004500")
+}
+
+func writeArtifactReleaseManifestWithIdentity(t *testing.T, artifactPath string, checksum string, commit string, timestamp string) {
+	t.Helper()
 	data, err := json.MarshalIndent(FirmwareReleaseManifest{
 		SchemaVersion: ReleaseManifestSchemaVersion,
 		Project:       "A21",
 		FirmwareID:    "a21-stackchan",
 		Version:       "0.1.0",
 		Board:         "m5stack-cores3",
-		Commit:        "abcdef123456",
-		Timestamp:     "20260530-004500",
+		Commit:        commit,
+		Timestamp:     timestamp,
 		ArtifactPath:  artifactPath,
 		ArtifactName:  filepath.Base(artifactPath),
 		SHA256Path:    artifactPath + ".sha256",

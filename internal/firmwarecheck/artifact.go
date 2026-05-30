@@ -164,6 +164,9 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 	if !sameGitCommit(options.Commit, artifact.Commit) {
 		return UploadCheckResult{}, fmt.Errorf("artifact commit %q does not match expected commit %q", artifact.Commit, options.Commit)
 	}
+	if err := validateLatestReleaseIndexArtifact(artifact.ReleaseIndexPath, artifact); err != nil {
+		return UploadCheckResult{}, err
+	}
 	return UploadCheckResult{
 		GuardID:                  "a21.firmware.upload_guard.v1",
 		DryRun:                   true,
@@ -210,6 +213,45 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) (FirmwareBu
 		return entry.Build, nil
 	}
 	return FirmwareBuildProvenance{}, fmt.Errorf("release index has no entry for artifact %q", expectedArtifactName)
+}
+
+func validateLatestReleaseIndexArtifact(path string, artifact ArtifactResult) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("release index missing or unreadable: %w", err)
+	}
+	expectedName := filepath.Base(artifact.ArtifactPath)
+	latestName := expectedName
+	latestTimestamp := artifact.Timestamp
+	for lineNumber, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		var entry ReleaseIndexEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			return fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
+		}
+		if entry.SchemaVersion != "a21.firmware.release.v1" ||
+			entry.FirmwareID != artifact.Manifest.FirmwareID ||
+			entry.Version != artifact.Manifest.Version ||
+			entry.Board != artifact.Manifest.Board ||
+			!sameGitCommit(entry.Commit, artifact.Commit) {
+			continue
+		}
+		entryName := filepath.Base(entry.ArtifactPath)
+		if entry.Timestamp > latestTimestamp {
+			latestTimestamp = entry.Timestamp
+			latestName = entryName
+		}
+		if entry.Timestamp == artifact.Timestamp && entryName != expectedName {
+			return fmt.Errorf("release index has ambiguous latest artifact timestamp %q for commit %q", entry.Timestamp, artifact.Commit)
+		}
+	}
+	if latestName != expectedName || latestTimestamp != artifact.Timestamp {
+		return fmt.Errorf("artifact %q is not the latest release index entry for commit %q; latest is %q at %s", expectedName, artifact.Commit, latestName, latestTimestamp)
+	}
+	return nil
 }
 
 func validateArtifactReleaseManifest(path string, artifact ArtifactResult) (FirmwareBuildProvenance, error) {

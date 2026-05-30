@@ -23,4 +23,6 @@ This blocks hand-assembled `.bin + .sha256` pairs from entering the upload plann
 
 Phase 5G further requires a sibling per-artifact `.manifest.json` with schema `a21.firmware.artifact_manifest.v1`. The release index proves the artifact is in the package ledger; the per-artifact manifest makes the candidate self-describing beside the binary. Upload-path guards require both records to agree with the filename, checksum, embedded identity, A21 manifest, and expected git commit.
 
+Phase 5I further tightens upload dry-runs by rejecting stale same-commit artifacts. When `a21-firmware-release-index.jsonl` contains multiple packages for the same A21 firmware ID, version, board, and commit, `firmware-upload-check` accepts only the newest timestamp. Older packages remain inspectable through `firmware-artifact-check`, but they cannot progress toward a flash plan.
+
 Real flashing remains locked. The guard only strengthens dry-run receipts and does not add any command that writes to hardware.
