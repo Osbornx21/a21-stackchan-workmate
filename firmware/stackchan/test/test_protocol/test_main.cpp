@@ -1803,7 +1803,7 @@ void test_servo_y_angle_clamps_to_stackchan_safe_range() {
 void test_motion_target_maps_render_states_to_safe_y_angles() {
   TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_IDLE));
   TEST_ASSERT_EQUAL_INT(38, a21MotionYForRenderState(A21_RENDER_LISTENING));
-  TEST_ASSERT_EQUAL_INT(32, a21MotionYForRenderState(A21_RENDER_THINKING));
+  TEST_ASSERT_EQUAL_INT(52, a21MotionYForRenderState(A21_RENDER_THINKING));
   TEST_ASSERT_EQUAL_INT(48, a21MotionYForRenderState(A21_RENDER_SPEAKING));
   TEST_ASSERT_EQUAL_INT(38, a21MotionYForRenderState(A21_RENDER_INTERRUPTED));
   TEST_ASSERT_EQUAL_INT(45, a21MotionYForRenderState(A21_RENDER_PROFESSIONAL));

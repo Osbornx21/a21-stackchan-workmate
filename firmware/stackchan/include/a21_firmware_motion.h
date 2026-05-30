@@ -31,7 +31,7 @@ inline int a21MotionYForRenderState(A21RenderState state) {
     case A21_RENDER_INTERRUPTED:
       return a21ClampServoY(38);
     case A21_RENDER_THINKING:
-      return a21ClampServoY(32);
+      return a21ClampServoY(52);
     case A21_RENDER_SPEAKING:
       return a21ClampServoY(48);
     case A21_RENDER_IDLE:
