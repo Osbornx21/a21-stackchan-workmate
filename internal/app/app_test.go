@@ -506,6 +506,33 @@ func TestRunProviderRealtimePlanRejectsExecuteFlag(t *testing.T) {
 	}
 }
 
+func TestRunAudioFrontEndPlanListsMatureCandidates(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"audio-front-end-plan"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"status": "plan_only"`,
+		`"id": "webrtc_apm"`,
+		`"id": "provider_side_vad"`,
+		`"id": "silero_vad"`,
+		`"id": "a21_rms_vad"`,
+		`"status": "dev_only"`,
+		`"a21_vad_detector_decisions_total{detector,result}"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"x21", "v21"} {
+		if strings.Contains(strings.ToLower(stdout.String()), forbidden) {
+			t.Fatalf("audio front-end plan leaked forbidden identity %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")

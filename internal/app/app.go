@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/gateway"
@@ -78,6 +79,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderRealtimePlan(args[1:], stdout, stderr)
 	case "provider-realtime-fixture":
 		return runProviderRealtimeFixture(args[1:], stdout, stderr)
+	case "audio-front-end-plan":
+		return runAudioFrontEndPlan(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -200,6 +203,27 @@ func runProviderRealtimeFixture(args []string, stdout io.Writer, stderr io.Write
 		return 1
 	}
 	if execute && report.Status != providers.ProviderSmokePassed {
+		return 1
+	}
+	return 0
+}
+
+func runAudioFrontEndPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 audio-front-end-plan")
+			return 0
+		case "--execute":
+			fmt.Fprintln(stderr, "audio-front-end-plan is plan-only and does not execute audio libraries")
+			return 2
+		default:
+			fmt.Fprintf(stderr, "unknown audio-front-end-plan option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := writeJSONAudioFrontEndPlan(stdout, audio.BaselineFrontEndPlan()); err != nil {
+		fmt.Fprintf(stderr, "encode audio front-end plan: %v\n", err)
 		return 1
 	}
 	return 0
@@ -621,6 +645,12 @@ func writeJSONDoctorReport(writer io.Writer, report doctorReport) error {
 }
 
 func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONAudioFrontEndPlan(writer io.Writer, report audio.FrontEndPlan) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

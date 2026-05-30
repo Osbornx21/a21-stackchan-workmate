@@ -44,3 +44,5 @@ Future work should evaluate mature VAD/AEC options behind this boundary, likely 
 - local neural VAD only if latency, deployment size, and maintenance cost are justified
 
 Any chosen adapter must be benchmarked with A21 latency reports before it is treated as the production path.
+
+Use `go run ./cmd/a21 audio-front-end-plan` to print the current A21-owned candidate plan and required evidence.

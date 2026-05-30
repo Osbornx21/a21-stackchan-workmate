@@ -23,3 +23,5 @@ The label set is intentionally small:
 This metric does not make the RMS detector production-ready. It only makes the current development detector observable.
 
 Future adapters must keep detector names stable, low-cardinality, and A21-owned. Do not put device IDs, trace IDs, provider session IDs, raw file names, or user text into metric labels.
+
+`go run ./cmd/a21 audio-front-end-plan` lists the current candidate set and the metrics each candidate must preserve before it can replace the deterministic RMS baseline.
