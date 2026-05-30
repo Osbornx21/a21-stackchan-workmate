@@ -159,6 +159,28 @@ func TestPackageArtifactWritesBuildProvenance(t *testing.T) {
 	}
 }
 
+func TestPackageArtifactRejectsInputWithoutExpectedEmbeddedIdentity(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	input := writePackageInput(t, dir, "a21-stackchan 0.1.0 m5stack-cores3 oldcommit")
+
+	_, err := PackageArtifact(PackageOptions{
+		ManifestPath:    manifest,
+		InputPath:       input,
+		OutputDir:       filepath.Join(dir, "artifacts"),
+		Commit:          "abcdef123456",
+		Timestamp:       "20260530-073000",
+		PlatformIOEnv:   "a21_stackchan_cores3",
+		PlatformIOBoard: "m5stack-cores3",
+	})
+	if err == nil {
+		t.Fatal("expected source firmware without expected embedded commit to be rejected")
+	}
+	if !strings.Contains(err.Error(), "embedded") || !strings.Contains(err.Error(), "commit") {
+		t.Fatalf("error = %q, want embedded commit identity", err)
+	}
+}
+
 func TestPackageArtifactRejectsLegacyOutputDirectory(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)

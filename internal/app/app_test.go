@@ -792,7 +792,7 @@ func TestRunFirmwarePackageCreatesVersionedArtifact(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(input), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(input, []byte("firmware"), 0o644); err != nil {
+	if err := os.WriteFile(input, []byte("firmware a21-stackchan 0.1.0 m5stack-cores3 abcdef1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	outputDir := filepath.Join(dir, "artifacts")

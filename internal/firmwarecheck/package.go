@@ -98,6 +98,9 @@ func PackageArtifact(options PackageOptions) (PackageResult, error) {
 	if err != nil {
 		return PackageResult{}, err
 	}
+	if err := validateEmbeddedArtifactIdentity(options.InputPath, manifest, options.Commit); err != nil {
+		return PackageResult{}, fmt.Errorf("source firmware identity invalid: %w", err)
+	}
 	artifactName := fmt.Sprintf("%s-%s-%s-%s-%s.bin", manifest.ArtifactPrefix, manifest.Version, manifest.Board, options.Commit, options.Timestamp)
 	artifactPath := filepath.Join(options.OutputDir, artifactName)
 	checksum, err := copyWithSHA256(options.InputPath, artifactPath)
