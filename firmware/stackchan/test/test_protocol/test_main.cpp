@@ -15,6 +15,7 @@
 #include "a21_firmware_state.h"
 #include "a21_firmware_touch.h"
 #include "a21_firmware_gateway_ws.h"
+#include "a21_firmware_imu.h"
 #include "a21_firmware_wifi.h"
 #include "a21_firmware_wifi_runtime.h"
 
@@ -213,6 +214,38 @@ void initFakeRGBDriver(FakeRGBDriver* fake, A21RGBDriver* driver) {
   fake->last_color = {0, 0, 0};
   driver->ctx = fake;
   driver->write = fakeRGBWrite;
+}
+
+struct FakeIMUDriver {
+  int read_count;
+  bool read_ok;
+  A21IMUSample sample;
+};
+
+bool fakeIMURead(void* ctx, A21IMUSample* sample) {
+  FakeIMUDriver* driver = static_cast<FakeIMUDriver*>(ctx);
+  driver->read_count += 1;
+  if (!driver->read_ok || sample == nullptr) {
+    return false;
+  }
+  *sample = driver->sample;
+  return true;
+}
+
+void initFakeIMUDriver(FakeIMUDriver* fake, A21IMUDriver* driver) {
+  fake->read_count = 0;
+  fake->read_ok = true;
+  fake->sample = {};
+  fake->sample.has_accel = true;
+  fake->sample.accel_x_g = 0.0f;
+  fake->sample.accel_y_g = 0.0f;
+  fake->sample.accel_z_g = 1.0f;
+  fake->sample.has_gyro = true;
+  fake->sample.gyro_x_dps = 0.1f;
+  fake->sample.gyro_y_dps = -0.2f;
+  fake->sample.gyro_z_dps = 0.3f;
+  driver->ctx = fake;
+  driver->read = fakeIMURead;
 }
 
 struct FakeTouchDriver {
@@ -1197,6 +1230,116 @@ void test_gateway_ws_runtime_echo_reports_playback_diagnostics_when_changed() {
       &rgb_runtime,
       &diagnostics,
       2200));
+  TEST_ASSERT_EQUAL(2, fake.send_count);
+}
+
+void test_imu_capability_status_defaults_to_planned() {
+  TEST_ASSERT_EQUAL_STRING("planned_9_axis_imu", a21IMUCapabilityStatus());
+}
+
+void test_imu_diagnostic_runtime_samples_driver_and_classifies_posture() {
+  A21IMUDiagnosticRuntime runtime;
+  FakeIMUDriver fake;
+  A21IMUDriver driver;
+  initFakeIMUDriver(&fake, &driver);
+  a21InitIMUDiagnosticRuntime(&runtime);
+  runtime.enabled = true;
+
+  TEST_ASSERT_TRUE(a21IMUDiagnosticTick(&runtime, &driver, 3000));
+
+  TEST_ASSERT_EQUAL(1, fake.read_count);
+  TEST_ASSERT_TRUE(runtime.available);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.samples);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.read_errors);
+  TEST_ASSERT_EQUAL_INT16(0, runtime.accel_mg_x);
+  TEST_ASSERT_EQUAL_INT16(0, runtime.accel_mg_y);
+  TEST_ASSERT_EQUAL_INT16(1000, runtime.accel_mg_z);
+  TEST_ASSERT_EQUAL_INT16(100, runtime.gyro_mdps_x);
+  TEST_ASSERT_EQUAL_INT16(-200, runtime.gyro_mdps_y);
+  TEST_ASSERT_EQUAL_INT16(300, runtime.gyro_mdps_z);
+  TEST_ASSERT_EQUAL_STRING("face_up", runtime.posture);
+}
+
+void test_gateway_ws_runtime_echo_reports_imu_diagnostics_when_changed() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  A21MotionRuntime motion_runtime;
+  A21RGBRuntime rgb_runtime;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21CopyString(state.mode, A21_MODE_CAP, "workmate");
+  state.render_state = A21_RENDER_IDLE;
+  a21InitMotionRuntime(&motion_runtime);
+  motion_runtime.has_y = true;
+  motion_runtime.last_y_deg = 45;
+  a21InitRGBRuntime(&rgb_runtime);
+  rgb_runtime.has_color = true;
+  rgb_runtime.last_color = a21RGBColorMake(16, 16, 16);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 3040);
+  A21RuntimeEchoDiagnostics diagnostics = {};
+  diagnostics.enabled = true;
+  diagnostics.imu_enabled = true;
+  diagnostics.imu_available = true;
+  diagnostics.imu_samples = 3;
+  diagnostics.imu_read_errors = 1;
+  diagnostics.imu_accel_mg_x = 12;
+  diagnostics.imu_accel_mg_y = -34;
+  diagnostics.imu_accel_mg_z = 987;
+  diagnostics.imu_gyro_mdps_x = 100;
+  diagnostics.imu_gyro_mdps_y = -200;
+  diagnostics.imu_gyro_mdps_z = 300;
+  a21CopyString(diagnostics.imu_posture, sizeof(diagnostics.imu_posture), "face_up");
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      3040));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("1", doc["payload"]["runtime_echo"]["imu_available"] | "");
+  TEST_ASSERT_EQUAL_STRING("3", doc["payload"]["runtime_echo"]["imu_samples"] | "");
+  TEST_ASSERT_EQUAL_STRING("1", doc["payload"]["runtime_echo"]["imu_read_errors"] | "");
+  TEST_ASSERT_EQUAL_STRING("12", doc["payload"]["runtime_echo"]["imu_accel_mg_x"] | "");
+  TEST_ASSERT_EQUAL_STRING("-34", doc["payload"]["runtime_echo"]["imu_accel_mg_y"] | "");
+  TEST_ASSERT_EQUAL_STRING("987", doc["payload"]["runtime_echo"]["imu_accel_mg_z"] | "");
+  TEST_ASSERT_EQUAL_STRING("100", doc["payload"]["runtime_echo"]["imu_gyro_mdps_x"] | "");
+  TEST_ASSERT_EQUAL_STRING("-200", doc["payload"]["runtime_echo"]["imu_gyro_mdps_y"] | "");
+  TEST_ASSERT_EQUAL_STRING("300", doc["payload"]["runtime_echo"]["imu_gyro_mdps_z"] | "");
+  TEST_ASSERT_EQUAL_STRING("face_up", doc["payload"]["runtime_echo"]["imu_posture"] | "");
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      3060));
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+
+  diagnostics.imu_samples = 4;
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      &diagnostics,
+      3080));
   TEST_ASSERT_EQUAL(2, fake.send_count);
 }
 
@@ -2284,6 +2427,9 @@ int main(int argc, char** argv) {
   RUN_TEST(test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb);
   RUN_TEST(test_gateway_ws_runtime_echo_reports_mic_diagnostics_when_changed);
   RUN_TEST(test_gateway_ws_runtime_echo_reports_playback_diagnostics_when_changed);
+  RUN_TEST(test_imu_capability_status_defaults_to_planned);
+  RUN_TEST(test_imu_diagnostic_runtime_samples_driver_and_classifies_posture);
+  RUN_TEST(test_gateway_ws_runtime_echo_reports_imu_diagnostics_when_changed);
   RUN_TEST(test_audio_ws_runtime_waits_for_gateway_connection);
   RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);

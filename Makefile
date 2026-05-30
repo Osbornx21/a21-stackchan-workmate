@@ -19,7 +19,7 @@ A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
 A21_SPEAKER_MIN_PLAYED_FRAMES ?= 50
 A21_SPEAKER_WINDOW_MS ?= 1000
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute
 
 test:
 	go test ./...
@@ -75,7 +75,7 @@ audio-front-end-eval:
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 
-release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff doctor
+release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff doctor
 
 firmware-tools:
 	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh
@@ -91,6 +91,9 @@ firmware-build: firmware-tools firmware-check
 
 firmware-mic-probe-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_mic_probe
+
+firmware-imu-probe-build: firmware-tools firmware-check
+	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_imu_probe
 
 firmware-avatar-spike-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_avatar_spike
@@ -122,6 +125,20 @@ firmware-mic-probe-upload-blocker-check: firmware-tools
 		exit 1; \
 	}; \
 	echo "A21 mic probe raw PlatformIO upload blocker ok"
+
+firmware-imu-probe-upload-blocker-check: firmware-tools
+	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3_imu_probe -t upload 2>&1 )"; \
+	code="$$?"; \
+	printf '%s\n' "$$output"; \
+	if [ "$$code" -eq 0 ]; then \
+		echo "A21 IMU probe raw PlatformIO upload blocker failed: upload target exited 0"; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$output" | grep -q "A21 raw PlatformIO upload is forbidden" || { \
+		echo "A21 IMU probe raw PlatformIO upload blocker failed: guard message missing"; \
+		exit 1; \
+	}; \
+	echo "A21 IMU probe raw PlatformIO upload blocker ok"
 
 firmware-clean-check:
 	@test -z "$$(git status --porcelain --untracked-files=all)" || (echo "A21 firmware package requires a clean git worktree"; git status --short; exit 2)

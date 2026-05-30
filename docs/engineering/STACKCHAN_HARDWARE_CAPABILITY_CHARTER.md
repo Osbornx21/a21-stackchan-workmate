@@ -41,7 +41,8 @@ The current product firmware declares:
 
 - `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` as `available`.
 - `microphone` as `disabled_m5unified_i2s_stop_crash_guard` in the release build, with a separate diagnostic probe path.
-- `servo_x`, `camera`, `imu`, `ambient_light`, `proximity`, `battery`, `nfc`, and `infrared` as planned capabilities.
+- `imu` as `planned_9_axis_imu` in the release build, with a separate read-only diagnostic probe path.
+- `servo_x`, `camera`, `ambient_light`, `proximity`, `battery`, `nfc`, and `infrared` as planned capabilities.
 
 This prevents A21 from silently shrinking StackChan into a screen-plus-LED device while still avoiding false claims about unimplemented hardware.
 
@@ -96,3 +97,11 @@ The ordered track list is:
 8. `infrared`: explicit opt-in interaction spike.
 
 This report is not proof that a planned capability is product-ready. It is the gate that prevents A21 from forgetting the hardware surface while preserving firmware build and flash discipline.
+
+IMU diagnostic discipline:
+
+- default release firmware must keep `imu=planned_9_axis_imu`;
+- `a21_stackchan_cores3_imu_probe` is the only current IMU diagnostic build;
+- `make firmware-imu-probe-build` must pass before any physical IMU test window;
+- `make firmware-imu-probe-upload-blocker-check` must continue proving raw PlatformIO uploads are blocked;
+- IMU runtime echo is telemetry, not product promotion.

@@ -3,6 +3,7 @@
 #include "a21_firmware_capabilities.h"
 #include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
+#include "a21_firmware_imu.h"
 #include "a21_firmware_mic.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
@@ -36,6 +37,17 @@ struct A21RuntimeEchoDiagnostics {
   uint32_t speaker_busy_ticks;
   uint32_t speaker_driver_errors;
   char speaker_last_stream_id[A21_STREAM_ID_CAP];
+  bool imu_enabled;
+  bool imu_available;
+  uint32_t imu_samples;
+  uint32_t imu_read_errors;
+  int16_t imu_accel_mg_x;
+  int16_t imu_accel_mg_y;
+  int16_t imu_accel_mg_z;
+  int16_t imu_gyro_mdps_x;
+  int16_t imu_gyro_mdps_y;
+  int16_t imu_gyro_mdps_z;
+  char imu_posture[A21_IMU_POSTURE_CAP];
 };
 
 struct A21GatewayWSDriver {
@@ -265,6 +277,15 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     char speaker_frames_played[12];
     char speaker_busy_ticks[12];
     char speaker_driver_errors[12];
+    char imu_available[2];
+    char imu_samples[12];
+    char imu_read_errors[12];
+    char imu_accel_mg_x[12];
+    char imu_accel_mg_y[12];
+    char imu_accel_mg_z[12];
+    char imu_gyro_mdps_x[12];
+    char imu_gyro_mdps_y[12];
+    char imu_gyro_mdps_z[12];
     snprintf(mic_frames_captured, sizeof(mic_frames_captured), "%lu", static_cast<unsigned long>(diagnostics->mic_frames_captured));
     snprintf(mic_driver_errors, sizeof(mic_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->mic_driver_errors));
     snprintf(mic_skipped_render_state, sizeof(mic_skipped_render_state), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_render_state));
@@ -302,6 +323,27 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     echo["speaker_busy_ticks"] = speaker_busy_ticks;
     echo["speaker_driver_errors"] = speaker_driver_errors;
     echo["speaker_last_stream_id"] = diagnostics->speaker_last_stream_id;
+    if (diagnostics->imu_enabled) {
+      snprintf(imu_available, sizeof(imu_available), "%u", diagnostics->imu_available ? 1U : 0U);
+      snprintf(imu_samples, sizeof(imu_samples), "%lu", static_cast<unsigned long>(diagnostics->imu_samples));
+      snprintf(imu_read_errors, sizeof(imu_read_errors), "%lu", static_cast<unsigned long>(diagnostics->imu_read_errors));
+      snprintf(imu_accel_mg_x, sizeof(imu_accel_mg_x), "%d", diagnostics->imu_accel_mg_x);
+      snprintf(imu_accel_mg_y, sizeof(imu_accel_mg_y), "%d", diagnostics->imu_accel_mg_y);
+      snprintf(imu_accel_mg_z, sizeof(imu_accel_mg_z), "%d", diagnostics->imu_accel_mg_z);
+      snprintf(imu_gyro_mdps_x, sizeof(imu_gyro_mdps_x), "%d", diagnostics->imu_gyro_mdps_x);
+      snprintf(imu_gyro_mdps_y, sizeof(imu_gyro_mdps_y), "%d", diagnostics->imu_gyro_mdps_y);
+      snprintf(imu_gyro_mdps_z, sizeof(imu_gyro_mdps_z), "%d", diagnostics->imu_gyro_mdps_z);
+      echo["imu_available"] = imu_available;
+      echo["imu_samples"] = imu_samples;
+      echo["imu_read_errors"] = imu_read_errors;
+      echo["imu_accel_mg_x"] = imu_accel_mg_x;
+      echo["imu_accel_mg_y"] = imu_accel_mg_y;
+      echo["imu_accel_mg_z"] = imu_accel_mg_z;
+      echo["imu_gyro_mdps_x"] = imu_gyro_mdps_x;
+      echo["imu_gyro_mdps_y"] = imu_gyro_mdps_y;
+      echo["imu_gyro_mdps_z"] = imu_gyro_mdps_z;
+      echo["imu_posture"] = diagnostics->imu_posture;
+    }
   }
 
   const size_t written = serializeJson(doc, output, output_size);
@@ -383,7 +425,18 @@ inline bool a21RuntimeEchoDiagnosticsEqual(
          left->speaker_frames_played == right->speaker_frames_played &&
          left->speaker_busy_ticks == right->speaker_busy_ticks &&
          left->speaker_driver_errors == right->speaker_driver_errors &&
-         a21StringEquals(left->speaker_last_stream_id, right->speaker_last_stream_id);
+         a21StringEquals(left->speaker_last_stream_id, right->speaker_last_stream_id) &&
+         left->imu_enabled == right->imu_enabled &&
+         left->imu_available == right->imu_available &&
+         left->imu_samples == right->imu_samples &&
+         left->imu_read_errors == right->imu_read_errors &&
+         left->imu_accel_mg_x == right->imu_accel_mg_x &&
+         left->imu_accel_mg_y == right->imu_accel_mg_y &&
+         left->imu_accel_mg_z == right->imu_accel_mg_z &&
+         left->imu_gyro_mdps_x == right->imu_gyro_mdps_x &&
+         left->imu_gyro_mdps_y == right->imu_gyro_mdps_y &&
+         left->imu_gyro_mdps_z == right->imu_gyro_mdps_z &&
+         a21StringEquals(left->imu_posture, right->imu_posture);
 }
 
 inline bool a21RuntimeEchoDiagnosticsChanged(

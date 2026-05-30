@@ -21,7 +21,9 @@ go run ./cmd/a21 firmware-check
 make firmware-test
 make firmware-build
 make firmware-mic-probe-build
+make firmware-imu-probe-build
 make firmware-mic-probe-upload-blocker-check
+make firmware-imu-probe-upload-blocker-check
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 ```
 
@@ -31,7 +33,11 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 
 `make firmware-mic-probe-build` compiles `a21_stackchan_cores3_mic_probe`, an isolated diagnostic build that turns on M5Unified microphone capture with `A21_ENABLE_MIC_DIAGNOSTIC_PROBE=1`. It is not the default environment and must not be packaged as a production release artifact.
 
+`make firmware-imu-probe-build` compiles `a21_stackchan_cores3_imu_probe`, an isolated diagnostic build that turns on read-only M5Unified IMU sampling with `A21_ENABLE_IMU_DIAGNOSTIC_PROBE=1`. It reports IMU sample counters, acceleration, gyro, and coarse posture through runtime echo. It is not the default environment and must not be packaged as a production release artifact.
+
 `make firmware-mic-probe-upload-blocker-check` proves the diagnostic environment also fails raw PlatformIO upload targets before a flash can start.
+
+`make firmware-imu-probe-upload-blocker-check` provides the same no-raw-upload proof for the IMU diagnostic environment.
 
 `make firmware-mic-probe-flash-plan` and `make firmware-mic-probe-flash-execute` are the only diagnostic microphone flash lane. They rebuild the probe firmware, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_i2s_capture` marker, and require `A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE` before any write. Use this only for microphone bring-up, not for production release packaging.
 
@@ -107,6 +113,8 @@ Firmware runtime echo includes playback-buffer and speaker-pump counters: queued
 The dedicated `a21_stackchan_cores3_mic_probe` environment enables the same M5Unified mic path only for diagnosis. Its capability status is `diagnostic_probe_m5unified_i2s_capture`, not production `available`. The CoreS3 driver now switches I2S based on real M5Unified task state (`isRunning`) instead of pin-configuration state (`isEnabled`) so probe builds do not end/restart speaker or mic on every capture frame.
 
 The firmware still does not run VAD on device, prove acoustic echo cancellation, prove physical microphone quality, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path, while physical microphone uplink is intentionally disabled behind the crash guard and must not be counted as real user-facing audio until hardware acceptance passes.
+
+`a21_firmware_imu.h` owns the first read-only IMU diagnostic boundary. The default release build keeps `imu=planned_9_axis_imu`. The isolated `a21_stackchan_cores3_imu_probe` build reports `imu=diagnostic_probe_m5unified_imu` and samples M5Unified IMU through a small driver interface, producing runtime echo fields for sample count, read errors, acceleration in mg, gyro in mdps, and coarse posture. These fields are diagnostic telemetry only; they do not promote IMU to product `available`.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

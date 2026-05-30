@@ -97,6 +97,8 @@ go run ./cmd/a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:2108
 
 The command is a planning and diagnostic gate only. It must not flash firmware, delete artifacts, or promote a planned capability to `available`.
 
+Current progress: the IMU track now has a guarded native runtime boundary and isolated `a21_stackchan_cores3_imu_probe` build lane. It remains diagnostic-only until physical evidence proves posture and motion telemetry improve A21's embodied behavior.
+
 ### P0. Professional V21 Evidence Lane
 
 Goal: keep professional mode auditable and separate from opaque realtime voice.

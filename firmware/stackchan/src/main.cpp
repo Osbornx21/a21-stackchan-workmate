@@ -12,6 +12,7 @@
 #include "a21_firmware_connection.h"
 #include "a21_firmware_display.h"
 #include "a21_firmware_gateway_ws.h"
+#include "a21_firmware_imu.h"
 #include "a21_firmware_mic.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
@@ -188,6 +189,7 @@ A21AudioPlaybackBuffer g_audio_playback_buffer;
 A21SpeakerPumpRuntime g_speaker_pump_runtime;
 A21MicCaptureRuntime g_mic_capture_runtime;
 A21MicFrameQueue g_mic_frame_queue;
+A21IMUDiagnosticRuntime g_imu_runtime;
 
 static constexpr size_t A21_ARDUINO_WS_TEXT_MESSAGE_CAP =
     A21_AUDIO_WS_TEXT_MESSAGE_CAP > A21_WS_TEXT_MESSAGE_CAP ? A21_AUDIO_WS_TEXT_MESSAGE_CAP : A21_WS_TEXT_MESSAGE_CAP;
@@ -369,6 +371,28 @@ bool arduinoRGBWrite(void* ctx, A21RGBColor color) {
 A21RGBDriver g_rgb_driver = {
     nullptr,
     arduinoRGBWrite,
+};
+
+bool arduinoIMURead(void* ctx, A21IMUSample* sample) {
+  (void)ctx;
+  if (sample == nullptr) {
+    return false;
+  }
+#if defined(A21_ENABLE_IMU_DIAGNOSTIC_PROBE) && A21_ENABLE_IMU_DIAGNOSTIC_PROBE
+  if (!M5.Imu.isEnabled() || !M5.Imu.update()) {
+    return false;
+  }
+  sample->has_accel = M5.Imu.getAccel(&sample->accel_x_g, &sample->accel_y_g, &sample->accel_z_g);
+  sample->has_gyro = M5.Imu.getGyro(&sample->gyro_x_dps, &sample->gyro_y_dps, &sample->gyro_z_dps);
+  return sample->has_accel || sample->has_gyro;
+#else
+  return false;
+#endif
+}
+
+A21IMUDriver g_imu_driver = {
+    nullptr,
+    arduinoIMURead,
 };
 
 struct A21ArduinoTouchState {
@@ -610,6 +634,7 @@ void setup() {
   a21InitSpeakerPumpRuntime(&g_speaker_pump_runtime);
   a21InitMicCaptureRuntime(&g_mic_capture_runtime);
   a21InitMicFrameQueue(&g_mic_frame_queue);
+  a21InitIMUDiagnosticRuntime(&g_imu_runtime);
   a21InitPhysicalTouchState(&g_physical_touch_state);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
@@ -652,6 +677,7 @@ void loop() {
       now_ms);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
+  a21IMUDiagnosticTick(&g_imu_runtime, &g_imu_driver, now_ms);
   handleLocalControls(now_ms);
   drawIfChanged();
   A21RuntimeEchoDiagnostics runtime_diagnostics = {};
@@ -678,6 +704,17 @@ void loop() {
       runtime_diagnostics.speaker_last_stream_id,
       A21_STREAM_ID_CAP,
       g_speaker_pump_runtime.last_stream_id);
+  runtime_diagnostics.imu_enabled = g_imu_runtime.enabled;
+  runtime_diagnostics.imu_available = g_imu_runtime.available;
+  runtime_diagnostics.imu_samples = g_imu_runtime.samples;
+  runtime_diagnostics.imu_read_errors = g_imu_runtime.read_errors;
+  runtime_diagnostics.imu_accel_mg_x = g_imu_runtime.accel_mg_x;
+  runtime_diagnostics.imu_accel_mg_y = g_imu_runtime.accel_mg_y;
+  runtime_diagnostics.imu_accel_mg_z = g_imu_runtime.accel_mg_z;
+  runtime_diagnostics.imu_gyro_mdps_x = g_imu_runtime.gyro_mdps_x;
+  runtime_diagnostics.imu_gyro_mdps_y = g_imu_runtime.gyro_mdps_y;
+  runtime_diagnostics.imu_gyro_mdps_z = g_imu_runtime.gyro_mdps_z;
+  a21CopyString(runtime_diagnostics.imu_posture, A21_IMU_POSTURE_CAP, g_imu_runtime.posture);
   a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &g_gateway_ws_runtime,
       &g_gateway_ws_driver,

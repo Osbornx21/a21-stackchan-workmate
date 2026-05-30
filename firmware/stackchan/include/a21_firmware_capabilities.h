@@ -1,5 +1,6 @@
 #pragma once
 
+#include "a21_firmware_imu.h"
 #include "a21_firmware_mic.h"
 
 #include <ArduinoJson.h>
@@ -14,7 +15,7 @@ inline void a21WriteStackChanHardwareCapabilities(JsonObject capabilities) {
   capabilities["servo_x"] = "planned_continuous_rotation_axis";
   capabilities["rgb"] = "available";
   capabilities["camera"] = "planned_core_s3_camera";
-  capabilities["imu"] = "planned_9_axis_imu";
+  capabilities["imu"] = a21IMUCapabilityStatus();
   capabilities["ambient_light"] = "planned_ambient_light_sensor";
   capabilities["proximity"] = "planned_proximity_sensor";
   capabilities["battery"] = "planned_550mah_battery";
