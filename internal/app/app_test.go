@@ -3625,6 +3625,205 @@ func TestRunStackChanIdentityAcceptanceRejectsLegacyReportPathWithoutEchoingPath
 	}
 }
 
+func TestRunStackChanCapabilityAcceptanceConfirmsPhysicalEvidence(t *testing.T) {
+	dir := t.TempDir()
+	artifactPath := filepath.Join(dir, "artifacts", "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	artifactSHA := strings.Repeat("a", 64)
+	identityPath := filepath.Join(dir, "a21-stackchan-identity-acceptance.json")
+	if err := os.WriteFile(identityPath, []byte(`{
+  "schema_version": "a21.stackchan_identity_acceptance.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "hardware_acceptance_scope": "identity_only",
+  "identity_acceptance_status": "identity_confirmed",
+  "device_id": "stackchan-001",
+  "commit": "abcdef1",
+  "artifact_path": "`+artifactPath+`",
+  "artifact_sha256": "`+artifactSHA+`",
+  "device_identity": {
+    "device_identity_confirmed": true,
+    "device": {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": "workmate",
+      "current_expression": "idle",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "capabilities": {
+        "microphone": "available",
+        "speaker": "available",
+        "screen": "available",
+        "screen_touch": "available",
+        "top_touch": "available",
+        "servo_y": "available",
+        "rgb": "available"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(dir, "a21-stackchan-physical-evidence.json")
+	if err := os.WriteFile(evidencePath, []byte(`{
+  "schema_version": "a21.stackchan_physical_evidence.v1",
+  "device_id": "stackchan-001",
+  "commit": "abcdef1",
+  "artifact_sha256": "`+artifactSHA+`",
+  "observations": [
+    {"capability": "microphone", "status": "passed", "evidence_type": "gateway_audio_frame", "observed_at_ms": 1780000001000},
+    {"capability": "speaker", "status": "passed", "evidence_type": "audible_playback", "observed_at_ms": 1780000002000},
+    {"capability": "screen", "status": "passed", "evidence_type": "operator_visible_state", "observed_at_ms": 1780000003000},
+    {"capability": "screen_touch", "status": "passed", "evidence_type": "touch_event", "observed_at_ms": 1780000004000},
+    {"capability": "top_touch", "status": "passed", "evidence_type": "touch_event", "observed_at_ms": 1780000005000},
+    {"capability": "servo_y", "status": "passed", "evidence_type": "servo_clamped_motion", "observed_at_ms": 1780000006000},
+    {"capability": "rgb", "status": "passed", "evidence_type": "operator_visible_state", "observed_at_ms": 1780000007000}
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outputDir := filepath.Join(dir, "reports")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-capability-acceptance",
+		"--identity-acceptance", identityPath,
+		"--evidence", evidencePath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_capability_acceptance.v1"`,
+		`"hardware_acceptance_scope": "physical_capability_evidence"`,
+		`"capability_acceptance_status": "confirmed"`,
+		`"flash_allowed": false`,
+		`"identity_acceptance_report_path": "` + identityPath + `"`,
+		`"evidence_report_path": "` + evidencePath + `"`,
+		`"device_id": "stackchan-001"`,
+		`"artifact_sha256": "` + artifactSHA + `"`,
+		`"capability": "microphone"`,
+		`"capability": "servo_y"`,
+		"stackchan capability acceptance ok (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-capability-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("capability acceptance reports = %d, want 1: %v", len(matches), matches)
+	}
+}
+
+func TestRunStackChanCapabilityAcceptanceBlocksMissingCapabilityEvidence(t *testing.T) {
+	dir := t.TempDir()
+	identityPath := filepath.Join(dir, "a21-stackchan-identity-acceptance.json")
+	if err := os.WriteFile(identityPath, []byte(`{
+  "schema_version": "a21.stackchan_identity_acceptance.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "hardware_acceptance_scope": "identity_only",
+  "identity_acceptance_status": "identity_confirmed",
+  "device_id": "stackchan-001",
+  "commit": "abcdef1",
+  "artifact_sha256": "`+strings.Repeat("b", 64)+`",
+  "device_identity": {
+    "device_identity_confirmed": true,
+    "device": {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {"id": "a21-stackchan", "version": "0.1.0", "board": "m5stack-cores3", "commit": "abcdef1"},
+      "capabilities": {
+        "microphone": "available",
+        "speaker": "available",
+        "screen": "available",
+        "screen_touch": "available",
+        "top_touch": "available",
+        "servo_y": "available",
+        "rgb": "available"
+      }
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(dir, "a21-stackchan-physical-evidence.json")
+	if err := os.WriteFile(evidencePath, []byte(`{
+  "schema_version": "a21.stackchan_physical_evidence.v1",
+  "device_id": "stackchan-001",
+  "commit": "abcdef1",
+  "artifact_sha256": "`+strings.Repeat("b", 64)+`",
+  "observations": [
+    {"capability": "microphone", "status": "passed", "evidence_type": "gateway_audio_frame", "observed_at_ms": 1780000001000}
+  ]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-capability-acceptance",
+		"--identity-acceptance", identityPath,
+		"--evidence", evidencePath,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_capability_acceptance.v1"`,
+		`"capability_acceptance_status": "blocked"`,
+		`"code": "capability_evidence_missing"`,
+		`"message": "physical evidence missing for required StackChan capability"`,
+		"stackchan capability acceptance failed",
+	} {
+		if !strings.Contains(stdout.String()+stderr.String(), want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestRunStackChanCapabilityAcceptanceRejectsLegacyEvidencePathWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-capability-acceptance",
+		"--identity-acceptance", filepath.Join(t.TempDir(), "a21-stackchan-identity-acceptance.json"),
+		"--evidence", filepath.Join(t.TempDir(), "x21-physical-evidence.json"),
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-physical") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

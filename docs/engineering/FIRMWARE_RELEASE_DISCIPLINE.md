@@ -526,6 +526,67 @@ reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json
 
 It reuses the release-ledger artifact guard, takes a fresh direct Gateway `/v1/devices` capture, validates A21 firmware identity and freshness, checks device quiescence, and records serial inventory plus USB serial candidates. The report uses `hardware_acceptance_scope=identity_only` and `identity_acceptance_status=identity_confirmed` only when all checks pass. It still sets `flash_allowed=false` and does not claim microphone, speaker, screen, servo, RGB, OTA, latency, or flashing acceptance.
 
+## StackChan Capability Acceptance
+
+After identity-only acceptance passes, physical capability acceptance is a separate no-flash evidence gate:
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-capability-acceptance
+```
+
+or:
+
+```bash
+go run ./cmd/a21 stackchan-capability-acceptance \
+  --identity-acceptance reports/a21-stackchan-identity-acceptance-YYYYMMDD-HHMMSS.json \
+  --evidence reports/a21-stackchan-physical-evidence.json \
+  --device-id stackchan-001 \
+  --commit <expected-git-sha> \
+  --output-dir reports
+```
+
+The command writes:
+
+```text
+reports/a21-stackchan-capability-acceptance-YYYYMMDD-HHMMSS.json
+```
+
+The required physical evidence schema is:
+
+```json
+{
+  "schema_version": "a21.stackchan_physical_evidence.v1",
+  "device_id": "stackchan-001",
+  "commit": "<expected-git-sha>",
+  "artifact_sha256": "<identity-acceptance-artifact-sha256>",
+  "observations": [
+    {
+      "capability": "microphone",
+      "status": "passed",
+      "evidence_type": "gateway_audio_frame",
+      "observed_at_ms": 1780000001000
+    }
+  ]
+}
+```
+
+Required capabilities are:
+
+- `microphone`
+- `speaker`
+- `screen`
+- `screen_touch`
+- `top_touch`
+- `servo_y`
+- `rgb`
+
+For each required capability, the fresh identity acceptance report must declare it as `available`, and the physical evidence report must include a `passed` observation with non-empty `evidence_type` and `observed_at_ms`. Missing or failed capability evidence produces `capability_acceptance_status=blocked`.
+
+This gate deliberately separates declaration from acceptance. Gateway `capabilities` prove what the firmware says the device surface is; `stackchan-capability-acceptance` proves that an operator or later hardware probe produced per-capability evidence. The report still sets `flash_allowed=false` and does not claim OTA, latency, AEC, full-duplex quality, or future flashing permission.
+
 ## Serial Inventory
 
 Before choosing an upload port, inspect the current serial state:

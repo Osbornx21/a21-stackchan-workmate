@@ -111,6 +111,17 @@ make stackchan-identity-acceptance
 
 It writes `reports/a21-stackchan-identity-acceptance-*.json`, checks the office acceptance receipt against a fresh Gateway `/v1/devices` capture and USB serial inventory, and still sets `flash_allowed: false`.
 
+After identity is confirmed, capability acceptance requires separate physical evidence for every declared StackChan surface:
+
+```bash
+A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT=reports/a21-stackchan-identity-acceptance-<timestamp>.json \
+A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT=reports/a21-stackchan-physical-evidence.json \
+A21_DEVICE_ID=stackchan-001 \
+make stackchan-capability-acceptance
+```
+
+The evidence report must use `schema_version: a21.stackchan_physical_evidence.v1` and include passed observations for `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb`. The acceptance report still sets `flash_allowed: false`; it proves capability evidence, not flashing, OTA, latency, or full-duplex quality.
+
 ## Required Reading
 
 - [AGENTS.md](AGENTS.md)
