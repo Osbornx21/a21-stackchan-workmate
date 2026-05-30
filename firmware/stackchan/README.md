@@ -16,12 +16,13 @@ PlatformIO runs `scripts/a21_build_identity.py` before each firmware build. The 
 From the repository root:
 
 ```bash
+make firmware-tools
 go run ./cmd/a21 firmware-check
 make firmware-test
-.a21-tools/platformio-venv/bin/pio run -d firmware/stackchan
+make firmware-build
 ```
 
-`make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
+`make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
 
 ## Runtime Surface
 

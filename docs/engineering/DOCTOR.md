@@ -45,6 +45,7 @@ It checks what the current foundation can truthfully check:
 - minimum network/DNS fingerprint
 - StackChan firmware manifest identity
 - repository-local PlatformIO venv path
+- repository-local PlatformIO pinned version, currently `6.1.19`
 - repository-local PlatformIO core path
 - validated firmware artifact count
 - current git commit firmware artifact match
@@ -57,7 +58,7 @@ It checks what the current foundation can truthfully check:
 - voice realtime WebSocket readiness plan, without dialing providers
 - optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
-The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state.
+The firmware section intentionally checks repository-local paths under `.a21-tools/`. This keeps A21 firmware tooling isolated from X21/V21 and from global PlatformIO state. If the local `pio` version is missing or not `6.1.19`, doctor warns; run `make firmware-tools` to create or repair the pinned toolchain.
 
 The proxy section intentionally records only env variable names and direct-connect coverage labels. It blocks `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` configurations that do not prove direct routing for localhost, loopback, `.local`, `10.0.0.0/8`, `10.21.0.0/16`, `172.16.0.0/12`, and `192.168.0.0/16`. `A21_PROVIDER_PROXY_URL` is reported separately as explicit provider egress configuration and is not treated as LAN bypass coverage.
 

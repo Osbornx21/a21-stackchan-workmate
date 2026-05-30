@@ -24,10 +24,13 @@ A21 firmware must be treated as a device release artifact, not a casual sketch. 
 PlatformIO is installed in the repository-local ignored path:
 
 ```bash
+A21_PLATFORMIO_VERSION=6.1.19 make firmware-tools
 PLATFORMIO_CORE_DIR=$PWD/.a21-tools/platformio-core .a21-tools/platformio-venv/bin/pio --version
 ```
 
-This keeps A21 firmware tooling and PlatformIO package state isolated from X21/V21 and from system-global Python packages.
+`make firmware-tools` creates or repairs `.a21-tools/platformio-venv` and `.a21-tools/platformio-core`, then installs the pinned `platformio==6.1.19`. `firmware-test`, `firmware-build`, and `firmware-upload-blocker-check` depend on this target, so a fresh checkout or CI worker can bootstrap the A21-local toolchain before touching firmware.
+
+This keeps A21 firmware tooling and PlatformIO package state isolated from X21/V21 and from system-global Python packages. `doctor` reports the repository-local PlatformIO version and warns when it drifts from the pinned version.
 
 ## Board Baseline
 
@@ -74,6 +77,7 @@ It is created by PlatformIO before native tests and CoreS3 builds. It must not b
 Before any firmware build:
 
 ```bash
+make firmware-tools
 go run ./cmd/a21 firmware-check
 PLATFORMIO_CORE_DIR=$PWD/.a21-tools/platformio-core .a21-tools/platformio-venv/bin/pio run -d firmware/stackchan
 ```

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,6 +20,18 @@ import (
 
 var listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 	return firmwarecheck.ListSerialDevices(context.Background())
+}
+
+const expectedPlatformIOVersion = "6.1.19"
+
+var detectPlatformIOVersion = func(path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path, "--version").Output()
+	if err != nil {
+		return "", err
+	}
+	return parsePlatformIOVersion(string(output))
 }
 
 var probeV21AdapterHealth = func(ctx context.Context, baseURL string) error {
@@ -40,17 +53,20 @@ type doctorReport struct {
 }
 
 type firmwareDoctorReport struct {
-	ManifestPath        string                       `json:"manifest_path"`
-	ManifestOK          bool                         `json:"manifest_ok"`
-	PlatformIOVenvPath  string                       `json:"platformio_venv_path"`
-	PlatformIOVenvOK    bool                         `json:"platformio_venv_ok"`
-	PlatformIOCoreDir   string                       `json:"platformio_core_dir"`
-	PlatformIOCoreOK    bool                         `json:"platformio_core_ok"`
-	CurrentCommit       string                       `json:"current_commit,omitempty"`
-	CurrentArtifactPath string                       `json:"current_artifact_path,omitempty"`
-	ArtifactCount       int                          `json:"artifact_count"`
-	SerialDevices       []firmwarecheck.SerialDevice `json:"serial_devices"`
-	Findings            []runtimeguard.Finding       `json:"findings"`
+	ManifestPath              string                       `json:"manifest_path"`
+	ManifestOK                bool                         `json:"manifest_ok"`
+	PlatformIOVenvPath        string                       `json:"platformio_venv_path"`
+	PlatformIOVenvOK          bool                         `json:"platformio_venv_ok"`
+	PlatformIOVersion         string                       `json:"platformio_version,omitempty"`
+	PlatformIOVersionOK       bool                         `json:"platformio_version_ok"`
+	ExpectedPlatformIOVersion string                       `json:"expected_platformio_version"`
+	PlatformIOCoreDir         string                       `json:"platformio_core_dir"`
+	PlatformIOCoreOK          bool                         `json:"platformio_core_ok"`
+	CurrentCommit             string                       `json:"current_commit,omitempty"`
+	CurrentArtifactPath       string                       `json:"current_artifact_path,omitempty"`
+	ArtifactCount             int                          `json:"artifact_count"`
+	SerialDevices             []firmwarecheck.SerialDevice `json:"serial_devices"`
+	Findings                  []runtimeguard.Finding       `json:"findings"`
 }
 
 type v21DoctorReport struct {
@@ -174,10 +190,11 @@ func buildV21DoctorReport(adapterURL string) v21DoctorReport {
 
 func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwareDoctorReport {
 	report := firmwareDoctorReport{
-		ManifestPath:       filepath.Join(projectRoot, "firmware", "stackchan", "a21-firmware.json"),
-		PlatformIOVenvPath: filepath.Join(projectRoot, ".a21-tools", "platformio-venv", "bin", "pio"),
-		PlatformIOCoreDir:  filepath.Join(projectRoot, ".a21-tools", "platformio-core"),
-		CurrentCommit:      currentCommit,
+		ManifestPath:              filepath.Join(projectRoot, "firmware", "stackchan", "a21-firmware.json"),
+		PlatformIOVenvPath:        filepath.Join(projectRoot, ".a21-tools", "platformio-venv", "bin", "pio"),
+		ExpectedPlatformIOVersion: expectedPlatformIOVersion,
+		PlatformIOCoreDir:         filepath.Join(projectRoot, ".a21-tools", "platformio-core"),
+		CurrentCommit:             currentCommit,
 	}
 
 	if _, err := firmwarecheck.LoadAndValidate(report.ManifestPath); err != nil {
@@ -193,6 +210,26 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 
 	if info, err := os.Stat(report.PlatformIOVenvPath); err == nil && !info.IsDir() {
 		report.PlatformIOVenvOK = true
+		version, err := detectPlatformIOVersion(report.PlatformIOVenvPath)
+		if err != nil {
+			report.Findings = append(report.Findings, runtimeguard.Finding{
+				Code:     "firmware_platformio_version_unreadable",
+				Severity: runtimeguard.SeverityWarn,
+				Message:  "A21 repository-local PlatformIO version could not be read",
+				Detail:   redactDoctorSecret(err.Error()),
+			})
+		} else {
+			report.PlatformIOVersion = version
+			report.PlatformIOVersionOK = version == expectedPlatformIOVersion
+			if !report.PlatformIOVersionOK {
+				report.Findings = append(report.Findings, runtimeguard.Finding{
+					Code:     "firmware_platformio_version_mismatch",
+					Severity: runtimeguard.SeverityWarn,
+					Message:  "A21 repository-local PlatformIO version does not match the pinned version",
+					Detail:   fmt.Sprintf("got %s, want %s", version, expectedPlatformIOVersion),
+				})
+			}
+		}
 	} else {
 		report.Findings = append(report.Findings, runtimeguard.Finding{
 			Code:     "firmware_platformio_venv_missing",
@@ -266,6 +303,19 @@ var doctorURLCredentialPattern = regexp.MustCompile(`(https?://)[^/\s"']+@`)
 
 func redactDoctorSecret(text string) string {
 	return doctorURLCredentialPattern.ReplaceAllString(text, "${1}<redacted>@")
+}
+
+func parsePlatformIOVersion(output string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(output))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty PlatformIO version output")
+	}
+	for index, field := range fields {
+		if strings.TrimRight(field, ",") == "version" && index+1 < len(fields) {
+			return strings.Trim(fields[index+1], " ,"), nil
+		}
+	}
+	return "", fmt.Errorf("unrecognized PlatformIO version output")
 }
 
 func findProjectRoot(start string) string {

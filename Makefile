@@ -2,8 +2,9 @@ PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
 A21_DEVICE_MAX_AGE_MS ?= 300000
 A21_GATEWAY_URL ?= http://127.0.0.1:21080
+A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
+.PHONY: test verify preflight doctor gateway provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-artifact-check firmware-upload-check firmware-device-report firmware-device-check firmware-flash-plan
 
 test:
 	go test ./...
@@ -47,16 +48,19 @@ latency-bench:
 
 release-check: verify latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package doctor
 
+firmware-tools:
+	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh
+
 firmware-check:
 	go run ./cmd/a21 firmware-check
 
-firmware-test: firmware-check
+firmware-test: firmware-tools firmware-check
 	$(PIO) test -d firmware/stackchan -e a21_stackchan_native
 
-firmware-build: firmware-check
+firmware-build: firmware-tools firmware-check
 	$(PIO) run -d firmware/stackchan
 
-firmware-upload-blocker-check:
+firmware-upload-blocker-check: firmware-tools
 	@output="$$( $(PIO) run -d firmware/stackchan -e a21_stackchan_cores3 -t upload 2>&1 )"; \
 	code="$$?"; \
 	printf '%s\n' "$$output"; \

@@ -885,7 +885,7 @@ func TestBuildFirmwareDoctorReportFindsCurrentArtifact(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-venv", "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".a21-tools", "platformio-venv", "bin", "pio"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".a21-tools", "platformio-venv", "bin", "pio"), []byte("#!/bin/sh\necho 'PlatformIO Core, version 6.1.19'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-core"), 0o755); err != nil {
@@ -906,11 +906,50 @@ func TestBuildFirmwareDoctorReportFindsCurrentArtifact(t *testing.T) {
 	if !report.PlatformIOVenvOK {
 		t.Fatal("expected local PlatformIO venv to be detected")
 	}
+	if !report.PlatformIOVersionOK {
+		t.Fatalf("expected pinned PlatformIO version, got %#v", report)
+	}
 	if !report.PlatformIOCoreOK {
 		t.Fatal("expected local PlatformIO core to be detected")
 	}
 	if report.CurrentArtifactPath != artifact {
 		t.Fatalf("CurrentArtifactPath = %q, want %q", report.CurrentArtifactPath, artifact)
+	}
+}
+
+func TestBuildFirmwareDoctorReportWarnsOnPlatformIOVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	writeTestFirmwareManifest(t, filepath.Join(root, "firmware", "stackchan"))
+	pioPath := filepath.Join(root, ".a21-tools", "platformio-venv", "bin", "pio")
+	if err := os.MkdirAll(filepath.Dir(pioPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pioPath, []byte("#!/bin/sh\necho 'PlatformIO Core, version 6.2.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".a21-tools", "platformio-core"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report := buildFirmwareDoctorReport(root, "")
+
+	if report.PlatformIOVersionOK {
+		t.Fatalf("PlatformIOVersionOK = true, want false: %#v", report)
+	}
+	if report.PlatformIOVersion != "6.2.0" || report.ExpectedPlatformIOVersion != "6.1.19" {
+		t.Fatalf("version fields = got %q expected %q", report.PlatformIOVersion, report.ExpectedPlatformIOVersion)
+	}
+	var found bool
+	for _, finding := range report.Findings {
+		if finding.Code == "firmware_platformio_version_mismatch" {
+			found = true
+			if strings.Contains(strings.ToLower(finding.Detail), "x21") || strings.Contains(strings.ToLower(finding.Detail), "v21") {
+				t.Fatalf("finding detail leaked legacy identity: %#v", finding)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("findings missing firmware_platformio_version_mismatch: %#v", report.Findings)
 	}
 }
 
