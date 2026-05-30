@@ -98,6 +98,8 @@ make firmware-current-artifact-check
 
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
+The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
+
 Current native firmware tests cover:
 
 - firmware build identity fields, firmware label construction, and build identity propagation in outgoing device events
@@ -171,6 +173,7 @@ Upload-path dry-run guards now require both the release index record and the sib
 
 - the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
+- the release index entry and sibling manifest resolve to the same checked artifact path and checksum path
 - the release index and sibling manifest full artifact/checksum paths do not contain forbidden X21/V21 identities
 
 `firmware-upload-check` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.

@@ -222,6 +222,9 @@ func ValidateLatestArtifactForCommit(options LatestArtifactOptions) (ArtifactRes
 			!sameGitCommit(entry.Commit, options.Commit) {
 			continue
 		}
+		if err := validateReleaseRecordPathsInDirectory("release index entry", releaseIndexPath, entry.ArtifactPath, entry.SHA256Path); err != nil {
+			return ArtifactResult{}, err
+		}
 		if found && entry.Timestamp == latest.Timestamp && filepath.Base(entry.ArtifactPath) != filepath.Base(latest.ArtifactPath) {
 			return ArtifactResult{}, fmt.Errorf("release index has ambiguous latest artifact timestamp %q for commit %q", entry.Timestamp, options.Commit)
 		}
@@ -273,6 +276,12 @@ func validateReleaseIndexEntry(path string, artifact ArtifactResult) (FirmwareBu
 		if filepath.Base(entry.ArtifactPath) != expectedArtifactName {
 			continue
 		}
+		if err := validateReleaseRecordPathMatches("release index artifact", entry.ArtifactPath, artifact.ArtifactPath); err != nil {
+			return FirmwareBuildProvenance{}, err
+		}
+		if err := validateReleaseRecordPathMatches("release index checksum", entry.SHA256Path, artifact.SHA256Path); err != nil {
+			return FirmwareBuildProvenance{}, err
+		}
 		if entry.SchemaVersion != "a21.firmware.release.v1" ||
 			entry.FirmwareID != artifact.Manifest.FirmwareID ||
 			entry.Version != artifact.Manifest.Version ||
@@ -318,6 +327,9 @@ func validateLatestReleaseIndexArtifact(path string, artifact ArtifactResult) er
 			!sameGitCommit(entry.Commit, artifact.Commit) {
 			continue
 		}
+		if err := validateReleaseRecordPathsInDirectory("release index entry", path, entry.ArtifactPath, entry.SHA256Path); err != nil {
+			return err
+		}
 		entryName := filepath.Base(entry.ArtifactPath)
 		if entry.Timestamp > latestTimestamp {
 			latestTimestamp = entry.Timestamp
@@ -346,6 +358,12 @@ func validateArtifactReleaseManifest(path string, artifact ArtifactResult) (Firm
 	expectedSHAName := filepath.Base(artifact.SHA256Path)
 	if releaseRecordPathContainsForbiddenIdentity(releaseManifest.ArtifactPath, releaseManifest.SHA256Path) {
 		return FirmwareBuildProvenance{}, fmt.Errorf("artifact release manifest contains forbidden legacy path identity")
+	}
+	if err := validateReleaseRecordPathMatches("artifact release manifest artifact", releaseManifest.ArtifactPath, artifact.ArtifactPath); err != nil {
+		return FirmwareBuildProvenance{}, err
+	}
+	if err := validateReleaseRecordPathMatches("artifact release manifest checksum", releaseManifest.SHA256Path, artifact.SHA256Path); err != nil {
+		return FirmwareBuildProvenance{}, err
 	}
 	if releaseManifest.SchemaVersion != ReleaseManifestSchemaVersion ||
 		releaseManifest.Project != artifact.Manifest.Project ||
@@ -384,6 +402,35 @@ func releaseRecordPathContainsForbiddenIdentity(paths ...string) bool {
 		}
 	}
 	return false
+}
+
+func validateReleaseRecordPathsInDirectory(label string, releaseIndexPath string, paths ...string) error {
+	indexDir := filepath.Dir(releaseIndexPath)
+	for _, path := range paths {
+		if !sameCleanAbsPath(filepath.Dir(path), indexDir) {
+			return fmt.Errorf("%s path must stay in release index directory", label)
+		}
+	}
+	return nil
+}
+
+func validateReleaseRecordPathMatches(label string, recordedPath string, expectedPath string) error {
+	if !sameCleanAbsPath(recordedPath, expectedPath) {
+		return fmt.Errorf("%s path does not match expected A21 artifact path", label)
+	}
+	return nil
+}
+
+func sameCleanAbsPath(left string, right string) bool {
+	if strings.TrimSpace(left) == "" || strings.TrimSpace(right) == "" {
+		return false
+	}
+	leftAbs, leftErr := filepath.Abs(filepath.Clean(left))
+	rightAbs, rightErr := filepath.Abs(filepath.Clean(right))
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return leftAbs == rightAbs
 }
 
 type parsedArtifactName struct {

@@ -203,6 +203,82 @@ func TestValidateUploadCandidateRejectsReleaseManifestLegacyPath(t *testing.T) {
 	}
 }
 
+func TestValidateUploadCandidateRejectsReleaseIndexExternalPath(t *testing.T) {
+	dir := t.TempDir()
+	externalDir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	externalArtifact := filepath.Join(externalDir, filepath.Base(artifact))
+	writeArtifactWithChecksum(t, artifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, artifact+".sha256")
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  externalArtifact,
+		SHA256Path:    externalArtifact + ".sha256",
+		SHA256:        checksum,
+		Build:         testBuildProvenance(artifact),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactReleaseManifest(t, artifact, checksum)
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: artifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected upload candidate with external release index path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "release index") || !strings.Contains(err.Error(), "path") {
+		t.Fatalf("error = %q, want release index path", err)
+	}
+}
+
+func TestValidateUploadCandidateRejectsReleaseManifestExternalPath(t *testing.T) {
+	dir := t.TempDir()
+	externalDir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	externalArtifact := filepath.Join(externalDir, filepath.Base(artifact))
+	writeArtifactWithChecksum(t, artifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, artifact+".sha256")
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  artifact,
+		SHA256Path:    artifact + ".sha256",
+		SHA256:        checksum,
+		Build:         testBuildProvenance(artifact),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactReleaseManifestWithPaths(t, artifact, checksum, externalArtifact, externalArtifact+".sha256")
+
+	_, err := ValidateUploadCandidate(UploadCheckOptions{
+		ManifestPath: manifest,
+		ArtifactPath: artifact,
+		Port:         "/dev/cu.usbmodemA21",
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected upload candidate with external release manifest path to be rejected")
+	}
+	if !strings.Contains(err.Error(), "artifact release manifest") || !strings.Contains(err.Error(), "path") {
+		t.Fatalf("error = %q, want release manifest path", err)
+	}
+}
+
 func TestValidateUploadCandidateAcceptsReleaseIndexEntry(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeArtifactManifest(t, dir)
@@ -382,6 +458,47 @@ func TestValidateLatestArtifactForCommitAcceptsNewestReleaseIndexArtifact(t *tes
 	}
 	if result.ArtifactPath != newArtifact {
 		t.Fatalf("ArtifactPath = %q, want newest %q", result.ArtifactPath, newArtifact)
+	}
+}
+
+func TestValidateLatestArtifactForCommitRejectsExternalReleaseIndexPath(t *testing.T) {
+	dir := t.TempDir()
+	externalDir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	artifactName := "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin"
+	externalArtifact := filepath.Join(externalDir, artifactName)
+	writeArtifactWithChecksum(t, externalArtifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456"))
+	checksum := readTestChecksum(t, externalArtifact+".sha256")
+	entry := ReleaseIndexEntry{
+		SchemaVersion: "a21.firmware.release.v1",
+		FirmwareID:    "a21-stackchan",
+		Version:       "0.1.0",
+		Board:         "m5stack-cores3",
+		Commit:        "abcdef123456",
+		Timestamp:     "20260530-004500",
+		ArtifactPath:  externalArtifact,
+		SHA256Path:    externalArtifact + ".sha256",
+		SHA256:        checksum,
+		Build:         testBuildProvenance(externalArtifact),
+	}
+	if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), entry); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendReleaseIndexEntry(filepath.Join(externalDir, ReleaseIndexFileName), entry); err != nil {
+		t.Fatal(err)
+	}
+	writeArtifactReleaseManifestWithIdentity(t, externalArtifact, checksum, "abcdef123456", "20260530-004500")
+
+	_, err := ValidateLatestArtifactForCommit(LatestArtifactOptions{
+		ManifestPath: manifest,
+		ArtifactDir:  dir,
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected current artifact selection to reject an external release index path")
+	}
+	if !strings.Contains(err.Error(), "release index") || !strings.Contains(err.Error(), "path") {
+		t.Fatalf("error = %q, want release index path", err)
 	}
 }
 

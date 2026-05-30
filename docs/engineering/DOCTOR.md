@@ -131,7 +131,7 @@ Upload and flash-plan guards accept only explicit USB serial-looking ports. On m
 
 `namespace-audit` scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. It is part of `make release-check` so path-level project identity drift is caught before merge.
 
-`firmware-current-artifact-check` validates the newest packaged artifact for the current git commit from `a21-firmware-release-index.jsonl`, then re-runs artifact, release-index, and per-artifact manifest checks. It is part of `make release-check` immediately after `firmware-package`.
+`firmware-current-artifact-check` validates the newest packaged artifact for the current git commit from `a21-firmware-release-index.jsonl`, then re-runs artifact, release-index, and per-artifact manifest checks. The release index and per-artifact manifest must point to the same checked artifact and checksum paths; a same-named binary outside the selected artifact directory is rejected. It is part of `make release-check` immediately after `firmware-package`.
 
 `firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It rejects known X21/V21 legacy ports before dialing, then requires the response to declare `schema_version=a21.gateway.devices.v1` and `service=a21-gateway` before any device identity is accepted. Use this instead of hand-written curl captures before device identity or flash-plan checks.
 
