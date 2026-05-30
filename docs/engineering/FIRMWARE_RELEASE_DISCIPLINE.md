@@ -169,7 +169,7 @@ Current native firmware tests cover:
 - Wi-Fi config defaults, password redaction, legacy SSID rejection, and local fallback when credentials are missing
 - Wi-Fi runtime begin-once behavior, connected transition, and disconnect retry behavior
 - Gateway control WebSocket begin-once behavior, control-event parsing, and disconnect retry behavior
-- Gateway `device.event` send gating, deterministic seq/trace IDs, and interrupt/mock-turn envelope construction
+- Gateway `device.event` send gating, deterministic seq/trace IDs, interrupt/mock-turn envelope construction, and runtime echo change detection for applied screen/motion/RGB plus microphone and playback/speaker diagnostics
 - audio WebSocket begin gating after Gateway connection, full 640-byte mock `audio.frame` envelope construction, queued mic PCM `audio.frame` uplink construction, ack control-event parsing, mock `audio.playback.chunk` downlink parsing, full 20 ms 16 kHz PCM base64 payload capacity, fixed 640-byte PCM encode/decode, bounded playback buffering, M5 speaker pump queue gating, and send rejection while disconnected
 - microphone capture policy and four-frame uplink queue that record one PCM16 frame only when the render state is capture-safe and the speaker queue is idle in hardware-free tests; physical CoreS3 release microphone capture is currently disabled by a crash guard, while `a21_stackchan_cores3_mic_probe` exposes the isolated diagnostic status `diagnostic_probe_m5unified_i2s_capture`
 - semantic touch intent runtime for `wake_or_listen` and `barge_in`, preserving `screen` vs `top_sensor` source metadata through Gateway `device.event` envelopes

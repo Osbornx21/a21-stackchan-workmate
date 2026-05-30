@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1400;
+static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1800;
 
 struct A21RuntimeEchoDiagnostics {
   bool enabled;
@@ -27,6 +27,14 @@ struct A21RuntimeEchoDiagnostics {
   uint32_t audio_ws_sent_audio_frames;
   int16_t mic_last_abs_peak;
   uint16_t mic_last_nonzero_samples;
+  uint8_t playback_buffer_queued_chunks;
+  uint32_t playback_buffer_total_chunks;
+  uint32_t playback_buffer_dropped_chunks;
+  uint32_t playback_buffer_clear_count;
+  uint32_t speaker_frames_played;
+  uint32_t speaker_busy_ticks;
+  uint32_t speaker_driver_errors;
+  char speaker_last_stream_id[A21_STREAM_ID_CAP];
 };
 
 struct A21GatewayWSDriver {
@@ -261,6 +269,13 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     char audio_ws_sent_audio_frames[12];
     char mic_last_abs_peak[12];
     char mic_last_nonzero_samples[12];
+    char playback_buffer_queued_chunks[8];
+    char playback_buffer_total_chunks[12];
+    char playback_buffer_dropped_chunks[12];
+    char playback_buffer_clear_count[12];
+    char speaker_frames_played[12];
+    char speaker_busy_ticks[12];
+    char speaker_driver_errors[12];
     snprintf(mic_frames_captured, sizeof(mic_frames_captured), "%lu", static_cast<unsigned long>(diagnostics->mic_frames_captured));
     snprintf(mic_driver_errors, sizeof(mic_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->mic_driver_errors));
     snprintf(mic_skipped_render_state, sizeof(mic_skipped_render_state), "%lu", static_cast<unsigned long>(diagnostics->mic_skipped_render_state));
@@ -272,6 +287,13 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     snprintf(audio_ws_sent_audio_frames, sizeof(audio_ws_sent_audio_frames), "%lu", static_cast<unsigned long>(diagnostics->audio_ws_sent_audio_frames));
     snprintf(mic_last_abs_peak, sizeof(mic_last_abs_peak), "%d", diagnostics->mic_last_abs_peak);
     snprintf(mic_last_nonzero_samples, sizeof(mic_last_nonzero_samples), "%u", static_cast<unsigned>(diagnostics->mic_last_nonzero_samples));
+    snprintf(playback_buffer_queued_chunks, sizeof(playback_buffer_queued_chunks), "%u", static_cast<unsigned>(diagnostics->playback_buffer_queued_chunks));
+    snprintf(playback_buffer_total_chunks, sizeof(playback_buffer_total_chunks), "%lu", static_cast<unsigned long>(diagnostics->playback_buffer_total_chunks));
+    snprintf(playback_buffer_dropped_chunks, sizeof(playback_buffer_dropped_chunks), "%lu", static_cast<unsigned long>(diagnostics->playback_buffer_dropped_chunks));
+    snprintf(playback_buffer_clear_count, sizeof(playback_buffer_clear_count), "%lu", static_cast<unsigned long>(diagnostics->playback_buffer_clear_count));
+    snprintf(speaker_frames_played, sizeof(speaker_frames_played), "%lu", static_cast<unsigned long>(diagnostics->speaker_frames_played));
+    snprintf(speaker_busy_ticks, sizeof(speaker_busy_ticks), "%lu", static_cast<unsigned long>(diagnostics->speaker_busy_ticks));
+    snprintf(speaker_driver_errors, sizeof(speaker_driver_errors), "%lu", static_cast<unsigned long>(diagnostics->speaker_driver_errors));
     echo["mic_frames_captured"] = mic_frames_captured;
     echo["mic_driver_errors"] = mic_driver_errors;
     echo["mic_skipped_render_state"] = mic_skipped_render_state;
@@ -283,6 +305,14 @@ inline bool a21GatewayWSBuildRuntimeEchoEvent(
     echo["audio_ws_sent_audio_frames"] = audio_ws_sent_audio_frames;
     echo["mic_last_abs_peak"] = mic_last_abs_peak;
     echo["mic_last_nonzero_samples"] = mic_last_nonzero_samples;
+    echo["playback_buffer_queued_chunks"] = playback_buffer_queued_chunks;
+    echo["playback_buffer_total_chunks"] = playback_buffer_total_chunks;
+    echo["playback_buffer_dropped_chunks"] = playback_buffer_dropped_chunks;
+    echo["playback_buffer_clear_count"] = playback_buffer_clear_count;
+    echo["speaker_frames_played"] = speaker_frames_played;
+    echo["speaker_busy_ticks"] = speaker_busy_ticks;
+    echo["speaker_driver_errors"] = speaker_driver_errors;
+    echo["speaker_last_stream_id"] = diagnostics->speaker_last_stream_id;
   }
 
   const size_t written = serializeJson(doc, output, output_size);
@@ -356,7 +386,15 @@ inline bool a21RuntimeEchoDiagnosticsEqual(
          left->mic_queue_dropped_frames == right->mic_queue_dropped_frames &&
          left->audio_ws_sent_audio_frames == right->audio_ws_sent_audio_frames &&
          left->mic_last_abs_peak == right->mic_last_abs_peak &&
-         left->mic_last_nonzero_samples == right->mic_last_nonzero_samples;
+         left->mic_last_nonzero_samples == right->mic_last_nonzero_samples &&
+         left->playback_buffer_queued_chunks == right->playback_buffer_queued_chunks &&
+         left->playback_buffer_total_chunks == right->playback_buffer_total_chunks &&
+         left->playback_buffer_dropped_chunks == right->playback_buffer_dropped_chunks &&
+         left->playback_buffer_clear_count == right->playback_buffer_clear_count &&
+         left->speaker_frames_played == right->speaker_frames_played &&
+         left->speaker_busy_ticks == right->speaker_busy_ticks &&
+         left->speaker_driver_errors == right->speaker_driver_errors &&
+         a21StringEquals(left->speaker_last_stream_id, right->speaker_last_stream_id);
 }
 
 inline bool a21RuntimeEchoDiagnosticsChanged(

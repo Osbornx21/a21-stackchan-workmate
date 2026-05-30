@@ -566,6 +566,17 @@ void loop() {
   runtime_diagnostics.audio_ws_sent_audio_frames = g_audio_ws_runtime.sent_audio_frames;
   runtime_diagnostics.mic_last_abs_peak = g_mic_capture_runtime.last_abs_peak;
   runtime_diagnostics.mic_last_nonzero_samples = g_mic_capture_runtime.last_nonzero_samples;
+  runtime_diagnostics.playback_buffer_queued_chunks = g_audio_playback_buffer.queued_chunks;
+  runtime_diagnostics.playback_buffer_total_chunks = g_audio_playback_buffer.total_chunks;
+  runtime_diagnostics.playback_buffer_dropped_chunks = g_audio_playback_buffer.dropped_chunks;
+  runtime_diagnostics.playback_buffer_clear_count = g_audio_playback_buffer.clear_count;
+  runtime_diagnostics.speaker_frames_played = g_speaker_pump_runtime.frames_played;
+  runtime_diagnostics.speaker_busy_ticks = g_speaker_pump_runtime.busy_ticks;
+  runtime_diagnostics.speaker_driver_errors = g_speaker_pump_runtime.driver_errors;
+  a21CopyString(
+      runtime_diagnostics.speaker_last_stream_id,
+      A21_STREAM_ID_CAP,
+      g_speaker_pump_runtime.last_stream_id);
   a21GatewayWSSendRuntimeEchoIfChangedWithDiagnostics(
       &g_gateway_ws_runtime,
       &g_gateway_ws_driver,
