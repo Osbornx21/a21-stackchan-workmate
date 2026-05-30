@@ -34,6 +34,8 @@ struct A21TouchRuntime {
 
 struct A21PhysicalTouchState {
   bool screen_was_down;
+  bool top_was_down;
+  bool top_press_reported;
 };
 
 inline void a21InitTouchRuntime(A21TouchRuntime* runtime) {
@@ -51,6 +53,8 @@ inline void a21InitPhysicalTouchState(A21PhysicalTouchState* state) {
     return;
   }
   state->screen_was_down = false;
+  state->top_was_down = false;
+  state->top_press_reported = false;
 }
 
 inline bool a21TouchDriverReady(const A21TouchDriver* driver) {
@@ -112,14 +116,33 @@ inline bool a21PhysicalTouchReadScreen(
 
 inline bool a21PhysicalTouchReadTopSensor(
     A21PhysicalTouchState* state,
+    bool top_down,
     bool clicked,
     bool swiped_forward,
     bool swiped_backward,
     A21TouchSample* sample) {
-  (void)state;
-  if (sample == nullptr || (!clicked && !swiped_forward && !swiped_backward)) {
+  if (state == nullptr || sample == nullptr) {
     return false;
   }
+  if (top_down) {
+    const bool rising_edge = !state->top_was_down;
+    state->top_was_down = true;
+    if (!rising_edge) {
+      return false;
+    }
+    state->top_press_reported = true;
+    sample->source = A21_TOUCH_SOURCE_TOP_SENSOR;
+    sample->intent = A21_TOUCH_INTENT_BARGE_IN;
+    return true;
+  }
+
+  const bool suppress_release_event = state->top_press_reported && (clicked || swiped_forward || swiped_backward);
+  state->top_was_down = false;
+  state->top_press_reported = false;
+  if (suppress_release_event || (!clicked && !swiped_forward && !swiped_backward)) {
+    return false;
+  }
+
   sample->source = A21_TOUCH_SOURCE_TOP_SENSOR;
   sample->intent = A21_TOUCH_INTENT_BARGE_IN;
   return true;
