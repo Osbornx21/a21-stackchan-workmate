@@ -67,9 +67,10 @@ Gateway configuration is currently compile-time and A21-only:
 
 - opens a separate `/ws/audio` socket only after the control Gateway is connected
 - sends deterministic mock `audio.frame` envelopes with a full 640-byte `pcm_s16le`, 16 kHz, mono, 20 ms silence payload encoded in base64
+- sends queued microphone capture frames as A21 `audio.frame` envelopes with real PCM payloads when the device is in a capture-safe state
 - applies Gateway ack `control.event` messages through the same tested parser
 - accepts Gateway `audio.playback.chunk` envelopes into a bounded playback buffer keyed by `stream_id`
-- keeps real microphone capture out of this slice while allowing guarded CoreS3 speaker playback of Gateway downlink frames
+- keeps all mic/speaker switching inside the firmware driver layer so Gateway still sees only A21 protocol envelopes
 
 Current local controls are intentionally minimal and routed through semantic device intents:
 
@@ -85,9 +86,9 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_speaker.h` owns the first real speaker pump boundary. It consumes decoded PCM frames only while the render state is `speaking`, waits when the M5Unified speaker channel already has two queued buffers, copies each 20 ms frame into one of three stable slots, and then calls `M5.Speaker.playRaw(...)`. This avoids handing M5Unified a pointer to buffer memory that may be cleared on barge-in.
 
-`a21_firmware_mic.h` owns the first microphone capture policy boundary. It records one 20 ms / 16 kHz / mono PCM16 frame only when the render state is capture-safe and the speaker channel queue is empty. This encodes the current M5Unified internal mic/speaker constraint directly in firmware tests instead of pretending full-duplex is solved.
+`a21_firmware_mic.h` owns the first microphone capture policy boundary and a bounded four-frame uplink queue. It records one 20 ms / 16 kHz / mono PCM16 frame only when the render state is capture-safe and the speaker channel queue is empty, then the audio WebSocket runtime encodes that frame into an A21 `audio.frame`. This encodes the current M5Unified internal mic/speaker constraint directly in firmware tests instead of pretending full-duplex is solved.
 
-The firmware still does not send real microphone samples to Gateway, run VAD on device, prove acoustic echo cancellation, or claim full-duplex behavior. Current speaker output is a guarded CoreS3 build path and still needs physical hardware acceptance before it counts as real user-facing playback.
+The firmware still does not run VAD on device, prove acoustic echo cancellation, prove physical microphone quality, or claim full-duplex behavior. Current mic uplink and speaker output are guarded CoreS3 build paths and still need physical hardware acceptance before they count as real user-facing audio.
 
 Servo safety currently lives in `a21_firmware_config.h`:
 

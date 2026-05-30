@@ -117,6 +117,45 @@ inline int8_t a21Base64Value(char value) {
   return -1;
 }
 
+inline char a21Base64Char(uint8_t value) {
+  static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  return alphabet[value & 0x3F];
+}
+
+inline uint8_t a21PCM16ByteAt(const int16_t* samples, size_t byte_index) {
+  const uint16_t sample = static_cast<uint16_t>(samples[byte_index / 2]);
+  if ((byte_index % 2) == 0) {
+    return static_cast<uint8_t>(sample & 0xFF);
+  }
+  return static_cast<uint8_t>((sample >> 8) & 0xFF);
+}
+
+inline bool a21EncodePCM16Base64(
+    const int16_t* samples,
+    size_t sample_count,
+    char* output,
+    size_t output_size) {
+  if (samples == nullptr || output == nullptr || sample_count != A21_AUDIO_PCM_FRAME_SAMPLES ||
+      output_size <= A21_AUDIO_PCM_FRAME_BASE64_CHARS) {
+    return false;
+  }
+
+  size_t out = 0;
+  for (size_t i = 0; i < A21_AUDIO_PCM_FRAME_BYTES; i += 3) {
+    const size_t remaining = A21_AUDIO_PCM_FRAME_BYTES - i;
+    const uint8_t b0 = a21PCM16ByteAt(samples, i);
+    const uint8_t b1 = remaining > 1 ? a21PCM16ByteAt(samples, i + 1) : 0;
+    const uint8_t b2 = remaining > 2 ? a21PCM16ByteAt(samples, i + 2) : 0;
+
+    output[out++] = a21Base64Char(static_cast<uint8_t>(b0 >> 2));
+    output[out++] = a21Base64Char(static_cast<uint8_t>(((b0 & 0x03) << 4) | (b1 >> 4)));
+    output[out++] = remaining > 1 ? a21Base64Char(static_cast<uint8_t>(((b1 & 0x0F) << 2) | (b2 >> 6))) : '=';
+    output[out++] = remaining > 2 ? a21Base64Char(static_cast<uint8_t>(b2 & 0x3F)) : '=';
+  }
+  output[out] = '\0';
+  return out == A21_AUDIO_PCM_FRAME_BASE64_CHARS;
+}
+
 inline bool a21FillPCM16SilenceBase64(char* output, size_t output_size) {
   if (output == nullptr || output_size <= A21_AUDIO_PCM_FRAME_BASE64_CHARS) {
     return false;

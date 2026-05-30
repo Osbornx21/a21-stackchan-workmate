@@ -1393,6 +1393,75 @@ void test_mic_capture_reports_driver_failure() {
   TEST_ASSERT_EQUAL_UINT32(1, runtime.driver_errors);
 }
 
+void test_pcm16_base64_encoder_preserves_nonzero_samples() {
+  int16_t samples[A21_AUDIO_PCM_FRAME_SAMPLES];
+  for (size_t i = 0; i < A21_AUDIO_PCM_FRAME_SAMPLES; ++i) {
+    samples[i] = static_cast<int16_t>(i % 2 == 0 ? 1234 : -1234);
+  }
+
+  char encoded[A21_AUDIO_DATA_BASE64_CAP];
+  TEST_ASSERT_TRUE(a21EncodePCM16Base64(samples, A21_AUDIO_PCM_FRAME_SAMPLES, encoded, sizeof(encoded)));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BASE64_CHARS), static_cast<uint32_t>(strlen(encoded)));
+
+  A21AudioPCMFrame decoded;
+  TEST_ASSERT_TRUE(a21DecodeBase64PCM16(encoded, &decoded));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_BYTES), static_cast<uint32_t>(decoded.byte_count));
+
+  const uint16_t first = static_cast<uint16_t>(decoded.data[0]) | (static_cast<uint16_t>(decoded.data[1]) << 8);
+  const uint16_t second = static_cast<uint16_t>(decoded.data[2]) | (static_cast<uint16_t>(decoded.data[3]) << 8);
+  TEST_ASSERT_EQUAL_INT16(1234, static_cast<int16_t>(first));
+  TEST_ASSERT_EQUAL_INT16(-1234, static_cast<int16_t>(second));
+}
+
+void test_audio_ws_sends_queued_mic_capture_frame_with_real_pcm_payload() {
+  A21AudioWSRuntime audio_runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  A21MicCaptureRuntime mic_runtime;
+  A21MicFrameQueue mic_queue;
+  FakeMicDriver fake_mic;
+  A21MicDriver mic_driver;
+  FakeGatewayWSDriver fake_ws;
+  A21AudioWSDriver audio_driver;
+  initFakeMicDriver(&fake_mic, &mic_driver);
+  initFakeAudioWSDriver(&fake_ws, &audio_driver);
+  fake_ws.connected = true;
+  fake_mic.fill_sample = 3210;
+  a21InitAudioWSRuntime(&audio_runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21InitMicCaptureRuntime(&mic_runtime);
+  a21InitMicFrameQueue(&mic_queue);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 1600);
+  state.render_state = A21_RENDER_LISTENING;
+
+  TEST_ASSERT_TRUE(a21MicCaptureTick(&mic_runtime, &mic_driver, &state, 0, 5020));
+  TEST_ASSERT_TRUE(a21MicFrameQueuePushCapture(&mic_queue, &mic_runtime));
+  TEST_ASSERT_EQUAL_UINT8(1, mic_queue.queued_frames);
+
+  TEST_ASSERT_TRUE(a21AudioWSSendNextMicFrame(&audio_runtime, &audio_driver, &connection, &state, &mic_queue, 5030));
+
+  TEST_ASSERT_EQUAL(1, fake_ws.send_count);
+  TEST_ASSERT_EQUAL_UINT8(0, mic_queue.queued_frames);
+  TEST_ASSERT_EQUAL_UINT32(1, audio_runtime.sent_audio_frames);
+  TEST_ASSERT_EQUAL_UINT64(2, audio_runtime.next_seq);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake_ws.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("a21.device.v1", doc["protocol"] | "");
+  TEST_ASSERT_EQUAL_STRING("stackchan-001", doc["device_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("audio.frame", doc["kind"] | "");
+  TEST_ASSERT_EQUAL_STRING("a21-trace-audio-000001", doc["trace_id"] | "");
+  TEST_ASSERT_EQUAL_INT64(5030, doc["sent_at_ms"] | 0);
+  TEST_ASSERT_EQUAL_INT64(5000, doc["payload"]["capture_started_at_ms"] | 0);
+  TEST_ASSERT_EQUAL_INT64(5020, doc["payload"]["capture_ended_at_ms"] | 0);
+
+  const char* data_base64 = doc["payload"]["data_base64"] | "";
+  A21AudioPCMFrame frame;
+  TEST_ASSERT_TRUE(a21DecodeBase64PCM16(data_base64, &frame));
+  const uint16_t first = static_cast<uint16_t>(frame.data[0]) | (static_cast<uint16_t>(frame.data[1]) << 8);
+  TEST_ASSERT_EQUAL_INT16(3210, static_cast<int16_t>(first));
+}
+
 void test_audio_ws_buffers_playback_chunk_without_error_state() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1806,6 +1875,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_mic_capture_skips_when_speaker_queue_is_active);
   RUN_TEST(test_mic_capture_skips_when_render_state_is_speaking);
   RUN_TEST(test_mic_capture_reports_driver_failure);
+  RUN_TEST(test_pcm16_base64_encoder_preserves_nonzero_samples);
+  RUN_TEST(test_audio_ws_sends_queued_mic_capture_frame_with_real_pcm_payload);
   RUN_TEST(test_audio_ws_buffers_playback_chunk_without_error_state);
   RUN_TEST(test_audio_playback_buffer_clears_on_barge_in_state);
   RUN_TEST(test_audio_ws_send_mock_frame_rejects_when_audio_not_connected);

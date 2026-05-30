@@ -70,7 +70,7 @@ Current mock audio payload:
 - device frame duration: 20 ms or 40 ms for LAN responsiveness
 - provider aggregation: adapter-specific, often 100-200 ms
 
-The current firmware mock uplink emits the first safe subset as a complete deterministic silence payload: `pcm_s16le`, 16 kHz, mono, 20 ms. Each mock `audio.frame` contains 640 raw PCM bytes encoded as an 856-character base64 string, so Gateway ingress, VAD, and WebSocket sizing are exercised with real frame dimensions instead of a tiny placeholder payload.
+The firmware supports two uplink sources with the same A21 `audio.frame` shape. The debug/mock path emits a complete deterministic silence payload: `pcm_s16le`, 16 kHz, mono, 20 ms. The guarded mic path records one capture-safe PCM16 frame, puts it through a bounded firmware queue, base64-encodes the real samples, and sends the same envelope shape. Each frame contains 640 raw PCM bytes encoded as an 856-character base64 string, so Gateway ingress, VAD, and WebSocket sizing are exercised with real frame dimensions instead of a tiny placeholder payload.
 
 Device uplink uses `audio.frame`.
 
@@ -85,7 +85,7 @@ Gateway downlink uses `audio.playback.chunk` with the same A21 envelope and a pl
 
 The current Gateway mock downlink emits a complete deterministic silence payload for the first safe subset: `pcm_s16le`, 16 kHz, mono, 20 ms chunks. Each chunk contains 640 raw PCM bytes encoded in `data_base64`, which is large enough to exercise the real envelope size, client decode path, and firmware buffering boundary instead of relying on a placeholder string.
 
-This proves A21 protocol shape, trace/session propagation, Gateway-to-device media direction, simulator PCM scheduling, and firmware buffering/cancellation semantics. It does not prove real provider TTS, hardware speaker output, mouth sync, or full-duplex capture.
+This proves A21 protocol shape, trace/session propagation, device-to-Gateway and Gateway-to-device media envelope direction, simulator PCM scheduling, and firmware buffering/cancellation semantics. It does not prove real provider TTS, physical speaker output, physical microphone quality, mouth sync, or full-duplex capture.
 
 For a single mock trace/session, Gateway keeps the same `stream_id` across consecutive playback chunks. New traces may allocate a new stream. This mirrors the future TTS stream contract and prevents device/simulator buffers from treating every chunk as a replacement stream.
 

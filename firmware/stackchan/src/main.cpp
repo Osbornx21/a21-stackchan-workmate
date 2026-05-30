@@ -7,6 +7,7 @@
 #include "a21_firmware_audio_ws.h"
 #include "a21_firmware_connection.h"
 #include "a21_firmware_gateway_ws.h"
+#include "a21_firmware_mic.h"
 #include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_playback.h"
@@ -104,6 +105,8 @@ A21TouchRuntime g_touch_runtime;
 A21PlaybackRuntime g_playback_runtime;
 A21AudioPlaybackBuffer g_audio_playback_buffer;
 A21SpeakerPumpRuntime g_speaker_pump_runtime;
+A21MicCaptureRuntime g_mic_capture_runtime;
+A21MicFrameQueue g_mic_frame_queue;
 
 static constexpr size_t A21_ARDUINO_WS_TEXT_MESSAGE_CAP =
     A21_AUDIO_WS_TEXT_MESSAGE_CAP > A21_WS_TEXT_MESSAGE_CAP ? A21_AUDIO_WS_TEXT_MESSAGE_CAP : A21_WS_TEXT_MESSAGE_CAP;
@@ -305,12 +308,20 @@ A21TouchDriver g_touch_driver = {
     arduinoTouchRead,
 };
 
+void arduinoEndMicForSpeaker() {
+  if (!M5.Mic.isEnabled()) {
+    return;
+  }
+  while (M5.Mic.isRecording()) {
+    M5.delay(1);
+  }
+  M5.Mic.end();
+}
+
 bool arduinoPlaybackStart(void* ctx, const char* stream_id) {
   (void)ctx;
   (void)stream_id;
-  if (!M5.Speaker.isEnabled()) {
-    return true;
-  }
+  arduinoEndMicForSpeaker();
   return M5.Speaker.begin();
 }
 
@@ -341,9 +352,10 @@ size_t arduinoSpeakerQueued(void* ctx, uint8_t channel) {
 
 bool arduinoSpeakerPlayPCM16(void* ctx, const int16_t* samples, size_t sample_count, uint32_t sample_rate_hz, uint8_t channel) {
   (void)ctx;
-  if (samples == nullptr || sample_count == 0 || !M5.Speaker.isEnabled()) {
+  if (samples == nullptr || sample_count == 0) {
     return false;
   }
+  arduinoEndMicForSpeaker();
   if (!M5.Speaker.begin()) {
     return false;
   }
@@ -354,6 +366,33 @@ A21SpeakerDriver g_speaker_driver = {
     nullptr,
     arduinoSpeakerQueued,
     arduinoSpeakerPlayPCM16,
+};
+
+bool arduinoMicEnabled(void* ctx) {
+  (void)ctx;
+  return !M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL);
+}
+
+bool arduinoMicRecordPCM16(void* ctx, int16_t* samples, size_t sample_count, uint32_t sample_rate_hz) {
+  (void)ctx;
+  if (samples == nullptr || sample_count != A21_AUDIO_PCM_FRAME_SAMPLES ||
+      sample_rate_hz != A21_AUDIO_PCM_SAMPLE_RATE_HZ ||
+      M5.Speaker.isPlaying(A21_SPEAKER_CHANNEL)) {
+    return false;
+  }
+  if (M5.Speaker.isEnabled()) {
+    M5.Speaker.end();
+  }
+  if (!M5.Mic.isEnabled() && !M5.Mic.begin()) {
+    return false;
+  }
+  return M5.Mic.record(samples, sample_count, sample_rate_hz, false);
+}
+
+A21MicDriver g_mic_driver = {
+    nullptr,
+    arduinoMicEnabled,
+    arduinoMicRecordPCM16,
 };
 
 void handleLocalControls(uint32_t now_ms) {
@@ -416,6 +455,8 @@ void setup() {
   a21InitPlaybackRuntime(&g_playback_runtime);
   a21InitAudioPlaybackBuffer(&g_audio_playback_buffer);
   a21InitSpeakerPumpRuntime(&g_speaker_pump_runtime);
+  a21InitMicCaptureRuntime(&g_mic_capture_runtime);
+  a21InitMicFrameQueue(&g_mic_frame_queue);
   g_touch_state.has_sample = false;
   g_touch_state.sample = {A21_TOUCH_SOURCE_SCREEN, A21_TOUCH_INTENT_NONE};
   if (!a21ValidateNetworkConfig(&g_network)) {
@@ -442,6 +483,19 @@ void loop() {
   a21PlaybackRuntimeApplyState(&g_playback_runtime, &g_playback_driver, &g_state);
   a21SpeakerPumpTick(&g_speaker_pump_runtime, &g_speaker_driver, &g_state, &g_audio_playback_buffer);
   a21AudioPlaybackBufferApplyState(&g_audio_playback_buffer, &g_state);
+  const size_t speaker_queue_depth = g_speaker_driver.queued(g_speaker_driver.ctx, A21_SPEAKER_CHANNEL);
+  const uint32_t mic_frames_before = g_mic_capture_runtime.frames_captured;
+  if (a21MicCaptureTick(&g_mic_capture_runtime, &g_mic_driver, &g_state, speaker_queue_depth, now_ms) &&
+      g_mic_capture_runtime.frames_captured > mic_frames_before) {
+    a21MicFrameQueuePushCapture(&g_mic_frame_queue, &g_mic_capture_runtime);
+  }
+  a21AudioWSSendNextMicFrame(
+      &g_audio_ws_runtime,
+      &g_audio_ws_driver,
+      &g_connection,
+      &g_state,
+      &g_mic_frame_queue,
+      now_ms);
   a21MotionRuntimeApplyState(&g_motion_runtime, &g_motion_driver, &g_state);
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);

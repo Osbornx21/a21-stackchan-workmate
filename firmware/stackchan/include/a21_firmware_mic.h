@@ -6,10 +6,27 @@
 #include <stddef.h>
 #include <stdint.h>
 
+static constexpr uint8_t A21_MIC_FRAME_QUEUE_CAP = 4;
+
 struct A21MicDriver {
   void* ctx;
   bool (*enabled)(void* ctx);
   bool (*record_pcm16)(void* ctx, int16_t* samples, size_t sample_count, uint32_t sample_rate_hz);
+};
+
+struct A21MicFrame {
+  int16_t samples[A21_AUDIO_PCM_FRAME_SAMPLES];
+  uint32_t capture_started_at_ms;
+  uint32_t capture_ended_at_ms;
+};
+
+struct A21MicFrameQueue {
+  A21MicFrame frames[A21_MIC_FRAME_QUEUE_CAP];
+  uint8_t queued_frames;
+  uint8_t read_index;
+  uint8_t write_index;
+  uint32_t total_frames;
+  uint32_t dropped_frames;
 };
 
 struct A21MicCaptureRuntime {
@@ -25,6 +42,31 @@ struct A21MicCaptureRuntime {
 
 inline bool a21MicDriverReady(const A21MicDriver* driver) {
   return driver != nullptr && driver->enabled != nullptr && driver->record_pcm16 != nullptr;
+}
+
+inline void a21ResetMicFrame(A21MicFrame* frame) {
+  if (frame == nullptr) {
+    return;
+  }
+  for (uint16_t i = 0; i < A21_AUDIO_PCM_FRAME_SAMPLES; ++i) {
+    frame->samples[i] = 0;
+  }
+  frame->capture_started_at_ms = 0;
+  frame->capture_ended_at_ms = 0;
+}
+
+inline void a21InitMicFrameQueue(A21MicFrameQueue* queue) {
+  if (queue == nullptr) {
+    return;
+  }
+  for (uint8_t i = 0; i < A21_MIC_FRAME_QUEUE_CAP; ++i) {
+    a21ResetMicFrame(&queue->frames[i]);
+  }
+  queue->queued_frames = 0;
+  queue->read_index = 0;
+  queue->write_index = 0;
+  queue->total_frames = 0;
+  queue->dropped_frames = 0;
 }
 
 inline void a21InitMicCaptureRuntime(A21MicCaptureRuntime* runtime) {
@@ -89,5 +131,48 @@ inline bool a21MicCaptureTick(
   runtime->frames_captured += 1;
   runtime->capture_ended_at_ms = now_ms;
   runtime->capture_started_at_ms = now_ms >= A21_AUDIO_PCM_DURATION_MS ? now_ms - A21_AUDIO_PCM_DURATION_MS : 0;
+  return true;
+}
+
+inline bool a21MicFrameQueuePushCapture(A21MicFrameQueue* queue, const A21MicCaptureRuntime* runtime) {
+  if (queue == nullptr || runtime == nullptr || runtime->capture_ended_at_ms == 0) {
+    return false;
+  }
+  if (queue->queued_frames >= A21_MIC_FRAME_QUEUE_CAP) {
+    a21ResetMicFrame(&queue->frames[queue->read_index]);
+    queue->read_index = static_cast<uint8_t>((queue->read_index + 1) % A21_MIC_FRAME_QUEUE_CAP);
+    queue->queued_frames -= 1;
+    queue->dropped_frames += 1;
+  }
+
+  A21MicFrame* frame = &queue->frames[queue->write_index];
+  for (uint16_t i = 0; i < A21_AUDIO_PCM_FRAME_SAMPLES; ++i) {
+    frame->samples[i] = runtime->samples[i];
+  }
+  frame->capture_started_at_ms = runtime->capture_started_at_ms;
+  frame->capture_ended_at_ms = runtime->capture_ended_at_ms;
+  queue->write_index = static_cast<uint8_t>((queue->write_index + 1) % A21_MIC_FRAME_QUEUE_CAP);
+  queue->queued_frames += 1;
+  queue->total_frames += 1;
+  return true;
+}
+
+inline const A21MicFrame* a21MicFrameQueuePeek(const A21MicFrameQueue* queue) {
+  if (queue == nullptr || queue->queued_frames == 0) {
+    return nullptr;
+  }
+  return &queue->frames[queue->read_index];
+}
+
+inline bool a21MicFrameQueuePop(A21MicFrameQueue* queue, A21MicFrame* output) {
+  if (queue == nullptr || queue->queued_frames == 0) {
+    return false;
+  }
+  if (output != nullptr) {
+    *output = queue->frames[queue->read_index];
+  }
+  a21ResetMicFrame(&queue->frames[queue->read_index]);
+  queue->read_index = static_cast<uint8_t>((queue->read_index + 1) % A21_MIC_FRAME_QUEUE_CAP);
+  queue->queued_frames -= 1;
   return true;
 }

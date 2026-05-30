@@ -2,6 +2,7 @@
 
 #include "a21_firmware_audio_playback.h"
 #include "a21_firmware_connection.h"
+#include "a21_firmware_mic.h"
 #include "a21_firmware_network.h"
 #include "a21_firmware_state.h"
 
@@ -95,6 +96,48 @@ inline bool a21AudioWSBuildMockFrame(
   return written > 0 && written < output_size;
 }
 
+inline bool a21AudioWSBuildMicFrame(
+    const A21AudioWSRuntime* runtime,
+    const A21FirmwareState* state,
+    const A21MicFrame* frame,
+    uint32_t now_ms,
+    char* output,
+    size_t output_size) {
+  if (runtime == nullptr || state == nullptr || frame == nullptr || output == nullptr || output_size == 0) {
+    return false;
+  }
+  output[0] = '\0';
+
+  char data_base64[A21_AUDIO_DATA_BASE64_CAP];
+  if (!a21EncodePCM16Base64(frame->samples, A21_AUDIO_PCM_FRAME_SAMPLES, data_base64, sizeof(data_base64))) {
+    return false;
+  }
+
+  char trace_id[A21_TRACE_ID_CAP];
+  snprintf(trace_id, sizeof(trace_id), "a21-trace-audio-%06llu", static_cast<unsigned long long>(runtime->next_seq));
+
+  JsonDocument doc;
+  doc["protocol"] = "a21.device.v1";
+  doc["device_id"] = state->device_id;
+  doc["kind"] = "audio.frame";
+  doc["seq"] = runtime->next_seq;
+  doc["trace_id"] = trace_id;
+  doc["session_id"] = state->session_id[0] == '\0' ? "a21-session-device" : state->session_id;
+  doc["sent_at_ms"] = now_ms;
+
+  JsonObject payload = doc["payload"].to<JsonObject>();
+  payload["codec"] = "pcm_s16le";
+  payload["sample_rate_hz"] = A21_AUDIO_PCM_SAMPLE_RATE_HZ;
+  payload["channels"] = A21_AUDIO_PCM_CHANNELS;
+  payload["duration_ms"] = A21_AUDIO_PCM_DURATION_MS;
+  payload["capture_started_at_ms"] = frame->capture_started_at_ms;
+  payload["capture_ended_at_ms"] = frame->capture_ended_at_ms;
+  payload["data_base64"] = data_base64;
+
+  const size_t written = serializeJson(doc, output, output_size);
+  return written > 0 && written < output_size;
+}
+
 inline bool a21AudioWSSendMockFrame(
     A21AudioWSRuntime* runtime,
     const A21AudioWSDriver* driver,
@@ -115,6 +158,39 @@ inline bool a21AudioWSSendMockFrame(
   if (!driver->send_text(driver->ctx, message)) {
     return false;
   }
+  runtime->sent_audio_frames += 1;
+  runtime->next_seq += 1;
+  return true;
+}
+
+inline bool a21AudioWSSendNextMicFrame(
+    A21AudioWSRuntime* runtime,
+    const A21AudioWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    A21MicFrameQueue* mic_queue,
+    uint32_t now_ms) {
+  if (runtime == nullptr || !a21AudioWSDriverReady(driver) || connection == nullptr || state == nullptr ||
+      mic_queue == nullptr) {
+    return false;
+  }
+  if (connection->phase != A21_CONN_GATEWAY_CONNECTED || !driver->connected(driver->ctx)) {
+    return false;
+  }
+
+  const A21MicFrame* frame = a21MicFrameQueuePeek(mic_queue);
+  if (frame == nullptr) {
+    return false;
+  }
+
+  char message[A21_AUDIO_WS_TEXT_MESSAGE_CAP];
+  if (!a21AudioWSBuildMicFrame(runtime, state, frame, now_ms, message, sizeof(message))) {
+    return false;
+  }
+  if (!driver->send_text(driver->ctx, message)) {
+    return false;
+  }
+  a21MicFrameQueuePop(mic_queue, nullptr);
   runtime->sent_audio_frames += 1;
   runtime->next_seq += 1;
   return true;
