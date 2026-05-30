@@ -156,30 +156,41 @@ type AudioChunk struct {
 }
 
 func ValidateAudioChunk(chunk AudioChunk) error {
-	if chunk.Codec != AudioCodecPCMS16LE {
-		return fmt.Errorf("audio codec %q is unsupported", chunk.Codec)
+	return validatePCM16Audio(chunk.Codec, chunk.SampleRateHz, chunk.Channels, chunk.DurationMS, chunk.DataBase64)
+}
+
+func ValidateAudioPlaybackChunk(chunk AudioPlaybackChunk) error {
+	if chunk.StreamID == "" {
+		return fmt.Errorf("audio playback stream_id is required")
 	}
-	switch chunk.SampleRateHz {
+	return validatePCM16Audio(chunk.Codec, chunk.SampleRateHz, chunk.Channels, chunk.DurationMS, chunk.DataBase64)
+}
+
+func validatePCM16Audio(codec AudioCodec, sampleRateHz int, channels int, durationMS int, dataBase64 string) error {
+	if codec != AudioCodecPCMS16LE {
+		return fmt.Errorf("audio codec %q is unsupported", codec)
+	}
+	switch sampleRateHz {
 	case 16000, 24000, 48000:
 	default:
-		return fmt.Errorf("audio sample_rate_hz %d is unsupported", chunk.SampleRateHz)
+		return fmt.Errorf("audio sample_rate_hz %d is unsupported", sampleRateHz)
 	}
-	if chunk.Channels != 1 {
-		return fmt.Errorf("audio channels %d is unsupported", chunk.Channels)
+	if channels != 1 {
+		return fmt.Errorf("audio channels %d is unsupported", channels)
 	}
-	switch chunk.DurationMS {
+	switch durationMS {
 	case 20, 40:
 	default:
-		return fmt.Errorf("audio duration_ms %d is unsupported", chunk.DurationMS)
+		return fmt.Errorf("audio duration_ms %d is unsupported", durationMS)
 	}
-	if chunk.DataBase64 == "" {
+	if dataBase64 == "" {
 		return fmt.Errorf("audio data_base64 is required")
 	}
-	data, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+	data, err := base64.StdEncoding.DecodeString(dataBase64)
 	if err != nil {
 		return fmt.Errorf("audio data_base64 is invalid: %w", err)
 	}
-	expectedBytes := chunk.SampleRateHz * chunk.DurationMS * chunk.Channels * 2 / 1000
+	expectedBytes := sampleRateHz * durationMS * channels * 2 / 1000
 	if len(data) != expectedBytes {
 		return fmt.Errorf("audio pcm byte length %d does not match expected %d", len(data), expectedBytes)
 	}

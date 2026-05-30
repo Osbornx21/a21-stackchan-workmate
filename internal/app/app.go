@@ -37,6 +37,7 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
+var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
 
 const (
 	stackChanSpeakerProbeChunkDurationMS = 20
@@ -170,6 +171,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanHalfDuplexAcceptance(args[1:], stdout, stderr)
 	case "stackchan-speaker-acceptance":
 		return runStackChanSpeakerAcceptance(args[1:], stdout, stderr)
+	case "stackchan-local-tts-playback":
+		return runStackChanLocalTTSPlayback(args[1:], stdout, stderr)
 	case "stackchan-touch-acceptance":
 		return runStackChanTouchAcceptance(args[1:], stdout, stderr)
 	case "stackchan-hardware-mainline":
@@ -723,13 +726,23 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 
 func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	text := "A21 本地语音链路测试。"
+	engine := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TTS_ENGINE"), "sherpa_onnx"))
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
+	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
+	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-tts-smoke [--text <text>] [--voice Tingting] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-tts-smoke [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--output-dir reports]")
 			return 0
+		case "--engine":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--engine requires a value")
+				return 2
+			}
+			i++
+			engine = args[i]
 		case "--text":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--text requires a value")
@@ -744,6 +757,25 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			}
 			i++
 			voice = args[i]
+		case "--model-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--model-dir requires a value")
+				return 2
+			}
+			i++
+			modelDir = args[i]
+		case "--speaker-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--speaker-id requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--speaker-id must be a positive integer")
+				return 2
+			}
+			speakerID = value
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -760,9 +792,12 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "local TTS report dir invalid: %v\n", err)
 		return 1
 	}
-	report, err := synthesizeMacOSSay(context.Background(), audio.LocalTTSOptions{
+	report, err := synthesizeLocalTTS(context.Background(), localTTSRuntimeOptions{
+		Engine:    engine,
 		Text:      text,
 		Voice:     voice,
+		ModelDir:  modelDir,
+		SpeakerID: speakerID,
 		OutputDir: outputDir,
 	})
 	if err != nil {
@@ -785,11 +820,56 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+type localTTSRuntimeOptions struct {
+	Engine    string
+	Text      string
+	Voice     string
+	ModelDir  string
+	SpeakerID int
+	OutputDir string
+}
+
+func synthesizeLocalTTS(ctx context.Context, options localTTSRuntimeOptions) (audio.LocalTTSReport, error) {
+	engine, err := normalizeLocalTTSEngine(options.Engine)
+	if err != nil {
+		return audio.LocalTTSReport{}, err
+	}
+	ttsOptions := audio.LocalTTSOptions{
+		Text:      options.Text,
+		Voice:     options.Voice,
+		OutputDir: options.OutputDir,
+		ModelDir:  options.ModelDir,
+		SpeakerID: options.SpeakerID,
+	}
+	switch engine {
+	case "macos_say":
+		return synthesizeMacOSSay(ctx, ttsOptions)
+	case "sherpa_onnx":
+		return synthesizeSherpaONNX(ctx, ttsOptions)
+	default:
+		return audio.LocalTTSReport{}, fmt.Errorf("unsupported local TTS engine")
+	}
+}
+
+func normalizeLocalTTSEngine(raw string) (string, error) {
+	engine := strings.ToLower(strings.TrimSpace(firstNonEmpty(raw, "sherpa_onnx")))
+	engine = strings.ReplaceAll(engine, "-", "_")
+	switch engine {
+	case "sherpa", "sherpa_onnx":
+		return "sherpa_onnx", nil
+	case "macos", "macos_say", "say":
+		return "macos_say", nil
+	default:
+		return "", fmt.Errorf("unsupported local TTS engine")
+	}
+}
+
 type localVoiceLoopbackReport struct {
 	SchemaVersion             string               `json:"schema_version"`
 	GeneratedAtMS             int64                `json:"generated_at_ms"`
 	Metadata                  latencyBenchMetadata `json:"metadata"`
 	Status                    string               `json:"status"`
+	Repeat                    int                  `json:"repeat"`
 	InputTextBytes            int                  `json:"input_text_bytes"`
 	VADStatus                 string               `json:"vad_status"`
 	VADDetector               string               `json:"vad_detector"`
@@ -808,6 +888,10 @@ type localVoiceLoopbackReport struct {
 	TTSOutputFormat           string               `json:"tts_output_format"`
 	TTSAudioPath              string               `json:"tts_audio_path,omitempty"`
 	TTSFirstAudioMS           float64              `json:"tts_first_audio_ms"`
+	TTSFirstAudioP50MS        float64              `json:"tts_first_audio_p50_ms,omitempty"`
+	TTSFirstAudioP95MS        float64              `json:"tts_first_audio_p95_ms,omitempty"`
+	FirstAudioTotalP50MS      float64              `json:"first_audio_total_p50_ms,omitempty"`
+	FirstAudioTotalP95MS      float64              `json:"first_audio_total_p95_ms,omitempty"`
 	TotalDurationMS           float64              `json:"total_duration_ms"`
 	BargeInStatus             string               `json:"barge_in_status"`
 	BargeInStopP95MS          float64              `json:"barge_in_stop_p95_ms,omitempty"`
@@ -815,15 +899,51 @@ type localVoiceLoopbackReport struct {
 	Findings                  []string             `json:"findings,omitempty"`
 }
 
+type stackChanLocalTTSPlaybackReport struct {
+	SchemaVersion           string               `json:"schema_version"`
+	GeneratedAtMS           int64                `json:"generated_at_ms"`
+	Metadata                latencyBenchMetadata `json:"metadata"`
+	Status                  string               `json:"status"`
+	GatewayURL              string               `json:"gateway_url"`
+	DeviceID                string               `json:"device_id"`
+	TraceID                 string               `json:"trace_id"`
+	SessionID               string               `json:"session_id"`
+	StreamID                string               `json:"stream_id"`
+	InputTextBytes          int                  `json:"input_text_bytes"`
+	TTSProvider             string               `json:"tts_provider"`
+	TTSEngine               string               `json:"tts_engine,omitempty"`
+	TTSVoice                string               `json:"tts_voice"`
+	TTSOutputFormat         string               `json:"tts_output_format"`
+	TTSAudioPath            string               `json:"tts_audio_path,omitempty"`
+	TTSFirstAudioMS         float64              `json:"tts_first_audio_ms"`
+	PlaybackChunks          int                  `json:"playback_chunks"`
+	PlaybackBatches         int                  `json:"playback_batches"`
+	ExpectedAudioDurationMS int                  `json:"expected_audio_duration_ms"`
+	PhysicalSoundObserved   bool                 `json:"physical_sound_observed"`
+	ReportPath              string               `json:"report_path,omitempty"`
+	Findings                []string             `json:"findings,omitempty"`
+}
+
 func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) int {
 	inputText := "A21 本地语音 loopback 测试。"
+	engine := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TTS_ENGINE"), "sherpa_onnx"))
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
+	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
+	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	repeat := parsePositiveIntOrDefault(os.Getenv("A21_LOCAL_VOICE_LOOPBACK_REPEAT"), 1)
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--text <text>] [--voice Tingting] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
 			return 0
+		case "--engine":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--engine requires a value")
+				return 2
+			}
+			i++
+			engine = args[i]
 		case "--text":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--text requires a value")
@@ -838,6 +958,37 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 			}
 			i++
 			voice = args[i]
+		case "--model-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--model-dir requires a value")
+				return 2
+			}
+			i++
+			modelDir = args[i]
+		case "--speaker-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--speaker-id requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--speaker-id must be a positive integer")
+				return 2
+			}
+			speakerID = value
+		case "--repeat":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--repeat requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprintln(stderr, "--repeat must be a positive integer")
+				return 2
+			}
+			repeat = value
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -854,7 +1005,14 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 		fmt.Fprintf(stderr, "local voice loopback report dir invalid: %v\n", err)
 		return 1
 	}
-	report, err := buildLocalVoiceLoopbackReport(context.Background(), inputText, voice, outputDir)
+	report, err := buildLocalVoiceLoopbackReport(context.Background(), localTTSRuntimeOptions{
+		Engine:    engine,
+		Text:      inputText,
+		Voice:     voice,
+		ModelDir:  modelDir,
+		SpeakerID: speakerID,
+		OutputDir: outputDir,
+	}, repeat)
 	if err != nil {
 		fmt.Fprintf(stderr, "local voice loopback failed: %v\n", err)
 		return 1
@@ -875,7 +1033,10 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	return 0
 }
 
-func buildLocalVoiceLoopbackReport(ctx context.Context, inputText string, voice string, outputDir string) (localVoiceLoopbackReport, error) {
+func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, repeat int) (localVoiceLoopbackReport, error) {
+	if repeat <= 0 {
+		repeat = 1
+	}
 	start := time.Now()
 	frontEnd := audio.RunMockFrontEndEval()
 	report := localVoiceLoopbackReport{
@@ -883,7 +1044,8 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, inputText string, voice 
 		GeneratedAtMS:        time.Now().UnixMilli(),
 		Metadata:             buildLatencyBenchMetadata(),
 		Status:               "failed",
-		InputTextBytes:       len([]byte(inputText)),
+		Repeat:               repeat,
+		InputTextBytes:       len([]byte(ttsOptions.Text)),
 		VADStatus:            frontEnd.Status,
 		VADDetector:          frontEnd.Detector,
 		VADSpeechStartEvents: frontEnd.SpeechStartEvents,
@@ -923,20 +1085,31 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, inputText string, voice 
 		return report, nil
 	}
 
-	ttsReport, err := synthesizeMacOSSay(ctx, audio.LocalTTSOptions{Text: ttsText, Voice: voice, OutputDir: outputDir})
-	if err != nil {
-		report.Findings = append(report.Findings, "local TTS failed")
-		return report, err
+	ttsSamples := make([]time.Duration, 0, repeat)
+	firstAudioTotalSamples := make([]time.Duration, 0, repeat)
+	for sample := 0; sample < repeat; sample++ {
+		ttsOptions.Text = ttsText
+		ttsReport, err := synthesizeLocalTTS(ctx, ttsOptions)
+		if err != nil {
+			report.Findings = append(report.Findings, "local TTS failed")
+			return report, err
+		}
+		report.TTSProvider = ttsReport.Provider
+		report.TTSVoice = ttsReport.Voice
+		report.TTSOutputFormat = ttsReport.OutputFormat
+		report.TTSAudioPath = ttsReport.OutputPath
+		report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
+		if ttsReport.Status != "passed" {
+			report.Findings = append(report.Findings, "local TTS did not pass")
+			return report, nil
+		}
+		ttsSamples = append(ttsSamples, time.Duration(ttsReport.TTSFirstAudioMS*1000)*time.Microsecond)
+		firstAudioTotalSamples = append(firstAudioTotalSamples, time.Duration((report.ASRFirstPartialMS+report.TextStreamFirstContentMS+ttsReport.TTSFirstAudioMS)*1000)*time.Microsecond)
 	}
-	report.TTSProvider = ttsReport.Provider
-	report.TTSVoice = ttsReport.Voice
-	report.TTSOutputFormat = ttsReport.OutputFormat
-	report.TTSAudioPath = ttsReport.OutputPath
-	report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
-	if ttsReport.Status != "passed" {
-		report.Findings = append(report.Findings, "local TTS did not pass")
-		return report, nil
-	}
+	report.TTSFirstAudioP50MS = percentileMS(ttsSamples, 0.50)
+	report.TTSFirstAudioP95MS = percentileMS(ttsSamples, 0.95)
+	report.FirstAudioTotalP50MS = percentileMS(firstAudioTotalSamples, 0.50)
+	report.FirstAudioTotalP95MS = percentileMS(firstAudioTotalSamples, 0.95)
 
 	bench, err := runMockLatencyBench(1)
 	if err != nil {
@@ -946,6 +1119,189 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, inputText string, voice 
 	report.BargeInStatus = "benchmarked"
 	report.BargeInStopP95MS = bench.Summary.AudioWSBargeInMS.P95MS
 	report.TotalDurationMS = elapsedReportMS(start)
+	report.Status = "passed"
+	return report, nil
+}
+
+func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Writer) int {
+	inputText := "A21 本地语音实机播放测试。"
+	engine := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TTS_ENGINE"), "sherpa_onnx"))
+	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
+	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
+	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	gatewayURL := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080")
+	deviceID := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001")
+	outputDir := "reports"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--output-dir reports]")
+			return 0
+		case "--gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--gateway-url requires a value")
+				return 2
+			}
+			i++
+			gatewayURL = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			deviceID = args[i]
+		case "--engine":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--engine requires a value")
+				return 2
+			}
+			i++
+			engine = args[i]
+		case "--text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--text requires a value")
+				return 2
+			}
+			i++
+			inputText = args[i]
+		case "--voice":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice requires a value")
+				return 2
+			}
+			i++
+			voice = args[i]
+		case "--model-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--model-dir requires a value")
+				return 2
+			}
+			i++
+			modelDir = args[i]
+		case "--speaker-id":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--speaker-id")
+			if !ok {
+				return 2
+			}
+			speakerID = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan-local-tts-playback option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(outputDir); err != nil {
+		fmt.Fprintf(stderr, "stackchan local TTS playback report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := buildStackChanLocalTTSPlaybackReport(context.Background(), localTTSRuntimeOptions{
+		Engine:    engine,
+		Text:      inputText,
+		Voice:     voice,
+		ModelDir:  modelDir,
+		SpeakerID: speakerID,
+		OutputDir: outputDir,
+	}, gatewayURL, deviceID)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan local TTS playback failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeStackChanLocalTTSPlaybackReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write stackchan local TTS playback report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanLocalTTSPlayback(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode stackchan local TTS playback report: %v\n", err)
+		return 1
+	}
+	if report.Status != "passed" {
+		return 1
+	}
+	return 0
+}
+
+func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localTTSRuntimeOptions, gatewayURL string, deviceID string) (stackChanLocalTTSPlaybackReport, error) {
+	generatedAtMS := time.Now().UnixMilli()
+	traceID := fmt.Sprintf("a21-trace-local-tts-playback-%d", generatedAtMS)
+	sessionID := fmt.Sprintf("a21-session-local-tts-playback-%d", generatedAtMS)
+	streamID := fmt.Sprintf("a21-local-tts-playback-stream-%d", generatedAtMS)
+	report := stackChanLocalTTSPlaybackReport{
+		SchemaVersion:         "a21.stackchan_local_tts_playback.v1",
+		GeneratedAtMS:         generatedAtMS,
+		Metadata:              buildLatencyBenchMetadata(),
+		Status:                "failed",
+		GatewayURL:            sanitizedOfficeGatewayURL(gatewayURL),
+		DeviceID:              deviceID,
+		TraceID:               traceID,
+		SessionID:             sessionID,
+		StreamID:              streamID,
+		InputTextBytes:        len([]byte(ttsOptions.Text)),
+		PhysicalSoundObserved: false,
+	}
+	if _, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/devices/control", nil); err != nil {
+		report.Findings = append(report.Findings, err.Error())
+		return report, nil
+	}
+	ttsReport, err := synthesizeLocalTTS(ctx, ttsOptions)
+	if err != nil {
+		report.Findings = append(report.Findings, "local TTS failed")
+		return report, err
+	}
+	report.TTSProvider = ttsReport.Provider
+	report.TTSEngine = ttsReport.Engine
+	report.TTSVoice = ttsReport.Voice
+	report.TTSOutputFormat = ttsReport.OutputFormat
+	report.TTSAudioPath = ttsReport.OutputPath
+	report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
+	if ttsReport.Status != "passed" {
+		report.Findings = append(report.Findings, "local TTS did not pass")
+		return report, nil
+	}
+	pcmChunks, err := audio.ReadPCM16MonoWAVChunks(ttsReport.OutputPath, 20)
+	if err != nil {
+		report.Findings = append(report.Findings, "local TTS wav parse failed")
+		return report, err
+	}
+	report.PlaybackChunks = len(pcmChunks)
+	report.ExpectedAudioDurationMS = len(pcmChunks) * 20
+	for offset := 0; offset < len(pcmChunks); offset += stackChanSpeakerProbeBatchChunks {
+		end := offset + stackChanSpeakerProbeBatchChunks
+		if end > len(pcmChunks) {
+			end = len(pcmChunks)
+		}
+		batch := make([]protocol.AudioPlaybackChunk, 0, end-offset)
+		for _, chunk := range pcmChunks[offset:end] {
+			batch = append(batch, protocol.AudioPlaybackChunk{
+				StreamID:     streamID,
+				Codec:        protocol.AudioCodecPCMS16LE,
+				SampleRateHz: chunk.SampleRateHz,
+				Channels:     chunk.Channels,
+				DurationMS:   chunk.DurationMS,
+				DataBase64:   chunk.DataBase64,
+			})
+		}
+		if _, err := postStackChanAudioPlaybackBatch(gatewayURL, deviceID, traceID, sessionID, streamID, batch); err != nil {
+			report.Findings = append(report.Findings, "device playback delivery failed")
+			return report, err
+		}
+		report.PlaybackBatches++
+		if end < len(pcmChunks) {
+			time.Sleep(time.Duration((end-offset)*20) * time.Millisecond)
+		}
+	}
+	if _, err := postStackChanSpeakerControl(gatewayURL, deviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, streamID, 0); err != nil {
+		report.Findings = append(report.Findings, "device playback idle delivery failed")
+		return report, err
+	}
 	report.Status = "passed"
 	return report, nil
 }
@@ -4556,6 +4912,48 @@ func postStackChanSpeakerControl(gatewayBaseURL string, deviceID string, state p
 	return response, nil
 }
 
+func postStackChanAudioPlaybackBatch(gatewayBaseURL string, deviceID string, traceID string, sessionID string, streamID string, chunks []protocol.AudioPlaybackChunk) (gateway.DeviceControlResponse, error) {
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayBaseURL, "/v1/devices/control", nil)
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	request := gateway.DeviceControlRequest{
+		DeviceID:    deviceID,
+		State:       protocol.ExpressionSpeaking,
+		Mode:        protocol.ModeWorkmate,
+		Text:        "A21 LOCAL TTS",
+		TraceID:     traceID,
+		SessionID:   sessionID,
+		StreamID:    streamID,
+		AudioChunks: chunks,
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	client := http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{Proxy: nil},
+	}
+	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return gateway.DeviceControlResponse{}, fmt.Errorf("gateway device control returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var response gateway.DeviceControlResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return gateway.DeviceControlResponse{}, err
+	}
+	if containsLegacyIdentity(response.TraceID) || containsLegacyIdentity(response.SessionID) || containsLegacyIdentity(response.DeviceID) {
+		return gateway.DeviceControlResponse{}, fmt.Errorf("gateway device control contains forbidden legacy identity")
+	}
+	return response, nil
+}
+
 func postStackChanSpeakerProbeBatches(gatewayBaseURL string, deviceID string, traceID string, sessionID string, streamID string, totalChunks int) (gateway.DeviceControlResponse, error) {
 	remaining := totalChunks
 	var firstControl gateway.DeviceControlResponse
@@ -4906,6 +5304,14 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func parsePositiveIntOrDefault(raw string, fallback int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
 func fetchFirmwareDeviceReport(gatewayBaseURL string) (firmwareDeviceReport, error) {
 	endpoint, safeGatewayURL, err := firmwareDeviceReportEndpoint(gatewayBaseURL)
 	if err != nil {
@@ -5186,6 +5592,23 @@ func writeLocalVoiceLoopbackReport(outputDir string, report localVoiceLoopbackRe
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONLocalVoiceLoopback(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeStackChanLocalTTSPlaybackReport(outputDir string, report stackChanLocalTTSPlaybackReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-stackchan-local-tts-playback-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanLocalTTSPlayback(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -6055,6 +6478,12 @@ func writeJSONLocalTTSSmoke(writer io.Writer, report audio.LocalTTSReport) error
 }
 
 func writeJSONLocalVoiceLoopback(writer io.Writer, report localVoiceLoopbackReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanLocalTTSPlayback(writer io.Writer, report stackChanLocalTTSPlaybackReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

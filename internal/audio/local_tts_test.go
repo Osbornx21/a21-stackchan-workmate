@@ -19,6 +19,9 @@ func (r *fakeTTSCommandRunner) Run(ctx context.Context, name string, args ...str
 		if arg == "-o" && i+1 < len(args) {
 			return os.WriteFile(args[i+1], []byte("a21-aiff"), 0o644)
 		}
+		if arg == "--output" && i+1 < len(args) {
+			return os.WriteFile(args[i+1], []byte("RIFF-a21-sherpa-wav"), 0o644)
+		}
 	}
 	if strings.Contains(name, "afconvert") && len(args) >= 2 {
 		return os.WriteFile(args[len(args)-1], []byte("RIFF-a21-wav"), 0o644)
@@ -76,6 +79,59 @@ func TestMacOSSayLocalTTSRejectsLegacyOutputDir(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected legacy output dir rejection")
+	}
+}
+
+func TestSherpaONNXLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
+	dir := t.TempDir()
+	modelDir := filepath.Join(t.TempDir(), "vits-icefall-zh-aishell3")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"model.onnx", "lexicon.txt", "tokens.txt", "phone.fst", "date.fst", "number.fst"} {
+		if err := os.WriteFile(filepath.Join(modelDir, name), []byte("fixture"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := &fakeTTSCommandRunner{}
+
+	report, err := SynthesizeSherpaONNX(context.Background(), LocalTTSOptions{
+		Text:          "这句话也不能出现在报告里",
+		OutputDir:     dir,
+		CommandRunner: runner,
+		PythonPath:    "/a21/python",
+		ScriptPath:    "/a21/scripts/a21_sherpa_onnx_tts.py",
+		AFConvertPath: "/usr/bin/afconvert",
+		ModelDir:      modelDir,
+		SpeakerID:     21,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Provider != "sherpa_onnx" || report.Engine != "vits_icefall_zh_aishell3" {
+		t.Fatalf("provider/engine = %q/%q", report.Provider, report.Engine)
+	}
+	if report.ModelDir == "" || strings.Contains(report.ModelDir, modelDir) {
+		t.Fatalf("model dir should be labeled, not full path: %q", report.ModelDir)
+	}
+	if report.OutputFormat != "wav_pcm_s16le_16000_mono" || report.OutputBytes <= 0 {
+		t.Fatalf("output = %q bytes=%d", report.OutputFormat, report.OutputBytes)
+	}
+	if len(runner.commands) != 2 {
+		t.Fatalf("commands = %#v, want python and afconvert", runner.commands)
+	}
+	pythonCommand := runner.commands[0]
+	for _, want := range []string{"/a21/python", "--model-dir", modelDir, "--speaker-id", "21"} {
+		if !strings.Contains(pythonCommand, want) {
+			t.Fatalf("python command missing %q: %s", want, pythonCommand)
+		}
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{"这句话也不能出现在报告里", modelDir, "Authorization", "Bearer"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("report leaked %q: %s", forbidden, rendered)
+		}
 	}
 }
 

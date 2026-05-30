@@ -92,17 +92,18 @@ type RealtimeSessionResponse struct {
 }
 
 type DeviceControlRequest struct {
-	DeviceID                     string                   `json:"device_id"`
-	State                        protocol.ExpressionState `json:"state,omitempty"`
-	Mode                         protocol.Mode            `json:"mode,omitempty"`
-	Text                         string                   `json:"text,omitempty"`
-	TraceID                      string                   `json:"trace_id,omitempty"`
-	SessionID                    string                   `json:"session_id,omitempty"`
-	StreamID                     string                   `json:"stream_id,omitempty"`
-	MockAudioChunks              int                      `json:"mock_audio_chunks,omitempty"`
-	AudioProbeOnly               bool                     `json:"audio_probe_only,omitempty"`
-	MockPlaybackOnNextAudioFrame bool                     `json:"mock_playback_on_next_audio_frame,omitempty"`
-	RealtimeOnNextSpeech         bool                     `json:"realtime_on_next_speech,omitempty"`
+	DeviceID                     string                        `json:"device_id"`
+	State                        protocol.ExpressionState      `json:"state,omitempty"`
+	Mode                         protocol.Mode                 `json:"mode,omitempty"`
+	Text                         string                        `json:"text,omitempty"`
+	TraceID                      string                        `json:"trace_id,omitempty"`
+	SessionID                    string                        `json:"session_id,omitempty"`
+	StreamID                     string                        `json:"stream_id,omitempty"`
+	MockAudioChunks              int                           `json:"mock_audio_chunks,omitempty"`
+	AudioChunks                  []protocol.AudioPlaybackChunk `json:"audio_chunks,omitempty"`
+	AudioProbeOnly               bool                          `json:"audio_probe_only,omitempty"`
+	MockPlaybackOnNextAudioFrame bool                          `json:"mock_playback_on_next_audio_frame,omitempty"`
+	RealtimeOnNextSpeech         bool                          `json:"realtime_on_next_speech,omitempty"`
 }
 
 type DeviceControlResponse struct {
@@ -282,6 +283,23 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	if req.MockAudioChunks < 0 || req.MockAudioChunks > 8 {
 		http.Error(w, "mock_audio_chunks must be between 0 and 8", http.StatusBadRequest)
 		return
+	}
+	if len(req.AudioChunks) > 8 {
+		http.Error(w, "audio_chunks must contain at most 8 chunks", http.StatusBadRequest)
+		return
+	}
+	for i := range req.AudioChunks {
+		if req.AudioChunks[i].StreamID == "" {
+			req.AudioChunks[i].StreamID = req.StreamID
+		}
+		if req.AudioChunks[i].StreamID != req.StreamID {
+			http.Error(w, "audio_chunks stream_id must match request stream_id", http.StatusBadRequest)
+			return
+		}
+		if err := protocol.ValidateAudioPlaybackChunk(req.AudioChunks[i]); err != nil {
+			http.Error(w, "invalid audio_chunks payload", http.StatusBadRequest)
+			return
+		}
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
@@ -1264,6 +1282,28 @@ func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelo
 		StreamID: req.StreamID,
 	}
 	events := s.controlSequence(req.DeviceID, req.TraceID, req.SessionID, []protocol.ControlEventPayload{payload})
+	if len(req.AudioChunks) > 0 {
+		s.setActiveStream(req.TraceID, req.SessionID, req.DeviceID, req.StreamID)
+		sentAt := s.now().UnixMilli()
+		for i, chunk := range req.AudioChunks {
+			events = append(events, s.voiceAudioPlaybackChunk(
+				req.DeviceID,
+				req.TraceID,
+				req.SessionID,
+				uint64(len(events)+1),
+				sentAt+int64(i+1),
+				chunk.StreamID,
+				&providers.VoiceAudioChunk{
+					Codec:        string(chunk.Codec),
+					SampleRateHz: chunk.SampleRateHz,
+					Channels:     chunk.Channels,
+					DurationMS:   chunk.DurationMS,
+					DataBase64:   chunk.DataBase64,
+				},
+			))
+		}
+		return events
+	}
 	if req.MockAudioChunks <= 0 || req.StreamID == "" {
 		return events
 	}

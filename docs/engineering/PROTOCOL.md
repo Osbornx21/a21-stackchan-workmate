@@ -146,7 +146,7 @@ The registry intentionally does not persist utterance text, professional answer 
 
 ## Device Validation Control
 
-`POST /v1/devices/control` is an A21-only physical validation surface for a connected StackChan. It writes semantic `control.event` envelopes to the registered device audio WebSocket and can optionally append up to eight non-silent 20 ms PCM chunks for speaker/playback smoke testing.
+`POST /v1/devices/control` is an A21-only physical validation surface for a connected StackChan. It writes semantic `control.event` envelopes to the registered device audio WebSocket and can optionally append up to eight non-silent 20 ms PCM chunks for speaker/playback smoke testing or up to eight caller-provided `audio.playback.chunk` payloads for local TTS playback batches.
 
 Longer speaker acceptance probes must preserve that per-request cap. The `stackchan-speaker-acceptance` CLI may send about one second of probe audio, but it does so as multiple bounded control requests, each with `mock_audio_chunks <= 4`, sharing the same A21 trace/session/stream identifiers.
 
@@ -159,6 +159,7 @@ Request fields:
 - `trace_id` and `session_id`: optional explicit trace/session IDs
 - `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation
 - `mock_audio_chunks`: 0-8 non-silent chunks for physical speaker validation
+- `audio_chunks`: 0-8 caller-provided playback chunks. Each chunk must be `pcm_s16le`, mono, 16/24/48 kHz, 20 or 40 ms, and its `stream_id` must match the request `stream_id`.
 - `audio_probe_only`: optional diagnostic flag for the requested trace/session. When true, Gateway keeps accepting and measuring matching `audio.frame` uplink frames but suppresses mock listening/speaking/playback responses. Use this for physical microphone probes so Gateway does not force StackChan into `speaking` while measuring capture.
 - `mock_playback_on_next_audio_frame`: optional physical validation flag for the requested trace/session. When true, Gateway arms exactly one mock playback response for the next matching physical StackChan `audio.frame`, then immediately disarms it.
 - `realtime_on_next_speech`: optional physical provider flag for the requested trace/session. When true, Gateway arms exactly one provider realtime-session start for the next matching physical StackChan speech frame. This is separate from mock playback validation and prevents ambient office audio from opening realtime provider sessions by accident.

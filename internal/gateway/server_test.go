@@ -1990,6 +1990,69 @@ func TestDeviceControlEndpointDeliversControlAndAudioToRegisteredDevice(t *testi
 	}
 }
 
+func TestDeviceControlEndpointDeliversProvidedAudioChunks(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	pcm := mockPCM16SquareWaveBase64(16000, 20)
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"speaking","mode":"workmate","trace_id":"a21-trace-provided-audio","session_id":"a21-session-provided-audio","stream_id":"a21-provided-audio-stream","audio_chunks":[{"stream_id":"a21-provided-audio-stream","codec":"pcm_s16le","sample_rate_hz":16000,"channels":1,"duration_ms":20,"data_base64":"` + pcm + `"}]}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	readControlEvents(t, ctx, conn, 1)
+	var playback protocol.Envelope
+	if err := wsjson.Read(ctx, conn, &playback); err != nil {
+		t.Fatal(err)
+	}
+	if playback.Kind != protocol.KindAudioPlaybackChunk {
+		t.Fatalf("kind = %q, want playback chunk", playback.Kind)
+	}
+	var chunk protocol.AudioPlaybackChunk
+	if err := json.Unmarshal(playback.Payload, &chunk); err != nil {
+		t.Fatal(err)
+	}
+	if chunk.StreamID != "a21-provided-audio-stream" || chunk.DataBase64 != pcm {
+		t.Fatalf("chunk = %+v", chunk)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+		var delivered DeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&delivered); err != nil {
+			t.Fatal(err)
+		}
+		if len(delivered.Events) != 2 {
+			t.Fatalf("events = %d, want control + provided audio", len(delivered.Events))
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
 func TestDeviceControlIdleClearsPlaybackStreamFromRegistry(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

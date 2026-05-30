@@ -318,6 +318,36 @@ func TestAudioPlaybackChunkPayloadShape(t *testing.T) {
 	}
 }
 
+func TestValidateAudioPlaybackChunkAcceptsPCM16Playback(t *testing.T) {
+	chunk := AudioPlaybackChunk{
+		StreamID:     "a21-playback-stream-001",
+		Codec:        AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   testPCM16Base64WithSample(1024),
+	}
+
+	if err := ValidateAudioPlaybackChunk(chunk); err != nil {
+		t.Fatalf("ValidateAudioPlaybackChunk() error = %v", err)
+	}
+}
+
+func TestValidateAudioPlaybackChunkRejectsShortPCM(t *testing.T) {
+	chunk := AudioPlaybackChunk{
+		StreamID:     "a21-playback-stream-001",
+		Codec:        AudioCodecPCMS16LE,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   "AAAA",
+	}
+
+	if err := ValidateAudioPlaybackChunk(chunk); err == nil {
+		t.Fatal("ValidateAudioPlaybackChunk() error = nil, want short PCM rejection")
+	}
+}
+
 func testPCM16Base64WithSample(sample int16) string {
 	const samplesPer20MS16K = 320
 	data := make([]byte, samplesPer20MS16K*2)

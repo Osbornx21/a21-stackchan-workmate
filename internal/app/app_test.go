@@ -693,7 +693,7 @@ func TestRunLocalTTSSmokeWritesRedactedReport(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"local-tts-smoke", "--text", "这句话不应该出现在报告里", "--voice", "Tingting", "--output-dir", dir}, &stdout, &stderr)
+	code := Run([]string{"local-tts-smoke", "--engine", "macos_say", "--text", "这句话不应该出现在报告里", "--voice", "Tingting", "--output-dir", dir}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
@@ -718,6 +718,52 @@ func TestRunLocalTTSSmokeWritesRedactedReport(t *testing.T) {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("local TTS smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
+	}
+}
+
+func TestRunLocalTTSSmokeSupportsSherpaONNXEngine(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		if options.ModelDir != "/tmp/a21-sherpa-model" || options.SpeakerID != 21 {
+			t.Fatalf("sherpa options = %+v", options)
+		}
+		outputPath := filepath.Join(options.OutputDir, "a21-sherpa-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "sherpa_onnx",
+			Engine:          "vits_icefall_zh_aishell3",
+			Voice:           "sid_21",
+			ModelDir:        "vits-icefall-zh-aishell3",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      22.5,
+			TTSFirstAudioMS: 22.5,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-tts-smoke", "--engine", "sherpa_onnx", "--text", "不能进报告", "--model-dir", "/tmp/a21-sherpa-model", "--speaker-id", "21", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{`"provider": "sherpa_onnx"`, `"engine": "vits_icefall_zh_aishell3"`, `"model_dir": "vits-icefall-zh-aishell3"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "不能进报告") || strings.Contains(stdout.String(), "/tmp/a21-sherpa-model") {
+		t.Fatalf("sherpa smoke leaked sensitive content: %s", stdout.String())
 	}
 }
 
@@ -758,7 +804,7 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"local-voice-loopback", "--text", "真实输入不要进报告", "--output-dir", dir}, &stdout, &stderr)
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text", "真实输入不要进报告", "--repeat", "2", "--output-dir", dir}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
@@ -770,6 +816,9 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 		`"asr_provider": "mock_asr"`,
 		`"text_stream_provider": "mock_text_stream"`,
 		`"tts_provider": "macos_say"`,
+		`"repeat": 2`,
+		`"tts_first_audio_p50_ms"`,
+		`"first_audio_total_p95_ms"`,
 		`"barge_in_status": "benchmarked"`,
 		`"report_path"`,
 	} {
@@ -792,6 +841,74 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
+	}
+}
+
+func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	var receivedChunks int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			DeviceID    string `json:"device_id"`
+			Text        string `json:"text"`
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.DeviceID != "stackchan-001" {
+			t.Fatalf("request = %+v", request)
+		}
+		if len(request.AudioChunks) > 0 && request.Text != "A21 LOCAL TTS" {
+			t.Fatalf("audio request text = %q", request.Text)
+		}
+		receivedChunks += len(request.AudioChunks)
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, "a21-sherpa-playback-test.wav")
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 640))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "sherpa_onnx",
+			Engine:          "vits_icefall_zh_aishell3",
+			Voice:           "sid_21",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     1280,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      33,
+			TTSFirstAudioMS: 33,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-local-tts-playback", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "sherpa_onnx", "--text", "不要写进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if receivedChunks != 2 {
+		t.Fatalf("received chunks = %d, want 2", receivedChunks)
+	}
+	for _, want := range []string{`"schema_version": "a21.stackchan_local_tts_playback.v1"`, `"status": "passed"`, `"tts_provider": "sherpa_onnx"`, `"playback_chunks": 2`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "不要写进报告") {
+		t.Fatalf("playback report leaked text: %s", stdout.String())
 	}
 }
 
@@ -5788,6 +5905,35 @@ func testArtifactTimestampFromName(t *testing.T, artifactPath string) string {
 		t.Fatalf("artifact name %q lacks timestamp field", name)
 	}
 	return parts[len(parts)-2] + "-" + parts[len(parts)-1]
+}
+
+func writeAppTestWAV(t *testing.T, path string, sampleRate int, pcm []byte) {
+	t.Helper()
+	byteRate := sampleRate * 2
+	blockAlign := 2
+	header := []byte{
+		'R', 'I', 'F', 'F',
+		0, 0, 0, 0,
+		'W', 'A', 'V', 'E',
+		'f', 'm', 't', ' ',
+		16, 0, 0, 0,
+		1, 0,
+		1, 0,
+		byte(sampleRate), byte(sampleRate >> 8), byte(sampleRate >> 16), byte(sampleRate >> 24),
+		byte(byteRate), byte(byteRate >> 8), byte(byteRate >> 16), byte(byteRate >> 24),
+		byte(blockAlign), byte(blockAlign >> 8),
+		16, 0,
+		'd', 'a', 't', 'a',
+		byte(len(pcm)), byte(len(pcm) >> 8), byte(len(pcm) >> 16), byte(len(pcm) >> 24),
+	}
+	riffSize := uint32(len(header) - 8 + len(pcm))
+	header[4] = byte(riffSize)
+	header[5] = byte(riffSize >> 8)
+	header[6] = byte(riffSize >> 16)
+	header[7] = byte(riffSize >> 24)
+	if err := os.WriteFile(path, append(header, pcm...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func appTestPCM16Base64(sample int16) string {
