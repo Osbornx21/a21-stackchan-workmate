@@ -214,6 +214,12 @@ struct A21ArduinoTextWS {
 A21ArduinoTextWS g_gateway_ws_client;
 A21ArduinoTextWS g_audio_ws_client;
 
+void configureA21SpeakerForStreaming() {
+  auto speaker_config = M5.Speaker.config();
+  speaker_config.task_priority = A21_SPEAKER_TASK_PRIORITY;
+  M5.Speaker.config(speaker_config);
+}
+
 bool arduinoWiFiBegin(void* ctx, const char* ssid, const char* password) {
   (void)ctx;
   WiFi.mode(WIFI_STA);
@@ -712,8 +718,10 @@ void drawIfChanged() {
 void setup() {
   auto config = M5.config();
   config.internal_spk = true;
+  configureA21SpeakerForStreaming();
   M5.begin(config);
   M5StackChan.begin();
+  configureA21SpeakerForStreaming();
   M5.Speaker.setVolume(96);
   M5.Speaker.begin();
   arduinoSensorProbeBegin();

@@ -9,7 +9,8 @@
 static constexpr uint8_t A21_SPEAKER_CHANNEL = 0;
 static constexpr uint8_t A21_SPEAKER_SLOT_COUNT = 3;
 static constexpr uint8_t A21_SPEAKER_MAX_DRIVER_QUEUE = 2;
-static constexpr uint8_t A21_SPEAKER_PLAYBACK_BATCH_FRAMES = 4;
+static constexpr uint8_t A21_SPEAKER_PLAYBACK_BATCH_FRAMES = 8;
+static constexpr uint8_t A21_SPEAKER_TASK_PRIORITY = 4;
 static constexpr uint16_t A21_SPEAKER_PLAYBACK_BATCH_SAMPLES =
     A21_AUDIO_PCM_FRAME_SAMPLES * A21_SPEAKER_PLAYBACK_BATCH_FRAMES;
 
@@ -25,6 +26,8 @@ struct A21SpeakerPumpRuntime {
   uint32_t frames_played;
   uint32_t busy_ticks;
   uint32_t driver_errors;
+  bool preroll_complete;
+  char active_stream_id[A21_STREAM_ID_CAP];
   char last_trace_id[A21_TRACE_ID_CAP];
   char last_stream_id[A21_STREAM_ID_CAP];
 };
@@ -46,6 +49,8 @@ inline void a21InitSpeakerPumpRuntime(A21SpeakerPumpRuntime* runtime) {
   runtime->frames_played = 0;
   runtime->busy_ticks = 0;
   runtime->driver_errors = 0;
+  runtime->preroll_complete = false;
+  a21CopyString(runtime->active_stream_id, A21_STREAM_ID_CAP, "");
   a21CopyString(runtime->last_trace_id, A21_TRACE_ID_CAP, "");
   a21CopyString(runtime->last_stream_id, A21_STREAM_ID_CAP, "");
 }
@@ -101,7 +106,13 @@ inline bool a21SpeakerPumpTick(
     return false;
   }
   if (state->render_state != A21_RENDER_SPEAKING || state->stream_id[0] == '\0') {
+    runtime->preroll_complete = false;
+    a21CopyString(runtime->active_stream_id, A21_STREAM_ID_CAP, "");
     return true;
+  }
+  if (!a21StringEquals(runtime->active_stream_id, state->stream_id)) {
+    runtime->preroll_complete = false;
+    a21CopyString(runtime->active_stream_id, A21_STREAM_ID_CAP, state->stream_id);
   }
 
   const A21AudioPCMFrame* frame = a21AudioPlaybackBufferPeek(buffer);
@@ -109,6 +120,9 @@ inline bool a21SpeakerPumpTick(
     return true;
   }
   if (!a21StringEquals(frame->stream_id, state->stream_id)) {
+    return true;
+  }
+  if (!runtime->preroll_complete && buffer->queued_chunks < A21_SPEAKER_PLAYBACK_BATCH_FRAMES) {
     return true;
   }
   if (driver->queued(driver->ctx, A21_SPEAKER_CHANNEL) >= A21_SPEAKER_MAX_DRIVER_QUEUE) {
@@ -139,6 +153,7 @@ inline bool a21SpeakerPumpTick(
 
   runtime->next_slot = static_cast<uint8_t>((runtime->next_slot + 1) % A21_SPEAKER_SLOT_COUNT);
   runtime->frames_played += playback_frames;
+  runtime->preroll_complete = true;
   a21CopyString(runtime->last_trace_id, A21_TRACE_ID_CAP, frame->trace_id);
   a21CopyString(runtime->last_stream_id, A21_STREAM_ID_CAP, frame->stream_id);
   for (uint8_t i = 0; i < playback_frames; ++i) {

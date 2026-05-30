@@ -43,7 +43,7 @@ var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 
 const (
 	stackChanSpeakerProbeChunkDurationMS = 20
-	stackChanSpeakerProbeBatchChunks     = 4
+	stackChanSpeakerProbeBatchChunks     = 8
 	stackChanSpeakerPrerollBatchChunks   = 8
 	stackChanSpeakerProbeMaxChunks       = 64
 )
@@ -1701,14 +1701,13 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 				DataBase64:   chunk.DataBase64,
 			})
 		}
+		batch = padStackChanPlaybackBatch(streamID, batch)
 		if _, err := postStackChanAudioPlaybackBatch(gatewayURL, deviceID, traceID, sessionID, streamID, batch); err != nil {
 			report.Findings = append(report.Findings, "device playback delivery failed")
 			return report, err
 		}
 		report.PlaybackBatches++
-		if end < len(pcmChunks) {
-			time.Sleep(stackChanPlaybackBatchDelay(offset, end-offset))
-		}
+		time.Sleep(stackChanPlaybackBatchDelay(offset, len(batch)))
 		offset = end
 	}
 	if _, err := postStackChanSpeakerControl(gatewayURL, deviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, streamID, 0); err != nil {
@@ -6029,20 +6028,20 @@ func postStackChanSpeakerProbeBatches(gatewayBaseURL string, deviceID string, tr
 	remaining := totalChunks
 	var firstControl gateway.DeviceControlResponse
 	for remaining > 0 {
-		batchChunks := stackChanSpeakerProbeBatchChunks
-		if remaining < batchChunks {
-			batchChunks = remaining
+		consumedChunks := stackChanSpeakerProbeBatchChunks
+		if remaining < consumedChunks {
+			consumedChunks = remaining
 		}
-		control, err := postStackChanSpeakerControl(gatewayBaseURL, deviceID, protocol.ExpressionSpeaking, protocol.ModeWorkmate, "SPEAKER PROBE", traceID, sessionID, streamID, batchChunks)
+		control, err := postStackChanSpeakerControl(gatewayBaseURL, deviceID, protocol.ExpressionSpeaking, protocol.ModeWorkmate, "SPEAKER PROBE", traceID, sessionID, streamID, stackChanSpeakerProbeBatchChunks)
 		if err != nil {
 			return firstControl, err
 		}
 		if firstControl.TraceID == "" {
 			firstControl = control
 		}
-		remaining -= batchChunks
+		remaining -= consumedChunks
 		if remaining > 0 {
-			time.Sleep(time.Duration(batchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond)
+			time.Sleep(time.Duration(stackChanSpeakerProbeBatchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond)
 		}
 	}
 	return firstControl, nil

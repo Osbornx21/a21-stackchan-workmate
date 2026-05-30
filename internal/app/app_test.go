@@ -1303,8 +1303,8 @@ func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if receivedChunks != 2 {
-		t.Fatalf("received chunks = %d, want 2", receivedChunks)
+	if receivedChunks != 8 {
+		t.Fatalf("received chunks = %d, want 8 padded speaker-batch chunks", receivedChunks)
 	}
 	for _, want := range []string{`"schema_version": "a21.stackchan_local_tts_playback.v1"`, `"status": "passed"`, `"tts_provider": "sherpa_onnx"`, `"playback_chunks": 2`} {
 		if !strings.Contains(stdout.String(), want) {
@@ -1365,7 +1365,61 @@ func TestRunStackChanLocalTTSPlaybackPrerollsInitialAudioBuffer(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if got, want := fmt.Sprint(batchSizes), "[8 2]"; got != want {
+	if got, want := fmt.Sprint(batchSizes), "[8 8]"; got != want {
+		t.Fatalf("audio batch sizes = %s, want %s", got, want)
+	}
+}
+
+func TestRunStackChanLocalTTSPlaybackKeepsSteadyBatchesLargeEnoughForSpeakerPump(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	var batchSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.AudioChunks) > 0 {
+			batchSizes = append(batchSizes, len(request.AudioChunks))
+		}
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, "a21-sherpa-playback-steady-batch-test.wav")
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 320*20))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "sherpa_onnx",
+			Engine:          "vits_icefall_zh_aishell3",
+			Voice:           "sid_21",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     12800,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      400,
+			TTSFirstAudioMS: 33,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-local-tts-playback", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "sherpa_onnx", "--text", "不要写进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if got, want := fmt.Sprint(batchSizes), "[8 8 8]"; got != want {
 		t.Fatalf("audio batch sizes = %s, want %s", got, want)
 	}
 }
@@ -1405,8 +1459,8 @@ func TestRunStackChanLocalTTSPlaybackCanSendExistingA21WAV(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if receivedChunks != 3 {
-		t.Fatalf("received chunks = %d, want 3", receivedChunks)
+	if receivedChunks != 8 {
+		t.Fatalf("received chunks = %d, want 8 padded speaker-batch chunks", receivedChunks)
 	}
 	for _, want := range []string{`"tts_provider": "wav_file"`, `"tts_audio_path": "a21-existing-playback.wav"`, `"playback_chunks": 3`} {
 		if !strings.Contains(stdout.String(), want) {
@@ -6082,8 +6136,8 @@ func TestRunStackChanSpeakerAcceptanceConfirmsInstrumentedDownlink(t *testing.T)
 			if payload.State == "speaking" {
 				speakingControlSeen = true
 				probeStarted = true
-				if payload.MockAudioChunks != 4 {
-					t.Fatalf("mock_audio_chunks = %d, want 4", payload.MockAudioChunks)
+				if payload.MockAudioChunks != 8 {
+					t.Fatalf("mock_audio_chunks = %d, want 8 padded playback frames", payload.MockAudioChunks)
 				}
 				if payload.StreamID != "a21-speaker-acceptance-stream" {
 					t.Fatalf("stream_id = %q", payload.StreamID)
@@ -6186,8 +6240,8 @@ func TestRunStackChanSpeakerAcceptanceBatchesAudibleProbe(t *testing.T) {
 			if payload.State == "speaking" {
 				speakingCalls++
 				totalChunks += payload.MockAudioChunks
-				if payload.MockAudioChunks < 1 || payload.MockAudioChunks > 4 {
-					t.Fatalf("speaker batch mock_audio_chunks = %d, want 1..4", payload.MockAudioChunks)
+				if payload.MockAudioChunks != 8 {
+					t.Fatalf("speaker batch mock_audio_chunks = %d, want 8 padded playback frames", payload.MockAudioChunks)
 				}
 				if payload.StreamID != "a21-speaker-acceptance-stream" {
 					t.Fatalf("stream_id = %q", payload.StreamID)
@@ -6234,7 +6288,7 @@ func TestRunStackChanSpeakerAcceptanceBatchesAudibleProbe(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if speakingCalls < 2 || totalChunks != 50 || !idleControlSeen {
+	if speakingCalls < 2 || totalChunks != 56 || !idleControlSeen {
 		t.Fatalf("speakingCalls=%d totalChunks=%d idleControlSeen=%v", speakingCalls, totalChunks, idleControlSeen)
 	}
 	for _, want := range []string{

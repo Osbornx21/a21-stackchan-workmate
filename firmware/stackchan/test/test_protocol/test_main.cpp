@@ -1794,7 +1794,7 @@ void test_audio_playback_buffer_pops_decoded_pcm_frame() {
   TEST_ASSERT_FALSE(a21AudioPlaybackBufferPop(&buffer, &frame));
 }
 
-void test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room() {
+void test_speaker_pump_plays_one_prerolled_pcm_batch_when_queue_has_room() {
   A21AudioPlaybackBuffer buffer;
   A21SpeakerPumpRuntime runtime;
   A21FirmwareState state;
@@ -1807,16 +1807,18 @@ void test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room() {
 
   char data[900];
   fillPCM16SilenceBase64(data, sizeof(data));
-  A21AudioPlaybackChunk chunk;
-  a21ResetAudioPlaybackChunk(&chunk);
-  a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-speaker-pump");
-  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
-  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
-  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
-  chunk.sample_rate_hz = 16000;
-  chunk.channels = 1;
-  chunk.duration_ms = 20;
-  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  for (uint8_t i = 0; i < A21_SPEAKER_PLAYBACK_BATCH_FRAMES; ++i) {
+    A21AudioPlaybackChunk chunk;
+    a21ResetAudioPlaybackChunk(&chunk);
+    a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-speaker-pump");
+    a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+    a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+    a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+    chunk.sample_rate_hz = 16000;
+    chunk.channels = 1;
+    chunk.duration_ms = 20;
+    TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  }
 
   state.render_state = A21_RENDER_SPEAKING;
   a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
@@ -1824,8 +1826,10 @@ void test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room() {
 
   TEST_ASSERT_EQUAL_INT(1, fake.play_count);
   TEST_ASSERT_EQUAL_UINT8(0, buffer.queued_chunks);
-  TEST_ASSERT_EQUAL_UINT32(1, runtime.frames_played);
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES), static_cast<uint32_t>(fake.last_sample_count));
+  TEST_ASSERT_EQUAL_UINT32(A21_SPEAKER_PLAYBACK_BATCH_FRAMES, runtime.frames_played);
+  TEST_ASSERT_EQUAL_UINT32(
+      static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES * A21_SPEAKER_PLAYBACK_BATCH_FRAMES),
+      static_cast<uint32_t>(fake.last_sample_count));
   TEST_ASSERT_EQUAL_UINT32(A21_AUDIO_PCM_SAMPLE_RATE_HZ, fake.last_sample_rate_hz);
   TEST_ASSERT_EQUAL_UINT8(A21_SPEAKER_CHANNEL, fake.last_channel);
   TEST_ASSERT_NOT_NULL(fake.last_samples);
@@ -1872,6 +1876,48 @@ void test_speaker_pump_coalesces_contiguous_pcm_frames_for_clean_playback() {
       static_cast<uint32_t>(fake.last_sample_count));
 }
 
+void test_speaker_pump_uses_160ms_batches_to_avoid_fragmented_playraw() {
+  TEST_ASSERT_EQUAL_UINT8(8, A21_SPEAKER_PLAYBACK_BATCH_FRAMES);
+  TEST_ASSERT_EQUAL_UINT32(
+      static_cast<uint32_t>(A21_AUDIO_PCM_FRAME_SAMPLES * 8),
+      static_cast<uint32_t>(A21_SPEAKER_PLAYBACK_BATCH_SAMPLES));
+}
+
+void test_speaker_pump_waits_for_full_preroll_before_first_playraw() {
+  A21AudioPlaybackBuffer buffer;
+  A21SpeakerPumpRuntime runtime;
+  A21FirmwareState state;
+  FakeSpeakerDriver fake;
+  A21SpeakerDriver driver;
+  a21InitAudioPlaybackBuffer(&buffer);
+  a21InitSpeakerPumpRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  initFakeSpeakerDriver(&fake, &driver);
+
+  char data[900];
+  fillPCM16SilenceBase64(data, sizeof(data));
+  for (uint8_t i = 0; i < A21_SPEAKER_PLAYBACK_BATCH_FRAMES - 1; ++i) {
+    A21AudioPlaybackChunk chunk;
+    a21ResetAudioPlaybackChunk(&chunk);
+    a21CopyString(chunk.trace_id, A21_TRACE_ID_CAP, "a21-trace-speaker-preroll");
+    a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+    a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+    a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+    chunk.sample_rate_hz = 16000;
+    chunk.channels = 1;
+    chunk.duration_ms = 20;
+    TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  }
+
+  state.render_state = A21_RENDER_SPEAKING;
+  a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+  TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
+
+  TEST_ASSERT_EQUAL_INT(0, fake.play_count);
+  TEST_ASSERT_EQUAL_UINT8(A21_SPEAKER_PLAYBACK_BATCH_FRAMES - 1, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_played);
+}
+
 void test_speaker_pump_waits_when_driver_queue_is_full() {
   A21AudioPlaybackBuffer buffer;
   A21SpeakerPumpRuntime runtime;
@@ -1886,22 +1932,24 @@ void test_speaker_pump_waits_when_driver_queue_is_full() {
 
   char data[900];
   fillPCM16SilenceBase64(data, sizeof(data));
-  A21AudioPlaybackChunk chunk;
-  a21ResetAudioPlaybackChunk(&chunk);
-  a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
-  a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
-  a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
-  chunk.sample_rate_hz = 16000;
-  chunk.channels = 1;
-  chunk.duration_ms = 20;
-  TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  for (uint8_t i = 0; i < A21_SPEAKER_PLAYBACK_BATCH_FRAMES; ++i) {
+    A21AudioPlaybackChunk chunk;
+    a21ResetAudioPlaybackChunk(&chunk);
+    a21CopyString(chunk.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
+    a21CopyString(chunk.codec, A21_AUDIO_CODEC_CAP, "pcm_s16le");
+    a21CopyString(chunk.data_base64, A21_AUDIO_DATA_BASE64_CAP, data);
+    chunk.sample_rate_hz = 16000;
+    chunk.channels = 1;
+    chunk.duration_ms = 20;
+    TEST_ASSERT_TRUE(a21AudioPlaybackBufferPush(&buffer, &chunk));
+  }
 
   state.render_state = A21_RENDER_SPEAKING;
   a21CopyString(state.stream_id, A21_STREAM_ID_CAP, "a21-audio-stream-000001");
   TEST_ASSERT_TRUE(a21SpeakerPumpTick(&runtime, &driver, &state, &buffer));
 
   TEST_ASSERT_EQUAL_INT(0, fake.play_count);
-  TEST_ASSERT_EQUAL_UINT8(1, buffer.queued_chunks);
+  TEST_ASSERT_EQUAL_UINT8(A21_SPEAKER_PLAYBACK_BATCH_FRAMES, buffer.queued_chunks);
   TEST_ASSERT_EQUAL_UINT32(0, runtime.frames_played);
   TEST_ASSERT_EQUAL_UINT32(1, runtime.busy_ticks);
 }
@@ -2652,8 +2700,10 @@ int main(int argc, char** argv) {
   RUN_TEST(test_audio_playback_buffer_tracks_bounded_stream_chunks);
   RUN_TEST(test_audio_playback_buffer_peeks_decoded_pcm_frame);
   RUN_TEST(test_audio_playback_buffer_pops_decoded_pcm_frame);
-  RUN_TEST(test_speaker_pump_plays_one_decoded_pcm_frame_when_queue_has_room);
+  RUN_TEST(test_speaker_pump_plays_one_prerolled_pcm_batch_when_queue_has_room);
   RUN_TEST(test_speaker_pump_coalesces_contiguous_pcm_frames_for_clean_playback);
+  RUN_TEST(test_speaker_pump_uses_160ms_batches_to_avoid_fragmented_playraw);
+  RUN_TEST(test_speaker_pump_waits_for_full_preroll_before_first_playraw);
   RUN_TEST(test_speaker_pump_waits_when_driver_queue_is_full);
   RUN_TEST(test_speaker_pump_does_not_play_when_not_speaking);
   RUN_TEST(test_speaker_pump_keeps_frame_when_stream_id_mismatches_state);

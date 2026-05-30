@@ -718,6 +718,7 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 				DataBase64:   chunk.DataBase64,
 			})
 		}
+		batch = padStackChanPlaybackBatch(streamID, batch)
 		response, err := postStackChanAudioPlaybackBatch(gatewayURL, deviceID, traceID, sessionID, streamID, batch)
 		if err != nil {
 			return delivery, err
@@ -727,7 +728,7 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 		select {
 		case <-ctx.Done():
 			return delivery, ctx.Err()
-		case <-time.After(stackChanPlaybackBatchDelay(offset, end-offset)):
+		case <-time.After(stackChanPlaybackBatchDelay(offset, len(batch))):
 		}
 		offset = end
 	}
@@ -752,11 +753,36 @@ func stackChanPlaybackBatchDelay(offset int, batchChunks int) time.Duration {
 	if batchChunks <= 0 {
 		return 0
 	}
-	delayChunks := batchChunks
-	if offset == 0 && batchChunks > stackChanSpeakerProbeBatchChunks {
-		delayChunks = stackChanSpeakerProbeBatchChunks
+	return time.Duration(batchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond
+}
+
+func padStackChanPlaybackBatch(streamID string, batch []protocol.AudioPlaybackChunk) []protocol.AudioPlaybackChunk {
+	if len(batch) == 0 || len(batch) >= stackChanSpeakerProbeBatchChunks {
+		return batch
 	}
-	return time.Duration(delayChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond
+	sampleRateHz := batch[len(batch)-1].SampleRateHz
+	channels := batch[len(batch)-1].Channels
+	durationMS := batch[len(batch)-1].DurationMS
+	silence := stackChanPCM16SilenceBase64(sampleRateHz, durationMS)
+	for len(batch) < stackChanSpeakerProbeBatchChunks {
+		batch = append(batch, protocol.AudioPlaybackChunk{
+			StreamID:     streamID,
+			Codec:        protocol.AudioCodecPCMS16LE,
+			SampleRateHz: sampleRateHz,
+			Channels:     channels,
+			DurationMS:   durationMS,
+			DataBase64:   silence,
+		})
+	}
+	return batch
+}
+
+func stackChanPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
+	if sampleRateHz <= 0 || durationMS <= 0 {
+		return ""
+	}
+	byteCount := sampleRateHz * durationMS * 2 / 1000
+	return base64.StdEncoding.EncodeToString(make([]byte, byteCount))
 }
 
 func normalizeFastCompanionListenSource(raw string) string {
