@@ -1,0 +1,136 @@
+# A21 Development Mainline
+
+Status: v0.4, aligned with `docs/prd/A21_PRD.md`.
+
+## Source Of Truth
+
+`docs/prd/A21_PRD.md` is the current product-level directive for A21. It supersedes older roadmap ordering where it conflicts with product priority, but it does not repeal verified local engineering facts:
+
+- Go-first A21 Core/Gateway remains the approved foundation.
+- StackChan remains a thin device for sensing and expression.
+- Firmware build, package, artifact, and guarded flashing discipline remain mandatory.
+- A21/X21/V21 naming, process, port, env, log, report, and artifact isolation remains mandatory.
+- Provider keys never enter firmware, docs output, reports, traces, logs, screenshots, Git, or device messages.
+- External latency labs and procurement experiments stay outside the A21 mainline; only redacted conclusions and profile/env names return.
+
+## Current Mainline
+
+The active product-engineering mainline is now:
+
+```text
+StackChan embodied device foundation
+  + Provider Spine / text streaming hot plug
+  + Local audio front-end boundaries
+  -> Fast Companion Hybrid Lane
+  -> Professional V21 evidence lane
+  -> Controlled realtime voice lane
+  -> AgentTask bridge
+  -> Product polish and office scenarios
+```
+
+This means the next core implementation pressure is Provider Spine and mainland-latency-controlled fast companion behavior, while the already-built StackChan firmware/link discipline remains a non-regression base.
+
+## Priority Order
+
+### P0. Provider Spine / Text Stream Hot Plug
+
+Goal: make provider selection profile-driven and hot-pluggable without changing Gateway business logic.
+
+Required shape:
+
+- provider families: `text_stream`, `voice_realtime`, `voice_hybrid`, `agent_task`, `local_audio`;
+- built-in profile coverage for `siliconflow`, `deepseek`, `stepfun`, `bailian_dashscope`, `moonshot`, `volcengine_ark`, `local_ollama`, `local_vllm`, `openai_realtime`, `doubao_realtime`, `doubao_tts_realtime`, `hermes_agent`, and `mimo_agent`;
+- Baidu and Huawei are blocked provider names, not candidates;
+- local overrides through `A21_PROVIDER_PROFILES_PATH` are allowed only after secret, legacy-name, and blocked-provider validation;
+- provider smoke and doctor output show env names, host, status, timing, and redacted findings only.
+
+### P0. Fast Companion Hybrid Lane
+
+Goal: achieve low perceived latency through local audio front-end plus streaming text provider plus local or streaming TTS.
+
+Default lane:
+
+```text
+StackChan mic
+  -> Gateway VAD/barge-in
+  -> local ASR
+  -> OpenAI-compatible streaming text provider
+  -> local/streaming TTS
+  -> StackChan speaker/screen/servo/RGB/touch state
+```
+
+Acceptance target:
+
+- first audible response P50 < 900 ms and P95 < 1500 ms for the candidate chain;
+- barge-in local stop/cancel P95 < 300 ms;
+- first byte, first content, TTS first audio, downlink first frame, and device playback start are recorded.
+
+### P0. StackChan Physical Acceptance
+
+Goal: keep the embodied device foundation real while Provider Spine advances.
+
+Already preserved:
+
+- A21 firmware identity and guarded flash discipline;
+- screen expression, RGB, Y-axis servo, touch semantics, speaker buffer, audio frame uplink, runtime echo, and full hardware capability declaration.
+
+Next accepted work must improve or protect actual product behavior. Planned hardware such as camera, IMU, ambient light, proximity, battery, NFC, infrared, and second servo axis stays `planned_*` until implementation and evidence prove it is not worse than original StackChan behavior.
+
+### P0. Professional V21 Evidence Lane
+
+Goal: keep professional mode auditable and separate from opaque realtime voice.
+
+Rules:
+
+- professional mode calls only the A21 V21 adapter contract;
+- companion/private/roleplay content does not automatically become V21 retrieval context;
+- public mode does not externalize sensitive evidence;
+- every answer keeps `trace_id`, source evidence, confidence, screen cards, and fallback behavior.
+
+### P1. Controlled Realtime Voice Lane
+
+Goal: keep speech-to-speech providers as controlled optional capability, not default architecture.
+
+Rules:
+
+- provider events are converted to A21 provider-neutral events before Gateway or firmware sees them;
+- physical StackChan requires one-shot `realtime_on_next_speech` arming before paid realtime provider startup;
+- professional mode is explicitly rejected by the realtime lane;
+- fixture smoke comes before real network execution.
+
+### P1. AgentTask Bridge
+
+Goal: use mature agent frameworks for long tasks without letting them own A21.
+
+Rules:
+
+- `hermes_agent` and `mimo_agent` are `agent_task` profiles only;
+- agent output maps back into A21 semantic events;
+- agents cannot write firmware commands, provider env, V21 internals, or Gateway runtime state directly;
+- the lane is disabled until explicit `A21_AGENT_PROVIDER_PRIMARY` and smoke pass.
+
+### P2. Product Polish
+
+Goal: turn the working system into a desk workmate people want to talk to.
+
+Work includes:
+
+- personality files instead of one giant prompt;
+- office scenario playbooks;
+- public/private/focus transitions;
+- roleplay and co-creation flows;
+- failure copy that preserves A21's presence.
+
+## Non-Regression Rule
+
+No PRD-driven task may regress:
+
+- guarded firmware package/flash flow;
+- StackChan capability reporting;
+- LAN/proxy directness checks;
+- provider report redaction;
+- A21 namespace audit;
+- V21 adapter boundary;
+- Gateway default mock safety.
+
+If a new PRD slice requires changing one of these, it needs an ADR before code.

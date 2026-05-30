@@ -38,8 +38,10 @@ Default stance:
 
 ## Required Reading Before Major Changes
 
+- `docs/prd/A21_PRD.md`
 - `docs/a21/00-project-charter-and-home-baseline.md`
 - `docs/a21/01-architecture-research-and-options.md`
+- `docs/engineering/A21_DEVELOPMENT_MAINLINE.md`
 - `docs/engineering/A21_CODEX_MASTERPLAN.md`
 - `docs/engineering/A21_CODEX_AUDIT.md`
 - `docs/engineering/PORTS.md`
