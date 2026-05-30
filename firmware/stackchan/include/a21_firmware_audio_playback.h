@@ -11,7 +11,7 @@
 
 static constexpr size_t A21_AUDIO_CODEC_CAP = 16;
 static constexpr size_t A21_AUDIO_DATA_BASE64_CAP = 900;
-static constexpr uint8_t A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP = 8;
+static constexpr uint8_t A21_AUDIO_PLAYBACK_BUFFER_CHUNK_CAP = 32;
 static constexpr uint32_t A21_AUDIO_PCM_SAMPLE_RATE_HZ = 16000;
 static constexpr uint8_t A21_AUDIO_PCM_CHANNELS = 1;
 static constexpr uint16_t A21_AUDIO_PCM_DURATION_MS = 20;

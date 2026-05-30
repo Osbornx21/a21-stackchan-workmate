@@ -728,7 +728,7 @@ func deliverStackChanAudioFile(ctx context.Context, gatewayURL string, deviceID 
 		select {
 		case <-ctx.Done():
 			return delivery, ctx.Err()
-		case <-time.After(stackChanPlaybackBatchDelay(offset, len(batch))):
+		case <-time.After(stackChanPlaybackBatchDelay(offset, end, len(pcmChunks), len(batch))):
 		}
 		offset = end
 	}
@@ -749,11 +749,17 @@ func stackChanPlaybackBatchSize(offset int, totalChunks int) int {
 	return stackChanSpeakerProbeBatchChunks
 }
 
-func stackChanPlaybackBatchDelay(offset int, batchChunks int) time.Duration {
-	if batchChunks <= 0 {
+func stackChanPlaybackBatchDelay(offset int, nextOffset int, totalChunks int, transportBatchChunks int) time.Duration {
+	if transportBatchChunks <= 0 {
 		return 0
 	}
-	return time.Duration(batchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond
+	if nextOffset < totalChunks {
+		batchIndex := offset / stackChanSpeakerProbeBatchChunks
+		if batchIndex < stackChanPlaybackPrebufferBatches-1 {
+			return 0
+		}
+	}
+	return time.Duration(transportBatchChunks*stackChanSpeakerProbeChunkDurationMS) * time.Millisecond
 }
 
 func padStackChanPlaybackBatch(streamID string, batch []protocol.AudioPlaybackChunk) []protocol.AudioPlaybackChunk {

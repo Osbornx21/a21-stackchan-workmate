@@ -1424,6 +1424,65 @@ func TestRunStackChanLocalTTSPlaybackKeepsSteadyBatchesLargeEnoughForSpeakerPump
 	}
 }
 
+func TestRunStackChanLocalTTSPlaybackPrebuffersAheadOfSpeakerPump(t *testing.T) {
+	original := synthesizeSherpaONNX
+	t.Cleanup(func() { synthesizeSherpaONNX = original })
+	var requestTimes []time.Time
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if len(request.AudioChunks) > 0 {
+			requestTimes = append(requestTimes, time.Now())
+		}
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	synthesizeSherpaONNX = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		outputPath := filepath.Join(options.OutputDir, "a21-sherpa-playback-prebuffer-test.wav")
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 320*40))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "sherpa_onnx",
+			Engine:          "vits_icefall_zh_aishell3",
+			Voice:           "sid_21",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     25600,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      800,
+			TTSFirstAudioMS: 33,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-local-tts-playback", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "sherpa_onnx", "--text", "不要写进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if len(requestTimes) < 5 {
+		t.Fatalf("audio request count = %d, want at least 5", len(requestTimes))
+	}
+	for i := 1; i <= 2; i++ {
+		if gap := requestTimes[i].Sub(requestTimes[i-1]); gap > 80*time.Millisecond {
+			t.Fatalf("initial prebuffer request gap %d = %s, want <= 80ms", i, gap)
+		}
+	}
+}
+
 func TestRunStackChanLocalTTSPlaybackCanSendExistingA21WAV(t *testing.T) {
 	original := synthesizeSherpaONNX
 	t.Cleanup(func() { synthesizeSherpaONNX = original })

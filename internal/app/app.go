@@ -45,6 +45,7 @@ const (
 	stackChanSpeakerProbeChunkDurationMS = 20
 	stackChanSpeakerProbeBatchChunks     = 8
 	stackChanSpeakerPrerollBatchChunks   = 8
+	stackChanPlaybackPrebufferBatches    = 3
 	stackChanSpeakerProbeMaxChunks       = 64
 )
 
@@ -1707,7 +1708,7 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 			return report, err
 		}
 		report.PlaybackBatches++
-		time.Sleep(stackChanPlaybackBatchDelay(offset, len(batch)))
+		time.Sleep(stackChanPlaybackBatchDelay(offset, end, len(pcmChunks), len(batch)))
 		offset = end
 	}
 	if _, err := postStackChanSpeakerControl(gatewayURL, deviceID, protocol.ExpressionIdle, protocol.ModeWorkmate, "IDLE", traceID, sessionID, streamID, 0); err != nil {
