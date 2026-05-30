@@ -3209,6 +3209,188 @@ func TestRunOfficeHandoffRejectsLegacyArtifactDirWithoutEchoingPath(t *testing.T
 	}
 }
 
+func TestRunOfficeAcceptanceAcceptsMatchingHandoffAndPreflight(t *testing.T) {
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{
+			Path:     "/dev/cu.usbmodemA21",
+			USBModem: true,
+			Usage:    firmwarecheck.PortUsage{Exists: true},
+		}}, nil
+	}
+	defer func() {
+		listFirmwareSerialDevices = originalLister
+	}()
+
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifactDir := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "current_mode": "workmate",
+      "current_expression": "idle",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef1"
+      },
+      "last_seen_ms": ` + fmt.Sprint(time.Now().UnixMilli()) + `
+    }
+  ]
+}`))
+	}))
+	defer server.Close()
+	outputDir := filepath.Join(dir, "reports")
+
+	var handoffOut bytes.Buffer
+	if code := Run([]string{
+		"office-handoff",
+		"--manifest", manifest,
+		"--artifact-dir", artifactDir,
+		"--commit", "abcdef1",
+		"--output-dir", outputDir,
+	}, &handoffOut, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("office-handoff code = %d: %s", code, handoffOut.String())
+	}
+	var preflightOut bytes.Buffer
+	var preflightErr bytes.Buffer
+	if code := Run([]string{
+		"office-preflight",
+		"--manifest", manifest,
+		"--artifact-dir", artifactDir,
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--commit", "abcdef1",
+		"--max-device-age-ms", "300000",
+		"--output-dir", outputDir,
+	}, &preflightOut, &preflightErr); code != 0 {
+		t.Fatalf("office-preflight code = %d: stdout=%s stderr=%s", code, preflightOut.String(), preflightErr.String())
+	}
+	handoffPath := newestGlob(t, filepath.Join(outputDir, "a21-office-handoff-*.json"))
+	preflightPath := newestGlob(t, filepath.Join(outputDir, "a21-office-preflight-*.json"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-acceptance",
+		"--handoff", handoffPath,
+		"--office-preflight", preflightPath,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("office-acceptance code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.office_acceptance.v1"`,
+		`"physical_acceptance_status": "ready_for_physical_acceptance"`,
+		`"flash_allowed": false`,
+		`"delete_allowed": false`,
+		`"handoff_report_path": "` + handoffPath + `"`,
+		`"office_preflight_report_path": "` + preflightPath + `"`,
+		`"artifact_path": "` + artifact + `"`,
+		`"device_id": "stackchan-001"`,
+		"office acceptance gate ok (no flash, no delete)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	acceptancePath := newestGlob(t, filepath.Join(outputDir, "a21-office-acceptance-*.json"))
+	data, err := os.ReadFile(acceptancePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"physical_acceptance_status": "ready_for_physical_acceptance"`) {
+		t.Fatalf("acceptance report missing ready status: %s", string(data))
+	}
+}
+
+func TestRunOfficeAcceptanceRejectsMismatchedReports(t *testing.T) {
+	dir := t.TempDir()
+	handoffPath := filepath.Join(dir, "a21-office-handoff.json")
+	preflightPath := filepath.Join(dir, "a21-office-preflight.json")
+	if err := os.WriteFile(handoffPath, []byte(`{
+  "schema_version": "a21.office_handoff.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "delete_allowed": false,
+  "commit": "abcdef1",
+  "current_artifact_path": "firmware/artifacts/a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin"
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preflightPath, []byte(`{
+  "schema_version": "a21.office_preflight.v1",
+  "dry_run": true,
+  "flash_allowed": false,
+  "ready_for_flash_plan": true,
+  "device_id": "stackchan-001",
+  "commit": "2222222",
+  "artifact": {
+    "artifact_path": "firmware/artifacts/a21-stackchan-0.1.0-m5stack-cores3-2222222-20260530-004500.bin",
+    "sha256": "abc"
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-acceptance",
+		"--handoff", handoffPath,
+		"--office-preflight", preflightPath,
+		"--output-dir", filepath.Join(dir, "reports"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"physical_acceptance_status": "blocked"`,
+		`"code": "commit_mismatch"`,
+		`"code": "artifact_mismatch"`,
+		"office acceptance gate failed",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunOfficeAcceptanceRejectsLegacyReportPathWithoutEchoingPath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"office-acceptance",
+		"--handoff", filepath.Join(t.TempDir(), "x21-office-handoff.json"),
+		"--office-preflight", filepath.Join(t.TempDir(), "a21-office-preflight.json"),
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "forbidden legacy identity") {
+		t.Fatalf("stderr = %q, want legacy path rejection", stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21-office") {
+		t.Fatalf("legacy path leaked stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func writeTestFirmwareManifest(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -3242,6 +3424,18 @@ func writeTestGatewayDeviceReport(t *testing.T, reportPath string, content strin
 	if err := os.WriteFile(reportPath, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func newestGlob(t *testing.T, pattern string) string {
+	t.Helper()
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatalf("no files match %q", pattern)
+	}
+	return matches[len(matches)-1]
 }
 
 func testPlatformIOConfig(board string) string {

@@ -460,6 +460,41 @@ The command composes:
 
 The preflight rejects manifest and artifact input paths that contain forbidden X21/V21 identity before reading them. It also refuses `ready_for_flash_plan=true` while the device is speaking, has active playback, is thinking, is in professional mode, or is in error/local fallback. It writes `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json` plus a paired `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It sets `dry_run=true` and `flash_allowed=false`. A passing office preflight only means the operator has enough evidence to run `firmware-flash-plan` with an explicit USB serial path; it is still not permission to flash.
 
+## Office Acceptance Gate
+
+After the office has a handoff receipt and a ready office-preflight receipt, run:
+
+```bash
+A21_HANDOFF_REPORT=reports/a21-office-handoff-YYYYMMDD-HHMMSS.json \
+A21_OFFICE_PREFLIGHT_REPORT=reports/a21-office-preflight-YYYYMMDD-HHMMSS.json \
+make office-acceptance
+```
+
+If a no-flash flash-plan receipt exists, include it:
+
+```bash
+A21_FIRMWARE_FLASH_PLAN=reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json
+```
+
+The command writes:
+
+```text
+reports/a21-office-acceptance-YYYYMMDD-HHMMSS.json
+```
+
+The gate cross-checks:
+
+- handoff schema is `a21.office_handoff.v1`
+- office-preflight schema is `a21.office_preflight.v1`
+- all receipts keep `flash_allowed=false`
+- handoff keeps `delete_allowed=false`
+- office-preflight has `ready_for_flash_plan=true`
+- commit and artifact path match across reports
+- artifact SHA matches when both receipts provide it
+- optional flash-plan report references the same commit, artifact, and device
+
+The success status is `ready_for_physical_acceptance`, not "flashed" or "launched". This preserves the difference between software evidence and physical StackChan acceptance.
+
 ## Serial Inventory
 
 Before choosing an upload port, inspect the current serial state:

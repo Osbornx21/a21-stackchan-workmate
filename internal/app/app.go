@@ -114,6 +114,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runOfficePreflight(args[1:], stdout, stderr)
 	case "office-handoff":
 		return runOfficeHandoff(args[1:], stdout, stderr)
+	case "office-acceptance":
+		return runOfficeAcceptance(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -768,6 +770,33 @@ type officeHandoffReport struct {
 	Findings                   []officePreflightFinding         `json:"findings,omitempty"`
 }
 
+type officeAcceptanceOptions struct {
+	HandoffPath       string
+	OfficePreflight   string
+	FirmwareFlashPlan string
+	OutputDir         string
+}
+
+type officeAcceptanceReport struct {
+	SchemaVersion             string                   `json:"schema_version"`
+	GeneratedAtMS             int64                    `json:"generated_at_ms"`
+	Metadata                  latencyBenchMetadata     `json:"metadata"`
+	DryRun                    bool                     `json:"dry_run"`
+	FlashAllowed              bool                     `json:"flash_allowed"`
+	DeleteAllowed             bool                     `json:"delete_allowed"`
+	PhysicalAcceptanceStatus  string                   `json:"physical_acceptance_status"`
+	HandoffReportPath         string                   `json:"handoff_report_path"`
+	OfficePreflightReportPath string                   `json:"office_preflight_report_path"`
+	FirmwareFlashPlanReport   string                   `json:"firmware_flash_plan_report_path,omitempty"`
+	Commit                    string                   `json:"commit,omitempty"`
+	ArtifactPath              string                   `json:"artifact_path,omitempty"`
+	ArtifactSHA256            string                   `json:"artifact_sha256,omitempty"`
+	DeviceID                  string                   `json:"device_id,omitempty"`
+	NextRequiredActions       []string                 `json:"next_required_actions"`
+	ReportPath                string                   `json:"report_path,omitempty"`
+	Findings                  []officePreflightFinding `json:"findings,omitempty"`
+}
+
 func runOfficeHandoff(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := defaultOfficeHandoffOptions()
 	for i := 0; i < len(args); i++ {
@@ -917,6 +946,210 @@ func buildOfficeHandoffReport(options officeHandoffOptions) (officeHandoffReport
 		},
 		Findings: findings,
 	}, nil
+}
+
+func runOfficeAcceptance(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := officeAcceptanceOptions{OutputDir: "reports"}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 office-acceptance --handoff reports/a21-office-handoff-...json --office-preflight reports/a21-office-preflight-...json [--firmware-flash-plan reports/a21-firmware-flash-plan-...json] [--output-dir reports]")
+			return 0
+		case "--handoff":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--handoff requires a value")
+				return 2
+			}
+			i++
+			options.HandoffPath = args[i]
+		case "--office-preflight":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--office-preflight requires a value")
+				return 2
+			}
+			i++
+			options.OfficePreflight = args[i]
+		case "--firmware-flash-plan":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--firmware-flash-plan requires a value")
+				return 2
+			}
+			i++
+			options.FirmwareFlashPlan = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown office-acceptance option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.HandoffPath == "" {
+		fmt.Fprintln(stderr, "--handoff requires a value")
+		return 2
+	}
+	if options.OfficePreflight == "" {
+		fmt.Fprintln(stderr, "--office-preflight requires a value")
+		return 2
+	}
+	for _, path := range []string{options.HandoffPath, options.OfficePreflight, options.FirmwareFlashPlan} {
+		if path == "" {
+			continue
+		}
+		if err := validateA21InputPath(path); err != nil {
+			fmt.Fprintf(stderr, "office acceptance report path invalid: %v\n", err)
+			return 1
+		}
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "office acceptance report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := buildOfficeAcceptanceReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "office acceptance failed: %v\n", err)
+		return 1
+	}
+	reportPath, err := writeOfficeAcceptanceReport(options.OutputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write office acceptance report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONOfficeAcceptance(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode office acceptance report: %v\n", err)
+		return 1
+	}
+	if len(report.Findings) > 0 {
+		fmt.Fprintln(stdout, "office acceptance gate failed (no flash, no delete)")
+		return 1
+	}
+	fmt.Fprintln(stdout, "office acceptance gate ok (no flash, no delete)")
+	return 0
+}
+
+func buildOfficeAcceptanceReport(options officeAcceptanceOptions) (officeAcceptanceReport, error) {
+	var handoff officeHandoffReport
+	if err := readJSONFile(options.HandoffPath, &handoff); err != nil {
+		return officeAcceptanceReport{}, err
+	}
+	var preflight officePreflightReport
+	if err := readJSONFile(options.OfficePreflight, &preflight); err != nil {
+		return officeAcceptanceReport{}, err
+	}
+	report := officeAcceptanceReport{
+		SchemaVersion:             "a21.office_acceptance.v1",
+		GeneratedAtMS:             time.Now().UnixMilli(),
+		Metadata:                  buildLatencyBenchMetadata(),
+		DryRun:                    true,
+		FlashAllowed:              false,
+		DeleteAllowed:             false,
+		PhysicalAcceptanceStatus:  "ready_for_physical_acceptance",
+		HandoffReportPath:         options.HandoffPath,
+		OfficePreflightReportPath: options.OfficePreflight,
+		Commit:                    firstNonEmpty(handoff.Commit, preflight.Commit),
+		ArtifactPath:              firstNonEmpty(handoff.CurrentArtifactPath, preflightArtifactPath(preflight)),
+		ArtifactSHA256:            firstNonEmpty(handoff.Artifact.SHA256, preflightArtifactSHA256(preflight)),
+		DeviceID:                  preflight.DeviceID,
+		NextRequiredActions: []string{
+			"Keep this report with the handoff and office-preflight receipts.",
+			"Run firmware-flash-plan only when an explicit USB serial port and fresh A21 Gateway device report are present.",
+			"Real flashing remains locked until a future explicit guarded A21 flash command exists.",
+		},
+	}
+	if handoff.SchemaVersion != "a21.office_handoff.v1" {
+		report.addFinding("handoff_schema_invalid", "handoff report schema is not a21.office_handoff.v1")
+	}
+	if preflight.SchemaVersion != "a21.office_preflight.v1" {
+		report.addFinding("office_preflight_schema_invalid", "office preflight report schema is not a21.office_preflight.v1")
+	}
+	if handoff.FlashAllowed || handoff.DeleteAllowed || preflight.FlashAllowed {
+		report.addFinding("unsafe_permission", "handoff or office preflight unexpectedly allowed flash/delete")
+	}
+	if !preflight.ReadyForFlashPlan {
+		report.addFinding("office_preflight_not_ready", "office preflight is not ready for flash-plan evidence")
+	}
+	if handoff.Commit != "" && preflight.Commit != "" && !sameCLICommit(handoff.Commit, preflight.Commit) {
+		report.addFinding("commit_mismatch", "handoff and office preflight commits differ")
+	}
+	handoffArtifact := handoff.CurrentArtifactPath
+	preflightArtifact := preflightArtifactPath(preflight)
+	if handoffArtifact != "" && preflightArtifact != "" && !sameCleanCLIPath(handoffArtifact, preflightArtifact) {
+		report.addFinding("artifact_mismatch", "handoff and office preflight artifacts differ")
+	}
+	handoffSHA := handoff.Artifact.SHA256
+	preflightSHA := preflightArtifactSHA256(preflight)
+	if handoffSHA != "" && preflightSHA != "" && !strings.EqualFold(handoffSHA, preflightSHA) {
+		report.addFinding("artifact_sha_mismatch", "handoff and office preflight artifact sha256 values differ")
+	}
+	if options.FirmwareFlashPlan != "" {
+		var flashPlan firmwarecheck.FlashPlanResult
+		if err := readJSONFile(options.FirmwareFlashPlan, &flashPlan); err != nil {
+			return officeAcceptanceReport{}, err
+		}
+		report.FirmwareFlashPlanReport = options.FirmwareFlashPlan
+		if flashPlan.FlashAllowed {
+			report.addFinding("unsafe_flash_plan", "firmware flash plan unexpectedly allowed flashing")
+		}
+		if flashPlan.Commit != "" && report.Commit != "" && !sameCLICommit(report.Commit, flashPlan.Commit) {
+			report.addFinding("flash_plan_commit_mismatch", "firmware flash plan commit differs")
+		}
+		if flashPlan.ArtifactPath != "" && report.ArtifactPath != "" && !sameCleanCLIPath(report.ArtifactPath, flashPlan.ArtifactPath) {
+			report.addFinding("flash_plan_artifact_mismatch", "firmware flash plan artifact differs")
+		}
+		if flashPlan.DeviceID != "" && report.DeviceID != "" && flashPlan.DeviceID != report.DeviceID {
+			report.addFinding("flash_plan_device_mismatch", "firmware flash plan device differs")
+		}
+	}
+	if len(report.Findings) > 0 {
+		report.PhysicalAcceptanceStatus = "blocked"
+	}
+	return report, nil
+}
+
+func readJSONFile(path string, target any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, target)
+}
+
+func (report *officeAcceptanceReport) addFinding(code string, message string) {
+	report.Findings = append(report.Findings, officePreflightFinding{Code: code, Message: message})
+}
+
+func preflightArtifactPath(report officePreflightReport) string {
+	if report.Artifact == nil {
+		return ""
+	}
+	return report.Artifact.ArtifactPath
+}
+
+func preflightArtifactSHA256(report officePreflightReport) string {
+	if report.Artifact == nil {
+		return ""
+	}
+	return report.Artifact.SHA256
+}
+
+func sameCLICommit(left string, right string) bool {
+	left = strings.ToLower(left)
+	right = strings.ToLower(right)
+	return left == right || strings.HasPrefix(left, right) || strings.HasPrefix(right, left)
+}
+
+func sameCleanCLIPath(left string, right string) bool {
+	leftClean, leftErr := filepath.Abs(filepath.Clean(left))
+	rightClean, rightErr := filepath.Abs(filepath.Clean(right))
+	if leftErr != nil || rightErr != nil {
+		return filepath.Clean(left) == filepath.Clean(right)
+	}
+	return leftClean == rightClean
 }
 
 func runOfficePreflight(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -1390,6 +1623,23 @@ func writeOfficeHandoffReport(outputDir string, report officeHandoffReport) (str
 	defer file.Close()
 	report.ReportPath = reportPath
 	if err := writeJSONOfficeHandoff(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeOfficeAcceptanceReport(outputDir string, report officeAcceptanceReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-office-acceptance-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONOfficeAcceptance(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
@@ -1989,6 +2239,12 @@ func writeJSONOfficePreflight(writer io.Writer, report officePreflightReport) er
 }
 
 func writeJSONOfficeHandoff(writer io.Writer, report officeHandoffReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONOfficeAcceptance(writer io.Writer, report officeAcceptanceReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

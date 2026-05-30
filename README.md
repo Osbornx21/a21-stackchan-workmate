@@ -91,6 +91,16 @@ make office-handoff
 
 It writes `reports/a21-office-handoff-*.json` with the current release-ledger-validated firmware artifact, no-delete artifact retention summary, serial inventory, and the next physical acceptance steps. It still sets `flash_allowed: false` and `delete_allowed: false`.
 
+At the office, after `office-preflight` has produced a ready report, cross-check the receipts:
+
+```bash
+A21_HANDOFF_REPORT=reports/a21-office-handoff-<timestamp>.json \
+A21_OFFICE_PREFLIGHT_REPORT=reports/a21-office-preflight-<timestamp>.json \
+make office-acceptance
+```
+
+If a no-flash `firmware-flash-plan` report also exists, add `A21_FIRMWARE_FLASH_PLAN=reports/a21-firmware-flash-plan-<timestamp>.json`. The acceptance gate checks commit, artifact, device, and no-flash/no-delete invariants across receipts.
+
 ## Required Reading
 
 - [AGENTS.md](AGENTS.md)
