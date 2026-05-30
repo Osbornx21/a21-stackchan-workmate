@@ -330,6 +330,81 @@ func TestValidateUploadCandidateRejectsReleaseIndexChecksumMismatch(t *testing.T
 	}
 }
 
+func TestValidateLatestArtifactForCommitAcceptsNewestReleaseIndexArtifact(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	oldArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	newArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-005500.bin")
+	writeArtifactWithChecksum(t, oldArtifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456 old"))
+	writeArtifactWithChecksum(t, newArtifact, []byte("a21-stackchan 0.1.0 m5stack-cores3 abcdef123456 new"))
+	oldChecksum := readTestChecksum(t, oldArtifact+".sha256")
+	newChecksum := readTestChecksum(t, newArtifact+".sha256")
+	for _, entry := range []ReleaseIndexEntry{
+		{
+			SchemaVersion: "a21.firmware.release.v1",
+			FirmwareID:    "a21-stackchan",
+			Version:       "0.1.0",
+			Board:         "m5stack-cores3",
+			Commit:        "abcdef123456",
+			Timestamp:     "20260530-004500",
+			ArtifactPath:  oldArtifact,
+			SHA256Path:    oldArtifact + ".sha256",
+			SHA256:        oldChecksum,
+			Build:         testBuildProvenance(oldArtifact),
+		},
+		{
+			SchemaVersion: "a21.firmware.release.v1",
+			FirmwareID:    "a21-stackchan",
+			Version:       "0.1.0",
+			Board:         "m5stack-cores3",
+			Commit:        "abcdef123456",
+			Timestamp:     "20260530-005500",
+			ArtifactPath:  newArtifact,
+			SHA256Path:    newArtifact + ".sha256",
+			SHA256:        newChecksum,
+			Build:         testBuildProvenance(newArtifact),
+		},
+	} {
+		if err := appendReleaseIndexEntry(filepath.Join(dir, ReleaseIndexFileName), entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeArtifactReleaseManifestWithIdentity(t, oldArtifact, oldChecksum, "abcdef123456", "20260530-004500")
+	writeArtifactReleaseManifestWithIdentity(t, newArtifact, newChecksum, "abcdef123456", "20260530-005500")
+
+	result, err := ValidateLatestArtifactForCommit(LatestArtifactOptions{
+		ManifestPath: manifest,
+		ArtifactDir:  dir,
+		Commit:       "abcdef123456",
+	})
+	if err != nil {
+		t.Fatalf("ValidateLatestArtifactForCommit returned error: %v", err)
+	}
+	if result.ArtifactPath != newArtifact {
+		t.Fatalf("ArtifactPath = %q, want newest %q", result.ArtifactPath, newArtifact)
+	}
+}
+
+func TestValidateLatestArtifactForCommitRejectsMissingCommitArtifact(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeArtifactManifest(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ReleaseIndexFileName), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ValidateLatestArtifactForCommit(LatestArtifactOptions{
+		ManifestPath: manifest,
+		ArtifactDir:  dir,
+		Commit:       "abcdef123456",
+	})
+	if err == nil {
+		t.Fatal("expected missing current-commit artifact to be rejected")
+	}
+	if !strings.Contains(err.Error(), "no release index entry") {
+		t.Fatalf("error = %q, want no release index entry", err)
+	}
+}
+
 func writeArtifactManifest(t *testing.T, dir string) string {
 	t.Helper()
 	manifest := filepath.Join(dir, "a21-firmware.json")

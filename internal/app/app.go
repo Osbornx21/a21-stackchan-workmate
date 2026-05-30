@@ -98,6 +98,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwarePackage(args[1:], stdout, stderr)
 	case "firmware-artifact-check":
 		return runFirmwareArtifactCheck(args[1:], stdout, stderr)
+	case "firmware-current-artifact-check":
+		return runFirmwareCurrentArtifactCheck(args[1:], stdout, stderr)
 	case "firmware-upload-check":
 		return runFirmwareUploadCheck(args[1:], stdout, stderr)
 	case "firmware-device-check":
@@ -1138,6 +1140,59 @@ func runFirmwareArtifactCheck(args []string, stdout io.Writer, stderr io.Writer)
 		return 1
 	}
 	fmt.Fprintln(stdout, "firmware artifact ok")
+	return 0
+}
+
+func runFirmwareCurrentArtifactCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.LatestArtifactOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		ArtifactDir:  "firmware/artifacts",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-current-artifact-check --commit <expected-git-commit> [--artifact-dir firmware/artifacts]")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact-dir requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactDir = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-current-artifact-check option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	result, err := firmwarecheck.ValidateLatestArtifactForCommit(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware current artifact check failed: %v\n", err)
+		return 1
+	}
+	if err := writeJSONFirmwareArtifact(stdout, result); err != nil {
+		fmt.Fprintf(stderr, "encode firmware current artifact result: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "firmware current artifact ok")
 	return 0
 }
 

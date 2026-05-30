@@ -34,7 +34,9 @@ make release-check
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO environment pinned to `platformio==6.1.19`.
 
-`make release-check` runs Go tests, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, and doctor. It does not flash hardware.
+`make firmware-current-artifact-check` validates the newest packaged firmware artifact for the current git commit through the release index and per-artifact manifest.
+
+`make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, and doctor. It does not flash hardware.
 
 ## Local Gateway
 

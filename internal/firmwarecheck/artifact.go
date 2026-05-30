@@ -40,6 +40,12 @@ type UploadCheckOptions struct {
 	Commit       string
 }
 
+type LatestArtifactOptions struct {
+	ManifestPath string
+	ArtifactDir  string
+	Commit       string
+}
+
 type UploadCheckResult struct {
 	GuardID                  string         `json:"guard_id"`
 	DryRun                   bool           `json:"dry_run"`
@@ -176,6 +182,73 @@ func ValidateUploadCandidate(options UploadCheckOptions) (UploadCheckResult, err
 		Port:                     options.Port,
 		OK:                       true,
 	}, nil
+}
+
+func ValidateLatestArtifactForCommit(options LatestArtifactOptions) (ArtifactResult, error) {
+	manifestResult, err := LoadAndValidate(options.ManifestPath)
+	if err != nil {
+		return ArtifactResult{}, err
+	}
+	if options.ArtifactDir == "" {
+		return ArtifactResult{}, fmt.Errorf("artifact directory is required")
+	}
+	if err := validateExpectedCommit(options.Commit); err != nil {
+		return ArtifactResult{}, err
+	}
+	releaseIndexPath := filepath.Join(options.ArtifactDir, ReleaseIndexFileName)
+	data, err := os.ReadFile(releaseIndexPath)
+	if err != nil {
+		return ArtifactResult{}, fmt.Errorf("release index missing or unreadable: %w", err)
+	}
+	manifest := manifestResult.Manifest
+	var latest ReleaseIndexEntry
+	found := false
+	for lineNumber, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		var entry ReleaseIndexEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			return ArtifactResult{}, fmt.Errorf("release index line %d is invalid: %w", lineNumber+1, err)
+		}
+		if releaseRecordPathContainsForbiddenIdentity(entry.ArtifactPath, entry.SHA256Path) {
+			return ArtifactResult{}, fmt.Errorf("release index contains forbidden legacy path identity")
+		}
+		if entry.SchemaVersion != "a21.firmware.release.v1" ||
+			entry.FirmwareID != manifest.FirmwareID ||
+			entry.Version != manifest.Version ||
+			entry.Board != manifest.Board ||
+			!sameGitCommit(entry.Commit, options.Commit) {
+			continue
+		}
+		if found && entry.Timestamp == latest.Timestamp && filepath.Base(entry.ArtifactPath) != filepath.Base(latest.ArtifactPath) {
+			return ArtifactResult{}, fmt.Errorf("release index has ambiguous latest artifact timestamp %q for commit %q", entry.Timestamp, options.Commit)
+		}
+		if !found || entry.Timestamp > latest.Timestamp {
+			latest = entry
+			found = true
+		}
+	}
+	if !found {
+		return ArtifactResult{}, fmt.Errorf("no release index entry for commit %q", options.Commit)
+	}
+	result, err := ValidateArtifact(ArtifactOptions{
+		ManifestPath:           options.ManifestPath,
+		ArtifactPath:           latest.ArtifactPath,
+		RequireReleaseIndex:    true,
+		RequireReleaseManifest: true,
+	})
+	if err != nil {
+		return ArtifactResult{}, err
+	}
+	if !sameGitCommit(options.Commit, result.Commit) {
+		return ArtifactResult{}, fmt.Errorf("artifact commit %q does not match expected commit %q", result.Commit, options.Commit)
+	}
+	if err := validateLatestReleaseIndexArtifact(result.ReleaseIndexPath, result); err != nil {
+		return ArtifactResult{}, err
+	}
+	return result, nil
 }
 
 func validateReleaseIndexEntry(path string, artifact ArtifactResult) (FirmwareBuildProvenance, error) {

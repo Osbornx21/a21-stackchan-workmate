@@ -1337,6 +1337,44 @@ func TestRunFirmwareArtifactCheckRejectsChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareCurrentArtifactCheckAcceptsNewestCommitArtifact(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	oldArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
+	newArtifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-005500.bin")
+	writeFirmwareArtifactWithChecksum(t, oldArtifact, []byte("old firmware"))
+	writeFirmwareArtifactWithChecksum(t, newArtifact, []byte("new firmware"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-current-artifact-check",
+		"--manifest", manifest,
+		"--artifact-dir", dir,
+		"--commit", "abcdef1",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), newArtifact) {
+		t.Fatalf("stdout missing newest artifact %q: %s", newArtifact, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "firmware current artifact ok") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunFirmwareCurrentArtifactCheckRequiresCommit(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-current-artifact-check"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "--commit requires a value") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunFirmwareUploadCheckRequiresExplicitPort(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeTestFirmwareManifest(t, dir)

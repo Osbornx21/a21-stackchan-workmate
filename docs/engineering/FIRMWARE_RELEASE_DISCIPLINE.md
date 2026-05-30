@@ -89,11 +89,14 @@ make firmware-test
 make firmware-build
 make firmware-upload-blocker-check
 make firmware-package
+make firmware-current-artifact-check
 ```
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
 `firmware-upload-blocker-check` intentionally invokes PlatformIO's raw upload target and expects it to fail with the A21 blocker message before any hardware write can start. A successful raw upload target is a release-blocking failure.
+
+`firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 Current native firmware tests cover:
 
@@ -183,6 +186,13 @@ or:
 
 ```bash
 A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> make firmware-artifact-check
+```
+
+For the current checkout, prefer the ledger-backed command:
+
+```bash
+go run ./cmd/a21 firmware-current-artifact-check --commit <git-sha>
+make firmware-current-artifact-check
 ```
 
 The guard verifies:
