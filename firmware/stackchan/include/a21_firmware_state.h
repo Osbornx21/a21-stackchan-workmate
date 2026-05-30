@@ -72,6 +72,28 @@ inline A21RenderState a21RenderStateFromProtocol(const char* state) {
   return A21_RENDER_ERROR;
 }
 
+inline const char* a21RenderStateProtocolName(A21RenderState state) {
+  switch (state) {
+    case A21_RENDER_IDLE:
+      return "idle";
+    case A21_RENDER_LISTENING:
+      return "listening";
+    case A21_RENDER_THINKING:
+      return "thinking";
+    case A21_RENDER_SPEAKING:
+      return "speaking";
+    case A21_RENDER_INTERRUPTED:
+      return "interrupted";
+    case A21_RENDER_PROFESSIONAL:
+      return "professional";
+    case A21_RENDER_LOCAL:
+      return "local_fallback";
+    case A21_RENDER_ERROR:
+    default:
+      return "error";
+  }
+}
+
 inline bool a21ProtocolStateSupported(const char* state) {
   return a21StringEquals(state, "idle") ||
          a21StringEquals(state, "listening") ||

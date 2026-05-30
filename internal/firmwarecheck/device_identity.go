@@ -29,6 +29,7 @@ type DeviceIdentityRecord struct {
 	DeviceID          string                 `json:"device_id"`
 	Firmware          DeviceIdentityFirmware `json:"firmware"`
 	Capabilities      map[string]string      `json:"capabilities,omitempty"`
+	RuntimeEcho       map[string]string      `json:"runtime_echo,omitempty"`
 	IdentityStatus    string                 `json:"identity_status"`
 	IdentityError     string                 `json:"identity_error,omitempty"`
 	ConnectionStatus  string                 `json:"connection_status,omitempty"`

@@ -99,6 +99,7 @@ Phase 2B supports:
 - device event `interrupt` -> control events `interrupted`, `listening`
 - device event `touch.wake_or_listen` -> same turn path as `mock.turn`, with optional `touch_source`
 - device event `touch.barge_in` -> same interruption path as `interrupt`, with optional `touch_source`
+- device event `runtime.echo` -> registry-only acknowledgement that firmware applied current screen/motion/RGB state
 - audio frame -> mock listening ack, mock speaking state with `stream_id`, then `audio.playback.chunk`
 - audio frame with a realtime-capable provider -> Gateway starts or reuses a provider realtime session, forwards detected speech frames, and commits on `vad.speech.end`
 - realtime provider output event -> Gateway emits A21 `control.event` and, when audio exists, A21 `audio.playback.chunk`
@@ -111,8 +112,9 @@ Firmware-originated `device.event` payloads may also carry build identity:
 - `firmware_commit`: git SHA embedded by the A21 PlatformIO pre-build script
 - `capabilities`: semantic StackChan hardware capability map. Current firmware and simulator report `microphone`, `speaker`, `screen`, `screen_touch`, `top_touch`, `servo_y`, and `rgb` as `available`.
 - `touch_source`: `screen` or `top_sensor` for semantic touch-origin events
+- `runtime_echo`: device-applied runtime echo map. Current firmware reports `screen` as the applied render state, `servo_y` as the clamped applied Y-axis angle, and `rgb` as the applied RGB color. Gateway records this for diagnostics and capability evidence derivation, but it is still not a substitute for physical operator observation.
 
-Gateway records this identity and capability map in the device registry and rejects events whose firmware identity or capability values contain forbidden X21/V21 naming or mismatched A21 board/firmware fields. Capability values are evidence of the declared device surface, not proof that physical microphone, speaker, touch, servo, RGB, or screen acceptance has passed.
+Gateway records this identity, capability map, and runtime echo in the device registry and rejects events whose firmware identity, capability values, or runtime echo values contain forbidden X21/V21 naming or mismatched A21 board/firmware fields. Capability values are evidence of the declared device surface; runtime echo values are evidence that firmware applied a state to its runtime drivers. Neither is proof that physical microphone, speaker, touch, servo, RGB, or screen acceptance has passed.
 
 The `/v1/devices` registry response must identify the serving process before any device list is trusted:
 
@@ -127,6 +129,7 @@ Gateway also records the device's current control state for office acceptance:
 - `current_expression`: latest expression/render state from A21 `control.event`
 - `playback_stream_id`: active speaking stream when one is present
 - `capabilities`: latest semantic device capability map reported by firmware or simulator
+- `runtime_echo`: latest device-applied screen/servo/RGB echo reported by firmware
 
 The current online window is 300000 ms. Anything older is `stale`; this is aligned with the default firmware device identity freshness guard. This field is an operator acceptance aid, not flash permission.
 

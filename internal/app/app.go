@@ -1706,12 +1706,38 @@ func deriveGatewayPhysicalEvidence(report *stackChanPhysicalEvidenceReport, opti
 		report.addFinding("gateway_device_missing", "expected device is missing from Gateway report")
 		return
 	}
-	if device.CurrentExpression != "" || device.CurrentMode != "" {
+	if device.RuntimeEcho["screen"] != "" {
 		observed["screen"] = stackChanPhysicalEvidenceObservation{
 			Capability:   "screen",
 			Status:       "passed",
-			EvidenceType: "gateway_render_state",
+			EvidenceType: "device_screen_echo",
 			ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+		}
+	}
+	if device.RuntimeEcho["servo_y"] != "" {
+		observed["servo_y"] = stackChanPhysicalEvidenceObservation{
+			Capability:   "servo_y",
+			Status:       "passed",
+			EvidenceType: "device_servo_echo",
+			ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+		}
+	}
+	if device.RuntimeEcho["rgb"] != "" {
+		observed["rgb"] = stackChanPhysicalEvidenceObservation{
+			Capability:   "rgb",
+			Status:       "passed",
+			EvidenceType: "device_rgb_echo",
+			ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+		}
+	}
+	if device.CurrentExpression != "" || device.CurrentMode != "" {
+		if _, ok := observed["screen"]; !ok {
+			observed["screen"] = stackChanPhysicalEvidenceObservation{
+				Capability:   "screen",
+				Status:       "passed",
+				EvidenceType: "gateway_render_state",
+				ObservedAtMS: bestObservedAtMS(device.LastSeenMS, report.GeneratedAtMS),
+			}
 		}
 	}
 	if strings.HasPrefix(device.LastEvent, "touch.") {
@@ -2463,6 +2489,11 @@ func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityR
 			}
 		}
 		for key, value := range device.Capabilities {
+			if containsLegacyIdentity(key) || containsLegacyIdentity(value) {
+				return fmt.Errorf("gateway device report contains forbidden legacy identity")
+			}
+		}
+		for key, value := range device.RuntimeEcho {
 			if containsLegacyIdentity(key) || containsLegacyIdentity(value) {
 				return fmt.Errorf("gateway device report contains forbidden legacy identity")
 			}

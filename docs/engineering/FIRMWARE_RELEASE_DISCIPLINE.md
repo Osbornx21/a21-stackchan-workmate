@@ -572,11 +572,13 @@ Gateway-derived evidence is intentionally limited:
 
 - `microphone`: latest trace includes `audio.frame.received`
 - `speaker`: latest trace includes `audio.playback.chunk.sent`
-- `screen`: device registry has a current mode or expression
+- `screen`: device registry has `runtime_echo.screen`; if absent, it can fall back to current Gateway mode/expression
 - `screen_touch`: latest touch event source is `screen`
 - `top_touch`: latest touch event source is `top_sensor`
+- `servo_y`: device registry has `runtime_echo.servo_y`
+- `rgb`: device registry has `runtime_echo.rgb`
 
-It does not prove physical audibility, screen visibility, servo movement, RGB output, OTA, AEC, or full-duplex quality. Those still require explicit physical observations or future firmware echo probes.
+`runtime_echo` is emitted by firmware after applying screen, motion, and RGB state, so it is a device-applied echo rather than only Gateway intent. It still does not prove physical audibility, screen visibility, servo movement, RGB output, OTA, AEC, or full-duplex quality. Those still require explicit physical observations or later instrumented hardware probes.
 
 Capability acceptance then consumes that evidence file:
 

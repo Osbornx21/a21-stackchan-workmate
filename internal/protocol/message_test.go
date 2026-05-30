@@ -168,6 +168,36 @@ func TestDeviceEventPayloadKindsCoverTouchSemantics(t *testing.T) {
 	}
 }
 
+func TestDeviceEventPayloadKindsCoverRuntimeEcho(t *testing.T) {
+	event := DeviceEventPayload{
+		Event: DeviceEventRuntimeEcho,
+		Mode:  ModeWorkmate,
+		RuntimeEcho: map[string]string{
+			"screen":  "speaking",
+			"servo_y": "48deg",
+			"rgb":     "#002430",
+		},
+	}
+	if string(event.Event) != "runtime.echo" {
+		t.Fatalf("runtime echo event = %q, want runtime.echo", event.Event)
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"event":"runtime.echo"`,
+		`"runtime_echo"`,
+		`"screen":"speaking"`,
+		`"servo_y":"48deg"`,
+		`"rgb":"#002430"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("json missing %q: %s", want, data)
+		}
+	}
+}
+
 func TestAudioChunkPayloadShape(t *testing.T) {
 	chunk := AudioChunk{
 		Codec:              AudioCodecPCMS16LE,

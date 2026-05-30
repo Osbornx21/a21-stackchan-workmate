@@ -92,6 +92,7 @@ const (
 	DeviceEventInterrupt         DeviceEventKind = "interrupt"
 	DeviceEventTouchWakeOrListen DeviceEventKind = "touch.wake_or_listen"
 	DeviceEventTouchBargeIn      DeviceEventKind = "touch.barge_in"
+	DeviceEventRuntimeEcho       DeviceEventKind = "runtime.echo"
 )
 
 type TouchSource string
@@ -111,6 +112,7 @@ type DeviceEventPayload struct {
 	FirmwareBoard   string            `json:"firmware_board,omitempty"`
 	FirmwareCommit  string            `json:"firmware_commit,omitempty"`
 	Capabilities    map[string]string `json:"capabilities,omitempty"`
+	RuntimeEcho     map[string]string `json:"runtime_echo,omitempty"`
 }
 
 type AudioCodec string

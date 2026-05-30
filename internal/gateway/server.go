@@ -103,6 +103,7 @@ type DeviceRecord struct {
 	DeviceID         string                   `json:"device_id"`
 	Firmware         DeviceFirmwareIdentity   `json:"firmware,omitempty"`
 	Capabilities     map[string]string        `json:"capabilities,omitempty"`
+	RuntimeEcho      map[string]string        `json:"runtime_echo,omitempty"`
 	IdentityStatus   string                   `json:"identity_status"`
 	IdentityError    string                   `json:"identity_error,omitempty"`
 	ConnectionStatus string                   `json:"connection_status,omitempty"`
@@ -786,6 +787,8 @@ func (s *Server) controlEventsForDeviceEvent(event protocol.Envelope) []protocol
 		return s.mockTurnResponse(req).Events
 	case protocol.DeviceEventInterrupt, protocol.DeviceEventTouchBargeIn:
 		return s.mockInterruptResponse(req).Events
+	case protocol.DeviceEventRuntimeEcho:
+		return nil
 	default:
 		return s.errorEvents(event, "unsupported device event")
 	}
@@ -871,13 +874,22 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 		Commit:  payload.FirmwareCommit,
 	}
 	status, identityError := validateFirmwareIdentity(firmware)
-	capabilities, capabilityError := sanitizeDeviceCapabilities(payload.Capabilities)
+	capabilities, capabilityError := sanitizeDeviceStringMap(payload.Capabilities, "device capabilities")
 	if capabilityError != "" {
 		status = "invalid"
 		if identityError != "" {
 			identityError += "; " + capabilityError
 		} else {
 			identityError = capabilityError
+		}
+	}
+	runtimeEcho, runtimeEchoError := sanitizeDeviceStringMap(payload.RuntimeEcho, "device runtime echo values")
+	if runtimeEchoError != "" {
+		status = "invalid"
+		if identityError != "" {
+			identityError += "; " + runtimeEchoError
+		} else {
+			identityError = runtimeEchoError
 		}
 	}
 
@@ -890,6 +902,9 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	}
 	record.Firmware = firmware
 	record.Capabilities = capabilities
+	if runtimeEcho != nil {
+		record.RuntimeEcho = runtimeEcho
+	}
 	record.IdentityStatus = status
 	record.IdentityError = identityError
 	record.LastEvent = payload.Event
@@ -904,7 +919,7 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	return record
 }
 
-func sanitizeDeviceCapabilities(input map[string]string) (map[string]string, string) {
+func sanitizeDeviceStringMap(input map[string]string, label string) (map[string]string, string) {
 	if len(input) == 0 {
 		return nil, ""
 	}
@@ -919,7 +934,7 @@ func sanitizeDeviceCapabilities(input map[string]string) (map[string]string, str
 			strings.Contains(strings.ToLower(cleanKey), "v21") ||
 			strings.Contains(strings.ToLower(cleanValue), "x21") ||
 			strings.Contains(strings.ToLower(cleanValue), "v21") {
-			return nil, "device capabilities contain forbidden legacy identity"
+			return nil, label + " contain forbidden legacy identity"
 		}
 		output[cleanKey] = cleanValue
 	}

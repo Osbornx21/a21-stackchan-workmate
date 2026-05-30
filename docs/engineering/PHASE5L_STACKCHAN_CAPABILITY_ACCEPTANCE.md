@@ -46,7 +46,9 @@ A21_DERIVE_GATEWAY_EVIDENCE=1 \
 make stackchan-physical-evidence
 ```
 
-This mode reads the A21 Gateway directly with no ambient proxy. It can mark `microphone` when the latest trace has `audio.frame.received`, `speaker` when Gateway sent `audio.playback.chunk`, `screen` when Gateway knows the current render state, and `screen_touch` or `top_touch` when the latest touch event includes the source. It leaves servo/RGB and any truly physical audible/visible proof pending until those have explicit observations or future firmware echo probes.
+This mode reads the A21 Gateway directly with no ambient proxy. It can mark `microphone` when the latest trace has `audio.frame.received`, `speaker` when Gateway sent `audio.playback.chunk`, `screen_touch` or `top_touch` when the latest touch event includes the source, and `screen`/`servo_y`/`rgb` when the latest device registry includes firmware `runtime_echo` values. If `runtime_echo.screen` is missing, `screen` can still fall back to `gateway_render_state`.
+
+`runtime_echo` is stronger than Gateway intent because it is emitted by firmware after applying screen, motion, and RGB state. It is still not the same as human-visible or instrument-measured proof: physical audibility, visibility, servo movement, and LED output remain separate observations for Shanghai office acceptance.
 
 ## Acceptance Command
 

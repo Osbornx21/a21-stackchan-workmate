@@ -500,5 +500,13 @@ void loop() {
   a21RGBRuntimeApplyState(&g_rgb_runtime, &g_rgb_driver, &g_state);
   handleLocalControls(now_ms);
   drawIfChanged();
+  a21GatewayWSSendRuntimeEchoIfChanged(
+      &g_gateway_ws_runtime,
+      &g_gateway_ws_driver,
+      &g_connection,
+      &g_state,
+      &g_motion_runtime,
+      &g_rgb_runtime,
+      now_ms);
   delay(20);
 }

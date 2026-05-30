@@ -2,14 +2,16 @@
 
 #include "a21_firmware_config.h"
 #include "a21_firmware_connection.h"
+#include "a21_firmware_motion.h"
 #include "a21_firmware_network.h"
+#include "a21_firmware_rgb.h"
 #include "a21_firmware_state.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
-static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 768;
+static constexpr size_t A21_WS_TEXT_MESSAGE_CAP = 1024;
 
 struct A21GatewayWSDriver {
   void* ctx;
@@ -27,6 +29,10 @@ struct A21GatewayWSRuntime {
   uint32_t invalid_control_events;
   uint32_t sent_device_events;
   uint64_t next_seq;
+  bool has_runtime_echo;
+  A21RenderState last_runtime_echo_render_state;
+  int last_runtime_echo_y_deg;
+  A21RGBColor last_runtime_echo_rgb;
 };
 
 inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
@@ -39,6 +45,10 @@ inline void a21InitGatewayWSRuntime(A21GatewayWSRuntime* runtime) {
   runtime->invalid_control_events = 0;
   runtime->sent_device_events = 0;
   runtime->next_seq = 1;
+  runtime->has_runtime_echo = false;
+  runtime->last_runtime_echo_render_state = A21_RENDER_ERROR;
+  runtime->last_runtime_echo_y_deg = 45;
+  runtime->last_runtime_echo_rgb = a21RGBColorMake(0, 0, 0);
 }
 
 inline bool a21GatewayWSDriverReady(const A21GatewayWSDriver* driver) {
@@ -70,6 +80,15 @@ inline bool a21GatewayWSSendDeviceEventWithTouchSource(
     const char* mode,
     const char* text,
     const char* touch_source,
+    uint32_t now_ms);
+
+inline bool a21GatewayWSSendRuntimeEchoIfChanged(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const A21MotionRuntime* motion_runtime,
+    const A21RGBRuntime* rgb_runtime,
     uint32_t now_ms);
 
 inline bool a21GatewayWSBuildDeviceEvent(
@@ -145,6 +164,65 @@ inline bool a21GatewayWSBuildDeviceEventWithTouchSource(
   return written > 0 && written < output_size;
 }
 
+inline bool a21GatewayWSBuildRuntimeEchoEvent(
+    const A21GatewayWSRuntime* runtime,
+    const A21FirmwareState* state,
+    const A21MotionRuntime* motion_runtime,
+    const A21RGBRuntime* rgb_runtime,
+    uint32_t now_ms,
+    char* output,
+    size_t output_size) {
+  if (runtime == nullptr || state == nullptr || motion_runtime == nullptr || rgb_runtime == nullptr ||
+      !motion_runtime->has_y || !rgb_runtime->has_color || output == nullptr || output_size == 0) {
+    return false;
+  }
+  output[0] = '\0';
+
+  char trace_id[A21_TRACE_ID_CAP];
+  snprintf(trace_id, sizeof(trace_id), "a21-trace-device-%06llu", static_cast<unsigned long long>(runtime->next_seq));
+  char servo_y[12];
+  snprintf(servo_y, sizeof(servo_y), "%ddeg", motion_runtime->last_y_deg);
+  char rgb_hex[8];
+  snprintf(
+      rgb_hex,
+      sizeof(rgb_hex),
+      "#%02X%02X%02X",
+      rgb_runtime->last_color.r,
+      rgb_runtime->last_color.g,
+      rgb_runtime->last_color.b);
+
+  JsonDocument doc;
+  doc["protocol"] = "a21.device.v1";
+  doc["device_id"] = state->device_id;
+  doc["kind"] = "device.event";
+  doc["seq"] = runtime->next_seq;
+  doc["trace_id"] = trace_id;
+  doc["session_id"] = state->session_id[0] == '\0' ? "a21-session-device" : state->session_id;
+  doc["sent_at_ms"] = now_ms;
+  JsonObject payload = doc["payload"].to<JsonObject>();
+  payload["event"] = "runtime.echo";
+  payload["mode"] = state->mode[0] == '\0' ? "workmate" : state->mode;
+  payload["firmware_id"] = A21_FIRMWARE_ID;
+  payload["firmware_version"] = A21_FIRMWARE_VERSION;
+  payload["firmware_board"] = A21_FIRMWARE_BOARD;
+  payload["firmware_commit"] = A21_FIRMWARE_COMMIT;
+  JsonObject capabilities = payload["capabilities"].to<JsonObject>();
+  capabilities["microphone"] = "available";
+  capabilities["speaker"] = "available";
+  capabilities["screen"] = "available";
+  capabilities["screen_touch"] = "available";
+  capabilities["top_touch"] = "available";
+  capabilities["servo_y"] = "available";
+  capabilities["rgb"] = "available";
+  JsonObject echo = payload["runtime_echo"].to<JsonObject>();
+  echo["screen"] = a21RenderStateProtocolName(state->render_state);
+  echo["servo_y"] = servo_y;
+  echo["rgb"] = rgb_hex;
+
+  const size_t written = serializeJson(doc, output, output_size);
+  return written > 0 && written < output_size;
+}
+
 inline bool a21GatewayWSSendDeviceEvent(
     A21GatewayWSRuntime* runtime,
     const A21GatewayWSDriver* driver,
@@ -192,6 +270,47 @@ inline bool a21GatewayWSSendDeviceEventWithTouchSource(
   }
   runtime->sent_device_events += 1;
   runtime->next_seq += 1;
+  return true;
+}
+
+inline bool a21GatewayWSSendRuntimeEchoIfChanged(
+    A21GatewayWSRuntime* runtime,
+    const A21GatewayWSDriver* driver,
+    const A21ConnectionState* connection,
+    const A21FirmwareState* state,
+    const A21MotionRuntime* motion_runtime,
+    const A21RGBRuntime* rgb_runtime,
+    uint32_t now_ms) {
+  if (runtime == nullptr || !a21GatewayWSDriverReady(driver) || connection == nullptr ||
+      state == nullptr || motion_runtime == nullptr || rgb_runtime == nullptr) {
+    return false;
+  }
+  if (!motion_runtime->has_y || !rgb_runtime->has_color) {
+    return true;
+  }
+  if (runtime->has_runtime_echo &&
+      runtime->last_runtime_echo_render_state == state->render_state &&
+      runtime->last_runtime_echo_y_deg == motion_runtime->last_y_deg &&
+      a21RGBColorEquals(runtime->last_runtime_echo_rgb, rgb_runtime->last_color)) {
+    return true;
+  }
+  if (connection->phase != A21_CONN_GATEWAY_CONNECTED || !driver->connected(driver->ctx)) {
+    return false;
+  }
+
+  char message[A21_WS_TEXT_MESSAGE_CAP];
+  if (!a21GatewayWSBuildRuntimeEchoEvent(runtime, state, motion_runtime, rgb_runtime, now_ms, message, sizeof(message))) {
+    return false;
+  }
+  if (!driver->send_text(driver->ctx, message)) {
+    return false;
+  }
+  runtime->sent_device_events += 1;
+  runtime->next_seq += 1;
+  runtime->has_runtime_echo = true;
+  runtime->last_runtime_echo_render_state = state->render_state;
+  runtime->last_runtime_echo_y_deg = motion_runtime->last_y_deg;
+  runtime->last_runtime_echo_rgb = rgb_runtime->last_color;
   return true;
 }
 

@@ -909,6 +909,66 @@ void test_gateway_ws_send_device_event_rejects_when_not_connected() {
   TEST_ASSERT_EQUAL_UINT64(1, runtime.next_seq);
 }
 
+void test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb() {
+  A21GatewayWSRuntime runtime;
+  A21ConnectionState connection;
+  A21FirmwareState state;
+  A21MotionRuntime motion_runtime;
+  A21RGBRuntime rgb_runtime;
+  FakeGatewayWSDriver fake;
+  A21GatewayWSDriver driver;
+  initFakeGatewayWSDriver(&fake, &driver);
+  fake.connected = true;
+  a21InitGatewayWSRuntime(&runtime);
+  a21InitFirmwareState(&state, "stackchan-001");
+  a21CopyString(state.mode, A21_MODE_CAP, "workmate");
+  state.render_state = A21_RENDER_SPEAKING;
+  a21InitMotionRuntime(&motion_runtime);
+  motion_runtime.has_y = true;
+  motion_runtime.last_y_deg = 48;
+  a21InitRGBRuntime(&rgb_runtime);
+  rgb_runtime.has_color = true;
+  rgb_runtime.last_color = a21RGBColorMake(0, 36, 48);
+  a21SetConnectionPhase(&connection, A21_CONN_GATEWAY_CONNECTED, 2000);
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChanged(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      2000));
+
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.sent_device_events);
+  TEST_ASSERT_EQUAL_UINT64(2, runtime.next_seq);
+
+  JsonDocument doc;
+  TEST_ASSERT_FALSE(deserializeJson(doc, fake.last_sent_text));
+  TEST_ASSERT_EQUAL_STRING("a21.device.v1", doc["protocol"] | "");
+  TEST_ASSERT_EQUAL_STRING("stackchan-001", doc["device_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("device.event", doc["kind"] | "");
+  TEST_ASSERT_EQUAL_STRING("runtime.echo", doc["payload"]["event"] | "");
+  TEST_ASSERT_EQUAL_STRING("workmate", doc["payload"]["mode"] | "");
+  TEST_ASSERT_EQUAL_STRING("speaking", doc["payload"]["runtime_echo"]["screen"] | "");
+  TEST_ASSERT_EQUAL_STRING("48deg", doc["payload"]["runtime_echo"]["servo_y"] | "");
+  TEST_ASSERT_EQUAL_STRING("#002430", doc["payload"]["runtime_echo"]["rgb"] | "");
+  TEST_ASSERT_EQUAL_STRING("a21-stackchan", doc["payload"]["firmware_id"] | "");
+  TEST_ASSERT_EQUAL_STRING("m5stack-cores3", doc["payload"]["firmware_board"] | "");
+
+  TEST_ASSERT_TRUE(a21GatewayWSSendRuntimeEchoIfChanged(
+      &runtime,
+      &driver,
+      &connection,
+      &state,
+      &motion_runtime,
+      &rgb_runtime,
+      2020));
+  TEST_ASSERT_EQUAL(1, fake.send_count);
+  TEST_ASSERT_EQUAL_UINT32(1, runtime.sent_device_events);
+}
+
 void test_audio_ws_runtime_waits_for_gateway_connection() {
   A21AudioWSRuntime runtime;
   A21ConnectionState connection;
@@ -1863,6 +1923,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_gateway_ws_send_mock_turn_builds_a21_device_event);
   RUN_TEST(test_gateway_ws_send_interrupt_increments_seq);
   RUN_TEST(test_gateway_ws_send_device_event_rejects_when_not_connected);
+  RUN_TEST(test_gateway_ws_send_runtime_echo_reports_applied_screen_motion_rgb);
   RUN_TEST(test_audio_ws_runtime_waits_for_gateway_connection);
   RUN_TEST(test_audio_ws_runtime_begins_audio_socket_once);
   RUN_TEST(test_audio_ws_send_mock_frame_builds_a21_audio_frame);
