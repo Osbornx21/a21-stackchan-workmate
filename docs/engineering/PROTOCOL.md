@@ -109,6 +109,14 @@ Firmware-originated `device.event` payloads may also carry build identity:
 
 Gateway records this identity in the device registry and rejects events whose firmware identity contains forbidden X21/V21 naming or mismatched A21 board/firmware fields.
 
+Gateway also records the device's current control state for office acceptance:
+
+- `current_mode`: latest semantic mode from A21 `control.event`
+- `current_expression`: latest expression/render state from A21 `control.event`
+- `playback_stream_id`: active speaking stream when one is present
+
+The registry intentionally does not persist utterance text, professional answer text, evidence summaries, or screen-card content. It is an operational state surface for "is this device listening, speaking, professional, private, muted, local, or in error", not a conversation transcript.
+
 Professional `control.event` payloads can now include explicit evidence fields:
 
 - `confidence`

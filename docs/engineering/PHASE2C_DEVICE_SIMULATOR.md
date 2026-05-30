@@ -49,6 +49,8 @@ Current playback support decodes Gateway mock `pcm_s16le` downlink chunks and sc
 
 The simulator uses a synthetic firmware commit `0000000` so Gateway identity validation can be exercised without pretending the simulator is a real packaged firmware artifact.
 
+The simulator's Device Registry panel now mirrors Gateway acceptance fields: device identity, firmware identity, current mode, and current expression. This is deliberately shallow state. It proves the operator can see whether A21 is listening, speaking, professional, muted, private, public, local, or in error without storing the user's utterance or V21 evidence body in the registry.
+
 Future simulator work should add:
 
 - p50/p95 summaries across repeated turns

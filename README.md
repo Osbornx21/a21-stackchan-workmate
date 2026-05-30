@@ -79,6 +79,8 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
+`/v1/devices` and the simulator Device Registry panel show the latest A21 mode and expression for each registered device. They do not store utterance text or V21 evidence bodies.
+
 When a fresh device report and explicit serial port are available, `make firmware-flash-plan` writes `reports/a21-firmware-flash-plan-*.json`. This is the strongest current no-flash receipt and still sets `flash_allowed: false`.
 
 ## Required Reading

@@ -447,6 +447,8 @@ const simulatorHTML = `<!doctype html>
           <div class="registry-grid">
             <div class="metric"><label>Device</label><div id="registryDevice">none</div></div>
             <div class="metric"><label>Identity</label><div id="registryIdentity">none</div></div>
+            <div class="metric"><label>Mode</label><div id="registryMode">none</div></div>
+            <div class="metric"><label>Expression</label><div id="registryExpression">none</div></div>
             <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
             <div class="metric"><label>Commit</label><div id="registryCommit">none</div></div>
           </div>
@@ -501,6 +503,8 @@ const simulatorHTML = `<!doctype html>
       mockPlayback: document.getElementById('mockPlayback'),
       registryDevice: document.getElementById('registryDevice'),
       registryIdentity: document.getElementById('registryIdentity'),
+      registryMode: document.getElementById('registryMode'),
+      registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
       waterfall: document.getElementById('waterfall'),
@@ -767,6 +771,8 @@ const simulatorHTML = `<!doctype html>
         const firmware = device.firmware || {};
         ui.registryDevice.textContent = device.device_id || 'none';
         ui.registryIdentity.textContent = device.identity_status || 'none';
+        ui.registryMode.textContent = device.current_mode || 'none';
+        ui.registryExpression.textContent = device.current_expression || 'none';
         ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';
         ui.registryCommit.textContent = firmware.commit || 'none';
       } catch (err) {

@@ -101,6 +101,8 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/devices",
 		"/v1/traces",
 		"Device Registry",
+		`id="registryMode"`,
+		`id="registryExpression"`,
 		"Waterfall",
 		"Latency Summary",
 		"Professional Evidence",
@@ -925,6 +927,66 @@ func TestControlWebSocketRegistersFirmwareIdentity(t *testing.T) {
 	}
 	if device.LastTraceID != "a21-trace-device-000007" {
 		t.Fatalf("last trace = %q", device.LastTraceID)
+	}
+}
+
+func TestControlWebSocketRegistryExposesCurrentModeAndExpressionWithoutText(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       9,
+		TraceID:   "a21-trace-device-state",
+		SessionID: "a21-session-device-state",
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventMockTurn,
+		Mode:            protocol.ModePrivate,
+		Text:            "这句私人吐槽不应该进入设备 registry",
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
+	})
+	readControlEvents(t, ctx, conn, 3)
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry map[string][]map[string]any
+	if err := json.Unmarshal(body, &registry); err != nil {
+		t.Fatal(err)
+	}
+	devices := registry["devices"]
+	if len(devices) != 1 {
+		t.Fatalf("devices = %d, want 1: %s", len(devices), string(body))
+	}
+	device := devices[0]
+	if device["current_mode"] != string(protocol.ModePrivate) {
+		t.Fatalf("current_mode = %#v, want private; body=%s", device["current_mode"], string(body))
+	}
+	if device["current_expression"] != string(protocol.ExpressionSpeaking) {
+		t.Fatalf("current_expression = %#v, want speaking; body=%s", device["current_expression"], string(body))
+	}
+	if strings.Contains(string(body), "私人吐槽") {
+		t.Fatalf("registry leaked utterance text: %s", string(body))
 	}
 }
 

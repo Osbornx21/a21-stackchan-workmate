@@ -104,6 +104,9 @@ type DeviceRecord struct {
 	Firmware       DeviceFirmwareIdentity   `json:"firmware,omitempty"`
 	IdentityStatus string                   `json:"identity_status"`
 	IdentityError  string                   `json:"identity_error,omitempty"`
+	CurrentMode    protocol.Mode            `json:"current_mode,omitempty"`
+	CurrentExpr    protocol.ExpressionState `json:"current_expression,omitempty"`
+	PlaybackStream string                   `json:"playback_stream_id,omitempty"`
 	LastEvent      protocol.DeviceEventKind `json:"last_event,omitempty"`
 	LastSeq        uint64                   `json:"last_seq,omitempty"`
 	LastTraceID    string                   `json:"last_trace_id,omitempty"`
@@ -858,6 +861,38 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	return record
 }
 
+func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID string, payload protocol.ControlEventPayload, atMS int64) {
+	if deviceID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = atMS
+		record.IdentityStatus = "unknown"
+	}
+	if payload.Mode != "" {
+		record.CurrentMode = payload.Mode
+	}
+	if payload.State != "" {
+		record.CurrentExpr = payload.State
+	}
+	switch payload.State {
+	case protocol.ExpressionSpeaking:
+		if payload.StreamID != "" {
+			record.PlaybackStream = payload.StreamID
+		}
+	case protocol.ExpressionInterrupted, protocol.ExpressionListening, protocol.ExpressionError:
+		record.PlaybackStream = ""
+	}
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = atMS
+	s.devices[deviceID] = record
+}
+
 func (s *Server) deviceRecords() []DeviceRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1070,6 +1105,7 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 			Payload:   data,
 		})
 		s.recordTrace(traceID, sessionID, deviceID, "control."+string(payload.State)+".sent", sentAt+int64(i))
+		s.recordDeviceControl(deviceID, traceID, sessionID, payload, sentAt+int64(i))
 	}
 	return events
 }
@@ -1093,6 +1129,7 @@ func (s *Server) realtimeOutputSequence(deviceID string, traceID string, session
 				Payload:   data,
 			})
 			s.recordTrace(traceID, sessionID, deviceID, "control."+string(output.Control.State)+".sent", eventAt)
+			s.recordDeviceControl(deviceID, traceID, sessionID, output.Control, eventAt)
 			seq++
 		}
 		if output.Audio != nil {
