@@ -28,7 +28,9 @@ StackChan embodied device foundation
   -> Product polish and office scenarios
 ```
 
-This means the next core implementation pressure is Provider Spine and mainland-latency-controlled fast companion behavior, while the already-built StackChan firmware/link discipline remains a non-regression base.
+This means Provider Spine and mainland-latency-controlled fast companion behavior remain the next software pressure, while the already-built StackChan firmware/link discipline remains a non-regression base.
+
+Current active slice: finish the StackChan hardware mainline before moving deeper into Provider Spine. The slice is deliberately non-destructive: use `stackchan-hardware-mainline` to read Gateway device capability declarations, preserve the no-flash discipline, and lock the next hardware tracks into an ordered diagnostic path.
 
 ## Priority Order
 
@@ -75,6 +77,25 @@ Already preserved:
 - screen expression, RGB, Y-axis servo, touch semantics, speaker buffer, audio frame uplink, runtime echo, and full hardware capability declaration.
 
 Next accepted work must improve or protect actual product behavior. Planned hardware such as camera, IMU, ambient light, proximity, battery, NFC, infrared, and second servo axis stays `planned_*` until implementation and evidence prove it is not worse than original StackChan behavior.
+
+Active hardware order:
+
+1. IMU read-only diagnostic probe.
+2. Ambient light read-only diagnostic probe.
+3. Proximity read-only diagnostic probe.
+4. Battery read-only diagnostic probe.
+5. Second servo axis safety spike.
+6. Camera privacy-safe vision spike.
+7. NFC explicit opt-in interaction spike.
+8. Infrared explicit opt-in interaction spike.
+
+Acceptance entry:
+
+```bash
+go run ./cmd/a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --output-dir reports
+```
+
+The command is a planning and diagnostic gate only. It must not flash firmware, delete artifacts, or promote a planned capability to `available`.
 
 ### P0. Professional V21 Evidence Lane
 

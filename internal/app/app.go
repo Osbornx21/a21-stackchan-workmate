@@ -167,6 +167,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanSpeakerAcceptance(args[1:], stdout, stderr)
 	case "stackchan-touch-acceptance":
 		return runStackChanTouchAcceptance(args[1:], stdout, stderr)
+	case "stackchan-hardware-mainline":
+		return runStackChanHardwareMainline(args[1:], stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
@@ -1245,6 +1247,40 @@ type stackChanTouchAcceptanceReport struct {
 	ObservedEvents     []stackChanTouchAcceptanceObservation `json:"observed_events,omitempty"`
 	ReportPath         string                                `json:"report_path,omitempty"`
 	Findings           []officePreflightFinding              `json:"findings,omitempty"`
+}
+
+type stackChanHardwareMainlineOptions struct {
+	GatewayURL string
+	DeviceID   string
+	OutputDir  string
+}
+
+type stackChanHardwareTrack struct {
+	Capability       string `json:"capability"`
+	DeclaredStatus   string `json:"declared_status,omitempty"`
+	TargetStatus     string `json:"target_status"`
+	Track            string `json:"track"`
+	PromotionAllowed bool   `json:"promotion_allowed"`
+	NextAction       string `json:"next_action"`
+}
+
+type stackChanHardwareMainlineReport struct {
+	SchemaVersion          string                               `json:"schema_version"`
+	GeneratedAtMS          int64                                `json:"generated_at_ms"`
+	Metadata               latencyBenchMetadata                 `json:"metadata"`
+	DryRun                 bool                                 `json:"dry_run"`
+	FlashAllowed           bool                                 `json:"flash_allowed"`
+	DeleteAllowed          bool                                 `json:"delete_allowed"`
+	HardwareMainlineStatus string                               `json:"hardware_mainline_status"`
+	GatewayURL             string                               `json:"gateway_url"`
+	DeviceID               string                               `json:"device_id"`
+	Firmware               firmwarecheck.DeviceIdentityFirmware `json:"firmware"`
+	Capabilities           map[string]string                    `json:"capabilities,omitempty"`
+	RuntimeEcho            map[string]string                    `json:"runtime_echo,omitempty"`
+	OrderedTracks          []stackChanHardwareTrack             `json:"ordered_tracks"`
+	NextRequiredActions    []string                             `json:"next_required_actions"`
+	ReportPath             string                               `json:"report_path,omitempty"`
+	Findings               []officePreflightFinding             `json:"findings,omitempty"`
 }
 
 func (report *stackChanTouchAcceptanceReport) addFinding(code string, message string) {
@@ -3980,6 +4016,207 @@ func stackChanTouchCase(name string) (stackChanTouchCaseSpec, bool) {
 	}
 }
 
+var stackChanHardwareMainlineTracks = []stackChanHardwareTrack{
+	{
+		Capability:       "imu",
+		TargetStatus:     "planned_9_axis_imu",
+		Track:            "read_only_diagnostic_probe",
+		PromotionAllowed: false,
+		NextAction:       "Add posture, bump, pickup, and safe expression transition telemetry before any product promotion.",
+	},
+	{
+		Capability:       "ambient_light",
+		TargetStatus:     "planned_adaptive_brightness",
+		Track:            "read_only_diagnostic_probe",
+		PromotionAllowed: false,
+		NextAction:       "Add adaptive brightness telemetry and acceptance evidence without changing expression behavior first.",
+	},
+	{
+		Capability:       "proximity",
+		TargetStatus:     "planned_presence_distance",
+		Track:            "read_only_diagnostic_probe",
+		PromotionAllowed: false,
+		NextAction:       "Add wake, sleep, and interaction-distance telemetry with false-positive protection.",
+	},
+	{
+		Capability:       "battery",
+		TargetStatus:     "planned_power_state",
+		Track:            "read_only_diagnostic_probe",
+		PromotionAllowed: false,
+		NextAction:       "Add honest power-state reporting and low-power local fallback evidence.",
+	},
+	{
+		Capability:       "servo_x",
+		TargetStatus:     "planned_second_axis_servo",
+		Track:            "motion_safety_spike",
+		PromotionAllowed: false,
+		NextAction:       "Prove second-axis range, clamps, and coordinated head pose before enabling motion.",
+	},
+	{
+		Capability:       "camera",
+		TargetStatus:     "planned_privacy_safe_vision",
+		Track:            "privacy_safe_vision_spike",
+		PromotionAllowed: false,
+		NextAction:       "Design explicit opt-in local presence or gesture context with no silent surveillance.",
+	},
+	{
+		Capability:       "nfc",
+		TargetStatus:     "planned_opt_in_interaction",
+		Track:            "explicit_opt_in_interaction_spike",
+		PromotionAllowed: false,
+		NextAction:       "Define visible consent and desk interaction semantics before runtime use.",
+	},
+	{
+		Capability:       "infrared",
+		TargetStatus:     "planned_opt_in_remote",
+		Track:            "explicit_opt_in_interaction_spike",
+		PromotionAllowed: false,
+		NextAction:       "Define explicit opt-in remote interaction semantics before runtime use.",
+	},
+}
+
+func runStackChanHardwareMainline(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := defaultStackChanHardwareMainlineOptions()
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 [--output-dir reports]")
+			return 0
+		case "--gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--gateway-url requires a value")
+				return 2
+			}
+			i++
+			options.GatewayURL = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.DeviceID = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan-hardware-mainline option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.DeviceID == "" {
+		fmt.Fprintln(stderr, "--device-id requires a value")
+		return 2
+	}
+	if containsLegacyIdentity(options.DeviceID) {
+		fmt.Fprintln(stderr, "device id contains forbidden legacy identity")
+		return 1
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "stackchan hardware mainline report dir invalid: %v\n", err)
+		return 1
+	}
+	report := buildStackChanHardwareMainlineReport(options)
+	if options.OutputDir != "" {
+		reportPath, err := writeStackChanHardwareMainlineReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write stackchan hardware mainline report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanHardwareMainline(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode stackchan hardware mainline report: %v\n", err)
+		return 1
+	}
+	if report.HardwareMainlineStatus != "ready_for_diagnostic_spikes" {
+		fmt.Fprintln(stdout, "stackchan hardware mainline blocked (no flash performed)")
+		return 1
+	}
+	fmt.Fprintln(stdout, "stackchan hardware mainline ready (no flash performed)")
+	return 0
+}
+
+func defaultStackChanHardwareMainlineOptions() stackChanHardwareMainlineOptions {
+	deviceID := strings.TrimSpace(os.Getenv("A21_DEVICE_ID"))
+	if deviceID == "" {
+		deviceID = "stackchan-001"
+	}
+	return stackChanHardwareMainlineOptions{
+		GatewayURL: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DeviceID:   deviceID,
+		OutputDir:  "reports",
+	}
+}
+
+func buildStackChanHardwareMainlineReport(options stackChanHardwareMainlineOptions) stackChanHardwareMainlineReport {
+	report := stackChanHardwareMainlineReport{
+		SchemaVersion:          "a21.stackchan_hardware_mainline.v1",
+		GeneratedAtMS:          time.Now().UnixMilli(),
+		Metadata:               buildLatencyBenchMetadata(),
+		DryRun:                 true,
+		FlashAllowed:           false,
+		DeleteAllowed:          false,
+		HardwareMainlineStatus: "blocked",
+		GatewayURL:             sanitizedOfficeGatewayURL(options.GatewayURL),
+		DeviceID:               options.DeviceID,
+	}
+	gatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
+	if err != nil {
+		report.addFinding("gateway_device_report_failed", err.Error())
+		report.NextRequiredActions = []string{"Start the A21 Gateway, keep LAN traffic direct, and rerun stackchan-hardware-mainline before touching firmware."}
+		return report
+	}
+	device, ok := findFirmwareDeviceRecord(gatewayReport.Devices, options.DeviceID)
+	if !ok {
+		report.addFinding("device_missing", "expected StackChan device is missing from Gateway")
+		report.NextRequiredActions = []string{"Connect the intended A21 StackChan device to Gateway and rerun stackchan-hardware-mainline."}
+		return report
+	}
+	report.Firmware = device.Firmware
+	report.Capabilities = cloneStringMap(device.Capabilities)
+	report.RuntimeEcho = cloneStringMap(device.RuntimeEcho)
+	for _, spec := range stackChanHardwareMainlineTracks {
+		track := spec
+		declaredStatus, ok := report.Capabilities[track.Capability]
+		if !ok || strings.TrimSpace(declaredStatus) == "" {
+			report.addFinding("capability_missing", fmt.Sprintf("StackChan capability %q must be declared before this hardware track can proceed", track.Capability))
+			track.DeclaredStatus = ""
+		} else {
+			track.DeclaredStatus = declaredStatus
+		}
+		report.OrderedTracks = append(report.OrderedTracks, track)
+	}
+	report.NextRequiredActions = []string{
+		"Run hardware tracks in ordered_tracks order and keep unavailable capabilities planned until instrumented evidence exists.",
+		"Add firmware diagnostics as separate guarded builds before promoting any planned capability to product firmware.",
+		"Preserve A21 package identity, artifact checks, and no raw upload discipline for every hardware slice.",
+	}
+	if len(report.Findings) == 0 {
+		report.HardwareMainlineStatus = "ready_for_diagnostic_spikes"
+	}
+	return report
+}
+
+func (report *stackChanHardwareMainlineReport) addFinding(code string, message string) {
+	report.Findings = append(report.Findings, officePreflightFinding{Code: code, Message: message})
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	copy := make(map[string]string, len(source))
+	for key, value := range source {
+		copy[key] = value
+	}
+	return copy
+}
+
 func postStackChanMicProbeControl(gatewayBaseURL string, deviceID string, state protocol.ExpressionState, mode protocol.Mode, text string, traceID string, sessionID string, audioProbeOnly bool, mockPlaybackOnNextAudioFrame bool) (gateway.DeviceControlResponse, error) {
 	endpoint, _, err := firmwareGatewayEndpoint(gatewayBaseURL, "/v1/devices/control", nil)
 	if err != nil {
@@ -4852,6 +5089,23 @@ func writeStackChanTouchAcceptanceReport(outputDir string, report stackChanTouch
 	return reportPath, nil
 }
 
+func writeStackChanHardwareMainlineReport(outputDir string, report stackChanHardwareMainlineReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-stackchan-hardware-mainline-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanHardwareMainline(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeFirmwareFlashPlanReport(outputDir string, result firmwarecheck.FlashPlanResult) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -5562,6 +5816,12 @@ func writeJSONStackChanSpeakerAcceptance(writer io.Writer, report stackChanSpeak
 }
 
 func writeJSONStackChanTouchAcceptance(writer io.Writer, report stackChanTouchAcceptanceReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanHardwareMainline(writer io.Writer, report stackChanHardwareMainlineReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

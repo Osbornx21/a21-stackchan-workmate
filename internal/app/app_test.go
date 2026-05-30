@@ -5026,6 +5026,107 @@ func TestRunStackChanTouchAcceptanceMarksDirectionalCaseAsAffordanceBoundWhenMis
 	}
 }
 
+func TestRunStackChanHardwareMainlineReportsOrderedPlannedTracks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_second_axis_servo","rgb":"available","camera":"planned_privacy_safe_vision","imu":"planned_9_axis_imu","ambient_light":"planned_adaptive_brightness","proximity":"planned_presence_distance","battery":"planned_power_state","nfc":"planned_opt_in_interaction","infrared":"planned_opt_in_remote"},"runtime_echo":{"screen":"idle","servo_y":"48deg","rgb":"#002430"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-hardware-mainline",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_hardware_mainline.v1"`,
+		`"hardware_mainline_status": "ready_for_diagnostic_spikes"`,
+		`"flash_allowed": false`,
+		`"capability": "imu"`,
+		`"declared_status": "planned_9_axis_imu"`,
+		`"promotion_allowed": false`,
+		"stackchan hardware mainline ready (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Index(stdout.String(), `"capability": "imu"`) > strings.Index(stdout.String(), `"capability": "camera"`) {
+		t.Fatalf("hardware mainline order should probe IMU before camera: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-hardware-mainline-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("hardware mainline reports = %d, want 1: %v", len(matches), matches)
+	}
+}
+
+func TestRunStackChanHardwareMainlineBlocksMissingPlannedCapability(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_second_axis_servo","rgb":"available","ambient_light":"planned_adaptive_brightness","proximity":"planned_presence_distance","battery":"planned_power_state","nfc":"planned_opt_in_interaction","infrared":"planned_opt_in_remote"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-hardware-mainline",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"hardware_mainline_status": "blocked"`,
+		`"code": "capability_missing"`,
+		"stackchan hardware mainline blocked (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunStackChanHardwareMainlineRejectsLegacyDeviceIDWithoutEchoingIt(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-hardware-mainline",
+		"--gateway-url", "http://127.0.0.1:21080",
+		"--device-id", "x21-stackchan-001",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(strings.ToLower(stdout.String()), "x21") || strings.Contains(strings.ToLower(stderr.String()), "x21") {
+		t.Fatalf("legacy identity leaked: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "device id contains forbidden legacy identity") {
+		t.Fatalf("stderr missing legacy identity guard: %s", stderr.String())
+	}
+}
+
 func TestRunStackChanPhysicalEvidenceWritesPendingTemplateFromIdentity(t *testing.T) {
 	dir := t.TempDir()
 	artifactSHA := strings.Repeat("c", 64)

@@ -59,9 +59,40 @@ If a capability fails this gate, keep it as `planned_*`, `diagnostic_*`, or `dis
 
 ## Near-Term Hardware Tracks
 
-- Camera: local presence/gesture or privacy-safe visual context, never silent surveillance.
 - IMU: posture, bump/pickup detection, attention cues, and safe expression transitions.
 - Ambient light and proximity: adaptive brightness, wake/sleep, and interaction distance.
 - Battery: honest power state, local fallback behavior, and low-power expression.
-- NFC/infrared: explicit opt-in desk interactions, not hidden automation.
 - Second servo axis: coordinated head pose once mechanical range and safety clamps are verified.
+- Camera: local presence/gesture or privacy-safe visual context, never silent surveillance.
+- NFC/infrared: explicit opt-in desk interactions, not hidden automation.
+
+## Hardware Mainline Command
+
+Use this command before starting any planned-hardware driver work:
+
+```bash
+go run ./cmd/a21 stackchan-hardware-mainline --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --output-dir reports
+```
+
+The report schema is `a21.stackchan_hardware_mainline.v1`.
+
+The command:
+
+- reads the current Gateway `/v1/devices` report with direct no-proxy LAN access;
+- confirms the intended StackChan device is online and declares every planned hardware key;
+- emits an ordered hardware track list;
+- keeps `dry_run=true`, `flash_allowed=false`, and `delete_allowed=false`;
+- writes `reports/a21-stackchan-hardware-mainline-*.json`.
+
+The ordered track list is:
+
+1. `imu`: read-only diagnostic probe.
+2. `ambient_light`: read-only diagnostic probe.
+3. `proximity`: read-only diagnostic probe.
+4. `battery`: read-only diagnostic probe.
+5. `servo_x`: motion safety spike.
+6. `camera`: privacy-safe vision spike.
+7. `nfc`: explicit opt-in interaction spike.
+8. `infrared`: explicit opt-in interaction spike.
+
+This report is not proof that a planned capability is product-ready. It is the gate that prevents A21 from forgetting the hardware surface while preserving firmware build and flash discipline.
