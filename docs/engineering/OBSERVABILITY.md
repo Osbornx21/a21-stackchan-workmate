@@ -32,6 +32,8 @@ Gateway also exposes `GET /v1/audio/recent` as a loopback-only development captu
 
 `latency-bench --mock --output-dir reports` emits `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` with the current commit, generated timestamp, network/DNS fingerprint, and redacted proxy-policy metadata. This makes latency runs comparable across home, Shanghai office, LAN, and proxy configurations without logging proxy URLs or credentials.
 
+Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:
@@ -173,6 +175,8 @@ Future Prometheus metrics should include:
 - `a21_audio_downlink_ms_bucket`
 - `a21_vad_duration_ms_bucket`
 - `a21_tts_first_chunk_ms_bucket`
+- `a21_asr_final_ms_bucket`
+- `a21_llm_first_token_ms_bucket`
 - `a21_barge_in_total`
 - `a21_barge_in_stop_ms_bucket`
 - `a21_provider_error_total`

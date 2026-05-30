@@ -33,6 +33,20 @@ The following A21 code is allowed only as a baseline, harness, or compatibility 
 
 None of these baselines may be promoted to production by inertia.
 
+## StackChan Speaker Baseline
+
+The previous A21 hand-written speaker path produced audible "telegraph" artifacts on real StackChan hardware. That path is frozen as a diagnostic failure case and must not be used as the speaker acceptance baseline.
+
+The accepted speaker baseline is now the official StackChan/CoreS3 codec path:
+
+- official StackChan source is exported from clean Git `HEAD`, even if the local source worktree is dirty;
+- CoreS3 output goes through the official `AudioCodec` abstraction and `OutputData`, not a custom A21 `playRaw` loop;
+- the codec evidence includes `esp_codec_dev_open`, `esp_codec_dev_write`, `CreateDuplexChannels`, StackChan `audio.cpp`, CoreS3 board config, and Xiaozhi `AudioService` output-task usage;
+- the A21 official audio-smoke overlay builds `a21-stackchan-official-audio-smoke.bin` with ESP-IDF and writes only through the guarded `stackchan-official-audio-smoke-flash-*` commands;
+- real-device acceptance requires a continuous two-tone pattern to be heard clearly without the earlier "telegraph" artifact.
+
+Any future real speech downlink work must migrate toward this official codec lane or an A21 adapter over the same mature codec/HAL boundary. The old A21 speaker parser may remain only as a host-side protocol fixture until removed.
+
 ## Mature Inputs To Prefer
 
 ### Transport And Media

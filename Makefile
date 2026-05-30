@@ -26,8 +26,14 @@ A21_PLATFORMIO_VERSION ?= 6.1.19
 A21_SPEAKER_MOCK_AUDIO_CHUNKS ?= 50
 A21_SPEAKER_MIN_PLAYED_FRAMES ?= 50
 A21_SPEAKER_WINDOW_MS ?= 1500
+A21_STACKCHAN_OFFICIAL_SOURCE ?= /Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan
+A21_STACKCHAN_OFFICIAL_WORK_DIR ?= /tmp/a21-stackchan-official-clean
+A21_STACKCHAN_OFFICIAL_BUILD_DIR ?= /tmp/a21-stackchan-official-build
+A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_OVERLAY ?= firmware/stackchan-official/overlays/a21-official-audio-smoke.patch
+A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM ?=
+A21_IDF_EXPORT ?= /Users/jiyurun/esp/esp-idf-v5.5.2/export.sh
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
 
 test:
 	go test ./...
@@ -94,6 +100,24 @@ stackchan-local-tts-playback:
 
 stackchan-fast-companion-turn:
 	go run ./cmd/a21 stackchan-fast-companion-turn --repeat 3 --output-dir reports
+
+stackchan-official-baseline:
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --output-dir reports
+
+stackchan-official-baseline-build:
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --execute --output-dir reports
+
+stackchan-official-audio-smoke-build:
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --overlay "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_OVERLAY)" --execute --output-dir reports
+
+stackchan-official-audio-smoke-flash-plan:
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	go run ./cmd/a21 stackchan-official-audio-smoke-flash-plan --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --output-dir reports
+
+stackchan-official-audio-smoke-flash-execute:
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test -n "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM is required"; exit 2)
+	go run ./cmd/a21 stackchan-official-audio-smoke-flash-execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --confirm "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM)" --output-dir reports
 
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports

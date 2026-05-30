@@ -4,6 +4,8 @@
 
 Phase 7G turns "use mature wheels" into a concrete A21 gate for VAD, AEC, noise suppression, and turn detection. A21 should not grow a custom production speech front-end unless a benchmark proves mature options fail the Shanghai office and StackChan constraints.
 
+This phase is governed by `docs/engineering/A21_MATURE_VOICE_REUSE.md`. RMS VAD remains a development baseline; new production-facing work should evaluate mature audio front-end components before adding more hand-written detector or endpointing logic.
+
 ## Command
 
 ```bash

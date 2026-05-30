@@ -127,6 +127,8 @@ It validates provider wrapper event flow without dialing a provider. It is still
 
 `latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons. The report also includes `generated_at`, `current_commit`, network/DNS fingerprint, and doctor-style redacted proxy-policy metadata. It reports env variable names such as `HTTPS_PROXY` or `A21_PROVIDER_PROXY_URL`, but never proxy values, hosts, ports, usernames, passwords, keys, or model IDs.
 
+Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until a dedicated `provider-latency-bench` command exists, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, or `latency-bench --mock`, and must list unmeasured stages explicitly.
+
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary through a direct no-ambient-proxy HTTP client and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 V21 adapter query smoke is intentionally a separate command, not a doctor side effect:
@@ -141,6 +143,18 @@ Without `--execute`, it only reports whether an adapter URL is configured and wr
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 
 Upload and flash-plan guards accept only explicit USB serial-looking ports. On macOS that means `cu.*`/`tty.*` names containing `usbmodem` or `usbserial`; Bluetooth and debug-console paths are intentionally rejected even though they appear in the serial inventory.
+
+Official StackChan speaker smoke uses a separate guarded flash family:
+
+```bash
+make stackchan-official-audio-smoke-build
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE \
+make stackchan-official-audio-smoke-flash-execute
+```
+
+This lane is allowed only for the official codec speaker baseline. It builds from official StackChan Git `HEAD`, records hashes from IDF `flash_args`, and requires the same explicit USB serial-port discipline. It is not production A21 firmware and cannot replace `firmware-package`, `firmware-upload-check`, or steady-state `firmware-flash-plan`.
 
 `namespace-audit` scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. It is part of `make release-check` so path-level project identity drift is caught before merge.
 

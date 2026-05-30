@@ -1,0 +1,139 @@
+diff --git a/firmware/CMakeLists.txt b/firmware/CMakeLists.txt
+index 6f0c64a..eae5f1f 100644
+--- a/firmware/CMakeLists.txt
++++ b/firmware/CMakeLists.txt
+@@ -2,11 +2,11 @@
+ # CMakeLists in this exact order for cmake to work correctly
+ cmake_minimum_required(VERSION 3.16)
+
+-set(PROJECT_VER "1.4.1")
++set(PROJECT_VER "0.1.0-a21-official-audio-smoke")
+ add_definitions(-DFIRMWARE_VERSION=\"${PROJECT_VER}\")
+
+ # Add this line to disable the specific warning
+ add_compile_options(-Wno-missing-field-initializers)
+
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+-project(stack-chan)
++project(a21-stackchan-official-audio-smoke)
+diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
+index 5e49344..9eb7c07 100644
+--- a/firmware/main/main.cpp
++++ b/firmware/main/main.cpp
+@@ -3,55 +3,79 @@
+  *
+  * SPDX-License-Identifier: MIT
+  */
+-#include <smooth_ui_toolkit.hpp>
+-#include <uitk/short_namespace.hpp>
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <vector>
++
++#include <esp_log.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
+ #include <mooncake_log.h>
+-#include <mooncake.h>
+-#include <apps/apps.h>
++#include <audio/audio_codec.h>
++#include <board.h>
++#include <hal/board/config.h>
+ #include <hal/hal.h>
+
+-using namespace mooncake;
+-using namespace smooth_ui_toolkit;
++namespace {
++
++constexpr const char* kTag = "A21OfficialAudioSmoke";
++constexpr double kPi = 3.14159265358979323846;
++constexpr int kChunkFrames = 512;
++
++void playTone(AudioCodec& codec, int frequency_hz, int duration_ms, int amplitude)
++{
++    const int sample_rate = codec.output_sample_rate() > 0 ? codec.output_sample_rate() : AUDIO_OUTPUT_SAMPLE_RATE;
++    const int total_frames = sample_rate * duration_ms / 1000;
++    std::vector<int16_t> chunk;
++    chunk.reserve(kChunkFrames);
++
++    for (int frame = 0; frame < total_frames;) {
++        const int frames_to_write = std::min(kChunkFrames, total_frames - frame);
++        chunk.resize(frames_to_write);
++        for (int i = 0; i < frames_to_write; ++i) {
++            const double phase = 2.0 * kPi * static_cast<double>(frequency_hz) *
++                                 static_cast<double>(frame + i) / static_cast<double>(sample_rate);
++            chunk[i] = static_cast<int16_t>(std::sin(phase) * static_cast<double>(amplitude));
++        }
++        codec.OutputData(chunk);
++        frame += frames_to_write;
++    }
++}
++
++void idleWithWatchdog()
++{
++    while (true) {
++        GetHAL().feedTheDog();
++        vTaskDelay(pdMS_TO_TICKS(1000));
++    }
++}
++
++}  // namespace
+
+ extern "C" void app_main(void)
+ {
+-    // Setup logger
+     mclog::set_level(mclog::level_info);
+     mclog::set_time_format(mclog::time_format_unix_milliseconds);
+
+-    // HAL init
+     GetHAL().init();
+
+-    // Setup ui hal
+-    ui_hal::on_delay([](uint32_t ms) { GetHAL().delay(ms); });
+-    ui_hal::on_get_tick([]() { return GetHAL().millis(); });
+-
+-    // Install apps
+-    GetMooncake().installApp(std::make_unique<AppLauncher>());
+-    GetMooncake().installApp(std::make_unique<AppAiAgent>());
+-    GetMooncake().installApp(std::make_unique<AppAvatar>());
+-    GetMooncake().installApp(std::make_unique<AppEspnowControl>());
+-    GetMooncake().installApp(std::make_unique<AppAppCenter>());
+-    GetMooncake().installApp(std::make_unique<AppEzdata>());
+-    GetMooncake().installApp(std::make_unique<AppDance>());
+-    GetMooncake().installApp(std::make_unique<AppSetup>());
+-
+-    // Main loop
+-    while (1) {
+-        GetHAL().feedTheDog();
+-        GetHAL().updateHeapStatusLog();
+-
+-        GetMooncake().update();
+-
+-        if (GetHAL().isXiaozhiStartRequested()) {
+-            break;
+-        }
++    auto* codec = Board::GetInstance().GetAudioCodec();
++    if (codec == nullptr) {
++        ESP_LOGE(kTag, "A21 official codec unavailable");
++        idleWithWatchdog();
+     }
+
+-    // Uninstall all apps and destroy mooncake
+-    GetMooncake().uninstallAllApps();
+-    DestroyMooncake();
++    codec->Start();
++    codec->SetOutputVolume(92);
++    codec->EnableOutput(true);
++    ESP_LOGI(kTag, "A21 official codec smoke started: sample_rate=%d", codec->output_sample_rate());
+
+-    // Start xiaozhi, never returns
+-    GetHAL().startXiaozhi();
++    while (true) {
++        playTone(*codec, 880, 1200, 12000);
++        vTaskDelay(pdMS_TO_TICKS(500));
++        playTone(*codec, 440, 1200, 12000);
++        vTaskDelay(pdMS_TO_TICKS(2500));
++        GetHAL().feedTheDog();
++    }
+ }

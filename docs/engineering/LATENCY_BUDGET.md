@@ -51,6 +51,8 @@ Every latency report should include:
 - playback start
 - interrupt detection and stop time
 
+Provider and ASR/TTS/LLM combination benchmarks must follow `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. A21 may reuse public benchmark methods such as TTFS, TTFA, FTTS, TTFT, semantic WER, and speech-to-speech first-audio timing, but promotion evidence must still be rerun through A21-owned trace IDs, redacted report shape, explicit network/proxy metadata, and StackChan device markers when physical behavior is claimed.
+
 ## Current Mock Benchmark
 
 A21 has a mock-only latency benchmark:

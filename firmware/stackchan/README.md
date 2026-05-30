@@ -23,12 +23,14 @@ make firmware-build
 make firmware-mic-probe-build
 make firmware-imu-probe-build
 make firmware-sensor-probe-build
+make stackchan-official-audio-smoke-build
 make firmware-mic-probe-upload-blocker-check
 make firmware-imu-probe-upload-blocker-check
 make firmware-sensor-probe-upload-blocker-check
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-sensor-probe-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-plan
 ```
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
@@ -52,6 +54,8 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-sensor-probe-flash-plan
 `make firmware-imu-probe-flash-plan` and `make firmware-imu-probe-flash-execute` are the matching read-only diagnostic IMU flash lane. They rebuild `a21_stackchan_cores3_imu_probe`, require a clean git source tree, check the embedded A21 identity and `diagnostic_probe_m5unified_imu` marker, and require `A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE` before any write. Use this only for IMU bring-up evidence, not for production release packaging.
 
 `make firmware-sensor-probe-flash-plan` and `make firmware-sensor-probe-flash-execute` are the matching read-only diagnostic sensor flash lane. They rebuild `a21_stackchan_cores3_sensor_probe`, require a clean git source tree, check the embedded A21 identity plus `diagnostic_probe_ltr553_ambient_light`, `diagnostic_probe_ltr553_proximity`, and `diagnostic_probe_ina226_battery` markers, and require `A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE` before any write. Use this only for sensor bring-up evidence, not for production release packaging.
+
+`make stackchan-official-audio-smoke-build`, `make stackchan-official-audio-smoke-flash-plan`, and `make stackchan-official-audio-smoke-flash-execute` are the official StackChan/CoreS3 codec speaker-smoke lane. This lane exports official StackChan from Git `HEAD`, applies only the A21 audio-smoke overlay, verifies mature codec evidence, builds with ESP-IDF, records all `flash_args` parts and hashes, and requires `A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE` before any write. Use this only to validate clear physical speaker output through the official codec/HAL boundary. It is not production A21 firmware and does not replace A21 release packaging.
 
 ## Runtime Surface
 
@@ -116,7 +120,7 @@ Current local controls are intentionally minimal and routed through semantic dev
 
 `a21_firmware_audio_playback.h` owns the hardware-free playback chunk parser and bounded buffer. It accepts only A21 `audio.playback.chunk` envelopes for the current device, validates current Phase 5 PCM mono chunk metadata (`pcm_s16le`, 16 kHz, 20 ms), decodes each accepted payload into a fixed 640-byte PCM frame, tracks queue depth/drop counts, and clears the buffer when render state leaves `speaking`.
 
-`a21_firmware_speaker.h` owns the first real speaker pump boundary. It consumes decoded PCM frames only while the render state is `speaking`, waits when the M5Unified speaker channel already has two queued buffers, copies each 20 ms frame into one of three stable slots, and then calls `M5.Speaker.playRaw(...)`. This avoids handing M5Unified a pointer to buffer memory that may be cleared on barge-in.
+`a21_firmware_speaker.h` owns the first A21 release-firmware speaker pump boundary, but the real-device acceptance baseline is now the official StackChan/CoreS3 codec smoke lane. The earlier hand-written A21 playback variants produced audible "telegraph" artifacts on the real StackChan and must not be used to claim speaker acceptance. Future production downlink work should migrate this boundary toward the official `AudioCodec` / `OutputData` path or an A21 adapter over the same mature codec/HAL layer. The current PCM/base64 envelope remains a diagnostic bridge; the mature production media direction is A21-owned binary Opus over the device audio WebSocket.
 
 Firmware runtime echo includes playback-buffer and speaker-pump counters: queued chunks, total accepted chunks, dropped chunks, clear count, played frames, busy ticks, driver errors, and last stream ID. These fields are diagnostic evidence for the speaker/downlink lane; they do not by themselves prove that physical sound was heard.
 

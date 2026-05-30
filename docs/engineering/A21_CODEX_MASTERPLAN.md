@@ -51,6 +51,8 @@ Custom A21 code should focus on:
 
 Do not hand-roll mature infrastructure just to keep code "pure". If A21 rejects a mature library or SDK, write an ADR explaining the tradeoff, maintenance cost, and replacement path.
 
+The concrete voice/audio version of this rule lives in `docs/engineering/A21_MATURE_VOICE_REUSE.md`. That document is required context for any work touching transport, codecs, VAD, AEC, provider websocket logic, audio pacing, interruption, firmware media paths, or voice benchmarks. X21 may contribute real-device lessons, but X21 hand-written runtime code is not a mature dependency and must not become A21's blueprint.
+
 ## Voice Strategy
 
 A21 must support two voice paths:
@@ -100,6 +102,8 @@ Provider adapters must enter through provider contracts with:
 - no ambient proxy inheritance unless `A21_PROVIDER_PROXY_URL` explicitly opts in
 
 The core protocol and business logic must stay provider-neutral.
+
+Provider benchmark governance lives in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Public benchmark projects can inform A21's metric names, datasets, and adapter comparison strategy, but A21 acceptance requires its own redacted reports, trace/session/device IDs, explicit network/proxy metadata, and per-stage waterfall timings. Do not create new provider-specific benchmark gates when the shared contract can be extended.
 
 ## V21 Boundary
 
@@ -156,7 +160,7 @@ Phase 5: StackChan firmware MVP. Current baseline includes A21-only CoreS3 firmw
 
 Phase 6: V21 professional mode. Current baseline includes a V21 adapter contract, HTTP/mock clients, Gateway professional mode routing, explicit evidence fields, confidence, speech blocks, failure fallback, trace markers, optional doctor health checks, simulator evidence-card rendering, and redacted `v21-adapter-smoke` readiness/execution reports for the adapter boundary. Real Shanghai endpoint execution, endpoint-specific permission checks, and timeout metrics remain future work.
 
-Phase 7: fast companion hybrid lane and low-latency optimization. Current baseline includes bounded audio ingress buffering, an explicit VAD detector adapter boundary with deterministic RMS default, detector-labelled VAD decision metrics, `audio-front-end-plan` for mature VAD/AEC candidate governance, `audio-front-end-eval --mock` and `audio-front-end-eval --fixture` for deterministic/labelled-frame baseline reporting with speech start/end lag, timestamped audio front-end eval report artifacts, audio-path barge-in cancellation, provider-neutral realtime audio uplink forwarding, provider-neutral realtime audio downlink pumping, and commit-to-first-provider-audio waterfall metrics for providers that expose an explicit realtime session interface. The PRD v0.4 target lane is local VAD/ASR, streaming text provider, local/streaming TTS, and StackChan semantic expression, with first audible response P50 < 900 ms and P95 < 1500 ms for accepted candidate chains. This still does not claim production VAD, AEC, hardware full-duplex, real provider latency, or physical-device latency acceptance until reports prove it. Next slices should add mature VAD/AEC adapter implementation spikes, real StackChan mic/speaker acceptance, and first-byte/first-content/TTS-first-audio latency reports.
+Phase 7: fast companion hybrid lane and low-latency optimization. Current baseline includes bounded audio ingress buffering, an explicit VAD detector adapter boundary with deterministic RMS default, detector-labelled VAD decision metrics, `audio-front-end-plan` for mature VAD/AEC candidate governance, `audio-front-end-eval --mock` and `audio-front-end-eval --fixture` for deterministic/labelled-frame baseline reporting with speech start/end lag, timestamped audio front-end eval report artifacts, audio-path barge-in cancellation, provider-neutral realtime audio uplink forwarding, provider-neutral realtime audio downlink pumping, commit-to-first-provider-audio waterfall metrics for providers that expose an explicit realtime session interface, the shared A21 provider benchmark contract for ASR/TTS/LLM/S2S comparison methodology, and the mature voice reuse contract that prevents temporary hand-written media/VAD/provider code from becoming architecture by inertia. The PRD v0.4 target lane is local VAD/ASR, streaming text provider, local/streaming TTS, and StackChan semantic expression, with first audible response P50 < 900 ms and P95 < 1500 ms for accepted candidate chains. This still does not claim production VAD, AEC, hardware full-duplex, real provider latency, or physical-device latency acceptance until reports prove it. Next slices should add mature VAD/AEC adapter implementation spikes, an A21 binary Opus media plan, real StackChan mic/speaker acceptance, and provider-latency reports that preserve TTFS/TTFT/FTTS/TTFA plus device playback markers.
 
 Phase 8: product polish. Add personality prompts, office scenario playbooks, public/private transitions, failure copy, and expression polish.
 

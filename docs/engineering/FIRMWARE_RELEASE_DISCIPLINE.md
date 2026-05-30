@@ -122,6 +122,33 @@ Firmware expression changes must keep the avatar contract testable without hardw
 
 `firmware-imu-probe-upload-blocker-check` and `firmware-sensor-probe-upload-blocker-check` repeat the same raw-upload negative test for their diagnostic environments. Passing those checks proves the new hardware tracks cannot bypass the guarded A21 flash lanes.
 
+## Official StackChan Audio Smoke Lane
+
+The A21 speaker bring-up baseline now uses official StackChan/CoreS3 codec code instead of the rejected hand-written playback path.
+
+The lane is intentionally separate from `firmware/stackchan/` release packaging:
+
+```bash
+make stackchan-official-baseline
+make stackchan-official-audio-smoke-build
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE \
+make stackchan-official-audio-smoke-flash-execute
+```
+
+Rules:
+
+- source is exported from the official StackChan Git `HEAD`; local dirty files in that source checkout are not copied into the build;
+- the plan verifies official codec evidence before build: `AudioCodec::OutputData`, `esp_codec_dev_open`, `esp_codec_dev_write`, `CreateDuplexChannels`, and Xiaozhi `AudioService` output-task usage;
+- the overlay must be an A21-owned patch under `firmware/stackchan-official/overlays/`;
+- the ESP-IDF build output must include `a21-stackchan-official-audio-smoke.bin` at app offset `0x20000` in `flash_args`;
+- flash plan is a no-flash receipt with all bootloader, app, partition table, OTA data, and assets hashes;
+- execute requires the exact confirmation token above and uses only `python -m esptool ... write_flash @flash_args` from the build directory;
+- this is a speaker hardware acceptance lane only, not production A21 firmware, not a provider lane, and not a license to use raw `idf.py flash` or copied X21/V21 esptool commands.
+
+Physical acceptance criterion: the device plays a repeated two-tone pattern, high tone for about 1.2 seconds, short pause, low tone for about 1.2 seconds, then a longer pause. The sound must be continuous and clear enough to distinguish from the previous "telegraph" artifact.
+
 When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
 
 ```bash

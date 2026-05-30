@@ -48,6 +48,8 @@ Default stance:
 - `docs/engineering/PORTS.md`
 - `docs/engineering/NETWORK.md`
 - `docs/engineering/LATENCY_BUDGET.md`
+- `docs/engineering/A21_MATURE_VOICE_REUSE.md`
+- `docs/engineering/A21_PROVIDER_BENCHMARKS.md`
 - `docs/engineering/OBSERVABILITY.md`
 - `docs/engineering/PROTOCOL.md`
 - `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`

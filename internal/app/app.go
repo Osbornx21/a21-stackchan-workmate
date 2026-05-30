@@ -219,6 +219,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanTouchAcceptance(args[1:], stdout, stderr)
 	case "stackchan-hardware-mainline":
 		return runStackChanHardwareMainline(args[1:], stdout, stderr)
+	case "stackchan-official-baseline":
+		return runStackChanOfficialBaseline(args[1:], stdout, stderr)
+	case "stackchan-official-audio-smoke-flash-plan":
+		return runStackChanOfficialAudioSmokeFlash(args[1:], false, stdout, stderr)
+	case "stackchan-official-audio-smoke-flash-execute":
+		return runStackChanOfficialAudioSmokeFlash(args[1:], true, stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":
