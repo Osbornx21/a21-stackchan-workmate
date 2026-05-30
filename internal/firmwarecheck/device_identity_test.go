@@ -16,6 +16,8 @@ func TestValidateDeviceIdentityConfirmsMatchingGatewayReport(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
 	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
 	report := writeDeviceIdentityReport(t, dir, `{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -58,6 +60,76 @@ func TestValidateDeviceIdentityConfirmsMatchingGatewayReport(t *testing.T) {
 	}
 	if result.Device.DeviceID != "stackchan-001" {
 		t.Fatalf("DeviceID = %q", result.Device.DeviceID)
+	}
+}
+
+func TestValidateDeviceIdentityRejectsReportWithoutGatewayIdentity(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeRawDeviceIdentityReport(t, dir, `{
+  "devices": [
+    {
+      "device_id": "stackchan-001",
+      "identity_status": "ok",
+      "connection_status": "online",
+      "firmware": {
+        "id": "a21-stackchan",
+        "version": "0.1.0",
+        "board": "m5stack-cores3",
+        "commit": "abcdef123456"
+      },
+      "last_seen_ms": 1780000000000
+    }
+  ]
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected missing Gateway identity to be rejected")
+	}
+	if !strings.Contains(err.Error(), "A21 Gateway identity") {
+		t.Fatalf("error = %q, want A21 Gateway identity", err)
+	}
+}
+
+func TestValidateDeviceIdentityRejectsLegacyGatewayServiceWithoutEchoingIt(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeDeviceIdentityManifest(t, dir)
+	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef123456-20260530-004500.bin")
+	writeDeviceIdentityArtifact(t, artifact, []byte("firmware"))
+	report := writeDeviceIdentityReport(t, dir, `{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "x21-gateway",
+  "devices": []
+}`)
+
+	_, err := ValidateDeviceIdentity(DeviceIdentityOptions{
+		ManifestPath:      manifest,
+		ArtifactPath:      artifact,
+		ReportPath:        report,
+		ExpectedDeviceID:  "stackchan-001",
+		ExpectedGitCommit: "abcdef123456",
+		MaxDeviceAgeMS:    300000,
+		NowMS:             1780000000100,
+	})
+	if err == nil {
+		t.Fatal("expected legacy Gateway identity to be rejected")
+	}
+	if !strings.Contains(err.Error(), "forbidden legacy identity") {
+		t.Fatalf("error = %q, want forbidden legacy identity", err)
+	}
+	if strings.Contains(err.Error(), "x21-gateway") {
+		t.Fatalf("error leaked legacy Gateway service: %q", err)
 	}
 }
 
@@ -386,6 +458,18 @@ lib_deps =
 }
 
 func writeDeviceIdentityReport(t *testing.T, dir string, content string) string {
+	t.Helper()
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "{") && !strings.Contains(content, `"schema_version"`) {
+		content = strings.TrimPrefix(content, "{")
+		content = `{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",` + content
+	}
+	return writeRawDeviceIdentityReport(t, dir, content)
+}
+
+func writeRawDeviceIdentityReport(t *testing.T, dir string, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, "devices.json")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

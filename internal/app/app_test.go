@@ -2315,7 +2315,7 @@ func TestRunFirmwareDeviceCheckAcceptsMatchingGatewayReport(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2330,9 +2330,7 @@ func TestRunFirmwareDeviceCheckAcceptsMatchingGatewayReport(t *testing.T) {
       "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -2367,7 +2365,7 @@ func TestRunFirmwareDeviceCheckRequiresFreshnessGuard(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2382,9 +2380,7 @@ func TestRunFirmwareDeviceCheckRequiresFreshnessGuard(t *testing.T) {
       "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -2409,9 +2405,7 @@ func TestRunFirmwareDeviceCheckRequiresDeviceID(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{"devices":[]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeTestGatewayDeviceReport(t, report, `{"devices":[]}`)
 
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -2435,7 +2429,7 @@ func TestRunFirmwareDeviceCheckRejectsStaleGatewayReport(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2450,9 +2444,7 @@ func TestRunFirmwareDeviceCheckRejectsStaleGatewayReport(t *testing.T) {
       "last_seen_ms": 1000
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -2478,7 +2470,7 @@ func TestRunFirmwareDeviceCheckRejectsStaleConnectionStatus(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2494,9 +2486,7 @@ func TestRunFirmwareDeviceCheckRejectsStaleConnectionStatus(t *testing.T) {
       "last_seen_ms": 1780000000000
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -2530,7 +2520,7 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2545,9 +2535,7 @@ func TestRunFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
       "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -2592,7 +2580,7 @@ func TestRunFirmwareFlashPlanRequiresFreshnessGuard(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2607,9 +2595,7 @@ func TestRunFirmwareFlashPlanRequiresFreshnessGuard(t *testing.T) {
       "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -2644,6 +2630,8 @@ func TestRunFirmwareFlashPlanRejectsActivePlaybackDevice(t *testing.T) {
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
 	reportPayload := map[string]any{
+		"schema_version": "a21.gateway.devices.v1",
+		"service":        "a21-gateway",
 		"devices": []map[string]any{{
 			"device_id":          "stackchan-001",
 			"identity_status":    "ok",
@@ -2700,7 +2688,7 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
 	artifact := filepath.Join(dir, "a21-stackchan-0.1.0-m5stack-cores3-abcdef1-20260530-004500.bin")
 	writeFirmwareArtifactWithChecksum(t, artifact, []byte("firmware"))
 	report := filepath.Join(dir, "devices.json")
-	if err := os.WriteFile(report, []byte(`{
+	writeTestGatewayDeviceReport(t, report, `{
   "devices": [
     {
       "device_id": "stackchan-001",
@@ -2715,9 +2703,7 @@ func TestRunFirmwareFlashPlanWritesReportWhenOutputDirProvided(t *testing.T) {
       "last_seen_ms": `+fmt.Sprint(time.Now().UnixMilli())+`
     }
   ]
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+}`)
 	outputDir := filepath.Join(dir, "reports")
 
 	var stdout bytes.Buffer
@@ -2972,6 +2958,20 @@ func writeTestFirmwareManifest(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return manifest
+}
+
+func writeTestGatewayDeviceReport(t *testing.T, reportPath string, content string) {
+	t.Helper()
+	content = strings.TrimSpace(content)
+	if strings.HasPrefix(content, "{") && !strings.Contains(content, `"schema_version"`) {
+		content = strings.TrimPrefix(content, "{")
+		content = `{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",` + content
+	}
+	if err := os.WriteFile(reportPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testPlatformIOConfig(board string) string {

@@ -51,8 +51,17 @@ type DeviceIdentityResult struct {
 	OK                       bool                 `json:"ok"`
 }
 
+const (
+	GatewayDeviceReportSchemaVersion = "a21.gateway.devices.v1"
+	GatewayDeviceReportServiceName   = "a21-gateway"
+)
+
 type gatewayDeviceReport struct {
-	Devices []DeviceIdentityRecord `json:"devices"`
+	SchemaVersion        string                 `json:"schema_version"`
+	Service              string                 `json:"service"`
+	GatewaySchemaVersion string                 `json:"gateway_schema_version"`
+	GatewayService       string                 `json:"gateway_service"`
+	Devices              []DeviceIdentityRecord `json:"devices"`
 }
 
 func ValidateDeviceIdentity(options DeviceIdentityOptions) (DeviceIdentityResult, error) {
@@ -170,7 +179,32 @@ func readGatewayDeviceReport(path string) (gatewayDeviceReport, error) {
 	if err := json.Unmarshal(data, &report); err != nil {
 		return gatewayDeviceReport{}, err
 	}
+	if err := validateGatewayDeviceReportIdentity(report); err != nil {
+		return gatewayDeviceReport{}, err
+	}
 	return report, nil
+}
+
+func validateGatewayDeviceReportIdentity(report gatewayDeviceReport) error {
+	schemaVersion := strings.TrimSpace(report.SchemaVersion)
+	service := strings.TrimSpace(report.Service)
+	if schemaVersion == "a21.firmware.device_report.v1" {
+		schemaVersion = strings.TrimSpace(report.GatewaySchemaVersion)
+		service = strings.TrimSpace(report.GatewayService)
+	}
+	if containsLegacyIdentity(schemaVersion) || containsLegacyIdentity(service) {
+		return fmt.Errorf("gateway device report contains forbidden legacy identity")
+	}
+	if schemaVersion != GatewayDeviceReportSchemaVersion ||
+		service != GatewayDeviceReportServiceName {
+		return fmt.Errorf("gateway device report is missing required A21 Gateway identity")
+	}
+	return nil
+}
+
+func containsLegacyIdentity(value string) bool {
+	lower := strings.ToLower(value)
+	return strings.Contains(lower, "x21") || strings.Contains(lower, "v21")
 }
 
 func findDeviceIdentity(report gatewayDeviceReport, deviceID string) (DeviceIdentityRecord, bool) {
