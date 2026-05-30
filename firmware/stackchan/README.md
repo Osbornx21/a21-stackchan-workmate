@@ -24,6 +24,8 @@ make firmware-build
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
 
+`firmware-check` treats `a21-firmware.json` as the release identity source of truth. The CoreS3 and native PlatformIO environments must use matching `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flags, or the build gate fails before packaging.
+
 ## Runtime Surface
 
 The current firmware starts in local fallback render state and renders the A21 identity, firmware version plus commit, state label, Gateway target, connection lifecycle status, and short status text on the CoreS3 screen. Gateway `control.event` messages are parsed by `a21_firmware_protocol.h` and applied to a thin device-local state model in `a21_firmware_state.h`.

@@ -68,7 +68,8 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if err != nil {
 		return err
 	}
-	content := strings.ToLower(string(data))
+	rawContent := string(data)
+	content := strings.ToLower(rawContent)
 	if strings.Contains(content, "x21") || strings.Contains(content, "v21") {
 		return fmt.Errorf("platformio.ini contains forbidden legacy identity")
 	}
@@ -105,6 +106,9 @@ func validatePlatformIO(path string, manifest Manifest) error {
 	if !strings.Contains(content, "a21_firmware_board") {
 		return fmt.Errorf("platformio A21 firmware board build flag is required")
 	}
+	if err := validatePlatformIOBuildFlagValues(rawContent, manifest); err != nil {
+		return err
+	}
 	if !strings.Contains(content, "pre:scripts/a21_build_identity.py") {
 		return fmt.Errorf("platformio A21 build identity script is required")
 	}
@@ -126,4 +130,47 @@ func validatePlatformIO(path string, manifest Manifest) error {
 		return fmt.Errorf("platformio upload configuration is forbidden before A21 upload guard")
 	}
 	return nil
+}
+
+func validatePlatformIOBuildFlagValues(content string, manifest Manifest) error {
+	checks := []struct {
+		flag     string
+		expected string
+		label    string
+	}{
+		{flag: "A21_FIRMWARE_ID", expected: manifest.FirmwareID, label: "firmware id"},
+		{flag: "A21_FIRMWARE_VERSION", expected: manifest.Version, label: "firmware version"},
+		{flag: "A21_FIRMWARE_BOARD", expected: manifest.Board, label: "firmware board"},
+	}
+	for _, check := range checks {
+		if check.expected == "" {
+			continue
+		}
+		values := platformIOBuildFlagValues(content, check.flag)
+		if len(values) == 0 {
+			return fmt.Errorf("platformio %s build flag is required", check.label)
+		}
+		for _, value := range values {
+			if value != check.expected {
+				return fmt.Errorf("platformio %s build flag %q does not match manifest value %q", check.label, value, check.expected)
+			}
+		}
+	}
+	return nil
+}
+
+func platformIOBuildFlagValues(content string, flag string) []string {
+	pattern := regexp.MustCompile(`(?m)^\s*-D\s+` + regexp.QuoteMeta(flag) + `=([^\s#]+)`)
+	matches := pattern.FindAllStringSubmatch(content, -1)
+	values := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) == 2 {
+			values = append(values, normalizePlatformIOBuildFlagValue(match[1]))
+		}
+	}
+	return values
+}
+
+func normalizePlatformIOBuildFlagValue(value string) string {
+	return strings.Trim(strings.TrimSpace(value), "\\\"'")
 }

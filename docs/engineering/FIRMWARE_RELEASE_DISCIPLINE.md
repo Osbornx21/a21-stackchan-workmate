@@ -62,7 +62,7 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `scripts/a21_block_raw_upload.py` PlatformIO pre-build script for failing raw upload targets before flashing can start
 - `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata
 
-`firmware-check` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
+`firmware-check` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. It also treats `firmware/stackchan/a21-firmware.json` as the firmware release identity source of truth: every `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flag in the CoreS3 and native test environments must exactly match the manifest. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
 
 The generated commit header is ignored:
 
