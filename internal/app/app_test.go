@@ -1050,6 +1050,35 @@ func TestRunLatencyBenchMockEmitsPercentileReport(t *testing.T) {
 	}
 }
 
+func TestRunLatencyBenchWritesReportWhenOutputDirProvided(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"latency-bench", "--mock", "--iterations", "2", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"report_path"`) {
+		t.Fatalf("stdout missing report_path: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-latency-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("report files = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"mode": "mock"`, `"iterations": 2`, `"audio_ws_downlink_ms"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("report missing %q: %s", want, string(data))
+		}
+	}
+}
+
 func TestRunLatencyBenchRequiresMockMode(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"latency-bench"}, &bytes.Buffer{}, &stderr)

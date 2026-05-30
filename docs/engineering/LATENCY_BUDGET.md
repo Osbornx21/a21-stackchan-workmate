@@ -57,6 +57,7 @@ A21 has a mock-only latency benchmark:
 
 ```bash
 go run ./cmd/a21 latency-bench --mock --iterations 5
+go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 make latency-bench
 ```
 
@@ -71,6 +72,8 @@ The report currently measures in-process Gateway paths for:
 `audio_ws_downlink_ms` opens a mock audio WebSocket, sends one `audio.frame`, and measures until the Gateway returns the mock speaking control state plus a full 20 ms / 16 kHz / mono / `pcm_s16le` `audio.playback.chunk`. Each mock chunk carries 640 raw PCM bytes encoded in base64, so the measurement now covers the Gateway downlink envelope path for a real-sized first PCM chunk instead of a tiny placeholder payload. Each series reports `samples`, `p50_ms`, and `p95_ms` using nearest-rank percentiles.
 
 `audio_ws_barge_in_stop_ms` opens the same mock audio WebSocket, establishes an active playback stream with a silent frame, then sends a voiced PCM16 frame that triggers mock VAD `vad.speech.start`. The measurement starts when the voiced frame is written and stops when Gateway returns `interrupted`. This protects the audio-channel interruption contract without claiming hardware microphone, speaker, AEC, or provider-cancel latency.
+
+When `--output-dir reports` is provided, the CLI writes a timestamped `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` file and includes `report_path` in stdout. The Makefile `latency-bench` target uses this path so every local/release run can leave an ignored evidence artifact for comparing home, office, LAN, proxy, and future provider/device results.
 
 The Gateway audio ingress path now has a small bounded frame buffer and an explicit VAD detector boundary with deterministic RMS default. It records `audio.ingress.buffered`, `vad.speech.start`, and `vad.speech.end` trace markers and exposes ingress/VAD Prometheus metrics, including `a21_vad_detector_decisions_total{detector,result}` for speech/silence frame decisions by detector. This is a control-point and observability baseline for future tuning; it is not production VAD, echo cancellation, full-duplex validation, or LAN jitter characterization.
 

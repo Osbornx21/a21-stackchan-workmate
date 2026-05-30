@@ -94,6 +94,8 @@ go run ./cmd/a21 provider-realtime-fixture --provider openai_realtime --execute
 
 It validates provider wrapper event flow without dialing a provider. It is still not connectivity, latency, audio-quality, or paid-provider proof.
 
+`latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons.
+
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.

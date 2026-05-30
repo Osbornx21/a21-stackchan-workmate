@@ -47,7 +47,7 @@ audio-front-end-eval:
 	fi
 
 latency-bench:
-	go run ./cmd/a21 latency-bench --mock --iterations 5
+	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 
 release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-package firmware-current-artifact-check doctor
 

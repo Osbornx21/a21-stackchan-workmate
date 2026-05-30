@@ -36,6 +36,8 @@ make release-check
 
 `make firmware-current-artifact-check` validates the newest packaged firmware artifact for the current git commit through the release index and per-artifact manifest.
 
+`make latency-bench` writes an ignored `reports/a21-latency-bench-*.json` evidence report for mock Gateway and audio WebSocket timing.
+
 `make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, and doctor. It does not flash hardware.
 
 ## Local Gateway

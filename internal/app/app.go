@@ -602,6 +602,7 @@ type latencyBenchReport struct {
 	Iterations int                 `json:"iterations"`
 	Summary    latencyBenchSummary `json:"summary"`
 	OK         bool                `json:"ok"`
+	ReportPath string              `json:"report_path,omitempty"`
 }
 
 type latencyBenchSummary struct {
@@ -621,10 +622,11 @@ type latencyBenchSeries struct {
 func runLatencyBench(args []string, stdout io.Writer, stderr io.Writer) int {
 	mock := false
 	iterations := 5
+	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 latency-bench --mock --iterations 5")
+			fmt.Fprintln(stdout, "a21 latency-bench --mock --iterations 5 [--output-dir reports]")
 			return 0
 		case "--mock":
 			mock = true
@@ -640,6 +642,13 @@ func runLatencyBench(args []string, stdout io.Writer, stderr io.Writer) int {
 				return 2
 			}
 			iterations = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown latency-bench option %q\n", args[i])
 			return 2
@@ -653,6 +662,18 @@ func runLatencyBench(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "latency bench failed: %v\n", err)
 		return 1
+	}
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "latency bench report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeLatencyBenchReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write latency bench report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
@@ -715,6 +736,25 @@ func runMockLatencyBench(iterations int) (latencyBenchReport, error) {
 		},
 		OK: true,
 	}, nil
+}
+
+func writeLatencyBenchReport(outputDir string, report latencyBenchReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-latency-bench-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
 }
 
 func measureGatewayAudioDownlink(serverURL string, seq uint64) (time.Duration, error) {
