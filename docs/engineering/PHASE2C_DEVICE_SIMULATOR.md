@@ -33,7 +33,7 @@ http://127.0.0.1:21080/simulator
 - Plays a short local mock playback tick when a speaking control event arrives and playback is enabled
 - Displays expression state, mode, trace ID, session ID, and event log
 - Displays office visibility badges for `PRIVATE`, `PUBLIC`, `PRO`, `MUTED`, `LISTENING`, screen state, and output state
-- Displays Gateway `/v1/devices` registry status for the simulator device
+- Displays Gateway `/v1/devices` registry status and connection freshness for the simulator device
 - Displays Gateway `/v1/traces` waterfall events for the active trace
 - Displays Gateway trace latency summary for audio frame to playback, V21 first result, barge-in stop, and provider commit to first audio
 - Displays professional evidence, confidence, screen cards, and follow-ups returned by the V21 adapter mock path
@@ -49,7 +49,7 @@ Current playback support decodes Gateway mock `pcm_s16le` downlink chunks and sc
 
 The simulator uses a synthetic firmware commit `0000000` so Gateway identity validation can be exercised without pretending the simulator is a real packaged firmware artifact.
 
-The simulator's Device Registry panel now mirrors Gateway acceptance fields: device identity, firmware identity, current mode, and current expression. This is deliberately shallow state. It proves the operator can see whether A21 is listening, speaking, professional, muted, private, public, local, or in error without storing the user's utterance or V21 evidence body in the registry.
+The simulator's Device Registry panel now mirrors Gateway acceptance fields: device identity, firmware identity, connection status, device age, current mode, and current expression. This is deliberately shallow state. It proves the operator can see whether A21 is live, stale, listening, speaking, professional, muted, private, public, local, or in error without storing the user's utterance or V21 evidence body in the registry.
 
 Future simulator work should add:
 

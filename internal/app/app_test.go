@@ -1031,6 +1031,10 @@ func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
         "board": "m5stack-cores3",
         "commit": "abcdef1"
       },
+      "connection_status": "online",
+      "device_age_ms": 42,
+      "current_mode": "workmate",
+      "current_expression": "speaking",
       "last_seen_ms": 1780000000000
     }
   ]
@@ -1054,6 +1058,10 @@ func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
 		`"device_report_path":`,
 		`"gateway_url":`,
 		`"device_id": "stackchan-001"`,
+		`"connection_status": "online"`,
+		`"device_age_ms": 42`,
+		`"current_mode": "workmate"`,
+		`"current_expression": "speaking"`,
 		`"last_seen_ms": 1780000000000`,
 	} {
 		if !strings.Contains(stdout.String(), want) {

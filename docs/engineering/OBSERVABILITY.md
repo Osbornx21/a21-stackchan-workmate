@@ -18,7 +18,7 @@ The current CLI preflight/doctor report emits:
 
 The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.
 
-Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, last trace/session IDs, and first/last seen timestamps.
+Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, identity validation status, current mode, current expression, active playback stream, last trace/session IDs, first/last seen timestamps, and read-time freshness (`connection_status` plus `device_age_ms`). The registry is intentionally transcript-free: it must not persist utterance text, professional answer text, evidence body, or screen-card body.
 
 Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, mock playback chunk sends, audio-path barge-in markers, realtime provider commit/downlink markers, V21 adapter markers, and outgoing control events with millisecond offsets. The response includes a summary for audio-frame-to-playback, V21 first result, barge-in stop, provider-commit-to-first-audio, event count, and last offset. This is a development observability surface, not the final durable trace backend.
 

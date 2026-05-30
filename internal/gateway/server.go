@@ -100,19 +100,21 @@ type DeviceFirmwareIdentity struct {
 }
 
 type DeviceRecord struct {
-	DeviceID       string                   `json:"device_id"`
-	Firmware       DeviceFirmwareIdentity   `json:"firmware,omitempty"`
-	IdentityStatus string                   `json:"identity_status"`
-	IdentityError  string                   `json:"identity_error,omitempty"`
-	CurrentMode    protocol.Mode            `json:"current_mode,omitempty"`
-	CurrentExpr    protocol.ExpressionState `json:"current_expression,omitempty"`
-	PlaybackStream string                   `json:"playback_stream_id,omitempty"`
-	LastEvent      protocol.DeviceEventKind `json:"last_event,omitempty"`
-	LastSeq        uint64                   `json:"last_seq,omitempty"`
-	LastTraceID    string                   `json:"last_trace_id,omitempty"`
-	LastSessionID  string                   `json:"last_session_id,omitempty"`
-	FirstSeenMS    int64                    `json:"first_seen_ms"`
-	LastSeenMS     int64                    `json:"last_seen_ms"`
+	DeviceID         string                   `json:"device_id"`
+	Firmware         DeviceFirmwareIdentity   `json:"firmware,omitempty"`
+	IdentityStatus   string                   `json:"identity_status"`
+	IdentityError    string                   `json:"identity_error,omitempty"`
+	ConnectionStatus string                   `json:"connection_status,omitempty"`
+	DeviceAgeMS      int64                    `json:"device_age_ms,omitempty"`
+	CurrentMode      protocol.Mode            `json:"current_mode,omitempty"`
+	CurrentExpr      protocol.ExpressionState `json:"current_expression,omitempty"`
+	PlaybackStream   string                   `json:"playback_stream_id,omitempty"`
+	LastEvent        protocol.DeviceEventKind `json:"last_event,omitempty"`
+	LastSeq          uint64                   `json:"last_seq,omitempty"`
+	LastTraceID      string                   `json:"last_trace_id,omitempty"`
+	LastSessionID    string                   `json:"last_session_id,omitempty"`
+	FirstSeenMS      int64                    `json:"first_seen_ms"`
+	LastSeenMS       int64                    `json:"last_seen_ms"`
 }
 
 type DeviceRegistryResponse struct {
@@ -896,14 +898,35 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 func (s *Server) deviceRecords() []DeviceRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	nowMS := s.now().UnixMilli()
 	records := make([]DeviceRecord, 0, len(s.devices))
 	for _, record := range s.devices {
-		records = append(records, record)
+		records = append(records, withDeviceFreshness(record, nowMS))
 	}
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].DeviceID < records[j].DeviceID
 	})
 	return records
+}
+
+const deviceOnlineWindowMS int64 = 300_000
+
+func withDeviceFreshness(record DeviceRecord, nowMS int64) DeviceRecord {
+	if record.LastSeenMS <= 0 {
+		record.ConnectionStatus = "unknown"
+		return record
+	}
+	ageMS := nowMS - record.LastSeenMS
+	if ageMS < 0 {
+		ageMS = 0
+	}
+	record.DeviceAgeMS = ageMS
+	if ageMS <= deviceOnlineWindowMS {
+		record.ConnectionStatus = "online"
+	} else {
+		record.ConnectionStatus = "stale"
+	}
+	return record
 }
 
 var a21FirmwareCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)

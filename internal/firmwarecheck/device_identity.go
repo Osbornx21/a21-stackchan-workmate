@@ -26,11 +26,16 @@ type DeviceIdentityFirmware struct {
 }
 
 type DeviceIdentityRecord struct {
-	DeviceID       string                 `json:"device_id"`
-	Firmware       DeviceIdentityFirmware `json:"firmware"`
-	IdentityStatus string                 `json:"identity_status"`
-	IdentityError  string                 `json:"identity_error,omitempty"`
-	LastSeenMS     int64                  `json:"last_seen_ms,omitempty"`
+	DeviceID          string                 `json:"device_id"`
+	Firmware          DeviceIdentityFirmware `json:"firmware"`
+	IdentityStatus    string                 `json:"identity_status"`
+	IdentityError     string                 `json:"identity_error,omitempty"`
+	ConnectionStatus  string                 `json:"connection_status,omitempty"`
+	DeviceAgeMS       int64                  `json:"device_age_ms,omitempty"`
+	CurrentMode       string                 `json:"current_mode,omitempty"`
+	CurrentExpression string                 `json:"current_expression,omitempty"`
+	PlaybackStreamID  string                 `json:"playback_stream_id,omitempty"`
+	LastSeenMS        int64                  `json:"last_seen_ms,omitempty"`
 }
 
 type DeviceIdentityResult struct {

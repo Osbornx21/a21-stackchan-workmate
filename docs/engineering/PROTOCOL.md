@@ -111,9 +111,13 @@ Gateway records this identity in the device registry and rejects events whose fi
 
 Gateway also records the device's current control state for office acceptance:
 
+- `connection_status`: computed at `/v1/devices` read time as `online`, `stale`, or `unknown`
+- `device_age_ms`: age of the latest observed device/control event at read time
 - `current_mode`: latest semantic mode from A21 `control.event`
 - `current_expression`: latest expression/render state from A21 `control.event`
 - `playback_stream_id`: active speaking stream when one is present
+
+The current online window is 300000 ms. Anything older is `stale`; this is aligned with the default firmware device identity freshness guard. This field is an operator acceptance aid, not flash permission.
 
 The registry intentionally does not persist utterance text, professional answer text, evidence summaries, or screen-card content. It is an operational state surface for "is this device listening, speaking, professional, private, muted, local, or in error", not a conversation transcript.
 

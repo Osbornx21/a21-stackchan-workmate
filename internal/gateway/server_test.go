@@ -101,6 +101,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/devices",
 		"/v1/traces",
 		"Device Registry",
+		`id="registryConnection"`,
 		`id="registryMode"`,
 		`id="registryExpression"`,
 		"Waterfall",
@@ -990,6 +991,51 @@ func TestControlWebSocketRegistryExposesCurrentModeAndExpressionWithoutText(t *t
 	}
 }
 
+func TestDeviceRegistryMarksOnlineAndStaleByLastSeenAge(t *testing.T) {
+	server := NewServer()
+	current := time.UnixMilli(2_000_000)
+	server.now = func() time.Time { return current }
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/control"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol: protocol.ProtocolVersion,
+		DeviceID: "stackchan-001",
+		Kind:     protocol.KindDeviceEvent,
+		Seq:      10,
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventMockTurn,
+		Mode:            protocol.ModeWorkmate,
+		Text:            "heartbeat",
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
+	})
+	readControlEvents(t, ctx, conn, 3)
+
+	current = time.UnixMilli(2_000_000 + 299_999)
+	online := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if online["connection_status"] != "online" || int64(online["device_age_ms"].(float64)) != 299_997 {
+		t.Fatalf("online status/age = %#v/%#v, want online/299997", online["connection_status"], online["device_age_ms"])
+	}
+
+	current = time.UnixMilli(2_000_000 + 300_003)
+	stale := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if stale["connection_status"] != "stale" || int64(stale["device_age_ms"].(float64)) != 300_001 {
+		t.Fatalf("stale status/age = %#v/%#v, want stale/300001", stale["connection_status"], stale["device_age_ms"])
+	}
+}
+
 func TestControlWebSocketRejectsForbiddenFirmwareIdentity(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -1713,6 +1759,27 @@ func readControlEvents(t *testing.T, ctx context.Context, conn *websocket.Conn, 
 		events = append(events, event)
 	}
 	return events
+}
+
+func fetchSingleDeviceRegistryItem(t *testing.T, serverURL string) map[string]any {
+	t.Helper()
+	resp, err := http.Get(serverURL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("device registry status = %d, want 200", resp.StatusCode)
+	}
+	var registry map[string][]map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	devices := registry["devices"]
+	if len(devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(devices))
+	}
+	return devices[0]
 }
 
 func assertNoEnvelope(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
