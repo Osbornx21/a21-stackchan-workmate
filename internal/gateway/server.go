@@ -23,19 +23,21 @@ import (
 )
 
 type Server struct {
-	mu            sync.Mutex
-	next          uint64
-	now           func() time.Time
-	metrics       *metrics
-	voice         providers.VoiceProvider
-	v21           v21adapter.Client
-	v21TTL        time.Duration
-	devices       map[string]DeviceRecord
-	traces        map[string][]TraceEvent
-	audioStreams  map[string]string
-	activeStreams map[string]string
-	realtimeAudio map[string]providers.RealtimeVoiceSession
-	audioIngress  *audio.Ingress
+	mu                         sync.Mutex
+	next                       uint64
+	now                        func() time.Time
+	metrics                    *metrics
+	voice                      providers.VoiceProvider
+	v21                        v21adapter.Client
+	v21TTL                     time.Duration
+	devices                    map[string]DeviceRecord
+	traces                     map[string][]TraceEvent
+	audioStreams               map[string]string
+	activeStreams              map[string]string
+	realtimeAudio              map[string]providers.RealtimeVoiceSession
+	realtimeAudioCommitAt      map[string]time.Time
+	realtimeAudioFirstDownlink map[string]bool
+	audioIngress               *audio.Ingress
 }
 
 type ServerOptions struct {
@@ -146,17 +148,19 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		v21TTL = 3 * time.Second
 	}
 	return &Server{
-		now:           time.Now,
-		metrics:       newMetrics(),
-		voice:         voiceProvider,
-		v21:           v21Client,
-		v21TTL:        v21TTL,
-		devices:       make(map[string]DeviceRecord),
-		traces:        make(map[string][]TraceEvent),
-		audioStreams:  make(map[string]string),
-		activeStreams: make(map[string]string),
-		realtimeAudio: make(map[string]providers.RealtimeVoiceSession),
-		audioIngress:  audio.NewIngress(audio.DefaultIngressConfig()),
+		now:                        time.Now,
+		metrics:                    newMetrics(),
+		voice:                      voiceProvider,
+		v21:                        v21Client,
+		v21TTL:                     v21TTL,
+		devices:                    make(map[string]DeviceRecord),
+		traces:                     make(map[string][]TraceEvent),
+		audioStreams:               make(map[string]string),
+		activeStreams:              make(map[string]string),
+		realtimeAudio:              make(map[string]providers.RealtimeVoiceSession),
+		realtimeAudioCommitAt:      make(map[string]time.Time),
+		realtimeAudioFirstDownlink: make(map[string]bool),
+		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 	}
 }
 
@@ -557,6 +561,7 @@ func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, 
 			}), true
 		}
 		s.metrics.realtimeAudioCommitTotal.Inc()
+		s.markRealtimeAudioCommit(traceID, sessionID, frame.DeviceID, s.now())
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.audio.commit", s.now().UnixMilli())
 		return s.controlSequence(frame.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionThinking, Mode: protocol.ModeWorkmate, Text: "我在想"},
@@ -630,7 +635,11 @@ func (s *Server) startRealtimeAudioDownlinkPump(ctx context.Context, conn *webso
 					s.setActiveStream(outputTraceID, outputSessionID, outputDeviceID, payload.StreamID)
 				}
 				s.metrics.realtimeAudioDownlinkEvents.Inc()
-				s.recordTrace(outputTraceID, outputSessionID, outputDeviceID, "provider.audio.downlink", s.now().UnixMilli())
+				eventAt := s.now()
+				s.recordTrace(outputTraceID, outputSessionID, outputDeviceID, "provider.audio.downlink", eventAt.UnixMilli())
+				if event.Audio != nil {
+					s.observeRealtimeFirstAudioDownlink(outputTraceID, outputSessionID, outputDeviceID, eventAt)
+				}
 				envelopes := s.realtimeOutputSequence(outputDeviceID, outputTraceID, outputSessionID, []realtimeVoiceOutput{
 					{Control: payload, Audio: event.Audio},
 				})
@@ -1153,6 +1162,34 @@ func (s *Server) setRealtimeAudioSession(traceID string, sessionID string, devic
 	s.realtimeAudio[key] = session
 }
 
+func (s *Server) markRealtimeAudioCommit(traceID string, sessionID string, deviceID string, at time.Time) {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.realtimeAudioCommitAt[key] = at
+	delete(s.realtimeAudioFirstDownlink, key)
+}
+
+func (s *Server) observeRealtimeFirstAudioDownlink(traceID string, sessionID string, deviceID string, at time.Time) {
+	key := streamStateKey(traceID, sessionID, deviceID)
+	s.mu.Lock()
+	commitAt, hasCommit := s.realtimeAudioCommitAt[key]
+	alreadyObserved := s.realtimeAudioFirstDownlink[key]
+	if hasCommit && !alreadyObserved {
+		s.realtimeAudioFirstDownlink[key] = true
+	}
+	s.mu.Unlock()
+	if !hasCommit || alreadyObserved {
+		return
+	}
+	durationMS := float64(at.Sub(commitAt)) / float64(time.Millisecond)
+	if durationMS < 0 {
+		durationMS = 0
+	}
+	s.metrics.realtimeFirstAudioMS.Observe(durationMS)
+	s.recordTrace(traceID, sessionID, deviceID, "provider.audio.first_downlink", at.UnixMilli())
+}
+
 func (s *Server) closeRealtimeAudioSessions(ctx context.Context, keys map[string]struct{}) {
 	for key := range keys {
 		session := s.clearRealtimeAudioSessionByKey(key)
@@ -1170,6 +1207,8 @@ func (s *Server) clearRealtimeAudioSessionByKey(key string) providers.RealtimeVo
 	defer s.mu.Unlock()
 	session := s.realtimeAudio[key]
 	delete(s.realtimeAudio, key)
+	delete(s.realtimeAudioCommitAt, key)
+	delete(s.realtimeAudioFirstDownlink, key)
 	return session
 }
 

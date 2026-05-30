@@ -24,6 +24,7 @@ type metrics struct {
 	realtimeAudioUplinkFrames   prometheus.Counter
 	realtimeAudioCommitTotal    prometheus.Counter
 	realtimeAudioDownlinkEvents prometheus.Counter
+	realtimeFirstAudioMS        prometheus.Histogram
 	voiceProviderStartTurnMS    prometheus.Histogram
 	voiceProviderCancelMS       prometheus.Histogram
 	v21QueryMS                  prometheus.Histogram
@@ -94,6 +95,11 @@ func newMetrics() *metrics {
 			Name: "a21_realtime_audio_downlink_events_total",
 			Help: "Total realtime provider output events streamed back to A21 audio WebSocket clients.",
 		}),
+		realtimeFirstAudioMS: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "a21_realtime_first_audio_ms",
+			Help:    "Milliseconds from A21 realtime provider audio commit to first provider audio downlink event.",
+			Buckets: []float64{25, 50, 100, 250, 500, 750, 1000, 1500, 2500, 5000},
+		}),
 		voiceProviderStartTurnMS: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "a21_voice_provider_start_turn_ms",
 			Help:    "A21 voice provider StartTurn latency in milliseconds.",
@@ -130,6 +136,7 @@ func newMetrics() *metrics {
 		m.realtimeAudioUplinkFrames,
 		m.realtimeAudioCommitTotal,
 		m.realtimeAudioDownlinkEvents,
+		m.realtimeFirstAudioMS,
 		m.voiceProviderStartTurnMS,
 		m.voiceProviderCancelMS,
 		m.v21QueryMS,

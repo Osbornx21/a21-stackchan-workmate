@@ -1496,7 +1496,7 @@ func TestAudioWebSocketStreamsRealtimeProviderOutputEventsAfterCommit(t *testing
 	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-realtime-downlink", nil)
 	traceRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(traceRec, traceReq)
-	for _, want := range []string{"provider.audio.downlink", "audio.playback.chunk.sent"} {
+	for _, want := range []string{"provider.audio.downlink", "provider.audio.first_downlink", "audio.playback.chunk.sent"} {
 		if !strings.Contains(traceRec.Body.String(), want) {
 			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
 		}
@@ -1505,8 +1505,13 @@ func TestAudioWebSocketStreamsRealtimeProviderOutputEventsAfterCommit(t *testing
 	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	metricsRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(metricsRec, metricsReq)
-	if !strings.Contains(metricsRec.Body.String(), "a21_realtime_audio_downlink_events_total 1") {
-		t.Fatalf("metrics missing realtime downlink count:\n%s", metricsRec.Body.String())
+	for _, want := range []string{
+		"a21_realtime_audio_downlink_events_total 1",
+		"a21_realtime_first_audio_ms_count 1",
+	} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
 	}
 }
 

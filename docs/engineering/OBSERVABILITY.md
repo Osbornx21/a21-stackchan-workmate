@@ -83,6 +83,7 @@ Current mock trace events include:
 - `provider.audio.commit`
 - `provider.audio.commit.error`
 - `provider.audio.downlink`
+- `provider.audio.first_downlink`
 - `audio.playback.chunk.sent`
 - `v21.query.start`
 - `v21.query.first_result`
@@ -133,6 +134,7 @@ Current Prometheus metrics:
 - `a21_realtime_audio_uplink_frames_total`
 - `a21_realtime_audio_commit_total`
 - `a21_realtime_audio_downlink_events_total`
+- `a21_realtime_first_audio_ms_bucket`
 - `a21_voice_provider_start_turn_ms_bucket`
 - `a21_voice_provider_cancel_ms_bucket`
 - `a21_v21_query_ms_bucket`
