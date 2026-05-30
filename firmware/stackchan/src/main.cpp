@@ -1,4 +1,5 @@
 #include <M5Unified.h>
+#include <M5StackChan.h>
 #include <WebSocketsClient.h>
 #include <WiFi.h>
 
@@ -266,7 +267,8 @@ A21AudioWSDriver g_audio_ws_driver = {
 
 bool arduinoMotionWriteY(void* ctx, int y_deg) {
   (void)ctx;
-  (void)y_deg;
+  const int safe_y_deg = a21ClampServoY(y_deg);
+  M5StackChan.Motion.moveY(safe_y_deg * 10, 300);
   return true;
 }
 
@@ -277,7 +279,10 @@ A21MotionDriver g_motion_driver = {
 
 bool arduinoRGBWrite(void* ctx, A21RGBColor color) {
   (void)ctx;
-  (void)color;
+  for (int led_index = 0; led_index < 12; ++led_index) {
+    M5StackChan.setRgbColor(led_index, color.r, color.g, color.b);
+  }
+  M5StackChan.refreshRgb();
   return true;
 }
 
@@ -468,6 +473,7 @@ void setup() {
   auto config = M5.config();
   config.internal_spk = true;
   M5.begin(config);
+  M5StackChan.begin();
   M5.Speaker.setVolume(96);
   M5.Speaker.begin();
   a21InitFirmwareState(&g_state, A21_DEVICE_ID);

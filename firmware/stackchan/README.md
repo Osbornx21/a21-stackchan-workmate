@@ -101,9 +101,9 @@ Servo safety currently lives in `a21_firmware_config.h`:
 - `A21_SERVO_Y_MAX_DEG=85`
 - `a21ClampServoY(...)`
 
-`a21_firmware_motion.h` maps semantic render states to safe Y-axis targets and writes only when the target angle changes. The CoreS3 main loop is wired through a no-op motion driver for now, so the runtime path is exercised without actuating hardware. Real servo hardware output still requires a future calibrated driver.
+`a21_firmware_motion.h` maps semantic render states to safe Y-axis targets and writes only when the target angle changes. The CoreS3 main loop uses the official `m5stack/StackChan-BSP` driver and sends the clamped Y-axis target through `M5StackChan.Motion.moveY(...)`. Motion remains bounded by the A21 servo clamp; do not bypass that clamp for physical validation.
 
-`a21_firmware_rgb.h` maps semantic render states to RGB state colors and writes only when the target color changes. The CoreS3 main loop is wired through a no-op RGB driver for now, so the runtime path is exercised without lighting hardware. Real RGB output still requires a future calibrated driver.
+`a21_firmware_rgb.h` maps semantic render states to RGB state colors and writes only when the target color changes. The CoreS3 main loop uses the official `m5stack/StackChan-BSP` driver to apply the color to the 12 body RGB LEDs and calls `M5StackChan.refreshRgb()` after each state color change.
 
 ## Upload
 
