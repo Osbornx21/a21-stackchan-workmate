@@ -1022,6 +1022,19 @@ func TestRunFirmwareUploadCheckRequiresExplicitPort(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareUploadCheckHelpShowsRequiredCommit(t *testing.T) {
+	var stdout bytes.Buffer
+	code := Run([]string{"firmware-upload-check", "--help"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	for _, want := range []string{"--artifact", "--port", "--commit"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunFirmwareUploadCheckRequiresExpectedCommit(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeTestFirmwareManifest(t, dir)

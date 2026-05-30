@@ -833,7 +833,7 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX")
+			fmt.Fprintln(stdout, "a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --commit <expected-git-commit> --port /dev/cu.usbmodemXXXX")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
