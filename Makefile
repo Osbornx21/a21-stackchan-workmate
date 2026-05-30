@@ -5,7 +5,7 @@ A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_LAN_SAMPLES ?= 5
 A21_PLATFORMIO_VERSION ?= 6.1.19
 
-.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute
+.PHONY: test verify preflight namespace-audit doctor gateway lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-touch-acceptance firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute
 
 test:
 	go test ./...
@@ -148,6 +148,11 @@ stackchan-capability-acceptance:
 	@test -n "$(A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT)" || (echo "A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	go run ./cmd/a21 stackchan-capability-acceptance --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --evidence "$(A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+
+stackchan-touch-acceptance:
+	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
+	@test -n "$(A21_TOUCH_CASE)" || (echo "A21_TOUCH_CASE is required"; exit 2)
+	go run ./cmd/a21 stackchan-touch-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --case "$(A21_TOUCH_CASE)" --window-ms "$${A21_TOUCH_WINDOW_MS:-15000}" --output-dir reports
 
 firmware-device-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)

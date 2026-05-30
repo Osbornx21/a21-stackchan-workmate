@@ -4093,6 +4093,129 @@ func TestRunStackChanCapabilityAcceptanceRejectsLegacyEvidencePathWithoutEchoing
 	}
 }
 
+func TestRunStackChanTouchAcceptancePassesTopTapWithGatewayTrace(t *testing.T) {
+	var armed bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices/control":
+			if r.Method != http.MethodPost {
+				t.Fatalf("control method = %s", r.Method)
+			}
+			armed = true
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"trace_id":"a21-trace-touch-acceptance-top_tap","session_id":"a21-session-touch-acceptance","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+		case "/v1/devices":
+			lastEvent := ""
+			lastSource := ""
+			lastTrace := ""
+			lastSeen := int64(1780000001000)
+			if armed {
+				lastEvent = "touch.top.tap"
+				lastSource = "top_sensor"
+				lastTrace = "a21-trace-device-000123"
+				lastSeen = time.Now().UnixMilli()
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abc123"},"capabilities":{"screen":"available","screen_touch":"available","top_touch":"available","speaker":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_event":%q,"last_touch_source":%q,"last_trace_id":%q,"last_session_id":"a21-session-touch-acceptance","last_seen_ms":%d,"first_seen_ms":1780000000000}]}`, lastEvent, lastSource, lastTrace, lastSeen)
+		case "/v1/traces":
+			if r.URL.Query().Get("trace_id") != "a21-trace-device-000123" {
+				t.Fatalf("trace id = %q", r.URL.Query().Get("trace_id"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"trace_id":"a21-trace-device-000123","events":[{"name":"device.touch.top.tap.received","trace_id":"a21-trace-device-000123","session_id":"a21-session-touch-acceptance","device_id":"stackchan-001","at_ms":%d,"offset_ms":0}],"summary":{"event_count":1,"last_offset_ms":0}}`, time.Now().UnixMilli())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-touch-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--case", "top_tap",
+		"--window-ms", "1000",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan_touch_acceptance.v1"`,
+		`"touch_acceptance_status": "passed"`,
+		`"expected_event": "touch.top.tap"`,
+		"stackchan touch acceptance ok (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-stackchan-touch-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("touch acceptance reports = %d, want 1: %v", len(matches), matches)
+	}
+}
+
+func TestRunStackChanTouchAcceptanceMarksDirectionalCaseAsAffordanceBoundWhenMissed(t *testing.T) {
+	var armed bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/devices/control":
+			armed = true
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"trace_id":"a21-trace-touch-acceptance-top_swipe_backward","session_id":"a21-session-touch-acceptance","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+		case "/v1/devices":
+			lastEvent := ""
+			lastSource := ""
+			lastTrace := ""
+			lastSeen := int64(1780000001000)
+			if armed {
+				lastEvent = "touch.top.tap"
+				lastSource = "top_sensor"
+				lastTrace = "a21-trace-device-000124"
+				lastSeen = time.Now().UnixMilli()
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abc123"},"capabilities":{"screen":"available","screen_touch":"available","top_touch":"available","speaker":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_event":%q,"last_touch_source":%q,"last_trace_id":%q,"last_session_id":"a21-session-touch-acceptance","last_seen_ms":%d,"first_seen_ms":1780000000000}]}`, lastEvent, lastSource, lastTrace, lastSeen)
+		case "/v1/traces":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"trace_id":"a21-trace-device-000124","events":[{"name":"device.touch.top.tap.received","trace_id":"a21-trace-device-000124","session_id":"a21-session-touch-acceptance","device_id":"stackchan-001","at_ms":%d,"offset_ms":0}],"summary":{"event_count":1,"last_offset_ms":0}}`, time.Now().UnixMilli())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-touch-acceptance",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--case", "top_swipe_backward",
+		"--window-ms", "50",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"acceptance_scope": "guided_directional_touch"`,
+		`"needs_affordance": true`,
+		`"code": "physical_affordance_required"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanPhysicalEvidenceWritesPendingTemplateFromIdentity(t *testing.T) {
 	dir := t.TempDir()
 	artifactSHA := strings.Repeat("c", 64)
