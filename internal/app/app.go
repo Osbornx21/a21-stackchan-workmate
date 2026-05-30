@@ -41,6 +41,22 @@ type firmwareSourceState struct {
 	Detail string
 }
 
+type firmwareArtifactPrunePlanSummary struct {
+	SchemaVersion       string `json:"schema_version"`
+	DryRun              bool   `json:"dry_run"`
+	DeleteAllowed       bool   `json:"delete_allowed"`
+	ArtifactDir         string `json:"artifact_dir"`
+	Commit              string `json:"commit"`
+	KeepRecent          int    `json:"keep_recent"`
+	CurrentArtifactPath string `json:"current_artifact_path"`
+	TotalArtifacts      int    `json:"total_artifacts"`
+	ReleaseValidCount   int    `json:"release_valid_count"`
+	KeepCount           int    `json:"keep_count"`
+	PruneCandidateCount int    `json:"prune_candidate_count"`
+	ManualReviewCount   int    `json:"manual_review_count"`
+	ReportPath          string `json:"report_path,omitempty"`
+}
+
 var detectFirmwareSourceState = detectGitFirmwareSourceState
 
 func detectGitFirmwareSourceState() (firmwareSourceState, error) {
@@ -108,6 +124,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareArtifactCheck(args[1:], stdout, stderr)
 	case "firmware-current-artifact-check":
 		return runFirmwareCurrentArtifactCheck(args[1:], stdout, stderr)
+	case "firmware-artifact-prune-plan":
+		return runFirmwareArtifactPrunePlan(args[1:], stdout, stderr)
 	case "firmware-upload-check":
 		return runFirmwareUploadCheck(args[1:], stdout, stderr)
 	case "firmware-device-check":
@@ -2025,6 +2043,127 @@ func runFirmwareCurrentArtifactCheck(args []string, stdout io.Writer, stderr io.
 	return 0
 }
 
+func runFirmwareArtifactPrunePlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := firmwarecheck.ArtifactPrunePlanOptions{
+		ManifestPath: "firmware/stackchan/a21-firmware.json",
+		ArtifactDir:  "firmware/artifacts",
+		KeepRecent:   5,
+	}
+	outputDir := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 firmware-artifact-prune-plan --commit <expected-git-commit> [--artifact-dir firmware/artifacts] [--keep-recent 5] [--output-dir reports]")
+			return 0
+		case "--manifest":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--manifest requires a value")
+				return 2
+			}
+			i++
+			options.ManifestPath = args[i]
+		case "--artifact-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--artifact-dir requires a value")
+				return 2
+			}
+			i++
+			options.ArtifactDir = args[i]
+		case "--commit":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--commit requires a value")
+				return 2
+			}
+			i++
+			options.Commit = args[i]
+		case "--keep-recent":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--keep-recent requires a value")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value < 1 {
+				fmt.Fprintln(stderr, "--keep-recent must be a positive integer")
+				return 2
+			}
+			options.KeepRecent = value
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown firmware-artifact-prune-plan option %q\n", args[i])
+			return 2
+		}
+	}
+	if options.Commit == "" {
+		fmt.Fprintln(stderr, "--commit requires a value")
+		return 2
+	}
+	result, err := firmwarecheck.BuildArtifactPrunePlan(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "firmware artifact prune plan failed: %v\n", err)
+		return 1
+	}
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			fmt.Fprintf(stderr, "create firmware artifact prune plan report dir: %v\n", err)
+			return 1
+		}
+		reportPath := filepath.Join(outputDir, "a21-firmware-artifact-prune-plan-"+time.Now().Format("20060102-150405")+".json")
+		file, err := os.Create(reportPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "create firmware artifact prune plan report: %v\n", err)
+			return 1
+		}
+		result.ReportPath = reportPath
+		if err := writeJSONFirmwareArtifactPrunePlan(file, result); err != nil {
+			_ = file.Close()
+			fmt.Fprintf(stderr, "write firmware artifact prune plan report: %v\n", err)
+			return 1
+		}
+		if err := file.Close(); err != nil {
+			fmt.Fprintf(stderr, "close firmware artifact prune plan report: %v\n", err)
+			return 1
+		}
+	}
+	if outputDir != "" {
+		if err := writeJSONFirmwareArtifactPrunePlanSummary(stdout, summarizeFirmwareArtifactPrunePlan(result)); err != nil {
+			fmt.Fprintf(stderr, "encode firmware artifact prune plan summary: %v\n", err)
+			return 1
+		}
+	} else {
+		if err := writeJSONFirmwareArtifactPrunePlan(stdout, result); err != nil {
+			fmt.Fprintf(stderr, "encode firmware artifact prune plan result: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintln(stdout, "firmware artifact prune plan ok (no files deleted)")
+	return 0
+}
+
+func summarizeFirmwareArtifactPrunePlan(plan firmwarecheck.ArtifactPrunePlan) firmwareArtifactPrunePlanSummary {
+	return firmwareArtifactPrunePlanSummary{
+		SchemaVersion:       "a21.firmware.artifact_prune_plan.summary.v1",
+		DryRun:              plan.DryRun,
+		DeleteAllowed:       plan.DeleteAllowed,
+		ArtifactDir:         plan.ArtifactDir,
+		Commit:              plan.Commit,
+		KeepRecent:          plan.KeepRecent,
+		CurrentArtifactPath: plan.CurrentArtifactPath,
+		TotalArtifacts:      plan.TotalArtifacts,
+		ReleaseValidCount:   plan.ReleaseValidCount,
+		KeepCount:           len(plan.Keep),
+		PruneCandidateCount: len(plan.PruneCandidates),
+		ManualReviewCount:   len(plan.ManualReview),
+		ReportPath:          plan.ReportPath,
+	}
+}
+
 func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := firmwarecheck.UploadCheckOptions{
 		ManifestPath: "firmware/stackchan/a21-firmware.json",
@@ -2340,6 +2479,18 @@ func writeJSONFirmwarePackage(writer io.Writer, result firmwarecheck.PackageResu
 }
 
 func writeJSONFirmwareArtifact(writer io.Writer, result firmwarecheck.ArtifactResult) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareArtifactPrunePlan(writer io.Writer, result firmwarecheck.ArtifactPrunePlan) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(result)
+}
+
+func writeJSONFirmwareArtifactPrunePlanSummary(writer io.Writer, result firmwareArtifactPrunePlanSummary) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)

@@ -90,6 +90,7 @@ make firmware-build
 make firmware-upload-blocker-check
 make firmware-package
 make firmware-current-artifact-check
+make firmware-artifact-prune-plan
 ```
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
@@ -99,6 +100,8 @@ make firmware-current-artifact-check
 `firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
+
+`firmware-artifact-prune-plan` writes a no-delete retention receipt after the current artifact guard. It requires the same release-ledger current artifact, keeps that package plus the configured recent release-ledger-valid packages, lists older release-ledger-valid packages as prune candidates, and lists loose or invalid files for manual review. It always sets `dry_run=true` and `delete_allowed=false`; it is planning evidence, not a deletion command. When `--output-dir` is set, stdout stays summary-only and the full plan goes into the JSON report so release logs are not flooded by old package paths.
 
 Current native firmware tests cover:
 
@@ -177,6 +180,36 @@ Upload-path dry-run guards now require both the release index record and the sib
 - the release index and sibling manifest full artifact/checksum paths do not contain forbidden X21/V21 identities
 
 `firmware-upload-check` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.
+
+## Artifact Retention Plan
+
+Artifact buildup is operational risk because a human may pick a stale binary under pressure. A21 therefore has a dry-run retention plan:
+
+```bash
+go run ./cmd/a21 firmware-artifact-prune-plan \
+  --commit <git-sha> \
+  --artifact-dir firmware/artifacts \
+  --keep-recent 5 \
+  --output-dir reports
+
+make firmware-artifact-prune-plan
+```
+
+The command writes:
+
+```text
+reports/a21-firmware-artifact-prune-plan-YYYYMMDD-HHMMSS.json
+```
+
+The receipt contains:
+
+- `delete_allowed: false`
+- the release-ledger-validated current artifact
+- keep records for current and recent release-ledger-valid packages
+- prune candidates for older release-ledger-valid packages
+- manual-review records for loose, incomplete, or invalid artifact files
+
+When `--output-dir reports` is used, stdout shows only summary counts plus `report_path`; inspect the report for the full file list. The command rejects artifact directories containing forbidden X21/V21 identity. It never removes files. Any future deletion command must be a separate explicit guarded command and must not reinterpret this dry-run receipt as permission to delete or flash.
 
 ## Artifact Guard
 

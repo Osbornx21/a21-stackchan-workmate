@@ -2101,6 +2101,77 @@ func TestRunFirmwareCurrentArtifactCheckRequiresCommit(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareArtifactPrunePlanWritesNoDeleteReport(t *testing.T) {
+	dir := t.TempDir()
+	manifest := writeTestFirmwareManifest(t, dir)
+	artifactDir := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldArtifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-1111111-20260530-010000.bin")
+	currentArtifact := filepath.Join(artifactDir, "a21-stackchan-0.1.0-m5stack-cores3-2222222-20260530-020000.bin")
+	writeFirmwareArtifactWithChecksum(t, oldArtifact, []byte("old firmware"))
+	writeFirmwareArtifactWithChecksum(t, currentArtifact, []byte("current firmware"))
+	reportDir := filepath.Join(dir, "reports")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"firmware-artifact-prune-plan",
+		"--manifest", manifest,
+		"--artifact-dir", artifactDir,
+		"--commit", "2222222",
+		"--keep-recent", "1",
+		"--output-dir", reportDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.firmware.artifact_prune_plan.summary.v1"`,
+		`"delete_allowed": false`,
+		`"keep_count": 1`,
+		`"prune_candidate_count": 1`,
+		`"manual_review_count": 0`,
+		`"report_path":`,
+		"firmware artifact prune plan ok (no files deleted)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), oldArtifact) {
+		t.Fatalf("stdout should be summary-only when --output-dir is set: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(reportDir, "a21-firmware-artifact-prune-plan-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %v, want one prune-plan report", matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.firmware.artifact_prune_plan.v1"`,
+		`"reason": "current"`,
+		`"reason": "older_than_keep_recent"`,
+		oldArtifact,
+		currentArtifact,
+	} {
+		if !strings.Contains(string(reportData), want) {
+			t.Fatalf("report missing %q: %s", want, string(reportData))
+		}
+	}
+	for _, path := range []string{oldArtifact, currentArtifact} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("artifact %q was removed by prune plan: %v", path, err)
+		}
+	}
+}
+
 func TestRunFirmwareUploadCheckRequiresExplicitPort(t *testing.T) {
 	dir := t.TempDir()
 	manifest := writeTestFirmwareManifest(t, dir)
