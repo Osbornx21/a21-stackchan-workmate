@@ -128,9 +128,11 @@ ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 
 `xiaozhi-voice-bench` packages those host markers into schema
 `a21.xiaozhi_voice_bench.v1`. The report includes a loopback/remote Gateway
-label, stock/debug profile name, protocol version, answer turn receipts,
-barge-in turn receipts, first-audio p50/p95, abort-stop p50/p95, execution
-booleans, redaction booleans, and per-turn `/v1/traces` summaries for
+label, stock/debug profile name, protocol version, redacted input source
+metadata (`synthetic_sine` or `wav_fixture` basename plus Opus frame count),
+answer turn receipts, barge-in turn receipts, first-audio p50/p95,
+abort-stop p50/p95, execution booleans, redaction booleans, and per-turn
+`/v1/traces` summaries for
 `xiaozhi_opus_decode_ms`, `asr_first_partial_ms`, `llm_first_content_ms`,
 `tts_first_audio_ms`, `audio_downlink_first_frame_ms`,
 `answer_first_audio_total_ms`, and available barge-in/device markers. It

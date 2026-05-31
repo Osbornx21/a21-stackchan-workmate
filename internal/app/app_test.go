@@ -1935,6 +1935,57 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiVoiceBenchSupportsRedactedInputWAVFixture(t *testing.T) {
+	gatewayServer := newGatewayServerFromEnv(nil)
+	httpServer := httptest.NewServer(gatewayServer.Handler())
+	t.Cleanup(httpServer.Close)
+	dir := t.TempDir()
+	wavPath := filepath.Join(dir, "a21-input.wav")
+	writeAppTestWAV(t, wavPath, 16000, bytes.Repeat([]byte{0x70, 0x17}, 960*2))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-voice-bench",
+		"--gateway-url", httpServer.URL,
+		"--input-wav", wavPath,
+		"--repeat", "1",
+		"--timeout-ms", "5000",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"source": "wav_fixture"`,
+		`"wav_name": "a21-input.wav"`,
+		`"opus_frame_count": 2`,
+		`"acceptance_status": "candidate_host_only"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{wavPath, dir, "data_base64", "raw_audio"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-voice-bench-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("xiaozhi voice bench reports = %v, %v", matches, err)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), wavPath) || strings.Contains(string(data), dir) || strings.Contains(string(data), "data_base64") {
+		t.Fatalf("report leaked local path or audio payload: %s", data)
+	}
+}
+
 func TestRunProviderLatencyBenchRejectsDeprecatedHostBaselineMode(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"provider-latency-bench", "--mode", "host_baseline"}, &bytes.Buffer{}, &stderr)

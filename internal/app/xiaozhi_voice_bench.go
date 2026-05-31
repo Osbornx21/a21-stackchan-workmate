@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/audio/opuscodec"
 
 	"github.com/coder/websocket"
@@ -25,9 +27,16 @@ type xiaozhiVoiceBenchOptions struct {
 	Profile         string
 	DeviceID        string
 	ProtocolVersion int
+	InputWAV        string
 	Repeat          int
 	TimeoutMS       int
 	OutputDir       string
+}
+
+type xiaozhiVoiceBenchInput struct {
+	Source         string `json:"source"`
+	WAVName        string `json:"wav_name,omitempty"`
+	OpusFrameCount int    `json:"opus_frame_count"`
 }
 
 type xiaozhiVoiceBenchReport struct {
@@ -38,6 +47,7 @@ type xiaozhiVoiceBenchReport struct {
 	Gateway         string                     `json:"gateway"`
 	Profile         string                     `json:"profile"`
 	ProtocolVersion int                        `json:"protocol_version"`
+	Input           xiaozhiVoiceBenchInput     `json:"input_audio"`
 	DeviceID        string                     `json:"device_id"`
 	Repeat          int                        `json:"repeat"`
 	AnswerTurns     []xiaozhiVoiceBenchTurn    `json:"answer_turns"`
@@ -129,7 +139,7 @@ func runXiaozhiVoiceBench(args []string, stdout io.Writer, stderr io.Writer) int
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 xiaozhi-voice-bench [--gateway-url http://127.0.0.1:21080] [--profile xiaozhi|a21-debug] [--device-id stackchan-virtual-a21-bench-001] [--protocol-version 1|2|3] [--repeat 3] [--timeout-ms 5000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 xiaozhi-voice-bench [--gateway-url http://127.0.0.1:21080] [--profile xiaozhi|a21-debug] [--device-id stackchan-virtual-a21-bench-001] [--protocol-version 1|2|3] [--input-wav fixture.wav] [--repeat 3] [--timeout-ms 5000] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -141,6 +151,10 @@ func runXiaozhiVoiceBench(args []string, stdout io.Writer, stderr io.Writer) int
 			}
 		case "--device-id":
 			if !readStringOption(args, &i, stderr, "--device-id", &options.DeviceID) {
+				return 2
+			}
+		case "--input-wav":
+			if !readStringOption(args, &i, stderr, "--input-wav", &options.InputWAV) {
 				return 2
 			}
 		case "--protocol-version":
@@ -217,6 +231,15 @@ func validateXiaozhiVoiceBenchOptions(options xiaozhiVoiceBenchOptions) error {
 	if xiaozhiVoiceBenchContainsLegacy(options.DeviceID) {
 		return fmt.Errorf("device id contains legacy identity")
 	}
+	inputWAV := strings.TrimSpace(options.InputWAV)
+	if inputWAV != "" {
+		if xiaozhiVoiceBenchContainsLegacy(inputWAV) {
+			return fmt.Errorf("input wav contains legacy identity")
+		}
+		if strings.ToLower(filepath.Ext(inputWAV)) != ".wav" {
+			return fmt.Errorf("--input-wav must point to a wav file")
+		}
+	}
 	return nil
 }
 
@@ -256,23 +279,24 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 		report.Counts.FailureCount = len(report.Findings)
 		return report
 	}
-	packet, err := xiaozhiVoiceBenchOpusPacket()
+	packets, input, err := xiaozhiVoiceBenchOpusPackets(options)
 	if err != nil {
-		report.Findings = append(report.Findings, xiaozhiVoiceBenchFinding{Code: "opus_fixture_unavailable", Message: "synthetic Opus fixture could not be generated"})
+		report.Findings = append(report.Findings, xiaozhiVoiceBenchFinding{Code: "opus_fixture_unavailable", Message: "Opus uplink fixture could not be generated"})
 		report.Counts.FailureCount = len(report.Findings)
 		return report
 	}
+	report.Input = input
 	for turn := 1; turn <= options.Repeat; turn++ {
 		traceID := fmt.Sprintf("a21-trace-xiaozhi-bench-%d-answer-%02d", generatedAtMS, turn)
 		sessionID := fmt.Sprintf("a21-session-xiaozhi-bench-%d-answer-%02d", generatedAtMS, turn)
-		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packet, turn, "answer", traceID, sessionID, false)
+		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packets, turn, "answer", traceID, sessionID, false)
 		attachXiaozhiVoiceBenchTraceSummary(ctx, options.GatewayURL, &receipt)
 		report.AnswerTurns = append(report.AnswerTurns, receipt)
 	}
 	for turn := 1; turn <= options.Repeat; turn++ {
 		traceID := fmt.Sprintf("a21-trace-xiaozhi-bench-%d-barge-%02d", generatedAtMS, turn)
 		sessionID := fmt.Sprintf("a21-session-xiaozhi-bench-%d-barge-%02d", generatedAtMS, turn)
-		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packet, turn, "barge_in", traceID, sessionID, true)
+		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packets, turn, "barge_in", traceID, sessionID, true)
 		attachXiaozhiVoiceBenchTraceSummary(ctx, options.GatewayURL, &receipt)
 		report.BargeInTurns = append(report.BargeInTurns, receipt)
 	}
@@ -290,7 +314,7 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 	return report
 }
 
-func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOptions, wsURL string, packet []byte, turn int, kind string, traceID string, sessionID string, abortAfterFirstAudio bool) xiaozhiVoiceBenchTurn {
+func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOptions, wsURL string, packets [][]byte, turn int, kind string, traceID string, sessionID string, abortAfterFirstAudio bool) xiaozhiVoiceBenchTurn {
 	receipt := xiaozhiVoiceBenchTurn{
 		Turn:      turn,
 		Kind:      kind,
@@ -321,9 +345,11 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 	if message, ok := readXiaozhiVoiceBenchJSON(turnCtx, conn); ok {
 		markXiaozhiVoiceBenchJSON(&receipt, message)
 	}
-	if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
-		receipt.Findings = append(receipt.Findings, "opus_uplink_send_failed")
-		return receipt
+	for _, packet := range packets {
+		if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
+			receipt.Findings = append(receipt.Findings, "opus_uplink_send_failed")
+			return receipt
+		}
 	}
 	if err := wsjson.Write(turnCtx, conn, xiaozhiVoiceBenchListen(options, traceID, sessionID, "stop")); err != nil {
 		receipt.Findings = append(receipt.Findings, "listen_stop_send_failed")
@@ -450,7 +476,63 @@ func xiaozhiVoiceBenchAbort(options xiaozhiVoiceBenchOptions, traceID string, se
 	}
 }
 
-func xiaozhiVoiceBenchOpusPacket() ([]byte, error) {
+func xiaozhiVoiceBenchOpusPackets(options xiaozhiVoiceBenchOptions) ([][]byte, xiaozhiVoiceBenchInput, error) {
+	if strings.TrimSpace(options.InputWAV) != "" {
+		packets, err := xiaozhiVoiceBenchOpusPacketsFromWAV(options.InputWAV)
+		if err != nil {
+			return nil, xiaozhiVoiceBenchInput{}, err
+		}
+		return packets, xiaozhiVoiceBenchInput{
+			Source:         "wav_fixture",
+			WAVName:        filepath.Base(filepath.Clean(options.InputWAV)),
+			OpusFrameCount: len(packets),
+		}, nil
+	}
+	packet, err := xiaozhiVoiceBenchSyntheticOpusPacket()
+	if err != nil {
+		return nil, xiaozhiVoiceBenchInput{}, err
+	}
+	return [][]byte{packet}, xiaozhiVoiceBenchInput{
+		Source:         "synthetic_sine",
+		OpusFrameCount: 1,
+	}, nil
+}
+
+func xiaozhiVoiceBenchOpusPacketsFromWAV(path string) ([][]byte, error) {
+	chunks, err := audio.ReadPCM16MonoWAVChunks(path, 60)
+	if err != nil {
+		return nil, err
+	}
+	codec, err := opuscodec.New(16000, 1, 60)
+	if err != nil {
+		return nil, err
+	}
+	packets := make([][]byte, 0, len(chunks))
+	for _, chunk := range chunks {
+		data, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+		if err != nil {
+			return nil, err
+		}
+		if len(data)%2 != 0 {
+			return nil, fmt.Errorf("wav pcm chunk must contain 16-bit samples")
+		}
+		pcm := make([]int16, len(data)/2)
+		for i := range pcm {
+			pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2 : i*2+2]))
+		}
+		packet, err := codec.EncodePCM16(pcm)
+		if err != nil {
+			return nil, err
+		}
+		packets = append(packets, packet)
+	}
+	if len(packets) == 0 {
+		return nil, fmt.Errorf("wav fixture produced no Opus frames")
+	}
+	return packets, nil
+}
+
+func xiaozhiVoiceBenchSyntheticOpusPacket() ([]byte, error) {
 	codec, err := opuscodec.New(16000, 1, 60)
 	if err != nil {
 		return nil, err
@@ -547,6 +629,17 @@ func attachXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string,
 		return
 	}
 	receipt.TraceSummary = &summary
+	if !xiaozhiVoiceBenchCoreTraceMetricsPresent(summary) {
+		receipt.Findings = append(receipt.Findings, "trace_core_stage_metrics_missing")
+	}
+}
+
+func xiaozhiVoiceBenchCoreTraceMetricsPresent(summary xiaozhiVoiceBenchTraceSummary) bool {
+	return summary.ASRFirstPartialMS != nil &&
+		summary.LLMFirstContentMS != nil &&
+		summary.TTSFirstAudioMS != nil &&
+		summary.AudioDownlinkFirstFrameMS != nil &&
+		summary.AnswerFirstAudioTotalMS != nil
 }
 
 func fetchXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, traceID string) (xiaozhiVoiceBenchTraceSummary, error) {

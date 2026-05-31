@@ -80,9 +80,11 @@ The current `latency-bench --mock`, `audio-front-end-eval`, `provider-smoke --st
 
 `xiaozhi-voice-bench` is the Xiaozhi-protocol host-loopback member of the same
 family. It is allowed to contact an already-running local Gateway and exercise
-`/v1/xiaozhi` with synthetic Opus uplink, but it does not start Gateway,
-providers, V21, firmware, or hardware. Its successful state is
-`candidate_host_only`, not `accepted`, and it exists to compare answer
+`/v1/xiaozhi` with either the default synthetic Opus uplink or `--input-wav`
+speech fixtures encoded into 60 ms Opus frames, but it does not start Gateway,
+providers, V21, firmware, or hardware. Reports store only the fixture basename
+and Opus frame count, never local paths or audio payloads. Its successful state
+is `candidate_host_only`, not `accepted`, and it exists to compare answer
 first-audio and barge-in stop timings before physical StackChan promotion.
 
 The first `provider-latency-bench` scaffold now exists as a mock/fixture-only
