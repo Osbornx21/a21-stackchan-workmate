@@ -64,6 +64,15 @@ metadata. They must not store raw PCM, base64 audio, Opus payload bytes,
 prompts, transcripts, provider output, reasoning, credentials, full URLs, proxy
 URLs, model values, or full local paths.
 
+Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
+`xiaozhi.hello.received`, `xiaozhi.listen.start`,
+`xiaozhi.listen.detect`, `xiaozhi.listen.stop`,
+`xiaozhi.listen.stop.ignored`, `xiaozhi.opus_frame.received`,
+`xiaozhi.opus_frame.ignored_not_listening`,
+`xiaozhi.opus_passthrough_unimplemented_decode`, `xiaozhi.abort.received`,
+and `xiaozhi.tts.stop`. These markers prove protocol/session handling only;
+they are not ASR, TTS, real-device playback, or PRD latency acceptance evidence.
+
 AgentTask bridge reports include package-level T1/T2 semantic reports in
 `internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI
 reports. Provider semantic reports use schema
@@ -131,6 +140,16 @@ Current mock trace events include:
 - `device.touch.wake_or_listen.received`
 - `device.touch.barge_in.received`
 - `device.runtime.echo.received`
+- `xiaozhi.hello.received`
+- `xiaozhi.listen.start`
+- `xiaozhi.listen.detect`
+- `xiaozhi.listen.stop`
+- `xiaozhi.listen.stop.ignored`
+- `xiaozhi.opus_frame.received`
+- `xiaozhi.opus_frame.ignored_not_listening`
+- `xiaozhi.opus_passthrough_unimplemented_decode`
+- `xiaozhi.abort.received`
+- `xiaozhi.tts.stop`
 - `audio.frame.received`
 - `audio.ingress.buffered`
 - `audio.ingress.invalid`

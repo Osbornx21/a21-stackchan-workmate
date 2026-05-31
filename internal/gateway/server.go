@@ -19,6 +19,7 @@ import (
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	xiaozhitransport "a21.local/a21/internal/transport/xiaozhi"
 	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -201,6 +202,8 @@ const (
 	maxAudioCaptureFrames       = 512
 )
 
+const XiaozhiOpusPassthroughDecodeState = "opus_passthrough_unimplemented_decode"
+
 type AudioRecentResponse struct {
 	SchemaVersion string              `json:"schema_version"`
 	DeviceID      string              `json:"device_id,omitempty"`
@@ -311,6 +314,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/fast-companion/turn", s.handleFastCompanionTurn)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
+	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
 	mux.HandleFunc("/ws/audio", s.handleAudioWS)
 	return mux
@@ -689,6 +693,288 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 	req.SessionID = sessionID
 	s.recordTrace(traceID, sessionID, req.DeviceID, "http.mock_interrupt.received", s.now().UnixMilli())
 	writeJSON(w, http.StatusOK, s.mockInterruptResponse(req))
+}
+
+type xiaozhiSession struct {
+	traceID               string
+	sessionID             string
+	deviceID              string
+	helloReceived         bool
+	listening             bool
+	binaryProtocolVersion int
+	opusFrameCount        int
+	opusByteCount         int
+	ttsStopSent           bool
+}
+
+func (session *xiaozhiSession) identity() xiaozhitransport.Identity {
+	return xiaozhitransport.Identity{
+		DeviceID:  session.deviceID,
+		TraceID:   session.traceID,
+		SessionID: session.sessionID,
+	}
+}
+
+func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
+	session.deviceID = frame.DeviceID
+	session.traceID = frame.TraceID
+	session.sessionID = frame.SessionID
+}
+
+func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
+	queryDeviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if queryDeviceID != "" && !validA21DeviceID(queryDeviceID) {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
+	if err != nil {
+		return
+	}
+	s.metrics.wsConnections.WithLabelValues("xiaozhi").Inc()
+	defer s.metrics.wsConnections.WithLabelValues("xiaozhi").Dec()
+	defer conn.Close(websocket.StatusNormalClosure, "a21 xiaozhi closed")
+
+	ctx := context.Background()
+	session := &xiaozhiSession{
+		deviceID:              queryDeviceID,
+		binaryProtocolVersion: 1,
+	}
+	for {
+		messageType, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		switch messageType {
+		case websocket.MessageText:
+			if !s.handleXiaozhiText(ctx, conn, session, data) {
+				return
+			}
+		case websocket.MessageBinary:
+			if !s.handleXiaozhiBinary(ctx, conn, session, data) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
+	frame, err := xiaozhitransport.ParseTextFrame(data, xiaozhitransport.DirectionDeviceToServer, session.identity())
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		return true
+	}
+	session.adoptFrame(frame)
+	if frame.Control == nil {
+		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "unsupported_message_type", "unsupported xiaozhi message"))
+		return true
+	}
+	switch frame.Control.Type {
+	case xiaozhitransport.MessageTypeHello:
+		session.helloReceived = true
+		session.listening = false
+		session.opusFrameCount = 0
+		session.opusByteCount = 0
+		session.ttsStopSent = false
+		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
+		s.recordXiaozhiDeviceSeen(frame)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
+		_ = wsjson.Write(ctx, conn, s.xiaozhiHelloReply(session))
+	case xiaozhitransport.MessageTypeListen:
+		if !session.helloReceived {
+			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
+			return true
+		}
+		switch frame.Control.Listen.State {
+		case "start":
+			session.listening = true
+			session.opusFrameCount = 0
+			session.opusByteCount = 0
+			session.ttsStopSent = false
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
+			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
+		case "detect":
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
+			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "detect", "accepted"))
+		case "stop":
+			if !session.listening {
+				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
+				_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "stop", "ignored"))
+				return true
+			}
+			session.listening = false
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
+			s.writeXiaozhiPlaceholderTTS(ctx, conn, session)
+		}
+	case xiaozhitransport.MessageTypeAbort:
+		if !session.helloReceived {
+			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before abort"))
+			return true
+		}
+		session.listening = false
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.abort.received", s.now().UnixMilli())
+		s.writeXiaozhiTTSStop(ctx, conn, session, "abort")
+	}
+	return true
+}
+
+func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
+	if !session.helloReceived {
+		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before binary audio"))
+		return true
+	}
+	frame, err := xiaozhitransport.ParseBinaryFrameVersion(data, xiaozhitransport.DirectionDeviceToServer, session.identity(), session.binaryProtocolVersion)
+	if err != nil {
+		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		return true
+	}
+	session.adoptFrame(frame)
+	if !session.listening {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.ignored_not_listening", s.now().UnixMilli())
+		return true
+	}
+	session.opusFrameCount++
+	session.opusByteCount += frame.Opus.PayloadBytes
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.received", s.now().UnixMilli())
+	return true
+}
+
+func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[frame.DeviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = frame.DeviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.LastTraceID = frame.TraceID
+	record.LastSessionID = frame.SessionID
+	record.LastSeenMS = nowMS
+	s.devices[frame.DeviceID] = record
+}
+
+func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) {
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+XiaozhiOpusPassthroughDecodeState, s.now().UnixMilli())
+	_ = wsjson.Write(ctx, conn, map[string]any{
+		"type":       "tts",
+		"state":      "start",
+		"trace_id":   session.traceID,
+		"session_id": session.sessionID,
+		"device_id":  session.deviceID,
+		"audio_ingress": map[string]any{
+			"codec":         "opus",
+			"profile":       "xiaozhi_binary_v1_raw",
+			"decode_status": XiaozhiOpusPassthroughDecodeState,
+			"frame_count":   session.opusFrameCount,
+			"byte_count":    session.opusByteCount,
+		},
+	})
+	_ = wsjson.Write(ctx, conn, map[string]any{
+		"type":        "tts",
+		"state":       "sentence_start",
+		"trace_id":    session.traceID,
+		"session_id":  session.sessionID,
+		"device_id":   session.deviceID,
+		"placeholder": true,
+		"text":        "",
+	})
+	s.writeXiaozhiTTSStop(ctx, conn, session, "placeholder_no_decode")
+}
+
+func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, reason string) {
+	if session.ttsStopSent {
+		return
+	}
+	session.ttsStopSent = true
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.stop", s.now().UnixMilli())
+	_ = wsjson.Write(ctx, conn, map[string]any{
+		"type":       "tts",
+		"state":      "stop",
+		"trace_id":   session.traceID,
+		"session_id": session.sessionID,
+		"device_id":  session.deviceID,
+		"reason":     reason,
+	})
+}
+
+func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
+	return map[string]any{
+		"type":       "hello",
+		"version":    1,
+		"transport":  "websocket",
+		"trace_id":   session.traceID,
+		"session_id": session.sessionID,
+		"device_id":  session.deviceID,
+		"audio": map[string]any{
+			"format":         "opus",
+			"sample_rate":    24000,
+			"channels":       1,
+			"frame_duration": 60,
+		},
+	}
+}
+
+func (s *Server) xiaozhiBaseReply(session *xiaozhiSession, msgType string, state string, status string) map[string]any {
+	return map[string]any{
+		"type":       msgType,
+		"state":      state,
+		"status":     status,
+		"trace_id":   session.traceID,
+		"session_id": session.sessionID,
+		"device_id":  session.deviceID,
+	}
+}
+
+func (s *Server) xiaozhiError(session *xiaozhiSession, code string, detail string) map[string]any {
+	traceID, sessionID := s.ids(session.traceID, session.sessionID)
+	session.traceID = traceID
+	session.sessionID = sessionID
+	return map[string]any{
+		"type":       "error",
+		"code":       code,
+		"detail":     detail,
+		"trace_id":   session.traceID,
+		"session_id": session.sessionID,
+		"device_id":  session.deviceID,
+	}
+}
+
+func xiaozhiErrorCode(err error) string {
+	switch {
+	case errors.Is(err, xiaozhitransport.ErrMalformedJSON):
+		return "invalid_json"
+	case errors.Is(err, xiaozhitransport.ErrMissingDeviceIdentity), errors.Is(err, xiaozhitransport.ErrLegacyIdentity):
+		return "invalid_device_id"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedMessageType):
+		return "unsupported_message_type"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedListenState):
+		return "unsupported_listen_state"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedHelloVersion):
+		return "unsupported_hello_version"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedTransport):
+		return "unsupported_transport"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedAudioParams):
+		return "unsupported_audio_params"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedBinaryProtocol):
+		return "unsupported_binary_protocol_version"
+	case errors.Is(err, xiaozhitransport.ErrEmptyBinaryPayload):
+		return "empty_binary_payload"
+	case errors.Is(err, xiaozhitransport.ErrUnexpectedBinaryDirection):
+		return "unexpected_binary_frame_direction"
+	default:
+		return "invalid_xiaozhi_message"
+	}
+}
+
+func xiaozhiErrorDetail(err error) string {
+	if err == nil {
+		return "invalid xiaozhi message"
+	}
+	return err.Error()
 }
 
 func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {

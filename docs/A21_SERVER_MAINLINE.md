@@ -32,12 +32,18 @@ thin sensing and expression device.
 - Server mainline base commit: `37f156701d99f66675efbad6d62bd6e60d4959d2`.
 - Pivot ADR: `docs/engineering/adr/0006-xiaozhi-firmware-websocket-protocol.md`.
 - Embedded freeze record: `docs/engineering/A21_EMBEDDED_FREEZE_ARCHIVE.md`.
-- Baseline `make verify`: passing after the server-mainline bootstrap rename.
-- Baseline `gate --scope host`: passing with only
-  `firmware_current_artifact_missing` warning for the current commit.
+- WS-1 protocol fixture package: `internal/transport/xiaozhi`.
+- WS-1 Gateway seam: `/v1/xiaozhi` on the existing A21 Gateway port.
+- Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
+  seam.
+- Host-only `gate --scope host`: passing with only
+  `firmware_current_artifact_missing` warning.
 - Current known warning: no release-ledger-validated A21 firmware artifact
-  matches `37f156701d99`; this is not a server-mainline blocker unless a future
-  slice claims firmware release acceptance.
+  matches the current server-mainline commits; this is not a server-mainline
+  blocker unless a future slice claims firmware release acceptance.
+- Current xiaozhi seam limitation: raw Opus frames are counted and traced, but
+  Opus decode, ASR, provider streaming, TTS encode, binary downlink, and real
+  device proof remain not accepted.
 
 ## Acceptance Board
 
@@ -98,6 +104,7 @@ as physical/product acceptance.
 
 ## Next Action
 
-Dispatch WS-1 first. The WS-1 worker must not touch firmware, provider
-execution, V21 execution, or hardware writes. The first deliverable is a
-test-first xiaozhi protocol fixture package and a minimal Gateway seam.
+Continue WS-1 from the current fixture package and Gateway seam into Opus
+decode/encode and real xiaozhi-device handshake proof only under an explicit
+hardware/provider execution window. Until that window exists, keep work in
+host-only tests and report-contract slices.

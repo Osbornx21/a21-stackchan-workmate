@@ -1132,6 +1132,189 @@ func TestControlWebSocketAcceptsArduinoClientHandshake(t *testing.T) {
 	}
 }
 
+func TestXiaozhiWebSocketHelloAcceptsStockProtocol(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "stackchan-001",
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	if reply["type"] != "hello" || reply["transport"] != "websocket" {
+		t.Fatalf("hello reply = %#v", reply)
+	}
+	if reply["device_id"] != "stackchan-001" {
+		t.Fatalf("device_id = %#v, want stackchan-001", reply["device_id"])
+	}
+	sessionID, _ := reply["session_id"].(string)
+	if !strings.HasPrefix(sessionID, "a21-session-") {
+		t.Fatalf("session_id = %q, want generated A21 session", sessionID)
+	}
+	audio, ok := reply["audio"].(map[string]any)
+	if !ok {
+		t.Fatalf("reply audio = %#v", reply["audio"])
+	}
+	if audio["format"] != "opus" || audio["sample_rate"] != float64(24000) || audio["channels"] != float64(1) || audio["frame_duration"] != float64(60) {
+		t.Fatalf("server audio = %#v", audio)
+	}
+	replyJSON, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"x21", "v21", "debug_metrics", "device_events"} {
+		if strings.Contains(strings.ToLower(string(replyJSON)), forbidden) {
+			t.Fatalf("hello reply leaked forbidden/debug field %q: %s", forbidden, replyJSON)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["device_id"] != "stackchan-001" || registry["identity_status"] != "unknown" {
+		t.Fatalf("registry = %#v, want xiaozhi device with unknown firmware identity", registry)
+	}
+}
+
+func TestXiaozhiWebSocketListenCountsRawOpusWithoutDecodedAudioClaim(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-raw-opus",
+		"session_id": "a21-session-xiaozhi-raw-opus",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	startAck := readXiaozhiJSON(t, ctx, conn)
+	if startAck["type"] != "listen" || startAck["state"] != "start" || startAck["status"] != "accepted" {
+		t.Fatalf("listen start ack = %#v", startAck)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte{0x04, 0x05}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	summary, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio summary = %#v", ttsStart["audio_ingress"])
+	}
+	if summary["codec"] != "opus" || summary["decode_status"] != XiaozhiOpusPassthroughDecodeState || summary["frame_count"] != float64(2) || summary["byte_count"] != float64(5) {
+		t.Fatalf("audio summary = %#v", summary)
+	}
+	sentence := readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" {
+		t.Fatalf("sentence start = %#v", sentence)
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-raw-opus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.opus_frame.received") || !traceContains(traces.Events, "xiaozhi."+XiaozhiOpusPassthroughDecodeState) {
+		t.Fatalf("trace missing xiaozhi opus markers: %+v", traces.Events)
+	}
+}
+
+func TestXiaozhiWebSocketAbortStopsPlaceholderTTSAndPreventsStaleBinary(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-abort",
+		"session_id": "a21-session-xiaozhi-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "wake_word_detected"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, []byte{0x04, 0x05}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+}
+
+func TestXiaozhiWebSocketRejectsLegacyIdentity(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "x21-device",
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	if reply["type"] != "error" || reply["code"] != "invalid_device_id" {
+		t.Fatalf("reply = %#v, want invalid_device_id", reply)
+	}
+}
+
 func TestControlWebSocketRegistersFirmwareIdentity(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -3118,6 +3301,15 @@ func fetchSingleDeviceRegistryItem(t *testing.T, serverURL string) map[string]an
 	return devices[0]
 }
 
+func traceContains(events []TraceEvent, name string) bool {
+	for _, event := range events {
+		if event.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func assertNoEnvelope(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
 	t.Helper()
 	readCtx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -3126,6 +3318,50 @@ func assertNoEnvelope(t *testing.T, conn *websocket.Conn, timeout time.Duration)
 	if err := wsjson.Read(readCtx, conn, &unexpected); err == nil {
 		t.Fatalf("unexpected envelope: %+v", unexpected)
 	}
+}
+
+func assertNoXiaozhiMessage(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
+	t.Helper()
+	readCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	var unexpected map[string]any
+	if err := wsjson.Read(readCtx, conn, &unexpected); err == nil {
+		t.Fatalf("unexpected xiaozhi message: %#v", unexpected)
+	}
+}
+
+func writeXiaozhiHello(t *testing.T, ctx context.Context, conn *websocket.Conn, overrides map[string]any) {
+	t.Helper()
+	hello := map[string]any{
+		"type":      "hello",
+		"version":   1,
+		"transport": "websocket",
+		"features": map[string]any{
+			"mcp": true,
+			"aec": true,
+		},
+		"audio": map[string]any{
+			"format":         "opus",
+			"sample_rate":    16000,
+			"channels":       1,
+			"frame_duration": 60,
+		},
+	}
+	for key, value := range overrides {
+		hello[key] = value
+	}
+	if err := wsjson.Write(ctx, conn, hello); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readXiaozhiJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]any {
+	t.Helper()
+	var message map[string]any
+	if err := wsjson.Read(ctx, conn, &message); err != nil {
+		t.Fatal(err)
+	}
+	return message
 }
 
 func webSocketURL(serverURL string, path string) string {

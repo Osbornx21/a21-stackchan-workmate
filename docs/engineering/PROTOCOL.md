@@ -33,6 +33,28 @@ type Envelope struct {
 
 This remains intentionally small. It establishes the A21 namespace, control events, device events, and mock audio chunks without pretending to solve all device media concerns.
 
+## Xiaozhi WebSocket Compatibility
+
+The Gateway exposes the WS-1 xiaozhi compatibility seam at
+`/v1/xiaozhi` on the existing A21 Gateway port. It accepts stock-style
+xiaozhi JSON control messages:
+
+- `hello`
+- `listen` with `state=start|detect|stop`
+- `abort`
+
+It also accepts binary Opus payload frames after a valid `hello` and active
+`listen/start`. The current server seam records raw Opus frame count and byte
+count, propagates or derives `device_id`, `trace_id`, and `session_id`, and
+rejects legacy-looking X21/V21 identities.
+
+This is not yet the complete product voice chain. The current WS-1 seam does
+not decode Opus to PCM, does not run ASR/LLM/TTS providers, and does not send
+binary Opus TTS audio back to the device. On `listen/stop`, it emits an honest
+xiaozhi TTS lifecycle placeholder with
+`decode_status=opus_passthrough_unimplemented_decode` so tests and operators
+cannot mistake the transport proof for audible product acceptance.
+
 ## Protocol Rules
 
 - Every message family must be versioned.
@@ -109,9 +131,12 @@ first-audio waterfall report, device playback receipt, CPU/memory profile, LAN
 jitter/fallback report, and hardware window acceptance all pass under explicit
 authorization.
 
-Current `AudioCodecOpus` is reserved vocabulary only. Current validation still
-accepts `pcm_s16le` frames, and no Gateway, provider, firmware, or physical
-device path should treat Opus as implemented from this document.
+Current `AudioCodecOpus` is reserved vocabulary for the older A21 envelope
+path. The xiaozhi compatibility seam can receive raw Opus binary frames, but it
+does not yet decode them or treat them as ASR-ready audio. Current A21 envelope
+validation still accepts `pcm_s16le` frames, and no Gateway, provider,
+firmware, or physical device path should treat Opus media as product-complete
+from this document.
 
 ## Control And Device Events
 
