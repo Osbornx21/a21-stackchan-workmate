@@ -234,39 +234,39 @@ func ProviderCatalogFromEnv(env []string) ProviderCatalogReport {
 		rawPrimary = "mock"
 	}
 	primary := strings.ToLower(rawPrimary)
-	primaryKnown := knownProviderInProfiles(profiles, primary)
+	primaryProfile, primaryKnown := providerProfileByName(profiles, primary)
+	primaryIsAgentTask := primaryKnown && primaryProfile.Family == ProviderFamilyAgentTask
+	primarySelectable := primaryKnown && !primaryIsAgentTask
 	safePrimary := primary
 	if containsLegacyProviderIdentity(primary) {
 		safePrimary = "invalid_legacy_provider"
 	} else if containsBlockedProviderIdentity(primary) {
 		safePrimary = "blocked_provider"
+	} else if primaryIsAgentTask {
+		safePrimary = "invalid_agent_task_primary"
 	} else if !primaryKnown {
 		safePrimary = "unknown_provider"
 	}
 	report := ProviderCatalogReport{Primary: safePrimary, Findings: append([]ProviderCatalogFinding(nil), findings...)}
 	for _, profile := range profiles {
+		requiredEnv, presentEnv, missingEnv := providerProfileReadinessEnv(env, envMap, profile)
 		readiness := ProviderReadiness{
 			Name:          profile.Name,
 			Label:         profile.Label,
 			Family:        string(profile.Family),
 			Protocol:      profile.Protocol,
-			Selected:      primaryKnown && profile.Name == primary,
+			Selected:      primarySelectable && profile.Name == primary,
 			Realtime:      providerProfileRealtime(profile),
 			RouteEligible: profile.RouteEligible,
 			Capabilities:  append([]string(nil), profile.Capabilities...),
-			RequiredEnv:   providerProfileRequiredEnv(profile),
-		}
-		for _, name := range readiness.RequiredEnv {
-			if envMap[name] {
-				readiness.PresentEnv = append(readiness.PresentEnv, name)
-			} else {
-				readiness.MissingEnv = append(readiness.MissingEnv, name)
-			}
+			RequiredEnv:   requiredEnv,
+			PresentEnv:    presentEnv,
+			MissingEnv:    missingEnv,
 		}
 		readiness.Configured = len(readiness.MissingEnv) == 0
 		report.Providers = append(report.Providers, readiness)
 	}
-	if !primaryKnown {
+	if !primarySelectable {
 		code := "provider_unknown"
 		message := "A21 provider primary is not in the P0 provider registry"
 		if containsLegacyProviderIdentity(primary) {
@@ -275,6 +275,9 @@ func ProviderCatalogFromEnv(env []string) ProviderCatalogReport {
 		} else if containsBlockedProviderIdentity(primary) {
 			code = "provider_blocked"
 			message = "A21 provider primary is blocked by project policy"
+		} else if primaryIsAgentTask {
+			code = "provider_agent_task_primary"
+			message = "A21_PROVIDER_PRIMARY cannot select agent-task profiles; use A21_AGENT_PROVIDER_PRIMARY"
 		}
 		report.Findings = append(report.Findings, ProviderCatalogFinding{Code: code, Message: message, Detail: "A21_PROVIDER_PRIMARY"})
 	}
@@ -322,6 +325,27 @@ func providerProfileRequiredEnv(profile ProviderProfile) []string {
 		}
 	}
 	return required
+}
+
+func providerProfileReadinessEnv(env []string, envMap map[string]bool, profile ProviderProfile) ([]string, []string, []string) {
+	required := providerProfileRequiredEnv(profile)
+	if profile.Family == ProviderFamilyAgentTask {
+		selected := strings.ToLower(strings.TrimSpace(envValue(env, "A21_AGENT_PROVIDER_PRIMARY")))
+		if selected == profile.Name {
+			return required, append([]string(nil), required...), nil
+		}
+		return required, nil, append([]string(nil), required...)
+	}
+	var present []string
+	var missing []string
+	for _, name := range required {
+		if envMap[name] {
+			present = append(present, name)
+		} else {
+			missing = append(missing, name)
+		}
+	}
+	return required, present, missing
 }
 
 func knownProvider(name string) bool {

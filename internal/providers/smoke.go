@@ -234,6 +234,12 @@ func providerSmokeSpecFromProfile(profile ProviderProfile) providerSmokeSpec {
 }
 
 func providerSmokeConfigured(env []string, spec providerSmokeSpec) (bool, []string) {
+	if spec.Family == ProviderFamilyAgentTask {
+		if strings.ToLower(strings.TrimSpace(envValue(env, "A21_AGENT_PROVIDER_PRIMARY"))) != spec.Name {
+			return false, []string{"A21_AGENT_PROVIDER_PRIMARY"}
+		}
+		return true, nil
+	}
 	var missing []string
 	for _, name := range []string{spec.APIKeyEnv} {
 		if name == "" {

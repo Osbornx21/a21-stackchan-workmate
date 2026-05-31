@@ -115,6 +115,16 @@ go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 
 The provider catalog includes the PRD reference profiles for mainland text-stream candidates, local text providers, existing realtime references, and future agent-task bridges. Catalog visibility is not execution authorization: only `mock` and `deepseek` are route-eligible in the P0 provider-smoke path. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
 
+Agent-task profiles are reported as readiness visibility only. `hermes_agent`
+and `mimo_agent` stay in the `agent_task` family, are not route-eligible, and
+are not realtime-capable. The lane is disabled by default and becomes locally
+configured only when `A21_AGENT_PROVIDER_PRIMARY` explicitly selects one of
+those profile names. `A21_PROVIDER_PRIMARY` does not configure the agent-task
+lane and reports an invalid agent-task primary if pointed at `hermes_agent` or
+`mimo_agent`. The current T1/T2 scaffold has package-level fake `sse`, `http`,
+and `stdio` event streams plus A21 semantic redaction tests; there is no doctor
+or Gateway execution path for real Hermes/MiMo yet.
+
 When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 
 `provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.

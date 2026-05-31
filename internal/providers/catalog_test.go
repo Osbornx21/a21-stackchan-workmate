@@ -211,6 +211,42 @@ func TestProviderCatalogClassifiesReferenceProviderFamilies(t *testing.T) {
 	}
 }
 
+func TestProviderCatalogAgentTaskLaneRequiresExplicitAgentPrimary(t *testing.T) {
+	defaultReport := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
+	for _, name := range []string{"hermes_agent", "mimo_agent"} {
+		readiness := providerReadinessByName(t, defaultReport, name)
+		if readiness.Configured || readiness.RouteEligible || readiness.Realtime {
+			t.Fatalf("%s default readiness = %#v, want disabled/non-route/non-realtime", name, readiness)
+		}
+	}
+
+	report := ProviderCatalogFromEnv([]string{"A21_AGENT_PROVIDER_PRIMARY=hermes_agent"})
+
+	hermes := providerReadinessByName(t, report, "hermes_agent")
+	if !hermes.Configured {
+		t.Fatalf("hermes_agent configured = false, want true with explicit A21_AGENT_PROVIDER_PRIMARY")
+	}
+	if hermes.RouteEligible || hermes.Realtime {
+		t.Fatalf("hermes_agent entered runtime route/realtime path: %#v", hermes)
+	}
+	mimo := providerReadinessByName(t, report, "mimo_agent")
+	if mimo.Configured {
+		t.Fatalf("mimo_agent configured = true, want false when hermes_agent is selected: %#v", mimo)
+	}
+
+	voicePrimaryOnly := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PRIMARY=hermes_agent"})
+	if voicePrimaryOnly.Primary != "invalid_agent_task_primary" {
+		t.Fatalf("primary = %q, want invalid_agent_task_primary", voicePrimaryOnly.Primary)
+	}
+	if len(voicePrimaryOnly.Findings) != 1 || voicePrimaryOnly.Findings[0].Code != "provider_agent_task_primary" {
+		t.Fatalf("findings = %#v, want provider_agent_task_primary", voicePrimaryOnly.Findings)
+	}
+	hermes = providerReadinessByName(t, voicePrimaryOnly, "hermes_agent")
+	if hermes.Selected || hermes.Configured {
+		t.Fatalf("hermes_agent selected/configured via A21_PROVIDER_PRIMARY, want explicit A21_AGENT_PROVIDER_PRIMARY only: %#v", hermes)
+	}
+}
+
 func providerReadinessByName(t *testing.T, report ProviderCatalogReport, name string) ProviderReadiness {
 	t.Helper()
 	for _, readiness := range report.Providers {

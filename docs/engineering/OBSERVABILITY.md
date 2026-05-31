@@ -34,6 +34,15 @@ Gateway also exposes `GET /v1/audio/recent` as a loopback-only development captu
 
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
+AgentTask bridge reports currently exist only as package-level T1/T2 semantic
+reports in `internal/providers`. They use schema
+`a21.agent_task.semantic_report.v1`, preserve A21 `trace_id` and `session_id`,
+and store event kind/final markers plus redacted text/tool markers. They must
+not store external-agent text, tool payloads, credentials, full URLs, local
+paths, provider env values, or raw agent control payloads. This scaffold is not
+a Gateway runtime path and does not execute Hermes, MiMo, V21, providers, or
+hardware.
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:
@@ -106,6 +115,13 @@ Current mock trace events include:
 - `asr.first_partial`
 - `provider.first_byte`
 - `provider.first_content`
+- `agent_task.started`
+- `agent_task.progress`
+- `agent_task.text_delta.redacted`
+- `agent_task.tool_call.redacted`
+- `agent_task.result.redacted`
+- `agent_task.error`
+- `agent_task.final`
 - `tts.first_audio`
 - `audio.downlink.first_frame`
 - `device.playback.start`

@@ -191,6 +191,25 @@ Provider audio uplink is also provider-neutral. Gateway `/ws/audio` may forward 
 
 Provider audio downlink uses the same provider-neutral session interface. Gateway consumes `VoiceEvent` values from `Events()` and serializes them back to the audio WebSocket as A21 envelopes. OpenAI realtime `response.output_audio.delta` is currently read and mapped inside the provider adapter before Gateway sees it.
 
+## AgentTask Bridge Events
+
+The AgentTask bridge is currently a provider-package T1/T2 contract, not a
+device or Gateway runtime protocol. `AgentTaskRequest` carries `trace_id`,
+`session_id`, `task`, and `context`. External-agent stream events are consumed
+as `AgentTaskEvent` values with kinds `started`, `progress`, `text_delta`,
+`tool_call_redacted`, `result`, `error`, and `final`.
+
+Before any A21 surface consumes them, these events are mapped into
+`a21.agent_task.semantic_event.v1` report entries. The mapper preserves
+trace/session identity and final/error markers, but it stores only text length
+or redaction markers for external text and tools. It does not forward provider
+payloads, tool payloads, credentials, full URLs, local paths, provider env
+values, or direct control commands.
+
+AgentTask events are not allowed to become StackChan control events, realtime
+voice events, professional V21 evidence, or `/v1/devices/control` requests
+without a future approved adapter and runtime gate.
+
 The first realtime session HTTP boundary is:
 
 - `POST /v1/realtime/session`
