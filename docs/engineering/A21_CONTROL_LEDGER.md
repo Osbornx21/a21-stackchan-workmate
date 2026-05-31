@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `94d87c3`.
+Last accepted integration commit before this ledger update: `193a1f3`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `94d87c3 docs(control): accept fast companion audit`.
+  `193a1f3 docs(control): start fast companion boundary implementation`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -38,7 +38,8 @@ defines policy; this ledger records the current queue and accepted state.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
-  `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, and `94d87c3`.
+  `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
+  `193a1f3`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -59,7 +60,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | active; Task 4 implementation slice | T1/T2 | yes, in its isolated worktree only |
+| `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | completed; handoff accepted into integration branch | T1/T2 | no |
 | `019e7be6-bca3-71f2-9770-857b9da48b67` | Provider Spine Fast Companion Hybrid boundary audit | `/Users/jiyurun/.codex/worktrees/0d72/New project` | completed; no P0/P1 regression; Task 4 Gateway gap confirmed; no diff | T1/T2 | no |
 | `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` | Provider Spine text-stream parser coverage audit | `/Users/jiyurun/.codex/worktrees/9136/New project` | completed; no P0/P1 implementation gaps; no diff | T1/T2 | no |
 | `019e7bce-bacf-76e3-98f3-1e53fffe1377` | Promotion-readiness gate review | `/Users/jiyurun/.codex/worktrees/9f7f/New project` | completed; no P0/P1/P2 findings on `3ddcc45` | T0/T1 | no |
@@ -163,12 +164,57 @@ Evidence:
 - Forbidden: provider/V21 execute, Gateway runtime or service startup, durable
   provider reports with payloads, firmware changes, NVS execute, flash execute,
   raw upload, serial writes, `/v1/devices/control`, and physical device paths.
+- Handoff branch: `codex/a21-fast-companion-hybrid-boundary`.
+- Handoff HEAD: `94d87c393e2a`.
+- Handoff dirty files:
+  `internal/gateway/server.go`, `internal/gateway/server_test.go`,
+  `docs/engineering/PHASE7A_AUDIO_INGRESS.md`,
+  `docs/engineering/OBSERVABILITY.md`, and
+  `docs/engineering/PHASE7H_FAST_COMPANION_HYBRID.md`.
+- Handoff verification passed:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Handoff verification passed: `go test ./internal/gateway -count=1`.
+- Handoff verification passed: `git diff --check`.
+- Handoff verification passed: `go run ./cmd/a21 namespace-audit`.
+- Handoff verification passed: `go run ./cmd/a21 preflight`.
+- Handoff verification passed: `go run ./cmd/a21 doctor`, with existing
+  firmware warnings only: no repo-local PlatformIO venv/core and no
+  release-ledger artifact for the current commit.
+- Handoff verification passed: `make verify`.
+- Control tower integration tightened the route after handoff: only
+  `companion` and `workmate` may enter, `local_audio.asr_provider` is required,
+  and local audio counters must be non-negative.
+- Control tower integration also corrected the trace catalog marker from stale
+  `v21.first_result` wording to the actual `v21.query.first_result`.
+- Control tower verification passed:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Control tower verification passed: `go test ./internal/gateway -count=1`.
+- Control tower verification passed: `go test ./internal/app -count=1`.
+- Control tower verification passed: `make verify`.
+- Control tower verification passed: `go run ./cmd/a21 namespace-audit`.
+- Control tower dry-run provider smoke passed without execution:
+  `go run ./cmd/a21 provider-smoke --provider deepseek` returned `skipped`,
+  `configured=false`, and `executed=false` because
+  `A21_LAB_DEEPSEEK_API_KEY` is absent.
+- Control tower dry-run provider smoke passed without execution:
+  `go run ./cmd/a21 provider-smoke --provider bailian_dashscope` returned
+  `skipped`, `configured=false`, and `executed=false` because
+  `A21_DASHSCOPE_API_KEY` and `A21_DASHSCOPE_MODEL` are absent.
+- Control tower preflight re-run passed after a transient reserved-port
+  finding cleared; no Gateway runtime was started and no process was killed.
+- Control tower doctor passed with the expected firmware-artifact warning for
+  the current pre-commit HEAD.
 
 Decision:
 
-- This is the active Provider Spine Task 4 implementation slice.
-- Control tower will not accept completion until the implementation thread
-  hands back dirty files, tests, and verification evidence.
+- Accept the implementation as Provider Spine Task 4's Gateway-level boundary
+  slice.
+- Keep it T1/T2-only: this acceptance does not open provider/V21 execute,
+  Gateway runtime startup, firmware/NVS/flash/serial writes,
+  `/v1/devices/control`, or physical device paths.
+- Keep `PHASE7H_FAST_COMPANION_HYBRID.md` as the source of truth for this
+  placeholder trace contract until a later ADR promotes real provider, TTS,
+  downlink, or device playback timings.
 
 ### Provider Spine Plan Reconciliation
 

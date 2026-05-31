@@ -94,6 +94,34 @@ type RealtimeSessionResponse struct {
 	Events    []protocol.Envelope `json:"events"`
 }
 
+type FastCompanionLocalAudioResult struct {
+	ASRProvider          string `json:"asr_provider,omitempty"`
+	FirstPartialMS       int64  `json:"first_partial_ms,omitempty"`
+	FinalTranscriptChars int    `json:"final_transcript_chars,omitempty"`
+}
+
+type FastCompanionTurnRequest struct {
+	DeviceID   string                        `json:"device_id"`
+	Mode       protocol.Mode                 `json:"mode,omitempty"`
+	TraceID    string                        `json:"trace_id,omitempty"`
+	SessionID  string                        `json:"session_id,omitempty"`
+	LocalAudio FastCompanionLocalAudioResult `json:"local_audio,omitempty"`
+}
+
+type FastCompanionTurnResponse struct {
+	TraceID            string              `json:"trace_id"`
+	SessionID          string              `json:"session_id"`
+	DeviceID           string              `json:"device_id"`
+	Mode               protocol.Mode       `json:"mode"`
+	Status             string              `json:"status"`
+	Route              string              `json:"route"`
+	AudioFrontend      string              `json:"audio_frontend"`
+	TextStreamProvider string              `json:"text_stream_provider"`
+	ProviderFamily     string              `json:"provider_family"`
+	TextStreamExecuted bool                `json:"text_stream_executed"`
+	Events             []protocol.Envelope `json:"events"`
+}
+
 type DeviceControlRequest struct {
 	DeviceID                     string                        `json:"device_id"`
 	State                        protocol.ExpressionState      `json:"state,omitempty"`
@@ -280,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
 	mux.HandleFunc("/v1/realtime/session", s.handleRealtimeSessionStart)
 	mux.HandleFunc("/v1/realtime/session/cancel", s.handleRealtimeSessionCancel)
+	mux.HandleFunc("/v1/fast-companion/turn", s.handleFastCompanionTurn)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -1490,6 +1519,77 @@ func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelo
 		))
 	}
 	return events
+}
+
+func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req FastCompanionTurnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Mode == "" {
+		req.Mode = protocol.ModeWorkmate
+	}
+	if req.Mode == protocol.ModeProfessional {
+		http.Error(w, "professional mode must use the professional path with V21 evidence", http.StatusBadRequest)
+		return
+	}
+	if req.Mode != protocol.ModeWorkmate && req.Mode != protocol.ModeCompanion {
+		http.Error(w, "fast companion mode must be companion or workmate", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.LocalAudio.ASRProvider) == "" {
+		http.Error(w, "local_audio.asr_provider is required", http.StatusBadRequest)
+		return
+	}
+	if req.LocalAudio.FirstPartialMS < 0 || req.LocalAudio.FinalTranscriptChars < 0 {
+		http.Error(w, "local_audio timing and transcript counts must be non-negative", http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.turn.received", s.now().UnixMilli())
+	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(req))
+}
+
+func (s *Server) fastCompanionTurnResponse(req FastCompanionTurnRequest) FastCompanionTurnResponse {
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	now := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", now)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "asr.first_partial", now+1)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.text_stream.route.placeholder", now+2)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_byte", now+3)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_content", now+4)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "tts.first_audio", now+5)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "audio.downlink.first_frame", now+6)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "device.playback.start", now+7)
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
+		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我把本地语音结果接到文本流边界。"},
+		{State: protocol.ExpressionSpeaking, Mode: req.Mode, Text: "先走文本流占位边界，不启动真实 provider。", Final: true, StreamID: "a21-fast-companion-placeholder-stream"},
+	})
+	return FastCompanionTurnResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Mode:               req.Mode,
+		Status:             "boundary_ready",
+		Route:              "fast_companion_hybrid",
+		AudioFrontend:      "local_audio",
+		TextStreamProvider: "mock_text_stream",
+		ProviderFamily:     string(providers.ProviderFamilyTextStream),
+		TextStreamExecuted: false,
+		Events:             events,
+	}
 }
 
 func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {

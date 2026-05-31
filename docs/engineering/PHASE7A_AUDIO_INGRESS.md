@@ -24,6 +24,11 @@ Gateway `/ws/audio` now records:
 - `vad.speech.start`
 - `vad.speech.end`
 
+The Gateway-level Fast Companion Hybrid boundary above this ingress layer is documented in
+`docs/engineering/PHASE7H_FAST_COMPANION_HYBRID.md`. Phase 7A remains the media ingress
+and VAD/barge-in boundary; Phase 7H records the provider-neutral waterfall placeholders
+that connect local audio front-end results to the future `text_stream` lane.
+
 Gateway metrics now include:
 
 - `a21_audio_ingress_frames_total`

@@ -318,6 +318,194 @@ func TestMockTurnUsesVoiceProviderEvents(t *testing.T) {
 	}
 }
 
+func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "selected provider should not run", Final: true},
+		},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
+	handler := server.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"companion",
+		"trace_id":"a21-trace-fast-hybrid-001",
+		"session_id":"a21-session-fast-hybrid-001",
+		"local_audio":{"asr_provider":"mock_asr","first_partial_ms":42,"final_transcript_chars":11}
+	}`))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		TraceID            string              `json:"trace_id"`
+		SessionID          string              `json:"session_id"`
+		DeviceID           string              `json:"device_id"`
+		Mode               protocol.Mode       `json:"mode"`
+		Status             string              `json:"status"`
+		Route              string              `json:"route"`
+		AudioFrontend      string              `json:"audio_frontend"`
+		TextStreamProvider string              `json:"text_stream_provider"`
+		ProviderFamily     string              `json:"provider_family"`
+		TextStreamExecuted bool                `json:"text_stream_executed"`
+		Events             []protocol.Envelope `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.TraceID != "a21-trace-fast-hybrid-001" || response.SessionID != "a21-session-fast-hybrid-001" || response.DeviceID != "stackchan-sim-001" {
+		t.Fatalf("response identity = %+v", response)
+	}
+	if response.Mode != protocol.ModeCompanion || response.Status != "boundary_ready" || response.Route != "fast_companion_hybrid" {
+		t.Fatalf("response route = %+v", response)
+	}
+	if response.AudioFrontend != "local_audio" || response.ProviderFamily != "text_stream" || response.TextStreamProvider != "mock_text_stream" || response.TextStreamExecuted {
+		t.Fatalf("provider boundary = %+v", response)
+	}
+	if len(response.Events) != 3 {
+		t.Fatalf("events = %d, want 3", len(response.Events))
+	}
+	var speaking protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[2].Payload, &speaking); err != nil {
+		t.Fatal(err)
+	}
+	if speaking.State != protocol.ExpressionSpeaking || speaking.Mode != protocol.ModeCompanion || speaking.StreamID != "a21-fast-companion-placeholder-stream" {
+		t.Fatalf("speaking payload = %+v", speaking)
+	}
+	if provider.startCalls != 0 {
+		t.Fatalf("voice provider start calls = %d, want 0", provider.startCalls)
+	}
+	if v21.calls != 0 {
+		t.Fatalf("v21 calls = %d, want 0", v21.calls)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-fast-hybrid-001", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	for _, want := range []string{
+		"fast_companion.local_audio.frontend.accepted",
+		"asr.first_partial",
+		"provider.text_stream.route.placeholder",
+		"provider.first_byte",
+		"provider.first_content",
+		"tts.first_audio",
+		"audio.downlink.first_frame",
+		"device.playback.start",
+	} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
+func TestFastCompanionHybridRejectsUnsupportedModesAndMissingLocalAudio(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true},
+		},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: provider,
+		V21Client:     v21,
+	})
+	handler := server.Handler()
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{
+			name: "unsupported mode",
+			body: `{"device_id":"stackchan-sim-001","mode":"roleplay","local_audio":{"asr_provider":"mock_asr"}}`,
+		},
+		{
+			name: "missing local audio provider",
+			body: `{"device_id":"stackchan-sim-001","mode":"workmate","local_audio":{"first_partial_ms":42}}`,
+		},
+		{
+			name: "negative local audio counters",
+			body: `{"device_id":"stackchan-sim-001","mode":"companion","local_audio":{"asr_provider":"mock_asr","first_partial_ms":-1}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(tc.body))
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+			if provider.startCalls != 0 {
+				t.Fatalf("provider start calls = %d, want 0", provider.startCalls)
+			}
+			if v21.calls != 0 {
+				t.Fatalf("v21 calls = %d, want 0", v21.calls)
+			}
+		})
+	}
+}
+
+func TestFastCompanionHybridKeepsProfessionalRealtimeOutAndV21EvidenceIn(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true, StreamID: "rt-stream-pro"},
+		},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
+	handler := server.Handler()
+
+	realtimeReq := httptest.NewRequest(http.MethodPost, "/v1/realtime/session", bytes.NewBufferString(`{"device_id":"stackchan-001","text":"查一下证据","mode":"professional","trace_id":"a21-trace-pro-boundary","session_id":"a21-session-pro-boundary"}`))
+	realtimeRec := httptest.NewRecorder()
+	handler.ServeHTTP(realtimeRec, realtimeReq)
+
+	if realtimeRec.Code != http.StatusBadRequest {
+		t.Fatalf("realtime status = %d, want 400: %s", realtimeRec.Code, realtimeRec.Body.String())
+	}
+	if provider.startCalls != 0 {
+		t.Fatalf("provider start calls = %d, want 0", provider.startCalls)
+	}
+
+	proReq := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下证据","mode":"professional","trace_id":"a21-trace-pro-boundary","session_id":"a21-session-pro-boundary"}`))
+	proRec := httptest.NewRecorder()
+	handler.ServeHTTP(proRec, proReq)
+
+	if proRec.Code != http.StatusOK {
+		t.Fatalf("professional status = %d, want 200: %s", proRec.Code, proRec.Body.String())
+	}
+	if v21.calls != 1 {
+		t.Fatalf("v21 calls = %d, want 1", v21.calls)
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(proRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var answer protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[len(response.Events)-1].Payload, &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Mode != protocol.ModeProfessional || answer.State != protocol.ExpressionSpeaking || len(answer.Evidence) == 0 {
+		t.Fatalf("professional answer = %+v", answer)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-boundary", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"v21.query.start", "v21.query.first_result"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
 func TestRealtimeSessionStartUsesVoiceProviderAndRecordsMetrics(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		VoiceProvider: scriptedVoiceProvider{

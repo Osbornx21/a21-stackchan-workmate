@@ -116,31 +116,39 @@ and `PHASE7H_FAST_COMPANION_HYBRID.md` are still missing. Continue this task as
 a new implementation slice; do not mark it complete from `local-voice-loopback`
 or `stackchan-fast-companion-turn` alone.
 
+**Control acceptance, 2026-05-31:** Thread
+`019e7bed-4e1e-7512-8f21-1647b2357c00` implemented the Gateway-level Task 4
+boundary, then the control tower integrated and tightened it on
+`codex/a21-integration-governance-slices`. The accepted route is
+`POST /v1/fast-companion/turn`; it is provider-neutral, mock by default, limited
+to `companion`/`workmate`, requires an explicit local audio front-end identity,
+and does not execute provider, V21, Gateway runtime, firmware, or device paths.
+
 **Files:**
 - Modify: `internal/gateway/server.go`
 - Modify: `internal/gateway/server_test.go`
 - Modify: `docs/engineering/PHASE7A_AUDIO_INGRESS.md`
 - Create: `docs/engineering/PHASE7H_FAST_COMPANION_HYBRID.md`
 
-- [ ] **Step 1: Write Gateway routing tests**
+- [x] **Step 1: Write Gateway routing tests**
 
 Assert companion mode can route local audio front-end results to a text stream provider boundary, while professional mode refuses opaque realtime and keeps the V21 path.
 
-- [ ] **Step 2: Run Gateway tests**
+- [x] **Step 2: Run Gateway tests**
 
 Run: `go test ./internal/gateway -run 'FastCompanion|Professional|Realtime'`
 
-- [ ] **Step 3: Implement only the boundary**
+- [x] **Step 3: Implement only the boundary**
 
 Add trace markers for ASR first partial, provider first byte, provider first content, TTS first audio, downlink first frame, and playback start placeholders. Keep mock default.
 
-- [ ] **Step 4: Re-run Gateway tests**
+- [x] **Step 4: Re-run Gateway tests**
 
 Run: `go test ./internal/gateway -run 'FastCompanion|Professional|Realtime'`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git commit -m "feat: add fast companion hybrid routing boundary"`
+Run: `git commit -m "feat(gateway): add fast companion hybrid boundary"`
 
 ### Task 5: Verification
 
