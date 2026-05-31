@@ -2876,7 +2876,7 @@ func TestRunAudioFrontEndPlanListsMatureCandidates(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"x21", "v21"} {
+	for _, forbidden := range []string{"x21", "v21", "https://", "http://"} {
 		if strings.Contains(strings.ToLower(stdout.String()), forbidden) {
 			t.Fatalf("audio front-end plan leaked forbidden identity %q: %s", forbidden, stdout.String())
 		}
@@ -2901,10 +2901,40 @@ func TestRunAudioFrontEndEvalMockReportsQualityMetrics(t *testing.T) {
 		`"false_negative": 0`,
 		`"speech_start_lag_ms": 0`,
 		`"speech_end_lag_ms": 20`,
+		`"baseline_scope": "host_only"`,
+		`"device_id": "none_host_fixture"`,
+		`"candidate_evidence"`,
+		`"fast_companion_evidence_contract"`,
+		`"provider_executed": false`,
+		`"v21_executed": false`,
+		`"hardware_executed": false`,
+		`"raw_audio_stored": false`,
+		`"transcripts_stored": false`,
 		`"promotion_gate": "not_production"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, want := range []string{
+		`"id": "webrtc_apm"`,
+		`"id": "provider_side_vad"`,
+		`"id": "silero_vad"`,
+		`"id": "a21_rms_vad"`,
+		`"available": false`,
+		`"placeholder": true`,
+		`"id": "speaker_to_mic_echo_report"`,
+		`"id": "barge_in_stop_timing"`,
+		`"id": "first_audio_waterfall_impact"`,
+		`"id": "metrics_continuity"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing evidence contract %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"https://", "http://", "pcm_s16le_base64"} {
+		if strings.Contains(strings.ToLower(stdout.String()), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
 		}
 	}
 }
@@ -2981,6 +3011,9 @@ func TestRunAudioFrontEndEvalWritesReportArtifact(t *testing.T) {
 	if !strings.Contains(stdout.String(), `"report_path":`) || !strings.Contains(stdout.String(), filepath.Base(matches[0])) {
 		t.Fatalf("stdout missing report path: %s", stdout.String())
 	}
+	if strings.Contains(stdout.String(), dir) {
+		t.Fatalf("stdout leaked full local report path %q: %s", dir, stdout.String())
+	}
 	data, err := os.ReadFile(matches[0])
 	if err != nil {
 		t.Fatal(err)
@@ -2990,10 +3023,13 @@ func TestRunAudioFrontEndEvalWritesReportArtifact(t *testing.T) {
 			t.Fatalf("report file missing %q: %s", want, data)
 		}
 	}
-	for _, forbidden := range []string{"pcm_s16le_base64", "x21", "v21"} {
+	for _, forbidden := range []string{"pcm_s16le_base64", "x21"} {
 		if strings.Contains(strings.ToLower(string(data)), forbidden) {
 			t.Fatalf("report file leaked %q: %s", forbidden, data)
 		}
+	}
+	if strings.Contains(string(data), dir) {
+		t.Fatalf("report file leaked full local report path %q: %s", dir, data)
 	}
 }
 

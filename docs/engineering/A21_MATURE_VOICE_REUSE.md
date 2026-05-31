@@ -90,10 +90,10 @@ For changes touching latency-sensitive behavior, the default answer "we can hand
 
 ## Immediate Mainline Consequences
 
-1. `docs/engineering/PHASE7G_AUDIO_FRONT_END_EVALUATION.md` remains the promotion gate for VAD/AEC/noise suppression. Its candidate list should grow before the RMS detector grows features.
+1. `docs/engineering/PHASE7G_AUDIO_FRONT_END_EVALUATION.md` remains the promotion gate for VAD/AEC/noise suppression. Its candidate list is now a machine-readable evidence contract with availability and placeholder state for WebRTC APM, ESP-SR, provider-side VAD, Silero VAD, and the A21 RMS baseline. The contract should grow before the RMS detector grows features.
 2. `docs/engineering/A21_PROVIDER_BENCHMARKS.md` is the shared gate for provider latency and quality. Do not create provider-specific one-off benchmarks unless the shared report shape cannot express the result.
 3. The next real media slice should be an A21 binary Opus transport plan, not more JSON/base64 tuning.
-4. The next full-duplex slice should evaluate WebRTC APM and/or ESP-SR AEC with a speaker-to-mic echo fixture before changing barge-in thresholds.
+4. The next full-duplex slice should evaluate WebRTC APM and/or ESP-SR AEC with a speaker-to-mic echo fixture before changing barge-in thresholds. The current report contract explicitly marks those native/runtime adapters unavailable; it is not approval to add native dependencies or execute hardware work.
 5. X21-derived fixes must be rewritten through A21 packages and commit messages must cite the X21 source according to `A21_LEGACY_ONE_WAY_REFERENCE.md`.
 
 ## Source Pointers

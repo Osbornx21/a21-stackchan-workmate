@@ -10,28 +10,51 @@ import (
 )
 
 type FrontEndEvalReport struct {
-	SchemaVersion        string   `json:"schema_version"`
-	Status               string   `json:"status"`
-	Dataset              string   `json:"dataset"`
-	Detector             string   `json:"detector"`
-	ReportPath           string   `json:"report_path,omitempty"`
-	FramesTotal          int      `json:"frames_total"`
-	ExpectedSpeechFrames int      `json:"expected_speech_frames"`
-	DetectedSpeechFrames int      `json:"detected_speech_frames"`
-	TruePositive         int      `json:"true_positive"`
-	TrueNegative         int      `json:"true_negative"`
-	FalsePositive        int      `json:"false_positive"`
-	FalseNegative        int      `json:"false_negative"`
-	Accuracy             float64  `json:"accuracy"`
-	Precision            float64  `json:"precision"`
-	Recall               float64  `json:"recall"`
-	SpeechStartEvents    int      `json:"speech_start_events"`
-	SpeechEndEvents      int      `json:"speech_end_events"`
-	SpeechStartLagMS     *int     `json:"speech_start_lag_ms,omitempty"`
-	SpeechEndLagMS       *int     `json:"speech_end_lag_ms,omitempty"`
-	RequiredMetrics      []string `json:"required_metrics"`
-	PromotionGate        string   `json:"promotion_gate"`
-	Notes                []string `json:"notes"`
+	SchemaVersion                 string                        `json:"schema_version"`
+	Status                        string                        `json:"status"`
+	Dataset                       string                        `json:"dataset"`
+	Detector                      string                        `json:"detector"`
+	TraceID                       string                        `json:"trace_id"`
+	SessionID                     string                        `json:"session_id"`
+	DeviceID                      string                        `json:"device_id"`
+	BaselineScope                 string                        `json:"baseline_scope"`
+	ReportPath                    string                        `json:"report_path,omitempty"`
+	FramesTotal                   int                           `json:"frames_total"`
+	ExpectedSpeechFrames          int                           `json:"expected_speech_frames"`
+	DetectedSpeechFrames          int                           `json:"detected_speech_frames"`
+	TruePositive                  int                           `json:"true_positive"`
+	TrueNegative                  int                           `json:"true_negative"`
+	FalsePositive                 int                           `json:"false_positive"`
+	FalseNegative                 int                           `json:"false_negative"`
+	Accuracy                      float64                       `json:"accuracy"`
+	Precision                     float64                       `json:"precision"`
+	Recall                        float64                       `json:"recall"`
+	SpeechStartEvents             int                           `json:"speech_start_events"`
+	SpeechEndEvents               int                           `json:"speech_end_events"`
+	SpeechStartLagMS              *int                          `json:"speech_start_lag_ms,omitempty"`
+	SpeechEndLagMS                *int                          `json:"speech_end_lag_ms,omitempty"`
+	RequiredMetrics               []string                      `json:"required_metrics"`
+	CandidateEvidence             []FrontEndCandidate           `json:"candidate_evidence"`
+	FastCompanionEvidenceContract []FrontEndEvidenceRequirement `json:"fast_companion_evidence_contract"`
+	ProviderExecuted              bool                          `json:"provider_executed"`
+	V21Executed                   bool                          `json:"v21_executed"`
+	HardwareExecuted              bool                          `json:"hardware_executed"`
+	Redaction                     FrontEndEvalRedaction         `json:"redaction"`
+	PromotionGate                 string                        `json:"promotion_gate"`
+	Notes                         []string                      `json:"notes"`
+}
+
+type FrontEndEvalRedaction struct {
+	RawAudioStored        bool `json:"raw_audio_stored"`
+	Base64AudioStored     bool `json:"base64_audio_stored"`
+	TranscriptsStored     bool `json:"transcripts_stored"`
+	PromptsStored         bool `json:"prompts_stored"`
+	ProviderOutputsStored bool `json:"provider_outputs_stored"`
+	ReasoningStored       bool `json:"reasoning_stored"`
+	CredentialsStored     bool `json:"credentials_stored"`
+	FullURLsStored        bool `json:"full_urls_stored"`
+	ProxyURLsStored       bool `json:"proxy_urls_stored"`
+	LocalPathsStored      bool `json:"local_paths_stored"`
 }
 
 type frontEndEvalFrame struct {
@@ -145,12 +168,19 @@ func runFrontEndEval(input frontEndEvalInput) FrontEndEvalReport {
 		SilenceHangover:   2,
 	})
 	report := FrontEndEvalReport{
-		SchemaVersion: "a21.audio.frontend_eval.v1",
-		Status:        input.status,
-		Dataset:       input.dataset,
-		Detector:      input.detector,
-		FramesTotal:   len(input.frames),
-		PromotionGate: input.promotionGate,
+		SchemaVersion:                 "a21.audio.frontend_eval.v1",
+		Status:                        input.status,
+		Dataset:                       input.dataset,
+		Detector:                      input.detector,
+		TraceID:                       "a21-trace-front-end-eval",
+		SessionID:                     "a21-session-front-end-eval",
+		DeviceID:                      "none_host_fixture",
+		BaselineScope:                 "host_only",
+		FramesTotal:                   len(input.frames),
+		CandidateEvidence:             BaselineFrontEndCandidates(),
+		FastCompanionEvidenceContract: BaselineFastCompanionEvidenceContract(),
+		Redaction:                     FrontEndEvalRedaction{},
+		PromotionGate:                 input.promotionGate,
 		RequiredMetrics: []string{
 			"a21_vad_detector_decisions_total{detector,result}",
 			"a21_vad_speech_start_total",

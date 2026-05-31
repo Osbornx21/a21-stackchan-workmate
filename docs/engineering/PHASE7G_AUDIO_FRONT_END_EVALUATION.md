@@ -16,11 +16,13 @@ go run ./cmd/a21 audio-front-end-eval --mock --output-dir reports
 make audio-front-end-eval
 ```
 
-`audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted.
+`audio-front-end-plan` is plan-only. It performs no network calls, loads no native audio libraries, and changes no runtime behavior. It emits the current A21-owned candidate list, guardrails, and evidence required before any candidate can be promoted. The candidate list is machine readable: each candidate carries `status`, `deployment_target`, `available`, `placeholder`, `placeholder_reason`, and `required_evidence`.
 
-`audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, speech start/end lag in milliseconds when measurable, required future metrics, and `promotion_gate: not_production`.
+`audio-front-end-eval --mock` runs the deterministic A21 RMS baseline over `a21_mock_vad_fixture_v1`. It reports frame counts, true/false positives, true/false negatives, precision, recall, start/end events, speech start/end lag in milliseconds when measurable, required future metrics, and `promotion_gate: not_production`. The report also carries host-only/no-execute proof fields: `trace_id`, `session_id`, `device_id=none_host_fixture`, `baseline_scope=host_only`, `provider_executed=false`, `v21_executed=false`, `hardware_executed=false`, and a redaction block proving that raw audio, base64 audio, transcripts, prompts, provider output, reasoning, credentials, full URLs, proxy URLs, and full local paths were not stored.
 
 `audio-front-end-eval --fixture <path>` runs the same report shape over an A21 labelled PCM fixture. `--mock` and `--fixture` are mutually exclusive. There is no implicit real evaluation mode, so nobody can mistake a synthetic or labelled-frame report for provider, AEC, full-duplex, or physical StackChan acceptance.
+
+Both mock and fixture reports now include `candidate_evidence` and `fast_companion_evidence_contract`. This is an evidence-contract / adapter-shape hardening only. It does not implement or accept production VAD, AEC, full-duplex, barge-in, native WebRTC APM, ESP-SR, Silero runtime, provider-side VAD runtime, binary Opus media, Gateway runtime execution, V21 execution, provider execution, or physical StackChan hardware acceptance.
 
 `--output-dir reports` writes a timestamped report:
 
@@ -28,7 +30,7 @@ make audio-front-end-eval
 reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
 ```
 
-Report artifacts contain aggregate metrics and environment metadata only. The metadata includes generated timestamp, current git commit, network/DNS fingerprint, and doctor-style redacted proxy-policy fields. They do not include raw PCM, base64 audio frames, provider secrets, proxy URLs, proxy hosts/ports, proxy credentials, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected.
+Report artifacts contain aggregate metrics and environment metadata only. The metadata includes generated timestamp, current git commit, network/DNS fingerprint, and doctor-style redacted proxy-policy fields. They do not include raw PCM, base64 audio frames, transcript text, prompt text, provider output, reasoning, provider secrets, full URLs, proxy URLs, proxy hosts/ports, proxy credentials, full local paths, or legacy project identities. Output directories containing X21/V21 legacy identity are rejected. `report_path` is stored as a basename only.
 
 `speech_start_lag_ms` and `speech_end_lag_ms` compare the first expected speech transition in the labelled fixture with the first detector event emitted by A21. A positive value means the detector was late; a negative value means it fired early. The current RMS mock baseline reports `speech_start_lag_ms: 0` and `speech_end_lag_ms: 20` because the two-frame silence hangover delays speech-end by one 20 ms frame.
 
@@ -70,6 +72,7 @@ This fixture is an evaluation intermediate, not the preferred long-term audio as
 ## Current Candidates
 
 - `webrtc_apm`: first evaluation target for Gateway/desktop-side AEC, noise suppression, AGC, and classic speech front-end behavior.
+- `esp_sr_afe`: planned firmware-side diagnostic candidate for ESP-SR AFE/AEC/VAD; unavailable until a guarded hardware window and physical evidence exist.
 - `provider_side_vad`: evaluated per provider behind the provider adapter only; useful when realtime providers expose reliable turn detection but too opaque to own the whole A21 speech boundary.
 - `silero_vad`: neural server-side VAD candidate; useful for speech/non-speech quality, but it does not solve acoustic echo cancellation.
 - `a21_rms_vad`: deterministic development baseline only; kept for tests and trace shape, not production.

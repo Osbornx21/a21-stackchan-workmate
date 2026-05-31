@@ -6871,11 +6871,11 @@ func writeAudioFrontEndEvalReport(outputDir string, report audioFrontEndEvalCLIR
 		return "", err
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	report.ReportPath = filepath.Base(reportPath)
 	if err := writeJSONAudioFrontEndEval(file, report); err != nil {
 		return "", err
 	}
-	return reportPath, nil
+	return filepath.Base(reportPath), nil
 }
 
 func writeLocalTTSSmokeReport(outputDir string, report audio.LocalTTSReport) (string, error) {

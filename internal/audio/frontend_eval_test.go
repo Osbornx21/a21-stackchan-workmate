@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,107 @@ func TestRunMockFrontEndEvalReportsDeterministicRMSQuality(t *testing.T) {
 	}
 	if report.PromotionGate != "not_production" {
 		t.Fatalf("PromotionGate = %q, want not_production", report.PromotionGate)
+	}
+}
+
+func TestBaselineFrontEndPlanExposesCandidateEvidenceShape(t *testing.T) {
+	data, err := json.Marshal(BaselineFrontEndPlan())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	rawCandidates, ok := report["candidates"].([]any)
+	if !ok || len(rawCandidates) == 0 {
+		t.Fatalf("candidates missing: %#v", report["candidates"])
+	}
+	candidates := map[string]map[string]any{}
+	for _, raw := range rawCandidates {
+		candidate, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("candidate shape = %#v", raw)
+		}
+		id, _ := candidate["id"].(string)
+		candidates[id] = candidate
+		for _, field := range []string{"status", "deployment_target", "available", "placeholder", "placeholder_reason", "required_evidence"} {
+			if _, ok := candidate[field]; !ok {
+				t.Fatalf("candidate %q missing %q: %#v", id, field, candidate)
+			}
+		}
+	}
+	for _, want := range []string{"webrtc_apm", "provider_side_vad", "silero_vad", "a21_rms_vad"} {
+		if _, ok := candidates[want]; !ok {
+			t.Fatalf("candidate list missing %q: %#v", want, candidates)
+		}
+	}
+	if available, _ := candidates["webrtc_apm"]["available"].(bool); available {
+		t.Fatalf("webrtc_apm must be unavailable until native adapter evidence exists: %#v", candidates["webrtc_apm"])
+	}
+	if placeholder, _ := candidates["webrtc_apm"]["placeholder"].(bool); !placeholder {
+		t.Fatalf("webrtc_apm must be a placeholder: %#v", candidates["webrtc_apm"])
+	}
+	if available, _ := candidates["a21_rms_vad"]["available"].(bool); !available {
+		t.Fatalf("a21_rms_vad baseline should be available as host-only development evidence: %#v", candidates["a21_rms_vad"])
+	}
+}
+
+func TestRunMockFrontEndEvalExposesFastCompanionEvidenceContract(t *testing.T) {
+	data, err := json.Marshal(RunMockFrontEndEval())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"trace_id",
+		"session_id",
+		"device_id",
+		"baseline_scope",
+		"candidate_evidence",
+		"fast_companion_evidence_contract",
+		"redaction",
+	} {
+		if _, ok := report[want]; !ok {
+			t.Fatalf("mock eval report missing %q: %#v", want, report)
+		}
+	}
+	if report["baseline_scope"] != "host_only" || report["device_id"] != "none_host_fixture" {
+		t.Fatalf("mock eval must stay host-only with no hardware identity: %#v", report)
+	}
+	candidates := collectFrontEndEvidenceByID(t, report["candidate_evidence"])
+	for _, want := range []string{"webrtc_apm", "provider_side_vad", "silero_vad", "a21_rms_vad"} {
+		if _, ok := candidates[want]; !ok {
+			t.Fatalf("candidate_evidence missing %q: %#v", want, candidates)
+		}
+	}
+	for _, id := range []string{"webrtc_apm", "provider_side_vad", "silero_vad"} {
+		candidate := candidates[id]
+		if available, _ := candidate["available"].(bool); available {
+			t.Fatalf("%s must be unavailable in mock eval: %#v", id, candidate)
+		}
+		if placeholder, _ := candidate["placeholder"].(bool); !placeholder {
+			t.Fatalf("%s must be placeholder in mock eval: %#v", id, candidate)
+		}
+	}
+	contract := collectFrontEndEvidenceByID(t, report["fast_companion_evidence_contract"])
+	for _, want := range []string{
+		"mock_benchmark_preservation",
+		"labelled_fixture_preservation",
+		"office_noise_benchmark",
+		"speaker_to_mic_echo_report",
+		"speech_start_end_lag",
+		"barge_in_stop_timing",
+		"first_audio_waterfall_impact",
+		"cpu_memory_profile",
+		"metrics_continuity",
+	} {
+		if _, ok := contract[want]; !ok {
+			t.Fatalf("fast companion evidence contract missing %q: %#v", want, contract)
+		}
 	}
 }
 
@@ -112,6 +214,27 @@ func TestRunFrontEndEvalFromFixtureRejectsWrongFrameSize(t *testing.T) {
 	if got := err.Error(); got == "" || !containsAll(got, []string{"frame", "bytes"}) {
 		t.Fatalf("error = %q, want frame byte-size failure", got)
 	}
+}
+
+func collectFrontEndEvidenceByID(t *testing.T, raw any) map[string]map[string]any {
+	t.Helper()
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("evidence list missing: %#v", raw)
+	}
+	result := map[string]map[string]any{}
+	for _, item := range items {
+		fields, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("evidence item shape = %#v", item)
+		}
+		id, _ := fields["id"].(string)
+		if id == "" {
+			t.Fatalf("evidence item missing id: %#v", fields)
+		}
+		result[id] = fields
+	}
+	return result
 }
 
 func containsAll(value string, parts []string) bool {

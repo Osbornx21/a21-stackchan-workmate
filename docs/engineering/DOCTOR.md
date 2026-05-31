@@ -53,7 +53,7 @@ It writes:
 reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json
 ```
 
-These reports are evidence artifacts for VAD/AEC evaluation. They do not contain raw audio frames.
+These reports are evidence artifacts for VAD/AEC evaluation. They do not contain raw audio frames. The current report contract is host-only and no-execute: it records `device_id=none_host_fixture`, `baseline_scope=host_only`, `provider_executed=false`, `v21_executed=false`, `hardware_executed=false`, and redaction booleans showing that raw PCM, base64 audio, transcripts, prompts, provider output, reasoning, credentials, full URLs, proxy URLs, and full local paths were not stored. The saved `report_path` is a basename only.
 
 It checks what the current foundation can truthfully check:
 
@@ -141,6 +141,8 @@ It validates provider wrapper event flow without dialing a provider. It is still
 `latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons. The report also includes `generated_at`, `current_commit`, network/DNS fingerprint, and doctor-style redacted proxy-policy metadata. It reports env variable names such as `HTTPS_PROXY` or `A21_PROVIDER_PROXY_URL`, but never proxy values, hosts, ports, usernames, passwords, keys, or model IDs.
 
 Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until `provider-latency-bench` is promoted beyond mock/fixture scaffolding, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, `latency-bench --mock`, or the scaffolded `provider-latency-bench` shape, and must list unmeasured stages explicitly.
+
+`audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 
 `provider-latency-bench` now exists as a mock/fixture scaffold for the shared
 candidate-chain report. It accepts `--provider`, `--fixture`, `--mode
