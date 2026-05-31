@@ -87,13 +87,14 @@ and Opus frame count, never local paths or audio payloads. Its successful state
 is `candidate_host_only`, not `accepted`, and it exists to compare answer
 first-audio and barge-in stop timings before physical StackChan promotion.
 
-The first `provider-latency-bench` scaffold now exists as a mock/fixture-only
-candidate-chain report shape:
+The first `provider-latency-bench` scaffold now exists as a mock/fixture plus
+host-loopback candidate-chain report shape:
 
 ```bash
 go run ./cmd/a21 provider-latency-bench \
   --provider <profile> \
-  --fixture <a21-redacted-audio-fixture> \
+  --mode host_loopback \
+  --fixture <a21-redacted-host-loopback-report.json> \
   --iterations 30 \
   --output-dir reports
 ```
@@ -120,9 +121,18 @@ redacted stats. The canonical block covers `transport_ingress_ms`,
 `speech_end_to_final_asr_ms`, `speech_end_to_first_llm_token_ms`,
 `llm_request_to_first_token_ms`, `first_llm_token_to_first_tts_audio_ms`,
 `tts_request_to_first_audio_ms`, `provider_commit_to_first_audio_ms`,
-`gateway_downlink_first_frame_ms`, `device_downlink_first_frame_ms`, and
-`speech_end_to_first_audible_response_ms`. Every current stage is marked
-`available=false`, `placeholder=true`, and carries a fixed placeholder reason.
+`gateway_downlink_first_frame_ms`, `device_downlink_first_frame_ms`,
+`speech_end_to_first_audible_response_ms`, `answer_first_audio_ms`,
+`answer_first_audio_p95_ms`, and `barge_in_stop_p95_ms`. Mock and fixture
+placeholder stages remain `available=false`, `placeholder=true`, and carry a
+fixed placeholder reason. When `--mode host_loopback --fixture <report.json>`
+ingests a redacted `local-voice-loopback` or `xiaozhi-voice-bench` style report,
+available host-only ASR/provider/TTS/downlink/barge-in fields may be marked
+`available=true`, `placeholder=false`, and summarized as
+`acceptance_status=candidate_host_only` if enough samples satisfy the PRD
+host-only latency thresholds. Physical-only fields such as
+`device_playback_start_ms` and `speech_end_to_first_audible_response_ms` remain
+unavailable unless the report contains physical StackChan evidence.
 When `--fixture` points at a redacted JSON sidecar, the report may include
 `schema_version=a21.provider_latency_fixture.v1`, fixture identity, audio
 format, sample rate, channel count, duration, sample count, window length, and

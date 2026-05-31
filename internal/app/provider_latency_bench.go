@@ -131,6 +131,7 @@ type providerLatencyBenchSample struct {
 	ProviderCancelDoneMS      float64 `json:"provider_cancel_done_ms"`
 	PlaybackStopMS            float64 `json:"playback_stop_ms"`
 	PlaybackStopDoneMS        float64 `json:"playback_stop_done_ms"`
+	AnswerFirstAudioMS        float64 `json:"answer_first_audio_ms"`
 	Placeholder               bool    `json:"placeholder"`
 }
 
@@ -152,6 +153,7 @@ type providerLatencyBenchSummary struct {
 	ProviderCancelDoneMS      providerLatencyBenchSeries `json:"provider_cancel_done_ms"`
 	PlaybackStopMS            providerLatencyBenchSeries `json:"playback_stop_ms"`
 	PlaybackStopDoneMS        providerLatencyBenchSeries `json:"playback_stop_done_ms"`
+	AnswerFirstAudioMS        providerLatencyBenchSeries `json:"answer_first_audio_ms"`
 }
 
 type providerLatencyBenchSeries struct {
@@ -335,19 +337,46 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 			LocalPathsStored:       false,
 		},
 	}
+	hostLoopbackIngested := false
+	hostLoopbackPhysicalEvidence := false
+	hostLoopbackInvalid := false
 	if options.FixturePath != "" {
-		fixtureMetadata, fixtureFindings := loadProviderLatencyBenchFixtureMetadata(options.FixturePath)
 		report.Fixture = &providerLatencyBenchFixture{
 			FixtureID: filepath.Base(options.FixturePath),
 			Stored:    false,
-			Metadata:  fixtureMetadata,
 		}
-		report.Findings = append(report.Findings, fixtureFindings...)
+		if mode == "host_loopback" {
+			evidence, fixtureFindings := loadProviderLatencyBenchHostLoopbackReport(options.FixturePath)
+			report.Findings = append(report.Findings, fixtureFindings...)
+			if evidence.Valid {
+				report.Samples = evidence.Samples
+				hostLoopbackIngested = true
+				hostLoopbackPhysicalEvidence = evidence.PhysicalEvidence
+				if len(evidence.Samples) > 0 {
+					report.Iterations = len(evidence.Samples)
+				}
+			} else if len(fixtureFindings) > 0 {
+				hostLoopbackInvalid = true
+			}
+		} else {
+			fixtureMetadata, fixtureFindings := loadProviderLatencyBenchFixtureMetadata(options.FixturePath)
+			report.Fixture.Metadata = fixtureMetadata
+			report.Findings = append(report.Findings, fixtureFindings...)
+		}
 	}
-	report.Samples = buildProviderLatencyBenchSamples(iterations, mode)
+	if len(report.Samples) == 0 && !hostLoopbackInvalid {
+		report.Samples = buildProviderLatencyBenchSamples(iterations, mode)
+	}
 	report.Summary = summarizeProviderLatencyBenchSamples(report.Samples)
-	report.StageAvailability = buildProviderLatencyBenchStageAvailability(report.Summary)
-	report.CanonicalMetrics = buildProviderLatencyCanonicalMetrics(report.Summary)
+	if hostLoopbackIngested {
+		report.Findings = append(report.Findings, providerLatencyHostLoopbackMissingFindings(report.Summary, hostLoopbackPhysicalEvidence)...)
+		if providerLatencyHostLoopbackCandidate(report.Summary, hostLoopbackPhysicalEvidence, len(report.Findings)) {
+			report.AcceptanceStatus = "candidate_host_only"
+		}
+	}
+	placeholder := !hostLoopbackIngested
+	report.StageAvailability = buildProviderLatencyBenchStageAvailability(report.Summary, placeholder, hostLoopbackPhysicalEvidence)
+	report.CanonicalMetrics = buildProviderLatencyCanonicalMetrics(report.Summary, placeholder, hostLoopbackPhysicalEvidence)
 	report.Counts.FailureCount = len(report.Findings)
 	return report, nil
 }
@@ -385,12 +414,17 @@ type providerLatencyBenchStageSpec struct {
 	Stage             string
 	SourceTraceMarker string
 	Series            providerLatencyBenchSeries
+	PhysicalOnly      bool
 }
 
-func buildProviderLatencyBenchStageAvailability(summary providerLatencyBenchSummary) []providerLatencyBenchStageAvailability {
+func buildProviderLatencyBenchStageAvailability(summary providerLatencyBenchSummary, placeholder bool, physicalEvidence bool) []providerLatencyBenchStageAvailability {
 	stages := providerLatencyBenchStageSpecs(summary)
 	availability := make([]providerLatencyBenchStageAvailability, 0, len(stages))
 	for _, stage := range stages {
+		available := !placeholder && stage.Series.Samples > 0
+		if stage.PhysicalOnly && !physicalEvidence {
+			available = false
+		}
 		availability = append(availability, providerLatencyBenchStageAvailability{
 			Stage:             stage.Stage,
 			SourceTraceMarker: stage.SourceTraceMarker,
@@ -398,9 +432,9 @@ func buildProviderLatencyBenchStageAvailability(summary providerLatencyBenchSumm
 			P50MS:             stage.Series.P50MS,
 			P95MS:             stage.Series.P95MS,
 			P99MS:             stage.Series.P99MS,
-			Available:         false,
-			Placeholder:       true,
-			PlaceholderReason: providerLatencyBenchPlaceholderReason,
+			Available:         available,
+			Placeholder:       placeholder,
+			PlaceholderReason: providerLatencyPlaceholderReason(placeholder),
 		})
 	}
 	return availability
@@ -418,14 +452,249 @@ func providerLatencyBenchStageSpecs(summary providerLatencyBenchSummary) []provi
 		{Stage: "tts_first_audio_ms", SourceTraceMarker: "tts.first_audio", Series: summary.TTSFirstAudioMS},
 		{Stage: "downlink_first_frame_ms", SourceTraceMarker: "audio.downlink.first_frame", Series: summary.DownlinkFirstFrameMS},
 		{Stage: "audio_downlink_first_frame_ms", SourceTraceMarker: "audio.downlink.first_frame", Series: summary.AudioDownlinkFirstFrameMS},
-		{Stage: "device_playback_start_ms", SourceTraceMarker: "device.playback.start", Series: summary.DevicePlaybackStartMS},
+		{Stage: "device_playback_start_ms", SourceTraceMarker: "device.playback.start", Series: summary.DevicePlaybackStartMS, PhysicalOnly: true},
 		{Stage: "barge_in_detected_ms", SourceTraceMarker: "barge_in.detected", Series: summary.BargeInDetectedMS},
 		{Stage: "barge_in_stop_ms", SourceTraceMarker: "playback.stop", Series: summary.BargeInStopMS},
 		{Stage: "provider_cancel_ms", SourceTraceMarker: "provider.cancel.end", Series: summary.ProviderCancelMS},
 		{Stage: "provider_cancel_done_ms", SourceTraceMarker: "provider.cancel.end", Series: summary.ProviderCancelDoneMS},
 		{Stage: "playback_stop_ms", SourceTraceMarker: "playback.stop", Series: summary.PlaybackStopMS},
 		{Stage: "playback_stop_done_ms", SourceTraceMarker: "playback.stop", Series: summary.PlaybackStopDoneMS},
+		{Stage: "answer_first_audio_ms", SourceTraceMarker: "answer.first_audio.host_loopback", Series: summary.AnswerFirstAudioMS},
 	}
+}
+
+func providerLatencyPlaceholderReason(placeholder bool) string {
+	if !placeholder {
+		return ""
+	}
+	return providerLatencyBenchPlaceholderReason
+}
+
+type providerLatencyBenchHostLoopbackEvidence struct {
+	Valid            bool
+	Samples          []providerLatencyBenchSample
+	PhysicalEvidence bool
+}
+
+type providerLatencyBenchHostLoopbackReport struct {
+	SchemaVersion string                                  `json:"schema_version"`
+	ExecutionMode string                                  `json:"execution_mode"`
+	BaselineScope string                                  `json:"baseline_scope"`
+	DeviceID      string                                  `json:"device_id"`
+	AnswerTurns   []providerLatencyBenchHostLoopbackTurn  `json:"answer_turns"`
+	BargeInTurns  []providerLatencyBenchHostLoopbackTurn  `json:"barge_in_turns"`
+	Samples       []providerLatencyBenchHostLoopbackTrace `json:"samples"`
+	Execution     providerLatencyBenchExecution           `json:"execution"`
+}
+
+type providerLatencyBenchHostLoopbackTurn struct {
+	TraceSummary *providerLatencyBenchHostLoopbackTrace `json:"trace_summary"`
+	FirstAudioMS *float64                               `json:"first_audio_ms,omitempty"`
+}
+
+type providerLatencyBenchHostLoopbackTrace struct {
+	TransportIngressMS            *float64 `json:"transport_ingress_ms,omitempty"`
+	XiaozhiListenToAudioIngressMS *float64 `json:"xiaozhi_listen_to_audio_ingress_ms,omitempty"`
+	CodecDecodeMS                 *float64 `json:"codec_decode_ms,omitempty"`
+	XiaozhiOpusDecodeMS           *float64 `json:"xiaozhi_opus_decode_ms,omitempty"`
+	ASRFirstPartialMS             *float64 `json:"asr_first_partial_ms,omitempty"`
+	ASRFinalMS                    *float64 `json:"asr_final_ms,omitempty"`
+	LLMFirstContentMS             *float64 `json:"llm_first_content_ms,omitempty"`
+	ProviderFirstByteMS           *float64 `json:"provider_first_byte_ms,omitempty"`
+	ProviderFirstContentMS        *float64 `json:"provider_first_content_ms,omitempty"`
+	TTSFirstAudioMS               *float64 `json:"tts_first_audio_ms,omitempty"`
+	DownlinkFirstFrameMS          *float64 `json:"downlink_first_frame_ms,omitempty"`
+	AudioDownlinkFirstFrameMS     *float64 `json:"audio_downlink_first_frame_ms,omitempty"`
+	DevicePlaybackStartMS         *float64 `json:"device_playback_start_ms,omitempty"`
+	BargeInDetectedMS             *float64 `json:"barge_in_detected_ms,omitempty"`
+	BargeInStopMS                 *float64 `json:"barge_in_stop_ms,omitempty"`
+	ProviderCancelMS              *float64 `json:"provider_cancel_ms,omitempty"`
+	ProviderCancelDoneMS          *float64 `json:"provider_cancel_done_ms,omitempty"`
+	PlaybackStopMS                *float64 `json:"playback_stop_ms,omitempty"`
+	PlaybackStopDoneMS            *float64 `json:"playback_stop_done_ms,omitempty"`
+	AnswerFirstAudioMS            *float64 `json:"answer_first_audio_ms,omitempty"`
+	AnswerFirstAudioTotalMS       *float64 `json:"answer_first_audio_total_ms,omitempty"`
+}
+
+func loadProviderLatencyBenchHostLoopbackReport(fixturePath string) (providerLatencyBenchHostLoopbackEvidence, []providerLatencyBenchFinding) {
+	if strings.ToLower(filepath.Ext(fixturePath)) != ".json" {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	if len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	var hostReport providerLatencyBenchHostLoopbackReport
+	decoder = json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&hostReport); err != nil {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	if !validProviderLatencyHostLoopbackReport(hostReport) {
+		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
+	}
+	evidence := providerLatencyBenchHostLoopbackEvidence{
+		Valid:            true,
+		PhysicalEvidence: providerLatencyHostLoopbackHasPhysicalEvidence(hostReport),
+	}
+	evidence.Samples = providerLatencyHostLoopbackSamples(hostReport, evidence.PhysicalEvidence)
+	return evidence, nil
+}
+
+func invalidProviderLatencyHostLoopbackFinding() providerLatencyBenchFinding {
+	return providerLatencyBenchFinding{
+		Code:    "host_loopback_report_invalid",
+		Message: "host-loopback report is invalid or unsafe",
+	}
+}
+
+func validProviderLatencyHostLoopbackReport(report providerLatencyBenchHostLoopbackReport) bool {
+	switch report.SchemaVersion {
+	case "a21.xiaozhi_voice_bench.v1", "a21.audio.local_voice_loopback.v1", "a21.provider_latency_host_loopback.v1":
+	default:
+		return false
+	}
+	mode := strings.TrimSpace(report.ExecutionMode)
+	return mode == "" || mode == "host_loopback"
+}
+
+func providerLatencyHostLoopbackHasPhysicalEvidence(report providerLatencyBenchHostLoopbackReport) bool {
+	if report.Execution.HardwareExecuted {
+		return true
+	}
+	return strings.TrimSpace(report.BaselineScope) == "physical_stackchan"
+}
+
+func providerLatencyHostLoopbackSamples(report providerLatencyBenchHostLoopbackReport, physicalEvidence bool) []providerLatencyBenchSample {
+	samples := make([]providerLatencyBenchSample, 0, len(report.AnswerTurns)+len(report.BargeInTurns)+len(report.Samples))
+	for _, trace := range report.Samples {
+		samples = append(samples, providerLatencyHostLoopbackSampleFromTrace(len(samples)+1, trace, physicalEvidence))
+	}
+	for _, turn := range report.AnswerTurns {
+		if turn.TraceSummary == nil {
+			continue
+		}
+		sample := providerLatencyHostLoopbackSampleFromTrace(len(samples)+1, *turn.TraceSummary, physicalEvidence)
+		if turn.FirstAudioMS != nil && sample.AnswerFirstAudioMS == 0 {
+			sample.AnswerFirstAudioMS = *turn.FirstAudioMS
+		}
+		samples = append(samples, sample)
+	}
+	for _, turn := range report.BargeInTurns {
+		if turn.TraceSummary == nil {
+			continue
+		}
+		samples = append(samples, providerLatencyHostLoopbackSampleFromTrace(len(samples)+1, *turn.TraceSummary, physicalEvidence))
+	}
+	return samples
+}
+
+func providerLatencyHostLoopbackSampleFromTrace(index int, trace providerLatencyBenchHostLoopbackTrace, physicalEvidence bool) providerLatencyBenchSample {
+	sample := providerLatencyBenchSample{
+		Index:       index,
+		Placeholder: false,
+	}
+	sample.TransportIngressMS = firstProviderLatencyValue(trace.TransportIngressMS, trace.XiaozhiListenToAudioIngressMS)
+	sample.CodecDecodeMS = firstProviderLatencyValue(trace.CodecDecodeMS, trace.XiaozhiOpusDecodeMS)
+	sample.ASRFirstPartialMS = providerLatencyValue(trace.ASRFirstPartialMS)
+	sample.ASRFinalMS = providerLatencyValue(trace.ASRFinalMS)
+	sample.LLMFirstContentMS = firstProviderLatencyValue(trace.LLMFirstContentMS, trace.ProviderFirstContentMS)
+	sample.ProviderFirstByteMS = providerLatencyValue(trace.ProviderFirstByteMS)
+	sample.ProviderFirstContentMS = firstProviderLatencyValue(trace.ProviderFirstContentMS, trace.LLMFirstContentMS)
+	sample.TTSFirstAudioMS = providerLatencyValue(trace.TTSFirstAudioMS)
+	audioDownlink := firstProviderLatencyValue(trace.AudioDownlinkFirstFrameMS, trace.DownlinkFirstFrameMS)
+	sample.DownlinkFirstFrameMS = audioDownlink
+	sample.AudioDownlinkFirstFrameMS = audioDownlink
+	if physicalEvidence {
+		sample.DevicePlaybackStartMS = providerLatencyValue(trace.DevicePlaybackStartMS)
+	}
+	sample.BargeInDetectedMS = providerLatencyValue(trace.BargeInDetectedMS)
+	sample.BargeInStopMS = providerLatencyValue(trace.BargeInStopMS)
+	sample.ProviderCancelMS = providerLatencyValue(trace.ProviderCancelMS)
+	sample.ProviderCancelDoneMS = providerLatencyValue(trace.ProviderCancelDoneMS)
+	sample.PlaybackStopMS = providerLatencyValue(trace.PlaybackStopMS)
+	sample.PlaybackStopDoneMS = providerLatencyValue(trace.PlaybackStopDoneMS)
+	sample.AnswerFirstAudioMS = firstProviderLatencyValue(trace.AnswerFirstAudioMS, trace.AnswerFirstAudioTotalMS)
+	return sample
+}
+
+func firstProviderLatencyValue(values ...*float64) float64 {
+	for _, value := range values {
+		if value != nil {
+			return *value
+		}
+	}
+	return 0
+}
+
+func providerLatencyValue(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func providerLatencyHostLoopbackMissingFindings(summary providerLatencyBenchSummary, physicalEvidence bool) []providerLatencyBenchFinding {
+	required := []struct {
+		code   string
+		series providerLatencyBenchSeries
+	}{
+		{code: "host_loopback_transport_ingress_unavailable", series: summary.TransportIngressMS},
+		{code: "host_loopback_codec_decode_unavailable", series: summary.CodecDecodeMS},
+		{code: "host_loopback_asr_first_partial_unavailable", series: summary.ASRFirstPartialMS},
+		{code: "host_loopback_asr_final_unavailable", series: summary.ASRFinalMS},
+		{code: "host_loopback_llm_first_content_unavailable", series: summary.LLMFirstContentMS},
+		{code: "host_loopback_tts_first_audio_unavailable", series: summary.TTSFirstAudioMS},
+		{code: "host_loopback_audio_downlink_first_frame_unavailable", series: summary.AudioDownlinkFirstFrameMS},
+		{code: "host_loopback_answer_first_audio_unavailable", series: summary.AnswerFirstAudioMS},
+		{code: "host_loopback_barge_in_stop_unavailable", series: summary.BargeInStopMS},
+	}
+	findings := make([]providerLatencyBenchFinding, 0)
+	for _, stage := range required {
+		if stage.series.Samples == 0 {
+			findings = append(findings, providerLatencyBenchFinding{
+				Code:    stage.code,
+				Message: "host-loopback report is missing a required redacted timing stage",
+			})
+		}
+	}
+	if !physicalEvidence || summary.DevicePlaybackStartMS.Samples == 0 {
+		findings = append(findings, providerLatencyBenchFinding{
+			Code:    "physical_device_playback_start_unavailable",
+			Message: "physical StackChan playback evidence is unavailable",
+		})
+	}
+	return findings
+}
+
+func providerLatencyHostLoopbackCandidate(summary providerLatencyBenchSummary, physicalEvidence bool, findingCount int) bool {
+	if findingCount > 1 {
+		return false
+	}
+	return !physicalEvidence &&
+		summary.AnswerFirstAudioMS.Samples >= 3 &&
+		summary.BargeInStopMS.Samples >= 3 &&
+		summary.AnswerFirstAudioMS.P95MS > 0 &&
+		summary.AnswerFirstAudioMS.P95MS < 1500 &&
+		summary.BargeInStopMS.P95MS > 0 &&
+		summary.BargeInStopMS.P95MS < 300
 }
 
 type providerLatencyBenchFixtureSidecar struct {
@@ -624,24 +893,26 @@ func summarizeProviderLatencyBenchSamples(samples []providerLatencyBenchSample) 
 	cancelDone := make([]time.Duration, 0, len(samples))
 	playbackStop := make([]time.Duration, 0, len(samples))
 	playbackStopDone := make([]time.Duration, 0, len(samples))
+	answerFirstAudio := make([]time.Duration, 0, len(samples))
 	for _, sample := range samples {
-		transportIngress = append(transportIngress, msDuration(sample.TransportIngressMS))
-		codecDecode = append(codecDecode, msDuration(sample.CodecDecodeMS))
-		asr = append(asr, msDuration(sample.ASRFirstPartialMS))
-		asrFinal = append(asrFinal, msDuration(sample.ASRFinalMS))
-		llmFirstContent = append(llmFirstContent, msDuration(sample.LLMFirstContentMS))
-		firstByte = append(firstByte, msDuration(sample.ProviderFirstByteMS))
-		firstContent = append(firstContent, msDuration(sample.ProviderFirstContentMS))
-		tts = append(tts, msDuration(sample.TTSFirstAudioMS))
-		downlink = append(downlink, msDuration(sample.DownlinkFirstFrameMS))
-		audioDownlink = append(audioDownlink, msDuration(sample.AudioDownlinkFirstFrameMS))
-		playback = append(playback, msDuration(sample.DevicePlaybackStartMS))
-		bargeInDetected = append(bargeInDetected, msDuration(sample.BargeInDetectedMS))
-		bargeIn = append(bargeIn, msDuration(sample.BargeInStopMS))
-		cancel = append(cancel, msDuration(sample.ProviderCancelMS))
-		cancelDone = append(cancelDone, msDuration(sample.ProviderCancelDoneMS))
-		playbackStop = append(playbackStop, msDuration(sample.PlaybackStopMS))
-		playbackStopDone = append(playbackStopDone, msDuration(sample.PlaybackStopDoneMS))
+		appendProviderLatencyPositiveMS(&transportIngress, sample.TransportIngressMS)
+		appendProviderLatencyPositiveMS(&codecDecode, sample.CodecDecodeMS)
+		appendProviderLatencyPositiveMS(&asr, sample.ASRFirstPartialMS)
+		appendProviderLatencyPositiveMS(&asrFinal, sample.ASRFinalMS)
+		appendProviderLatencyPositiveMS(&llmFirstContent, sample.LLMFirstContentMS)
+		appendProviderLatencyPositiveMS(&firstByte, sample.ProviderFirstByteMS)
+		appendProviderLatencyPositiveMS(&firstContent, sample.ProviderFirstContentMS)
+		appendProviderLatencyPositiveMS(&tts, sample.TTSFirstAudioMS)
+		appendProviderLatencyPositiveMS(&downlink, sample.DownlinkFirstFrameMS)
+		appendProviderLatencyPositiveMS(&audioDownlink, sample.AudioDownlinkFirstFrameMS)
+		appendProviderLatencyPositiveMS(&playback, sample.DevicePlaybackStartMS)
+		appendProviderLatencyPositiveMS(&bargeInDetected, sample.BargeInDetectedMS)
+		appendProviderLatencyPositiveMS(&bargeIn, sample.BargeInStopMS)
+		appendProviderLatencyPositiveMS(&cancel, sample.ProviderCancelMS)
+		appendProviderLatencyPositiveMS(&cancelDone, sample.ProviderCancelDoneMS)
+		appendProviderLatencyPositiveMS(&playbackStop, sample.PlaybackStopMS)
+		appendProviderLatencyPositiveMS(&playbackStopDone, sample.PlaybackStopDoneMS)
+		appendProviderLatencyPositiveMS(&answerFirstAudio, sample.AnswerFirstAudioMS)
 	}
 	return providerLatencyBenchSummary{
 		TransportIngressMS:        providerLatencySeries(transportIngress),
@@ -661,128 +932,249 @@ func summarizeProviderLatencyBenchSamples(samples []providerLatencyBenchSample) 
 		ProviderCancelDoneMS:      providerLatencySeries(cancelDone),
 		PlaybackStopMS:            providerLatencySeries(playbackStop),
 		PlaybackStopDoneMS:        providerLatencySeries(playbackStopDone),
+		AnswerFirstAudioMS:        providerLatencySeries(answerFirstAudio),
 	}
 }
 
-func buildProviderLatencyCanonicalMetrics(summary providerLatencyBenchSummary) map[string]providerLatencyCanonical {
+func appendProviderLatencyPositiveMS(samples *[]time.Duration, value float64) {
+	if value <= 0 {
+		return
+	}
+	*samples = append(*samples, msDuration(value))
+}
+
+func buildProviderLatencyCanonicalMetrics(summary providerLatencyBenchSummary, placeholder bool, physicalEvidence bool) map[string]providerLatencyCanonical {
 	return map[string]providerLatencyCanonical{
 		"transport_ingress_ms": providerLatencyCanonicalFromSeries(
 			"transport_ingress_ms",
 			summary.TransportIngressMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"codec_decode_ms": providerLatencyCanonicalFromSeries(
 			"codec_decode_ms",
 			summary.CodecDecodeMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"asr_first_partial_ms": providerLatencyCanonicalFromSeries(
 			"asr_first_partial_ms",
 			summary.ASRFirstPartialMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"asr_final_ms": providerLatencyCanonicalFromSeries(
 			"asr_final_ms",
 			summary.ASRFinalMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"llm_first_content_ms": providerLatencyCanonicalFromSeries(
 			"llm_first_content_ms",
 			summary.LLMFirstContentMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"provider_first_byte_ms": providerLatencyCanonicalFromSeries(
 			"provider_first_byte_ms",
 			summary.ProviderFirstByteMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"provider_first_content_ms": providerLatencyCanonicalFromSeries(
 			"provider_first_content_ms",
 			summary.ProviderFirstContentMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"tts_first_audio_ms": providerLatencyCanonicalFromSeries(
 			"tts_first_audio_ms",
 			summary.TTSFirstAudioMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
 			"downlink_first_frame_ms",
 			summary.DownlinkFirstFrameMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"audio_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
 			"audio_downlink_first_frame_ms",
 			summary.AudioDownlinkFirstFrameMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"device_playback_start_ms": providerLatencyCanonicalFromSeries(
 			"device_playback_start_ms",
 			summary.DevicePlaybackStartMS,
+			placeholder,
+			true,
+			physicalEvidence,
 		),
 		"barge_in_detected_ms": providerLatencyCanonicalFromSeries(
 			"barge_in_detected_ms",
 			summary.BargeInDetectedMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"barge_in_stop_ms": providerLatencyCanonicalFromSeries(
 			"barge_in_stop_ms",
 			summary.BargeInStopMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"provider_cancel_ms": providerLatencyCanonicalFromSeries(
 			"provider_cancel_ms",
 			summary.ProviderCancelMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"provider_cancel_done_ms": providerLatencyCanonicalFromSeries(
 			"provider_cancel_done_ms",
 			summary.ProviderCancelDoneMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"playback_stop_ms": providerLatencyCanonicalFromSeries(
 			"playback_stop_ms",
 			summary.PlaybackStopMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"playback_stop_done_ms": providerLatencyCanonicalFromSeries(
 			"playback_stop_done_ms",
 			summary.PlaybackStopDoneMS,
+			placeholder,
+			false,
+			physicalEvidence,
+		),
+		"answer_first_audio_ms": providerLatencyCanonicalFromSeries(
+			"answer_first_audio_ms",
+			summary.AnswerFirstAudioMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"speech_end_to_final_asr_ms": providerLatencyCanonicalFromSeries(
 			"asr_final_ms",
 			summary.ASRFinalMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"speech_end_to_first_llm_token_ms": providerLatencyCanonicalFromSeries(
 			"llm_first_content_ms",
 			summary.LLMFirstContentMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"llm_request_to_first_token_ms": providerLatencyCanonicalFromSeries(
 			"llm_first_content_ms",
 			summary.LLMFirstContentMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"first_llm_token_to_first_tts_audio_ms": providerLatencyCanonicalFromSeries(
 			"tts_first_audio_ms",
 			summary.TTSFirstAudioMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"tts_request_to_first_audio_ms": providerLatencyCanonicalFromSeries(
 			"tts_first_audio_ms",
 			summary.TTSFirstAudioMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"provider_commit_to_first_audio_ms": providerLatencyCanonicalFromSeries(
 			"tts_first_audio_ms",
 			summary.TTSFirstAudioMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"gateway_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
 			"audio_downlink_first_frame_ms",
 			summary.AudioDownlinkFirstFrameMS,
+			placeholder,
+			false,
+			physicalEvidence,
 		),
 		"device_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
 			"audio_downlink_first_frame_ms",
 			summary.AudioDownlinkFirstFrameMS,
+			placeholder,
+			true,
+			physicalEvidence,
 		),
 		"speech_end_to_first_audible_response_ms": providerLatencyCanonicalFromSeries(
 			"device_playback_start_ms",
 			summary.DevicePlaybackStartMS,
+			placeholder,
+			true,
+			physicalEvidence,
+		),
+		"answer_first_audio_p95_ms": providerLatencyCanonicalFromP95(
+			"answer_first_audio_ms",
+			summary.AnswerFirstAudioMS,
+			placeholder,
+		),
+		"barge_in_stop_p95_ms": providerLatencyCanonicalFromP95(
+			"barge_in_stop_ms",
+			summary.BargeInStopMS,
+			placeholder,
 		),
 	}
 }
 
-func providerLatencyCanonicalFromSeries(sourceStage string, series providerLatencyBenchSeries) providerLatencyCanonical {
+func providerLatencyCanonicalFromSeries(sourceStage string, series providerLatencyBenchSeries, placeholder bool, physicalOnly bool, physicalEvidence bool) providerLatencyCanonical {
+	available := !placeholder && series.Samples > 0
+	if physicalOnly && !physicalEvidence {
+		available = false
+	}
 	return providerLatencyCanonical{
 		SourceStage:       sourceStage,
 		Samples:           series.Samples,
 		P50MS:             series.P50MS,
 		P95MS:             series.P95MS,
 		P99MS:             series.P99MS,
-		Available:         false,
-		Placeholder:       true,
-		PlaceholderReason: providerLatencyBenchPlaceholderReason,
+		Available:         available,
+		Placeholder:       placeholder,
+		PlaceholderReason: providerLatencyPlaceholderReason(placeholder),
+	}
+}
+
+func providerLatencyCanonicalFromP95(sourceStage string, series providerLatencyBenchSeries, placeholder bool) providerLatencyCanonical {
+	available := !placeholder && series.Samples >= 3
+	return providerLatencyCanonical{
+		SourceStage:       sourceStage,
+		Samples:           series.Samples,
+		P50MS:             series.P95MS,
+		P95MS:             series.P95MS,
+		P99MS:             series.P95MS,
+		Available:         available,
+		Placeholder:       placeholder,
+		PlaceholderReason: providerLatencyPlaceholderReason(placeholder),
 	}
 }
 

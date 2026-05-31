@@ -1910,6 +1910,235 @@ func TestRunProviderLatencyBenchHostLoopbackUsesCanonicalMode(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchIngestsHostLoopbackReport(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-host-loopback-report.json")
+	writeProviderLatencyBenchHostLoopbackFixture(t, fixture)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	if report.ExecutionMode != "host_loopback" || report.BaselineScope != "host_only" {
+		t.Fatalf("wrong host-loopback identity: mode=%q scope=%q", report.ExecutionMode, report.BaselineScope)
+	}
+	if report.Fixture == nil || report.Fixture.FixtureID != "a21-host-loopback-report.json" {
+		t.Fatalf("fixture id not redacted to basename: %#v", report.Fixture)
+	}
+	for _, stage := range []string{"asr_first_partial_ms", "asr_final_ms", "llm_first_content_ms", "tts_first_audio_ms", "audio_downlink_first_frame_ms", "barge_in_stop_ms"} {
+		availability := providerLatencyBenchStageByName(t, report, stage)
+		if !availability.Available || availability.Placeholder {
+			t.Fatalf("stage %s availability = available:%v placeholder:%v, want measured host evidence", stage, availability.Available, availability.Placeholder)
+		}
+	}
+	playback := providerLatencyBenchStageByName(t, report, "device_playback_start_ms")
+	if playback.Available || playback.Placeholder {
+		t.Fatalf("physical playback should remain unavailable without physical evidence: %#v", playback)
+	}
+	answer := report.CanonicalMetrics["answer_first_audio_p95_ms"]
+	if !answer.Available || answer.P95MS >= 1500 || answer.SourceStage != "answer_first_audio_ms" {
+		t.Fatalf("answer_first_audio_p95_ms = %#v, want host-only p95 < 1500", answer)
+	}
+	barge := report.CanonicalMetrics["barge_in_stop_p95_ms"]
+	if !barge.Available || barge.P95MS >= 300 || barge.SourceStage != "barge_in_stop_ms" {
+		t.Fatalf("barge_in_stop_p95_ms = %#v, want host-only p95 < 300", barge)
+	}
+	physical := report.CanonicalMetrics["speech_end_to_first_audible_response_ms"]
+	if physical.Available || physical.Placeholder {
+		t.Fatalf("physical audible response should not be available from host-only fixture: %#v", physical)
+	}
+	if report.AcceptanceStatus != "candidate_host_only" || report.PRDAccepted {
+		t.Fatalf("acceptance = %q prd=%v, want host-only candidate without PRD acceptance", report.AcceptanceStatus, report.PRDAccepted)
+	}
+	if report.Execution.ProviderExecuted || report.Execution.V21Executed || report.Execution.HardwareExecuted {
+		t.Fatalf("host-loopback ingestion should not mark execution flags true: %#v", report.Execution)
+	}
+}
+
+func TestRunProviderLatencyBenchHostLoopbackRedactsUnsafeReportPayload(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-host-loopback-leaky-report.json")
+	data := `{
+  "schema_version": "a21.xiaozhi_voice_bench.v1",
+  "execution_mode": "host_loopback",
+  "gateway": "http://user:pass@example.invalid:21080",
+  "answer_turns": [
+    {
+      "trace_summary": {
+        "asr_first_partial_ms": 100,
+        "prompt": "secret prompt",
+        "transcript": "secret transcript",
+        "provider_output": "secret provider output",
+        "data_base64": "c2VjcmV0"
+      }
+    }
+  ]
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"fixture_id": "a21-host-loopback-leaky-report.json"`,
+		`"code": "host_loopback_report_invalid"`,
+		`"failure_count": 1`,
+		`"local_paths_stored": false`,
+		`"full_urls_stored": false`,
+		`"payloads_stored": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{dir, fixture, "http://", "example.invalid", "user:pass", "secret", "prompt", "transcript", "provider_output", "data_base64", "c2VjcmV0"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchHostLoopbackPartialReportFindsMissingStages(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-host-loopback-partial-report.json")
+	data := `{
+  "schema_version": "a21.xiaozhi_voice_bench.v1",
+  "execution_mode": "host_loopback",
+  "baseline_scope": "host_only",
+  "answer_turns": [
+    {
+      "trace_summary": {
+        "asr_first_partial_ms": 111
+      }
+    }
+  ]
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	asr := providerLatencyBenchStageByName(t, report, "asr_first_partial_ms")
+	if !asr.Available {
+		t.Fatalf("partial report should keep available ASR timing: %#v", asr)
+	}
+	tts := providerLatencyBenchStageByName(t, report, "tts_first_audio_ms")
+	if tts.Available {
+		t.Fatalf("missing TTS timing should be unavailable: %#v", tts)
+	}
+	if report.Counts.FailureCount == 0 || len(report.Findings) == 0 {
+		t.Fatalf("partial report should include honest findings: %#v", report.Findings)
+	}
+	for _, finding := range report.Findings {
+		if strings.Contains(finding.Message, dir) || strings.Contains(finding.Message, "trace_summary") {
+			t.Fatalf("finding should stay redacted and low-information: %#v", finding)
+		}
+	}
+}
+
+func writeProviderLatencyBenchHostLoopbackFixture(t *testing.T, path string) {
+	t.Helper()
+	data := `{
+  "schema_version": "a21.xiaozhi_voice_bench.v1",
+  "execution_mode": "host_loopback",
+  "baseline_scope": "host_only",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "answer_turns": [
+    {
+      "trace_id": "a21-trace-host-answer-01",
+      "session_id": "a21-session-host-answer-01",
+      "trace_summary": {
+        "xiaozhi_listen_to_audio_ingress_ms": 30,
+        "xiaozhi_opus_decode_ms": 44,
+        "asr_first_partial_ms": 120,
+        "asr_final_ms": 180,
+        "provider_first_byte_ms": 220,
+        "provider_first_content_ms": 260,
+        "llm_first_content_ms": 260,
+        "tts_first_audio_ms": 410,
+        "audio_downlink_first_frame_ms": 460,
+        "answer_first_audio_total_ms": 900
+      }
+    },
+    {
+      "trace_id": "a21-trace-host-answer-02",
+      "session_id": "a21-session-host-answer-02",
+      "trace_summary": {
+        "xiaozhi_listen_to_audio_ingress_ms": 32,
+        "xiaozhi_opus_decode_ms": 46,
+        "asr_first_partial_ms": 125,
+        "asr_final_ms": 185,
+        "provider_first_byte_ms": 225,
+        "provider_first_content_ms": 270,
+        "llm_first_content_ms": 270,
+        "tts_first_audio_ms": 420,
+        "audio_downlink_first_frame_ms": 470,
+        "answer_first_audio_total_ms": 940
+      }
+    },
+    {
+      "trace_id": "a21-trace-host-answer-03",
+      "session_id": "a21-session-host-answer-03",
+      "trace_summary": {
+        "xiaozhi_listen_to_audio_ingress_ms": 34,
+        "xiaozhi_opus_decode_ms": 48,
+        "asr_first_partial_ms": 130,
+        "asr_final_ms": 190,
+        "provider_first_byte_ms": 230,
+        "provider_first_content_ms": 280,
+        "llm_first_content_ms": 280,
+        "tts_first_audio_ms": 430,
+        "audio_downlink_first_frame_ms": 480,
+        "answer_first_audio_total_ms": 980
+      }
+    }
+  ],
+  "barge_in_turns": [
+    {"trace_summary": {"barge_in_detected_ms": 20, "provider_cancel_ms": 45, "provider_cancel_done_ms": 50, "playback_stop_ms": 170, "playback_stop_done_ms": 180, "barge_in_stop_ms": 180}},
+    {"trace_summary": {"barge_in_detected_ms": 22, "provider_cancel_ms": 47, "provider_cancel_done_ms": 52, "playback_stop_ms": 185, "playback_stop_done_ms": 195, "barge_in_stop_ms": 195}},
+    {"trace_summary": {"barge_in_detected_ms": 24, "provider_cancel_ms": 49, "provider_cancel_done_ms": 54, "playback_stop_ms": 190, "playback_stop_done_ms": 205, "barge_in_stop_ms": 205}}
+  ]
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func providerLatencyBenchStageByName(t *testing.T, report providerLatencyBenchReport, name string) providerLatencyBenchStageAvailability {
+	t.Helper()
+	for _, stage := range report.StageAvailability {
+		if stage.Stage == name {
+			return stage
+		}
+	}
+	t.Fatalf("stage %q missing: %#v", name, report.StageAvailability)
+	return providerLatencyBenchStageAvailability{}
+}
+
 func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 	gatewayServer := newGatewayServerFromEnv(nil)
 	httpServer := httptest.NewServer(gatewayServer.Handler())

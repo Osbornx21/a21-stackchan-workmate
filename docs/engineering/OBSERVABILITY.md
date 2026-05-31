@@ -78,12 +78,20 @@ p50/p95/p99 series for A21 names such as `transport_ingress_ms`,
 `playback_stop_done_ms`, and the shared provider-benchmark canonical fields.
 The unqualified `downlink_first_frame_ms` key is retained only as a legacy
 compatibility alias and is still covered by placeholder availability metadata.
-Its `stage_availability` block marks every current stage as a placeholder with
-a fixed reason, source trace marker, sample count, and p50/p95/p99 redacted
-stats because this command remains host-only report-contract evidence. Reports
-also carry `acceptance_status=not_accepted` and `prd_accepted=false`; these
+For mock/fixture-only reports, its `stage_availability` block marks stages as
+placeholders with a fixed reason, source trace marker, sample count, and
+p50/p95/p99 redacted stats. Reports also carry `prd_accepted=false`; these
 fields are durable JSON report fields, not Prometheus runtime metrics and not
 production acceptance evidence.
+
+`provider-latency-bench --mode host_loopback --fixture <report.json>` can also
+ingest an already-redacted host-loopback report, such as the
+`local-voice-loopback` or `xiaozhi-voice-bench` family. Ingested reports map
+available host-only timing fields into the same stage and canonical-metric
+taxonomy, including `answer_first_audio_p95_ms` and `barge_in_stop_p95_ms` when
+enough samples exist. Missing stages stay explicit findings. Physical-only
+acceptance remains blocked unless the source report contains physical
+StackChan evidence for device playback.
 
 The live protocol contract reserves future observability fields for binary Opus
 media. It is planning-only: reserved trace markers such as
