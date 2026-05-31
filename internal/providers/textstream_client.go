@@ -136,11 +136,11 @@ func RunTextStreamCompletionFromEnv(ctx context.Context, env []string, options T
 			if event.Text == "" {
 				continue
 			}
-			if result.FirstContentMS == 0 {
-				result.FirstContentMS = elapsedMS(start)
-			}
 			switch event.Kind {
 			case TextStreamDeltaContent:
+				if result.FirstContentMS == 0 {
+					result.FirstContentMS = elapsedMS(start)
+				}
 				result.ContentDeltaCount++
 				content.WriteString(event.Text)
 			case TextStreamDeltaReasoning:

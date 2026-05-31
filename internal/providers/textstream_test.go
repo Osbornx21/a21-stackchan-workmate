@@ -143,3 +143,37 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 		}
 	}
 }
+
+func TestRunTextStreamCompletionDoesNotTreatReasoningAsFirstContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning":"内部推理不进首内容指标"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	result, err := RunTextStreamCompletionFromEnv(context.Background(), []string{
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
+		"A21_DEEPSEEK_BASE_URL=" + server.URL,
+	}, TextStreamCompletionOptions{
+		ProviderName: "deepseek",
+		Prompt:       "不要进报告",
+		Client:       server.Client(),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FirstByteMS <= 0 {
+		t.Fatalf("first byte missing: %+v", result)
+	}
+	if result.FirstContentMS != 0 {
+		t.Fatalf("first content = %f, want 0 for reasoning-only stream", result.FirstContentMS)
+	}
+	if result.ContentDeltaCount != 0 || result.ReasoningDeltaCount != 1 || result.ContentText != "" || !result.Done {
+		t.Fatalf("unexpected stream result: %+v", result)
+	}
+}

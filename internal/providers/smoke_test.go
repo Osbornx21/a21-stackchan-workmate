@@ -214,6 +214,61 @@ func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing
 	}
 }
 
+func TestProviderSmokeStreamingDoesNotTreatReasoningAsFirstContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning":"内部推理不进首内容指标"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
+		"A21_DEEPSEEK_BASE_URL=" + server.URL,
+	}, ProviderSmokeOptions{
+		ProviderName: "deepseek",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       1,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if len(report.Attempts) != 1 {
+		t.Fatalf("attempts = %d, want 1", len(report.Attempts))
+	}
+	attempt := report.Attempts[0]
+	if attempt.FirstByteMS <= 0 {
+		t.Fatalf("first byte missing: %+v", attempt)
+	}
+	if attempt.FirstContentMS != 0 {
+		t.Fatalf("first content = %f, want 0 for reasoning-only stream", attempt.FirstContentMS)
+	}
+	if attempt.ContentDeltaCount != 0 || attempt.ReasoningDeltaCount != 1 || !attempt.Done {
+		t.Fatalf("unexpected attempt: %+v", attempt)
+	}
+	for _, metric := range report.Metrics {
+		if metric.Name == "a21_provider_first_content_ms" {
+			t.Fatalf("reasoning-only stream emitted first-content metric: %+v", report.Metrics)
+		}
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "内部推理"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("stream report leaked %q: %s", forbidden, data)
+		}
+	}
+}
+
 func TestProviderSmokeRedactsLegacyProviderName(t *testing.T) {
 	report := ProviderSmokeFromEnv(context.Background(), []string{"A21_PROVIDER_PRIMARY=x21_voice"}, "x21_voice", false, nil)
 
