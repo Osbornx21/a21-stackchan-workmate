@@ -86,7 +86,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

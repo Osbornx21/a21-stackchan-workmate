@@ -2227,6 +2227,22 @@ func TestWriteLocalASRSmokeReportUsesUniqueNamesForRapidWrites(t *testing.T) {
 	}
 }
 
+func TestRunLocalVoiceLoopbackHelpListsLocalOllama(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{"mock_text_stream", "deepseek", "local_ollama"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })
