@@ -46,6 +46,7 @@ Default stance:
 - `docs/engineering/A21_CODEX_MASTERPLAN.md`
 - `docs/engineering/A21_CODEX_AUDIT.md`
 - `docs/engineering/A21_PROJECT_CONTROL.md`
+- `docs/engineering/A21_CONTROL_LEDGER.md`
 - `docs/engineering/PORTS.md`
 - `docs/engineering/NETWORK.md`
 - `docs/engineering/LATENCY_BUDGET.md`

@@ -23,6 +23,9 @@ faster than the governance docs can catch up.
   T7 execute paths consume it before hardware writes and write its branch,
   commit, worktree, dirty-state, tier, and command evidence into execution
   receipts.
+- `docs/engineering/A21_CONTROL_LEDGER.md` is the current control tower queue:
+  it records accepted handoffs, active/paused thread roles, worktree ownership,
+  and the next PRD-authorized implementation slice.
 - No raw `pio upload`, `idf.py flash`, copied esptool command, or generic
   firmware path is allowed.
 
