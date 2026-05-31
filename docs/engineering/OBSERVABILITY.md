@@ -148,14 +148,18 @@ metadata (`synthetic_sine` or `wav_fixture` basename plus Opus frame count),
 answer turn receipts, barge-in turn receipts, first-audio p50/p95,
 abort-stop p50/p95, execution booleans, redaction booleans, and per-turn
 `/v1/traces` summaries for
-`xiaozhi_opus_decode_ms`, `asr_first_partial_ms`, `llm_first_content_ms`,
-`tts_first_audio_ms`, `audio_downlink_first_frame_ms`,
+`xiaozhi_opus_decode_ms`, `asr_first_partial_ms`, `asr_final_ms`,
+`llm_first_content_ms`, `tts_first_audio_ms`, `audio_downlink_first_frame_ms`,
 `answer_first_audio_total_ms`, and available barge-in/device markers. It
 intentionally stores no raw Opus/PCM, base64 payload, transcript, prompt,
 provider output, credential value, full URL, proxy value, or full local path.
-Even when the host loopback p95 values satisfy the PRD numbers, the report
-remains candidate evidence and keeps `prd_accepted=false` until physical
-StackChan markers are present.
+Its top-level `execution` block may record the redacted `voice_pipeline`
+execution mode, selected ASR/LLM/TTS profile names and `A21_` env names, and
+host-local ASR/text/TTS stage booleans. `fixture` remains the default when no
+host-local pipeline summary is observed. Even when the host loopback p95 values
+satisfy the PRD numbers, the report remains candidate evidence and keeps
+`provider_executed=false`, `v21_executed=false`, `hardware_executed=false`, and
+`prd_accepted=false` until physical StackChan markers are present.
 
 AgentTask bridge reports include package-level T1/T2 semantic reports in
 `internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI

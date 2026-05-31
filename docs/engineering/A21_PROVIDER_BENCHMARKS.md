@@ -135,7 +135,14 @@ harness reports contribute `first_audio_samples_ms` / `first_audio_p95_ms` to
 `answer_first_audio_*` metrics and `abort_stop_samples_ms` /
 `abort_stop_p95_ms` to `barge_in_stop_*` metrics. Physical-only fields such as
 `device_playback_start_ms` and `speech_end_to_first_audible_response_ms` remain
-unavailable unless the report contains physical StackChan evidence.
+unavailable unless the report contains physical StackChan evidence. When an
+ingested `xiaozhi-voice-bench` report contains a redacted `execution` summary
+from Gateway `voice_pipeline` messages, `provider-latency-bench` preserves only
+the safe execution semantics: `voice_pipeline_execution_mode`,
+ASR/LLM/TTS profile names and `A21_` env names, plus host-local ASR/text/TTS
+stage booleans. These fields are host-only evidence and do not flip
+`provider_executed`, `v21_executed`, `hardware_executed`, `promotion_gate`, or
+`prd_accepted`.
 When `--fixture` points at a redacted JSON sidecar, the report may include
 `schema_version=a21.provider_latency_fixture.v1`, fixture identity, audio
 format, sample rate, channel count, duration, sample count, window length, and

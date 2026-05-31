@@ -64,21 +64,22 @@ type xiaozhiVoiceBenchReport struct {
 }
 
 type xiaozhiVoiceBenchTurn struct {
-	Turn                 int                            `json:"turn"`
-	Kind                 string                         `json:"kind"`
-	TraceID              string                         `json:"trace_id"`
-	SessionID            string                         `json:"session_id"`
-	HelloAccepted        bool                           `json:"hello_accepted"`
-	ListenAck            bool                           `json:"listen_ack"`
-	BinaryDownlinkFrames int                            `json:"binary_downlink_frames"`
-	FirstAudioMS         *int64                         `json:"first_audio_ms,omitempty"`
-	TTSStopReceived      bool                           `json:"tts_stop_received"`
-	AbortSent            bool                           `json:"abort_sent"`
-	AbortStopMS          *int64                         `json:"abort_stop_ms,omitempty"`
-	MetricsObserved      bool                           `json:"metrics_observed"`
-	TraceSummary         *xiaozhiVoiceBenchTraceSummary `json:"trace_summary,omitempty"`
-	Status               string                         `json:"status"`
-	Findings             []string                       `json:"findings,omitempty"`
+	Turn                   int                            `json:"turn"`
+	Kind                   string                         `json:"kind"`
+	TraceID                string                         `json:"trace_id"`
+	SessionID              string                         `json:"session_id"`
+	HelloAccepted          bool                           `json:"hello_accepted"`
+	ListenAck              bool                           `json:"listen_ack"`
+	BinaryDownlinkFrames   int                            `json:"binary_downlink_frames"`
+	FirstAudioMS           *int64                         `json:"first_audio_ms,omitempty"`
+	TTSStopReceived        bool                           `json:"tts_stop_received"`
+	AbortSent              bool                           `json:"abort_sent"`
+	AbortStopMS            *int64                         `json:"abort_stop_ms,omitempty"`
+	MetricsObserved        bool                           `json:"metrics_observed"`
+	TraceSummary           *xiaozhiVoiceBenchTraceSummary `json:"trace_summary,omitempty"`
+	VoicePipelineExecution xiaozhiVoiceBenchExecution     `json:"-"`
+	Status                 string                         `json:"status"`
+	Findings               []string                       `json:"findings,omitempty"`
 }
 
 type xiaozhiVoiceBenchTraceSummary struct {
@@ -88,11 +89,17 @@ type xiaozhiVoiceBenchTraceSummary struct {
 	XiaozhiListenToAudioIngressMS *int64 `json:"xiaozhi_listen_to_audio_ingress_ms,omitempty"`
 	XiaozhiOpusDecodeMS           *int64 `json:"xiaozhi_opus_decode_ms,omitempty"`
 	ASRFirstPartialMS             *int64 `json:"asr_first_partial_ms,omitempty"`
+	ASRFinalMS                    *int64 `json:"asr_final_ms,omitempty"`
 	LLMFirstContentMS             *int64 `json:"llm_first_content_ms,omitempty"`
 	TTSFirstAudioMS               *int64 `json:"tts_first_audio_ms,omitempty"`
 	AudioDownlinkFirstFrameMS     *int64 `json:"audio_downlink_first_frame_ms,omitempty"`
 	DevicePlaybackStartMS         *int64 `json:"device_playback_start_ms,omitempty"`
 	AnswerFirstAudioTotalMS       *int64 `json:"answer_first_audio_total_ms,omitempty"`
+}
+
+type xiaozhiVoiceBenchTraceEvent struct {
+	Name string `json:"name"`
+	AtMS int64  `json:"at_ms"`
 }
 
 type xiaozhiVoiceBenchSummary struct {
@@ -109,9 +116,20 @@ type xiaozhiVoiceBenchCounts struct {
 }
 
 type xiaozhiVoiceBenchExecution struct {
-	ProviderExecuted bool `json:"provider_executed"`
-	V21Executed      bool `json:"v21_executed"`
-	HardwareExecuted bool `json:"hardware_executed"`
+	ProviderExecuted           bool   `json:"provider_executed"`
+	V21Executed                bool   `json:"v21_executed"`
+	HardwareExecuted           bool   `json:"hardware_executed"`
+	VoicePipelineObserved      bool   `json:"voice_pipeline_observed"`
+	VoicePipelineExecutionMode string `json:"voice_pipeline_execution_mode"`
+	ASRProfile                 string `json:"asr_profile,omitempty"`
+	ASRProfileEnv              string `json:"asr_profile_env,omitempty"`
+	LLMProfile                 string `json:"llm_profile,omitempty"`
+	LLMProfileEnv              string `json:"llm_profile_env,omitempty"`
+	TTSProfile                 string `json:"tts_profile,omitempty"`
+	TTSProfileEnv              string `json:"tts_profile_env,omitempty"`
+	HostLocalASRExecuted       bool   `json:"host_local_asr_executed"`
+	HostLocalTextExecuted      bool   `json:"host_local_text_executed"`
+	HostLocalTTSExecuted       bool   `json:"host_local_tts_executed"`
 }
 
 type xiaozhiVoiceBenchRedaction struct {
@@ -258,9 +276,10 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 		Acceptance:      "blocked",
 		PRDAccepted:     false,
 		Execution: xiaozhiVoiceBenchExecution{
-			ProviderExecuted: false,
-			V21Executed:      false,
-			HardwareExecuted: false,
+			ProviderExecuted:           false,
+			V21Executed:                false,
+			HardwareExecuted:           false,
+			VoicePipelineExecutionMode: "unknown",
 		},
 		Redaction: xiaozhiVoiceBenchRedaction{
 			PayloadsStored:         false,
@@ -303,6 +322,7 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 	report.Counts.AnswerTurnCount = len(report.AnswerTurns)
 	report.Counts.BargeInTurnCount = len(report.BargeInTurns)
 	report.Summary = summarizeXiaozhiVoiceBench(report.AnswerTurns, report.BargeInTurns)
+	report.Execution = summarizeXiaozhiVoiceBenchExecution(report.AnswerTurns, report.BargeInTurns)
 	report.Counts.FailureCount = xiaozhiVoiceBenchFailureCount(report.AnswerTurns) + xiaozhiVoiceBenchFailureCount(report.BargeInTurns) + len(report.Findings)
 	if report.Counts.FailureCount == 0 &&
 		xiaozhiVoiceBenchHasAnswerSamples(report.AnswerTurns) &&
@@ -396,6 +416,114 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 	}
 }
 
+func summarizeXiaozhiVoiceBenchExecution(answerTurns []xiaozhiVoiceBenchTurn, bargeInTurns []xiaozhiVoiceBenchTurn) xiaozhiVoiceBenchExecution {
+	summary := xiaozhiVoiceBenchExecution{VoicePipelineExecutionMode: "unknown"}
+	for _, turn := range append(append([]xiaozhiVoiceBenchTurn(nil), answerTurns...), bargeInTurns...) {
+		execution := turn.VoicePipelineExecution
+		if !execution.VoicePipelineObserved {
+			continue
+		}
+		if !summary.VoicePipelineObserved {
+			summary = execution
+			continue
+		}
+		summary.HostLocalASRExecuted = summary.HostLocalASRExecuted || execution.HostLocalASRExecuted
+		summary.HostLocalTextExecuted = summary.HostLocalTextExecuted || execution.HostLocalTextExecuted
+		summary.HostLocalTTSExecuted = summary.HostLocalTTSExecuted || execution.HostLocalTTSExecuted
+		if summary.VoicePipelineExecutionMode != execution.VoicePipelineExecutionMode {
+			summary.VoicePipelineExecutionMode = "mixed"
+		}
+		if summary.ASRProfile == "" {
+			summary.ASRProfile = execution.ASRProfile
+		}
+		if summary.ASRProfileEnv == "" {
+			summary.ASRProfileEnv = execution.ASRProfileEnv
+		}
+		if summary.LLMProfile == "" {
+			summary.LLMProfile = execution.LLMProfile
+		}
+		if summary.LLMProfileEnv == "" {
+			summary.LLMProfileEnv = execution.LLMProfileEnv
+		}
+		if summary.TTSProfile == "" {
+			summary.TTSProfile = execution.TTSProfile
+		}
+		if summary.TTSProfileEnv == "" {
+			summary.TTSProfileEnv = execution.TTSProfileEnv
+		}
+	}
+	summary.ProviderExecuted = false
+	summary.V21Executed = false
+	summary.HardwareExecuted = false
+	return summary
+}
+
+func xiaozhiVoiceBenchExecutionFromPipeline(pipeline map[string]any) xiaozhiVoiceBenchExecution {
+	execution := xiaozhiVoiceBenchExecution{
+		VoicePipelineObserved:      true,
+		VoicePipelineExecutionMode: xiaozhiVoiceBenchSafeExecutionMode(xiaozhiVoiceBenchStringField(pipeline, "execution_mode")),
+	}
+	if selection, ok := pipeline["selection"].(map[string]any); ok {
+		execution.ASRProfile = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "asr_profile"), false)
+		execution.ASRProfileEnv = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "asr_profile_env"), true)
+		execution.LLMProfile = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "llm_profile"), false)
+		execution.LLMProfileEnv = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "llm_profile_env"), true)
+		execution.TTSProfile = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "tts_profile"), false)
+		execution.TTSProfileEnv = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "tts_profile_env"), true)
+	}
+	if execution.VoicePipelineExecutionMode == "host_local" {
+		execution.HostLocalASRExecuted = execution.ASRProfile != ""
+		execution.HostLocalTextExecuted = execution.LLMProfile != ""
+		execution.HostLocalTTSExecuted = execution.TTSProfile != ""
+	}
+	return execution
+}
+
+func xiaozhiVoiceBenchStringField(values map[string]any, key string) string {
+	if value, ok := values[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func xiaozhiVoiceBenchSafeExecutionMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "fixture":
+		return "fixture"
+	case "host_local":
+		return "host_local"
+	default:
+		return "unknown"
+	}
+}
+
+func xiaozhiVoiceBenchSafeIdentifier(value string, requireA21Env bool) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 80 || xiaozhiVoiceBenchContainsUnsafeIdentifier(value) {
+		return ""
+	}
+	if requireA21Env && !strings.HasPrefix(value, "A21_") {
+		return ""
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return value
+}
+
+func xiaozhiVoiceBenchContainsUnsafeIdentifier(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"x21", "v21", "http://", "https://", "/", "\\", ":", "@", "key", "token", "secret", "proxy", "prompt", "transcript", "output"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func readXiaozhiVoiceBenchJSON(ctx context.Context, conn *websocket.Conn) (map[string]any, bool) {
 	var message map[string]any
 	if err := wsjson.Read(ctx, conn, &message); err != nil {
@@ -421,8 +549,9 @@ func markXiaozhiVoiceBenchJSON(receipt *xiaozhiVoiceBenchTurn, message map[strin
 		if _, ok := message["audio_ingress"].(map[string]any); ok {
 			receipt.MetricsObserved = true
 		}
-		if _, ok := message["voice_pipeline"].(map[string]any); ok {
+		if pipeline, ok := message["voice_pipeline"].(map[string]any); ok {
 			receipt.MetricsObserved = true
+			receipt.VoicePipelineExecution = xiaozhiVoiceBenchExecutionFromPipeline(pipeline)
 		}
 	}
 }
@@ -636,6 +765,7 @@ func attachXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string,
 
 func xiaozhiVoiceBenchCoreTraceMetricsPresent(summary xiaozhiVoiceBenchTraceSummary) bool {
 	return summary.ASRFirstPartialMS != nil &&
+		summary.ASRFinalMS != nil &&
 		summary.LLMFirstContentMS != nil &&
 		summary.TTSFirstAudioMS != nil &&
 		summary.AudioDownlinkFirstFrameMS != nil &&
@@ -663,6 +793,7 @@ func fetchXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, 
 		return xiaozhiVoiceBenchTraceSummary{}, fmt.Errorf("trace summary unavailable")
 	}
 	var decoded struct {
+		Events  []xiaozhiVoiceBenchTraceEvent `json:"events"`
 		Summary xiaozhiVoiceBenchTraceSummary `json:"summary"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
@@ -671,7 +802,29 @@ func fetchXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, 
 	if decoded.Summary.EventCount <= 0 {
 		return xiaozhiVoiceBenchTraceSummary{}, fmt.Errorf("trace summary empty")
 	}
+	if decoded.Summary.ASRFinalMS == nil {
+		decoded.Summary.ASRFinalMS = xiaozhiVoiceBenchTraceDeltaMS(decoded.Events, "audio.ingress.buffered", "asr.final")
+	}
 	return decoded.Summary, nil
+}
+
+func xiaozhiVoiceBenchTraceDeltaMS(events []xiaozhiVoiceBenchTraceEvent, startName string, endName string) *int64 {
+	var startAtMS int64
+	hasStart := false
+	for _, event := range events {
+		switch {
+		case event.Name == startName && !hasStart:
+			startAtMS = event.AtMS
+			hasStart = true
+		case event.Name == endName && hasStart:
+			delta := event.AtMS - startAtMS
+			if delta < 0 {
+				delta = 0
+			}
+			return &delta
+		}
+	}
+	return nil
 }
 
 func xiaozhiVoiceBenchTraceURL(gatewayURL string, traceID string) (string, error) {

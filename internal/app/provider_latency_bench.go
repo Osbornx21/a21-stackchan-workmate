@@ -186,9 +186,20 @@ type providerLatencyBenchCounts struct {
 }
 
 type providerLatencyBenchExecution struct {
-	ProviderExecuted bool `json:"provider_executed"`
-	V21Executed      bool `json:"v21_executed"`
-	HardwareExecuted bool `json:"hardware_executed"`
+	ProviderExecuted           bool   `json:"provider_executed"`
+	V21Executed                bool   `json:"v21_executed"`
+	HardwareExecuted           bool   `json:"hardware_executed"`
+	VoicePipelineObserved      bool   `json:"voice_pipeline_observed"`
+	VoicePipelineExecutionMode string `json:"voice_pipeline_execution_mode"`
+	ASRProfile                 string `json:"asr_profile,omitempty"`
+	ASRProfileEnv              string `json:"asr_profile_env,omitempty"`
+	LLMProfile                 string `json:"llm_profile,omitempty"`
+	LLMProfileEnv              string `json:"llm_profile_env,omitempty"`
+	TTSProfile                 string `json:"tts_profile,omitempty"`
+	TTSProfileEnv              string `json:"tts_profile_env,omitempty"`
+	HostLocalASRExecuted       bool   `json:"host_local_asr_executed"`
+	HostLocalTextExecuted      bool   `json:"host_local_text_executed"`
+	HostLocalTTSExecuted       bool   `json:"host_local_tts_executed"`
 }
 
 type providerLatencyBenchRedaction struct {
@@ -332,9 +343,10 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 		AcceptanceStatus: "not_accepted",
 		PRDAccepted:      false,
 		Execution: providerLatencyBenchExecution{
-			ProviderExecuted: false,
-			V21Executed:      false,
-			HardwareExecuted: false,
+			ProviderExecuted:           false,
+			V21Executed:                false,
+			HardwareExecuted:           false,
+			VoicePipelineExecutionMode: "unknown",
 		},
 		Redaction: providerLatencyBenchRedaction{
 			PayloadsStored:         false,
@@ -358,6 +370,7 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 				report.Samples = evidence.Samples
 				hostLoopbackIngested = true
 				hostLoopbackPhysicalEvidence = evidence.PhysicalEvidence
+				report.Execution = providerLatencyHostLoopbackExecution(evidence.Execution)
 				if len(evidence.Samples) > 0 {
 					report.Iterations = len(evidence.Samples)
 				}
@@ -480,6 +493,7 @@ type providerLatencyBenchHostLoopbackEvidence struct {
 	Valid            bool
 	Samples          []providerLatencyBenchSample
 	PhysicalEvidence bool
+	Execution        providerLatencyBenchExecution
 }
 
 type providerLatencyBenchHostLoopbackReport struct {
@@ -566,6 +580,7 @@ func loadProviderLatencyBenchHostLoopbackReport(fixturePath string) (providerLat
 	evidence := providerLatencyBenchHostLoopbackEvidence{
 		Valid:            true,
 		PhysicalEvidence: providerLatencyHostLoopbackHasPhysicalEvidence(hostReport),
+		Execution:        hostReport.Execution,
 	}
 	evidence.Samples = providerLatencyHostLoopbackSamples(hostReport, evidence.PhysicalEvidence)
 	return evidence, nil
@@ -604,6 +619,71 @@ func providerLatencyHostLoopbackHasPhysicalEvidence(report providerLatencyBenchH
 		return true
 	}
 	return strings.TrimSpace(report.BaselineScope) == "physical_stackchan"
+}
+
+func providerLatencyHostLoopbackExecution(source providerLatencyBenchExecution) providerLatencyBenchExecution {
+	execution := providerLatencyBenchExecution{
+		ProviderExecuted:           false,
+		V21Executed:                false,
+		HardwareExecuted:           false,
+		VoicePipelineObserved:      source.VoicePipelineObserved,
+		VoicePipelineExecutionMode: providerLatencySafeExecutionMode(source.VoicePipelineExecutionMode),
+		ASRProfile:                 providerLatencySafeIdentifier(source.ASRProfile, false),
+		ASRProfileEnv:              providerLatencySafeIdentifier(source.ASRProfileEnv, true),
+		LLMProfile:                 providerLatencySafeIdentifier(source.LLMProfile, false),
+		LLMProfileEnv:              providerLatencySafeIdentifier(source.LLMProfileEnv, true),
+		TTSProfile:                 providerLatencySafeIdentifier(source.TTSProfile, false),
+		TTSProfileEnv:              providerLatencySafeIdentifier(source.TTSProfileEnv, true),
+	}
+	if execution.VoicePipelineExecutionMode == "" {
+		execution.VoicePipelineExecutionMode = "unknown"
+	}
+	if execution.VoicePipelineExecutionMode == "host_local" {
+		execution.HostLocalASRExecuted = source.HostLocalASRExecuted && execution.ASRProfile != ""
+		execution.HostLocalTextExecuted = source.HostLocalTextExecuted && execution.LLMProfile != ""
+		execution.HostLocalTTSExecuted = source.HostLocalTTSExecuted && execution.TTSProfile != ""
+	}
+	return execution
+}
+
+func providerLatencySafeExecutionMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "fixture":
+		return "fixture"
+	case "host_local":
+		return "host_local"
+	case "mixed":
+		return "mixed"
+	default:
+		return "unknown"
+	}
+}
+
+func providerLatencySafeIdentifier(value string, requireA21Env bool) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 80 || providerLatencyContainsUnsafeIdentifier(value) {
+		return ""
+	}
+	if requireA21Env && !strings.HasPrefix(value, "A21_") {
+		return ""
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return value
+}
+
+func providerLatencyContainsUnsafeIdentifier(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"x21", "v21", "http://", "https://", "/", "\\", ":", "@", "key", "token", "secret", "proxy", "prompt", "transcript", "output"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func providerLatencyHostLoopbackSamples(report providerLatencyBenchHostLoopbackReport, physicalEvidence bool) []providerLatencyBenchSample {

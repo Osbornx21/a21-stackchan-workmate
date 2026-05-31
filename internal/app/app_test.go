@@ -1962,6 +1962,96 @@ func TestRunProviderLatencyBenchIngestsHostLoopbackReport(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchIngestsHostLocalXiaozhiExecutionWithoutAcceptance(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-xiaozhi-host-local-slow-report.json")
+	data := `{
+  "schema_version": "a21.xiaozhi_voice_bench.v1",
+  "execution_mode": "host_loopback",
+  "baseline_scope": "host_only",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "acceptance_status": "blocked",
+  "prd_accepted": false,
+  "execution": {
+    "provider_executed": false,
+    "v21_executed": false,
+    "hardware_executed": false,
+    "voice_pipeline_observed": true,
+    "voice_pipeline_execution_mode": "host_local",
+    "asr_profile": "local_sherpa_onnx",
+    "asr_profile_env": "A21_ASR_PROFILE",
+    "llm_profile": "ollama_local",
+    "llm_profile_env": "A21_LLM_PROFILE",
+    "tts_profile": "sherpa_onnx_tts",
+    "tts_profile_env": "A21_TTS_PROFILE",
+    "host_local_asr_executed": true,
+    "host_local_text_executed": true,
+    "host_local_tts_executed": true
+  },
+  "answer_turns": [
+    {"trace_summary": {"xiaozhi_listen_to_audio_ingress_ms": 30, "xiaozhi_opus_decode_ms": 44, "asr_first_partial_ms": 120, "asr_final_ms": 180, "llm_first_content_ms": 400, "tts_first_audio_ms": 900, "audio_downlink_first_frame_ms": 1200, "answer_first_audio_total_ms": 1600}},
+    {"trace_summary": {"xiaozhi_listen_to_audio_ingress_ms": 31, "xiaozhi_opus_decode_ms": 45, "asr_first_partial_ms": 122, "asr_final_ms": 185, "llm_first_content_ms": 420, "tts_first_audio_ms": 920, "audio_downlink_first_frame_ms": 1250, "answer_first_audio_total_ms": 1700}},
+    {"trace_summary": {"xiaozhi_listen_to_audio_ingress_ms": 32, "xiaozhi_opus_decode_ms": 46, "asr_first_partial_ms": 124, "asr_final_ms": 190, "llm_first_content_ms": 440, "tts_first_audio_ms": 940, "audio_downlink_first_frame_ms": 1300, "answer_first_audio_total_ms": 1800}}
+  ],
+  "barge_in_turns": [
+    {"trace_summary": {"barge_in_detected_ms": 20, "provider_cancel_ms": 45, "provider_cancel_done_ms": 50, "playback_stop_ms": 170, "playback_stop_done_ms": 180, "barge_in_stop_ms": 180}},
+    {"trace_summary": {"barge_in_detected_ms": 22, "provider_cancel_ms": 47, "provider_cancel_done_ms": 52, "playback_stop_ms": 185, "playback_stop_done_ms": 195, "barge_in_stop_ms": 195}},
+    {"trace_summary": {"barge_in_detected_ms": 24, "provider_cancel_ms": 49, "provider_cancel_done_ms": 54, "playback_stop_ms": 190, "playback_stop_done_ms": 205, "barge_in_stop_ms": 205}}
+  ]
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	answer := report.CanonicalMetrics["answer_first_audio_p95_ms"]
+	if !answer.Available || answer.P95MS != 1800 {
+		t.Fatalf("answer_first_audio_p95_ms = %#v, want available slow host-local p95", answer)
+	}
+	asrFinal := providerLatencyBenchStageByName(t, report, "asr_final_ms")
+	if !asrFinal.Available || asrFinal.Samples != 3 || asrFinal.P95MS != 190 {
+		t.Fatalf("asr final stage = %#v, want available from xiaozhi trace summary", asrFinal)
+	}
+	playback := providerLatencyBenchStageByName(t, report, "device_playback_start_ms")
+	if playback.Available || playback.Placeholder {
+		t.Fatalf("physical playback should stay unavailable without physical evidence: %#v", playback)
+	}
+	if report.AcceptanceStatus != "not_accepted" || report.PromotionGate != "not_production" || report.PRDAccepted {
+		t.Fatalf("acceptance=%q gate=%q prd=%v, want not accepted/not production", report.AcceptanceStatus, report.PromotionGate, report.PRDAccepted)
+	}
+	if report.Execution.ProviderExecuted || report.Execution.V21Executed || report.Execution.HardwareExecuted {
+		t.Fatalf("host-local fixture must not claim provider/v21/hardware execution: %#v", report.Execution)
+	}
+	if report.Execution.VoicePipelineExecutionMode != "host_local" ||
+		!report.Execution.HostLocalASRExecuted ||
+		!report.Execution.HostLocalTextExecuted ||
+		!report.Execution.HostLocalTTSExecuted ||
+		report.Execution.ASRProfile != "local_sherpa_onnx" ||
+		report.Execution.ASRProfileEnv != "A21_ASR_PROFILE" ||
+		report.Execution.LLMProfile != "ollama_local" ||
+		report.Execution.LLMProfileEnv != "A21_LLM_PROFILE" ||
+		report.Execution.TTSProfile != "sherpa_onnx_tts" ||
+		report.Execution.TTSProfileEnv != "A21_TTS_PROFILE" {
+		t.Fatalf("execution semantics = %#v, want honest host-local adapter evidence", report.Execution)
+	}
+	rendered := stdout.String()
+	for _, forbidden := range []string{dir, fixture, `"prd_accepted": true`, `"provider_executed": true`, `"hardware_executed": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked or overclaimed %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestRunProviderLatencyBenchHostLoopbackRedactsUnsafeReportPayload(t *testing.T) {
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "a21-host-loopback-leaky-report.json")
@@ -2398,6 +2488,7 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 		`"trace_summary"`,
 		`"xiaozhi_opus_decode_ms"`,
 		`"asr_first_partial_ms"`,
+		`"asr_final_ms"`,
 		`"llm_first_content_ms"`,
 		`"tts_first_audio_ms"`,
 		`"audio_downlink_first_frame_ms"`,
@@ -2409,6 +2500,17 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 		`"provider_executed": false`,
 		`"v21_executed": false`,
 		`"hardware_executed": false`,
+		`"voice_pipeline_observed": true`,
+		`"voice_pipeline_execution_mode": "fixture"`,
+		`"asr_profile": "mock-local-asr"`,
+		`"asr_profile_env": "A21_ASR_LOCAL_PROFILE"`,
+		`"llm_profile": "mock"`,
+		`"llm_profile_env": "A21_PROVIDER_PRIMARY"`,
+		`"tts_profile": "mock-fast-tts"`,
+		`"tts_profile_env": "A21_TTS_FAST_PROFILE"`,
+		`"host_local_asr_executed": false`,
+		`"host_local_text_executed": false`,
+		`"host_local_tts_executed": false`,
 		`"payloads_stored": false`,
 		`"report_path"`,
 	} {
