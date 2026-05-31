@@ -49,6 +49,8 @@ type Server struct {
 	audioSockets               map[string]*deviceSocket
 	audioCaptureFrames         []AudioCaptureFrame
 	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
+	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
+	xiaozhiFastAckTTS          providers.TTSAdapter
 }
 
 type ServerOptions struct {
@@ -57,6 +59,11 @@ type ServerOptions struct {
 	V21Timeout                   time.Duration
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 	AudioIngressConfig           audio.IngressConfig
+}
+
+type xiaozhiVoicePipelineMeta struct {
+	Selection     providers.VoicePipelineSelection
+	ExecutionMode string
 }
 
 type MockTurnRequest struct {
@@ -298,10 +305,28 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		v21TTL = 3 * time.Second
 	}
 	xiaozhiRunnerFactory := defaultXiaozhiVoicePipelineRunner
+	xiaozhiPipelineMeta := xiaozhiVoicePipelineMeta{
+		Selection:     providers.VoicePipelineSelectionFromEnv(nil),
+		ExecutionMode: "fixture",
+	}
+	xiaozhiFastAckTTS := providers.NewMockTTSAdapter("mock-fast-tts")
 	if options.XiaozhiVoicePipelineAdapters != nil {
 		adapters := *options.XiaozhiVoicePipelineAdapters
 		xiaozhiRunnerFactory = func() xiaozhiVoicePipelineRunner {
 			return providers.NewVoicePipelineRunner(adapters)
+		}
+		xiaozhiPipelineMeta = xiaozhiVoicePipelineMeta{
+			Selection:     adapters.Selection,
+			ExecutionMode: adapters.ExecutionMode,
+		}
+		if isZeroGatewayVoicePipelineSelection(xiaozhiPipelineMeta.Selection) {
+			xiaozhiPipelineMeta.Selection = providers.VoicePipelineSelectionFromEnv(nil)
+		}
+		if strings.TrimSpace(xiaozhiPipelineMeta.ExecutionMode) == "" {
+			xiaozhiPipelineMeta.ExecutionMode = "fixture"
+		}
+		if adapters.TTS != nil {
+			xiaozhiFastAckTTS = adapters.TTS
 		}
 	}
 	return &Server{
@@ -324,7 +349,20 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioSockets:               make(map[string]*deviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
+		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
+		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
 	}
+}
+
+func isZeroGatewayVoicePipelineSelection(selection providers.VoicePipelineSelection) bool {
+	return selection.ASRMode == "" &&
+		selection.ASRProfile == "" &&
+		selection.ASRProfileEnv == "" &&
+		selection.LLMProfile == "" &&
+		selection.LLMProfileEnv == "" &&
+		selection.TTSMode == "" &&
+		selection.TTSProfile == "" &&
+		selection.TTSProfileEnv == ""
 }
 
 func (s *Server) Handler() http.Handler {
@@ -1382,6 +1420,21 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		newRunner = defaultXiaozhiVoicePipelineRunner
 	}
 	runner := newRunner()
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":           "tts",
+		"state":          "start",
+		"turn_id":        task.turnID,
+		"trace_id":       task.traceID,
+		"session_id":     task.sessionID,
+		"device_id":      task.deviceID,
+		"audio_ingress":  task.audioIngressSummary("pipeline_running", "fast_ack_then_answer"),
+		"voice_pipeline": s.xiaozhiVoicePipelineFastAckSummary(),
+	}); err != nil {
+		return true
+	}
+	if !s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task) {
+		return true
+	}
 	result, err := runner.Run(turn.ctx, providers.VoicePipelineRequest{
 		Session: providers.VoiceSession{
 			TraceID:   task.traceID,
@@ -1397,29 +1450,20 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			return true
 		}
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
-		return false
+		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		return true
 	}
 	s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, result.Timing)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
-		"type":           "tts",
-		"state":          "start",
-		"turn_id":        task.turnID,
-		"trace_id":       task.traceID,
-		"session_id":     task.sessionID,
-		"device_id":      task.deviceID,
-		"audio_ingress":  task.audioIngressSummary("fixture_completed", "opus_downlink_fixture"),
-		"voice_pipeline": xiaozhiVoicePipelineSummary(result.Report),
-	}); err != nil {
-		return true
-	}
-	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":                   "tts",
 		"state":                  "sentence_start",
+		"phase":                  "answer",
 		"turn_id":                task.turnID,
 		"trace_id":               task.traceID,
 		"session_id":             task.sessionID,
 		"device_id":              task.deviceID,
 		"voice_pipeline_fixture": true,
+		"voice_pipeline":         xiaozhiVoicePipelineSummary(result.Report),
 		"text":                   "",
 	}); err != nil {
 		return true
@@ -1442,8 +1486,86 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		}
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
-	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_fixture_completed")
+	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
 	return true
+}
+
+func (s *Server) writeXiaozhiFastAckDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask) bool {
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return false
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":       "tts",
+		"state":      "sentence_start",
+		"phase":      "fast_ack",
+		"turn_id":    task.turnID,
+		"trace_id":   task.traceID,
+		"session_id": task.sessionID,
+		"device_id":  task.deviceID,
+		"text":       "",
+	}); err != nil {
+		return false
+	}
+	tts := s.xiaozhiFastAckTTS
+	if tts == nil {
+		tts = providers.NewMockTTSAdapter("mock-fast-tts")
+	}
+	chunks, err := tts.Synthesize(turn.ctx, providers.TTSAdapterRequest{
+		Session: providers.VoiceSession{
+			TraceID:   task.traceID,
+			SessionID: task.sessionID,
+			DeviceID:  task.deviceID,
+		},
+		Mode: string(protocol.ModeWorkmate),
+		Text: "我在",
+	})
+	if err != nil {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.unavailable", s.now().UnixMilli())
+		return false
+	}
+	for chunk := range chunks {
+		ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, chunk)
+		if err != nil {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.downlink_error", s.now().UnixMilli())
+			s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_downlink_error")
+			return false
+		}
+		if !ok {
+			return false
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.downlink", s.now().UnixMilli())
+		return true
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.unavailable", s.now().UnixMilli())
+	return false
+}
+
+func (s *Server) xiaozhiVoicePipelineFastAckSummary() map[string]any {
+	meta := s.xiaozhiVoicePipelineMeta
+	if isZeroGatewayVoicePipelineSelection(meta.Selection) {
+		meta.Selection = providers.VoicePipelineSelectionFromEnv(nil)
+	}
+	executionMode := strings.TrimSpace(meta.ExecutionMode)
+	if executionMode == "" {
+		executionMode = "fixture"
+	}
+	return map[string]any{
+		"schema_version": "a21.voice_pipeline.fast_ack.v1",
+		"status":         "running",
+		"stage":          "fast_ack",
+		"execution_mode": executionMode,
+		"selection": map[string]any{
+			"asr_mode":        meta.Selection.ASRMode,
+			"asr_profile":     meta.Selection.ASRProfile,
+			"asr_profile_env": meta.Selection.ASRProfileEnv,
+			"llm_profile":     meta.Selection.LLMProfile,
+			"llm_profile_env": meta.Selection.LLMProfileEnv,
+			"tts_mode":        meta.Selection.TTSMode,
+			"tts_profile":     meta.Selection.TTSProfile,
+			"tts_profile_env": meta.Selection.TTSProfileEnv,
+		},
+	}
 }
 
 func (s *Server) recordXiaozhiVoicePipelineStageMarkers(traceID string, sessionID string, deviceID string, startAtMS int64, timing providers.VoicePipelineTiming) {
@@ -1486,6 +1608,7 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 	return map[string]any{
 		"schema_version":    report.SchemaVersion,
 		"status":            report.Status,
+		"stage":             "answer",
 		"execution_mode":    report.ExecutionMode,
 		"audio_chunk_count": report.Output.AudioChunkCount,
 		"selection": map[string]any{

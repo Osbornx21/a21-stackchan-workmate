@@ -758,9 +758,20 @@ func attachXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string,
 		return
 	}
 	receipt.TraceSummary = &summary
+	if receipt.Kind == "barge_in" {
+		if !xiaozhiVoiceBenchBargeInTraceMetricsPresent(summary) {
+			receipt.Findings = append(receipt.Findings, "trace_barge_in_metrics_missing")
+		}
+		return
+	}
 	if !xiaozhiVoiceBenchCoreTraceMetricsPresent(summary) {
 		receipt.Findings = append(receipt.Findings, "trace_core_stage_metrics_missing")
 	}
+}
+
+func xiaozhiVoiceBenchBargeInTraceMetricsPresent(summary xiaozhiVoiceBenchTraceSummary) bool {
+	return summary.BargeInStopMS != nil &&
+		summary.AnswerFirstAudioTotalMS != nil
 }
 
 func xiaozhiVoiceBenchCoreTraceMetricsPresent(summary xiaozhiVoiceBenchTraceSummary) bool {

@@ -1943,14 +1943,14 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	if !ok {
 		t.Fatalf("audio ingress = %#v", ttsStart["audio_ingress"])
 	}
-	if audioIngress["asr_status"] != "fixture_completed" || audioIngress["tts_status"] != "opus_downlink_fixture" {
-		t.Fatalf("audio ingress = %#v, want fixture pipeline status", audioIngress)
+	if audioIngress["asr_status"] != "pipeline_running" || audioIngress["tts_status"] != "fast_ack_then_answer" {
+		t.Fatalf("audio ingress = %#v, want running fast ack status", audioIngress)
 	}
 	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
 	if !ok {
 		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
 	}
-	if pipeline["schema_version"] != "a21.voice_pipeline.fixture.v1" || pipeline["execution_mode"] != "fixture" || pipeline["audio_chunk_count"] != float64(1) {
+	if pipeline["schema_version"] != "a21.voice_pipeline.fast_ack.v1" || pipeline["execution_mode"] != "fixture" || pipeline["status"] != "running" || pipeline["stage"] != "fast_ack" {
 		t.Fatalf("voice pipeline = %#v", pipeline)
 	}
 	startPayload := mustJSON(t, ttsStart)
@@ -1961,18 +1961,36 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	}
 
 	sentence := readXiaozhiJSON(t, ctx, conn)
-	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["placeholder"] == true {
-		t.Fatalf("sentence start = %#v", sentence)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["phase"] != "fast_ack" || sentence["placeholder"] == true {
+		t.Fatalf("fast ack sentence start = %#v", sentence)
 	}
 	messageType, data, err := conn.Read(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if messageType != websocket.MessageBinary || len(data) == 0 {
-		t.Fatalf("downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+		t.Fatalf("fast ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	sentence = readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["phase"] != "answer" || sentence["placeholder"] == true {
+		t.Fatalf("answer sentence start = %#v", sentence)
+	}
+	answerPipeline, ok := sentence["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("answer voice pipeline = %#v", sentence["voice_pipeline"])
+	}
+	if answerPipeline["schema_version"] != "a21.voice_pipeline.fixture.v1" || answerPipeline["stage"] != "answer" || answerPipeline["audio_chunk_count"] != float64(1) {
+		t.Fatalf("answer voice pipeline = %#v", answerPipeline)
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
 	}
 	ttsStop := readXiaozhiJSON(t, ctx, conn)
-	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_fixture_completed" {
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
 		t.Fatalf("tts stop = %#v", ttsStop)
 	}
 	var captured providers.VoicePipelineRequest
@@ -2010,6 +2028,184 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
 	}
+}
+
+func TestXiaozhiWebSocketSendsFastAckBeforeVoicePipelineCompletes(t *testing.T) {
+	server := NewServer()
+	runner := newSlowAnswerXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.releaseAnswer)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-fast-ack",
+		"session_id": "a21-session-xiaozhi-fast-ack",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("voice pipeline did not start")
+	}
+
+	ackCtx, ackCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer ackCancel()
+	ttsStart := readXiaozhiJSON(t, ackCtx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	audioIngress, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio ingress = %#v", ttsStart["audio_ingress"])
+	}
+	if audioIngress["asr_status"] != "pipeline_running" || audioIngress["tts_status"] != "fast_ack_then_answer" {
+		t.Fatalf("audio ingress = %#v, want running fast ack status", audioIngress)
+	}
+	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
+	}
+	if pipeline["status"] != "running" || pipeline["stage"] != "fast_ack" {
+		t.Fatalf("voice pipeline = %#v, want fast_ack running", pipeline)
+	}
+	for _, forbidden := range []string{"data_base64", "raw_audio", "provider output", "fast ack", "http://", "https://", "/Users/"} {
+		if strings.Contains(mustJSON(t, ttsStart), forbidden) {
+			t.Fatalf("tts start leaked %q: %s", forbidden, mustJSON(t, ttsStart))
+		}
+	}
+
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	select {
+	case <-runner.released:
+		t.Fatal("answer pipeline completed before fast ack was read")
+	default:
+	}
+
+	runner.releaseAnswer()
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	answerPipeline, ok := answerSentence["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("answer voice pipeline = %#v", answerSentence["voice_pipeline"])
+	}
+	if answerPipeline["stage"] != "answer" || answerPipeline["audio_chunk_count"] != float64(1) {
+		t.Fatalf("answer voice pipeline = %#v", answerPipeline)
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+}
+
+func TestXiaozhiWebSocketAbortAfterFastAckSuppressesAnswerFrames(t *testing.T) {
+	server := NewServer()
+	runner := newSlowAnswerXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.releaseAnswer)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-fast-ack-abort",
+		"session_id": "a21-session-xiaozhi-fast-ack-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("voice pipeline did not start")
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	select {
+	case <-runner.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("slow answer pipeline did not observe cancellation")
+	}
+	runner.releaseAnswer()
+	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
 }
 
 func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testing.T) {
@@ -2063,7 +2259,9 @@ func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testi
 	}
 	for _, want := range []string{
 		`"execution_mode":"host_local"`,
-		`"schema_version":"a21.voice_pipeline.host_local.v1"`,
+		`"schema_version":"a21.voice_pipeline.fast_ack.v1"`,
+		`"stage":"fast_ack"`,
+		`"status":"running"`,
 		`"asr_profile":"a21-test-asr"`,
 		`"llm_profile":"a21-test-text"`,
 		`"tts_profile":"a21-test-tts"`,
@@ -2071,6 +2269,18 @@ func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testi
 		if !strings.Contains(mustJSON(t, pipeline), want) {
 			t.Fatalf("voice pipeline missing %q: %#v", want, pipeline)
 		}
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("fast ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
 	}
 }
 
@@ -2109,6 +2319,21 @@ func TestXiaozhiWebSocketAbortCancelsBlockedTurnTaskWithinBargeInBudget(t *testi
 	}
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
 		t.Fatal(err)
+	}
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
 	}
 	select {
 	case <-runner.entered:
@@ -4489,6 +4714,114 @@ func (r *recordingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.
 	default:
 	}
 	return r.delegate.Run(ctx, req)
+}
+
+type slowAnswerXiaozhiPipelineRunner struct {
+	entered      chan struct{}
+	canceled     chan struct{}
+	release      chan struct{}
+	released     chan struct{}
+	enteredOnce  sync.Once
+	canceledOnce sync.Once
+	releaseOnce  sync.Once
+}
+
+func newSlowAnswerXiaozhiPipelineRunner() *slowAnswerXiaozhiPipelineRunner {
+	return &slowAnswerXiaozhiPipelineRunner{
+		entered:  make(chan struct{}),
+		canceled: make(chan struct{}),
+		release:  make(chan struct{}),
+		released: make(chan struct{}),
+	}
+}
+
+func (r *slowAnswerXiaozhiPipelineRunner) releaseAnswer() {
+	r.releaseOnce.Do(func() {
+		close(r.release)
+		close(r.released)
+	})
+}
+
+func (r *slowAnswerXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	r.enteredOnce.Do(func() {
+		close(r.entered)
+	})
+	select {
+	case <-ctx.Done():
+		r.canceledOnce.Do(func() {
+			close(r.canceled)
+		})
+		return providers.VoicePipelineResult{
+			Status:       providers.VoicePipelineStatusCancelled,
+			CancelReason: providers.CancelBargeIn,
+			Timing: providers.VoicePipelineTiming{
+				ASRFirstPartialMS:       -1,
+				ASRFinalMS:              -1,
+				LLMFirstContentMS:       -1,
+				TTSFirstAudioMS:         -1,
+				AudioDownlinkFirstMS:    -1,
+				ProviderCancelMS:        1,
+				BargeInStopMS:           1,
+				SpeechEndToFinalASRMS:   -1,
+				SpeechEndToFirstTokenMS: -1,
+			},
+			Report: providers.VoicePipelineReport{
+				SchemaVersion: "a21.voice_pipeline.fixture.v1",
+				Status:        string(providers.VoicePipelineStatusCancelled),
+				TraceID:       req.Session.TraceID,
+				SessionID:     req.Session.SessionID,
+				DeviceID:      req.Session.DeviceID,
+				Mode:          req.Mode,
+				ExecutionMode: "fixture",
+			},
+		}, nil
+	case <-r.release:
+		return providers.VoicePipelineResult{
+			Status: providers.VoicePipelineStatusCompleted,
+			Timing: providers.VoicePipelineTiming{
+				ASRFirstPartialMS:       10,
+				ASRFinalMS:              20,
+				LLMFirstContentMS:       30,
+				TTSFirstAudioMS:         40,
+				AudioDownlinkFirstMS:    40,
+				ProviderCancelMS:        -1,
+				BargeInStopMS:           -1,
+				SpeechEndToFinalASRMS:   20,
+				SpeechEndToFirstTokenMS: 30,
+			},
+			AudioChunks: []providers.VoiceAudioChunk{xiaozhiTestVoiceAudioChunk()},
+			Report: providers.VoicePipelineReport{
+				SchemaVersion: "a21.voice_pipeline.fixture.v1",
+				Status:        string(providers.VoicePipelineStatusCompleted),
+				TraceID:       req.Session.TraceID,
+				SessionID:     req.Session.SessionID,
+				DeviceID:      req.Session.DeviceID,
+				Mode:          req.Mode,
+				ExecutionMode: "fixture",
+				Output: providers.VoicePipelineOutputReport{
+					AudioChunkCount: 1,
+				},
+				Redaction: providers.VoicePipelineRedactionPolicies{
+					TranscriptPolicy:     "transcript_not_recorded",
+					ProviderOutputPolicy: "provider_output_not_recorded",
+					AudioPayloadPolicy:   "audio_payload_not_recorded",
+					URLPolicy:            "full_url_not_recorded",
+					ProxyPolicy:          "proxy_value_not_recorded",
+					LocalPathPolicy:      "local_path_not_recorded",
+				},
+			},
+		}, nil
+	}
+}
+
+func xiaozhiTestVoiceAudioChunk() providers.VoiceAudioChunk {
+	return providers.VoiceAudioChunk{
+		Codec:        "pcm_s16le",
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   base64.StdEncoding.EncodeToString(make([]byte, 2880)),
+	}
 }
 
 func xiaozhiTestOpusPacket(t *testing.T) []byte {
