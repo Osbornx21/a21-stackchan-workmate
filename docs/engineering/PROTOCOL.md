@@ -53,14 +53,14 @@ unwraps the compact 4-byte header. The current server seam records Opus frame
 count and byte count, propagates or derives `device_id`, `trace_id`, and
 `session_id`, and rejects legacy-looking X21/V21 identities.
 
-This is not yet the complete product voice chain. The current WS-1 seam does
-not decode Opus to PCM inside Gateway, does not run ASR/LLM/TTS providers, and
-does not send binary Opus TTS audio back to the device. A host-only
-`internal/audio/opuscodec` boundary separately proves mono PCM16 60 ms
-Opus encode/decode for xiaozhi's 16 kHz uplink and 24 kHz downlink rates. On
-`listen/stop`, it emits an honest xiaozhi TTS lifecycle placeholder with
-`decode_status=opus_passthrough_unimplemented_decode` so tests and operators
-cannot mistake the transport proof for audible product acceptance.
+This is not yet the complete product voice chain. The current WS-1 seam decodes
+valid uplink Opus frames to PCM16 only to produce aggregate telemetry
+(`decoded_frame_count`, `decoded_sample_count`, `decoded_duration_ms`) and an
+honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`. It
+does not run ASR/LLM/TTS providers and does not send binary Opus TTS audio back
+to the device. On `listen/stop`, it emits an honest xiaozhi TTS lifecycle
+placeholder so tests and operators cannot mistake the transport and codec proof
+for audible product acceptance.
 
 ## Protocol Rules
 
@@ -140,11 +140,11 @@ authorization.
 
 Current `AudioCodecOpus` is reserved vocabulary for the older A21 envelope
 path. The xiaozhi compatibility seam can receive raw Opus binary frames, and
-the host codec boundary can encode/decode 60 ms mono PCM16 frames, but Gateway
-does not yet decode those frames or treat them as ASR-ready audio. Current A21
-envelope validation still accepts `pcm_s16le` frames, and no Gateway, provider,
-firmware, or physical device path should treat Opus media as product-complete
-from this document.
+Gateway can decode valid 60 ms mono uplink frames for telemetry, but it must not
+treat those frames as ASR-ready audio until a later provider/frontend slice
+adds the explicit handoff. Current A21 envelope validation still accepts
+`pcm_s16le` frames, and no Gateway, provider, firmware, or physical device path
+should treat Opus media as product-complete from this document.
 
 ## Control And Device Events
 

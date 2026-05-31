@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/audio/opuscodec"
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
@@ -202,7 +203,12 @@ const (
 	maxAudioCaptureFrames       = 512
 )
 
-const XiaozhiOpusPassthroughDecodeState = "opus_passthrough_unimplemented_decode"
+const (
+	XiaozhiOpusNoFramesState           = "opus_no_frames"
+	XiaozhiOpusDecodedPCMState         = "opus_decoded_pcm16"
+	XiaozhiOpusDecodeErrorState        = "opus_decode_error"
+	XiaozhiOpusPartialDecodeErrorState = "opus_partial_decode_error"
+)
 
 type AudioRecentResponse struct {
 	SchemaVersion string              `json:"schema_version"`
@@ -696,15 +702,22 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 type xiaozhiSession struct {
-	traceID               string
-	sessionID             string
-	deviceID              string
-	helloReceived         bool
-	listening             bool
-	binaryProtocolVersion int
-	opusFrameCount        int
-	opusByteCount         int
-	ttsStopSent           bool
+	traceID                string
+	sessionID              string
+	deviceID               string
+	helloReceived          bool
+	listening              bool
+	binaryProtocolVersion  int
+	opusCodec              *opuscodec.Codec
+	opusSampleRateHz       int
+	opusChannels           int
+	opusFrameDurationMS    int
+	opusFrameCount         int
+	opusByteCount          int
+	opusDecodedFrameCount  int
+	opusDecodedSampleCount int
+	opusDecodeErrorCount   int
+	ttsStopSent            bool
 }
 
 func (session *xiaozhiSession) identity() xiaozhitransport.Identity {
@@ -719,6 +732,47 @@ func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
 	session.deviceID = frame.DeviceID
 	session.traceID = frame.TraceID
 	session.sessionID = frame.SessionID
+}
+
+func (session *xiaozhiSession) configureXiaozhiAudio(params xiaozhitransport.AudioParams) error {
+	codec, err := opuscodec.New(params.SampleRate, params.Channels, params.FrameDuration)
+	if err != nil {
+		return err
+	}
+	session.opusCodec = codec
+	session.opusSampleRateHz = params.SampleRate
+	session.opusChannels = params.Channels
+	session.opusFrameDurationMS = params.FrameDuration
+	session.resetXiaozhiOpusIngress()
+	return nil
+}
+
+func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
+	session.opusFrameCount = 0
+	session.opusByteCount = 0
+	session.opusDecodedFrameCount = 0
+	session.opusDecodedSampleCount = 0
+	session.opusDecodeErrorCount = 0
+}
+
+func (session *xiaozhiSession) xiaozhiOpusDecodeStatus() string {
+	if session.opusDecodeErrorCount > 0 && session.opusDecodedFrameCount > 0 {
+		return XiaozhiOpusPartialDecodeErrorState
+	}
+	if session.opusDecodeErrorCount > 0 {
+		return XiaozhiOpusDecodeErrorState
+	}
+	if session.opusDecodedFrameCount > 0 {
+		return XiaozhiOpusDecodedPCMState
+	}
+	return XiaozhiOpusNoFramesState
+}
+
+func (session *xiaozhiSession) xiaozhiDecodedDurationMS() int {
+	if session.opusSampleRateHz <= 0 {
+		return 0
+	}
+	return session.opusDecodedSampleCount * 1000 / session.opusSampleRateHz
 }
 
 func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
@@ -790,10 +844,12 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 	}
 	switch frame.Control.Type {
 	case xiaozhitransport.MessageTypeHello:
+		if err := session.configureXiaozhiAudio(frame.Control.Hello.AudioParams); err != nil {
+			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "unsupported_audio_params", err.Error()))
+			return true
+		}
 		session.helloReceived = true
 		session.listening = false
-		session.opusFrameCount = 0
-		session.opusByteCount = 0
 		session.ttsStopSent = false
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		s.recordXiaozhiDeviceSeen(frame)
@@ -807,8 +863,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		switch frame.Control.Listen.State {
 		case "start":
 			session.listening = true
-			session.opusFrameCount = 0
-			session.opusByteCount = 0
+			session.resetXiaozhiOpusIngress()
 			session.ttsStopSent = false
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
 			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
@@ -855,6 +910,20 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	session.opusFrameCount++
 	session.opusByteCount += frame.Opus.PayloadBytes
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.received", s.now().UnixMilli())
+	if session.opusCodec == nil {
+		session.opusDecodeErrorCount++
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
+		return true
+	}
+	pcm, err := session.opusCodec.DecodePCM16(frame.Opus.Payload)
+	if err != nil {
+		session.opusDecodeErrorCount++
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
+		return true
+	}
+	session.opusDecodedFrameCount++
+	session.opusDecodedSampleCount += len(pcm)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
 	return true
 }
 
@@ -877,7 +946,8 @@ func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
 }
 
 func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) {
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+XiaozhiOpusPassthroughDecodeState, s.now().UnixMilli())
+	decodeStatus := session.xiaozhiOpusDecodeStatus()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	_ = wsjson.Write(ctx, conn, map[string]any{
 		"type":       "tts",
 		"state":      "start",
@@ -885,11 +955,20 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 		"session_id": session.sessionID,
 		"device_id":  session.deviceID,
 		"audio_ingress": map[string]any{
-			"codec":         "opus",
-			"profile":       xiaozhiBinaryProfile(session.binaryProtocolVersion),
-			"decode_status": XiaozhiOpusPassthroughDecodeState,
-			"frame_count":   session.opusFrameCount,
-			"byte_count":    session.opusByteCount,
+			"codec":                "opus",
+			"profile":              xiaozhiBinaryProfile(session.binaryProtocolVersion),
+			"sample_rate_hz":       session.opusSampleRateHz,
+			"channels":             session.opusChannels,
+			"frame_duration_ms":    session.opusFrameDurationMS,
+			"decode_status":        decodeStatus,
+			"frame_count":          session.opusFrameCount,
+			"byte_count":           session.opusByteCount,
+			"decoded_frame_count":  session.opusDecodedFrameCount,
+			"decoded_sample_count": session.opusDecodedSampleCount,
+			"decoded_duration_ms":  session.xiaozhiDecodedDurationMS(),
+			"decode_error_count":   session.opusDecodeErrorCount,
+			"asr_status":           "not_connected",
+			"tts_status":           "placeholder_only",
 		},
 	})
 	_ = wsjson.Write(ctx, conn, map[string]any{
@@ -901,7 +980,7 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 		"placeholder": true,
 		"text":        "",
 	})
-	s.writeXiaozhiTTSStop(ctx, conn, session, "placeholder_no_decode")
+	s.writeXiaozhiTTSStop(ctx, conn, session, "placeholder_no_asr_tts")
 }
 
 func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, reason string) {

@@ -37,6 +37,8 @@ thin sensing and expression device.
 - WS-1 host Opus codec boundary: `internal/audio/opuscodec`, covering mono
   PCM16 60 ms encode/decode at the xiaozhi 16 kHz uplink and 24 kHz downlink
   rates through a pinned pure-Go Opus library.
+- WS-1 Gateway Opus telemetry hook: `/v1/xiaozhi` decodes valid uplink Opus
+  frames to PCM16 for aggregate frame/sample/duration telemetry only.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only
@@ -44,10 +46,9 @@ thin sensing and expression device.
 - Current known warning: no release-ledger-validated A21 firmware artifact
   matches the current server-mainline commits; this is not a server-mainline
   blocker unless a future slice claims firmware release acceptance.
-- Current xiaozhi seam limitation: raw Opus frames are counted and traced at
-  the Gateway, and the host Opus codec boundary is tested separately. Gateway
-  Opus decode, ASR, provider streaming, TTS encode, binary downlink, and real
-  device proof remain not accepted.
+- Current xiaozhi seam limitation: Gateway can count raw Opus frames and decode
+  valid uplink frames to PCM telemetry, but ASR, provider streaming, TTS encode,
+  binary downlink, and real device proof remain not accepted.
 
 ## Acceptance Board
 

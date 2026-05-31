@@ -68,9 +68,11 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 `xiaozhi.hello.received`, `xiaozhi.listen.start`,
 `xiaozhi.listen.detect`, `xiaozhi.listen.stop`,
 `xiaozhi.listen.stop.ignored`, `xiaozhi.opus_frame.received`,
-`xiaozhi.opus_frame.ignored_not_listening`,
-`xiaozhi.opus_passthrough_unimplemented_decode`, `xiaozhi.abort.received`,
-and `xiaozhi.tts.stop`. These markers prove protocol/session handling only;
+`xiaozhi.opus_frame.decoded`, `xiaozhi.opus_frame.decode_error`,
+`xiaozhi.opus_frame.ignored_not_listening`, `xiaozhi.opus_no_frames`,
+`xiaozhi.opus_decoded_pcm16`, `xiaozhi.opus_decode_error`,
+`xiaozhi.opus_partial_decode_error`, `xiaozhi.abort.received`, and
+`xiaozhi.tts.stop`. These markers prove protocol/session/codec telemetry only;
 they are not ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 
 AgentTask bridge reports include package-level T1/T2 semantic reports in
@@ -146,8 +148,13 @@ Current mock trace events include:
 - `xiaozhi.listen.stop`
 - `xiaozhi.listen.stop.ignored`
 - `xiaozhi.opus_frame.received`
+- `xiaozhi.opus_frame.decoded`
+- `xiaozhi.opus_frame.decode_error`
 - `xiaozhi.opus_frame.ignored_not_listening`
-- `xiaozhi.opus_passthrough_unimplemented_decode`
+- `xiaozhi.opus_no_frames`
+- `xiaozhi.opus_decoded_pcm16`
+- `xiaozhi.opus_decode_error`
+- `xiaozhi.opus_partial_decode_error`
 - `xiaozhi.abort.received`
 - `xiaozhi.tts.stop`
 - `audio.frame.received`
