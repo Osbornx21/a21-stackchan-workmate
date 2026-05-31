@@ -82,6 +82,13 @@ class A21VirtualXiaozhiPayloadTests(unittest.TestCase):
         self.assertNotIn("token", rendered)
         self.assertNotIn("/Users/", rendered)
 
+    def test_expect_audio_uses_builtin_opus_fixture_without_local_path(self):
+        data, label = a21_virtual_xiaozhi.resolve_opus_fixture(None, expect_audio=True)
+
+        self.assertGreater(len(data), 0)
+        self.assertEqual(label, "builtin_speech")
+        self.assertNotIn("/", label)
+
 
 if __name__ == "__main__":
     unittest.main()

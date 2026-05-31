@@ -27,6 +27,17 @@ DEFAULT_DEVICE_ID = "stackchan-virtual-a21-001"
 DEFAULT_TRACE_ID = "a21-trace-virtual-xiaozhi"
 DEFAULT_SESSION_ID = "a21-session-virtual-xiaozhi"
 GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+BUILTIN_SPEECH_OPUS_BASE64 = (
+    "+wN9Fe8q/WweIrO8S6e3BS1VEZTVvOfWfIBmbF67EEX+tPRA8GZC+5Sr1DdpepXftLCgFnrYd7qX"
+    "C3CgEU1P+mWzEPB6CuikBp4i80h/v5ZElM3JVM3JVn+LjVu/W8G/W8AxQpfypJthUGOaQtiEWod"
+    "EhR/BQP4V181rZfIBwsl7tW4gDS91S9n3iAtH9R4JQaNYraLWjZgQY0xzadd4sn5p2JBpjk/gj1"
+    "qW8BAzZp7OblAZp4KzmA0XC4mTIPVs70t+b3CwVujVZrf3QUvzXZLOuyxn6LPXK2VJPY7GfCxQg"
+    "FPA/DDvwuMROoZSAE0WnRnwUY4cxwnCzY/40DIbrFI/oNIbEViu2GV+H0MMhxIRV9USaclvjzp2"
+    "vVbi4Fr+bZHFd/yyhHjYLj8lMgIJXfVn323gAAPzHxXIU+1ZinogXdnvKTZez35gLCpTfzlrw22"
+    "7xafE4ixdvVpmwlsXGPucZcz4dxRjaJFXScmUtaJD9EAt3cyvhVdXP754y4ja2ZOguiPrANR/jU"
+    "RqlZgR2alef7EAY2Pgq2iiwhFPMvZxBiU742CMcsTryLt+S/vkN3GVSDAMb9M1J04zfHjKQ9M6T"
+    "emRKqL2nWTOo8UqBy24aJcqmqgsAlzYXOA="
+)
 
 
 @dataclass
@@ -326,6 +337,20 @@ def read_fixture(path: str | None) -> bytes | None:
     return data
 
 
+def builtin_speech_opus_fixture() -> bytes:
+    return base64.b64decode(BUILTIN_SPEECH_OPUS_BASE64)
+
+
+def resolve_opus_fixture(path: str | None, *, expect_audio: bool) -> tuple[bytes | None, str]:
+    if path in ("builtin_speech", "builtin:speech"):
+        return builtin_speech_opus_fixture(), "builtin_speech"
+    if path is not None:
+        return read_fixture(path), "provided"
+    if expect_audio:
+        return builtin_speech_opus_fixture(), "builtin_speech"
+    return None, "none"
+
+
 def run_self_test() -> int:
     stock = build_hello_payload(
         profile="xiaozhi",
@@ -371,11 +396,11 @@ def run_harness(options: HarnessOptions) -> tuple[int, dict[str, Any]]:
         session_id=options.session_id,
         protocol_version=options.protocol_version,
     )
-    report["opus_fixture"] = "provided" if options.opus_fixture else "none"
     start_time = time.monotonic()
     abort_at: float | None = None
     try:
-        fixture = read_fixture(options.opus_fixture)
+        fixture, fixture_label = resolve_opus_fixture(options.opus_fixture, expect_audio=options.expect_audio)
+        report["opus_fixture"] = fixture_label
         headers = {
             "Device-Id": options.device_id,
             "Protocol-Version": str(options.protocol_version),
@@ -456,7 +481,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--abort-after-first-audio", action="store_true")
     parser.add_argument("--timeout-ms", type=int, default=2000)
     parser.add_argument("--json-report", action="store_true")
-    parser.add_argument("--opus-fixture")
+    parser.add_argument("--opus-fixture", help="Path to a raw Opus packet, or builtin_speech")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
