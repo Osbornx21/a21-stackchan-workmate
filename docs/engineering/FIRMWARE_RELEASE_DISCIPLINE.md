@@ -180,7 +180,8 @@ Rules:
 - the flash-plan receipt validates the bridge artifact and USB serial port, but stores only the audio websocket scheme, host, path, and `device_id` query presence instead of the full URL;
 - when `a21/audio_ws_url` is missing, the device must stay on a black A21 status screen and remain silent;
 - playback is accepted only as `pcm_s16le`, mono, 16 kHz or 24 kHz, 1-100 ms chunks, queued through the official `AudioCodec::OutputData` path;
-- a future real-device bridge app flash lane must consume NVS provisioning evidence plus the same explicit USB serial, artifact hash, flash-part hash, and confirmation-token discipline before any app write is allowed.
+- a future real-device bridge app flash lane must consume NVS provisioning evidence plus the same explicit USB serial, artifact hash, flash-part hash, and confirmation-token discipline before any app write is allowed;
+- `docs/engineering/adr/0005-official-pcm-bridge-app-flash.md` records the current draft ADR gate. Until an accepted ADR and reviewed execute guard replace that draft, `stackchan-official-pcm-bridge-flash-execute` remains T8 blocked.
 
 This lane exists to move M3 away from the rejected M5Unified `playRaw` path. It is not production firmware and must not bypass the existing A21 release package/flash discipline.
 
