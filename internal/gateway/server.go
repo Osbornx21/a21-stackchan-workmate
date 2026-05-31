@@ -723,8 +723,15 @@ func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
 
 func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 	queryDeviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
-	if queryDeviceID != "" && !validA21DeviceID(queryDeviceID) {
+	headerDeviceID := strings.TrimSpace(r.Header.Get("Device-Id"))
+	deviceID := firstNonEmpty(queryDeviceID, headerDeviceID)
+	if deviceID != "" && !validA21DeviceID(deviceID) {
 		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+	protocolVersion, err := parseXiaozhiProtocolVersionHeader(r.Header.Get("Protocol-Version"))
+	if err != nil {
+		http.Error(w, "invalid Protocol-Version", http.StatusBadRequest)
 		return
 	}
 	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
@@ -737,8 +744,8 @@ func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	session := &xiaozhiSession{
-		deviceID:              queryDeviceID,
-		binaryProtocolVersion: 1,
+		deviceID:              deviceID,
+		binaryProtocolVersion: protocolVersion,
 	}
 	for {
 		messageType, data, err := conn.Read(ctx)
@@ -756,6 +763,18 @@ func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func parseXiaozhiProtocolVersionHeader(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 1, nil
+	}
+	version, err := strconv.Atoi(raw)
+	if err != nil || !xiaozhitransport.SupportedBinaryProtocolVersion(version) {
+		return 0, fmt.Errorf("unsupported xiaozhi protocol version")
+	}
+	return version, nil
 }
 
 func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
@@ -867,7 +886,7 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 		"device_id":  session.deviceID,
 		"audio_ingress": map[string]any{
 			"codec":         "opus",
-			"profile":       "xiaozhi_binary_v1_raw",
+			"profile":       xiaozhiBinaryProfile(session.binaryProtocolVersion),
 			"decode_status": XiaozhiOpusPassthroughDecodeState,
 			"frame_count":   session.opusFrameCount,
 			"byte_count":    session.opusByteCount,
@@ -902,20 +921,29 @@ func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, 
 }
 
 func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
-	return map[string]any{
-		"type":       "hello",
-		"version":    1,
-		"transport":  "websocket",
-		"trace_id":   session.traceID,
-		"session_id": session.sessionID,
-		"device_id":  session.deviceID,
-		"audio": map[string]any{
-			"format":         "opus",
-			"sample_rate":    24000,
-			"channels":       1,
-			"frame_duration": 60,
-		},
+	audioParams := map[string]any{
+		"format":         "opus",
+		"sample_rate":    24000,
+		"channels":       1,
+		"frame_duration": 60,
 	}
+	return map[string]any{
+		"type":         "hello",
+		"version":      session.binaryProtocolVersion,
+		"transport":    "websocket",
+		"trace_id":     session.traceID,
+		"session_id":   session.sessionID,
+		"device_id":    session.deviceID,
+		"audio":        audioParams,
+		"audio_params": audioParams,
+	}
+}
+
+func xiaozhiBinaryProfile(version int) string {
+	if version <= 1 {
+		return "xiaozhi_binary_v1_raw"
+	}
+	return fmt.Sprintf("xiaozhi_binary_v%d", version)
 }
 
 func (s *Server) xiaozhiBaseReply(session *xiaozhiSession, msgType string, state string, status string) map[string]any {
@@ -961,6 +989,10 @@ func xiaozhiErrorCode(err error) string {
 		return "unsupported_audio_params"
 	case errors.Is(err, xiaozhitransport.ErrUnsupportedBinaryProtocol):
 		return "unsupported_binary_protocol_version"
+	case errors.Is(err, xiaozhitransport.ErrMalformedBinaryFrame):
+		return "malformed_binary_frame"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedBinaryFrameType):
+		return "unsupported_binary_frame_type"
 	case errors.Is(err, xiaozhitransport.ErrEmptyBinaryPayload):
 		return "empty_binary_payload"
 	case errors.Is(err, xiaozhitransport.ErrUnexpectedBinaryDirection):

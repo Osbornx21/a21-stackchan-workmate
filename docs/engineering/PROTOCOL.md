@@ -36,17 +36,22 @@ This remains intentionally small. It establishes the A21 namespace, control even
 ## Xiaozhi WebSocket Compatibility
 
 The Gateway exposes the WS-1 xiaozhi compatibility seam at
-`/v1/xiaozhi` on the existing A21 Gateway port. It accepts stock-style
-xiaozhi JSON control messages:
+`/v1/xiaozhi` on the existing A21 Gateway port. It accepts stock-style xiaozhi
+handshake headers `Device-Id` and `Protocol-Version`; `device_id` may also be
+provided in the JSON body or query string for local harnesses. It accepts
+stock-style xiaozhi JSON control messages:
 
 - `hello`
 - `listen` with `state=start|detect|stop`
 - `abort`
 
-It also accepts binary Opus payload frames after a valid `hello` and active
-`listen/start`. The current server seam records raw Opus frame count and byte
-count, propagates or derives `device_id`, `trace_id`, and `session_id`, and
-rejects legacy-looking X21/V21 identities.
+The server hello includes stock `audio_params` and an `audio` alias for current
+local tests. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after
+a valid `hello` and active `listen/start`. Version 1 is a raw Opus payload. Version 2
+unwraps the 16-byte metadata header and preserves the timestamp. Version 3
+unwraps the compact 4-byte header. The current server seam records Opus frame
+count and byte count, propagates or derives `device_id`, `trace_id`, and
+`session_id`, and rejects legacy-looking X21/V21 identities.
 
 This is not yet the complete product voice chain. The current WS-1 seam does
 not decode Opus to PCM, does not run ASR/LLM/TTS providers, and does not send

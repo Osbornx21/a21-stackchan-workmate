@@ -1,6 +1,7 @@
 package xiaozhi
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,17 +9,19 @@ import (
 )
 
 var (
-	ErrMalformedJSON             = errors.New("malformed json")
-	ErrMissingDeviceIdentity     = errors.New("missing device identity")
-	ErrUnsupportedMessageType    = errors.New("unsupported message type")
-	ErrUnsupportedListenState    = errors.New("unsupported listen state")
-	ErrUnsupportedHelloVersion   = errors.New("unsupported hello version")
-	ErrUnsupportedTransport      = errors.New("unsupported transport")
-	ErrUnsupportedAudioParams    = errors.New("unsupported audio params")
-	ErrUnsupportedBinaryProtocol = errors.New("unsupported binary protocol version")
-	ErrEmptyBinaryPayload        = errors.New("empty binary payload")
-	ErrUnexpectedBinaryDirection = errors.New("unexpected binary frame direction")
-	ErrLegacyIdentity            = errors.New("legacy identity")
+	ErrMalformedJSON              = errors.New("malformed json")
+	ErrMissingDeviceIdentity      = errors.New("missing device identity")
+	ErrUnsupportedMessageType     = errors.New("unsupported message type")
+	ErrUnsupportedListenState     = errors.New("unsupported listen state")
+	ErrUnsupportedHelloVersion    = errors.New("unsupported hello version")
+	ErrUnsupportedTransport       = errors.New("unsupported transport")
+	ErrUnsupportedAudioParams     = errors.New("unsupported audio params")
+	ErrUnsupportedBinaryProtocol  = errors.New("unsupported binary protocol version")
+	ErrMalformedBinaryFrame       = errors.New("malformed binary frame")
+	ErrUnsupportedBinaryFrameType = errors.New("unsupported binary frame type")
+	ErrEmptyBinaryPayload         = errors.New("empty binary payload")
+	ErrUnexpectedBinaryDirection  = errors.New("unexpected binary frame direction")
+	ErrLegacyIdentity             = errors.New("legacy identity")
 )
 
 type Direction string
@@ -93,6 +96,7 @@ type AbortMessage struct {
 type OpusFrame struct {
 	Codec         string
 	BinaryVersion int
+	TimestampMS   uint32
 	PayloadBytes  int
 	Payload       []byte
 }
@@ -234,14 +238,34 @@ func ParseBinaryFrameVersion(payload []byte, direction Direction, identity Ident
 	if binaryProtocolVersion == 0 {
 		binaryProtocolVersion = 1
 	}
-	if binaryProtocolVersion != 1 {
+	var opusPayload []byte
+	var timestampMS uint32
+	switch binaryProtocolVersion {
+	case 1:
+		opusPayload = payload
+	case 2:
+		var err error
+		opusPayload, timestampMS, err = unwrapBinaryProtocol2(payload)
+		if err != nil {
+			return Frame{}, err
+		}
+	case 3:
+		var err error
+		opusPayload, timestampMS, err = unwrapBinaryProtocol3(payload)
+		if err != nil {
+			return Frame{}, err
+		}
+	default:
 		return Frame{}, fmt.Errorf("%w: %d", ErrUnsupportedBinaryProtocol, binaryProtocolVersion)
+	}
+	if len(opusPayload) == 0 {
+		return Frame{}, ErrEmptyBinaryPayload
 	}
 	resolved, err := resolveIdentity(identity, Identity{})
 	if err != nil {
 		return Frame{}, err
 	}
-	copied := append([]byte(nil), payload...)
+	copied := append([]byte(nil), opusPayload...)
 	return Frame{
 		Kind:      FrameKindOpus,
 		Direction: direction,
@@ -251,17 +275,55 @@ func ParseBinaryFrameVersion(payload []byte, direction Direction, identity Ident
 		Opus: &OpusFrame{
 			Codec:         "opus",
 			BinaryVersion: binaryProtocolVersion,
+			TimestampMS:   timestampMS,
 			PayloadBytes:  len(copied),
 			Payload:       copied,
 		},
 	}, nil
 }
 
+func unwrapBinaryProtocol2(payload []byte) ([]byte, uint32, error) {
+	const headerBytes = 16
+	if len(payload) < headerBytes {
+		return nil, 0, fmt.Errorf("%w: v2 header requires %d bytes", ErrMalformedBinaryFrame, headerBytes)
+	}
+	version := binary.BigEndian.Uint16(payload[0:2])
+	if version != 2 {
+		return nil, 0, fmt.Errorf("%w: v2 header version %d", ErrUnsupportedBinaryProtocol, version)
+	}
+	frameType := binary.BigEndian.Uint16(payload[2:4])
+	if frameType != 0 {
+		return nil, 0, fmt.Errorf("%w: %d", ErrUnsupportedBinaryFrameType, frameType)
+	}
+	timestampMS := binary.BigEndian.Uint32(payload[8:12])
+	payloadSize := int(binary.BigEndian.Uint32(payload[12:16]))
+	if payloadSize < 0 || len(payload)-headerBytes != payloadSize {
+		return nil, 0, fmt.Errorf("%w: v2 payload size mismatch", ErrMalformedBinaryFrame)
+	}
+	return payload[headerBytes:], timestampMS, nil
+}
+
+func unwrapBinaryProtocol3(payload []byte) ([]byte, uint32, error) {
+	const headerBytes = 4
+	if len(payload) < headerBytes {
+		return nil, 0, fmt.Errorf("%w: v3 header requires %d bytes", ErrMalformedBinaryFrame, headerBytes)
+	}
+	frameType := payload[0]
+	if frameType != 0 {
+		return nil, 0, fmt.Errorf("%w: %d", ErrUnsupportedBinaryFrameType, frameType)
+	}
+	payloadSize := int(binary.BigEndian.Uint16(payload[2:4]))
+	if payloadSize < 0 || len(payload)-headerBytes != payloadSize {
+		return nil, 0, fmt.Errorf("%w: v3 payload size mismatch", ErrMalformedBinaryFrame)
+	}
+	return payload[headerBytes:], 0, nil
+}
+
 func validateHello(message *HelloMessage) error {
 	if message.Version == 0 {
 		message.Version = 1
 	}
-	if message.Version != 1 {
+	if !SupportedBinaryProtocolVersion(message.Version) {
 		return fmt.Errorf("%w: %d", ErrUnsupportedHelloVersion, message.Version)
 	}
 	if message.Transport == "" {
@@ -284,12 +346,21 @@ func validateHello(message *HelloMessage) error {
 		return fmt.Errorf("%w: frame_duration must be 60", ErrUnsupportedAudioParams)
 	}
 	if message.AudioParams.BinaryProtocolVersion == 0 {
-		message.AudioParams.BinaryProtocolVersion = 1
+		message.AudioParams.BinaryProtocolVersion = message.Version
 	}
-	if message.AudioParams.BinaryProtocolVersion != 1 {
+	if !SupportedBinaryProtocolVersion(message.AudioParams.BinaryProtocolVersion) {
 		return fmt.Errorf("%w: %d", ErrUnsupportedBinaryProtocol, message.AudioParams.BinaryProtocolVersion)
 	}
 	return nil
+}
+
+func SupportedBinaryProtocolVersion(version int) bool {
+	switch version {
+	case 1, 2, 3:
+		return true
+	default:
+		return false
+	}
 }
 
 func firstAudioParams(primary audioParamsWire, fallback audioParamsWire) audioParamsWire {

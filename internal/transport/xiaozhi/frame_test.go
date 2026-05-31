@@ -1,6 +1,7 @@
 package xiaozhi
 
 import (
+	"encoding/binary"
 	"errors"
 	"os"
 	"strings"
@@ -115,13 +116,13 @@ func TestParseControlFixturesPropagatesA21Identity(t *testing.T) {
 func TestParseHelloAcceptsAudioAliasAndRejectsUnsafeParams(t *testing.T) {
 	frame, err := ParseTextFrame([]byte(`{
 		"type": "hello",
+		"version": 3,
 		"device_id": "stackchan-001",
 		"audio": {
 			"format": "opus",
 			"sample_rate": 16000,
 			"channels": 1,
-			"frame_duration": 60,
-			"binary_protocol_version": 1
+			"frame_duration": 60
 		}
 	}`), DirectionDeviceToServer, Identity{})
 	if err != nil {
@@ -129,6 +130,9 @@ func TestParseHelloAcceptsAudioAliasAndRejectsUnsafeParams(t *testing.T) {
 	}
 	if frame.Control.Hello.Transport != "websocket" {
 		t.Fatalf("transport = %q, want websocket default", frame.Control.Hello.Transport)
+	}
+	if frame.Control.Hello.Version != 3 || frame.Control.Hello.AudioParams.BinaryProtocolVersion != 3 {
+		t.Fatalf("version = %d binary = %d, want 3/3", frame.Control.Hello.Version, frame.Control.Hello.AudioParams.BinaryProtocolVersion)
 	}
 
 	_, err = ParseTextFrame([]byte(`{
@@ -224,6 +228,44 @@ func TestParseBinaryFrameRecognizesOpusWithoutDecoding(t *testing.T) {
 	}
 }
 
+func TestParseBinaryFrameVersion2UnwrapsTimestampedOpusPayload(t *testing.T) {
+	payload := []byte{0x11, 0x22, 0x33}
+	wire := make([]byte, 16+len(payload))
+	binary.BigEndian.PutUint16(wire[0:2], 2)
+	binary.BigEndian.PutUint16(wire[2:4], 0)
+	binary.BigEndian.PutUint32(wire[8:12], 1234)
+	binary.BigEndian.PutUint32(wire[12:16], uint32(len(payload)))
+	copy(wire[16:], payload)
+
+	frame, err := ParseBinaryFrameVersion(wire, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Opus.BinaryVersion != 2 || frame.Opus.TimestampMS != 1234 || frame.Opus.PayloadBytes != len(payload) {
+		t.Fatalf("opus metadata = %+v, want version=2 timestamp=1234 bytes=%d", frame.Opus, len(payload))
+	}
+	if string(frame.Opus.Payload) != string(payload) {
+		t.Fatalf("payload = %#v, want %#v", frame.Opus.Payload, payload)
+	}
+}
+
+func TestParseBinaryFrameVersion3UnwrapsCompactOpusPayload(t *testing.T) {
+	payload := []byte{0xaa, 0xbb}
+	wire := make([]byte, 4+len(payload))
+	wire[0] = 0
+	wire[1] = 0
+	binary.BigEndian.PutUint16(wire[2:4], uint16(len(payload)))
+	copy(wire[4:], payload)
+
+	frame, err := ParseBinaryFrameVersion(wire, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Opus.BinaryVersion != 3 || frame.Opus.PayloadBytes != len(payload) || string(frame.Opus.Payload) != string(payload) {
+		t.Fatalf("opus = %+v, want version=3 bytes=%d payload=%#v", frame.Opus, len(payload), payload)
+	}
+}
+
 func TestParseBinaryFrameRejectsEmptyPayloadAndUnexpectedDirection(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -245,8 +287,24 @@ func TestParseBinaryFrameRejectsEmptyPayloadAndUnexpectedDirection(t *testing.T)
 	}
 }
 
+func TestParseBinaryFrameRejectsMalformedWrappedPayload(t *testing.T) {
+	_, err := ParseBinaryFrameVersion([]byte{0x00, 0x02}, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 2)
+	if !errors.Is(err, ErrMalformedBinaryFrame) {
+		t.Fatalf("short v2 err = %v, want %v", err, ErrMalformedBinaryFrame)
+	}
+
+	wire := make([]byte, 5)
+	wire[0] = 1
+	binary.BigEndian.PutUint16(wire[2:4], 1)
+	wire[4] = 0xff
+	_, err = ParseBinaryFrameVersion(wire, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 3)
+	if !errors.Is(err, ErrUnsupportedBinaryFrameType) {
+		t.Fatalf("unsupported type err = %v, want %v", err, ErrUnsupportedBinaryFrameType)
+	}
+}
+
 func TestParseBinaryFrameRejectsUnsupportedBinaryVersion(t *testing.T) {
-	_, err := ParseBinaryFrameVersion([]byte{0x01}, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 2)
+	_, err := ParseBinaryFrameVersion([]byte{0x01}, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 4)
 	if !errors.Is(err, ErrUnsupportedBinaryProtocol) {
 		t.Fatalf("err = %v, want %v", err, ErrUnsupportedBinaryProtocol)
 	}

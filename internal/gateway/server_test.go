@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -1182,6 +1183,41 @@ func TestXiaozhiWebSocketHelloAcceptsStockProtocol(t *testing.T) {
 	}
 }
 
+func TestXiaozhiWebSocketUsesStockHandshakeHeaders(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Device-Id":        []string{"stackchan-header-001"},
+			"Protocol-Version": []string{"3"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"version": 3,
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	if reply["type"] != "hello" || reply["device_id"] != "stackchan-header-001" || reply["version"] != float64(3) {
+		t.Fatalf("hello reply = %#v", reply)
+	}
+	if _, ok := reply["audio_params"].(map[string]any); !ok {
+		t.Fatalf("hello reply missing stock audio_params: %#v", reply)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["device_id"] != "stackchan-header-001" {
+		t.Fatalf("registry = %#v, want header device id", registry)
+	}
+}
+
 func TestXiaozhiWebSocketListenCountsRawOpusWithoutDecodedAudioClaim(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -1252,6 +1288,58 @@ func TestXiaozhiWebSocketListenCountsRawOpusWithoutDecodedAudioClaim(t *testing.
 	if !traceContains(traces.Events, "xiaozhi.opus_frame.received") || !traceContains(traces.Events, "xiaozhi."+XiaozhiOpusPassthroughDecodeState) {
 		t.Fatalf("trace missing xiaozhi opus markers: %+v", traces.Events)
 	}
+}
+
+func TestXiaozhiWebSocketAcceptsProtocolVersion3BinaryFrames(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"version":    3,
+		"trace_id":   "a21-trace-xiaozhi-v3",
+		"session_id": "a21-session-xiaozhi-v3",
+		"device_id":  "stackchan-001",
+	})
+	hello := readXiaozhiJSON(t, ctx, conn)
+	if hello["version"] != float64(3) {
+		t.Fatalf("hello version = %#v, want 3", hello["version"])
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	payload := []byte{0xaa, 0xbb, 0xcc}
+	wire := make([]byte, 4+len(payload))
+	wire[0] = 0
+	binary.BigEndian.PutUint16(wire[2:4], uint16(len(payload)))
+	copy(wire[4:], payload)
+	if err := conn.Write(ctx, websocket.MessageBinary, wire); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	summary, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio summary = %#v", ttsStart["audio_ingress"])
+	}
+	if summary["profile"] != "xiaozhi_binary_v3" || summary["frame_count"] != float64(1) || summary["byte_count"] != float64(3) {
+		t.Fatalf("audio summary = %#v", summary)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
 }
 
 func TestXiaozhiWebSocketAbortStopsPlaceholderTTSAndPreventsStaleBinary(t *testing.T) {
