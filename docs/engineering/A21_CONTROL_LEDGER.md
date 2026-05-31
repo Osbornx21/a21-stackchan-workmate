@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `ac2ab42`.
+Last accepted integration commit before this ledger update: `52c64d2`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `ac2ab42 docs(control): record provider spine verification`.
+  `52c64d2 docs(control): track prd next-slice audit`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -40,8 +40,9 @@ defines policy; this ledger records the current queue and accepted state.
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
   `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
   `193a1f3`; Task 4 acceptance is `7af0259`, post-commit review tracking is
-  `819fe8b`, the Task 4 trace-fidelity P2 fix is `22c90ae`, and Provider
-  Spine Task 5 verification tracking is `ac2ab42`.
+  `819fe8b`, the Task 4 trace-fidelity P2 fix is `22c90ae`, Provider Spine
+  Task 5 verification tracking is `ac2ab42`, and PRD next-slice audit
+  tracking is `52c64d2`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -62,7 +63,8 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | active; read-only gap audit after Provider Spine Task 5 | T0/T1 | no |
+| `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | active; TDD implementation handoff pending | T1/T2 | no |
+| `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
 | `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | completed; P2 trace-fidelity finding fixed by control | T0/T1/T2 | no |
 | `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | completed; handoff accepted into integration branch | T1/T2 | no |
 | `019e7be6-bca3-71f2-9770-857b9da48b67` | Provider Spine Fast Companion Hybrid boundary audit | `/Users/jiyurun/.codex/worktrees/0d72/New project` | completed; no P0/P1 regression; Task 4 Gateway gap confirmed; no diff | T1/T2 | no |
@@ -123,11 +125,87 @@ Evidence:
 
 Decision:
 
-- Keep this as a read-only audit thread; do not promote it into implementation.
-- Do not open provider/V21 execution, Gateway runtime, firmware, NVS, flash,
-  serial, or physical-device windows from this audit.
-- The control tower will choose the next implementation slice only after
-  reading the audit handoff and reconciling it with the ledger.
+- Accept the audit result: Provider Spine Task 1 through Task 5 are complete in
+  the current integration baseline, and the next PRD pressure is no longer the
+  Fast Companion Gateway placeholder boundary.
+- The next implementation slice is `Provider Latency Bench Scaffold / Fast
+  Companion Candidate Report`.
+- The slice must remain T1/T2 and produce a redacted candidate-chain report
+  shape only. It must not execute provider/V21 calls, start Gateway/runtime,
+  write durable provider payload reports, touch firmware/NVS/flash/serial
+  paths, call `/v1/devices/control`, or use physical device paths.
+- Real provider execution, real V21 execution, and StackChan physical
+  acceptance remain separate T4/T6 windows requiring explicit authorization.
+
+Audit handoff evidence:
+
+- Audit branch/head: detached HEAD at
+  `ac2ab42 docs(control): record provider spine verification`, decorated by
+  `codex/a21-integration-governance-slices`.
+- Audit dirty files: none.
+- P0 gap: A21 has a Gateway Fast Companion placeholder trace, but lacks a
+  unified provider-latency candidate report/bench proving ASR/provider/TTS/
+  downlink/playback timing across mock/fixture/host-only chains.
+- P0 gap: current provider smoke, local voice loopback, and StackChan fast
+  companion receipts are partial evidence; they do not yet converge into the
+  PRD benchmark contract with p50/p95/p99, redacted network/proxy metadata,
+  fallback/failure counts, and `promotion_gate=not_production`.
+- P1 gap: physical StackChan acceptance remains future T6 evidence and should
+  not be opened before the latency evidence scaffold exists.
+- P1 gap: barge-in is covered at mock/Gateway level, but not yet production
+  VAD/AEC/full-duplex/physical speaker proof.
+- P2 gap: professional mode and V21 evidence path are sufficiently guarded for
+  this decision; real V21 execute is still T4.
+- Audit verification passed:
+  `go test ./internal/gateway -run 'FastCompanion|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21|AudioWSBargeIn' -count=1`.
+- Audit verification passed:
+  `go test ./internal/providers -run 'ProviderCatalog|ProviderProfile|TextStream|ProviderSmoke' -count=1`.
+- Audit verification passed:
+  `go test ./internal/app -run 'LocalVoiceLoopback|StackChanFastCompanion|RunProviderSmoke|GatewayServerFromEnv|RunV21AdapterSmoke|RunDoctor' -count=1`.
+- Audit verification passed: `go run ./cmd/a21 namespace-audit`.
+- Audit verification passed: `git diff --check`.
+- Audit did not change files, commit, push, start Gateway/runtime, execute
+  provider/V21 calls, generate durable payload reports, touch firmware/NVS/
+  flash/serial paths, call `/v1/devices/control`, or use physical device paths.
+
+### Provider Latency Bench Scaffold Implementation Thread
+
+Opened by the control tower after accepting the PRD next-slice audit.
+
+Evidence:
+
+- Implementation thread: `019e7c0d-f7a0-7323-8413-e3e2aac53a94`.
+- Implementation worktree: `/Users/jiyurun/.codex/worktrees/acc7/New project`.
+- Starting integration HEAD:
+  `52c64d2 docs(control): track prd next-slice audit`.
+- Target branch: `codex/a21-provider-latency-bench-scaffold`.
+- Scope: TDD implementation of `provider-latency-bench` mock/fixture scaffold
+  for Fast Companion candidate-chain reports.
+- Expected report fields: `trace_id`, `session_id`, `device_id`, execution
+  mode, redacted network/proxy metadata, provider profile/family labels, ASR
+  first partial, provider first byte, provider first content, TTS first audio,
+  downlink first frame, device playback start, barge-in stop/cancel
+  placeholders, p50/p95/p99 summary, fallback/failure counts, and
+  `promotion_gate=not_production`.
+- Expected files:
+  `internal/app/provider_latency_bench*.go`, `internal/app/app.go` and tests,
+  `docs/engineering/A21_PROVIDER_BENCHMARKS.md`,
+  `docs/engineering/LATENCY_BUDGET.md`, `docs/engineering/DOCTOR.md`, and
+  optionally `Makefile`.
+- Maximum tier: T1/T2.
+- Forbidden: provider `--execute`, V21 execute, Gateway runtime/service
+  startup, durable provider reports with payloads, firmware/NVS/flash/raw
+  upload/serial writes, `/v1/devices/control`, physical device paths,
+  production dependency additions, secrets, prompt/transcript/provider output/
+  reasoning text, full URLs, proxy URLs, or local paths in reports.
+
+Decision:
+
+- Keep the implementation thread isolated and non-committing. The control tower
+  will review its dirty diff and verification output before accepting anything
+  into the integration branch.
+- Do not open T4 provider/V21 or T6/T7/T8 hardware windows from this
+  implementation slice.
 
 ### Fast Companion Hybrid Boundary Audit
 
