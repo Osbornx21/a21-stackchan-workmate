@@ -522,6 +522,22 @@ Decision:
 - Keep real provider/V21/Gateway/hardware latency evidence outside this slice
   until a separately authorized T4/T6 window.
 
+Next queue:
+
+- Opened post-commit review thread
+  `019e7c41-1842-7a30-a185-aafc73ba2d73` for `a4e3a6f^..447b917`.
+- Review thread title:
+  `A21 Provider Fixture Sidecar：Post-Commit Review`.
+- Review worktree:
+  `/Users/jiyurun/.codex/worktrees/8922/New project`.
+- Scope: read-only P0/P1/P2 review of sidecar hardening tests, ledger
+  accuracy, namespace safety, redaction coverage, and no production/provider/
+  V21/Gateway/hardware execution regression.
+- Forbidden: edits, commits, provider `--execute`, V21 execute, Gateway runtime
+  or service startup, durable provider reports with payloads, firmware/NVS/
+  flash/raw upload/serial writes, real `/v1/devices/control`, physical device
+  paths, production dependency additions, secrets, or provider payloads.
+
 ### Fast Companion Hybrid Boundary Audit
 
 Accepted from thread `019e7be6-bca3-71f2-9770-857b9da48b67`.
