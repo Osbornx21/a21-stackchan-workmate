@@ -252,12 +252,20 @@ type TraceEvent struct {
 }
 
 type TraceLatencySummary struct {
-	EventCount                   int    `json:"event_count"`
-	LastOffsetMS                 int64  `json:"last_offset_ms"`
-	AudioFrameToPlaybackMS       *int64 `json:"audio_frame_to_playback_ms,omitempty"`
-	V21QueryFirstResultMS        *int64 `json:"v21_query_first_result_ms,omitempty"`
-	BargeInStopMS                *int64 `json:"barge_in_stop_ms,omitempty"`
-	ProviderCommitToFirstAudioMS *int64 `json:"provider_commit_to_first_audio_ms,omitempty"`
+	EventCount                    int    `json:"event_count"`
+	LastOffsetMS                  int64  `json:"last_offset_ms"`
+	AudioFrameToPlaybackMS        *int64 `json:"audio_frame_to_playback_ms,omitempty"`
+	V21QueryFirstResultMS         *int64 `json:"v21_query_first_result_ms,omitempty"`
+	BargeInStopMS                 *int64 `json:"barge_in_stop_ms,omitempty"`
+	ProviderCommitToFirstAudioMS  *int64 `json:"provider_commit_to_first_audio_ms,omitempty"`
+	XiaozhiListenToAudioIngressMS *int64 `json:"xiaozhi_listen_to_audio_ingress_ms,omitempty"`
+	XiaozhiOpusDecodeMS           *int64 `json:"xiaozhi_opus_decode_ms,omitempty"`
+	ASRFirstPartialMS             *int64 `json:"asr_first_partial_ms,omitempty"`
+	LLMFirstContentMS             *int64 `json:"llm_first_content_ms,omitempty"`
+	TTSFirstAudioMS               *int64 `json:"tts_first_audio_ms,omitempty"`
+	AudioDownlinkFirstFrameMS     *int64 `json:"audio_downlink_first_frame_ms,omitempty"`
+	DevicePlaybackStartMS         *int64 `json:"device_playback_start_ms,omitempty"`
+	AnswerFirstAudioTotalMS       *int64 `json:"answer_first_audio_total_ms,omitempty"`
 }
 
 type TraceResponse struct {
@@ -1809,6 +1817,14 @@ func traceLatencySummary(events []TraceEvent) TraceLatencySummary {
 	summary.V21QueryFirstResultMS = traceDeltaMS(events, "v21.query.start", "v21.query.first_result")
 	summary.BargeInStopMS = traceDeltaMS(events, "barge_in.detected", "playback.stop")
 	summary.ProviderCommitToFirstAudioMS = traceDeltaMS(events, "provider.audio.commit", "provider.audio.first_downlink")
+	summary.XiaozhiListenToAudioIngressMS = traceDeltaMS(events, "xiaozhi.listen.start", "audio.ingress.buffered")
+	summary.XiaozhiOpusDecodeMS = traceDeltaMS(events, "xiaozhi.opus_frame.received", "xiaozhi.opus_frame.decoded")
+	summary.ASRFirstPartialMS = traceDeltaMS(events, "audio.ingress.buffered", "asr.first_partial")
+	summary.LLMFirstContentMS = traceDeltaMS(events, "asr.first_partial", "provider.first_content")
+	summary.TTSFirstAudioMS = traceDeltaMS(events, "provider.first_content", "tts.first_audio")
+	summary.AudioDownlinkFirstFrameMS = traceDeltaMS(events, "tts.first_audio", "audio.downlink.first_frame")
+	summary.DevicePlaybackStartMS = traceDeltaMS(events, "audio.downlink.first_frame", "device.playback.start")
+	summary.AnswerFirstAudioTotalMS = traceDeltaMS(events, "audio.ingress.buffered", "audio.downlink.first_frame")
 	return summary
 }
 

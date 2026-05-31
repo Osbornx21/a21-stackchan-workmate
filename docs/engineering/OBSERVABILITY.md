@@ -80,6 +80,11 @@ capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
 `xiaozhi.turn.cancel` on `abort`; these are turn-control markers only, not
 provider cancel or device playback stop proof yet.
+`/v1/traces` now summarizes split latency deltas for
+`xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
+`asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,
+`audio_downlink_first_frame_ms`, `device_playback_start_ms`, and
+`answer_first_audio_total_ms` when the corresponding markers exist.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 

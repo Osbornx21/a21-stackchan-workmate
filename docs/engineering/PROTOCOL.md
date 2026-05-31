@@ -299,6 +299,14 @@ It is provider-neutral and returns ordinary A21 `control.event` envelopes. When 
 - `v21_query_first_result_ms`
 - `barge_in_stop_ms`
 - `provider_commit_to_first_audio_ms`
+- `xiaozhi_listen_to_audio_ingress_ms`
+- `xiaozhi_opus_decode_ms`
+- `asr_first_partial_ms`
+- `llm_first_content_ms`
+- `tts_first_audio_ms`
+- `audio_downlink_first_frame_ms`
+- `device_playback_start_ms`
+- `answer_first_audio_total_ms`
 
 These values are computed from A21 trace markers and are meant for development diagnosis and simulator visibility. They do not claim physical-device first-audio latency until StackChan capture, LAN jitter, speaker buffer, and playback-start markers are present.
 

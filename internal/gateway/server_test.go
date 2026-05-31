@@ -275,6 +275,38 @@ func TestTraceEndpointReturnsLatencySummary(t *testing.T) {
 	}
 }
 
+func TestTraceEndpointReturnsVoicePipelineSplitSummary(t *testing.T) {
+	server := NewServer()
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "xiaozhi.listen.start", 1000)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "xiaozhi.opus_frame.received", 1010)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "xiaozhi.opus_frame.decoded", 1024)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "audio.ingress.buffered", 1030)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "asr.first_partial", 1140)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "provider.first_content", 1300)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "tts.first_audio", 1375)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "audio.downlink.first_frame", 1400)
+	server.recordTrace("a21-trace-pipeline-001", "a21-session-pipeline-001", "stackchan-sim-001", "device.playback.start", 1460)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pipeline-001", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response TraceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	assertSummaryDelta(t, "xiaozhi_listen_to_audio_ingress_ms", response.Summary.XiaozhiListenToAudioIngressMS, 30)
+	assertSummaryDelta(t, "xiaozhi_opus_decode_ms", response.Summary.XiaozhiOpusDecodeMS, 14)
+	assertSummaryDelta(t, "asr_first_partial_ms", response.Summary.ASRFirstPartialMS, 110)
+	assertSummaryDelta(t, "llm_first_content_ms", response.Summary.LLMFirstContentMS, 160)
+	assertSummaryDelta(t, "tts_first_audio_ms", response.Summary.TTSFirstAudioMS, 75)
+	assertSummaryDelta(t, "audio_downlink_first_frame_ms", response.Summary.AudioDownlinkFirstFrameMS, 25)
+	assertSummaryDelta(t, "device_playback_start_ms", response.Summary.DevicePlaybackStartMS, 60)
+	assertSummaryDelta(t, "answer_first_audio_total_ms", response.Summary.AnswerFirstAudioTotalMS, 370)
+}
+
 func TestTraceEndpointRequiresTraceID(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
@@ -3672,6 +3704,13 @@ func traceContains(events []TraceEvent, name string) bool {
 		}
 	}
 	return false
+}
+
+func assertSummaryDelta(t *testing.T, name string, got *int64, want int64) {
+	t.Helper()
+	if got == nil || *got != want {
+		t.Fatalf("%s = %v, want %d", name, got, want)
+	}
 }
 
 func assertNoEnvelope(t *testing.T, conn *websocket.Conn, timeout time.Duration) {

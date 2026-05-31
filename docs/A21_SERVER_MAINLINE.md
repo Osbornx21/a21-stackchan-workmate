@@ -51,6 +51,9 @@ thin sensing and expression device.
 - P0-3 turn foundation: `/v1/xiaozhi` now creates a current turn on
   `listen/start` and cancels it on `abort`, resetting the downlink pacer before
   future frame sends can observe stale turn state.
+- WS-6 split trace summary: `/v1/traces` reports xiaozhi ingress/codec,
+  ASR, LLM, TTS, first downlink, device playback, and total answer-first-audio
+  deltas when the matching trace markers exist.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only
