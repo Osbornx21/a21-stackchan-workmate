@@ -3055,6 +3055,22 @@ func TestRunStackChanLocalTTSPlaybackCanSendExistingA21WAV(t *testing.T) {
 	}
 }
 
+func TestRunStackChanFastCompanionTurnHelpListsLocalOllama(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"stackchan-fast-companion-turn", "--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{"mock_text_stream", "deepseek", "local_ollama"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help output missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

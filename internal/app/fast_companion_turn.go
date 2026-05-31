@@ -130,7 +130,7 @@ func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Wr
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-fast-companion-turn [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--text-provider mock_text_stream|deepseek] [--execute-text-provider] [--listen-source host_fixture|stackchan_mic] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-fast-companion-turn [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--text-provider mock_text_stream|deepseek|local_ollama] [--execute-text-provider] [--listen-source host_fixture|stackchan_mic] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
