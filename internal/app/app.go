@@ -42,84 +42,26 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDemo(args[1:], stdout, stderr)
 	case "product-readiness":
 		return runProductReadiness(args[1:], stdout, stderr)
-	case "agent-plan":
-		return runAgentPlan(args[1:], stdout, stderr)
-	case "agent-io-smoke":
-		return runAgentIOSmoke(args[1:], stdout, stderr)
 	case "gate":
 		return runGate(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
 	case "provider-latency-bench":
 		return runProviderLatencyBench(args[1:], stdout, stderr)
-	case "provider-realtime-plan":
-		return runProviderRealtimePlan(args[1:], stdout, stderr)
-	case "provider-realtime-fixture":
-		return runProviderRealtimeFixture(args[1:], stdout, stderr)
-	case "v21-adapter-smoke":
-		return runV21AdapterSmoke(args[1:], stdout, stderr)
 	case "lan-probe":
 		return runLANProbe(args[1:], stdout, stderr)
-	case "audio-front-end-plan":
-		return runAudioFrontEndPlan(args[1:], stdout, stderr)
-	case "audio-front-end-eval":
-		return runAudioFrontEndEval(args[1:], stdout, stderr)
-	case "local-tts-smoke":
-		return runLocalTTSSmoke(args[1:], stdout, stderr)
-	case "local-asr-smoke":
-		return runLocalASRSmoke(args[1:], stdout, stderr)
 	case "local-voice-loopback":
 		return runLocalVoiceLoopback(args[1:], stdout, stderr)
-	case "firmware-device-report":
-		return runFirmwareDeviceReport(args[1:], stdout, stderr)
 	case "stackchan-accept":
 		return runStackChanAccept(args[1:], stdout, stderr)
 	case "stackchan-local-tts-playback":
 		return runStackChanLocalTTSPlayback(args[1:], stdout, stderr)
 	case "stackchan-fast-companion-turn":
 		return runStackChanFastCompanionTurn(args[1:], stdout, stderr)
-	case "stackchan-official-baseline":
-		return runStackChanOfficialBaseline(args[1:], stdout, stderr)
-	case "stackchan-official-audio-smoke-flash-plan":
-		return runStackChanOfficialAudioSmokeFlash(args[1:], false, stdout, stderr)
-	case "stackchan-official-audio-smoke-flash-execute":
-		return runStackChanOfficialAudioSmokeFlash(args[1:], true, stdout, stderr)
-	case "stackchan-official-pcm-bridge-flash-plan":
-		return runStackChanOfficialPCMBridgeFlash(args[1:], false, stdout, stderr)
-	case "stackchan-official-pcm-bridge-flash-execute":
-		return runStackChanOfficialPCMBridgeFlash(args[1:], true, stdout, stderr)
-	case "stackchan-official-pcm-bridge-nvs-plan":
-		return runStackChanOfficialPCMBridgeNVS(args[1:], false, stdout, stderr)
-	case "stackchan-official-pcm-bridge-nvs-execute":
-		return runStackChanOfficialPCMBridgeNVS(args[1:], true, stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
-	case "serial-list":
-		return runSerialList(args[1:], stdout, stderr)
 	case "firmware-check":
 		return runFirmwareCheck(args[1:], stdout, stderr)
-	case "firmware-package":
-		return runFirmwarePackage(args[1:], stdout, stderr)
-	case "firmware-artifact-prune-plan":
-		return runFirmwareArtifactPrunePlan(args[1:], stdout, stderr)
-	case "firmware-flash-plan":
-		return runFirmwareFlashPlan(args[1:], stdout, stderr)
-	case "firmware-bootstrap-flash-plan":
-		return runFirmwareBootstrapFlashPlan(args[1:], stdout, stderr)
-	case "firmware-bootstrap-flash-execute":
-		return runFirmwareBootstrapFlashExecute(args[1:], stdout, stderr)
-	case "firmware-mic-probe-flash-plan":
-		return runFirmwareMicProbeFlashPlan(args[1:], stdout, stderr)
-	case "firmware-mic-probe-flash-execute":
-		return runFirmwareMicProbeFlashExecute(args[1:], stdout, stderr)
-	case "firmware-imu-probe-flash-plan":
-		return runFirmwareIMUProbeFlashPlan(args[1:], stdout, stderr)
-	case "firmware-imu-probe-flash-execute":
-		return runFirmwareIMUProbeFlashExecute(args[1:], stdout, stderr)
-	case "firmware-sensor-probe-flash-plan":
-		return runFirmwareSensorProbeFlashPlan(args[1:], stdout, stderr)
-	case "firmware-sensor-probe-flash-execute":
-		return runFirmwareSensorProbeFlashExecute(args[1:], stdout, stderr)
 	default:
 		if code, ok := runDeprecatedGateAlias(args, stdout, stderr); ok {
 			return code
@@ -128,6 +70,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 			return code
 		}
 		if code, ok := runDeprecatedFirmwareCheckAlias(args, stdout, stderr); ok {
+			return code
+		}
+		if code, ok := runDeprecatedPlanExecuteAlias(args, stdout, stderr); ok {
+			return code
+		}
+		if code, ok := runAuxiliaryCommandAlias(args, stdout, stderr); ok {
 			return code
 		}
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])

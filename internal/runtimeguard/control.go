@@ -72,6 +72,19 @@ func LookupControlCommandSpec(command string) (ControlCommandSpec, bool) {
 	if commandHasFlag(normalized, "provider-realtime-fixture", "--execute") {
 		return controlCommandSpecs()["provider-realtime-fixture --execute"], true
 	}
+	for _, command := range []string{
+		"stackchan-official-audio-smoke-flash",
+		"stackchan-official-pcm-bridge-flash",
+		"stackchan-official-pcm-bridge-nvs",
+		"firmware-bootstrap-flash",
+		"firmware-mic-probe-flash",
+		"firmware-imu-probe-flash",
+		"firmware-sensor-probe-flash",
+	} {
+		if commandHasFlag(normalized, command, "--execute") {
+			return controlCommandSpecs()[command+" --execute"], true
+		}
+	}
 	if strings.Contains(normalized, "pio run -t upload") ||
 		strings.Contains(normalized, "idf.py flash") ||
 		strings.Contains(normalized, "esptool") && strings.Contains(normalized, "write_flash") {
@@ -182,13 +195,20 @@ func controlCommandSpecs() map[string]ControlCommandSpec {
 		}
 	}
 	return map[string]ControlCommandSpec{
-		"stackchan-official-audio-smoke-flash-execute": t7HardwareWrite("stackchan-official-audio-smoke-flash-execute", "official StackChan app flash execute"),
-		"stackchan-official-pcm-bridge-nvs-execute":    t7HardwareWrite("stackchan-official-pcm-bridge-nvs-execute", "official StackChan PCM bridge NVS write"),
-		"firmware-bootstrap-flash-execute":             t7HardwareWrite("firmware-bootstrap-flash-execute", "release firmware flash execute"),
-		"firmware-mic-probe-flash-execute":             t7HardwareWrite("firmware-mic-probe-flash-execute", "mic probe firmware flash execute"),
-		"firmware-imu-probe-flash-execute":             t7HardwareWrite("firmware-imu-probe-flash-execute", "IMU probe firmware flash execute"),
-		"firmware-sensor-probe-flash-execute":          t7HardwareWrite("firmware-sensor-probe-flash-execute", "sensor probe firmware flash execute"),
-		"stackchan-official-pcm-bridge-flash-execute":  t7HardwareWrite("stackchan-official-pcm-bridge-flash-execute", "official StackChan PCM bridge app flash execute"),
+		"stackchan-official-audio-smoke-flash --execute": t7HardwareWrite("stackchan-official-audio-smoke-flash --execute", "official StackChan app flash execute"),
+		"stackchan-official-audio-smoke-flash-execute":   t7HardwareWrite("stackchan-official-audio-smoke-flash-execute", "official StackChan app flash execute"),
+		"stackchan-official-pcm-bridge-nvs --execute":    t7HardwareWrite("stackchan-official-pcm-bridge-nvs --execute", "official StackChan PCM bridge NVS write"),
+		"stackchan-official-pcm-bridge-nvs-execute":      t7HardwareWrite("stackchan-official-pcm-bridge-nvs-execute", "official StackChan PCM bridge NVS write"),
+		"firmware-bootstrap-flash --execute":             t7HardwareWrite("firmware-bootstrap-flash --execute", "release firmware flash execute"),
+		"firmware-bootstrap-flash-execute":               t7HardwareWrite("firmware-bootstrap-flash-execute", "release firmware flash execute"),
+		"firmware-mic-probe-flash --execute":             t7HardwareWrite("firmware-mic-probe-flash --execute", "mic probe firmware flash execute"),
+		"firmware-mic-probe-flash-execute":               t7HardwareWrite("firmware-mic-probe-flash-execute", "mic probe firmware flash execute"),
+		"firmware-imu-probe-flash --execute":             t7HardwareWrite("firmware-imu-probe-flash --execute", "IMU probe firmware flash execute"),
+		"firmware-imu-probe-flash-execute":               t7HardwareWrite("firmware-imu-probe-flash-execute", "IMU probe firmware flash execute"),
+		"firmware-sensor-probe-flash --execute":          t7HardwareWrite("firmware-sensor-probe-flash --execute", "sensor probe firmware flash execute"),
+		"firmware-sensor-probe-flash-execute":            t7HardwareWrite("firmware-sensor-probe-flash-execute", "sensor probe firmware flash execute"),
+		"stackchan-official-pcm-bridge-flash --execute":  t7HardwareWrite("stackchan-official-pcm-bridge-flash --execute", "official StackChan PCM bridge app flash execute"),
+		"stackchan-official-pcm-bridge-flash-execute":    t7HardwareWrite("stackchan-official-pcm-bridge-flash-execute", "official StackChan PCM bridge app flash execute"),
 		"raw-firmware-write": {
 			Command:         "raw-firmware-write",
 			Tier:            "T8",

@@ -4166,6 +4166,30 @@ func TestRunDeprecatedFirmwareCheckAliasStillDispatches(t *testing.T) {
 	}
 }
 
+func TestRunPlanExecuteCommandDispatchesHelp(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"firmware-bootstrap-flash", "--help"}, want: "a21 firmware-bootstrap-flash"},
+		{args: []string{"firmware-bootstrap-flash-execute", "--help"}, want: "a21 firmware-bootstrap-flash --execute"},
+		{args: []string{"stackchan-official-pcm-bridge-nvs", "--help"}, want: "a21 stackchan-official-pcm-bridge-nvs"},
+		{args: []string{"stackchan-official-pcm-bridge-nvs-execute", "--help"}, want: "a21 stackchan-official-pcm-bridge-nvs"},
+	} {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(tc.args, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("stdout missing %q: %s", tc.want, stdout.String())
+			}
+		})
+	}
+}
+
 func TestRunFirmwareCheckRejectsWrongPlatformIOBoard(t *testing.T) {
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "a21-firmware.json")

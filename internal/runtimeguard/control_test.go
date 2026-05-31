@@ -131,6 +131,26 @@ func TestControlGuardClassifiesExecuteFlagCommands(t *testing.T) {
 	}
 }
 
+func TestControlGuardClassifiesFlashExecuteFlagCommands(t *testing.T) {
+	for _, command := range []string{
+		"stackchan-official-audio-smoke-flash --execute",
+		"stackchan-official-pcm-bridge-flash --execute",
+		"stackchan-official-pcm-bridge-nvs --execute",
+		"firmware-bootstrap-flash --execute",
+		"firmware-mic-probe-flash --execute",
+		"firmware-imu-probe-flash --execute",
+		"firmware-sensor-probe-flash --execute",
+	} {
+		spec, ok := LookupControlCommandSpec(command)
+		if !ok {
+			t.Fatalf("missing spec for %q", command)
+		}
+		if spec.Tier != "T7" {
+			t.Fatalf("%q tier = %q, want T7", command, spec.Tier)
+		}
+	}
+}
+
 func hasFindingCode(findings []Finding, code string) bool {
 	for _, finding := range findings {
 		if finding.Code == code {

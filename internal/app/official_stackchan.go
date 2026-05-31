@@ -362,8 +362,7 @@ func runStackChanOfficialAudioSmokeFlash(args []string, execute bool, stdout io.
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-official-audio-smoke-flash-plan --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--idf-export /path/to/export.sh] [--output-dir reports]")
-			fmt.Fprintln(stdout, "a21 stackchan-official-audio-smoke-flash-execute --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --confirm WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-audio-smoke-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE] [--idf-export /path/to/export.sh] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -413,7 +412,7 @@ func runStackChanOfficialAudioSmokeFlash(args []string, execute bool, stdout io.
 			return 2
 		}
 		var code int
-		controlGuard, code = requireA21ControlAllowed("stackchan-official-audio-smoke-flash-execute", stderr)
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-audio-smoke-flash --execute", stderr)
 		if code != 0 {
 			return code
 		}
@@ -474,8 +473,7 @@ func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.W
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash-plan --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--idf-export /path/to/export.sh] [--output-dir reports]")
-			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash-execute --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP] [--idf-export /path/to/export.sh] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -539,7 +537,7 @@ func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.W
 			return 2
 		}
 		var code int
-		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-flash-execute", stderr)
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-flash --execute", stderr)
 		if code != 0 {
 			return code
 		}
@@ -596,8 +594,7 @@ func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-nvs-plan --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-pcm-bridge-nvs] [--output-dir reports]")
-			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-nvs-execute --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-pcm-bridge-nvs] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-nvs --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS] [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-pcm-bridge-nvs] [--output-dir reports]")
 			return 0
 		case "--idf-export":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -661,7 +658,7 @@ func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Wri
 			return 2
 		}
 		var code int
-		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-nvs-execute", stderr)
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-nvs --execute", stderr)
 		if code != 0 {
 			return code
 		}

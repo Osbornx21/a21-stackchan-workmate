@@ -155,34 +155,34 @@ stackchan-official-pcm-bridge-build:
 
 stackchan-official-audio-smoke-flash-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-audio-smoke-flash-plan --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-audio-smoke-flash --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --output-dir reports
 
 stackchan-official-audio-smoke-flash-execute:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-audio-smoke-flash-execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --confirm "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-audio-smoke-flash --execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --confirm "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM)" --output-dir reports
 
 stackchan-official-pcm-bridge-flash-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-pcm-bridge-flash-plan --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-pcm-bridge-flash --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --output-dir reports
 
 stackchan-official-pcm-bridge-flash-execute:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-pcm-bridge-flash-execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-pcm-bridge-flash --execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM)" --output-dir reports
 
 stackchan-official-pcm-bridge-nvs-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-pcm-bridge-nvs-plan --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-pcm-bridge-nvs --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --output-dir reports
 
 stackchan-official-pcm-bridge-nvs-execute:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM is required"; exit 2)
-	go run ./cmd/a21 stackchan-official-pcm-bridge-nvs-execute --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-pcm-bridge-nvs --execute --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM)" --output-dir reports
 
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
@@ -374,40 +374,40 @@ firmware-flash-plan:
 firmware-bootstrap-flash-plan:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 firmware-bootstrap-flash-plan --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	go run ./cmd/a21 firmware-bootstrap-flash --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 firmware-bootstrap-flash-execute:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_BOOTSTRAP_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_FIRMWARE" || (echo "A21_BOOTSTRAP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_FIRMWARE is required"; exit 2)
-	go run ./cmd/a21 firmware-bootstrap-flash-execute --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_BOOTSTRAP_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 firmware-bootstrap-flash --execute --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_BOOTSTRAP_FLASH_CONFIRM)" --output-dir reports
 
 firmware-mic-probe-flash-plan: firmware-mic-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 firmware-mic-probe-flash-plan --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	go run ./cmd/a21 firmware-mic-probe-flash --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 firmware-mic-probe-flash-execute: firmware-mic-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_MIC_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE" || (echo "A21_MIC_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE is required"; exit 2)
-	go run ./cmd/a21 firmware-mic-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_MIC_PROBE_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 firmware-mic-probe-flash --execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_MIC_PROBE_FLASH_CONFIRM)" --output-dir reports
 
 firmware-imu-probe-flash-plan: firmware-imu-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 firmware-imu-probe-flash-plan --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	go run ./cmd/a21 firmware-imu-probe-flash --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 firmware-imu-probe-flash-execute: firmware-imu-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_IMU_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE" || (echo "A21_IMU_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required"; exit 2)
-	go run ./cmd/a21 firmware-imu-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_IMU_PROBE_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 firmware-imu-probe-flash --execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_IMU_PROBE_FLASH_CONFIRM)" --output-dir reports
 
 firmware-sensor-probe-flash-plan: firmware-sensor-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 firmware-sensor-probe-flash-plan --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	go run ./cmd/a21 firmware-sensor-probe-flash --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 firmware-sensor-probe-flash-execute: firmware-sensor-probe-build
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test "$(A21_SENSOR_PROBE_FLASH_CONFIRM)" = "WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE" || (echo "A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE is required"; exit 2)
-	go run ./cmd/a21 firmware-sensor-probe-flash-execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_SENSOR_PROBE_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 firmware-sensor-probe-flash --execute --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD) --confirm "$(A21_SENSOR_PROBE_FLASH_CONFIRM)" --output-dir reports
 
 verify:
 	go test ./...

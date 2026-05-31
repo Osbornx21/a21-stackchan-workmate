@@ -72,7 +72,7 @@ func runFirmwareIMUProbeFlashPlan(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-imu-probe-flash-plan --port /dev/cu.usbmodemXXXX --commit <git-sha> [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 firmware-imu-probe-flash --port /dev/cu.usbmodemXXXX --commit <git-sha> [--execute --confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE] [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -151,7 +151,7 @@ func runFirmwareIMUProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-imu-probe-flash-execute --port /dev/cu.usbmodemXXXX --commit <git-sha> --confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 firmware-imu-probe-flash --execute --port /dev/cu.usbmodemXXXX --commit <git-sha> --confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE [--artifact firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe/firmware.bin] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3_imu_probe] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -218,7 +218,7 @@ func runFirmwareIMUProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required")
 		return 2
 	}
-	controlGuard, code := requireA21ControlAllowed("firmware-imu-probe-flash-execute", stderr)
+	controlGuard, code := requireA21ControlAllowed("firmware-imu-probe-flash --execute", stderr)
 	if code != 0 {
 		return code
 	}

@@ -228,7 +228,7 @@ func runFirmwareBootstrapFlashPlan(args []string, stdout io.Writer, stderr io.Wr
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-bootstrap-flash-plan --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <git-sha> [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 firmware-bootstrap-flash --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <git-sha> [--execute --confirm WRITE_A21_STACKCHAN_FIRMWARE] [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -306,7 +306,7 @@ func runFirmwareBootstrapFlashExecute(args []string, stdout io.Writer, stderr io
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-bootstrap-flash-execute --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <git-sha> --confirm WRITE_A21_STACKCHAN_FIRMWARE [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 firmware-bootstrap-flash --execute --artifact firmware/artifacts/<a21-stackchan...bin> --port /dev/cu.usbmodemXXXX --commit <git-sha> --confirm WRITE_A21_STACKCHAN_FIRMWARE [--build-dir firmware/stackchan/.pio/build/a21_stackchan_cores3] [--core-dir .a21-tools/platformio-core] [--output-dir reports]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -373,7 +373,7 @@ func runFirmwareBootstrapFlashExecute(args []string, stdout io.Writer, stderr io
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_FIRMWARE is required")
 		return 2
 	}
-	controlGuard, code := requireA21ControlAllowed("firmware-bootstrap-flash-execute", stderr)
+	controlGuard, code := requireA21ControlAllowed("firmware-bootstrap-flash --execute", stderr)
 	if code != 0 {
 		return code
 	}

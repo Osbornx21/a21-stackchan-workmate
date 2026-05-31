@@ -4,7 +4,7 @@
 
 Accepted for the foreground A21 hardware window opened on 2026-05-31.
 
-`stackchan-official-pcm-bridge-flash-execute` is downgraded from T8 to T7 only
+`stackchan-official-pcm-bridge-flash --execute` is downgraded from T8 to T7 only
 when the reviewed execute guard passes from a clean
 `codex/a21-hardware-window-*` branch, with an explicit USB port, a fresh bridge
 build/flash plan, scoped NVS provisioning, and the exact
@@ -31,7 +31,7 @@ official StackChan, A21 bridge, X21/V21 assumptions, and local hardware state.
 
 ## Decision
 
-Implement `stackchan-official-pcm-bridge-flash-execute` as a guarded T7
+Implement `stackchan-official-pcm-bridge-flash --execute` as a guarded T7
 foreground hardware-write lane. The command must consume the current bridge
 build directory, validate the app artifact and `flash_args`, pass the A21
 control guard, require the exact app-flash confirmation token, write a durable
@@ -43,7 +43,7 @@ app flashing remain forbidden regardless of this ADR.
 
 ## Why The Lane Needs A Strict T7 Gate
 
-- The `stackchan-official-pcm-bridge-flash-plan` is deliberately
+- The `stackchan-official-pcm-bridge-flash` command is deliberately
   no-write. It validates the app artifact and required flash parts but does not
   prove that a foreground hardware window is open.
 - The accepted NVS lane only proves scoped NVS mutation. It does not prove that
@@ -90,8 +90,8 @@ window. Executing this command requires all of the following:
   `WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP`, and recorded exactly in the
   guard schema without accepting partial matches.
 - Fresh control evidence from the same clean hardware-window branch:
-  `make verify`, `go run ./cmd/a21 preflight`, `go run ./cmd/a21 doctor`, and
-  `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-flash-execute'`.
+  `make verify`, `go run ./cmd/a21 gate --scope host`, and
+  `go run ./cmd/a21 gate --scope hardware --command 'stackchan-official-pcm-bridge-flash --execute'`.
 - Execution receipt including `trace_id`, `session_id`, `device_id`, branch,
   commit, worktree path, dirty state, tier, command, artifact hashes, flash
   offsets, NVS receipt path, rollback package path, port, operator token status,
