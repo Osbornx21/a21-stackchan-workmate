@@ -2,6 +2,7 @@ package xiaozhi
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -350,5 +351,177 @@ func TestParseBinaryFrameRejectsUnsupportedBinaryVersion(t *testing.T) {
 	_, err := ParseBinaryFrameVersion([]byte{0x01}, DirectionDeviceToServer, Identity{DeviceID: "stackchan-001"}, 4)
 	if !errors.Is(err, ErrUnsupportedBinaryProtocol) {
 		t.Fatalf("err = %v, want %v", err, ErrUnsupportedBinaryProtocol)
+	}
+}
+
+func TestBuildServerHelloKeepsStockProfileFreeOfDebugExtensions(t *testing.T) {
+	data, err := BuildServerHello(Identity{
+		DeviceID:  "stackchan-001",
+		TraceID:   "a21-trace-server-hello",
+		SessionID: "a21-session-server-hello",
+	}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(data)
+	for _, forbidden := range []string{"debug_metrics", "device_events"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("server hello leaked %q: %s", forbidden, payload)
+		}
+	}
+
+	var hello map[string]any
+	if err := json.Unmarshal(data, &hello); err != nil {
+		t.Fatal(err)
+	}
+	if hello["type"] != "hello" || hello["transport"] != "websocket" || hello["version"] != float64(3) {
+		t.Fatalf("hello = %#v, want stock xiaozhi server hello", hello)
+	}
+	audio, ok := hello["audio_params"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio_params = %#v, want object", hello["audio_params"])
+	}
+	if audio["format"] != "opus" || audio["sample_rate"] != float64(24000) || audio["frame_duration"] != float64(60) {
+		t.Fatalf("audio_params = %#v, want 24kHz mono Opus 60ms", audio)
+	}
+}
+
+func TestBuildAndParseMCPJSONRPCEnvelope(t *testing.T) {
+	initData, err := BuildMCPInitializeRequest("a21-mcp-001", "a21-xiaozhi-transport")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initEnvelope, err := ParseMCPEnvelope(initData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initEnvelope.JSONRPC != "2.0" || initEnvelope.Method != MCPMethodInitialize {
+		t.Fatalf("initialize envelope = %+v, want jsonrpc 2.0 initialize", initEnvelope)
+	}
+
+	listData, err := BuildMCPToolsListRequest("a21-mcp-002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listEnvelope, err := ParseMCPEnvelope(listData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listEnvelope.Method != MCPMethodToolsList {
+		t.Fatalf("tools/list method = %q, want %q", listEnvelope.Method, MCPMethodToolsList)
+	}
+
+	callData, err := BuildMCPToolsCallRequest("a21-mcp-003", "display.set_emotion", map[string]any{
+		"emotion":       "listening",
+		"api_key":       "sk-a21-secret",
+		"transcript":    "raw office words",
+		"audio_base64":  "AAAA",
+		"safe_metadata": "visible",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	callPayload := string(callData)
+	for _, leaked := range []string{"sk-a21-secret", "raw office words", "AAAA"} {
+		if strings.Contains(callPayload, leaked) {
+			t.Fatalf("tools/call leaked sensitive argument value %q: %s", leaked, callPayload)
+		}
+	}
+	if !strings.Contains(callPayload, `"safe_metadata":"visible"`) {
+		t.Fatalf("tools/call dropped safe metadata: %s", callPayload)
+	}
+	callEnvelope, err := ParseMCPEnvelope(callData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callEnvelope.Method != MCPMethodToolsCall || callEnvelope.ToolName != "display.set_emotion" {
+		t.Fatalf("tools/call envelope = %+v, want sanitized tool call", callEnvelope)
+	}
+}
+
+func TestMCPRejectsInvalidToolNamesAndLegacyIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		tool string
+		want error
+	}{
+		{name: "empty", tool: "", want: ErrInvalidMCPToolName},
+		{name: "space", tool: "display set", want: ErrInvalidMCPToolName},
+		{name: "legacy x21", tool: "x21.display.set", want: ErrLegacyIdentity},
+		{name: "legacy v21", tool: "v21.query", want: ErrLegacyIdentity},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := BuildMCPToolsCallRequest("a21-mcp-bad", tc.tool, map[string]any{"emotion": "idle"})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+		})
+	}
+
+	_, err := ParseMCPEnvelope([]byte(`{"jsonrpc":"2.0","id":"a21-mcp-bad","method":"tools/call","params":{"name":"x21.display","arguments":{}}}`))
+	if !errors.Is(err, ErrLegacyIdentity) {
+		t.Fatalf("parse err = %v, want %v", err, ErrLegacyIdentity)
+	}
+}
+
+func TestBuildLLMEmotionMessageMapsA21StatesWithoutLegacyNames(t *testing.T) {
+	tests := map[string]string{
+		"idle":         "idle",
+		"listening":    "listening",
+		"thinking":     "thinking",
+		"speaking":     "speaking",
+		"interrupted":  "interrupted",
+		"professional": "professional",
+		"error":        "error",
+		"":             "idle",
+	}
+	for state, wantEmotion := range tests {
+		t.Run("state_"+state, func(t *testing.T) {
+			data, err := BuildLLMEmotionMessage(Identity{
+				DeviceID:  "stackchan-001",
+				TraceID:   "a21-trace-emotion",
+				SessionID: "a21-session-emotion",
+			}, state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := string(data)
+			if strings.Contains(strings.ToLower(payload), "x21") || strings.Contains(strings.ToLower(payload), "v21") {
+				t.Fatalf("emotion payload leaked legacy naming: %s", payload)
+			}
+			var msg map[string]any
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatal(err)
+			}
+			if msg["type"] != "llm" || msg["emotion"] != wantEmotion {
+				t.Fatalf("message = %#v, want llm emotion %q", msg, wantEmotion)
+			}
+		})
+	}
+
+	_, err := BuildLLMEmotionMessage(Identity{DeviceID: "x21-stackchan"}, "listening")
+	if !errors.Is(err, ErrLegacyIdentity) {
+		t.Fatalf("err = %v, want %v", err, ErrLegacyIdentity)
+	}
+}
+
+func TestClampYAngleKeepsServoContractInsideStockRange(t *testing.T) {
+	tests := map[int]int{
+		-30: 5,
+		0:   5,
+		5:   5,
+		42:  42,
+		85:  85,
+		120: 85,
+	}
+	for input, want := range tests {
+		if got := ClampYAngle(input); got != want {
+			t.Fatalf("ClampYAngle(%d) = %d, want %d", input, got, want)
+		}
+	}
+	params := BuildMotionParams(120)
+	if params["y_angle"] != 85 {
+		t.Fatalf("motion params = %#v, want y_angle clamped to 85", params)
 	}
 }

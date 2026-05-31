@@ -94,6 +94,32 @@ the current turn context, clears current-turn ownership, and resets the downlink
 pacer. Future provider and TTS frame code must check current-turn ownership
 before every device-facing frame send.
 
+### Xiaozhi MCP And Expression Contract
+
+The xiaozhi transport package now carries a host-only WS-5 contract for future
+device-control integration:
+
+- MCP JSON-RPC envelopes are limited to `initialize`, `tools/list`, and
+  `tools/call` request shapes. This package only builds and parses the
+  envelopes; it does not execute `tools/call`, discover live device tools, or
+  connect to Gateway.
+- `tools/call` builders validate tool names, reject legacy-looking X21/V21
+  names, and redact sensitive argument fields such as keys, tokens, prompt or
+  transcript text, raw/base64 audio, provider output, URLs, proxies, and local
+  paths.
+- Server-to-device expression uses stock xiaozhi `type=llm` messages with an
+  `emotion` field. A21 expression states currently map to
+  `idle`, `listening`, `thinking`, `speaking`, `interrupted`, `professional`,
+  and `error`.
+- Optional motion parameters clamp `y_angle` to the stock-safe 5-85 degree
+  range before any later adapter may send them.
+
+This is a protocol contract only. It is not actual servo, RGB, screen, MCP
+tool, Gateway, firmware, or physical hardware acceptance. Future
+Gateway/device-control integration must first consume tools discovered from the
+connected device and then prove the resulting behavior with traceable device
+evidence.
+
 ## Protocol Rules
 
 - Every message family must be versioned.

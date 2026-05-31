@@ -54,6 +54,11 @@ thin sensing and expression device.
 - P0-3 turn foundation: `/v1/xiaozhi` now creates a current turn on
   `listen/start` and cancels it on `abort`, resetting the downlink pacer before
   future frame sends can observe stale turn state.
+- WS-5 contract precursor: `internal/transport/xiaozhi` can build and parse
+  minimal MCP JSON-RPC `initialize`, `tools/list`, and sanitized `tools/call`
+  envelopes, build stock `type=llm` emotion messages from A21 expression
+  states, and clamp planned motion `y_angle` to 5-85 degrees. This is not
+  Gateway/device-control integration or hardware acceptance.
 - WS-6 split trace summary: `/v1/traces` reports xiaozhi ingress/codec,
   ASR, LLM, TTS, first downlink, device playback, and total answer-first-audio
   deltas when the matching trace markers exist.
