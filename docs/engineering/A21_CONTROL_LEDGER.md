@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `560df00`.
+Last accepted integration commit before this ledger update: `aaeda0e`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `560df00 feat(providers): add agent task bridge scaffold`.
+  `aaeda0e docs(control): accept agent task bridge scaffold`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -85,6 +85,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | active; read-only review of `560df00^..aaeda0e` | T0/T1/T2 | no |
 | `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | completed; accepted into integration branch at `560df00` | T1/T2 | no |
 | `019e7c41-1842-7a30-a185-aafc73ba2d73` | Provider fixture sidecar post-commit review | `/Users/jiyurun/.codex/worktrees/8922/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | accepted into integration branch at `a4e3a6f`; post-review closed at `a1742ae` | T1/T2 | no |
@@ -693,6 +694,42 @@ Remaining gap:
 
 - Real adapter/runtime work remains a future T4/T6 window with explicit
   authorization, redacted receipts, and runtime gates.
+
+### AgentTaskProvider Bridge Post-Commit Review Thread
+
+Opened by the control tower after accepting the AgentTaskProvider Bridge
+scaffold.
+
+Evidence:
+
+- Review thread: `019e7c57-bd71-72d0-9cf8-ec9674f41bf0`.
+- Review thread title: `A21 AgentTask Bridge：Post-Commit Review`.
+- Review worktree: `/Users/jiyurun/.codex/worktrees/7077/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `aaeda0e docs(control): accept agent task bridge scaffold`.
+- Scope: read-only P0/P1/P2 review of implementation commit `560df00` and
+  ledger acceptance commit `aaeda0e`.
+- Required focus: no runtime/provider/V21/Gateway/hardware escalation,
+  no namespace pollution, no raw agent/provider/tool payload leakage, no
+  `A21_PROVIDER_PRIMARY` selection of agent-task profiles, accurate ledger
+  evidence, and adequate tests for the T1/T2 scaffold.
+- Forbidden: file edits, commits, pushes, provider `--execute`, V21 execute,
+  Gateway runtime/service startup, durable reports with payloads, firmware/NVS/
+  flash/raw upload/serial writes, real `/v1/devices/control`, physical device
+  paths, production dependency additions, secrets, provider payloads, or agent
+  payloads.
+
+Post-acceptance control-tower gates:
+
+- Passed: `go run ./cmd/a21 preflight`.
+- Passed with expected warning: `go run ./cmd/a21 doctor`. Warning:
+  `firmware_current_artifact_missing` for current commit `aaeda0e`; this docs/
+  provider scaffold slice did not build or promote firmware artifacts.
+- `go run ./cmd/a21 promotion-readiness` returned nonzero with
+  `review_ready=true`, `dirty_file_count=0`, `external_promotion_ready=false`,
+  and blockers `promotion_remote_missing`, `promotion_target_remote_missing`,
+  and `promotion_target_branch_missing`.
 
 ### Fast Companion Hybrid Boundary Audit
 
