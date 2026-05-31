@@ -39,6 +39,9 @@ thin sensing and expression device.
   rates through a pinned pure-Go Opus library.
 - WS-1 Gateway Opus telemetry hook: `/v1/xiaozhi` decodes valid uplink Opus
   frames to PCM16 for aggregate frame/sample/duration telemetry only.
+- WS-2 precursor: decoded xiaozhi PCM16 now feeds existing `audio.Ingress`,
+  VAD markers, and loopback-only recent-audio redaction without provider
+  execution.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only
@@ -46,9 +49,10 @@ thin sensing and expression device.
 - Current known warning: no release-ledger-validated A21 firmware artifact
   matches the current server-mainline commits; this is not a server-mainline
   blocker unless a future slice claims firmware release acceptance.
-- Current xiaozhi seam limitation: Gateway can count raw Opus frames and decode
-  valid uplink frames to PCM telemetry, but ASR, provider streaming, TTS encode,
-  binary downlink, and real device proof remain not accepted.
+- Current xiaozhi seam limitation: Gateway can count raw Opus frames, decode
+  valid uplink frames to PCM telemetry, and buffer those frames in audio ingress,
+  but ASR, provider streaming, TTS encode, binary downlink, and real device
+  proof remain not accepted.
 
 ## Acceptance Board
 

@@ -114,6 +114,9 @@ func (c *Codec) DecodePCM16(packet []byte) ([]int16, error) {
 		return nil, err
 	}
 	samples := n * c.channels
+	if samples != c.frameSamples*c.channels {
+		return nil, fmt.Errorf("%w: decoded %d samples, want %d", ErrInvalidOpusPacket, samples, c.frameSamples*c.channels)
+	}
 	return append([]int16(nil), pcm[:samples]...), nil
 }
 

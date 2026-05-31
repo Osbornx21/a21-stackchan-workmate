@@ -72,8 +72,10 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 `xiaozhi.opus_frame.ignored_not_listening`, `xiaozhi.opus_no_frames`,
 `xiaozhi.opus_decoded_pcm16`, `xiaozhi.opus_decode_error`,
 `xiaozhi.opus_partial_decode_error`, `xiaozhi.abort.received`, and
-`xiaozhi.tts.stop`. These markers prove protocol/session/codec telemetry only;
-they are not ASR, TTS, real-device playback, or PRD latency acceptance evidence.
+`xiaozhi.tts.stop`. Valid decoded xiaozhi Opus frames also emit the ordinary
+`audio.ingress.buffered` and VAD markers through the existing ingress path.
+These markers prove protocol/session/codec/ingress telemetry only; they are not
+ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 
 AgentTask bridge reports include package-level T1/T2 semantic reports in
 `internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI

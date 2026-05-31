@@ -54,11 +54,13 @@ count and byte count, propagates or derives `device_id`, `trace_id`, and
 `session_id`, and rejects legacy-looking X21/V21 identities.
 
 This is not yet the complete product voice chain. The current WS-1 seam decodes
-valid uplink Opus frames to PCM16 only to produce aggregate telemetry
+valid uplink Opus frames to PCM16 to produce aggregate telemetry
 (`decoded_frame_count`, `decoded_sample_count`, `decoded_duration_ms`) and an
-honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`. It
-does not run ASR/LLM/TTS providers and does not send binary Opus TTS audio back
-to the device. On `listen/stop`, it emits an honest xiaozhi TTS lifecycle
+honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`.
+Decoded PCM also enters the existing `audio.Ingress` buffer and VAD markers so
+the next ASR slice has the same observable ingress surface as `/ws/audio`.
+It does not run ASR/LLM/TTS providers and does not send binary Opus TTS audio
+back to the device. On `listen/stop`, it emits an honest xiaozhi TTS lifecycle
 placeholder so tests and operators cannot mistake the transport and codec proof
 for audible product acceptance.
 
@@ -140,11 +142,12 @@ authorization.
 
 Current `AudioCodecOpus` is reserved vocabulary for the older A21 envelope
 path. The xiaozhi compatibility seam can receive raw Opus binary frames, and
-Gateway can decode valid 60 ms mono uplink frames for telemetry, but it must not
-treat those frames as ASR-ready audio until a later provider/frontend slice
-adds the explicit handoff. Current A21 envelope validation still accepts
-`pcm_s16le` frames, and no Gateway, provider, firmware, or physical device path
-should treat Opus media as product-complete from this document.
+Gateway can decode valid 60 ms mono uplink frames for telemetry and
+loopback-only ingress inspection, but it must not treat those frames as
+provider-ready audio until a later ASR/frontend slice adds the explicit handoff.
+Current A21 envelope validation still accepts `pcm_s16le` frames, and no
+Gateway, provider, firmware, or physical device path should treat Opus media as
+product-complete from this document.
 
 ## Control And Device Events
 

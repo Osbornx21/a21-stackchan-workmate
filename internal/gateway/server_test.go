@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/audio/opuscodec"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
@@ -1336,6 +1337,76 @@ func TestXiaozhiWebSocketKeepsBadOpusDecodeHonest(t *testing.T) {
 	}
 	readXiaozhiJSON(t, ctx, conn)
 	readXiaozhiJSON(t, ctx, conn)
+}
+
+func TestXiaozhiWebSocketDecodedOpusFeedsAudioIngress(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-audio-ingress",
+		"session_id": "a21-session-xiaozhi-audio-ingress",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?device_id=stackchan-001&session_id=a21-session-xiaozhi-audio-ingress", nil)
+	req.RemoteAddr = "127.0.0.1:45678"
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"sample_rate_hz":16000`,
+		`"duration_ms":60`,
+		`"data_bytes":1920`,
+		`"speech_detected":true`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("recent response missing %q: %s", want, rec.Body.String())
+		}
+	}
+	if strings.Contains(rec.Body.String(), `"data_base64"`) {
+		t.Fatalf("default recent response leaked decoded audio: %s", rec.Body.String())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-audio-ingress", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "audio.ingress.buffered") || !traceContains(traces.Events, string(audio.EventVADSpeechStart)) {
+		t.Fatalf("trace missing decoded ingress markers: %+v", traces.Events)
+	}
 }
 
 func TestXiaozhiWebSocketAcceptsProtocolVersion3BinaryFrames(t *testing.T) {
@@ -3498,6 +3569,27 @@ func xiaozhiTestOpusPacket(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	packet, err := codec.EncodePCM16(make([]int16, codec.FrameSamples()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return packet
+}
+
+func xiaozhiTestSpeechOpusPacket(t *testing.T) []byte {
+	t.Helper()
+	codec, err := opuscodec.New(16000, 1, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pcm := make([]int16, codec.FrameSamples())
+	for i := range pcm {
+		if (i/10)%2 == 0 {
+			pcm[i] = 12000
+		} else {
+			pcm[i] = -12000
+		}
+	}
+	packet, err := codec.EncodePCM16(pcm)
 	if err != nil {
 		t.Fatal(err)
 	}

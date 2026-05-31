@@ -73,6 +73,9 @@ func TestCodecRejectsInvalidConfigAndFrames(t *testing.T) {
 	if _, err := codec.DecodePCM16(nil); err == nil {
 		t.Fatal("DecodePCM16 accepted empty packet")
 	}
+	if _, err := codec.DecodePCM16([]byte{0x01, 0x02, 0x03}); err == nil {
+		t.Fatal("DecodePCM16 accepted packet with wrong decoded duration")
+	}
 }
 
 func sinePCM16(sampleRate int, durationMS int, frequencyHz float64, amplitude float64) []int16 {

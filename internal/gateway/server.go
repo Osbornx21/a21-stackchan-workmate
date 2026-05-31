@@ -924,7 +924,72 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	session.opusDecodedFrameCount++
 	session.opusDecodedSampleCount += len(pcm)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
+	s.observeXiaozhiDecodedIngress(session, pcm)
 	return true
+}
+
+func (s *Server) observeXiaozhiDecodedIngress(session *xiaozhiSession, pcm []int16) {
+	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
+		return
+	}
+	durationMS := len(pcm) * 1000 / session.opusSampleRateHz / session.opusChannels
+	chunk := protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: session.opusSampleRateHz,
+		Channels:     session.opusChannels,
+		DurationMS:   durationMS,
+		DataBase64:   pcm16Base64(pcm),
+	}
+	frame := protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  session.deviceID,
+		Kind:      protocol.KindAudioFrame,
+		Seq:       uint64(session.opusFrameCount),
+		TraceID:   session.traceID,
+		SessionID: session.sessionID,
+		SentAtMS:  s.now().UnixMilli(),
+	}
+	result := s.audioIngress.Push(audio.Frame{
+		DeviceID:     session.deviceID,
+		TraceID:      session.traceID,
+		SessionID:    session.sessionID,
+		Seq:          frame.Seq,
+		SampleRateHz: chunk.SampleRateHz,
+		Channels:     chunk.Channels,
+		DurationMS:   chunk.DurationMS,
+		DataBase64:   chunk.DataBase64,
+	})
+	s.recordAudioCaptureFrame(frame, chunk, result, session.traceID, session.sessionID)
+	s.metrics.audioIngressFramesTotal.Inc()
+	if result.DroppedFrameDelta > 0 {
+		s.metrics.audioIngressDroppedTotal.Add(float64(result.DroppedFrameDelta))
+	}
+	s.metrics.audioIngressBufferDepth.Set(float64(result.BufferedFrames))
+	s.metrics.audioIngressRMS.Set(result.RMS)
+	s.metrics.vadDetectorDecisions.WithLabelValues(vadDetectorLabel(result.VADDetector), vadDecisionLabel(result.SpeechDetected)).Inc()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "audio.ingress.buffered", s.now().UnixMilli())
+	for _, event := range result.Events {
+		switch event {
+		case audio.EventVADSpeechStart:
+			s.metrics.vadSpeechStartTotal.Inc()
+		case audio.EventVADSpeechEnd:
+			s.metrics.vadSpeechEndTotal.Inc()
+		}
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, string(event), s.now().UnixMilli())
+	}
+}
+
+func pcm16Base64(pcm []int16) string {
+	if len(pcm) == 0 {
+		return ""
+	}
+	data := make([]byte, len(pcm)*2)
+	for i, sample := range pcm {
+		value := uint16(sample)
+		data[i*2] = byte(value)
+		data[i*2+1] = byte(value >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
