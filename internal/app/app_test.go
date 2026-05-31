@@ -277,6 +277,62 @@ func TestRunPromotionReadinessBlocksMissingTopicAncestor(t *testing.T) {
 	}
 }
 
+func TestRunGateIntegrationWrapsPromotionReadiness(t *testing.T) {
+	dir := t.TempDir()
+	writePromotionReadinessGitScript(t, dir, promotionGitScriptOptions{})
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"gate", "--scope", "integration"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.gate.v1"`,
+		`"scope": "integration"`,
+		`"promotion_readiness"`,
+		`"promotion_remote_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunGateHardwareRequiresCommand(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"gate", "--scope", "hardware"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--command requires a value") {
+		t.Fatalf("stderr missing command error: %s", stderr.String())
+	}
+}
+
+func TestRunGateHardwareWrapsControlGuard(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"gate", "--scope", "hardware", "--command", "provider-smoke --execute"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.gate.v1"`,
+		`"scope": "hardware"`,
+		`"control_guard"`,
+		`"command": "provider-smoke --execute"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\ninternal/v21adapter/client.go\n")

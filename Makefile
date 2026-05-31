@@ -39,30 +39,33 @@ A21_CONTROL_COMMAND ?=
 A21_CONTROL_TIER ?=
 A21_IDF_EXPORT ?= /Users/jiyurun/esp/esp-idf-v5.5.2/export.sh
 
-.PHONY: test verify preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
+.PHONY: test verify gate preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
 
 test:
 	go test ./...
 
+gate:
+	go run ./cmd/a21 gate --scope host
+
 preflight:
-	go run ./cmd/a21 preflight
+	go run ./cmd/a21 gate --scope host
 
 namespace-audit:
-	go run ./cmd/a21 namespace-audit
+	go run ./cmd/a21 gate --scope host
 
 promotion-readiness:
-	go run ./cmd/a21 promotion-readiness
+	go run ./cmd/a21 gate --scope integration
 
 control-guard:
 	@test -n "$(A21_CONTROL_COMMAND)" || (echo "A21_CONTROL_COMMAND is required, for example A21_CONTROL_COMMAND='provider-smoke --execute'"; exit 2)
 	@if [ -n "$(A21_CONTROL_TIER)" ]; then \
-		go run ./cmd/a21 control-guard --command "$(A21_CONTROL_COMMAND)" --tier "$(A21_CONTROL_TIER)"; \
+		go run ./cmd/a21 gate --scope hardware --command "$(A21_CONTROL_COMMAND)" --tier "$(A21_CONTROL_TIER)"; \
 	else \
-		go run ./cmd/a21 control-guard --command "$(A21_CONTROL_COMMAND)"; \
+		go run ./cmd/a21 gate --scope hardware --command "$(A21_CONTROL_COMMAND)"; \
 	fi
 
 doctor:
-	go run ./cmd/a21 doctor
+	go run ./cmd/a21 gate --scope host
 
 gateway:
 	go run ./cmd/a21 gateway --addr 127.0.0.1:21080
@@ -184,7 +187,7 @@ stackchan-official-pcm-bridge-nvs-execute:
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 
-release-check: verify namespace-audit latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff doctor
+release-check: verify gate latency-bench firmware-test firmware-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan office-handoff
 
 firmware-tools:
 	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh

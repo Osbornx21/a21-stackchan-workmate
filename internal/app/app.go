@@ -46,16 +46,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runAgentPlan(args[1:], stdout, stderr)
 	case "agent-io-smoke":
 		return runAgentIOSmoke(args[1:], stdout, stderr)
-	case "preflight":
-		return runPreflight(stdout, stderr)
-	case "namespace-audit":
-		return runNamespaceAudit(stdout, stderr)
-	case "promotion-readiness":
-		return runPromotionReadiness(args[1:], stdout, stderr)
-	case "control-guard":
-		return runControlGuard(args[1:], stdout, stderr)
-	case "doctor":
-		return runDoctor(args[1:], stdout, stderr)
+	case "gate":
+		return runGate(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
 	case "provider-latency-bench":
@@ -80,12 +72,6 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runLocalVoiceLoopback(args[1:], stdout, stderr)
 	case "firmware-device-report":
 		return runFirmwareDeviceReport(args[1:], stdout, stderr)
-	case "office-preflight":
-		return runOfficePreflight(args[1:], stdout, stderr)
-	case "office-handoff":
-		return runOfficeHandoff(args[1:], stdout, stderr)
-	case "office-acceptance":
-		return runOfficeAcceptance(args[1:], stdout, stderr)
 	case "stackchan-identity-acceptance":
 		return runStackChanIdentityAcceptance(args[1:], stdout, stderr)
 	case "stackchan-physical-evidence":
@@ -161,6 +147,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "firmware-sensor-probe-flash-execute":
 		return runFirmwareSensorProbeFlashExecute(args[1:], stdout, stderr)
 	default:
+		if code, ok := runDeprecatedGateAlias(args, stdout, stderr); ok {
+			return code
+		}
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}

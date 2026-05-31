@@ -19,14 +19,17 @@ faster than the governance docs can catch up.
 - The official PCM bridge NVS-only lane may be reviewed and stabilized.
 - The official PCM bridge app flash-execute lane is blocked until an ADR,
   reviewed guard, and fresh verification approve it.
-- `go run ./cmd/a21 control-guard` is now the machine-readable control gate.
+- `go run ./cmd/a21 gate --scope host` is the machine-readable host gate for
+  preflight, namespace audit, and doctor evidence.
+- `go run ./cmd/a21 gate --scope hardware --command "<command>"` is now the
+  machine-readable hardware control gate.
   T7 execute paths consume it before hardware writes and write its branch,
   commit, worktree, dirty-state, tier, and command evidence into execution
   receipts.
-- `go run ./cmd/a21 promotion-readiness` is the machine-readable integration
-  promotion gate. It separates local review readiness from external promotion
-  readiness, and it must stay host-only: no provider execution, V21 execution,
-  Gateway runtime, or hardware/device side effect.
+- `go run ./cmd/a21 gate --scope integration` is the machine-readable
+  integration promotion gate. It separates local review readiness from external
+  promotion readiness, and it must stay host-only: no provider execution, V21
+  execution, Gateway runtime, or hardware/device side effect.
 - `docs/engineering/A21_CONTROL_LEDGER.md` is the current control tower queue:
   it records accepted handoffs, active/paused thread roles, worktree ownership,
   and the next PRD-authorized implementation slice.
@@ -72,13 +75,13 @@ will touch before execution.
 | Tier | Label | Examples | Rules |
 | --- | --- | --- | --- |
 | T0 | Read-only inspection | `rg`, `git status`, `git diff`, `go list` | Always allowed in control/review threads |
-| T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `go run ./cmd/a21 promotion-readiness`, `make verify` | Allowed when no hardware/service side effect is expected |
-| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `agent-plan`, `agent-io-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
+| T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 gate --scope integration`, `make verify` | Allowed when no hardware/service side effect is expected |
+| T2 | Local reports and dry runs | `go run ./cmd/a21 gate --scope host`, `latency-bench`, `provider-smoke` without `--execute`, `agent-plan`, `agent-io-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
 | T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
 | T4 | External/provider execution | `provider-smoke --execute`, `agent-io-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
 | T5 | Firmware build/package | `firmware-tools`, `firmware-test`, `firmware-build`, `firmware-package`, official StackChan build lanes | No physical writes; package requires clean worktree |
 | T6 | Physical validation commands | `stackchan-*acceptance`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
-| T7 | Physical writes | `stackchan-official-pcm-bridge-nvs-execute`, `stackchan-official-pcm-bridge-flash-execute`, `stackchan-official-audio-smoke-flash-execute`, `firmware-*-flash-execute` | One foreground thread only, exact confirmation token, explicit port, `control-guard` receipt |
+| T7 | Physical writes | `stackchan-official-pcm-bridge-nvs-execute`, `stackchan-official-pcm-bridge-flash-execute`, `stackchan-official-audio-smoke-flash-execute`, `firmware-*-flash-execute` | One foreground thread only, exact confirmation token, explicit port, `gate --scope hardware` receipt |
 | T8 | Blocked until ADR | raw `pio run -t upload`, raw `idf.py flash`, copied `esptool write_flash` | Not allowed from normal threads |
 
 T7/T8 rules:
@@ -131,8 +134,8 @@ Every implementation handoff must include:
 - branch name and HEAD commit;
 - dirty files, staged files, and untracked files;
 - exact commands run and their result;
-- for integration branches, the `promotion-readiness` result and whether any
-  non-zero exit was the expected external-target blocker;
+- for integration branches, the `gate --scope integration` result and whether
+  any non-zero exit was the expected external-target blocker;
 - report paths for generated evidence;
 - hardware/device state when StackChan was involved;
 - next action, blocked reason, or required ADR.
@@ -167,8 +170,8 @@ Stop and return to the control tower if any of these happen:
 To resume the paused main execution thread:
 
 1. The control branch must be green on `go test ./...`, `git diff --check`,
-   `go run ./cmd/a21 namespace-audit`, `make verify`,
-   `go run ./cmd/a21 preflight`, and `go run ./cmd/a21 doctor`.
+   `make verify`, `go run ./cmd/a21 gate --scope integration`, and
+   `go run ./cmd/a21 gate --scope host`.
 2. Dirty files must be classified and either committed, intentionally left as a
    narrow working set, or moved to a new branch.
 3. The resumed thread receives a single-slice prompt with forbidden actions.
