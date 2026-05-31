@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `2f34854`.
+Last accepted integration commit before this ledger update: `101d590`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `2f34854 docs(control): track post-agent prd audit`.
+  `101d590 feat(app): harden provider latency report v2`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -59,7 +59,9 @@ defines policy; this ledger records the current queue and accepted state.
   `560df00`, AgentTaskProvider Bridge post-review tracking is `f15b4f2`,
   AgentTaskProvider Bridge post-review P2 fix is `598c0d9`, and
   AgentTaskProvider Bridge post-review closure is `31eea31`; post-AgentTask
-  PRD next-slice audit tracking is `2f34854`.
+  PRD next-slice audit tracking is `2f34854`, latency report v2
+  implementation tracking is `3dbec02`, and latency report v2 implementation
+  acceptance is `101d590`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -70,10 +72,11 @@ defines policy; this ledger records the current queue and accepted state.
   later explicit target decision outside this ledger update.
 - Current integration HEAD after AgentTaskProvider Bridge post-review closure:
   `31eea31 docs(control): close agent task post review`.
-- Current control-tower action: Provider Latency Report v2 implementation is
-  active in thread `019e7c65-5abb-77d3-9e43-04b53147a1ae` after PRD
-  next-slice audit thread `019e7c5f-e333-7871-8c02-245a435b06cd` selected
-  `Provider Latency Report v2 / Fast Companion Metric Shape Hardening`.
+- Current integration HEAD after Provider Latency Report v2 acceptance:
+  `101d590 feat(app): harden provider latency report v2`.
+- Current control-tower action: Provider Latency Report v2 implementation
+  thread `019e7c65-5abb-77d3-9e43-04b53147a1ae` has been accepted; open a
+  post-commit review thread before selecting the next PRD slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -92,7 +95,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c65-5abb-77d3-9e43-04b53147a1ae` | Provider Latency Report v2 implementation | `/Users/jiyurun/.codex/worktrees/45f5/New project` | active; TDD implementation in progress | T1/T2 | no |
+| `019e7c65-5abb-77d3-9e43-04b53147a1ae` | Provider Latency Report v2 implementation | `/Users/jiyurun/.codex/worktrees/45f5/New project` | completed; accepted into integration branch at `101d590` | T1/T2 | no |
 | `019e7c5f-e333-7871-8c02-245a435b06cd` | PRD next-slice audit after AgentTask closure | `/Users/jiyurun/.codex/worktrees/2dea/New project` | completed; recommended Provider Latency Report v2 | T0/T1/T2 | no |
 | `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | completed; two P2 findings fixed by control at `598c0d9` | T0/T1/T2 | no |
 | `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | completed; accepted into integration branch at `560df00` | T1/T2 | no |
@@ -915,6 +918,55 @@ Forbidden:
   reasoning/raw audio/full URL/proxy/local path leakage, AgentTask runtime,
   binary Opus transport implementation, and WebRTC/ESP-SR native dependency
   implementation.
+
+Decision:
+
+- Accept the implementation handoff into the integration branch at
+  `101d590 feat(app): harden provider latency report v2`.
+- The accepted implementation is T1/T2 report-contract hardening only. It
+  adds machine-readable `metric_terms`, `canonical_metrics`, and
+  `stage_availability` blocks to `provider-latency-bench`, keeps all current
+  stages as placeholders, and documents that the shape is not production
+  latency acceptance.
+- Keep real ASR/provider/TTS/downlink/playback/barge-in measurements behind
+  future explicit T4/T6/T8 windows.
+
+Acceptance evidence:
+
+- Implementation branch: `codex/a21-provider-latency-report-v2`.
+- Implementation worktree dirty files at handoff:
+  `internal/app/provider_latency_bench.go`, `internal/app/app_test.go`,
+  `docs/engineering/A21_PROVIDER_BENCHMARKS.md`,
+  `docs/engineering/LATENCY_BUDGET.md`,
+  `docs/engineering/OBSERVABILITY.md`, and
+  `docs/engineering/DOCTOR.md`.
+- TDD red evidence from the implementation thread:
+  `go test ./internal/app -run 'ProviderLatencyBench' -count=1` failed
+  because `metric_terms` was missing.
+- TDD green evidence from the implementation thread: the same focused test
+  passed after the v2 report shape was added.
+- Control tower independently verified:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|AudioFrontEnd|LocalVoiceLoopback|StackChanFastCompanion' -count=1`.
+- Control tower independently verified:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|AgentTask' -count=1`.
+- Control tower independently verified:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Control tower independently verified:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Control tower independently verified: `go run ./cmd/a21 namespace-audit`.
+- Control tower independently verified: `git diff --check`.
+- Control tower independently verified: `make verify`.
+- The host-loopback CLI report showed `promotion_gate=not_production`,
+  `provider_executed=false`, `v21_executed=false`,
+  `hardware_executed=false`, `payloads_stored=false`,
+  `credential_values_stored=false`, `full_urls_stored=false`, and
+  `local_paths_stored=false`.
+- No provider execution, V21 execution, Gateway runtime/service startup,
+  durable payload report, firmware/NVS/flash/raw upload/serial write, real
+  `/v1/devices/control`, physical device path, AgentTask runtime, binary Opus
+  implementation, WebRTC/ESP-SR native adapter, production dependency, secret,
+  prompt/transcript/provider output/reasoning text, raw audio, full URL,
+  proxy URL, or full local path was added or run.
 
 ### Fast Companion Hybrid Boundary Audit
 
