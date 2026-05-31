@@ -102,6 +102,118 @@ func TestHTTPClientRejectsResponseMissingProfessionalEvidenceContract(t *testing
 	}
 }
 
+func TestProfessionalBridgeReceiptIsSeparateFromEvidenceCompletion(t *testing.T) {
+	receipt, err := NewProfessionalBridgeReceipt(QueryRequest{
+		TraceID:   "a21-trace-v21-receipt",
+		SessionID: "a21-session-v21-receipt",
+		Utterance: "查一下语音唤醒误触发",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.TraceID != "a21-trace-v21-receipt" || receipt.SessionID != "a21-session-v21-receipt" {
+		t.Fatalf("ids = %+v", receipt)
+	}
+	if receipt.Mode != "professional" || receipt.Status != "checking" {
+		t.Fatalf("receipt mode/status = %+v", receipt)
+	}
+	if !strings.Contains(receipt.Text, "我在查") {
+		t.Fatalf("receipt text = %q, want local checking acknowledgement", receipt.Text)
+	}
+	if receipt.MaxFirstResponseMS != 1200 {
+		t.Fatalf("max first response = %d, want 1200", receipt.MaxFirstResponseMS)
+	}
+	if receipt.EvidenceCompleted {
+		t.Fatalf("receipt must not mark evidence completed: %+v", receipt)
+	}
+}
+
+func TestProfessionalBridgeEvidenceReportRedactsStructuredCards(t *testing.T) {
+	report, err := NewProfessionalBridgeEvidenceReport(QueryResponse{
+		TraceID:    "a21-trace-v21-report",
+		FastAnswer: "raw V21 answer text must not be reported",
+		Confidence: 0.78,
+		Evidence: []Evidence{{
+			Title:    "语音唤醒体验复盘",
+			Type:     "meeting",
+			SourceID: "v21-doc-secret-001",
+			Summary:  "提到多人说话导致误唤醒。",
+			Quote:    "raw quoted evidence",
+		}},
+		SpeechBlocks: []string{"raw speech block"},
+		ScreenCards:  []ScreenCard{{Label: "结论", Text: "误唤醒集中在 3 类场景"}},
+		FollowUps:    []string{"要不要按车型展开？"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "evidence_completed" || !report.EvidenceCompleted {
+		t.Fatalf("report status = %+v", report)
+	}
+	if report.EvidenceCount != 1 || report.ScreenCardCount != 1 || report.FollowUpCount != 1 {
+		t.Fatalf("counts = %+v", report)
+	}
+	if len(report.EvidenceCards) != 1 {
+		t.Fatalf("evidence cards = %+v", report.EvidenceCards)
+	}
+	card := report.EvidenceCards[0]
+	if !card.TitlePresent || card.Type != "meeting" || !card.SourceIDPresent || !card.SummaryPresent || !card.QuotePresent {
+		t.Fatalf("redacted structured evidence card = %+v", card)
+	}
+	if len(report.ScreenCards) != 1 || !report.ScreenCards[0].LabelPresent || !report.ScreenCards[0].TextPresent {
+		t.Fatalf("redacted structured screen card = %+v", report.ScreenCards)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"raw V21 answer",
+		"语音唤醒体验复盘",
+		"v21-doc-secret-001",
+		"提到多人说话",
+		"raw quoted evidence",
+		"raw speech block",
+		"误唤醒集中",
+		"要不要按车型",
+	} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("professional bridge report leaked %q: %s", forbidden, encoded)
+		}
+	}
+}
+
+func TestProfessionalBridgeReadinessReportsDisabledAndMisconfiguredWithoutQueryExecution(t *testing.T) {
+	disabled := NewProfessionalBridgeReadiness("")
+	if disabled.Configured || disabled.ContractReady || disabled.QueryExecuted || disabled.Status != "disabled" {
+		t.Fatalf("disabled readiness = %+v", disabled)
+	}
+	if !disabled.CheckingFeedbackSupported || disabled.MaxFirstResponseMS != 1200 {
+		t.Fatalf("disabled readiness missing local receipt support: %+v", disabled)
+	}
+
+	misconfigured := NewProfessionalBridgeReadiness("http://127.0.0.1:18080/a21/v21/query?token=secret-token")
+	if !misconfigured.Configured || misconfigured.ContractReady || misconfigured.QueryExecuted || misconfigured.Status != "misconfigured" {
+		t.Fatalf("misconfigured readiness = %+v", misconfigured)
+	}
+	if misconfigured.Detail == "" {
+		t.Fatalf("misconfigured readiness missing honest detail: %+v", misconfigured)
+	}
+	for _, forbidden := range []string{"http://", "127.0.0.1:18080", "secret-token", "/a21/v21/query"} {
+		if strings.Contains(misconfigured.Detail, forbidden) {
+			t.Fatalf("misconfigured detail leaked %q: %+v", forbidden, misconfigured)
+		}
+	}
+
+	configured := NewProfessionalBridgeReadiness("http://127.0.0.1:21121")
+	if !configured.Configured || !configured.ContractReady || configured.QueryExecuted || configured.Status != "configured" {
+		t.Fatalf("configured readiness = %+v", configured)
+	}
+	if configured.QueryPath != QueryPath || configured.HealthPath != HealthPath || !configured.EvidenceContractReady {
+		t.Fatalf("configured readiness missing contract paths: %+v", configured)
+	}
+}
+
 func TestHTTPClientRejectsNonProfessionalQueryBeforeNetwork(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

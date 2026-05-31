@@ -13,6 +13,8 @@ import (
 
 const QueryPath = "/a21/v21/query"
 const HealthPath = "/healthz"
+const ProfessionalMaxFirstResponseMS = 1200
+const ProfessionalCheckingFeedbackText = "我在查，先把证据和置信度拉出来。"
 
 type Client interface {
 	Query(ctx context.Context, request QueryRequest) (QueryResponse, error)
@@ -50,6 +52,70 @@ type QueryResponse struct {
 	SpeechBlocks []string     `json:"speech_blocks"`
 	ScreenCards  []ScreenCard `json:"screen_cards"`
 	FollowUps    []string     `json:"follow_ups"`
+}
+
+type ProfessionalBridgeReceipt struct {
+	SchemaVersion      string `json:"schema_version"`
+	TraceID            string `json:"trace_id,omitempty"`
+	SessionID          string `json:"session_id,omitempty"`
+	Mode               string `json:"mode"`
+	Status             string `json:"status"`
+	Text               string `json:"text"`
+	MaxFirstResponseMS int    `json:"max_first_response_ms"`
+	EvidenceCompleted  bool   `json:"evidence_completed"`
+}
+
+type ProfessionalBridgeEvidenceReport struct {
+	SchemaVersion     string                            `json:"schema_version"`
+	TraceID           string                            `json:"trace_id,omitempty"`
+	Status            string                            `json:"status"`
+	EvidenceCompleted bool                              `json:"evidence_completed"`
+	ConfidencePresent bool                              `json:"confidence_present"`
+	EvidenceCount     int                               `json:"evidence_count"`
+	SpeechBlockCount  int                               `json:"speech_block_count"`
+	ScreenCardCount   int                               `json:"screen_card_count"`
+	FollowUpCount     int                               `json:"follow_up_count"`
+	EvidenceCards     []ProfessionalBridgeEvidenceCard  `json:"evidence_cards,omitempty"`
+	ScreenCards       []ProfessionalBridgeScreenCard    `json:"screen_cards,omitempty"`
+	Redaction         ProfessionalBridgeRedactionStatus `json:"redaction"`
+}
+
+type ProfessionalBridgeEvidenceCard struct {
+	TitlePresent    bool   `json:"title_present"`
+	Type            string `json:"type,omitempty"`
+	SourceIDPresent bool   `json:"source_id_present"`
+	SummaryPresent  bool   `json:"summary_present"`
+	QuotePresent    bool   `json:"quote_present"`
+}
+
+type ProfessionalBridgeScreenCard struct {
+	LabelPresent bool `json:"label_present"`
+	TextPresent  bool `json:"text_present"`
+}
+
+type ProfessionalBridgeRedactionStatus struct {
+	FastAnswerStored     bool `json:"fast_answer_stored"`
+	EvidenceBodyStored   bool `json:"evidence_body_stored"`
+	ScreenTextStored     bool `json:"screen_text_stored"`
+	SpeechBlocksStored   bool `json:"speech_blocks_stored"`
+	FollowUpsStored      bool `json:"follow_ups_stored"`
+	FullURLStored        bool `json:"full_url_stored"`
+	LocalPathStored      bool `json:"local_path_stored"`
+	ProviderOutputStored bool `json:"provider_output_stored"`
+}
+
+type ProfessionalBridgeReadiness struct {
+	SchemaVersion             string `json:"schema_version"`
+	Configured                bool   `json:"configured"`
+	ContractReady             bool   `json:"contract_ready"`
+	Status                    string `json:"status"`
+	QueryPath                 string `json:"query_path"`
+	HealthPath                string `json:"health_path"`
+	MaxFirstResponseMS        int    `json:"max_first_response_ms"`
+	CheckingFeedbackSupported bool   `json:"checking_feedback_supported"`
+	EvidenceContractReady     bool   `json:"evidence_contract_ready"`
+	QueryExecuted             bool   `json:"query_executed"`
+	Detail                    string `json:"detail,omitempty"`
 }
 
 type HTTPClient struct {
@@ -137,6 +203,91 @@ func ProbeHealth(ctx context.Context, baseURL string, httpClient *http.Client) e
 		return fmt.Errorf("v21 adapter health failed with status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func NewProfessionalBridgeReceipt(request QueryRequest) (ProfessionalBridgeReceipt, error) {
+	if err := ValidateProfessionalQueryRequest(request); err != nil {
+		return ProfessionalBridgeReceipt{}, err
+	}
+	request = withDefaults(request)
+	return ProfessionalBridgeReceipt{
+		SchemaVersion:      "a21.v21_professional_bridge_receipt.v1",
+		TraceID:            request.TraceID,
+		SessionID:          request.SessionID,
+		Mode:               request.Mode,
+		Status:             "checking",
+		Text:               ProfessionalCheckingFeedbackText,
+		MaxFirstResponseMS: request.MaxFirstResponseMS,
+		EvidenceCompleted:  false,
+	}, nil
+}
+
+func NewProfessionalBridgeEvidenceReport(response QueryResponse) (ProfessionalBridgeEvidenceReport, error) {
+	if err := ValidateProfessionalQueryResponse(response); err != nil {
+		return ProfessionalBridgeEvidenceReport{}, err
+	}
+	report := ProfessionalBridgeEvidenceReport{
+		SchemaVersion:     "a21.v21_professional_bridge_evidence.v1",
+		TraceID:           response.TraceID,
+		Status:            "evidence_completed",
+		EvidenceCompleted: true,
+		ConfidencePresent: true,
+		EvidenceCount:     len(response.Evidence),
+		SpeechBlockCount:  len(response.SpeechBlocks),
+		ScreenCardCount:   len(response.ScreenCards),
+		FollowUpCount:     len(response.FollowUps),
+		Redaction: ProfessionalBridgeRedactionStatus{
+			FastAnswerStored:     false,
+			EvidenceBodyStored:   false,
+			ScreenTextStored:     false,
+			SpeechBlocksStored:   false,
+			FollowUpsStored:      false,
+			FullURLStored:        false,
+			LocalPathStored:      false,
+			ProviderOutputStored: false,
+		},
+	}
+	for _, item := range response.Evidence {
+		report.EvidenceCards = append(report.EvidenceCards, ProfessionalBridgeEvidenceCard{
+			TitlePresent:    strings.TrimSpace(item.Title) != "",
+			Type:            redactedEvidenceType(item.Type),
+			SourceIDPresent: strings.TrimSpace(item.SourceID) != "",
+			SummaryPresent:  strings.TrimSpace(item.Summary) != "",
+			QuotePresent:    strings.TrimSpace(item.Quote) != "",
+		})
+	}
+	for _, card := range response.ScreenCards {
+		report.ScreenCards = append(report.ScreenCards, ProfessionalBridgeScreenCard{
+			LabelPresent: strings.TrimSpace(card.Label) != "",
+			TextPresent:  strings.TrimSpace(card.Text) != "",
+		})
+	}
+	return report, nil
+}
+
+func NewProfessionalBridgeReadiness(adapterURL string) ProfessionalBridgeReadiness {
+	report := ProfessionalBridgeReadiness{
+		SchemaVersion:             "a21.v21_professional_bridge_readiness.v1",
+		QueryPath:                 QueryPath,
+		HealthPath:                HealthPath,
+		MaxFirstResponseMS:        ProfessionalMaxFirstResponseMS,
+		CheckingFeedbackSupported: true,
+		EvidenceContractReady:     true,
+		QueryExecuted:             false,
+	}
+	if strings.TrimSpace(adapterURL) == "" {
+		report.Status = "disabled"
+		return report
+	}
+	report.Configured = true
+	if _, err := NewHTTPClient(adapterURL); err != nil {
+		report.Status = "misconfigured"
+		report.Detail = redactSmokeDetail(err.Error())
+		return report
+	}
+	report.Status = "configured"
+	report.ContractReady = true
+	return report
 }
 
 func directHTTPClient(timeout time.Duration) *http.Client {
@@ -228,12 +379,29 @@ func withDefaults(request QueryRequest) QueryRequest {
 		request.AnswerStyle = "voice_first_with_citations"
 	}
 	if request.MaxFirstResponseMS == 0 {
-		request.MaxFirstResponseMS = 1200
+		request.MaxFirstResponseMS = ProfessionalMaxFirstResponseMS
 	}
 	if request.PrivacyScope == "" {
 		request.PrivacyScope = "professional_only"
 	}
 	return request
+}
+
+func redactedEvidenceType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if len(value) > 48 {
+		value = value[:48]
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return "other"
+	}
+	return value
 }
 
 func endpointLooksUnsafe(parsed *url.URL) bool {

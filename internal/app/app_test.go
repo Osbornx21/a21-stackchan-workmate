@@ -130,6 +130,62 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	}
 }
 
+func TestProductReadinessExposesProfessionalBridgeStateWithoutQueryExecution(t *testing.T) {
+	queryCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-v21-adapter","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
+		case "/a21/v21/query":
+			queryCalled = true
+			http.Error(w, "query execution is out of scope for product readiness", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+	})
+
+	if queryCalled {
+		t.Fatal("product readiness must not execute the V21 professional query path")
+	}
+	if !report.V21.Configured || !report.V21.Healthy || !report.V21.ProfessionalBridgeReady {
+		t.Fatalf("v21 readiness = %+v", report.V21)
+	}
+	if !report.V21.CheckingFeedbackSupported || report.V21.MaxFirstResponseMS != 1200 {
+		t.Fatalf("v21 readiness missing 1200ms checking feedback support: %+v", report.V21)
+	}
+	if !report.V21.EvidenceContractReady || report.V21.QueryExecuted {
+		t.Fatalf("v21 readiness contract/query execution = %+v", report.V21)
+	}
+	if report.V21.QueryPath != v21adapter.QueryPath || report.V21.HealthPath != v21adapter.HealthPath {
+		t.Fatalf("v21 readiness paths = %+v", report.V21)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://"} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	ttsModelDir := createProductReadinessTTSModelDir(t)

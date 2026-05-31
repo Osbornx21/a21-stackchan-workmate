@@ -15,6 +15,7 @@ import (
 
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/providers"
+	"a21.local/a21/internal/v21adapter"
 )
 
 type productReadinessOptions struct {
@@ -65,9 +66,16 @@ type productProviderReadiness struct {
 }
 
 type productV21Readiness struct {
-	Configured bool   `json:"configured"`
-	Healthy    bool   `json:"healthy"`
-	Status     string `json:"status"`
+	Configured                bool   `json:"configured"`
+	Healthy                   bool   `json:"healthy"`
+	Status                    string `json:"status"`
+	ProfessionalBridgeReady   bool   `json:"professional_bridge_ready"`
+	CheckingFeedbackSupported bool   `json:"checking_feedback_supported"`
+	MaxFirstResponseMS        int    `json:"max_first_response_ms"`
+	EvidenceContractReady     bool   `json:"evidence_contract_ready"`
+	QueryExecuted             bool   `json:"query_executed"`
+	QueryPath                 string `json:"query_path"`
+	HealthPath                string `json:"health_path"`
 }
 
 type productStackChanReadiness struct {
@@ -285,11 +293,20 @@ func buildProductProviderReadiness(env []string) productProviderReadiness {
 }
 
 func buildProductV21Readiness(env []string) productV21Readiness {
-	v21 := buildV21DoctorReport(appEnvValue(env, "A21_V21_ADAPTER_URL"))
+	adapterURL := appEnvValue(env, "A21_V21_ADAPTER_URL")
+	bridge := v21adapter.NewProfessionalBridgeReadiness(adapterURL)
+	v21 := buildV21DoctorReport(adapterURL)
 	return productV21Readiness{
-		Configured: v21.Configured,
-		Healthy:    v21.Healthy,
-		Status:     v21.Status,
+		Configured:                v21.Configured,
+		Healthy:                   v21.Healthy,
+		Status:                    v21.Status,
+		ProfessionalBridgeReady:   bridge.ContractReady,
+		CheckingFeedbackSupported: bridge.CheckingFeedbackSupported,
+		MaxFirstResponseMS:        bridge.MaxFirstResponseMS,
+		EvidenceContractReady:     bridge.EvidenceContractReady,
+		QueryExecuted:             bridge.QueryExecuted,
+		QueryPath:                 bridge.QueryPath,
+		HealthPath:                bridge.HealthPath,
 	}
 }
 
