@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `2b4f2ad`.
+Last accepted integration commit before this ledger update: `2106a30`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `2b4f2ad docs(control): open post-latency prd audit`.
+  `2106a30 feat(audio): add front-end evidence contract`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -64,7 +64,9 @@ defines policy; this ledger records the current queue and accepted state.
   acceptance is `101d590`; latency report v2 ledger acceptance is `5f22ecc`,
   latency report v2 post-review tracking is `c561096`, the latency report v2
   post-review P2 fix is `9fc73de`, latency report v2 post-review closure is
-  `0478774`, and post-latency PRD audit tracking is `2b4f2ad`.
+  `0478774`, post-latency PRD audit tracking is `2b4f2ad`, audio front-end
+  slice-opening tracking is `bbca97b`, and audio front-end evidence contract
+  implementation is `2106a30`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -85,11 +87,15 @@ defines policy; this ledger records the current queue and accepted state.
   `0478774 docs(control): close latency report v2 post review`.
 - Current integration HEAD after post-latency PRD audit tracking:
   `2b4f2ad docs(control): open post-latency prd audit`.
-- Current control-tower action: the post-latency PRD audit has completed and
-  recommended the Fast Companion audio-front-end evidence contract as the next
-  T1/T2 slice. Implementation is active in thread
-  `019e7c88-90c4-75f1-ba01-2f5bcc5bef90`; wait for its no-commit handoff
-  before accepting any code or docs into the main worktree.
+- Current integration HEAD after audio front-end slice opening:
+  `bbca97b docs(control): open audio front-end evidence slice`.
+- Current integration HEAD after audio front-end evidence contract
+  implementation:
+  `2106a30 feat(audio): add front-end evidence contract`.
+- Current control-tower action: the Fast Companion audio-front-end evidence
+  contract implementation has been accepted into the integration branch at
+  `2106a30`. Open a read-only post-commit review thread before selecting the
+  next PRD implementation slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -108,7 +114,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | active; TDD implementation in progress; no commit authority | T1/T2 | no |
+| `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
 | `019e7c80-f077-78c1-8962-58c53bb1779e` | PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/9959/New project` | completed; recommended audio-front-end evidence contract | T0/T1/T2 | no |
 | `019e7c81-9963-74d1-b860-f6cebd73ed6f` | Supporting PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/ce27/New project` | completed; converged on same audio-front-end report-hardening slice | T0/T1/T2 | no |
 | `019e7c70-eea3-7883-94bb-2c63ddc0460a` | Provider Latency Report v2 post-commit review | `/Users/jiyurun/.codex/worktrees/ded7/New project` | completed; P2 legacy downlink coverage fixed by control at `9fc73de` | T0/T1/T2 | no |
@@ -1253,12 +1259,86 @@ Forbidden:
 
 Control-tower next gate:
 
-- Wait for the implementation handoff. The implementation thread has no commit
-  authority; the control tower must verify the diff, re-run the gates in the
-  main integration worktree, and then decide whether to accept, request fixes,
-  or open a post-commit review.
+- The implementation thread has handed off and remains without commit
+  authority. The control tower accepted the diff into the main integration
+  worktree and committed it at
+  `2106a30 feat(audio): add front-end evidence contract`.
+- Open a read-only post-commit review thread before selecting the next PRD
+  implementation slice.
 
-Control-tower ledger-update validation:
+Decision:
+
+- Accept the implementation handoff from thread
+  `019e7c88-90c4-75f1-ba01-2f5bcc5bef90`.
+- The accepted slice hardens `audio-front-end-plan` and
+  `audio-front-end-eval` into a machine-readable Fast Companion evidence
+  contract. It adds candidate availability/placeholder state and explicit
+  VAD/AEC/echo/barge-in evidence requirements without changing production
+  runtime behavior.
+- `audio-front-end-eval --mock` and fixture evaluation remain host-only,
+  no-execute evidence. Reports carry `trace_id`, `session_id`,
+  `device_id=none_host_fixture`, `baseline_scope=host_only`,
+  `provider_executed=false`, `v21_executed=false`,
+  `hardware_executed=false`, redaction booleans, and basename-only
+  `report_path`.
+- The accepted JSON report/plan output uses low-information reference labels,
+  not full external URLs. Engineering docs may keep source context, but CLI
+  and saved report JSON must not emit `http://`, `https://`, raw/base64 audio,
+  prompt, transcript, provider output, reasoning, credentials, proxy URL, or
+  full local path payloads.
+- WebRTC APM, ESP-SR AFE, provider-side VAD, and Silero remain unavailable or
+  placeholder runtime candidates. A21 RMS VAD remains a host-only development
+  baseline, not a production voice front end.
+
+Acceptance evidence:
+
+- Implementation branch:
+  `codex/a21-audio-front-end-evidence-contract`.
+- Implementation handoff dirty files:
+  `docs/engineering/A21_MATURE_VOICE_REUSE.md`,
+  `docs/engineering/DOCTOR.md`, `docs/engineering/LATENCY_BUDGET.md`,
+  `docs/engineering/OBSERVABILITY.md`,
+  `docs/engineering/PHASE7G_AUDIO_FRONT_END_EVALUATION.md`,
+  `internal/app/app.go`, `internal/app/app_test.go`,
+  `internal/audio/frontend_eval.go`,
+  `internal/audio/frontend_eval_test.go`, and
+  `internal/audio/frontend_plan.go`.
+- Control tower reapplied the handoff diff onto
+  `codex/a21-integration-governance-slices` after
+  `bbca97b docs(control): open audio front-end evidence slice`.
+- TDD red evidence from the implementation thread covered missing candidate
+  evidence shape, missing host-only/no-execute proof fields, full local report
+  path leakage, and full URL leakage from candidate references.
+- Verification passed:
+  `go test ./internal/audio ./internal/app -run 'AudioFrontEnd|FrontEnd|ProviderLatencyBench|LatencyBench' -count=1`.
+- Verification passed:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|AudioWSBargeIn|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Verification passed: `go run ./cmd/a21 audio-front-end-plan`.
+- Verification passed: `go run ./cmd/a21 audio-front-end-eval --mock`.
+- Verification passed: the generated plan and eval JSON had no matches for
+  `https?://`, `pcm_s16le_base64`, `/Users`, provider output text, raw
+  reasoning text, proxy secrets, or synthetic user secret fragments.
+- Verification passed:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Verification passed: `go run ./cmd/a21 namespace-audit`.
+- Verification passed: `git diff --check`.
+- Verification passed: `make verify`.
+- No provider execute, V21 execute, Gateway runtime/service startup,
+  durable payload report, firmware/NVS/flash/raw upload/serial write,
+  `/v1/devices/control`, physical device path, AgentTask runtime, binary Opus
+  implementation, native WebRTC/ESP-SR/Silero dependency, production
+  dependency addition, secret, prompt/transcript/provider output/reasoning
+  payload, full URL, proxy URL, or full local path was used or saved.
+
+Residual gaps:
+
+- Real WebRTC APM, ESP-SR, Silero/provider-side VAD adapters remain future
+  native/provider windows.
+- Office-noise fixtures, speaker-to-mic echo evidence, real barge-in stop
+  timing, first-audio waterfall impact, and CPU/memory profiles remain
+  unmeasured until a separately authorized T4/T6/native-adapter window.
+
+Slice-opening ledger-update validation:
 
 - Passed: `git diff --check`.
 - Passed: `go run ./cmd/a21 namespace-audit`.
