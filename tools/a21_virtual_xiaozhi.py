@@ -12,6 +12,7 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import os
 import socket
 import struct
@@ -54,6 +55,7 @@ class HarnessOptions:
     timeout_ms: int
     json_report: bool
     opus_fixture: str | None
+    repeat: int
 
 
 class WebSocketError(RuntimeError):
@@ -312,6 +314,81 @@ def build_report(
     }
 
 
+def percentile95(samples: list[int]) -> int | None:
+    if not samples:
+        return None
+    ordered = sorted(samples)
+    index = max(0, math.ceil(len(ordered) * 0.95) - 1)
+    return ordered[index]
+
+
+def build_aggregate_report(
+    *,
+    base_report: dict[str, Any],
+    run_reports: list[dict[str, Any]],
+    exit_codes: list[int],
+    abort_after_first_audio: bool,
+) -> dict[str, Any]:
+    aggregate = dict(base_report)
+    if run_reports:
+        aggregate.update(
+            {
+                key: value
+                for key, value in run_reports[-1].items()
+                if key
+                not in {
+                    "run_index",
+                    "target",
+                    "profile",
+                    "device_id",
+                    "trace_id",
+                    "session_id",
+                    "protocol_version",
+                    "schema",
+                }
+            }
+        )
+    first_audio_samples = [
+        report["first_audio_ms"]
+        for report in run_reports
+        if isinstance(report.get("first_audio_ms"), int)
+    ]
+    abort_stop_samples = [
+        report["abort_stop_ms"]
+        for report in run_reports
+        if isinstance(report.get("abort_stop_ms"), int)
+    ]
+    aggregate.update(
+        {
+            "runs": len(run_reports),
+            "successful_runs": sum(1 for code in exit_codes if code == 0),
+            "exit_codes": list(exit_codes),
+            "run_reports": run_reports,
+            "first_audio_samples_ms": first_audio_samples,
+            "first_audio_p95_ms": percentile95(first_audio_samples),
+            "abort_stop_samples_ms": abort_stop_samples,
+            "abort_stop_p95_ms": percentile95(abort_stop_samples),
+            "host_candidate": False,
+            "prd_accepted": False,
+        }
+    )
+    all_runs_green = bool(run_reports) and all(code == 0 for code in exit_codes)
+    all_runs_have_audio = len(first_audio_samples) == len(run_reports)
+    first_audio_ok = aggregate["first_audio_p95_ms"] is not None and aggregate["first_audio_p95_ms"] < 1500
+    abort_ok = True
+    if abort_after_first_audio:
+        abort_ok = (
+            len(abort_stop_samples) == len(run_reports)
+            and aggregate["abort_stop_p95_ms"] is not None
+            and aggregate["abort_stop_p95_ms"] < 300
+        )
+    repeat_window_ok = len(run_reports) >= 3
+    aggregate["host_candidate"] = (
+        repeat_window_ok and all_runs_green and all_runs_have_audio and first_audio_ok and abort_ok
+    )
+    return aggregate
+
+
 def mark_json_event(report: dict[str, Any], message: dict[str, Any]) -> None:
     msg_type = message.get("type")
     state = message.get("state")
@@ -383,6 +460,48 @@ def run_self_test() -> int:
     assert report["target"] == "127.0.0.1:21080/v1/xiaozhi"
     assert report["prd_accepted"] is False
     assert "secret" not in rendered_report
+
+    assert percentile95([]) is None
+    assert percentile95([120, 80, 200, 160, 40]) == 200
+
+    run_a = dict(report)
+    run_a.update({"first_audio_ms": 80, "abort_stop_ms": 42, "binary_downlink_frames": 1})
+    run_b = dict(report)
+    run_b.update({"first_audio_ms": 120, "abort_stop_ms": 58, "binary_downlink_frames": 2})
+    run_c = dict(report)
+    run_c.update({"first_audio_ms": None, "abort_stop_ms": None, "binary_downlink_frames": 0})
+    aggregate = build_aggregate_report(
+        base_report=report,
+        run_reports=[run_a, run_b, run_c],
+        exit_codes=[0, 0, 2],
+        abort_after_first_audio=True,
+    )
+    rendered_aggregate = json.dumps(aggregate, sort_keys=True)
+    assert aggregate["runs"] == 3
+    assert aggregate["successful_runs"] == 2
+    assert aggregate["first_audio_samples_ms"] == [80, 120]
+    assert aggregate["first_audio_p95_ms"] == 120
+    assert aggregate["abort_stop_samples_ms"] == [42, 58]
+    assert aggregate["abort_stop_p95_ms"] == 58
+    assert aggregate["host_candidate"] is False
+    assert aggregate["prd_accepted"] is False
+    assert "secret" not in rendered_aggregate
+    assert "data_base64" not in rendered_aggregate
+
+    host_run_a = dict(report)
+    host_run_a.update({"first_audio_ms": 820, "abort_stop_ms": 180, "binary_downlink_frames": 1})
+    host_run_b = dict(report)
+    host_run_b.update({"first_audio_ms": 930, "abort_stop_ms": 220, "binary_downlink_frames": 1})
+    host_run_c = dict(report)
+    host_run_c.update({"first_audio_ms": 1200, "abort_stop_ms": 260, "binary_downlink_frames": 1})
+    host_candidate = build_aggregate_report(
+        base_report=report,
+        run_reports=[host_run_a, host_run_b, host_run_c],
+        exit_codes=[0, 0, 0],
+        abort_after_first_audio=True,
+    )
+    assert host_candidate["host_candidate"] is True
+    assert host_candidate["prd_accepted"] is False
     print("a21 virtual xiaozhi self-test passed")
     return 0
 
@@ -468,6 +587,36 @@ def run_harness(options: HarnessOptions) -> tuple[int, dict[str, Any]]:
     return exit_code, report
 
 
+def run_repeated_harness(options: HarnessOptions) -> tuple[int, dict[str, Any]]:
+    base_report = build_report(
+        target_url=options.target_url,
+        profile=options.profile,
+        device_id=options.device_id,
+        trace_id=options.trace_id,
+        session_id=options.session_id,
+        protocol_version=options.protocol_version,
+    )
+    run_reports: list[dict[str, Any]] = []
+    exit_codes: list[int] = []
+    for index in range(options.repeat):
+        exit_code, report = run_harness(options)
+        report["run_index"] = index + 1
+        run_reports.append(report)
+        exit_codes.append(exit_code)
+    aggregate = build_aggregate_report(
+        base_report=base_report,
+        run_reports=run_reports,
+        exit_codes=exit_codes,
+        abort_after_first_audio=options.abort_after_first_audio,
+    )
+    overall_exit_code = 0
+    for code in exit_codes:
+        if code != 0:
+            overall_exit_code = code
+            break
+    return overall_exit_code, aggregate
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="A21 virtual Xiaozhi WebSocket harness")
     parser.add_argument("--target-url", default=DEFAULT_TARGET_URL)
@@ -482,6 +631,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--timeout-ms", type=int, default=2000)
     parser.add_argument("--json-report", action="store_true")
     parser.add_argument("--opus-fixture", help="Path to a raw Opus packet, or builtin_speech")
+    parser.add_argument("--repeat", type=int, default=1, help="Run N sequential virtual turns")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args(argv)
 
@@ -490,6 +640,9 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if args.self_test:
         return run_self_test()
+    if args.repeat < 1:
+        print("repeat must be >= 1", file=sys.stderr)
+        return 2
     options = HarnessOptions(
         target_url=args.target_url,
         profile=args.profile,
@@ -503,6 +656,7 @@ def main(argv: list[str]) -> int:
         timeout_ms=args.timeout_ms,
         json_report=args.json_report,
         opus_fixture=args.opus_fixture,
+        repeat=args.repeat,
     )
     try:
         for field in ("device_id", "trace_id", "session_id"):
@@ -510,24 +664,30 @@ def main(argv: list[str]) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    exit_code, report = run_harness(options)
+    exit_code, report = run_repeated_harness(options)
     if args.json_report:
         print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     else:
         print(f"target={report['target']}")
         print(f"profile={report['profile']} protocol_version={report['protocol_version']}")
+        print(f"runs={report['runs']} successful_runs={report['successful_runs']}")
         print(
             "hello_accepted={hello} listen_ack={listen} binary_downlink_frames={frames} "
-            "first_audio_ms={first} tts_stop_received={stop} abort_sent={abort} "
-            "abort_stop_ms={abort_stop} metrics_observed={metrics} prd_accepted={prd}".format(
+            "first_audio_ms={first} first_audio_p95_ms={first_p95} "
+            "tts_stop_received={stop} abort_sent={abort} abort_stop_ms={abort_stop} "
+            "abort_stop_p95_ms={abort_p95} metrics_observed={metrics} "
+            "host_candidate={host_candidate} prd_accepted={prd}".format(
                 hello=report["hello_accepted"],
                 listen=report["listen_ack"],
                 frames=report["binary_downlink_frames"],
                 first=report["first_audio_ms"],
+                first_p95=report["first_audio_p95_ms"],
                 stop=report["tts_stop_received"],
                 abort=report["abort_sent"],
                 abort_stop=report["abort_stop_ms"],
+                abort_p95=report["abort_stop_p95_ms"],
                 metrics=report["metrics_observed"],
+                host_candidate=report["host_candidate"],
                 prd=report["prd_accepted"],
             )
         )
