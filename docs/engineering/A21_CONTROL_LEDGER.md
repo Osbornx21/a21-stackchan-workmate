@@ -64,6 +64,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | active; read-only review of `4532df8` and `8bc41f6` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
 | `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
 | `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | completed; P2 trace-fidelity finding fixed by control | T0/T1/T2 | no |
