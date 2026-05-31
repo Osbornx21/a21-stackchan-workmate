@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
 const stackChanOfficialAudioSmokeFlashSchema = "a21.stackchan.official_audio_smoke_flash.v1"
+const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_bridge_flash_plan.v1"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
@@ -95,6 +97,15 @@ type stackChanOfficialSmokeFlashOptions struct {
 	Execute   bool
 }
 
+type stackChanOfficialPCMBridgeFlashPlanOptions struct {
+	BuildDir   string
+	IDFExport  string
+	Port       string
+	OutputDir  string
+	DeviceID   string
+	AudioWSURL string
+}
+
 type stackChanOfficialSmokeFlashReport struct {
 	SchemaVersion            string                             `json:"schema_version"`
 	GeneratedAtMS            int64                              `json:"generated_at_ms"`
@@ -110,6 +121,30 @@ type stackChanOfficialSmokeFlashReport struct {
 	Parts                    []stackChanOfficialSmokeFlashPart  `json:"parts"`
 	Findings                 []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
 	ReportPath               string                             `json:"report_path,omitempty"`
+}
+
+type stackChanOfficialPCMBridgeFlashPlanReport struct {
+	SchemaVersion            string                             `json:"schema_version"`
+	GeneratedAtMS            int64                              `json:"generated_at_ms"`
+	Status                   string                             `json:"status"`
+	DryRun                   bool                               `json:"dry_run"`
+	FlashAllowed             bool                               `json:"flash_allowed"`
+	Port                     string                             `json:"port"`
+	BuildDir                 string                             `json:"build_dir"`
+	IDFExport                string                             `json:"idf_export"`
+	DeviceID                 string                             `json:"device_id"`
+	AudioWS                  stackChanOfficialPCMBridgeAudioWS  `json:"audio_ws"`
+	NextRequiredConfirmation string                             `json:"next_required_confirmation,omitempty"`
+	Parts                    []stackChanOfficialSmokeFlashPart  `json:"parts"`
+	Findings                 []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
+	ReportPath               string                             `json:"report_path,omitempty"`
+}
+
+type stackChanOfficialPCMBridgeAudioWS struct {
+	Scheme        string `json:"scheme"`
+	Host          string `json:"host"`
+	Path          string `json:"path"`
+	DeviceIDQuery bool   `json:"device_id_query"`
 }
 
 type stackChanOfficialSmokeFlashPart struct {
@@ -324,6 +359,95 @@ func runStackChanOfficialAudioSmokeFlash(args []string, execute bool, stdout io.
 	return 0
 }
 
+func runStackChanOfficialPCMBridgeFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := stackChanOfficialPCMBridgeFlashPlanOptions{
+		BuildDir:   firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:       strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		DeviceID:   firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001"),
+		AudioWSURL: strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL")),
+		OutputDir:  "",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash-plan --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--idf-export /path/to/export.sh] [--output-dir reports]")
+			return 0
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.DeviceID = args[i]
+		case "--audio-ws-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--audio-ws-url requires a value")
+				return 2
+			}
+			i++
+			options.AudioWSURL = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan official pcm bridge flash plan option %q\n", args[i])
+			return 2
+		}
+	}
+
+	report, err := buildStackChanOfficialPCMBridgeFlashPlanReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan official pcm bridge flash plan: %v\n", err)
+		return 1
+	}
+	if options.OutputDir != "" {
+		if err := validateA21ReportDir(options.OutputDir); err != nil {
+			fmt.Fprintf(stderr, "official pcm bridge flash plan report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeStackChanOfficialPCMBridgeFlashPlanReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write official pcm bridge flash plan report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanOfficialPCMBridgeFlashPlan(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode official pcm bridge flash plan report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	return 0
+}
+
 func normalizeOfficialOverlayPaths(options *stackChanOfficialBaselineOptions) error {
 	if len(options.Overlays) == 0 {
 		return nil
@@ -454,7 +578,64 @@ func buildStackChanOfficialSmokeFlashReport(options stackChanOfficialSmokeFlashO
 	return report, nil
 }
 
+func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCMBridgeFlashPlanOptions) (stackChanOfficialPCMBridgeFlashPlanReport, error) {
+	buildDir := filepath.Clean(options.BuildDir)
+	if err := validateA21OfficialScratchDir(buildDir); err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("build dir invalid: %w", err)
+	}
+	if containsLegacyIdentity(buildDir) {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
+	}
+	deviceID := strings.TrimSpace(options.DeviceID)
+	if err := validateOfficialPCMBridgeDeviceID(deviceID); err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, err
+	}
+	audioWS, err := parseOfficialPCMBridgeAudioWSURL(options.AudioWSURL, deviceID)
+	if err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, err
+	}
+	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, err
+	}
+	usage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("inspect upload port: %w", err)
+	}
+	if !usage.Exists {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("upload port %s does not exist", options.Port)
+	}
+	if usage.InUse {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("upload port %s is already in use: %s", options.Port, usage.Detail)
+	}
+	parts, err := collectOfficialPCMBridgeFlashParts(buildDir)
+	if err != nil {
+		return stackChanOfficialPCMBridgeFlashPlanReport{}, err
+	}
+	return stackChanOfficialPCMBridgeFlashPlanReport{
+		SchemaVersion:            stackChanOfficialPCMBridgeFlashPlanSchema,
+		GeneratedAtMS:            time.Now().UnixMilli(),
+		Status:                   "ready",
+		DryRun:                   true,
+		FlashAllowed:             false,
+		Port:                     options.Port,
+		BuildDir:                 buildDir,
+		IDFExport:                filepath.Clean(options.IDFExport),
+		DeviceID:                 deviceID,
+		AudioWS:                  audioWS,
+		NextRequiredConfirmation: "bridge_nvs_provisioning_and_flash_execute_guard_not_implemented",
+		Parts:                    parts,
+	}, nil
+}
+
 func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
+	return collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-audio-smoke.bin")
+}
+
+func collectOfficialPCMBridgeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
+	return collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-pcm-bridge.bin")
+}
+
+func collectOfficialFlashPartsForApp(buildDir string, expectedAppName string) ([]stackChanOfficialSmokeFlashPart, error) {
 	entries := readOfficialFlashArgsEntries(buildDir)
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("official smoke flash_args missing or empty")
@@ -477,8 +658,8 @@ func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFl
 		if containsLegacyIdentity(fullPath) {
 			return nil, fmt.Errorf("flash part path contains forbidden legacy identity")
 		}
-		if name == "app" && filepath.Base(fullPath) != "a21-stackchan-official-audio-smoke.bin" {
-			return nil, fmt.Errorf("official audio smoke app must be a21-stackchan-official-audio-smoke.bin")
+		if name == "app" && filepath.Base(fullPath) != expectedAppName {
+			return nil, fmt.Errorf("official app must be %s", expectedAppName)
 		}
 		stat, err := os.Stat(fullPath)
 		if err != nil {
@@ -503,6 +684,54 @@ func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFl
 		}
 	}
 	return parts, nil
+}
+
+func validateOfficialPCMBridgeDeviceID(deviceID string) error {
+	if deviceID == "" {
+		return fmt.Errorf("device-id is required")
+	}
+	if containsLegacyIdentity(deviceID) {
+		return fmt.Errorf("device-id contains forbidden legacy identity")
+	}
+	if !strings.HasPrefix(deviceID, "stackchan-") {
+		return fmt.Errorf("device-id must use stackchan-*")
+	}
+	return nil
+}
+
+func parseOfficialPCMBridgeAudioWSURL(rawURL string, deviceID string) (stackChanOfficialPCMBridgeAudioWS, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("--audio-ws-url is required")
+	}
+	if containsLegacyIdentity(rawURL) {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url contains forbidden legacy identity")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("parse audio ws url: %w", err)
+	}
+	if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url must use ws or wss")
+	}
+	if parsed.User != nil {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url must not contain credentials")
+	}
+	if parsed.Host == "" {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url host is required")
+	}
+	if parsed.Path != "/ws/audio" {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url path must be /ws/audio")
+	}
+	if parsed.Query().Get("device_id") != deviceID {
+		return stackChanOfficialPCMBridgeAudioWS{}, fmt.Errorf("audio ws url device_id query must match --device-id")
+	}
+	return stackChanOfficialPCMBridgeAudioWS{
+		Scheme:        parsed.Scheme,
+		Host:          parsed.Host,
+		Path:          parsed.Path,
+		DeviceIDQuery: true,
+	}, nil
 }
 
 func executeStackChanOfficialSmokeFlash(ctx context.Context, options stackChanOfficialSmokeFlashOptions, report *stackChanOfficialSmokeFlashReport) error {
@@ -915,6 +1144,23 @@ func writeStackChanOfficialSmokeFlashReport(outputDir string, report stackChanOf
 	return reportPath, nil
 }
 
+func writeStackChanOfficialPCMBridgeFlashPlanReport(outputDir string, report stackChanOfficialPCMBridgeFlashPlanReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-pcm-bridge-flash-plan-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := writeJSONStackChanOfficialPCMBridgeFlashPlan(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeJSONStackChanOfficialBaseline(writer io.Writer, report stackChanOfficialBaselineReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -922,6 +1168,12 @@ func writeJSONStackChanOfficialBaseline(writer io.Writer, report stackChanOffici
 }
 
 func writeJSONStackChanOfficialSmokeFlash(writer io.Writer, report stackChanOfficialSmokeFlashReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanOfficialPCMBridgeFlashPlan(writer io.Writer, report stackChanOfficialPCMBridgeFlashPlanReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

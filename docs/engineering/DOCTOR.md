@@ -156,7 +156,7 @@ make stackchan-official-audio-smoke-flash-execute
 
 This lane is allowed only for the official codec speaker baseline. It builds from official StackChan Git `HEAD`, records hashes from IDF `flash_args`, and requires the same explicit USB serial-port discipline. It is not production A21 firmware and cannot replace `firmware-package`, `firmware-upload-check`, or steady-state `firmware-flash-plan`.
 
-`stackchan-official-pcm-bridge-build` is the matching build-only lane for M3 downlink preparation. It exports official StackChan Git `HEAD`, applies the A21 PCM bridge overlay, and must produce `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000`. There is deliberately no flash target yet; a future bridge flash lane must first add NVS provisioning evidence for `a21/audio_ws_url` plus the normal explicit USB serial and confirmation-token guards.
+`stackchan-official-pcm-bridge-build` is the matching build lane for M3 downlink preparation. It exports official StackChan Git `HEAD`, applies the A21 PCM bridge overlay, and must produce `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000`. `stackchan-official-pcm-bridge-flash-plan` is no-flash and records the bridge app hash, required flash parts, USB serial readiness, `device_id`, and redacted audio-websocket endpoint fields. There is deliberately no flash-execute target yet; a future bridge flash lane must first add NVS provisioning evidence for `a21/audio_ws_url` plus the normal explicit USB serial and confirmation-token guards.
 
 `namespace-audit` scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. It is part of `make release-check` so path-level project identity drift is caught before merge.
 

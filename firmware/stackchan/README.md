@@ -32,6 +32,9 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-mic-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-imu-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make firmware-sensor-probe-flash-plan
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL='ws://HOST:21080/ws/audio?device_id=stackchan-001' \
+make stackchan-official-pcm-bridge-flash-plan
 ```
 
 `make firmware-tools` creates the repository-local `.a21-tools/` PlatformIO virtualenv pinned to `platformio==6.1.19`. `make firmware-test` runs host-native protocol and state-machine tests. It does not flash hardware.
@@ -58,7 +61,7 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-p
 
 `make stackchan-official-audio-smoke-build`, `make stackchan-official-audio-smoke-flash-plan`, and `make stackchan-official-audio-smoke-flash-execute` are the official StackChan/CoreS3 codec speaker-smoke lane. This lane exports official StackChan from Git `HEAD`, applies only the A21 audio-smoke overlay, verifies mature codec evidence, builds with ESP-IDF, records all `flash_args` parts and hashes, and requires `A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE` before any write. Use this only to validate clear physical speaker output through the official codec/HAL boundary. It is not production A21 firmware and does not replace A21 release packaging.
 
-`make stackchan-official-pcm-bridge-build` exports official StackChan from Git `HEAD`, applies the A21 PCM bridge overlay, and builds `a21-stackchan-official-pcm-bridge.bin` through ESP-IDF. It is intentionally build-only for now: no flash-plan or flash-execute target exists until A21 adds NVS provisioning evidence for `a21/device_id` and `a21/audio_ws_url` plus the normal serial/artifact/confirmation guards. If flashed by a future guarded lane without `a21/audio_ws_url`, the bridge must stay on a black A21 status page and remain silent.
+`make stackchan-official-pcm-bridge-build` exports official StackChan from Git `HEAD`, applies the A21 PCM bridge overlay, and builds `a21-stackchan-official-pcm-bridge.bin` through ESP-IDF. `make stackchan-official-pcm-bridge-flash-plan` is no-flash: it checks the bridge app, required flash parts, USB serial port, `device_id`, and a redacted A21 audio websocket endpoint. No flash-execute target exists until A21 adds NVS provisioning evidence for `a21/device_id` and `a21/audio_ws_url` plus the normal serial/artifact/confirmation guards. If flashed by a future guarded lane without `a21/audio_ws_url`, the bridge must stay on a black A21 status page and remain silent.
 
 ## Runtime Surface
 

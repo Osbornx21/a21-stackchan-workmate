@@ -155,17 +155,21 @@ The next M3-prep bridge keeps the successful official codec/HAL boundary, but ch
 
 ```bash
 make stackchan-official-pcm-bridge-build
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL='ws://HOST:21080/ws/audio?device_id=stackchan-001' \
+make stackchan-official-pcm-bridge-flash-plan
 ```
 
 Rules:
 
-- this lane builds only; it has no flash-plan or flash-execute target yet;
+- this lane builds and plans only; it has no flash-execute target yet and never writes the device;
 - source is exported from official StackChan Git `HEAD`, then `firmware/stackchan-official/overlays/a21-official-pcm-bridge.patch` is applied;
 - the app artifact must be `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000` in `flash_args`;
 - the bridge reads only `a21/device_id` and `a21/audio_ws_url` from NVS; it does not embed Wi-Fi credentials, provider keys, Gateway IPs, proxy URLs, or V21/X21 identity;
+- the flash-plan receipt validates the bridge artifact and USB serial port, but stores only the audio websocket scheme, host, path, and `device_id` query presence instead of the full URL;
 - when `a21/audio_ws_url` is missing, the device must stay on a black A21 status screen and remain silent;
 - playback is accepted only as `pcm_s16le`, mono, 16 kHz or 24 kHz, 1-100 ms chunks, queued through the official `AudioCodec::OutputData` path;
-- a future real-device bridge flash lane must add the same explicit USB serial, artifact hash, flash-part hash, and confirmation-token discipline before any write is allowed.
+- a future real-device bridge flash lane must add NVS provisioning evidence plus the same explicit USB serial, artifact hash, flash-part hash, and confirmation-token discipline before any write is allowed.
 
 This lane exists to move M3 away from the rejected M5Unified `playRaw` path. It is not production firmware and must not bypass the existing A21 release package/flash discipline.
 

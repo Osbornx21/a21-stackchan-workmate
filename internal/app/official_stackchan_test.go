@@ -287,6 +287,64 @@ func TestRunStackChanOfficialAudioSmokeFlashExecuteRunsGuardedCommand(t *testing
 	}
 }
 
+func TestRunStackChanOfficialPCMBridgeFlashPlanRequiresAudioWSURL(t *testing.T) {
+	buildDir := writeTestOfficialPCMBridgeBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("plan without audio ws url unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--audio-ws-url is required") {
+		t.Fatalf("stderr missing audio ws url requirement: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgeFlashPlanBuildsRedactedNoFlashReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialPCMBridgeBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_pcm_bridge_flash_plan.v1"`,
+		`"flash_allowed": false`,
+		`"app"`,
+		`a21-stackchan-official-pcm-bridge.bin`,
+		`"host": "127.0.0.1:21080"`,
+		`"path": "/ws/audio"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("plan missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001") {
+		t.Fatalf("plan leaked full audio ws url: %s", stdout.String())
+	}
+}
+
 func writeTestOfficialStackChanRepo(t *testing.T, includeCodecEvidence bool) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -335,6 +393,25 @@ func writeTestOfficialAudioSmokeBuild(t *testing.T) string {
 		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
 		"0x0 bootloader/bootloader.bin",
 		"0x20000 a21-stackchan-official-audio-smoke.bin",
+		"0x8000 partition_table/partition-table.bin",
+		"0xd000 ota_data_initial.bin",
+		"0xa00000 generated_assets.bin",
+	}, "\n")+"\n")
+	return buildDir
+}
+
+func writeTestOfficialPCMBridgeBuild(t *testing.T) string {
+	t.Helper()
+	buildDir := filepath.Join(t.TempDir(), "a21-stackchan-official-build")
+	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
+	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
+	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
+	writeTestFile(t, filepath.Join(buildDir, "generated_assets.bin"), "assets")
+	writeTestFile(t, filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin"), "app")
+	writeTestFile(t, filepath.Join(buildDir, "flash_args"), strings.Join([]string{
+		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
+		"0x0 bootloader/bootloader.bin",
+		"0x20000 a21-stackchan-official-pcm-bridge.bin",
 		"0x8000 partition_table/partition-table.bin",
 		"0xd000 ota_data_initial.bin",
 		"0xa00000 generated_assets.bin",
