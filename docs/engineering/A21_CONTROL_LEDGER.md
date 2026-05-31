@@ -59,6 +59,12 @@ defines policy; this ledger records the current queue and accepted state.
 - The local repository has no configured remote and no `main` or `master`
   branch. Remote PR creation or local mainline merge therefore requires a
   later explicit target decision outside this ledger update.
+- Current integration HEAD after provider fixture sidecar hardening and
+  post-review closure:
+  `a1742ae docs(control): record fixture sidecar post review`.
+- Current next PRD Phase 5 T1/T2 slice is AgentTaskProvider Bridge scaffold:
+  external agents remain an explicit Agent I/O Layer, not an A21 router,
+  second brain, backend orchestrator, or realtime first-response owner.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
@@ -71,7 +77,9 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | active; T1/T2 sidecar test and docs hardening | T1/T2 | no |
+| `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | active; T1/T2 Agent I/O scaffold, no real agent runtime | T1/T2 | no |
+| `019e7c41-1842-7a30-a185-aafc73ba2d73` | Provider fixture sidecar post-commit review | `/Users/jiyurun/.codex/worktrees/8922/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
+| `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | accepted into integration branch at `a4e3a6f`; post-review closed at `a1742ae` | T1/T2 | no |
 | `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | accepted into integration branch at `f69c6b8` | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
@@ -579,6 +587,51 @@ Post-review decision:
 - Do not block control-tower progress on this slice.
 - Keep provider/V21/Gateway/hardware latency evidence reserved for a separately
   authorized T4/T6 window.
+
+### AgentTaskProvider Bridge Scaffold Implementation Thread
+
+Opened by the control tower after provider latency and fixture evidence
+hardening closed.
+
+Evidence:
+
+- Implementation thread: `019e7c48-9fc7-7ff0-8563-965fe9da9f72`.
+- Implementation thread title:
+  `A21 AgentTask Bridge：Scaffold Implementation`.
+- Implementation worktree:
+  `/Users/jiyurun/.codex/worktrees/04c0/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting control HEAD:
+  `a1742ae docs(control): record fixture sidecar post review`.
+- Target branch: `codex/a21-agent-task-bridge-scaffold`.
+- Scope: PRD Phase 5 T1/T2 scaffold for `AgentTaskProvider`,
+  `AgentTaskRequest`, `AgentTaskEvent`, fake/smoke event consumption, and
+  A21-owned semantic event mapping.
+- User architecture boundary: external agents are an explicit Agent I/O Layer
+  selected by frontend/config; A21 does not route automatically, does not let
+  external agents become the realtime first-response path, and does not hand
+  them firmware, provider-env, V21-internal, Gateway-runtime, or physical
+  device control.
+- Expected files: `internal/providers/contracts.go`, optional
+  `internal/providers/agent_task*.go`, provider tests, optional
+  `internal/app` smoke CLI/tests if the implementation keeps CLI parity, and
+  optional `docs/engineering/PHASE5_AGENT_TASK_BRIDGE.md`, `DOCTOR.md`, or
+  `OBSERVABILITY.md`.
+- Forbidden: real Hermes/MiMo/OpenClaw or other agent runtime startup,
+  provider `--execute`, V21 execute, Gateway runtime or service startup,
+  durable reports with agent payloads, firmware/NVS/flash/raw upload/serial
+  writes, real `/v1/devices/control`, physical device paths, production
+  dependency additions, secrets, provider payloads, or agent payload text.
+
+Acceptance gates:
+
+- TDD red/green evidence for the new AgentTask contract and event mapper.
+- `go test ./internal/providers -run 'AgentTask|ProviderCatalog|ProviderProfile' -count=1`.
+- If CLI is touched:
+  `go test ./internal/app -run 'AgentTask|ProviderSmoke|RunDoctor' -count=1`.
+- `go run ./cmd/a21 namespace-audit`.
+- `git diff --check`.
+- `make verify` if the slice touches shared app CLI or docs.
 
 ### Fast Companion Hybrid Boundary Audit
 
