@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `0e46761`.
+Last accepted integration commit before this ledger update: `cfc1658`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `0e46761 docs(control): accept provider fixture metadata slice`.
+  `cfc1658 docs(control): open provider fixture post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -48,8 +48,8 @@ defines policy; this ledger records the current queue and accepted state.
   `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`, provider
   latency post-review acceptance is `b8d46f8`, provider fixture schema
   slice-open tracking is `44d6c76`, provider fixture metadata contract
-  acceptance is `f69c6b8`, and provider fixture metadata ledger acceptance is
-  `0e46761`.
+  acceptance is `f69c6b8`, provider fixture metadata ledger acceptance is
+  `0e46761`, and provider fixture metadata post-review tracking is `cfc1658`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -70,7 +70,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | active; read-only review of `f69c6b8` and `0e46761` | T0/T1/T2 | no |
+| `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | accepted into integration branch at `f69c6b8` | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
@@ -398,20 +398,65 @@ Residual gaps:
   StackChan acceptance, and barge-in timing remain unmeasured until a separately
   authorized T4/T6 window.
 
-Next queue:
+### Provider Fixture Metadata Post-Commit Review
 
-- Opened post-commit review thread `019e7c30-7329-7a32-996e-0566c9746e5d` for
-  the accepted fixture metadata contract commits `f69c6b8` and `0e46761`.
+Accepted from thread `019e7c30-7329-7a32-996e-0566c9746e5d`.
+
+Evidence:
+
 - Review worktree:
   `/Users/jiyurun/.codex/worktrees/1181/New project`.
-- Scope: read-only P0/P1/P2 review against A21 PRD, fixture redaction contract,
-  provider/V21/Gateway/hardware no-execute boundaries, docs, ledger, namespace,
-  default gates, and residual T4/T6 gaps.
-- Maximum tier: T0/T1/T2.
-- Forbidden: file edits, commits, pushes, provider `--execute`, V21 execute,
-  Gateway runtime/service startup, durable provider reports with payloads,
-  firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, physical
-  device paths, secrets, or provider payloads.
+- Review HEAD:
+  `0e46761 docs(control): accept provider fixture metadata slice`.
+- Review worktree state: detached HEAD, clean.
+- Reviewed commits:
+  `f69c6b8 feat(app): add provider fixture metadata contract` and
+  `0e46761 docs(control): accept provider fixture metadata slice`.
+- Review result: no P0 findings, no P1 findings, and no P2 findings.
+
+Review verification evidence:
+
+- Review passed: `git diff --check f69c6b8^..0e46761`.
+- Review passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Review passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Review passed: `go run ./cmd/a21 namespace-audit`.
+- Review passed: `make verify`.
+- Review passed: `go run ./cmd/a21 preflight`.
+- Review confirmed `provider-latency-bench --execute` is rejected.
+- Review confirmed `--fixture` stores only the basename and invalid JSON
+  sidecars report only fixed `fixture_sidecar_invalid` findings with
+  `failure_count=1` and execution flags false.
+- Review worktree `go run ./cmd/a21 doctor` returned nonzero for isolated
+  environment reasons: reserved port `127.0.0.1:21080` plus missing local
+  PlatformIO/tooling artifact state in the detached review worktree. Control
+  tower rechecked the main worktree and found no listener on `21080`, `21081`,
+  or `21073`; `go run ./cmd/a21 doctor` passed on the integration branch with
+  only the expected non-blocking `firmware_current_artifact_missing` warning.
+- Review worktree `go run ./cmd/a21 promotion-readiness` returned nonzero
+  because the worktree was detached at `0e46761`, so `review_ready=false` in
+  that isolated environment. Control tower separately verified the integration
+  branch at `cfc1658` reports `review_ready=true`, `dirty_file_count=0`, and
+  external promotion blocked only by missing remote, target remote, and target
+  branch.
+
+Decision:
+
+- Accept the review as closure for the fixture metadata contract slice.
+- No immediate control-tower code or docs fix is required for `f69c6b8` or
+  `0e46761`.
+- Treat detached-worktree doctor and promotion-readiness differences as review
+  environment evidence, not product or contract regressions.
+
+Next queue:
+
+- Open a narrow T1/T2 hardening slice for dedicated tests around oversized
+  fixture sidecars and unknown-field sidecars, plus documentation clarifying
+  that promotion-readiness `review_ready=true` should be asserted on the
+  integration branch, not on detached review worktrees.
+- Keep real provider/V21/Gateway/hardware latency measurement reserved for a
+  separately authorized T4/T6 window.
 
 ### Fast Companion Hybrid Boundary Audit
 
