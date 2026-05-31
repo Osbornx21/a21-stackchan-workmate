@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `4532df8`.
+Last accepted integration commit before this ledger update: `37697b9`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `4532df8 feat(app): add provider latency bench scaffold`.
+  `37697b9 docs(control): open provider latency post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -43,7 +43,9 @@ defines policy; this ledger records the current queue and accepted state.
   `819fe8b`, the Task 4 trace-fidelity P2 fix is `22c90ae`, Provider Spine
   Task 5 verification tracking is `ac2ab42`, PRD next-slice audit tracking is
   `52c64d2`, provider latency slice-open tracking is `28171ad`, and provider
-  latency bench scaffold acceptance is `4532df8`.
+  latency bench scaffold acceptance is `4532df8`; provider latency handoff
+  acceptance is `8bc41f6`, and provider latency post-review tracking is
+  `37697b9`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
