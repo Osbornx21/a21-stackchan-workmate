@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `a892ac9`.
+Last accepted integration commit before this ledger update: `3ed7ffd`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `a892ac9 fix(app): redact audio fixture read errors`.
+  `3ed7ffd docs(control): close audio front-end post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -68,7 +68,8 @@ defines policy; this ledger records the current queue and accepted state.
   slice-opening tracking is `bbca97b`, and audio front-end evidence contract
   implementation is `2106a30`; audio front-end evidence acceptance is
   `213cbf0`, audio front-end post-review tracking is `df20df5`, and audio
-  front-end post-review P2 fix is `a892ac9`.
+  front-end post-review P2 fix is `a892ac9`; audio front-end post-review
+  closure is `3ed7ffd`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -98,10 +99,11 @@ defines policy; this ledger records the current queue and accepted state.
   `213cbf0 docs(control): accept audio front-end evidence slice`.
 - Current integration HEAD after audio front-end post-review P2 fix:
   `a892ac9 fix(app): redact audio fixture read errors`.
-- Current control-tower action: audio-front-end evidence contract
-  post-commit review found one P2, fixed by control at `a892ac9`, and can be
-  closed. Start the next read-only PRD next-slice audit from the latest
-  integration HEAD before selecting another implementation slice.
+- Current integration HEAD after audio front-end post-review closure:
+  `3ed7ffd docs(control): close audio front-end post review`.
+- Current control-tower action: PRD next-slice audit after audio-front-end
+  closure is active in thread `019e7ca2-7551-7852-8c66-5bcc76d449bb`; wait
+  for its read-only handoff before opening the next implementation thread.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -120,6 +122,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7ca2-7551-7852-8c66-5bcc76d449bb` | PRD next-slice audit after audio-front-end closure | `/Users/jiyurun/.codex/worktrees/b764/New project` | active; read-only audit from `3ed7ffd` | T0/T1/T2 | no |
 | `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | completed; one P2 fixed by control at `a892ac9` | T0/T1/T2 | no |
 | `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
 | `019e7c80-f077-78c1-8962-58c53bb1779e` | PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/9959/New project` | completed; recommended audio-front-end evidence contract | T0/T1/T2 | no |
@@ -1470,6 +1473,57 @@ Control-tower next gate:
 - Close the post-commit review as accepted with the P2 fixed.
 - Run the next PRD next-slice audit from the latest integration HEAD before
   selecting another implementation slice.
+
+### PRD Next-Slice Audit After Audio Front-End Closure
+
+Opened by the control tower after closing the audio-front-end evidence
+contract post-review at `3ed7ffd`.
+
+Evidence:
+
+- Audit thread: `019e7ca2-7551-7852-8c66-5bcc76d449bb`.
+- Audit thread title:
+  `A21 PRD：Next Slice Audit After Audio Front-End`.
+- Audit worktree:
+  `/Users/jiyurun/.codex/worktrees/b764/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting integration HEAD:
+  `3ed7ffd docs(control): close audio front-end post review`.
+- Scope: read-only PRD gap audit after Provider Spine, Fast Companion,
+  provider latency reports, fixture sidecars, AgentTask Bridge, V21 adapter,
+  StackChan hardware capability honesty, and audio-front-end evidence contract
+  closure.
+- Required output: branch, HEAD, dirty state, current PRD P0/P1/P2 gap matrix,
+  recommended next slice, reason, file scope, maximum tool tier, whether an
+  implementation thread is needed, suggested verification commands, forbidden
+  actions, and whether the control tower can continue.
+- Maximum tier: T0/T1/T2.
+- Forbidden: file edits, commits, pushes, provider `--execute`, real provider
+  calls, V21 execute, Gateway runtime or service startup, durable payload
+  reports, firmware/NVS/flash/raw upload/serial writes, real
+  `/v1/devices/control`, physical device paths, production dependency
+  additions, secrets, prompt/transcript/provider output/reasoning/raw audio/
+  full URL/proxy/local path leakage, and AgentTask runtime.
+
+Audit candidates to compare, without treating any as preselected:
+
+- Binary Opus/media transport planning contract, T1/T2 plan/contract only.
+- Provider latency real-execute authorization gate design, T4 declaration only
+  and no execute.
+- Mature VAD/AEC native adapter evaluation window design, plan/contract only
+  unless explicitly authorized.
+- Professional V21 evidence contract continuation, without V21 execute.
+- StackChan hardware diagnostic planning/acceptance gates, without physical
+  device paths.
+- Agent I/O Layer follow-up only if it remains explicit user-selected I/O and
+  not routing/runtime.
+
+Control-tower next gate:
+
+- Wait for the audit handoff from
+  `019e7ca2-7551-7852-8c66-5bcc76d449bb`.
+- Do not open the next implementation thread until the audit returns a
+  concrete PRD gap matrix and recommended slice.
 
 ### Fast Companion Hybrid Boundary Audit
 
