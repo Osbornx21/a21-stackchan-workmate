@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -53,20 +54,35 @@ type xiaozhiVoiceBenchReport struct {
 }
 
 type xiaozhiVoiceBenchTurn struct {
-	Turn                 int      `json:"turn"`
-	Kind                 string   `json:"kind"`
-	TraceID              string   `json:"trace_id"`
-	SessionID            string   `json:"session_id"`
-	HelloAccepted        bool     `json:"hello_accepted"`
-	ListenAck            bool     `json:"listen_ack"`
-	BinaryDownlinkFrames int      `json:"binary_downlink_frames"`
-	FirstAudioMS         *int64   `json:"first_audio_ms,omitempty"`
-	TTSStopReceived      bool     `json:"tts_stop_received"`
-	AbortSent            bool     `json:"abort_sent"`
-	AbortStopMS          *int64   `json:"abort_stop_ms,omitempty"`
-	MetricsObserved      bool     `json:"metrics_observed"`
-	Status               string   `json:"status"`
-	Findings             []string `json:"findings,omitempty"`
+	Turn                 int                            `json:"turn"`
+	Kind                 string                         `json:"kind"`
+	TraceID              string                         `json:"trace_id"`
+	SessionID            string                         `json:"session_id"`
+	HelloAccepted        bool                           `json:"hello_accepted"`
+	ListenAck            bool                           `json:"listen_ack"`
+	BinaryDownlinkFrames int                            `json:"binary_downlink_frames"`
+	FirstAudioMS         *int64                         `json:"first_audio_ms,omitempty"`
+	TTSStopReceived      bool                           `json:"tts_stop_received"`
+	AbortSent            bool                           `json:"abort_sent"`
+	AbortStopMS          *int64                         `json:"abort_stop_ms,omitempty"`
+	MetricsObserved      bool                           `json:"metrics_observed"`
+	TraceSummary         *xiaozhiVoiceBenchTraceSummary `json:"trace_summary,omitempty"`
+	Status               string                         `json:"status"`
+	Findings             []string                       `json:"findings,omitempty"`
+}
+
+type xiaozhiVoiceBenchTraceSummary struct {
+	EventCount                    int    `json:"event_count"`
+	LastOffsetMS                  int64  `json:"last_offset_ms"`
+	BargeInStopMS                 *int64 `json:"barge_in_stop_ms,omitempty"`
+	XiaozhiListenToAudioIngressMS *int64 `json:"xiaozhi_listen_to_audio_ingress_ms,omitempty"`
+	XiaozhiOpusDecodeMS           *int64 `json:"xiaozhi_opus_decode_ms,omitempty"`
+	ASRFirstPartialMS             *int64 `json:"asr_first_partial_ms,omitempty"`
+	LLMFirstContentMS             *int64 `json:"llm_first_content_ms,omitempty"`
+	TTSFirstAudioMS               *int64 `json:"tts_first_audio_ms,omitempty"`
+	AudioDownlinkFirstFrameMS     *int64 `json:"audio_downlink_first_frame_ms,omitempty"`
+	DevicePlaybackStartMS         *int64 `json:"device_playback_start_ms,omitempty"`
+	AnswerFirstAudioTotalMS       *int64 `json:"answer_first_audio_total_ms,omitempty"`
 }
 
 type xiaozhiVoiceBenchSummary struct {
@@ -250,12 +266,14 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 		traceID := fmt.Sprintf("a21-trace-xiaozhi-bench-%d-answer-%02d", generatedAtMS, turn)
 		sessionID := fmt.Sprintf("a21-session-xiaozhi-bench-%d-answer-%02d", generatedAtMS, turn)
 		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packet, turn, "answer", traceID, sessionID, false)
+		attachXiaozhiVoiceBenchTraceSummary(ctx, options.GatewayURL, &receipt)
 		report.AnswerTurns = append(report.AnswerTurns, receipt)
 	}
 	for turn := 1; turn <= options.Repeat; turn++ {
 		traceID := fmt.Sprintf("a21-trace-xiaozhi-bench-%d-barge-%02d", generatedAtMS, turn)
 		sessionID := fmt.Sprintf("a21-session-xiaozhi-bench-%d-barge-%02d", generatedAtMS, turn)
 		receipt := runXiaozhiVoiceBenchTurn(ctx, options, wsURL, packet, turn, "barge_in", traceID, sessionID, true)
+		attachXiaozhiVoiceBenchTraceSummary(ctx, options.GatewayURL, &receipt)
 		report.BargeInTurns = append(report.BargeInTurns, receipt)
 	}
 	report.Counts.AnswerTurnCount = len(report.AnswerTurns)
@@ -517,6 +535,63 @@ func xiaozhiVoiceBenchHasBargeInSamples(turns []xiaozhiVoiceBenchTurn) bool {
 		}
 	}
 	return false
+}
+
+func attachXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, receipt *xiaozhiVoiceBenchTurn) {
+	if receipt == nil || receipt.TraceID == "" {
+		return
+	}
+	summary, err := fetchXiaozhiVoiceBenchTraceSummary(ctx, gatewayURL, receipt.TraceID)
+	if err != nil {
+		receipt.Findings = append(receipt.Findings, "trace_summary_unavailable")
+		return
+	}
+	receipt.TraceSummary = &summary
+}
+
+func fetchXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, traceID string) (xiaozhiVoiceBenchTraceSummary, error) {
+	endpoint, err := xiaozhiVoiceBenchTraceURL(gatewayURL, traceID)
+	if err != nil {
+		return xiaozhiVoiceBenchTraceSummary{}, err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return xiaozhiVoiceBenchTraceSummary{}, err
+	}
+	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return xiaozhiVoiceBenchTraceSummary{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return xiaozhiVoiceBenchTraceSummary{}, fmt.Errorf("trace summary unavailable")
+	}
+	var decoded struct {
+		Summary xiaozhiVoiceBenchTraceSummary `json:"summary"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		return xiaozhiVoiceBenchTraceSummary{}, err
+	}
+	if decoded.Summary.EventCount <= 0 {
+		return xiaozhiVoiceBenchTraceSummary{}, fmt.Errorf("trace summary empty")
+	}
+	return decoded.Summary, nil
+}
+
+func xiaozhiVoiceBenchTraceURL(gatewayURL string, traceID string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(gatewayURL))
+	if err != nil || parsed.Host == "" {
+		return "", fmt.Errorf("invalid gateway URL")
+	}
+	parsed.Path = "/v1/traces"
+	query := url.Values{}
+	query.Set("trace_id", traceID)
+	parsed.RawQuery = query.Encode()
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func xiaozhiVoiceBenchWebSocketURL(gatewayURL string) (string, error) {
