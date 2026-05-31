@@ -1,9 +1,12 @@
 package audio
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"math"
 	"sync"
+	"time"
 )
 
 type Event string
@@ -18,6 +21,9 @@ type IngressConfig struct {
 	SpeechThreshold   float64
 	SilenceHangover   int
 	VADDetector       VADDetector
+	VADPreference     VADDetectorPreference
+	SileroRunner      SileroVADRunner
+	VADTimeout        time.Duration
 }
 
 type Frame struct {
@@ -37,6 +43,8 @@ type IngressResult struct {
 	DroppedFrameDelta int
 	RMS               float64
 	VADDetector       string
+	VADStatus         string
+	VADFinding        string
 	SpeechDetected    bool
 	SpeechActive      bool
 	Events            []Event
@@ -46,14 +54,16 @@ type VADDecision struct {
 	SpeechDetected bool
 	Score          float64
 	Detector       string
+	Status         string
+	Finding        string
 }
 
 type VADDetector interface {
-	Detect(frame Frame) VADDecision
+	Detect(ctx context.Context, frame Frame) VADDecision
 }
 
 type SileroVADRunner interface {
-	Detect(frame Frame) (VADDecision, error)
+	Detect(ctx context.Context, frame Frame) (VADDecision, error)
 }
 
 type Ingress struct {
@@ -70,6 +80,7 @@ type RMSVADDetector struct {
 type SileroVADAdapter struct {
 	runner   SileroVADRunner
 	fallback RMSVADDetector
+	timeout  time.Duration
 }
 
 type streamState struct {
@@ -83,7 +94,38 @@ const (
 	VADDetectorRMS               = "a21-rms-vad"
 	VADDetectorSilero            = "a21-silero-vad"
 	VADDetectorSileroFallbackRMS = "a21-silero-vad-fallback-rms"
+
+	VADDetectorPreferenceRMS    VADDetectorPreference = "rms"
+	VADDetectorPreferenceSilero VADDetectorPreference = "silero"
+
+	VADStatusRMSBaseline          = "rms_baseline"
+	VADStatusSileroAvailable      = "silero_available"
+	VADStatusSileroUnavailable    = "silero_unavailable"
+	VADFindingRMSBaseline         = "rms_baseline_dev_only"
+	VADFindingSileroAvailable     = "silero_runner_available"
+	VADFindingSileroNotSelected   = "silero_not_selected"
+	VADFindingSileroRunnerEmpty   = "silero_runner_missing_rms_fallback"
+	VADFindingSileroRunnerError   = "silero_runner_error_rms_fallback"
+	VADFindingSileroRunnerAbort   = "silero_runner_canceled_rms_fallback"
+	VADFindingSileroRunnerTimeout = "silero_runner_timeout_rms_fallback"
+
+	DefaultSileroVADTimeout = 75 * time.Millisecond
 )
+
+type VADDetectorPreference string
+
+type VADDetectorConfig struct {
+	Preference        VADDetectorPreference
+	SileroRunner      SileroVADRunner
+	FallbackThreshold float64
+	Timeout           time.Duration
+}
+
+type SileroVADAdapterOptions struct {
+	Runner            SileroVADRunner
+	FallbackThreshold float64
+	Timeout           time.Duration
+}
 
 func DefaultIngressConfig() IngressConfig {
 	return IngressConfig{
@@ -106,12 +148,24 @@ func NewIngress(config IngressConfig) *Ingress {
 	}
 	vad := config.VADDetector
 	if vad == nil {
-		vad = NewRMSVADDetector(config.SpeechThreshold)
+		vad = NewVADDetector(VADDetectorConfig{
+			Preference:        config.VADPreference,
+			SileroRunner:      config.SileroRunner,
+			FallbackThreshold: config.SpeechThreshold,
+			Timeout:           config.VADTimeout,
+		})
 	}
 	return &Ingress{config: config, vad: vad, state: make(map[string]*streamState)}
 }
 
 func (i *Ingress) Push(frame Frame) IngressResult {
+	return i.PushContext(context.Background(), frame)
+}
+
+func (i *Ingress) PushContext(ctx context.Context, frame Frame) IngressResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
@@ -130,7 +184,7 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 		droppedDelta = 1
 	}
 
-	decision := i.vad.Detect(frame)
+	decision := i.vad.Detect(ctx, frame)
 	speechDetected := decision.SpeechDetected
 	events := make([]Event, 0, 1)
 	if speechDetected {
@@ -154,10 +208,23 @@ func (i *Ingress) Push(frame Frame) IngressResult {
 		DroppedFrameDelta: droppedDelta,
 		RMS:               decision.Score,
 		VADDetector:       decision.Detector,
+		VADStatus:         decision.Status,
+		VADFinding:        decision.Finding,
 		SpeechDetected:    speechDetected,
 		SpeechActive:      state.speechActive,
 		Events:            events,
 	}
+}
+
+func NewVADDetector(config VADDetectorConfig) VADDetector {
+	if config.Preference == VADDetectorPreferenceSilero {
+		return NewSileroVADAdapterWithOptions(SileroVADAdapterOptions{
+			Runner:            config.SileroRunner,
+			FallbackThreshold: config.FallbackThreshold,
+			Timeout:           config.Timeout,
+		})
+	}
+	return NewRMSVADDetector(config.FallbackThreshold)
 }
 
 func NewRMSVADDetector(threshold float64) RMSVADDetector {
@@ -167,38 +234,95 @@ func NewRMSVADDetector(threshold float64) RMSVADDetector {
 	return RMSVADDetector{threshold: threshold}
 }
 
-func (d RMSVADDetector) Detect(frame Frame) VADDecision {
+func (d RMSVADDetector) Detect(_ context.Context, frame Frame) VADDecision {
 	score := pcm16RMS(frame.DataBase64)
 	return VADDecision{
 		SpeechDetected: score >= d.threshold,
 		Score:          score,
 		Detector:       VADDetectorRMS,
+		Status:         VADStatusRMSBaseline,
+		Finding:        VADFindingRMSBaseline,
 	}
 }
 
 func NewSileroVADAdapter(runner SileroVADRunner, fallbackThreshold float64) SileroVADAdapter {
+	return NewSileroVADAdapterWithOptions(SileroVADAdapterOptions{
+		Runner:            runner,
+		FallbackThreshold: fallbackThreshold,
+	})
+}
+
+func NewSileroVADAdapterWithOptions(options SileroVADAdapterOptions) SileroVADAdapter {
+	timeout := options.Timeout
+	if timeout <= 0 {
+		timeout = DefaultSileroVADTimeout
+	}
 	return SileroVADAdapter{
-		runner:   runner,
-		fallback: NewRMSVADDetector(fallbackThreshold),
+		runner:   options.Runner,
+		fallback: NewRMSVADDetector(options.FallbackThreshold),
+		timeout:  timeout,
 	}
 }
 
-func (d SileroVADAdapter) Detect(frame Frame) VADDecision {
+func (d SileroVADAdapter) Detect(ctx context.Context, frame Frame) VADDecision {
 	if d.runner == nil {
-		return d.fallbackDecision(frame)
+		return d.fallbackDecision(frame, VADFindingSileroRunnerEmpty)
 	}
-	decision, err := d.runner.Detect(frame)
-	if err != nil {
-		return d.fallbackDecision(frame)
+	if ctx == nil {
+		ctx = context.Background()
 	}
+	runCtx := ctx
+	cancel := func() {}
+	if d.timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, d.timeout)
+	}
+	defer cancel()
+
+	type runnerResult struct {
+		decision VADDecision
+		err      error
+	}
+	resultCh := make(chan runnerResult, 1)
+	go func() {
+		decision, err := d.runner.Detect(runCtx, frame)
+		resultCh <- runnerResult{decision: decision, err: err}
+	}()
+
+	var result runnerResult
+	select {
+	case result = <-resultCh:
+	case <-runCtx.Done():
+		return d.fallbackDecision(frame, sileroFallbackFinding(runCtx.Err()))
+	}
+	if result.err != nil {
+		return d.fallbackDecision(frame, sileroFallbackFinding(result.err))
+	}
+	decision := result.decision
 	decision.Detector = VADDetectorSilero
+	decision.Status = VADStatusSileroAvailable
+	decision.Finding = VADFindingSileroAvailable
 	return decision
 }
 
-func (d SileroVADAdapter) fallbackDecision(frame Frame) VADDecision {
-	decision := d.fallback.Detect(frame)
+func (d SileroVADAdapter) fallbackDecision(frame Frame, finding string) VADDecision {
+	decision := d.fallback.Detect(context.Background(), frame)
 	decision.Detector = VADDetectorSileroFallbackRMS
+	decision.Status = VADStatusSileroUnavailable
+	decision.Finding = finding
 	return decision
+}
+
+func sileroFallbackFinding(err error) string {
+	switch {
+	case err == nil:
+		return VADFindingSileroRunnerError
+	case errors.Is(err, context.Canceled):
+		return VADFindingSileroRunnerAbort
+	case errors.Is(err, context.DeadlineExceeded):
+		return VADFindingSileroRunnerTimeout
+	default:
+		return VADFindingSileroRunnerError
+	}
 }
 
 func frameKey(frame Frame) string {

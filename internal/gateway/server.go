@@ -56,6 +56,7 @@ type ServerOptions struct {
 	V21Client                    v21adapter.Client
 	V21Timeout                   time.Duration
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
+	AudioIngressConfig           audio.IngressConfig
 }
 
 type MockTurnRequest struct {
@@ -238,6 +239,8 @@ type AudioCaptureFrame struct {
 	DataBase64          string  `json:"data_base64,omitempty"`
 	RMS                 float64 `json:"rms"`
 	VADDetector         string  `json:"vad_detector"`
+	VADStatus           string  `json:"vad_status,omitempty"`
+	VADFinding          string  `json:"vad_finding,omitempty"`
 	SpeechDetected      bool    `json:"speech_detected"`
 	SpeechActive        bool    `json:"speech_active"`
 	DroppedFrames       int     `json:"dropped_frames,omitempty"`
@@ -317,7 +320,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioProbeSessions:         make(map[string]bool),
 		mockPlaybackArmedSessions:  make(map[string]bool),
 		realtimeArmedSessions:      make(map[string]bool),
-		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
+		audioIngress:               audio.NewIngress(options.AudioIngressConfig),
 		audioSockets:               make(map[string]*deviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
@@ -1897,6 +1900,8 @@ func (s *Server) recordAudioCaptureFrame(frame protocol.Envelope, chunk protocol
 		DataBase64:          chunk.DataBase64,
 		RMS:                 ingress.RMS,
 		VADDetector:         ingress.VADDetector,
+		VADStatus:           ingress.VADStatus,
+		VADFinding:          ingress.VADFinding,
 		SpeechDetected:      ingress.SpeechDetected,
 		SpeechActive:        ingress.SpeechActive,
 		DroppedFrames:       ingress.DroppedFrames,

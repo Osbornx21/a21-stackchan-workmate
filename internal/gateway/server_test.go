@@ -3701,6 +3701,77 @@ func TestAudioWebSocketRecordsIngressAndVADTrace(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketUsesConfiguredSileroVADLabelsWithoutAudioLeak(t *testing.T) {
+	runner := &gatewaySileroVADRunner{
+		decision: audio.VADDecision{
+			SpeechDetected: true,
+			Score:          0.93,
+			Detector:       "runner-private-detail",
+		},
+	}
+	server := NewServerWithOptions(ServerOptions{
+		AudioIngressConfig: audio.IngressConfig{
+			VADPreference: audio.VADDetectorPreferenceSilero,
+			SileroRunner:  runner,
+			VADTimeout:    50 * time.Millisecond,
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	payload := pcm16Base64WithSample(0)
+	_ = writeAudioFrameWithPayload(t, ctx, conn, 1, "a21-trace-silero-vad-ws", "a21-session-silero-vad-ws", payload)
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	for _, want := range []string{
+		`a21_vad_detector_decisions_total{detector="a21-silero-vad",result="speech"} 1`,
+		"a21_vad_speech_start_total 1",
+	} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+	if strings.Contains(metricsRec.Body.String(), "runner-private-detail") {
+		t.Fatalf("metrics leaked runner detail:\n%s", metricsRec.Body.String())
+	}
+
+	recentReq := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?session_id=a21-session-silero-vad-ws", nil)
+	recentReq.RemoteAddr = "127.0.0.1:45678"
+	recentRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recentRec, recentReq)
+	if recentRec.Code != http.StatusOK {
+		t.Fatalf("recent status = %d: %s", recentRec.Code, recentRec.Body.String())
+	}
+	for _, want := range []string{
+		`"vad_detector":"a21-silero-vad"`,
+		`"vad_status":"silero_available"`,
+		`"vad_finding":"silero_runner_available"`,
+	} {
+		if !strings.Contains(recentRec.Body.String(), want) {
+			t.Fatalf("recent response missing %q: %s", want, recentRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{payload, "runner-private-detail"} {
+		if strings.Contains(recentRec.Body.String(), forbidden) {
+			t.Fatalf("recent response leaked %q: %s", forbidden, recentRec.Body.String())
+		}
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	}
+}
+
 func TestAudioWebSocketRejectsInvalidPCMFrame(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())
@@ -4673,6 +4744,20 @@ func (c slowV21Client) Query(ctx context.Context, request v21adapter.QueryReques
 	case <-timer.C:
 		return v21adapter.NewMockClient().Query(ctx, request)
 	}
+}
+
+type gatewaySileroVADRunner struct {
+	decision audio.VADDecision
+	err      error
+	calls    int
+}
+
+func (r *gatewaySileroVADRunner) Detect(ctx context.Context, frame audio.Frame) (audio.VADDecision, error) {
+	r.calls++
+	if r.err != nil {
+		return audio.VADDecision{}, r.err
+	}
+	return r.decision, ctx.Err()
 }
 
 func traceEventAtMS(events []TraceEvent, name string) (int64, bool) {

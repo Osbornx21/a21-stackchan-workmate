@@ -1,10 +1,14 @@
 package audio
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIngressBufferCapsDepthAndCountsDrops(t *testing.T) {
@@ -152,6 +156,71 @@ func TestIngressUsesConfiguredVADDetector(t *testing.T) {
 	}
 }
 
+func TestNewVADDetectorPrefersSileroWhenConfigured(t *testing.T) {
+	runner := &scriptedSileroVADRunner{
+		decision: VADDecision{
+			SpeechDetected: true,
+			Score:          0.87,
+			Detector:       "runner-detail",
+		},
+	}
+	detector := NewVADDetector(VADDetectorConfig{
+		Preference:        VADDetectorPreferenceSilero,
+		SileroRunner:      runner,
+		FallbackThreshold: 0.02,
+	})
+
+	decision := detector.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-silero-selection",
+		SessionID:    "a21-session-silero-selection",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(0),
+	})
+
+	if !decision.SpeechDetected || decision.Score != 0.87 {
+		t.Fatalf("decision = %+v, want Silero runner decision", decision)
+	}
+	if decision.Detector != VADDetectorSilero || decision.Status != VADStatusSileroAvailable || decision.Finding != VADFindingSileroAvailable {
+		t.Fatalf("decision labels = %+v, want stable Silero labels", decision)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("runner calls = %d, want 1", runner.calls)
+	}
+}
+
+func TestNewVADDetectorKeepsRMSWhenSileroNotConfigured(t *testing.T) {
+	runner := &scriptedSileroVADRunner{
+		decision: VADDecision{SpeechDetected: true, Score: 0.99, Detector: "runner-detail"},
+	}
+	detector := NewVADDetector(VADDetectorConfig{
+		Preference:        VADDetectorPreferenceRMS,
+		SileroRunner:      runner,
+		FallbackThreshold: 0.02,
+	})
+
+	decision := detector.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-rms-selection",
+		SessionID:    "a21-session-rms-selection",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(0),
+	})
+
+	if decision.SpeechDetected || decision.Detector != VADDetectorRMS || decision.Status != VADStatusRMSBaseline {
+		t.Fatalf("decision = %+v, want RMS silence decision", decision)
+	}
+	if runner.calls != 0 {
+		t.Fatalf("runner calls = %d, want 0", runner.calls)
+	}
+}
+
 func TestSileroVADAdapterUsesRunnerDecisionWithStableLabel(t *testing.T) {
 	runner := &scriptedSileroVADRunner{
 		decision: VADDecision{
@@ -162,7 +231,7 @@ func TestSileroVADAdapterUsesRunnerDecisionWithStableLabel(t *testing.T) {
 	}
 	adapter := NewSileroVADAdapter(runner, 0.02)
 
-	result := adapter.Detect(Frame{
+	result := adapter.Detect(context.Background(), Frame{
 		DeviceID:     "stackchan-sim-001",
 		TraceID:      "a21-trace-silero-vad",
 		SessionID:    "a21-session-silero-vad",
@@ -179,18 +248,21 @@ func TestSileroVADAdapterUsesRunnerDecisionWithStableLabel(t *testing.T) {
 	if result.Detector != "a21-silero-vad" {
 		t.Fatalf("Detector = %q, want a21-silero-vad", result.Detector)
 	}
+	if result.Status != VADStatusSileroAvailable || result.Finding != VADFindingSileroAvailable {
+		t.Fatalf("status/finding = %q/%q, want stable Silero availability", result.Status, result.Finding)
+	}
 	if runner.calls != 1 {
 		t.Fatalf("runner calls = %d, want 1", runner.calls)
 	}
 }
 
-func TestSileroVADAdapterFallsBackToRMSWhenRunnerUnavailable(t *testing.T) {
+func TestSileroVADAdapterFallsBackToRMSWhenRunnerUnavailableWithStableStatus(t *testing.T) {
 	runner := &scriptedSileroVADRunner{
-		err: errors.New("runner unavailable: model detail should stay private"),
+		err: errors.New("runner unavailable: /private/a21/model.onnx raw audio should stay private"),
 	}
 	adapter := NewSileroVADAdapter(runner, 0.02)
 
-	result := adapter.Detect(Frame{
+	result := adapter.Detect(context.Background(), Frame{
 		DeviceID:     "stackchan-sim-001",
 		TraceID:      "a21-trace-silero-vad-fallback",
 		SessionID:    "a21-session-silero-vad-fallback",
@@ -207,10 +279,104 @@ func TestSileroVADAdapterFallsBackToRMSWhenRunnerUnavailable(t *testing.T) {
 	if result.Detector != "a21-silero-vad-fallback-rms" {
 		t.Fatalf("Detector = %q, want a21-silero-vad-fallback-rms", result.Detector)
 	}
-	for _, forbidden := range []string{"runner unavailable", "model detail", "private"} {
-		if strings.Contains(result.Detector, forbidden) {
-			t.Fatalf("fallback detector label %q leaked %q", result.Detector, forbidden)
+	if result.Status != VADStatusSileroUnavailable || result.Finding != VADFindingSileroRunnerError {
+		t.Fatalf("status/finding = %q/%q, want stable unavailable fallback", result.Status, result.Finding)
+	}
+	for _, field := range []string{result.Detector, result.Status, result.Finding} {
+		for _, forbidden := range []string{"runner unavailable", "model", "private", "raw audio"} {
+			if strings.Contains(field, forbidden) {
+				t.Fatalf("fallback field %q leaked %q", field, forbidden)
+			}
 		}
+	}
+}
+
+func TestSileroVADAdapterTimesOutAndCancelsRunner(t *testing.T) {
+	runner := &blockingSileroVADRunner{done: make(chan struct{})}
+	adapter := NewSileroVADAdapterWithOptions(SileroVADAdapterOptions{
+		Runner:            runner,
+		FallbackThreshold: 0.02,
+		Timeout:           10 * time.Millisecond,
+	})
+
+	started := time.Now()
+	result := adapter.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-silero-timeout",
+		SessionID:    "a21-session-silero-timeout",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	elapsed := time.Since(started)
+
+	if elapsed > 150*time.Millisecond {
+		t.Fatalf("Detect elapsed %s, want timeout fallback within 150ms", elapsed)
+	}
+	if !result.SpeechDetected || result.Detector != VADDetectorSileroFallbackRMS || result.Finding != VADFindingSileroRunnerTimeout {
+		t.Fatalf("result = %+v, want timeout RMS fallback speech", result)
+	}
+	select {
+	case <-runner.done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("runner did not observe context cancellation")
+	}
+}
+
+func TestCommandSileroVADRunnerRedactsUnavailableCommandDetails(t *testing.T) {
+	runner := NewCommandSileroVADRunner(CommandSileroVADRunnerConfig{
+		CommandPath: "/private/a21/silero-vad-runner",
+		ModelPath:   "/private/a21/models/silero.onnx",
+	})
+
+	_, err := runner.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-command-silero",
+		SessionID:    "a21-session-command-silero",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if err == nil {
+		t.Fatal("Detect() error = nil, want unavailable command error")
+	}
+	for _, forbidden := range []string{"/private", "silero.onnx", "a21/silero-vad-runner", "raw", "AAAA"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("error %q leaked %q", err.Error(), forbidden)
+		}
+	}
+}
+
+func TestCommandSileroVADRunnerUsesLocalCommandDecision(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-silero-vad-runner")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\ncat >/dev/null\nprintf '{\"speech_detected\":true,\"score\":0.82}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewCommandSileroVADRunner(CommandSileroVADRunnerConfig{
+		CommandPath: commandPath,
+		ModelPath:   filepath.Join(dir, "model.onnx"),
+	})
+
+	decision, err := runner.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-command-silero-success",
+		SessionID:    "a21-session-command-silero-success",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if err != nil {
+		t.Fatalf("Detect() error = %v", err)
+	}
+	if !decision.SpeechDetected || decision.Score != 0.82 || decision.Detector != "" || decision.Status != "" || decision.Finding != "" {
+		t.Fatalf("decision = %+v, want raw command score before adapter labeling", decision)
 	}
 }
 
@@ -223,7 +389,7 @@ func TestSileroVADAdapterLowCardinalityLabels(t *testing.T) {
 		nil,
 	} {
 		adapter := NewSileroVADAdapter(runner, 0.02)
-		decision := adapter.Detect(Frame{
+		decision := adapter.Detect(context.Background(), Frame{
 			DeviceID:     "stackchan-sim-001",
 			TraceID:      "a21-trace-low-cardinality",
 			SessionID:    "a21-session-low-cardinality",
@@ -256,7 +422,7 @@ type scriptedVADDetector struct {
 	calls     int
 }
 
-func (d *scriptedVADDetector) Detect(frame Frame) VADDecision {
+func (d *scriptedVADDetector) Detect(_ context.Context, frame Frame) VADDecision {
 	d.calls++
 	if len(d.decisions) == 0 {
 		return VADDecision{Detector: "a21-scripted-vad"}
@@ -272,10 +438,22 @@ type scriptedSileroVADRunner struct {
 	calls    int
 }
 
-func (r *scriptedSileroVADRunner) Detect(frame Frame) (VADDecision, error) {
+func (r *scriptedSileroVADRunner) Detect(_ context.Context, frame Frame) (VADDecision, error) {
 	r.calls++
 	if r.err != nil {
 		return VADDecision{}, r.err
 	}
 	return r.decision, nil
+}
+
+type blockingSileroVADRunner struct {
+	done  chan struct{}
+	calls int
+}
+
+func (r *blockingSileroVADRunner) Detect(ctx context.Context, frame Frame) (VADDecision, error) {
+	r.calls++
+	<-ctx.Done()
+	close(r.done)
+	return VADDecision{}, ctx.Err()
 }
