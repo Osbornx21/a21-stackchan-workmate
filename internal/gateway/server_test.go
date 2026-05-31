@@ -1714,6 +1714,13 @@ func TestXiaozhiWebSocketDecodedOpusFeedsAudioIngress(t *testing.T) {
 	}
 	readXiaozhiJSON(t, ctx, conn)
 	readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
 	readXiaozhiJSON(t, ctx, conn)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/audio/recent?device_id=stackchan-001&session_id=a21-session-xiaozhi-audio-ingress", nil)
@@ -1749,6 +1756,102 @@ func TestXiaozhiWebSocketDecodedOpusFeedsAudioIngress(t *testing.T) {
 	}
 	if !traceContains(traces.Events, "audio.ingress.buffered") || !traceContains(traces.Events, string(audio.EventVADSpeechStart)) {
 		t.Fatalf("trace missing decoded ingress markers: %+v", traces.Events)
+	}
+}
+
+func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pipeline",
+		"session_id": "a21-session-xiaozhi-pipeline",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	audioIngress, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio ingress = %#v", ttsStart["audio_ingress"])
+	}
+	if audioIngress["asr_status"] != "fixture_completed" || audioIngress["tts_status"] != "opus_downlink_fixture" {
+		t.Fatalf("audio ingress = %#v, want fixture pipeline status", audioIngress)
+	}
+	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
+	}
+	if pipeline["schema_version"] != "a21.voice_pipeline.fixture.v1" || pipeline["execution_mode"] != "fixture" || pipeline["audio_chunk_count"] != float64(1) {
+		t.Fatalf("voice pipeline = %#v", pipeline)
+	}
+	startPayload := mustJSON(t, ttsStart)
+	for _, forbidden := range []string{"data_base64", "raw_audio", "provider output", "fixture transcript", "http://", "https://", "/Users/"} {
+		if strings.Contains(startPayload, forbidden) {
+			t.Fatalf("tts start leaked %q: %s", forbidden, startPayload)
+		}
+	}
+
+	sentence := readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["placeholder"] == true {
+		t.Fatalf("sentence start = %#v", sentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_fixture_completed" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-pipeline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.voice_pipeline.start",
+		"asr.first_partial",
+		"provider.first_content",
+		"tts.first_audio",
+		"audio.downlink.first_frame",
+		"xiaozhi.tts.opus_frame.downlink",
+		"xiaozhi.voice_pipeline.completed",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
 	}
 }
 
@@ -3962,6 +4065,15 @@ func readXiaozhiJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) ma
 		t.Fatal(err)
 	}
 	return message
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func webSocketURL(serverURL string, path string) string {

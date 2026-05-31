@@ -51,6 +51,10 @@ thin sensing and expression device.
 - P0-2 downlink primitive: Gateway can encode a validated 24 kHz mono 60 ms
   PCM TTS chunk into xiaozhi Opus and write it only through the current-turn
   pacer; the full ASR/LLM/TTS product route is still not accepted.
+- P0-4 fixture pipeline wiring: on xiaozhi `listen/stop`, decoded speech frames
+  can flow through the mock ASR/text/TTS pipeline contract and return one paced
+  binary Opus downlink frame. This proves plumbing only; real providers,
+  physical playback, and PRD first-audio acceptance are still not accepted.
 - P0-3 turn foundation: `/v1/xiaozhi` now creates a current turn on
   `listen/start` and cancels it on `abort`, resetting the downlink pacer before
   future frame sends can observe stale turn state.

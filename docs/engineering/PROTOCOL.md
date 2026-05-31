@@ -63,10 +63,12 @@ valid uplink Opus frames to PCM16 to produce aggregate telemetry
 honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`.
 Decoded PCM also enters the existing `audio.Ingress` buffer and VAD markers so
 the next ASR slice has the same observable ingress surface as `/ws/audio`.
-It does not run ASR/LLM/TTS providers and does not send binary Opus TTS audio
-back to the device. On `listen/stop`, it emits an honest xiaozhi TTS lifecycle
-placeholder so tests and operators cannot mistake the transport and codec proof
-for audible product acceptance.
+When decoded frames include VAD speech, `/v1/xiaozhi` can run the
+`internal/providers` fixture pipeline and send the resulting mock TTS PCM chunk
+through the paced Opus downlink. When no speech or no usable decoded frame is
+available, it still emits the honest xiaozhi TTS lifecycle placeholder. This
+is fixture plumbing only: it does not execute real ASR/LLM/TTS providers and
+must not be cited as audible product acceptance.
 
 Future xiaozhi TTS binary downlink must use the Go `AudioRateController`
 primitive before writing frames: default 60 ms frame slots, five-frame
@@ -88,6 +90,12 @@ names, and emits a redacted report that stores counts, format metadata, timing,
 and policy fields only. It must not be cited as real provider execution,
 physical StackChan first-audio acceptance, transcript quality evidence, or PRD
 latency acceptance.
+
+The Gateway xiaozhi fixture path consumes those report fields without storing
+transcripts, provider output, or audio payloads in JSON. Its TTS start message
+may include `voice_pipeline.schema_version`, `execution_mode`, chunk counts,
+and timing fields. The actual mock audio travels only as paced binary Opus
+frames; `data_base64` is not emitted in xiaozhi JSON.
 
 Each `listen/start` creates a Gateway-owned xiaozhi turn. Each `abort` cancels
 the current turn context, clears current-turn ownership, and resets the downlink
