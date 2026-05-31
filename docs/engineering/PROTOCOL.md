@@ -97,10 +97,13 @@ may include `voice_pipeline.schema_version`, `execution_mode`, chunk counts,
 and timing fields. The actual mock audio travels only as paced binary Opus
 frames; `data_base64` is not emitted in xiaozhi JSON.
 
-Each `listen/start` creates a Gateway-owned xiaozhi turn. Each `abort` cancels
-the current turn context, clears current-turn ownership, and resets the downlink
-pacer. Future provider and TTS frame code must check current-turn ownership
-before every device-facing frame send.
+Each `listen/start` creates a Gateway-owned xiaozhi turn and returns a stable
+A21 `turn_id` in the accepted reply. Each `abort` cancels the current turn
+context, clears current-turn ownership, resets the downlink pacer, and returns
+one `tts/stop` with the cancelled `turn_id`. Future provider and TTS frame code
+must check current-turn ownership before every device-facing frame send; stale
+turn downlink attempts are suppressed at the host seam and traced without
+emitting JSON or binary device frames.
 
 ### Xiaozhi MCP And Expression Contract
 

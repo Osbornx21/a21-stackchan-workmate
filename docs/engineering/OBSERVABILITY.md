@@ -114,8 +114,10 @@ Client `hello.features` are represented only as sanitized `/v1/devices`
 capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 `device_events` and `debug_metrics` are marked as an isolated debug profile.
 The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
-`xiaozhi.turn.cancel` on `abort`; these are turn-control markers only, not
-provider cancel or device playback stop proof yet.
+`xiaozhi.turn.cancel`, `turn_cancelled`, and `downlink_queue_cleared` on
+`abort`; barge-in-style abort reasons also add `barge_in_detected` alongside
+the existing `barge_in.detected` compatibility marker. These are
+turn-control markers only, not physical device playback stop proof yet.
 `/v1/traces` now summarizes split latency deltas for
 `xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,
@@ -123,6 +125,8 @@ provider cancel or device playback stop proof yet.
 `answer_first_audio_total_ms` when the corresponding markers exist.
 Paced xiaozhi TTS downlink frames record `xiaozhi.tts.opus_frame.downlink` only
 after a binary frame write succeeds through the current turn guard.
+Suppressed stale-turn downlink attempts record
+`xiaozhi.tts.stale_frame_suppressed` without storing or emitting frame payloads.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 

@@ -1475,11 +1475,29 @@ func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
 		t.Fatal(err)
 	}
-	readXiaozhiJSON(t, ctx, conn)
+	startAck := readXiaozhiJSON(t, ctx, conn)
+	firstTurnID, ok := startAck["turn_id"].(string)
+	if !ok || firstTurnID == "" {
+		t.Fatalf("listen/start ack turn_id = %#v, want stable turn id", startAck["turn_id"])
+	}
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
 		t.Fatal(err)
 	}
-	readXiaozhiJSON(t, ctx, conn)
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["turn_id"] != firstTurnID {
+		t.Fatalf("abort stop turn_id = %#v, want %q", stop["turn_id"], firstTurnID)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	nextStartAck := readXiaozhiJSON(t, ctx, conn)
+	nextTurnID, ok := nextStartAck["turn_id"].(string)
+	if !ok || nextTurnID == "" || nextTurnID == firstTurnID {
+		t.Fatalf("new listen turn_id = %#v, want new non-empty id different from %q", nextStartAck["turn_id"], firstTurnID)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
 
 	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-turn-cancel", nil)
 	traceRec := httptest.NewRecorder()
@@ -1491,8 +1509,10 @@ func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
 		t.Fatal(err)
 	}
-	if !traceContains(traces.Events, "xiaozhi.turn.start") || !traceContains(traces.Events, "xiaozhi.turn.cancel") {
-		t.Fatalf("trace missing turn lifecycle markers: %+v", traces.Events)
+	for _, want := range []string{"xiaozhi.turn.start", "xiaozhi.turn.cancel", "turn_cancelled", "downlink_queue_cleared", "barge_in_detected"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
 	}
 }
 
@@ -1643,6 +1663,9 @@ func TestWriteXiaozhiOpusDownlinkSkipsStaleTurn(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("stale turn downlink unexpectedly sent")
+	}
+	if !traceContains(server.traceEvents("a21-trace-xiaozhi-stale-turn"), "xiaozhi.tts.stale_frame_suppressed") {
+		t.Fatalf("trace missing stale suppression marker: %+v", server.traceEvents("a21-trace-xiaozhi-stale-turn"))
 	}
 }
 
@@ -2222,6 +2245,9 @@ func TestXiaozhiWebSocketAbortStopsPlaceholderTTSAndPreventsStaleBinary(t *testi
 	stop := readXiaozhiJSON(t, ctx, conn)
 	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
 		t.Fatalf("abort stop = %#v", stop)
+	}
+	if _, ok := stop["turn_id"].(string); !ok {
+		t.Fatalf("abort stop turn_id = %#v, want cancelled turn id", stop["turn_id"])
 	}
 	if err := conn.Write(ctx, websocket.MessageBinary, []byte{0x04, 0x05}); err != nil {
 		t.Fatal(err)

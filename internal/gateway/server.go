@@ -763,6 +763,7 @@ type xiaozhiVoicePipelineRunner interface {
 
 type xiaozhiTurnTask struct {
 	turn                   *xiaozhiTurn
+	turnID                 string
 	traceID                string
 	sessionID              string
 	deviceID               string
@@ -822,6 +823,12 @@ func (session *xiaozhiSession) currentXiaozhiTurn() *xiaozhiTurn {
 	return session.currentTurn
 }
 
+func (session *xiaozhiSession) currentXiaozhiTurnID() string {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return xiaozhiTurnID(session.currentTurn)
+}
+
 func (session *xiaozhiSession) cancelCurrentXiaozhiTurn(reason string) *xiaozhiTurn {
 	session.mu.Lock()
 	defer session.mu.Unlock()
@@ -861,6 +868,13 @@ func (session *xiaozhiSession) completeXiaozhiTurn(turn *xiaozhiTurn) {
 	if session.currentTurn == turn {
 		session.currentTurn = nil
 	}
+}
+
+func xiaozhiTurnID(turn *xiaozhiTurn) string {
+	if turn == nil || turn.id == 0 {
+		return ""
+	}
+	return fmt.Sprintf("a21-xiaozhi-turn-%06d", turn.id)
 }
 
 func (session *xiaozhiSession) resetXiaozhiTTSStop() {
@@ -1046,20 +1060,20 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		}
 		switch frame.Control.Listen.State {
 		case "start":
-			session.startXiaozhiTurn(ctx)
+			turn := session.startXiaozhiTurn(ctx)
 			session.listening = true
 			session.resetXiaozhiOpusIngress()
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
-			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "accepted", xiaozhiTurnID(turn)))
 		case "detect":
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
-			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "detect", "accepted"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "detect", "accepted", session.currentXiaozhiTurnID()))
 		case "stop":
 			if !session.listening {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
-				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "stop", "ignored"))
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "stop", "ignored", ""))
 				return true
 			}
 			session.listening = false
@@ -1077,6 +1091,8 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		turn := session.cancelCurrentXiaozhiTurn(abortReason)
 		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
 		s.writeXiaozhiTTSStop(ctx, conn, session, nil, xiaozhiTurnTask{
+			turn:      turn,
+			turnID:    xiaozhiTurnID(turn),
 			traceID:   session.traceID,
 			sessionID: session.sessionID,
 			deviceID:  session.deviceID,
@@ -1283,6 +1299,7 @@ func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) 
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	return xiaozhiTurnTask{
 		turn:      turn,
+		turnID:    xiaozhiTurnID(turn),
 		traceID:   session.traceID,
 		sessionID: session.sessionID,
 		deviceID:  session.deviceID,
@@ -1332,11 +1349,14 @@ func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason strin
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
 	if !xiaozhiAbortIsBargeIn(reason) {
 		return
 	}
 	s.metrics.bargeInTotal.Inc()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in_detected", now)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
 }
 
@@ -1383,6 +1403,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":           "tts",
 		"state":          "start",
+		"turn_id":        task.turnID,
 		"trace_id":       task.traceID,
 		"session_id":     task.sessionID,
 		"device_id":      task.deviceID,
@@ -1394,6 +1415,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":                   "tts",
 		"state":                  "sentence_start",
+		"turn_id":                task.turnID,
 		"trace_id":               task.traceID,
 		"session_id":             task.sessionID,
 		"device_id":              task.deviceID,
@@ -1492,6 +1514,7 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 	if err := session.writeXiaozhiJSON(ctx, conn, task.turn, map[string]any{
 		"type":          "tts",
 		"state":         "start",
+		"turn_id":       task.turnID,
 		"trace_id":      task.traceID,
 		"session_id":    task.sessionID,
 		"device_id":     task.deviceID,
@@ -1502,6 +1525,7 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 	if err := session.writeXiaozhiJSON(ctx, conn, task.turn, map[string]any{
 		"type":        "tts",
 		"state":       "sentence_start",
+		"turn_id":     task.turnID,
 		"trace_id":    task.traceID,
 		"session_id":  task.sessionID,
 		"device_id":   task.deviceID,
@@ -1529,6 +1553,7 @@ func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, 
 	if err := wsjson.Write(ctx, conn, map[string]any{
 		"type":       "tts",
 		"state":      "stop",
+		"turn_id":    task.turnID,
 		"trace_id":   task.traceID,
 		"session_id": task.sessionID,
 		"device_id":  task.deviceID,
@@ -1541,6 +1566,7 @@ func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, 
 
 func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, chunk providers.VoiceAudioChunk) (bool, error) {
 	if session == nil || session.shouldAbortXiaozhiTurn(turn) {
+		s.recordXiaozhiStaleDownlinkSuppressed(session)
 		return false, nil
 	}
 	if conn == nil {
@@ -1566,6 +1592,7 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 	}
 	return turn.pacer.Send(ctx, packet, func(ctx context.Context, frame []byte) error {
 		if session.shouldAbortXiaozhiTurn(turn) {
+			s.recordXiaozhiStaleDownlinkSuppressed(session)
 			return context.Canceled
 		}
 		if err := session.writeXiaozhiBinary(ctx, conn, turn, frame); err != nil {
@@ -1576,6 +1603,13 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 	}, func() bool {
 		return session.shouldAbortXiaozhiTurn(turn)
 	})
+}
+
+func (s *Server) recordXiaozhiStaleDownlinkSuppressed(session *xiaozhiSession) {
+	if session == nil {
+		return
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.stale_frame_suppressed", s.now().UnixMilli())
 }
 
 func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
@@ -1625,8 +1659,8 @@ func xiaozhiBinaryProfile(version int) string {
 	return fmt.Sprintf("xiaozhi_binary_v%d", version)
 }
 
-func (s *Server) xiaozhiBaseReply(session *xiaozhiSession, msgType string, state string, status string) map[string]any {
-	return map[string]any{
+func (s *Server) xiaozhiBaseReply(session *xiaozhiSession, msgType string, state string, status string, turnID string) map[string]any {
+	reply := map[string]any{
 		"type":       msgType,
 		"state":      state,
 		"status":     status,
@@ -1634,6 +1668,10 @@ func (s *Server) xiaozhiBaseReply(session *xiaozhiSession, msgType string, state
 		"session_id": session.sessionID,
 		"device_id":  session.deviceID,
 	}
+	if turnID != "" {
+		reply["turn_id"] = turnID
+	}
+	return reply
 }
 
 func (s *Server) xiaozhiError(session *xiaozhiSession, code string, detail string) map[string]any {
