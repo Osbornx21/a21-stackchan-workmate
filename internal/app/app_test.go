@@ -2243,6 +2243,42 @@ func TestRunLocalVoiceLoopbackHelpListsLocalOllama(t *testing.T) {
 	}
 }
 
+func TestFastCompanionVoicePreviewKeepsFirstSpeechShort(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "sentence boundary",
+			in:   "先稳住。后面这句不要进首段语音。",
+			want: "先稳住",
+		},
+		{
+			name: "rune cap",
+			in:   "这是一个很长很长的中文回复内容",
+			want: "这是一个很长很长的中文回",
+		},
+		{
+			name: "ascii tail",
+			in:   "这是来自本地 Ollama 的回复",
+			want: "这是来自本地",
+		},
+		{
+			name: "ascii only",
+			in:   "A21 loopback response",
+			want: "A21 loopback response",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := fastCompanionVoicePreview(tc.in); got != tc.want {
+				t.Fatalf("preview = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })
@@ -2343,8 +2379,8 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.MaxTokens != 20 {
-			t.Fatalf("max_tokens = %d, want 20", body.MaxTokens)
+		if body.MaxTokens != 12 {
+			t.Fatalf("max_tokens = %d, want 12", body.MaxTokens)
 		}
 		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "12个字") || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
 			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
@@ -2352,7 +2388,7 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(strings.Join([]string{
 			`data: {"choices":[{"delta":{"reasoning":"先识别情绪"}}]}`,
-			`data: {"choices":[{"delta":{"content":"这是来自 DeepSeek 的回复"}}]}`,
+			`data: {"choices":[{"delta":{"content":"收到我会帮你稳住"}}]}`,
 			`data: [DONE]`,
 			``,
 		}, "\n")))
@@ -2369,8 +2405,8 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if ttsInput != "这是来自 DeepSeek 的回复" {
-		t.Fatalf("tts input = %q, want provider content", ttsInput)
+	if ttsInput != "收到我会帮你稳住" {
+		t.Fatalf("tts input = %q, want provider voice preview", ttsInput)
 	}
 	for _, want := range []string{
 		`"status": "passed"`,
@@ -2395,7 +2431,7 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "用户原文不要进报告", "这是来自 DeepSeek 的回复", "先识别情绪", "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "用户原文不要进报告", "收到我会帮你稳住", "先识别情绪", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
@@ -2442,14 +2478,14 @@ func TestRunLocalVoiceLoopbackCanUseLocalOllamaTextStreamWithoutLeakingContent(t
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Model != "qwen2.5:0.5b" || body.Options.NumPredict != 20 {
+		if body.Model != "qwen2.5:0.5b" || body.Options.NumPredict != 12 {
 			t.Fatalf("ollama body = %+v", body)
 		}
 		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "12个字") || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
 			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
 		}
 		_, _ = w.Write([]byte(strings.Join([]string{
-			`{"message":{"content":"这是来自本地 Ollama 的回复"}}`,
+			`{"message":{"content":"收到我会帮你稳住"}}`,
 			`{"done":true}`,
 			``,
 		}, "\n")))
@@ -2467,8 +2503,8 @@ func TestRunLocalVoiceLoopbackCanUseLocalOllamaTextStreamWithoutLeakingContent(t
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if ttsInput != "这是来自本地 Ollama 的回复" {
-		t.Fatalf("tts input = %q, want local Ollama content", ttsInput)
+	if ttsInput != "收到我会帮你稳住" {
+		t.Fatalf("tts input = %q, want local Ollama voice preview", ttsInput)
 	}
 	for _, want := range []string{
 		`"status": "passed"`,
@@ -2490,7 +2526,7 @@ func TestRunLocalVoiceLoopbackCanUseLocalOllamaTextStreamWithoutLeakingContent(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"qwen2.5:0.5b", "用户原文不要进报告", "这是来自本地 Ollama 的回复", server.URL, "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"qwen2.5:0.5b", "用户原文不要进报告", "收到我会帮你稳住", server.URL, "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}

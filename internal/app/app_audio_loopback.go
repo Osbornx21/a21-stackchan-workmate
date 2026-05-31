@@ -45,6 +45,7 @@ type localVoiceLoopbackReport struct {
 	TextStreamContentDeltas   int                  `json:"text_stream_content_delta_count"`
 	TextStreamReasoningDeltas int                  `json:"text_stream_reasoning_delta_count"`
 	TextStreamDone            bool                 `json:"text_stream_done"`
+	AnswerVoicePreviewChars   int                  `json:"answer_voice_preview_chars,omitempty"`
 	LocalAckEnabled           bool                 `json:"local_ack_enabled"`
 	LocalAckStatus            string               `json:"local_ack_status,omitempty"`
 	LocalAckTTSProvider       string               `json:"local_ack_tts_provider,omitempty"`
@@ -68,6 +69,11 @@ type localVoiceLoopbackReport struct {
 	ReportPath                string               `json:"report_path,omitempty"`
 	Findings                  []string             `json:"findings,omitempty"`
 }
+
+const (
+	fastCompanionTextStreamMaxTokens        = 12
+	fastCompanionAnswerVoicePreviewMaxRunes = 12
+)
 
 func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) int {
 	inputText := "A21 本地语音 loopback 测试。"
@@ -291,11 +297,12 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 	if textResult.err != nil {
 		return report, textResult.err
 	}
-	ttsText := textResult.text
+	ttsText := fastCompanionVoicePreview(textResult.text)
 	if ttsText == "" {
 		report.Findings = append(report.Findings, "text stream produced no content")
 		return report, nil
 	}
+	report.AnswerVoicePreviewChars = len([]rune(ttsText))
 
 	ttsSamples := make([]time.Duration, 0, repeat)
 	firstAudioTotalSamples := make([]time.Duration, 0, repeat)
@@ -435,7 +442,7 @@ func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options
 		result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
 			ProviderName: provider,
 			Prompt:       fastCompanionTextStreamPrompt(prompt),
-			MaxTokens:    20,
+			MaxTokens:    fastCompanionTextStreamMaxTokens,
 			Client:       options.Client,
 		})
 		if err != nil {
@@ -463,6 +470,46 @@ func fastCompanionTextStreamPrompt(transcript string) string {
 	}
 	return "你是 A21 桌面伙伴。用中文不超过12个字自然回应，不要解释，不要列点。用户说：" + cleaned
 }
+
+func fastCompanionVoicePreview(text string) string {
+	cleaned := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if cleaned == "" {
+		return ""
+	}
+	if idx := firstSentenceBoundary(cleaned); idx > 0 {
+		cleaned = strings.TrimSpace(cleaned[:idx])
+	}
+	runes := []rune(cleaned)
+	if len(runes) <= fastCompanionAnswerVoicePreviewMaxRunes {
+		return cleaned
+	}
+	if !containsNonASCII(cleaned) {
+		return cleaned
+	}
+	preview := string(runes[:fastCompanionAnswerVoicePreviewMaxRunes])
+	preview = strings.TrimRight(preview, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	return strings.TrimSpace(preview)
+}
+
+func containsNonASCII(text string) bool {
+	for _, r := range text {
+		if r > 127 {
+			return true
+		}
+	}
+	return false
+}
+
+func firstSentenceBoundary(text string) int {
+	first := -1
+	for _, boundary := range []string{"。", "！", "？", "!", "?"} {
+		if idx := strings.Index(text, boundary); idx >= 0 && (first < 0 || idx < first) {
+			first = idx
+		}
+	}
+	return first
+}
+
 func runMockLocalVoiceLoopbackTextStream(report *localVoiceLoopbackReport) (string, error) {
 	providerStart := time.Now()
 	streamResult, err := providers.ParseOpenAICompatibleTextStream(strings.NewReader(strings.Join([]string{
