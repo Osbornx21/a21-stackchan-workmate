@@ -68,6 +68,11 @@ back to the device. On `listen/stop`, it emits an honest xiaozhi TTS lifecycle
 placeholder so tests and operators cannot mistake the transport and codec proof
 for audible product acceptance.
 
+Future xiaozhi TTS binary downlink must use the Go `AudioRateController`
+primitive before writing frames: default 60 ms frame slots, five-frame
+prebuffer, per-frame abort checks, and reset on turn cancellation. Raw unpaced
+binary writes are not accepted as an A21 product path.
+
 ## Protocol Rules
 
 - Every message family must be versioned.

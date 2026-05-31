@@ -45,6 +45,9 @@ thin sensing and expression device.
 - P0-1 feature/profile guard: `/v1/xiaozhi` parses `hello.features` and records
   stock versus debug profile state in the sanitized device registry without
   echoing debug extensions into the server hello.
+- P0-2 pacing primitive: `internal/audio.AudioRateController` provides 60 ms
+  frame pacing, five-frame prebuffer, abort checks, and reset semantics for the
+  future xiaozhi TTS Opus downlink.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only
