@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `aaeda0e`.
+Last accepted integration commit before this ledger update: `598c0d9`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `aaeda0e docs(control): accept agent task bridge scaffold`.
+  `598c0d9 fix(providers): reject agent profiles as voice primary`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -55,8 +55,9 @@ defines policy; this ledger records the current queue and accepted state.
   hardening implementation is `a4e3a6f`, sidecar hardening acceptance is
   `447b917`, fixture sidecar post-review tracking is `0633b2b`, fixture
   sidecar post-review closure is `a1742ae`, AgentTaskProvider Bridge scaffold
-  opening is `8974460`, and AgentTaskProvider Bridge scaffold acceptance is
-  `560df00`.
+  opening is `8974460`, AgentTaskProvider Bridge scaffold acceptance is
+  `560df00`, AgentTaskProvider Bridge post-review tracking is `f15b4f2`, and
+  AgentTaskProvider Bridge post-review P2 fix is `598c0d9`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -65,8 +66,8 @@ defines policy; this ledger records the current queue and accepted state.
 - The local repository has no configured remote and no `main` or `master`
   branch. Remote PR creation or local mainline merge therefore requires a
   later explicit target decision outside this ledger update.
-- Current integration HEAD after AgentTaskProvider Bridge scaffold acceptance:
-  `560df00 feat(providers): add agent task bridge scaffold`.
+- Current integration HEAD after AgentTaskProvider Bridge post-review fix:
+  `598c0d9 fix(providers): reject agent profiles as voice primary`.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -85,7 +86,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | active; read-only review of `560df00^..aaeda0e` | T0/T1/T2 | no |
+| `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | completed; two P2 findings fixed by control at `598c0d9` | T0/T1/T2 | no |
 | `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | completed; accepted into integration branch at `560df00` | T1/T2 | no |
 | `019e7c41-1842-7a30-a185-aafc73ba2d73` | Provider fixture sidecar post-commit review | `/Users/jiyurun/.codex/worktrees/8922/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | accepted into integration branch at `a4e3a6f`; post-review closed at `a1742ae` | T1/T2 | no |
@@ -730,6 +731,49 @@ Post-acceptance control-tower gates:
   `review_ready=true`, `dirty_file_count=0`, `external_promotion_ready=false`,
   and blockers `promotion_remote_missing`, `promotion_target_remote_missing`,
   and `promotion_target_branch_missing`.
+
+Review result:
+
+- Thread `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` reported no P0 or P1
+  findings for `560df00^..aaeda0e`.
+- P2 finding: adding `hermes_agent` and `mimo_agent` to the shared provider
+  catalog let the voice-provider factory surface them as known unavailable
+  voice providers when `A21_PROVIDER_PRIMARY` targeted an agent profile,
+  despite the catalog already rejecting them as voice primary choices.
+- P2 finding: `docs/engineering/OBSERVABILITY.md` described AgentTask reports
+  as package-level T1/T2 only, but also listed `agent_task.*` markers under
+  current mock trace events, which overstated current runtime observability.
+- Review verification passed:
+  `go test ./internal/providers -run 'AgentTask|ProviderCatalog|ProviderProfile' -count=1`.
+- Review verification passed: `go test ./internal/providers -count=1`.
+- Review verification passed: `go run ./cmd/a21 namespace-audit`.
+- Review verification passed: `git diff --check 560df00^..aaeda0e`.
+- Review verification passed: `make verify`.
+- Review worktree stayed clean and did not edit files, commit, push, execute
+  providers or V21, start Gateway runtime, create durable payload reports,
+  touch firmware/NVS/flash/serial paths, call `/v1/devices/control`, or use
+  physical device paths.
+
+Post-review decision:
+
+- Accept the review.
+- Close both P2 findings in control at
+  `598c0d9 fix(providers): reject agent profiles as voice primary`.
+- The fix rejects `A21_PROVIDER_PRIMARY=hermes_agent` or `mimo_agent` in both
+  `NewVoiceProviderFromEnv` and Gateway selected voice-provider mode as
+  `invalid_agent_task_primary`, without echoing the raw agent profile name in
+  health JSON or error text.
+- The fix moves AgentTask marker names from current mock runtime trace events
+  into reserved future semantic marker vocabulary.
+- Verification passed:
+  `go test ./internal/providers -run 'AgentTask|ProviderCatalog|ProviderProfile|VoiceProviderFromEnv|GatewayVoiceProviderFromEnv' -count=1`.
+- Verification passed: `go test ./internal/providers -count=1`.
+- Verification passed: `go run ./cmd/a21 namespace-audit`.
+- Verification passed: `git diff --check`.
+- Verification passed: `make verify`.
+- Continue to keep real Hermes/MiMo/OpenClaw runtime, provider execution, V21
+  execution, Gateway runtime, and hardware/device-control paths behind future
+  explicit windows.
 
 ### Fast Companion Hybrid Boundary Audit
 
