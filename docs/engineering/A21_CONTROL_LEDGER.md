@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `2106a30`.
+Last accepted integration commit before this ledger update: `213cbf0`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `2106a30 feat(audio): add front-end evidence contract`.
+  `213cbf0 docs(control): accept audio front-end evidence slice`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -92,10 +92,10 @@ defines policy; this ledger records the current queue and accepted state.
 - Current integration HEAD after audio front-end evidence contract
   implementation:
   `2106a30 feat(audio): add front-end evidence contract`.
-- Current control-tower action: the Fast Companion audio-front-end evidence
-  contract implementation has been accepted into the integration branch at
-  `2106a30`. Open a read-only post-commit review thread before selecting the
-  next PRD implementation slice.
+- Current control-tower action: audio-front-end evidence contract
+  post-commit review is active in thread
+  `019e7c99-bbc3-7d33-8b77-a32000d1281d`; wait for its read-only handoff
+  before selecting the next PRD implementation slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -114,6 +114,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | active; read-only review of `2b4f2ad..213cbf0` | T0/T1/T2 | no |
 | `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
 | `019e7c80-f077-78c1-8962-58c53bb1779e` | PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/9959/New project` | completed; recommended audio-front-end evidence contract | T0/T1/T2 | no |
 | `019e7c81-9963-74d1-b860-f6cebd73ed6f` | Supporting PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/ce27/New project` | completed; converged on same audio-front-end report-hardening slice | T0/T1/T2 | no |
@@ -1350,6 +1351,68 @@ Slice-opening ledger-update validation:
   with only the expected `firmware_current_artifact_missing` warning for
   commit `2b4f2ad45f7f`. This ledger update did not build or promote firmware
   artifacts.
+
+### Fast Companion Audio Front-End Evidence Contract Post-Commit Review
+
+Opened by the control tower after accepting the implementation at `2106a30`
+and recording acceptance at `213cbf0`.
+
+Evidence:
+
+- Review thread: `019e7c99-bbc3-7d33-8b77-a32000d1281d`.
+- Review thread title:
+  `A21 Audio Front-End Evidence：Post-Commit Review`.
+- Review worktree:
+  `/Users/jiyurun/.codex/worktrees/002c/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting integration HEAD:
+  `213cbf0 docs(control): accept audio front-end evidence slice`.
+- Review range: `2b4f2ad..213cbf0`.
+- Primary commits under review:
+  `2106a30 feat(audio): add front-end evidence contract` and
+  `213cbf0 docs(control): accept audio front-end evidence slice`.
+- Supporting context commit:
+  `bbca97b docs(control): open audio front-end evidence slice`.
+- Scope: read-only post-commit review for behavior bugs, boundary regressions,
+  PRD/AGENTS violations, test gaps, redaction holes, and ledger accuracy.
+- Maximum tier: T0/T1/T2.
+- Forbidden: file edits, commits, pushes, provider `--execute`, real provider
+  calls, V21 execute, Gateway runtime or service startup, durable payload
+  reports, firmware/NVS/flash/raw upload/serial writes, real
+  `/v1/devices/control`, physical device paths, production dependency
+  additions, secrets, prompt/transcript/provider output/reasoning/raw audio/
+  full URL/proxy/local path leakage, AgentTask runtime, binary Opus
+  implementation, and native WebRTC/ESP-SR/Silero dependency implementation.
+
+Expected review output:
+
+- Branch, HEAD, and dirty state.
+- P0/P1/P2 findings or explicit no-finding statement.
+- Verification command results.
+- Any environment-only non-blocking findings.
+- Recommendation to fix, close, or continue holding the next PRD slice.
+
+Allowed review verification:
+
+- `git diff --check 2b4f2ad..213cbf0`.
+- `go test ./internal/audio ./internal/app -run 'AudioFrontEnd|FrontEnd|ProviderLatencyBench|LatencyBench' -count=1`.
+- `go test ./internal/gateway -run 'FastCompanionHybrid|AudioWSBargeIn|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- `go run ./cmd/a21 audio-front-end-plan`.
+- `go run ./cmd/a21 audio-front-end-eval --mock`.
+- `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- `go run ./cmd/a21 namespace-audit`.
+- `make verify`.
+- `go run ./cmd/a21 preflight`.
+- `go run ./cmd/a21 doctor`.
+
+Control-tower next gate:
+
+- Wait for the post-commit review handoff from thread
+  `019e7c99-bbc3-7d33-8b77-a32000d1281d`.
+- If the review finds P0/P1/P2 issues, fix them in the control tower or open a
+  narrow fix thread.
+- If the review has no blocking findings, close the review in the ledger and
+  then run the next PRD next-slice audit from the latest integration HEAD.
 
 ### Fast Companion Hybrid Boundary Audit
 
