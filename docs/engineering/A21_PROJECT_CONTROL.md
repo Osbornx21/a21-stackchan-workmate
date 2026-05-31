@@ -37,6 +37,7 @@ safety system, not cosmetic metadata.
 | Branch pattern | Purpose | Allowed work |
 | --- | --- | --- |
 | `codex/a21-project-control` | Control tower | governance docs, red build fixes, thread/branch/tool triage |
+| `codex/a21-integration-<bundle>` | Integration candidate | merge already-accepted slices, resolve conflicts, run T1/T2 verification, record review outcome |
 | `codex/a21-mainline-<milestone>` | Product implementation | one milestone slice after control approval |
 | `codex/a21-provider-<provider-or-spine>` | Provider work | provider contracts, smoke tests, redacted reports |
 | `codex/a21-firmware-<capability>` | Firmware build/probe lane | build/test/report work without physical writes |
@@ -46,6 +47,9 @@ safety system, not cosmetic metadata.
 Rules:
 
 - Do not continue feature work on a stale branch name.
+- Integration branches do not create new product scope. They may combine only
+  accepted slice branches plus ledger/review evidence, and they must keep T4
+  provider/V21 execution and T6/T7/T8 hardware windows closed.
 - Do not mix provider, firmware write, V21 adapter, and product UX work in one
   branch unless the control thread explicitly declares it a release branch.
 - Hardware-write branches are single-thread and foreground-only.

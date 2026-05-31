@@ -37,6 +37,12 @@ defines policy; this ledger records the current queue and accepted state.
   `1872ca9` and `54af08b`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
+- Control tower has selected the single combined integration branch as the
+  current local promotion candidate. Topic branches remain frozen evidence and
+  rollback/review handles, not the preferred next PR shape.
+- The local repository has no configured remote and no `main` or `master`
+  branch. Remote PR creation or local mainline merge therefore requires a
+  later explicit target decision outside this ledger update.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
@@ -78,6 +84,45 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Integration Promotion Shape
+
+Accepted by the control tower after branch topology review.
+
+Evidence:
+
+- Current branch: `codex/a21-integration-governance-slices`.
+- Current HEAD before this ledger update:
+  `045147d docs(control): accept integration review`.
+- Local branches present:
+  `codex/a21-integration-governance-slices`,
+  `codex/a21-project-control`,
+  `codex/a21-phase1-clean-skeleton`,
+  `codex/a21-docs-pcm-bridge-flash-adr`,
+  `codex/a21-provider-spine-deepseek-textstream`,
+  `codex/a21-mainline-professional-v21-contract`,
+  `codex/a21-mainline-stackchan-hardware-diagnostic`.
+- No local `main` or `master` branch exists.
+- No git remote is configured.
+- `docs/engineering/A21_PROJECT_CONTROL.md` now includes the
+  `codex/a21-integration-<bundle>` branch pattern and limits it to accepted
+  slice merges plus T1/T2 verification/review evidence.
+- The combined branch preserves the four topic branch commits and has already
+  passed integration review with no P0/P1/P2 findings.
+
+Decision:
+
+- Use `codex/a21-integration-governance-slices` as the current local promotion
+  candidate for this governance slice bundle.
+- Keep the four topic branches available for review, bisect, or rollback, but
+  do not make four separate topic PRs the preferred path unless a remote/mainline
+  reviewer asks for split review.
+- Do not merge into `codex/a21-phase1-clean-skeleton`; that branch is stale for
+  current M3, StackChan hardware, provider, NVS, and official bridge work.
+- Do not merge into an invented `main` or `master` branch.
+- Next external integration action is blocked on choosing or configuring a git
+  remote and naming the target branch, or explicitly approving a local-only
+  mainline branch.
 
 ### Read-Only Integration Review
 
@@ -389,10 +434,11 @@ Decision:
      `codex/a21-mainline-professional-v21-contract`,
      `codex/a21-docs-pcm-bridge-flash-adr`.
    - Max tier: T1/T2.
-   - Purpose: choose one combined PR versus four topic PRs, or merge the
-     verified integration branch into the project mainline.
-   - Current local repository has no configured git remote, so push/PR requires
-     adding or selecting a remote outside this ledger change.
+   - Purpose: promote the verified combined branch once a remote/target branch
+     is selected, or once a local-only mainline branch is explicitly approved.
+   - Current local repository has no configured git remote and no `main` or
+     `master`; push/PR or local mainline merge requires adding/selecting a
+     remote and target branch outside this ledger change.
    - Forbidden: provider/V21 execute, Gateway runtime, hardware writes,
      background flash, NVS execute, raw upload, or changing PRD scope while
      integrating.
