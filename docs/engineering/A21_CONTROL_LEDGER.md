@@ -46,6 +46,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | active; read-only review of `1872ca9` | T0/T1 | no |
 | `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | completed; committed `a031f3d` | T0/T1 | no |
 | `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | completed; committed `fc61793` | T1/T2 | no |
 | `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | completed; committed `6b7fdf0` | T1/T2 | no |
@@ -327,14 +328,17 @@ Decision:
 1. PR / mainline integration decision.
    - Combined verification branch:
      `codex/a21-integration-governance-slices`.
+   - Read-only review thread:
+     `019e7bba-71ca-71d0-84cc-78424d4d07ab`.
    - Topic branches remain available:
      `codex/a21-mainline-stackchan-hardware-diagnostic`,
      `codex/a21-provider-spine-deepseek-textstream`,
      `codex/a21-mainline-professional-v21-contract`,
      `codex/a21-docs-pcm-bridge-flash-adr`.
    - Max tier: T1/T2.
-   - Purpose: choose one combined PR versus four topic PRs, or merge the
-     verified integration branch into the project mainline.
+   - Purpose: consume the integration review findings, then choose one combined
+     PR versus four topic PRs, or merge the verified integration branch into
+     the project mainline.
    - Forbidden: provider/V21 execute, Gateway runtime, hardware writes,
      background flash, NVS execute, raw upload, or changing PRD scope while
      integrating.
