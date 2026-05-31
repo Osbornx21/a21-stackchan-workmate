@@ -3,7 +3,7 @@
 Status: active control ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-project-control`.
-Last accepted control commit before this ledger update: `5de3f9c`.
+Last accepted control commit before this ledger update: `f6d55f9`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -16,7 +16,7 @@ defines policy; this ledger records the current queue and accepted state.
 ## Current Accepted State
 
 - Control branch: `codex/a21-project-control`.
-- Control HEAD before this ledger update: `5de3f9c docs(control): record provider handoff`.
+- Control HEAD before this ledger update: `f6d55f9 docs(control): record v21 handoff`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -26,10 +26,12 @@ defines policy; this ledger records the current queue and accepted state.
   `6b7fdf0 fix(providers): measure first content from content deltas`.
 - Professional V21 evidence adapter readiness branch is committed at
   `fc61793 fix(v21): wire configured adapter into gateway env`.
+- Official PCM bridge app flash ADR docs-only branch is committed at
+  `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
-- Official StackChan PCM bridge app flash-execute remains T8 blocked until an
-  ADR, reviewed execute guard, and fresh verification approve it.
+- Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
+  ADR document is draft gate evidence only; it is not execute authorization.
 - No current PRD slice authorizes raw `pio upload`, `idf.py flash`, copied
   `esptool write_flash`, provider/V21 execute, or background hardware writes.
 
@@ -38,7 +40,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | active | T0/T1 | no |
+| `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | completed; committed `a031f3d` | T0/T1 | no |
 | `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | completed; committed `fc61793` | T1/T2 | no |
 | `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | completed; committed `6b7fdf0` | T1/T2 | no |
 | `019e7b99-141e-70a3-b0fd-c5dd38b5cab5` | StackChan hardware mainline diagnostic consolidation | `/Users/jiyurun/.codex/worktrees/ddec/New project` | completed; committed `1e38804` | T1/T2 | no |
@@ -66,6 +68,41 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Official PCM Bridge App Flash ADR Docs-Only Gate
+
+Accepted from thread `019e7bb0-bf95-74f3-a935-1e89644bd417`.
+
+Evidence:
+
+- Branch: `codex/a21-docs-pcm-bridge-flash-adr`.
+- Worktree: `/Users/jiyurun/.codex/worktrees/42b1/New project`.
+- Committed HEAD: `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
+- Dirty state after commit: clean.
+- Changed files:
+  `docs/engineering/adr/0005-official-pcm-bridge-app-flash.md`,
+  `docs/engineering/FIRMWARE_RELEASE_DISCIPLINE.md`.
+- New ADR status is Draft, not accepted.
+- The ADR records why `stackchan-official-pcm-bridge-flash-execute` remains T8
+  blocked and lists the evidence required before any future downgrade to T7 or
+  T6.
+- `FIRMWARE_RELEASE_DISCIPLINE.md` now points operators at the draft ADR gate
+  from the official PCM bridge lane.
+- Control-tower verification passed: `git diff --check`.
+- Control-tower review confirmed the text does not authorize implementation,
+  app flashing, NVS writes, provider execution, V21 execution, Gateway runtime,
+  serial writes, raw uploads, `/v1/devices/control`, or a hardware window.
+- No build, Gateway runtime, provider execute, V21 execute, NVS execute, flash
+  execute, raw upload, serial write, durable report, or physical device path
+  was touched.
+
+Decision:
+
+- Accept the docs-only ADR gate slice as governance evidence.
+- Keep `stackchan-official-pcm-bridge-flash-execute` classified T8 blocked.
+- A future downgrade requires a separate accepted ADR, reviewed execute guard,
+  fresh verification, rollback package, NVS receipt, operator token, explicit
+  USB target, and foreground hardware-window branch.
 
 ### Professional V21 Evidence Adapter Readiness
 
@@ -224,15 +261,18 @@ Decision:
 
 ## Authorized Next Queue
 
-1. Official PCM bridge app flash ADR.
-   - Thread: `019e7bb0-bf95-74f3-a935-1e89644bd417`.
-   - Worktree: `/Users/jiyurun/.codex/worktrees/42b1/New project`.
-   - Branch: `codex/a21-docs-pcm-bridge-flash-adr`.
-   - Max tier: T0/T1.
-   - Purpose: draft ADR and reviewed execute-guard design only.
-   - Forbidden: build, Gateway, provider/V21 execute, NVS execute, flash
-     execute, raw upload, serial write, `/v1/devices/control`, or hardware
-     window claims.
+1. Branch integration / PR decision.
+   - Branches ready for integration decision:
+     `codex/a21-mainline-stackchan-hardware-diagnostic`,
+     `codex/a21-provider-spine-deepseek-textstream`,
+     `codex/a21-mainline-professional-v21-contract`,
+     `codex/a21-docs-pcm-bridge-flash-adr`.
+   - Max tier: T1/T2.
+   - Purpose: decide merge order, PR shape, conflict risk, and whether a
+     combined verification branch is needed.
+   - Forbidden: provider/V21 execute, Gateway runtime, hardware writes,
+     background flash, NVS execute, raw upload, or changing PRD scope while
+     integrating.
 
 2. Professional V21 evidence lane.
    - Branch: `codex/a21-mainline-professional-v21-contract`.
@@ -269,6 +309,16 @@ Decision:
    - Forbidden: firmware writes, app flash, NVS execute, provider/V21 execute,
      Gateway background runtime left running, or claiming physical acceptance
      without fresh physical evidence.
+
+5. Official PCM bridge app flash execute.
+   - Status: T8 blocked.
+   - Branch: none authorized.
+   - Required before any downgrade: accepted ADR, reviewed execute guard, NVS
+     receipt, rollback package, fresh verification, explicit USB target,
+     operator token, and foreground `codex/a21-hardware-window-*` branch.
+   - Forbidden: adding or running `stackchan-official-pcm-bridge-flash-execute`,
+     raw `pio upload`, raw `idf.py flash`, copied `esptool write_flash`, or any
+     serial/app partition write from normal Codex worktrees.
 
 ## Ledger Update Checklist
 
