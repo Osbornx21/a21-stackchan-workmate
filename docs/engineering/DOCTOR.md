@@ -153,9 +153,10 @@ hardware execution, and `promotion_gate=not_production`. The hardened report
 also includes machine-readable `metric_terms`, `canonical_metrics`, and
 `stage_availability` fields for TTFS/TTFT/FTTS/TTFA and A21 canonical metric
 comparison. Current stages remain `available=false` placeholders, including
-ASR first partial, provider first byte/content, TTS first audio, audio downlink
-first frame, device playback start, barge-in stop, provider cancel, and playback
-stop. Fixture reports store only the fixture basename, not the full local path.
+ASR first partial, provider first byte/content, TTS first audio, legacy
+downlink first frame, audio downlink first frame, device playback start,
+barge-in stop, provider cancel, and playback stop. Fixture reports store only
+the fixture basename, not the full local path.
 A JSON fixture sidecar can contribute `a21.provider_latency_fixture.v1` audio
 metadata: fixture identity, format, sample rate, channel count, duration, sample
 count, window length, and window count. Missing, invalid, oversized,

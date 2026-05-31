@@ -972,11 +972,21 @@ func assertProviderLatencyBenchCanonicalMetrics(t *testing.T, report map[string]
 	if !ok || len(metrics) == 0 {
 		t.Fatalf("canonical_metrics missing or empty: %#v", report["canonical_metrics"])
 	}
+	summary, ok := report["summary"].(map[string]any)
+	if !ok || len(summary) == 0 {
+		t.Fatalf("summary missing or empty: %#v", report["summary"])
+	}
+	for metric := range summary {
+		if _, ok := metrics[metric]; !ok {
+			t.Fatalf("canonical_metrics missing summary metric %q: %#v", metric, metrics)
+		}
+	}
 	for _, want := range []string{
 		"asr_first_partial_ms",
 		"provider_first_byte_ms",
 		"provider_first_content_ms",
 		"tts_first_audio_ms",
+		"downlink_first_frame_ms",
 		"audio_downlink_first_frame_ms",
 		"device_playback_start_ms",
 		"barge_in_stop_ms",
@@ -1014,6 +1024,10 @@ func assertProviderLatencyBenchStageAvailability(t *testing.T, report map[string
 	if !ok || len(rawStages) == 0 {
 		t.Fatalf("stage_availability missing or empty: %#v", report["stage_availability"])
 	}
+	summary, ok := report["summary"].(map[string]any)
+	if !ok || len(summary) == 0 {
+		t.Fatalf("summary missing or empty: %#v", report["summary"])
+	}
 	seenStages := map[string]bool{}
 	for _, rawStage := range rawStages {
 		stage, ok := rawStage.(map[string]any)
@@ -1033,11 +1047,17 @@ func assertProviderLatencyBenchStageAvailability(t *testing.T, report map[string
 		}
 		seenStages[name] = true
 	}
+	for metric := range summary {
+		if !seenStages[metric] {
+			t.Fatalf("stage_availability missing summary metric %q: %#v", metric, rawStages)
+		}
+	}
 	for _, want := range []string{
 		"asr_first_partial_ms",
 		"provider_first_byte_ms",
 		"provider_first_content_ms",
 		"tts_first_audio_ms",
+		"downlink_first_frame_ms",
 		"audio_downlink_first_frame_ms",
 		"device_playback_start_ms",
 		"barge_in_stop_ms",

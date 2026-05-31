@@ -78,8 +78,9 @@ provider first byte, provider first content, TTS first audio, Gateway downlink
 first frame, device playback start, barge-in stop, and provider cancel
 placeholders, with p50/p95/p99 summaries and fallback/failure counts. The v2
 shape additionally records TTFS/TTFT/FTTS/TTFA term mappings, A21 canonical
-metric fields, an explicit `audio_downlink_first_frame_ms` alias, and
-stage-level `available=false` / `placeholder=true` reasons. It sets
+metric fields, the legacy `downlink_first_frame_ms` compatibility alias, an
+explicit `audio_downlink_first_frame_ms` alias, and stage-level
+`available=false` / `placeholder=true` reasons. It sets
 `baseline_scope=host_only`, `device_id=none_host_fixture`, and
 `promotion_gate=not_production` until real provider, TTS, Gateway runtime, and
 physical StackChan evidence are captured under a later authorized window. It

@@ -99,6 +99,7 @@ shape also includes machine-readable `metric_terms`, `canonical_metrics`, and
 compared against A21 canonical fields without promoting the numbers as real
 latency. The canonical block covers `asr_first_partial_ms`,
 `provider_first_byte_ms`, `provider_first_content_ms`, `tts_first_audio_ms`,
+`downlink_first_frame_ms` as the legacy compatibility alias,
 `audio_downlink_first_frame_ms`, `device_playback_start_ms`,
 `barge_in_stop_ms`, `provider_cancel_ms`, `playback_stop_ms`,
 `speech_end_to_final_asr_ms`, `speech_end_to_first_llm_token_ms`,

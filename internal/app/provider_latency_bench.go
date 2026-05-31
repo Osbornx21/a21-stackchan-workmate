@@ -364,6 +364,7 @@ func buildProviderLatencyBenchStageAvailability() []providerLatencyBenchStageAva
 		"provider_first_byte_ms",
 		"provider_first_content_ms",
 		"tts_first_audio_ms",
+		"downlink_first_frame_ms",
 		"audio_downlink_first_frame_ms",
 		"device_playback_start_ms",
 		"barge_in_stop_ms",
@@ -607,6 +608,10 @@ func buildProviderLatencyCanonicalMetrics(summary providerLatencyBenchSummary) m
 		"tts_first_audio_ms": providerLatencyCanonicalFromSeries(
 			"tts_first_audio_ms",
 			summary.TTSFirstAudioMS,
+		),
+		"downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
+			"downlink_first_frame_ms",
+			summary.DownlinkFirstFrameMS,
 		),
 		"audio_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
 			"audio_downlink_first_frame_ms",

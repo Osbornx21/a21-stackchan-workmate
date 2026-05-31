@@ -39,12 +39,15 @@ report shape. Its `metric_terms` block maps TTFS, TTFT, FTTS, and TTFA onto A21
 stages and canonical metrics. Its `canonical_metrics` block preserves
 p50/p95/p99 series for A21 names such as `asr_first_partial_ms`,
 `provider_first_byte_ms`, `provider_first_content_ms`, `tts_first_audio_ms`,
-`audio_downlink_first_frame_ms`, `device_playback_start_ms`,
-`barge_in_stop_ms`, `provider_cancel_ms`, `playback_stop_ms`, and the shared
-provider-benchmark canonical fields. Its `stage_availability` block marks every
-current stage as a placeholder with a fixed reason because this command remains
-host-only report-contract evidence. These fields are durable JSON report fields,
-not Prometheus runtime metrics and not production acceptance evidence.
+`downlink_first_frame_ms`, `audio_downlink_first_frame_ms`,
+`device_playback_start_ms`, `barge_in_stop_ms`, `provider_cancel_ms`,
+`playback_stop_ms`, and the shared provider-benchmark canonical fields. The
+unqualified `downlink_first_frame_ms` key is retained only as a legacy
+compatibility alias and is still covered by placeholder availability metadata.
+Its `stage_availability` block marks every current stage as a placeholder with
+a fixed reason because this command remains host-only report-contract evidence.
+These fields are durable JSON report fields, not Prometheus runtime metrics and
+not production acceptance evidence.
 
 AgentTask bridge reports currently exist only as package-level T1/T2 semantic
 reports in `internal/providers`. They use schema
