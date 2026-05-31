@@ -108,6 +108,14 @@ do not create a duplicate stream-smoke commit from this stale task text.
 
 ### Task 4: Fast Companion Hybrid Boundary
 
+**Control note, 2026-05-31:** Thread
+`019e7be6-bca3-71f2-9770-857b9da48b67` audited this task against the current
+integration baseline. Existing app-level receipts partially cover the vertical
+lane, but the Gateway-level routing boundary, unified Gateway trace waterfall,
+and `PHASE7H_FAST_COMPANION_HYBRID.md` are still missing. Continue this task as
+a new implementation slice; do not mark it complete from `local-voice-loopback`
+or `stackchan-fast-companion-turn` alone.
+
 **Files:**
 - Modify: `internal/gateway/server.go`
 - Modify: `internal/gateway/server_test.go`
