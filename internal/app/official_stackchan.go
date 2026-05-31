@@ -1494,7 +1494,7 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 			report.fail("overlay_path_legacy_identity", "overlay path contains forbidden legacy identity")
 			return
 		}
-		if err := runLoggedCommand(ctx, options.WorkDir, filepath.Join(options.BuildDir, "a21-official-overlay.log"), "git", "apply", cleanOverlay); err != nil {
+		if err := runLoggedCommand(ctx, options.WorkDir, filepath.Join(options.BuildDir, "a21-official-overlay.log"), "git", "apply", "--recount", cleanOverlay); err != nil {
 			report.fail("overlay_apply_failed", "failed to apply A21 official baseline overlay")
 			return
 		}

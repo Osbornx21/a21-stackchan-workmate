@@ -20,7 +20,7 @@ diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
 index 5e49344..a00d376 100644
 --- a/firmware/main/main.cpp
 +++ b/firmware/main/main.cpp
-@@ -3,55 +3,366 @@
+@@ -3,55 +3,579 @@
   *
   * SPDX-License-Identifier: MIT
   */
@@ -28,9 +28,11 @@ index 5e49344..a00d376 100644
 -#include <uitk/short_namespace.hpp>
 +#include <algorithm>
 +#include <atomic>
++#include <cstdlib>
 +#include <cstdint>
 +#include <cstring>
 +#include <memory>
++#include <mutex>
 +#include <string>
 +#include <vector>
 +
@@ -60,6 +62,15 @@ index 5e49344..a00d376 100644
 +constexpr int kQueueDepth = 24;
 +constexpr int kMaxOutputFrames = 960;
 +constexpr int kConnectRetryDelayMS = 1500;
++constexpr int kMicInputSampleRateHz = 24000;
++constexpr int kMicOutputSampleRateHz = 16000;
++constexpr int kMicDurationMS = 20;
++constexpr int kMicInputFramesPerChunk = kMicInputSampleRateHz * kMicDurationMS / 1000;
++constexpr int kMicOutputFramesPerChunk = kMicOutputSampleRateHz * kMicDurationMS / 1000;
++
++#ifndef FIRMWARE_VERSION
++#define FIRMWARE_VERSION "0.1.0-a21-official-pcm-bridge"
++#endif
 +
 +struct A21PCMFrame {
 +    int sample_rate_hz = 0;
@@ -69,13 +80,20 @@ index 5e49344..a00d376 100644
 +};
 +
 +std::atomic<bool> g_network_connected{false};
++std::atomic<bool> g_mic_streaming{false};
++std::atomic<uint64_t> g_sequence{1};
 +QueueHandle_t g_audio_queue = nullptr;
 +AudioCodec* g_codec = nullptr;
++std::mutex g_control_mutex;
 +std::string g_status = "booting";
 +std::string g_device_id = kDefaultDeviceID;
++std::string g_trace_id = "a21-trace-stackchan-boot";
++std::string g_session_id = "a21-session-stackchan-boot";
 +int g_played_chunks = 0;
 +int g_dropped_chunks = 0;
 +int g_invalid_messages = 0;
++int g_mic_frames_sent = 0;
++int g_mic_read_errors = 0;
 +
 +void setStatus(const std::string& status)
 +{
@@ -100,7 +118,9 @@ index 5e49344..a00d376 100644
 +    std::string status_text = g_status + "\n" + g_device_id +
 +                              "\nchunks=" + std::to_string(g_played_chunks) +
 +                              " drop=" + std::to_string(g_dropped_chunks) +
-+                              " bad=" + std::to_string(g_invalid_messages);
++                              " bad=" + std::to_string(g_invalid_messages) +
++                              "\nmic=" + std::to_string(g_mic_frames_sent) +
++                              " err=" + std::to_string(g_mic_read_errors);
 +    lv_label_set_text(status, status_text.c_str());
 +    lv_obj_set_style_text_color(status, lv_color_hex(0x9FE6FF), 0);
 +    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
@@ -138,6 +158,37 @@ index 5e49344..a00d376 100644
 +    return withDeviceIDQuery(settings.GetString("audio_ws_url", ""));
 +}
 +
++std::string jsonEscape(const std::string& value)
++{
++    std::string escaped;
++    escaped.reserve(value.size() + 8);
++    for (char ch : value) {
++        switch (ch) {
++        case '\\':
++            escaped += "\\\\";
++            break;
++        case '"':
++            escaped += "\\\"";
++            break;
++        case '\n':
++            escaped += "\\n";
++            break;
++        case '\r':
++            escaped += "\\r";
++            break;
++        case '\t':
++            escaped += "\\t";
++            break;
++        default:
++            if (static_cast<unsigned char>(ch) >= 0x20) {
++                escaped += ch;
++            }
++            break;
++        }
++    }
++    return escaped;
++}
++
 +bool base64Decode(const char* encoded, std::vector<uint8_t>* decoded)
 +{
 +    if (encoded == nullptr || decoded == nullptr || encoded[0] == '\0') {
@@ -162,6 +213,26 @@ index 5e49344..a00d376 100644
 +    return true;
 +}
 +
++bool base64Encode(const uint8_t* data, size_t len, std::string* encoded)
++{
++    if (data == nullptr || len == 0 || encoded == nullptr) {
++        return false;
++    }
++    size_t required = 0;
++    int ret = mbedtls_base64_encode(nullptr, 0, &required, data, len);
++    if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL || required == 0) {
++        return false;
++    }
++    std::vector<unsigned char> buffer(required + 1, 0);
++    size_t actual = 0;
++    ret = mbedtls_base64_encode(buffer.data(), buffer.size(), &actual, data, len);
++    if (ret != 0 || actual == 0) {
++        return false;
++    }
++    encoded->assign(reinterpret_cast<const char*>(buffer.data()), actual);
++    return true;
++}
++
 +bool bytesToPCM16(const std::vector<uint8_t>& bytes, std::vector<int16_t>* samples)
 +{
 +    if (samples == nullptr || bytes.empty() || (bytes.size() % 2) != 0) {
@@ -174,6 +245,27 @@ index 5e49344..a00d376 100644
 +        (*samples)[i] = static_cast<int16_t>(lo | (hi << 8));
 +    }
 +    return true;
++}
++
++std::vector<uint8_t> pcm16ToLittleEndianBytes(const int16_t* samples, size_t count)
++{
++    std::vector<uint8_t> bytes(count * 2, 0);
++    for (size_t i = 0; i < count; ++i) {
++        const uint16_t value = static_cast<uint16_t>(samples[i]);
++        bytes[i * 2] = static_cast<uint8_t>(value & 0xff);
++        bytes[i * 2 + 1] = static_cast<uint8_t>((value >> 8) & 0xff);
++    }
++    return bytes;
++}
++
++void downsampleInputToA21PCM16(const std::vector<int16_t>& input, int input_channels, int16_t* output)
++{
++    input_channels = std::max(input_channels, 1);
++    for (int out = 0; out < kMicOutputFramesPerChunk; ++out) {
++        const int in_frame = std::min((out * kMicInputSampleRateHz) / kMicOutputSampleRateHz,
++                                      kMicInputFramesPerChunk - 1);
++        output[out] = input[in_frame * input_channels];
++    }
 +}
 +
 +void copyOrUpsampleToOutputRate(const std::vector<int16_t>& input, int sample_rate_hz, A21PCMFrame* frame)
@@ -197,6 +289,102 @@ index 5e49344..a00d376 100644
 +                                   input.size() - 1);
 +        frame->samples[out] = input[in];
 +    }
++}
++
++std::string makeA21Envelope(const std::string& kind,
++                            uint64_t seq,
++                            const std::string& trace_id,
++                            const std::string& session_id,
++                            const std::string& payload)
++{
++    std::string json = "{\"protocol\":\"a21.device.v1\",\"device_id\":\"" + jsonEscape(g_device_id) +
++                       "\",\"kind\":\"" + kind + "\",\"seq\":" + std::to_string(seq);
++    if (!trace_id.empty()) {
++        json += ",\"trace_id\":\"" + jsonEscape(trace_id) + "\"";
++    }
++    if (!session_id.empty()) {
++        json += ",\"session_id\":\"" + jsonEscape(session_id) + "\"";
++    }
++    json += ",\"payload\":" + payload + "}";
++    return json;
++}
++
++bool sendRuntimeEcho(WebSocket* ws)
++{
++    if (ws == nullptr || !ws->IsConnected()) {
++        return false;
++    }
++    const std::string payload =
++        std::string("{\"event\":\"runtime.echo\",") +
++        "\"firmware_id\":\"a21-stackchan\"," +
++        "\"firmware_version\":\"" FIRMWARE_VERSION "\"," +
++        "\"firmware_board\":\"m5stack-cores3\"," +
++        "\"firmware_commit\":\"0000000\"," +
++        "\"capabilities\":{" +
++        "\"microphone\":\"available_core_s3_i2s_24k_to_a21_16k\"," +
++        "\"speaker\":\"available_core_s3_aw88298_pcm\"," +
++        "\"screen\":\"available\"," +
++        "\"screen_touch\":\"planned_official_bridge\"," +
++        "\"top_touch\":\"planned_official_bridge\"," +
++        "\"servo_y\":\"planned_official_bridge\"," +
++        "\"servo_x\":\"planned_continuous_rotation_axis\"," +
++        "\"rgb\":\"planned_official_bridge\"," +
++        "\"camera\":\"planned_core_s3_camera\"," +
++        "\"imu\":\"planned_9_axis_imu\"," +
++        "\"ambient_light\":\"planned_ambient_light_sensor\"," +
++        "\"proximity\":\"planned_proximity_sensor\"," +
++        "\"battery\":\"planned_550mah_battery\"," +
++        "\"nfc\":\"planned_nfc\"," +
++        "\"infrared\":\"planned_infrared_tx_rx\"}," +
++        "\"runtime_echo\":{" +
++        "\"screen\":\"" + jsonEscape(g_status) + "\"," +
++        "\"playback_buffer_total_chunks\":\"" + std::to_string(g_played_chunks) + "\"," +
++        "\"playback_buffer_dropped_chunks\":\"" + std::to_string(g_dropped_chunks) + "\"," +
++        "\"speaker_frames_played\":\"" + std::to_string(g_played_chunks) + "\"," +
++        "\"audio_ws_sent_audio_frames\":\"" + std::to_string(g_mic_frames_sent) + "\"," +
++        "\"mic_frames_captured\":\"" + std::to_string(g_mic_frames_sent) + "\"," +
++        "\"mic_driver_errors\":\"" + std::to_string(g_mic_read_errors) + "\"}}";
++    return ws->Send(makeA21Envelope("device.event", g_sequence.fetch_add(1), "a21-trace-runtime-echo",
++                                    "a21-session-runtime-echo", payload));
++}
++
++bool sendMicFrameIfListening(WebSocket* ws)
++{
++    if (ws == nullptr || !ws->IsConnected() || g_codec == nullptr || !g_mic_streaming.load()) {
++        return false;
++    }
++    const int input_channels = std::max(g_codec->input_channels(), 1);
++    std::vector<int16_t> input(kMicInputFramesPerChunk * input_channels, 0);
++    if (!g_codec->InputData(input)) {
++        g_mic_read_errors += 1;
++        return false;
++    }
++
++    int16_t downsampled[kMicOutputFramesPerChunk] = {};
++    downsampleInputToA21PCM16(input, input_channels, downsampled);
++    const std::vector<uint8_t> bytes = pcm16ToLittleEndianBytes(downsampled, kMicOutputFramesPerChunk);
++    std::string encoded;
++    if (!base64Encode(bytes.data(), bytes.size(), &encoded)) {
++        g_mic_read_errors += 1;
++        return false;
++    }
++
++    std::string trace_id;
++    std::string session_id;
++    {
++        std::lock_guard<std::mutex> lock(g_control_mutex);
++        trace_id = g_trace_id;
++        session_id = g_session_id;
++    }
++    const std::string payload = std::string("{\"codec\":\"pcm_s16le\",\"sample_rate_hz\":16000,") +
++                                "\"channels\":1,\"duration_ms\":20,\"data_base64\":\"" +
++                                encoded + "\"}";
++    if (!ws->Send(makeA21Envelope("audio.frame", g_sequence.fetch_add(1), trace_id, session_id, payload))) {
++        g_mic_read_errors += 1;
++        return false;
++    }
++    g_mic_frames_sent += 1;
++    return true;
 +}
 +
 +bool enqueueAudioPlaybackChunk(const cJSON* root)
@@ -247,8 +435,20 @@ index 5e49344..a00d376 100644
 +    }
 +    const cJSON* payload = cJSON_GetObjectItem(root, "payload");
 +    const cJSON* state = cJSON_IsObject(payload) ? cJSON_GetObjectItem(payload, "state") : nullptr;
++    const cJSON* trace = cJSON_GetObjectItem(root, "trace_id");
++    const cJSON* session = cJSON_GetObjectItem(root, "session_id");
 +    if (cJSON_IsString(state)) {
 +        setStatus(state->valuestring);
++        {
++            std::lock_guard<std::mutex> lock(g_control_mutex);
++            if (cJSON_IsString(trace)) {
++                g_trace_id = trace->valuestring;
++            }
++            if (cJSON_IsString(session)) {
++                g_session_id = session->valuestring;
++            }
++        }
++        g_mic_streaming = std::strcmp(state->valuestring, "listening") == 0;
 +        if (std::strcmp(state->valuestring, "speaking") != 0) {
 +            xQueueReset(g_audio_queue);
 +        }
@@ -324,6 +524,7 @@ index 5e49344..a00d376 100644
 +        ESP_LOGW(kTag, "connect failed: error=%d", ws->GetLastError());
 +        return nullptr;
 +    }
++    sendRuntimeEcho(ws.get());
 +    return ws;
 +}
 +
@@ -396,6 +597,7 @@ index 5e49344..a00d376 100644
 +    g_codec->Start();
 +    g_codec->SetOutputVolume(82);
 +    g_codec->EnableOutput(true);
++    g_codec->EnableInput(true);
 +    g_audio_queue = xQueueCreate(kQueueDepth, sizeof(A21PCMFrame));
 +    xTaskCreate(audioOutputTask, "a21_audio_out", 4096, nullptr, 5, nullptr);
  
@@ -417,10 +619,21 @@ index 5e49344..a00d376 100644
 +    while (true) {
 +        renderStatus();
 +        auto ws = connectAudioWebSocket(audio_ws_url);
++        int heartbeat = 0;
 +        while (ws && ws->IsConnected()) {
-+            renderStatus();
-+            idleDelay(1000);
++            if (g_mic_streaming.load()) {
++                sendMicFrameIfListening(ws.get());
++            } else {
++                idleDelay(50);
++            }
++            heartbeat += 1;
++            if (heartbeat >= 50) {
++                renderStatus();
++                sendRuntimeEcho(ws.get());
++                heartbeat = 0;
++            }
 +        }
++        g_mic_streaming = false;
 +        idleDelay(kConnectRetryDelayMS);
 +    }
  }
