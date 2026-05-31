@@ -86,6 +86,52 @@ func ParseOpenAICompatibleTextStream(reader io.Reader) (TextStreamParseResult, e
 	return result, nil
 }
 
+func ParseOllamaChatStream(reader io.Reader) (TextStreamParseResult, error) {
+	var result TextStreamParseResult
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		event, done, err := parseOllamaChatStreamLine(line)
+		if err != nil {
+			return result, err
+		}
+		if done {
+			result.Done = true
+			result.Events = append(result.Events, TextStreamEvent{Kind: TextStreamDeltaDone})
+			continue
+		}
+		if event.Text == "" {
+			continue
+		}
+		result.ContentDeltaCount++
+		result.Events = append(result.Events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func parseOllamaChatStreamLine(line string) (TextStreamEvent, bool, error) {
+	var chunk struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+		Done bool `json:"done"`
+	}
+	if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+		return TextStreamEvent{}, false, fmt.Errorf("parse ollama chat stream chunk: %w", err)
+	}
+	if chunk.Done {
+		return TextStreamEvent{}, true, nil
+	}
+	return TextStreamEvent{Kind: TextStreamDeltaContent, Text: chunk.Message.Content}, false, nil
+}
+
 func parseOpenAICompatibleTextStreamLine(line string) ([]TextStreamEvent, bool, error) {
 	if line == "" || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "event:") {
 		return nil, false, nil

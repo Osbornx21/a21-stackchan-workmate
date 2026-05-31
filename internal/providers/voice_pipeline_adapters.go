@@ -172,6 +172,59 @@ type OpenAICompatibleTextStreamAdapterOptions struct {
 	MaxTokens    int
 }
 
+type OllamaTextStreamAdapterOptions struct {
+	Name      string
+	Env       []string
+	Client    *http.Client
+	MaxTokens int
+}
+
+type ollamaTextStreamAdapter struct {
+	name      string
+	env       []string
+	client    *http.Client
+	maxTokens int
+}
+
+func NewOllamaTextStreamAdapter(options OllamaTextStreamAdapterOptions) TextStreamAdapter {
+	name := strings.TrimSpace(options.Name)
+	if name == "" {
+		name = "local_ollama"
+	}
+	return &ollamaTextStreamAdapter{
+		name:      name,
+		env:       append([]string(nil), options.Env...),
+		client:    options.Client,
+		maxTokens: options.MaxTokens,
+	}
+}
+
+func (a *ollamaTextStreamAdapter) Name() string {
+	return a.name
+}
+
+func (a *ollamaTextStreamAdapter) StreamText(ctx context.Context, req TextStreamAdapterRequest) (<-chan TextStreamEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := RunTextStreamCompletionFromEnv(ctx, a.env, TextStreamCompletionOptions{
+		ProviderName: "local_ollama",
+		Prompt:       req.Text,
+		MaxTokens:    a.maxTokens,
+		Client:       a.client,
+	})
+	if err != nil {
+		return nil, err
+	}
+	events := make(chan TextStreamEvent, 2)
+	defer close(events)
+	if strings.TrimSpace(result.ContentText) != "" {
+		events <- TextStreamEvent{Kind: TextStreamDeltaContent, Text: result.ContentText}
+	}
+	events <- TextStreamEvent{Kind: TextStreamDeltaDone}
+	return events, nil
+}
+
 type openAICompatibleTextStreamAdapter struct {
 	name         string
 	providerName string
@@ -460,6 +513,14 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		})
 		adapters.ExecutionMode = "host_local"
 	}
+	if isOllamaTextStreamProfile(selection.LLMProfile) {
+		adapters.TextStream = NewOllamaTextStreamAdapter(OllamaTextStreamAdapterOptions{
+			Name:   selection.LLMProfile,
+			Env:    env,
+			Client: options.TextHTTPClient,
+		})
+		adapters.ExecutionMode = "host_local"
+	}
 	if isLocalTTSProfile(selection.TTSProfile) {
 		synthesizer := options.TTSSynthesizer
 		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "macos_say" {
@@ -491,6 +552,15 @@ func isOpenAITextStreamProfile(profile string) bool {
 	}
 	builtin, _, ok := ProviderProfileByNameFromEnv(nil, profile)
 	return ok && builtin.Family == ProviderFamilyTextStream && builtin.Protocol == "openai_chat_completions"
+}
+
+func isOllamaTextStreamProfile(profile string) bool {
+	profile = normalizePipelineProfile(profile)
+	if profile != "local_ollama" {
+		return false
+	}
+	builtin, _, ok := ProviderProfileByNameFromEnv(nil, profile)
+	return ok && builtin.Family == ProviderFamilyTextStream && builtin.Protocol == "ollama_chat"
 }
 
 func isLocalTTSProfile(profile string) bool {

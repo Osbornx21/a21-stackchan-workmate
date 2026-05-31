@@ -59,6 +59,30 @@ func TestParseOpenAICompatibleTextStreamSupportsReasoningContent(t *testing.T) {
 	}
 }
 
+func TestParseOllamaChatStreamDeltas(t *testing.T) {
+	stream := strings.NewReader(strings.Join([]string{
+		`{"message":{"role":"assistant","content":"你"}}`,
+		`{"message":{"role":"assistant","content":"好"}}`,
+		`{"done":true}`,
+		``,
+	}, "\n"))
+
+	result, err := ParseOllamaChatStream(stream)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.ContentText(); got != "你好" {
+		t.Fatalf("content text = %q, want 你好", got)
+	}
+	if !result.Done {
+		t.Fatal("done = false, want true")
+	}
+	if result.ContentDeltaCount != 2 || result.ReasoningDeltaCount != 0 {
+		t.Fatalf("delta counts = content %d reasoning %d", result.ContentDeltaCount, result.ReasoningDeltaCount)
+	}
+}
+
 func TestRedactedProviderHTTPErrorDoesNotLeakBody(t *testing.T) {
 	detail := redactedProviderHTTPError(401, []byte(`{"error":"bad sk-a21-secret for deepseek-v4-flash"}`))
 
@@ -138,6 +162,78 @@ func TestRunTextStreamCompletionFromEnvUsesDeepSeekProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "不要进报告", "给 StackChan 一个短回复", "先想一下"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("text stream result leaked %q: %s", forbidden, data)
+		}
+	}
+}
+
+func TestRunTextStreamCompletionFromEnvUsesLocalOllamaProfile(t *testing.T) {
+	var sawModel bool
+	var sawPrompt bool
+	var sawNumPredict bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Fatalf("path = %q, want /api/chat", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Fatalf("unexpected auth header")
+		}
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+			Stream  bool `json:"stream"`
+			Options struct {
+				NumPredict int `json:"num_predict"`
+			} `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		sawModel = body.Model == "qwen2.5:0.5b"
+		sawPrompt = len(body.Messages) == 1 && body.Messages[0].Content == "不要进报告"
+		sawNumPredict = body.Options.NumPredict == 16
+		if !body.Stream {
+			t.Fatal("stream = false, want true")
+		}
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`{"message":{"content":"本地短回复"}}`,
+			`{"done":true}`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	result, err := RunTextStreamCompletionFromEnv(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=local_ollama",
+		"A21_LOCAL_OLLAMA_BASE_URL=" + server.URL,
+		"A21_LOCAL_OLLAMA_MODEL=qwen2.5:0.5b",
+	}, TextStreamCompletionOptions{
+		ProviderName: "local_ollama",
+		Prompt:       "不要进报告",
+		MaxTokens:    16,
+		Client:       server.Client(),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawModel || !sawPrompt || !sawNumPredict {
+		t.Fatalf("saw model/prompt/num_predict = %v/%v/%v, want all true", sawModel, sawPrompt, sawNumPredict)
+	}
+	if result.Provider != "local_ollama" || result.Protocol != "ollama_chat" {
+		t.Fatalf("provider/protocol = %q/%q", result.Provider, result.Protocol)
+	}
+	if result.ContentText != "本地短回复" || !result.Done || result.ContentDeltaCount != 1 {
+		t.Fatalf("content/done/count = %q/%v/%d", result.ContentText, result.Done, result.ContentDeltaCount)
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"qwen2.5:0.5b", "不要进报告", "本地短回复", server.URL} {
 		if strings.Contains(string(data), forbidden) {
 			t.Fatalf("text stream result leaked %q: %s", forbidden, data)
 		}

@@ -271,6 +271,22 @@ func TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal(t *testing.
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvSelectsLocalOllama(t *testing.T) {
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=local_ollama",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434",
+		"A21_LOCAL_OLLAMA_MODEL=qwen2.5:0.5b",
+	})
+
+	if adapters.ExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local", adapters.ExecutionMode)
+	}
+	if adapters.TextStream.Name() != "local_ollama" {
+		t.Fatalf("text stream adapter = %s, want local_ollama", adapters.TextStream.Name())
+	}
+}
+
 func collectASREvents(t *testing.T, events <-chan ASRAdapterEvent) []ASRAdapterEvent {
 	t.Helper()
 	var collected []ASRAdapterEvent

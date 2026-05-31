@@ -427,19 +427,19 @@ func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options
 	switch provider {
 	case "", "mock", "mock_text_stream":
 		return runMockLocalVoiceLoopbackTextStream(report)
-	case "deepseek":
+	case "deepseek", "local_ollama":
 		if !options.Execute {
-			report.Findings = append(report.Findings, "deepseek text stream not executed; mock text stream used")
+			report.Findings = append(report.Findings, provider+" text stream not executed; mock text stream used")
 			return runMockLocalVoiceLoopbackTextStream(report)
 		}
 		result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
-			ProviderName: "deepseek",
+			ProviderName: provider,
 			Prompt:       fastCompanionTextStreamPrompt(prompt),
 			MaxTokens:    20,
 			Client:       options.Client,
 		})
 		if err != nil {
-			report.Findings = append(report.Findings, "deepseek text stream failed")
+			report.Findings = append(report.Findings, provider+" text stream failed")
 			return "", err
 		}
 		report.TextStreamProvider = result.Provider

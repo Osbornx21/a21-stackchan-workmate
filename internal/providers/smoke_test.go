@@ -172,6 +172,67 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 	}
 }
 
+func TestProviderSmokeExecutesLocalOllamaStreamingRequest(t *testing.T) {
+	var sawStream bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Fatalf("path = %q, want /api/chat", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "" {
+			t.Fatalf("unexpected auth header")
+		}
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		sawStream = body.Stream && body.Model == "qwen2.5:0.5b"
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`{"message":{"content":"OK"}}`,
+			`{"done":true}`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=local_ollama",
+		"A21_LOCAL_OLLAMA_BASE_URL=" + server.URL,
+		"A21_LOCAL_OLLAMA_MODEL=qwen2.5:0.5b",
+	}, ProviderSmokeOptions{
+		ProviderName: "local_ollama",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       1,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if !sawStream {
+		t.Fatal("server did not receive Ollama stream request with configured model")
+	}
+	if report.Protocol != "ollama_chat" || report.Family != string(ProviderFamilyTextStream) || !report.Stream {
+		t.Fatalf("protocol/family/stream = %q/%q/%v", report.Protocol, report.Family, report.Stream)
+	}
+	if len(report.Attempts) != 1 || report.Attempts[0].ContentDeltaCount != 1 || !report.Attempts[0].Done {
+		t.Fatalf("attempts = %+v", report.Attempts)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{"qwen2.5:0.5b", "OK", server.URL} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stream report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `bad key sk-a21-secret for deepseek-chat`, http.StatusUnauthorized)

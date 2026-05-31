@@ -145,7 +145,7 @@ func TestProviderCatalogIncludesPRDReferenceProfiles(t *testing.T) {
 	}
 }
 
-func TestProviderCatalogKeepsP0RouteEligibleProfilesNarrow(t *testing.T) {
+func TestProviderCatalogKeepsRouteEligibleProfilesExplicit(t *testing.T) {
 	report := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
 
 	var routeEligible []string
@@ -154,8 +154,13 @@ func TestProviderCatalogKeepsP0RouteEligibleProfilesNarrow(t *testing.T) {
 			routeEligible = append(routeEligible, provider.Name)
 		}
 	}
-	if len(routeEligible) != 2 || !stringSliceContains(routeEligible, "mock") || !stringSliceContains(routeEligible, "deepseek") {
-		t.Fatalf("route eligible providers = %#v, want only mock and deepseek", routeEligible)
+	for _, want := range []string{"mock", "deepseek", "local_ollama"} {
+		if !stringSliceContains(routeEligible, want) {
+			t.Fatalf("route eligible providers = %#v, missing %q", routeEligible, want)
+		}
+	}
+	if len(routeEligible) != 3 {
+		t.Fatalf("route eligible providers = %#v, want explicit mock, deepseek, and local_ollama only", routeEligible)
 	}
 }
 

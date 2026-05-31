@@ -210,6 +210,12 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 			return report
 		}
 	}
+	if spec.Protocol == "ollama_chat" {
+		if options.Stream {
+			return executeOllamaStreamingSmoke(ctx, env, spec, report, client)
+		}
+		return executeOllamaSmoke(ctx, env, spec, report, client)
+	}
 	if options.Stream {
 		return executeOpenAICompatibleStreamingSmoke(ctx, env, spec, report, client)
 	}
@@ -229,7 +235,8 @@ func providerSmokeSpecFromProfile(profile ProviderProfile) providerSmokeSpec {
 		DefaultBaseURL: profile.DefaultBaseURL,
 		EndpointPath:   profile.EndpointPath,
 		RouteEligible:  profile.RouteEligible,
-		Executable:     profile.RouteEligible && profile.Family == ProviderFamilyTextStream && profile.Protocol == "openai_chat_completions",
+		Executable: profile.RouteEligible && profile.Family == ProviderFamilyTextStream &&
+			(profile.Protocol == "openai_chat_completions" || profile.Protocol == "ollama_chat"),
 	}
 }
 
@@ -449,6 +456,167 @@ func executeOpenAICompatibleStreamingSmokeAttempt(ctx context.Context, env []str
 				attempt.ReasoningDeltaCount++
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		attempt.TotalDurationMS = elapsedMS(start)
+		return attempt, err
+	}
+	attempt.TotalDurationMS = elapsedMS(start)
+	return attempt, nil
+}
+
+func executeOllamaSmoke(ctx context.Context, env []string, spec providerSmokeSpec, report ProviderSmokeReport, client *http.Client) ProviderSmokeReport {
+	endpoint, err := providerSmokeEndpoint(env, spec)
+	if err != nil {
+		report.Status = ProviderSmokeFailed
+		report.Detail = redactProviderSmokeDetail(err.Error())
+		return report
+	}
+	body := map[string]any{
+		"model": providerSmokeModel(env, spec),
+		"messages": []map[string]string{
+			{"role": "user", "content": "A21 provider smoke check. Reply OK."},
+		},
+		"stream": false,
+		"options": map[string]any{
+			"num_predict": 8,
+		},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		report.Status = ProviderSmokeFailed
+		report.Detail = redactProviderSmokeDetail(err.Error())
+		return report
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		report.Status = ProviderSmokeFailed
+		report.Detail = redactProviderSmokeDetail(err.Error())
+		return report
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "a21-provider-smoke/0.1")
+	report.Executed = true
+	start := time.Now()
+	resp, err := client.Do(req)
+	report.DurationMS = elapsedMS(start)
+	if err != nil {
+		report.Status = ProviderSmokeFailed
+		report.Detail = redactProviderSmokeDetail(err.Error())
+		return report
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	report.HTTPStatus = resp.StatusCode
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		report.Status = ProviderSmokePassed
+		report.Detail = "provider smoke request succeeded"
+		return report
+	}
+	report.Status = ProviderSmokeFailed
+	report.Detail = redactedProviderHTTPError(resp.StatusCode, bodyBytes)
+	return report
+}
+
+func executeOllamaStreamingSmoke(ctx context.Context, env []string, spec providerSmokeSpec, report ProviderSmokeReport, client *http.Client) ProviderSmokeReport {
+	repeat := normalizedProviderSmokeRepeat(report.Repeat)
+	report.Repeat = repeat
+	report.Executed = true
+	report.TraceID = fmt.Sprintf("a21-trace-provider-smoke-%d", time.Now().UnixNano())
+	for i := 1; i <= repeat; i++ {
+		attempt, err := executeOllamaStreamingSmokeAttempt(ctx, env, spec, client, i)
+		report.Attempts = append(report.Attempts, attempt)
+		report.HTTPStatus = attempt.HTTPStatus
+		if attempt.TotalDurationMS > 0 {
+			report.DurationMS = attempt.TotalDurationMS
+		}
+		if attempt.FirstByteMS > 0 {
+			report.TraceMarkers = append(report.TraceMarkers, ProviderSmokeMarker{Name: "provider_first_byte", ValueMS: attempt.FirstByteMS})
+			report.Metrics = append(report.Metrics, ProviderSmokeMetric{Name: "a21_provider_first_byte_ms", Value: attempt.FirstByteMS})
+		}
+		if attempt.FirstContentMS > 0 {
+			report.TraceMarkers = append(report.TraceMarkers, ProviderSmokeMarker{Name: "provider_first_content", ValueMS: attempt.FirstContentMS})
+			report.Metrics = append(report.Metrics, ProviderSmokeMetric{Name: "a21_provider_first_content_ms", Value: attempt.FirstContentMS})
+		}
+		if err != nil {
+			report.Status = ProviderSmokeFailed
+			report.Detail = redactProviderSmokeDetail(err.Error())
+			report.Fallback = &ProviderSmokeFallback{Activated: true, Provider: "mock", Reason: "primary_failed"}
+			report.TraceMarkers = append(report.TraceMarkers, ProviderSmokeMarker{Name: "provider_fallback_used"})
+			report.Metrics = append(report.Metrics, ProviderSmokeMetric{Name: "a21_provider_fallback_total", Value: 1})
+			report.TimingSummary = summarizeProviderSmokeTimings(report.Attempts)
+			return report
+		}
+	}
+	report.Executed = true
+	report.Status = ProviderSmokePassed
+	report.Detail = "provider streaming smoke request succeeded"
+	report.TimingSummary = summarizeProviderSmokeTimings(report.Attempts)
+	return report
+}
+
+func executeOllamaStreamingSmokeAttempt(ctx context.Context, env []string, spec providerSmokeSpec, client *http.Client, index int) (ProviderSmokeAttempt, error) {
+	attempt := ProviderSmokeAttempt{Index: index}
+	endpoint, err := providerSmokeEndpoint(env, spec)
+	if err != nil {
+		return attempt, err
+	}
+	body := map[string]any{
+		"model": providerSmokeModel(env, spec),
+		"messages": []map[string]string{
+			{"role": "user", "content": "A21 provider smoke check. Reply OK."},
+		},
+		"stream": true,
+		"options": map[string]any{
+			"num_predict": 8,
+		},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return attempt, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return attempt, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/x-ndjson")
+	req.Header.Set("User-Agent", "a21-provider-smoke/0.1")
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		attempt.TotalDurationMS = elapsedMS(start)
+		return attempt, err
+	}
+	defer resp.Body.Close()
+	attempt.HTTPStatus = resp.StatusCode
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		attempt.TotalDurationMS = elapsedMS(start)
+		return attempt, fmt.Errorf("%s", redactedProviderHTTPError(resp.StatusCode, bodyBytes))
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024), 1024*1024)
+	for scanner.Scan() {
+		if attempt.FirstByteMS == 0 {
+			attempt.FirstByteMS = elapsedMS(start)
+		}
+		event, done, err := parseOllamaChatStreamLine(strings.TrimSpace(scanner.Text()))
+		if err != nil {
+			attempt.TotalDurationMS = elapsedMS(start)
+			return attempt, err
+		}
+		if done {
+			attempt.Done = true
+			continue
+		}
+		if event.Text == "" {
+			continue
+		}
+		if attempt.FirstContentMS == 0 {
+			attempt.FirstContentMS = elapsedMS(start)
+		}
+		attempt.ContentDeltaCount++
 	}
 	if err := scanner.Err(); err != nil {
 		attempt.TotalDurationMS = elapsedMS(start)

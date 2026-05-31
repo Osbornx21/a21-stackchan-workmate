@@ -63,6 +63,9 @@ func RunTextStreamCompletionFromEnv(ctx context.Context, env []string, options T
 	if !spec.Executable {
 		return result, fmt.Errorf("provider text stream is not executable for protocol")
 	}
+	if spec.Protocol == "ollama_chat" {
+		return runOllamaTextStreamCompletion(ctx, env, spec, result, options)
+	}
 	endpoint, err := providerSmokeEndpoint(env, spec)
 	if err != nil {
 		return result, err
@@ -147,6 +150,93 @@ func RunTextStreamCompletionFromEnv(ctx context.Context, env []string, options T
 				result.ReasoningDeltaCount++
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		result.TotalDurationMS = elapsedMS(start)
+		return result, err
+	}
+	result.TotalDurationMS = elapsedMS(start)
+	result.ContentText = content.String()
+	return result, nil
+}
+
+func runOllamaTextStreamCompletion(ctx context.Context, env []string, spec providerSmokeSpec, result TextStreamCompletionResult, options TextStreamCompletionOptions) (TextStreamCompletionResult, error) {
+	endpoint, err := providerSmokeEndpoint(env, spec)
+	if err != nil {
+		return result, err
+	}
+	prompt := strings.TrimSpace(options.Prompt)
+	if prompt == "" {
+		prompt = "A21 local voice loopback. Reply briefly."
+	}
+	maxTokens := options.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 48
+	}
+	body := map[string]any{
+		"model": providerSmokeModel(env, spec),
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+		"stream": true,
+		"options": map[string]any{
+			"num_predict": maxTokens,
+		},
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return result, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return result, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/x-ndjson")
+	req.Header.Set("User-Agent", "a21-text-stream/0.1")
+	client := options.Client
+	if client == nil {
+		policy, _ := NetworkPolicyFromEnv(env)
+		client, err = NewProviderHTTPClient(policy)
+		if err != nil {
+			return result, err
+		}
+	}
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		result.TotalDurationMS = elapsedMS(start)
+		return result, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.TotalDurationMS = elapsedMS(start)
+		return result, fmt.Errorf("%s", redactedProviderHTTPError(resp.StatusCode, nil))
+	}
+	var content strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024), 1024*1024)
+	for scanner.Scan() {
+		if result.FirstByteMS == 0 {
+			result.FirstByteMS = elapsedMS(start)
+		}
+		event, done, err := parseOllamaChatStreamLine(strings.TrimSpace(scanner.Text()))
+		if err != nil {
+			result.TotalDurationMS = elapsedMS(start)
+			return result, err
+		}
+		if done {
+			result.Done = true
+			continue
+		}
+		if event.Text == "" {
+			continue
+		}
+		if result.FirstContentMS == 0 {
+			result.FirstContentMS = elapsedMS(start)
+		}
+		result.ContentDeltaCount++
+		content.WriteString(event.Text)
 	}
 	if err := scanner.Err(); err != nil {
 		result.TotalDurationMS = elapsedMS(start)

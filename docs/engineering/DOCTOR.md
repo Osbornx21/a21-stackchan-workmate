@@ -114,7 +114,7 @@ go run ./cmd/a21 provider-smoke --provider deepseek --execute --stream --repeat 
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
-The provider catalog includes the PRD reference profiles for mainland text-stream candidates, local text providers, existing realtime references, and future agent-task bridges. Catalog visibility is not execution authorization: only `mock` and `deepseek` are route-eligible in the P0 provider-smoke path. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
+The provider catalog includes the PRD reference profiles for mainland text-stream candidates, local text providers, existing realtime references, and future agent-task bridges. Catalog visibility is not execution authorization: only `mock`, `deepseek`, and `local_ollama` are route-eligible in the P0 provider-smoke path. `local_ollama` is a direct local-fallback text-stream lane and still requires explicit `A21_LOCAL_OLLAMA_BASE_URL` plus `A21_LOCAL_OLLAMA_MODEL`. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
 
 Agent-task profiles are reported as readiness visibility only. `hermes_agent`
 and `mimo_agent` stay in the `agent_task` family, are not route-eligible, and

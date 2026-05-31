@@ -2386,6 +2386,101 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 	}
 }
 
+func TestRunLocalVoiceLoopbackCanUseLocalOllamaTextStreamWithoutLeakingContent(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-ollama-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12,
+			TTSFirstAudioMS: 12,
+		}, nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Fatalf("path = %q, want /api/chat", r.URL.Path)
+		}
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+			Options struct {
+				NumPredict int `json:"num_predict"`
+			} `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "qwen2.5:0.5b" || body.Options.NumPredict != 20 {
+			t.Fatalf("ollama body = %+v", body)
+		}
+		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "12个字") || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
+			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
+		}
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`{"message":{"content":"这是来自本地 Ollama 的回复"}}`,
+			`{"done":true}`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("A21_PROVIDER_PRIMARY", "local_ollama")
+	t.Setenv("A21_LOCAL_OLLAMA_BASE_URL", server.URL)
+	t.Setenv("A21_LOCAL_OLLAMA_MODEL", "qwen2.5:0.5b")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "local_ollama", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if ttsInput != "这是来自本地 Ollama 的回复" {
+		t.Fatalf("tts input = %q, want local Ollama content", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"text_stream_provider": "local_ollama"`,
+		`"text_stream_executed": true`,
+		`"text_stream_content_delta_count": 1`,
+		`"text_stream_reasoning_delta_count": 0`,
+		`"tts_provider": "macos_say"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("reports = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"qwen2.5:0.5b", "用户原文不要进报告", "这是来自本地 Ollama 的回复", server.URL, "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackRecordsLocalAckSeparatelyFromProviderAnswer(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })
