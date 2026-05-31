@@ -13,6 +13,7 @@ go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports
 go run ./cmd/a21 provider-latency-bench --provider mock --iterations 5 --output-dir reports
 go run ./cmd/a21 provider-latency-bench --provider deepseek --fixture reports/a21-redacted-audio-fixture.json --iterations 30 --output-dir reports
+go run ./cmd/a21 product-readiness --gateway-url http://127.0.0.1:21080 --output-dir reports
 go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
 go run ./cmd/a21 stackchan-accept --check mic-probe --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 5000 --min-delivery-ratio 0.95 --output-dir reports
 go run ./cmd/a21 stackchan-accept --check half-duplex --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-mic-frames 1 --min-playback-chunks 1 --min-delivery-ratio 0.95 --output-dir reports
@@ -154,6 +155,14 @@ It validates provider wrapper event flow without dialing a provider. It is still
 `latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons. The report also includes `generated_at`, `current_commit`, network/DNS fingerprint, and doctor-style redacted proxy-policy metadata. It reports env variable names such as `HTTPS_PROXY` or `A21_PROVIDER_PROXY_URL`, but never proxy values, hosts, ports, usernames, passwords, keys, or model IDs.
 
 Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until `provider-latency-bench` is promoted beyond mock/fixture scaffolding, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, `latency-bench --mock`, or the scaffolded `provider-latency-bench` shape, and must list unmeasured stages explicitly.
+
+`product-readiness` is the launch/demo status rollup. For local speech, it now
+recognizes either explicit `A21_SHERPA_ONNX_MODEL_DIR` /
+`A21_SHERPA_ONNX_ASR_MODEL_DIR` values or the repository-local `.a21-tools`
+sherpa-onnx model caches when their required model files are present. This is a
+static readiness check only: it never stores full local paths and does not
+execute ASR/TTS. Execution evidence still comes from `local-tts-smoke`,
+`local-asr-smoke`, `local-voice-loopback`, and physical StackChan receipts.
 
 `audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/providers"
 )
 
@@ -336,18 +337,28 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		_, err := exec.LookPath("say")
 		readiness.LocalTTSReady = err == nil
 	case "sherpa_onnx":
-		readiness.LocalTTSReady = strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_MODEL_DIR")) != ""
+		readiness.LocalTTSReady = productSherpaTTSReady(env)
 	default:
 		readiness.LocalTTSReady = false
 	}
-	readiness.RealASRReady = asrProvider == "sherpa_onnx" &&
-		strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")) != ""
+	readiness.RealASRReady = asrProvider == "sherpa_onnx" && productSherpaASRReady(env)
 	readiness.ContinuousVoiceReady = readiness.LocalTTSReady &&
 		readiness.RealASRReady &&
 		provider.RealProviderReady &&
 		stackchan.PhysicalDeviceOnline &&
 		stackchan.PhysicalMicrophoneReady
 	return readiness
+}
+
+func productSherpaTTSReady(env []string) bool {
+	modelDir := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_MODEL_DIR")), audio.DefaultSherpaONNXTTSModelDir())
+	return audio.SherpaONNXTTSModelDirReady(modelDir)
+}
+
+func productSherpaASRReady(env []string) bool {
+	modelDir := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")), audio.DefaultSherpaONNXASRModelDir())
+	family := strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_FAMILY"))
+	return audio.SherpaONNXASRModelDirReady(modelDir, family)
 }
 
 func buildProductNextActions(report productReadinessReport) []string {
@@ -369,7 +380,7 @@ func buildProductNextActions(report productReadinessReport) []string {
 		actions = append(actions, "promote StackChan microphone to a product-ready firmware capability; current status: "+status)
 	}
 	if !report.Voice.RealASRReady {
-		actions = append(actions, "configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")
+		actions = append(actions, "install or configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")
 	}
 	return actions
 }

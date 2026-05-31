@@ -273,6 +273,10 @@ func validateSherpaONNXModelDir(path string) error {
 	return nil
 }
 
+func SherpaONNXTTSModelDirReady(path string) bool {
+	return validateSherpaONNXModelDir(path) == nil
+}
+
 func resolveLocalTTSPath(explicitPath string, defaultPath string) (string, bool) {
 	if strings.TrimSpace(explicitPath) != "" {
 		return strings.TrimSpace(explicitPath), true
@@ -285,6 +289,10 @@ func resolveLocalTTSPath(explicitPath string, defaultPath string) (string, bool)
 
 func defaultSherpaONNXModelDir() string {
 	return filepath.Join(".a21-tools", "sherpa-onnx-models", "vits-icefall-zh-aishell3")
+}
+
+func DefaultSherpaONNXTTSModelDir() string {
+	return defaultSherpaONNXModelDir()
 }
 
 func defaultSherpaONNXPythonPath() string {

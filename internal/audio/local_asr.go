@@ -213,6 +213,14 @@ func validateSherpaONNXASRModelDir(path string, family string) error {
 	return nil
 }
 
+func SherpaONNXASRModelDirReady(path string, family string) bool {
+	family, err := normalizeSherpaONNXASRFamily(firstNonEmptyLocalTTS(family, inferSherpaONNXASRFamily(path)))
+	if err != nil {
+		return false
+	}
+	return validateSherpaONNXASRModelDir(path, family) == nil
+}
+
 func validateSherpaONNXASRWAVPath(path string) error {
 	cleaned := filepath.Clean(path)
 	lower := strings.ToLower(cleaned)
@@ -234,6 +242,10 @@ func validateSherpaONNXASRWAVPath(path string) error {
 
 func defaultSherpaONNXASRModelDir() string {
 	return filepath.Join(".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-paraformer-zh-small-2024-03-09")
+}
+
+func DefaultSherpaONNXASRModelDir() string {
+	return defaultSherpaONNXASRModelDir()
 }
 
 func defaultSherpaONNXASRWAVPath(modelDir string, family string) string {

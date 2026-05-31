@@ -50,6 +50,7 @@ func TestRunUnknownCommand(t *testing.T) {
 
 func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	ttsModelDir := createProductReadinessTTSModelDir(t)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
@@ -64,7 +65,7 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 	}, []string{
 		"A21_PROVIDER_PRIMARY=mock",
 		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
-		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+		"A21_SHERPA_ONNX_MODEL_DIR=" + ttsModelDir,
 	})
 
 	if report.Status != "mock_demo_ready" || !report.DemoReady || report.LaunchReady {
@@ -80,7 +81,7 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 	if err := writeJSONProductReadiness(&encoded, report); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{server.URL, "http://", "https://", "/redacted/tts"} {
+	for _, forbidden := range []string{server.URL, "http://", "https://", ttsModelDir} {
 		if strings.Contains(encoded.String(), forbidden) {
 			t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
 		}
@@ -89,6 +90,8 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 
 func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	ttsModelDir := createProductReadinessTTSModelDir(t)
+	asrModelDir := createProductReadinessASRModelDir(t)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
@@ -105,9 +108,9 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
 		"A21_V21_ADAPTER_URL=" + server.URL,
 		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
-		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+		"A21_SHERPA_ONNX_MODEL_DIR=" + ttsModelDir,
 		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
-		"A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/asr",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=" + asrModelDir,
 	})
 
 	if report.Status != "real_launch_ready" || !report.LaunchReady || !report.DemoReady {
@@ -129,6 +132,8 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 
 func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	ttsModelDir := createProductReadinessTTSModelDir(t)
+	asrModelDir := createProductReadinessASRModelDir(t)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
@@ -145,9 +150,9 @@ func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
 		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
 		"A21_V21_ADAPTER_URL=" + server.URL,
 		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
-		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+		"A21_SHERPA_ONNX_MODEL_DIR=" + ttsModelDir,
 		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
-		"A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/asr",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=" + asrModelDir,
 	})
 
 	if report.LaunchReady || report.Voice.ContinuousVoiceReady {
@@ -167,10 +172,11 @@ func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
 func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
+	ttsModelDir := createProductReadinessTTSModelDir(t)
 	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
 	t.Setenv("A21_V21_ADAPTER_URL", "")
 	t.Setenv("A21_LOCAL_TTS_ENGINE", "sherpa_onnx")
-	t.Setenv("A21_SHERPA_ONNX_MODEL_DIR", "/redacted/tts")
+	t.Setenv("A21_SHERPA_ONNX_MODEL_DIR", ttsModelDir)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return nil, nil
@@ -192,9 +198,47 @@ func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	if strings.Contains(stdout.String(), server.URL) || strings.Contains(stdout.String(), "http://") {
 		t.Fatalf("stdout leaked full URL: %s", stdout.String())
 	}
+	if strings.Contains(stdout.String(), ttsModelDir) {
+		t.Fatalf("stdout leaked local model path: %s", stdout.String())
+	}
 	matches, err := filepath.Glob(filepath.Join(dir, "a21-product-readiness-*.json"))
 	if err != nil || len(matches) != 1 {
 		t.Fatalf("product readiness report matches = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reportData), ttsModelDir) {
+		t.Fatalf("report leaked local model path: %s", reportData)
+	}
+}
+
+func TestProductVoiceReadinessDetectsDefaultLocalModelCache(t *testing.T) {
+	t.Chdir(t.TempDir())
+	createProductReadinessModelFiles(t, filepath.Join(".a21-tools", "sherpa-onnx-models", "vits-icefall-zh-aishell3"), []string{
+		"model.onnx",
+		"lexicon.txt",
+		"tokens.txt",
+		"phone.fst",
+		"date.fst",
+		"number.fst",
+	})
+	createProductReadinessModelFiles(t, filepath.Join(".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-paraformer-zh-small-2024-03-09"), []string{
+		"model.int8.onnx",
+		"tokens.txt",
+	})
+
+	voice := buildProductVoiceReadiness([]string{
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
+	}, productProviderReadiness{RealProviderReady: true}, productStackChanReadiness{
+		PhysicalDeviceOnline:    true,
+		PhysicalMicrophoneReady: true,
+	})
+
+	if !voice.LocalTTSReady || !voice.RealASRReady || !voice.ContinuousVoiceReady {
+		t.Fatalf("voice readiness = %+v, want default local cache ready", voice)
 	}
 }
 
@@ -215,6 +259,39 @@ func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.S
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func createProductReadinessTTSModelDir(t *testing.T) string {
+	t.Helper()
+	return createProductReadinessModelFiles(t, filepath.Join(t.TempDir(), "a21-tts-model"), []string{
+		"model.onnx",
+		"lexicon.txt",
+		"tokens.txt",
+		"phone.fst",
+		"date.fst",
+		"number.fst",
+	})
+}
+
+func createProductReadinessASRModelDir(t *testing.T) string {
+	t.Helper()
+	return createProductReadinessModelFiles(t, filepath.Join(t.TempDir(), "a21-asr-model"), []string{
+		"model.int8.onnx",
+		"tokens.txt",
+	})
+}
+
+func createProductReadinessModelFiles(t *testing.T, dir string, names []string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("a21"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 func containsProductAction(actions []string, want string) bool {
