@@ -113,26 +113,32 @@ type providerLatencyBenchStageAvailability struct {
 }
 
 type providerLatencyBenchSample struct {
-	Index                     int     `json:"index"`
-	TransportIngressMS        float64 `json:"transport_ingress_ms"`
-	CodecDecodeMS             float64 `json:"codec_decode_ms"`
-	ASRFirstPartialMS         float64 `json:"asr_first_partial_ms"`
-	ASRFinalMS                float64 `json:"asr_final_ms"`
-	LLMFirstContentMS         float64 `json:"llm_first_content_ms"`
-	ProviderFirstByteMS       float64 `json:"provider_first_byte_ms"`
-	ProviderFirstContentMS    float64 `json:"provider_first_content_ms"`
-	TTSFirstAudioMS           float64 `json:"tts_first_audio_ms"`
-	DownlinkFirstFrameMS      float64 `json:"downlink_first_frame_ms"`
-	AudioDownlinkFirstFrameMS float64 `json:"audio_downlink_first_frame_ms"`
-	DevicePlaybackStartMS     float64 `json:"device_playback_start_ms"`
-	BargeInDetectedMS         float64 `json:"barge_in_detected_ms"`
-	BargeInStopMS             float64 `json:"barge_in_stop_ms"`
-	ProviderCancelMS          float64 `json:"provider_cancel_ms"`
-	ProviderCancelDoneMS      float64 `json:"provider_cancel_done_ms"`
-	PlaybackStopMS            float64 `json:"playback_stop_ms"`
-	PlaybackStopDoneMS        float64 `json:"playback_stop_done_ms"`
-	AnswerFirstAudioMS        float64 `json:"answer_first_audio_ms"`
-	Placeholder               bool    `json:"placeholder"`
+	Index                      int     `json:"index"`
+	TransportIngressMS         float64 `json:"transport_ingress_ms"`
+	CodecDecodeMS              float64 `json:"codec_decode_ms"`
+	ASRFirstPartialMS          float64 `json:"asr_first_partial_ms"`
+	ASRFinalMS                 float64 `json:"asr_final_ms"`
+	LLMFirstContentMS          float64 `json:"llm_first_content_ms"`
+	ProviderFirstByteMS        float64 `json:"provider_first_byte_ms"`
+	ProviderFirstContentMS     float64 `json:"provider_first_content_ms"`
+	TTSFirstAudioMS            float64 `json:"tts_first_audio_ms"`
+	DownlinkFirstFrameMS       float64 `json:"downlink_first_frame_ms"`
+	AudioDownlinkFirstFrameMS  float64 `json:"audio_downlink_first_frame_ms"`
+	DevicePlaybackStartMS      float64 `json:"device_playback_start_ms"`
+	BargeInDetectedMS          float64 `json:"barge_in_detected_ms"`
+	BargeInStopMS              float64 `json:"barge_in_stop_ms"`
+	ProviderCancelMS           float64 `json:"provider_cancel_ms"`
+	ProviderCancelDoneMS       float64 `json:"provider_cancel_done_ms"`
+	PlaybackStopMS             float64 `json:"playback_stop_ms"`
+	PlaybackStopDoneMS         float64 `json:"playback_stop_done_ms"`
+	AnswerFirstAudioMS         float64 `json:"answer_first_audio_ms"`
+	Placeholder                bool    `json:"placeholder"`
+	bargeInDetectedObserved    bool
+	bargeInStopObserved        bool
+	providerCancelObserved     bool
+	providerCancelDoneObserved bool
+	playbackStopObserved       bool
+	playbackStopDoneObserved   bool
 }
 
 type providerLatencyBenchSummary struct {
@@ -645,6 +651,9 @@ func providerLatencyVirtualXiaozhiSamples(report providerLatencyBenchHostLoopbac
 			sample.BargeInStopMS = report.AbortStopSamplesMS[index]
 			sample.PlaybackStopMS = report.AbortStopSamplesMS[index]
 			sample.PlaybackStopDoneMS = report.AbortStopSamplesMS[index]
+			sample.bargeInStopObserved = true
+			sample.playbackStopObserved = true
+			sample.playbackStopDoneObserved = true
 		}
 		samples = append(samples, sample)
 	}
@@ -676,6 +685,12 @@ func providerLatencyHostLoopbackSampleFromTrace(index int, trace providerLatency
 	sample.ProviderCancelDoneMS = providerLatencyValue(trace.ProviderCancelDoneMS)
 	sample.PlaybackStopMS = providerLatencyValue(trace.PlaybackStopMS)
 	sample.PlaybackStopDoneMS = providerLatencyValue(trace.PlaybackStopDoneMS)
+	sample.bargeInDetectedObserved = trace.BargeInDetectedMS != nil
+	sample.bargeInStopObserved = trace.BargeInStopMS != nil
+	sample.providerCancelObserved = trace.ProviderCancelMS != nil
+	sample.providerCancelDoneObserved = trace.ProviderCancelDoneMS != nil
+	sample.playbackStopObserved = trace.PlaybackStopMS != nil
+	sample.playbackStopDoneObserved = trace.PlaybackStopDoneMS != nil
 	sample.AnswerFirstAudioMS = firstProviderLatencyValue(trace.AnswerFirstAudioMS, trace.AnswerFirstAudioTotalMS)
 	return sample
 }
@@ -738,7 +753,7 @@ func providerLatencyHostLoopbackCandidate(summary providerLatencyBenchSummary, p
 		summary.BargeInStopMS.Samples >= 3 &&
 		summary.AnswerFirstAudioMS.P95MS > 0 &&
 		summary.AnswerFirstAudioMS.P95MS < 1500 &&
-		summary.BargeInStopMS.P95MS > 0 &&
+		summary.BargeInStopMS.P95MS >= 0 &&
 		summary.BargeInStopMS.P95MS < 300
 }
 
@@ -951,12 +966,12 @@ func summarizeProviderLatencyBenchSamples(samples []providerLatencyBenchSample) 
 		appendProviderLatencyPositiveMS(&downlink, sample.DownlinkFirstFrameMS)
 		appendProviderLatencyPositiveMS(&audioDownlink, sample.AudioDownlinkFirstFrameMS)
 		appendProviderLatencyPositiveMS(&playback, sample.DevicePlaybackStartMS)
-		appendProviderLatencyPositiveMS(&bargeInDetected, sample.BargeInDetectedMS)
-		appendProviderLatencyPositiveMS(&bargeIn, sample.BargeInStopMS)
-		appendProviderLatencyPositiveMS(&cancel, sample.ProviderCancelMS)
-		appendProviderLatencyPositiveMS(&cancelDone, sample.ProviderCancelDoneMS)
-		appendProviderLatencyPositiveMS(&playbackStop, sample.PlaybackStopMS)
-		appendProviderLatencyPositiveMS(&playbackStopDone, sample.PlaybackStopDoneMS)
+		appendProviderLatencyObservedMS(&bargeInDetected, sample.BargeInDetectedMS, sample.bargeInDetectedObserved)
+		appendProviderLatencyObservedMS(&bargeIn, sample.BargeInStopMS, sample.bargeInStopObserved)
+		appendProviderLatencyObservedMS(&cancel, sample.ProviderCancelMS, sample.providerCancelObserved)
+		appendProviderLatencyObservedMS(&cancelDone, sample.ProviderCancelDoneMS, sample.providerCancelDoneObserved)
+		appendProviderLatencyObservedMS(&playbackStop, sample.PlaybackStopMS, sample.playbackStopObserved)
+		appendProviderLatencyObservedMS(&playbackStopDone, sample.PlaybackStopDoneMS, sample.playbackStopDoneObserved)
 		appendProviderLatencyPositiveMS(&answerFirstAudio, sample.AnswerFirstAudioMS)
 	}
 	return providerLatencyBenchSummary{
@@ -986,6 +1001,17 @@ func appendProviderLatencyPositiveMS(samples *[]time.Duration, value float64) {
 		return
 	}
 	*samples = append(*samples, msDuration(value))
+}
+
+func appendProviderLatencyObservedMS(samples *[]time.Duration, value float64, observed bool) {
+	if observed {
+		if value < 0 {
+			return
+		}
+		*samples = append(*samples, msDuration(value))
+		return
+	}
+	appendProviderLatencyPositiveMS(samples, value)
 }
 
 func buildProviderLatencyCanonicalMetrics(summary providerLatencyBenchSummary, placeholder bool, physicalEvidence bool) map[string]providerLatencyCanonical {

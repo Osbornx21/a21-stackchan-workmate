@@ -2158,6 +2158,53 @@ func TestRunProviderLatencyBenchVirtualXiaozhiPartialReportFindsMissingAbortStop
 	}
 }
 
+func TestRunProviderLatencyBenchVirtualXiaozhiAcceptsZeroAbortStopSamples(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-virtual-xiaozhi-zero-abort.json")
+	data := `{
+  "schema": "a21.virtual_xiaozhi_harness.v1",
+  "target": "127.0.0.1:21080/v1/xiaozhi",
+  "profile": "xiaozhi",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "trace_id": "a21-trace-virtual-001",
+  "session_id": "a21-session-virtual-001",
+  "runs": 3,
+  "successful_runs": 3,
+  "first_audio_samples_ms": [1032, 1123, 1223],
+  "first_audio_p95_ms": 1223,
+  "abort_stop_samples_ms": [0, 0, 0],
+  "abort_stop_p95_ms": 0,
+  "host_candidate": true,
+  "prd_accepted": false
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	barge := report.CanonicalMetrics["barge_in_stop_p95_ms"]
+	if !barge.Available || barge.Samples != 3 || barge.P95MS != 0 {
+		t.Fatalf("zero abort-stop samples should be valid observed timings: %#v", barge)
+	}
+	bargeStage := providerLatencyBenchStageByName(t, report, "barge_in_stop_ms")
+	if !bargeStage.Available || bargeStage.Samples != 3 || bargeStage.P95MS != 0 {
+		t.Fatalf("zero abort-stop stage should be available: %#v", bargeStage)
+	}
+	if report.PRDAccepted {
+		t.Fatalf("virtual host harness must not claim PRD acceptance")
+	}
+}
+
 func TestRunProviderLatencyBenchVirtualXiaozhiRedactsUnsafeReportPayload(t *testing.T) {
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "a21-virtual-xiaozhi-leaky.json")
