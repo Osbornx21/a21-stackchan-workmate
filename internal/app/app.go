@@ -178,6 +178,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
+	case "provider-latency-bench":
+		return runProviderLatencyBench(args[1:], stdout, stderr)
 	case "provider-realtime-plan":
 		return runProviderRealtimePlan(args[1:], stdout, stderr)
 	case "provider-realtime-fixture":

@@ -11,6 +11,8 @@ go run ./cmd/a21 provider-realtime-plan --provider doubao_realtime
 go run ./cmd/a21 provider-realtime-plan --provider doubao_tts_realtime
 go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports
+go run ./cmd/a21 provider-latency-bench --provider mock --iterations 5 --output-dir reports
+go run ./cmd/a21 provider-latency-bench --provider deepseek --fixture reports/a21-redacted-audio-fixture.json --iterations 30 --output-dir reports
 go run ./cmd/a21 lan-probe --target a21-gateway=127.0.0.1:21080 --output-dir reports
 go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 5000 --min-delivery-ratio 0.95 --output-dir reports
 go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --window-ms 1500 --min-mic-frames 1 --min-playback-chunks 1 --min-delivery-ratio 0.95 --output-dir reports
@@ -27,6 +29,7 @@ make stackchan-sensor-probe-acceptance
 make stackchan-speaker-acceptance
 make stackchan-fast-companion-turn
 make provider-realtime-plan
+make provider-latency-bench
 make v21-adapter-smoke
 make v21-adapter-smoke-execute
 ```
@@ -127,7 +130,19 @@ It validates provider wrapper event flow without dialing a provider. It is still
 
 `latency-bench --mock --output-dir reports` writes `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` and includes `report_path` in stdout. `make latency-bench` uses this mode so mock latency evidence is preserved for environment comparisons. The report also includes `generated_at`, `current_commit`, network/DNS fingerprint, and doctor-style redacted proxy-policy metadata. It reports env variable names such as `HTTPS_PROXY` or `A21_PROVIDER_PROXY_URL`, but never proxy values, hosts, ports, usernames, passwords, keys, or model IDs.
 
-Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until a dedicated `provider-latency-bench` command exists, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, or `latency-bench --mock`, and must list unmeasured stages explicitly.
+Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until `provider-latency-bench` is promoted beyond mock/fixture scaffolding, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, `latency-bench --mock`, or the scaffolded `provider-latency-bench` shape, and must list unmeasured stages explicitly.
+
+`provider-latency-bench` now exists as a mock/fixture scaffold for the shared
+candidate-chain report. It accepts `--provider`, `--fixture`, `--mode
+mock|fixture|host_baseline`, `--iterations`, and `--output-dir`, but it
+intentionally rejects `--execute`. The report includes A21 trace/session/device
+IDs, provider profile/family/protocol labels, redacted network/proxy metadata,
+ASR/provider/TTS/downlink/device/barge-in placeholder timings, p50/p95/p99
+summaries, fallback/failure counts, execution flags showing no provider/V21/
+hardware execution, and `promotion_gate=not_production`. Fixture reports store
+only the fixture basename, not the full local path, and never store prompt,
+transcript, provider output, reasoning, key values, full URLs, proxy URLs, or
+raw audio payloads.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary through a direct no-ambient-proxy HTTP client and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 

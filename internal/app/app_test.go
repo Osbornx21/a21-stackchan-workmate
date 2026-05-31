@@ -812,6 +812,133 @@ func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) 
 	}
 }
 
+func TestRunProviderLatencyBenchMockEmitsRedactedCandidateChainReport(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://user:secret@example.invalid:8080")
+	t.Setenv("A21_PROVIDER_PROXY_URL", "http://provider-secret@example.invalid:9000")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "deepseek", "--iterations", "3", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	reportJSON := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.provider_latency_bench.v1"`,
+		`"execution_mode": "mock"`,
+		`"baseline_scope": "host_only"`,
+		`"trace_id": "a21-trace-provider-latency-bench-000001"`,
+		`"session_id": "a21-session-provider-latency-bench-000001"`,
+		`"device_id": "none_host_fixture"`,
+		`"profile": "deepseek"`,
+		`"label": "DeepSeek text stream"`,
+		`"family": "text_stream"`,
+		`"network"`,
+		`"mode": "explicit_proxy"`,
+		`"proxy"`,
+		`"HTTPS_PROXY"`,
+		`"A21_PROVIDER_PROXY_URL"`,
+		`"asr_first_partial_ms"`,
+		`"provider_first_byte_ms"`,
+		`"provider_first_content_ms"`,
+		`"tts_first_audio_ms"`,
+		`"downlink_first_frame_ms"`,
+		`"device_playback_start_ms"`,
+		`"barge_in_stop_ms"`,
+		`"provider_cancel_ms"`,
+		`"p50_ms"`,
+		`"p95_ms"`,
+		`"p99_ms"`,
+		`"fallback_count": 0`,
+		`"failure_count": 0`,
+		`"promotion_gate": "not_production"`,
+		`"provider_executed": false`,
+		`"v21_executed": false`,
+		`"hardware_executed": false`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(reportJSON, want) {
+			t.Fatalf("stdout missing %q: %s", want, reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		"sk-a21-secret",
+		"secret",
+		"example.invalid",
+		"8080",
+		"9000",
+		"prompt",
+		"transcript",
+		"reasoning",
+		"provider output",
+		"/tmp/",
+	} {
+		if strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, reportJSON)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-provider-latency-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("provider latency bench reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileJSON := string(data)
+	for _, want := range []string{`"promotion_gate": "not_production"`, `"provider_first_content_ms"`, `"report_path"`} {
+		if !strings.Contains(fileJSON, want) {
+			t.Fatalf("report missing %q: %s", want, fileJSON)
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "secret", "example.invalid", "8080", "9000", "/tmp/"} {
+		if strings.Contains(fileJSON, forbidden) {
+			t.Fatalf("report leaked forbidden fragment %q: %s", forbidden, fileJSON)
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchFixtureRedactsFixturePath(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", "/tmp/a21/private/audio-fixture.wav", "--iterations", "1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"execution_mode": "fixture"`,
+		`"fixture_id": "audio-fixture.wav"`,
+		`"profile": "mock"`,
+		`"family": "mock"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"/tmp/a21", "private", "audio-fixture.wav/"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked fixture path fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchRejectsExecute(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-latency-bench", "--execute"}, &bytes.Buffer{}, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "does not support --execute") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunLocalTTSSmokeWritesRedactedReport(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

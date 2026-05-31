@@ -63,6 +63,25 @@ go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports
 make latency-bench
 ```
 
+A21 also has a provider-chain latency scaffold:
+
+```bash
+go run ./cmd/a21 provider-latency-bench --provider mock --iterations 5
+go run ./cmd/a21 provider-latency-bench --provider deepseek --iterations 30 --output-dir reports
+go run ./cmd/a21 provider-latency-bench --provider mock --fixture reports/a21-redacted-audio-fixture.json --output-dir reports
+make provider-latency-bench
+```
+
+`provider-latency-bench` is deliberately mock/fixture-only in this slice. It
+records the required A21 candidate-chain report shape for ASR first partial,
+provider first byte, provider first content, TTS first audio, Gateway downlink
+first frame, device playback start, barge-in stop, and provider cancel
+placeholders, with p50/p95/p99 summaries and fallback/failure counts. It sets
+`baseline_scope=host_only`, `device_id=none_host_fixture`, and
+`promotion_gate=not_production` until real provider, TTS, Gateway runtime, and
+physical StackChan evidence are captured under a later authorized window. It
+must not be used as proof of real first-audible latency.
+
 The report currently measures in-process Gateway paths for:
 
 - `mock_turn_ms`

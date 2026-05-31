@@ -78,7 +78,8 @@ Professional mode must not be promoted through an opaque realtime S2S benchmark 
 
 The current `latency-bench --mock`, `audio-front-end-eval`, `provider-smoke --stream`, `local-voice-loopback`, and `stackchan-fast-companion-turn` reports are partial pieces of this contract. Future real-provider work should extend this family instead of creating separate ad hoc gates.
 
-The intended command shape is:
+The first `provider-latency-bench` scaffold now exists as a mock/fixture-only
+candidate-chain report shape:
 
 ```bash
 go run ./cmd/a21 provider-latency-bench \
@@ -88,7 +89,17 @@ go run ./cmd/a21 provider-latency-bench \
   --output-dir reports
 ```
 
-That command does not exist yet. Until it does, new provider comparisons must explicitly name which existing A21 report covers each metric and which metrics remain unproven.
+This scaffold does not execute real providers, V21, Gateway runtime services, or
+physical StackChan paths. It emits A21-owned `trace_id`, `session_id`,
+`device_id=none_host_fixture`, provider profile/family labels, redacted
+network/proxy metadata, stage waterfall placeholders, p50/p95/p99 summaries,
+fallback/failure counts, and `promotion_gate=not_production`. Reports must not
+store prompt text, transcript text, provider output, provider reasoning, key
+values, full provider URLs, proxy URLs, or full local fixture paths.
+
+Until a later T4/T6 window adds real measurements, provider comparisons must
+cite this scaffold only as report-shape evidence and must list unmeasured real
+ASR, provider, TTS, downlink, physical playback, and barge-in stages explicitly.
 
 ## Non-Goals
 
