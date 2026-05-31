@@ -66,6 +66,13 @@ thin sensing and expression device.
 - WS-6 split trace summary: `/v1/traces` reports xiaozhi ingress/codec,
   ASR, LLM, TTS, first downlink, device playback, and total answer-first-audio
   deltas when the matching trace markers exist.
+- WS-6 provider benchmark report contract: `provider-latency-bench` now splits
+  host-only placeholder fields for transport ingress, codec decode, ASR
+  partial/final, LLM first content, TTS first audio, audio downlink first
+  frame, device playback start, and barge-in detected/provider cancel
+  done/playback stop done. Each stage carries availability, placeholder state,
+  source trace marker, and p50/p95/p99 stats while keeping
+  `acceptance_status=not_accepted` and `prd_accepted=false`.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only

@@ -59,17 +59,22 @@ provider latency evidence without later measured runs.
 `provider-latency-bench` is now hardened as a Fast Companion candidate-chain
 report shape. Its `metric_terms` block maps TTFS, TTFT, FTTS, and TTFA onto A21
 stages and canonical metrics. Its `canonical_metrics` block preserves
-p50/p95/p99 series for A21 names such as `asr_first_partial_ms`,
-`provider_first_byte_ms`, `provider_first_content_ms`, `tts_first_audio_ms`,
+p50/p95/p99 series for A21 names such as `transport_ingress_ms`,
+`codec_decode_ms`, `asr_first_partial_ms`, `asr_final_ms`,
+`llm_first_content_ms`, `provider_first_byte_ms`,
+`provider_first_content_ms`, `tts_first_audio_ms`,
 `downlink_first_frame_ms`, `audio_downlink_first_frame_ms`,
-`device_playback_start_ms`, `barge_in_stop_ms`, `provider_cancel_ms`,
-`playback_stop_ms`, and the shared provider-benchmark canonical fields. The
-unqualified `downlink_first_frame_ms` key is retained only as a legacy
+`device_playback_start_ms`, `barge_in_detected_ms`, `barge_in_stop_ms`,
+`provider_cancel_ms`, `provider_cancel_done_ms`, `playback_stop_ms`,
+`playback_stop_done_ms`, and the shared provider-benchmark canonical fields.
+The unqualified `downlink_first_frame_ms` key is retained only as a legacy
 compatibility alias and is still covered by placeholder availability metadata.
 Its `stage_availability` block marks every current stage as a placeholder with
-a fixed reason because this command remains host-only report-contract evidence.
-These fields are durable JSON report fields, not Prometheus runtime metrics and
-not production acceptance evidence.
+a fixed reason, source trace marker, sample count, and p50/p95/p99 redacted
+stats because this command remains host-only report-contract evidence. Reports
+also carry `acceptance_status=not_accepted` and `prd_accepted=false`; these
+fields are durable JSON report fields, not Prometheus runtime metrics and not
+production acceptance evidence.
 
 The live protocol contract reserves future observability fields for binary Opus
 media. It is planning-only: reserved trace markers such as
@@ -262,7 +267,7 @@ Every voice turn should eventually expose:
 
 - `audio.capture.start`
 - `audio.capture.end`
-- `gateway.audio.first_frame`
+- `audio.frame.received`
 - `vad.speech.start`
 - `vad.speech.end`
 - `asr.first_partial`

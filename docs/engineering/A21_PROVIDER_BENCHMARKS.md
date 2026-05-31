@@ -93,15 +93,21 @@ This scaffold does not execute real providers, V21, Gateway runtime services, or
 physical StackChan paths. It emits A21-owned `trace_id`, `session_id`,
 `device_id=none_host_fixture`, provider profile/family labels, redacted
 network/proxy metadata, stage waterfall placeholders, p50/p95/p99 summaries,
-fallback/failure counts, and `promotion_gate=not_production`. The v2 report
-shape also includes machine-readable `metric_terms`, `canonical_metrics`, and
+fallback/failure counts, `promotion_gate=not_production`,
+`acceptance_status=not_accepted`, and `prd_accepted=false`. The v2 report shape
+also includes machine-readable `metric_terms`, `canonical_metrics`, and
 `stage_availability` blocks so TTFS, TTFT, FTTS, and TTFA vocabulary can be
 compared against A21 canonical fields without promoting the numbers as real
-latency. The canonical block covers `asr_first_partial_ms`,
-`provider_first_byte_ms`, `provider_first_content_ms`, `tts_first_audio_ms`,
+latency. `stage_availability` is the per-segment contract: each entry carries
+`available`, `placeholder`, `source_trace_marker`, sample count, and p50/p95/p99
+redacted stats. The canonical block covers `transport_ingress_ms`,
+`codec_decode_ms`, `asr_first_partial_ms`, `asr_final_ms`,
+`llm_first_content_ms`, `provider_first_byte_ms`,
+`provider_first_content_ms`, `tts_first_audio_ms`,
 `downlink_first_frame_ms` as the legacy compatibility alias,
 `audio_downlink_first_frame_ms`, `device_playback_start_ms`,
-`barge_in_stop_ms`, `provider_cancel_ms`, `playback_stop_ms`,
+`barge_in_detected_ms`, `barge_in_stop_ms`, `provider_cancel_ms`,
+`provider_cancel_done_ms`, `playback_stop_ms`, `playback_stop_done_ms`,
 `speech_end_to_final_asr_ms`, `speech_end_to_first_llm_token_ms`,
 `llm_request_to_first_token_ms`, `first_llm_token_to_first_tts_audio_ms`,
 `tts_request_to_first_audio_ms`, `provider_commit_to_first_audio_ms`,

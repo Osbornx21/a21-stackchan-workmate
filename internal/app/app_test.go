@@ -1211,6 +1211,100 @@ func TestRunProviderLatencyBenchV2ReportsMetricShapeContract(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchReportsWS6SegmentContract(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "fixture", "--iterations", "2"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	assertProviderLatencyBenchWS6Segments(t, report)
+	rendered := stdout.String()
+	for _, forbidden := range []string{
+		`"promotion_gate": "accepted"`,
+		`"acceptance_status": "accepted"`,
+		`"prd_accepted": true`,
+		`"provider_executed": true`,
+		`"v21_executed": true`,
+		`"hardware_executed": true`,
+		"secret prompt",
+		"secret transcript",
+		"provider output",
+		"data_base64",
+		"/tmp/",
+		"http://user:pass@",
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout contains forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+	for _, want := range []string{
+		`"promotion_gate": "not_production"`,
+		`"acceptance_status": "not_accepted"`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+}
+
+func assertProviderLatencyBenchWS6Segments(t *testing.T, report map[string]any) {
+	t.Helper()
+	rawStages, ok := report["stage_availability"].([]any)
+	if !ok || len(rawStages) == 0 {
+		t.Fatalf("stage_availability missing or empty: %#v", report["stage_availability"])
+	}
+	required := map[string]string{
+		"transport_ingress_ms":          "audio.frame.received",
+		"codec_decode_ms":               "xiaozhi.opus_frame.decoded",
+		"asr_first_partial_ms":          "asr.first_partial",
+		"asr_final_ms":                  "asr.final",
+		"llm_first_content_ms":          "provider.first_content",
+		"tts_first_audio_ms":            "tts.first_audio",
+		"audio_downlink_first_frame_ms": "audio.downlink.first_frame",
+		"device_playback_start_ms":      "device.playback.start",
+		"barge_in_detected_ms":          "barge_in.detected",
+		"provider_cancel_done_ms":       "provider.cancel.end",
+		"playback_stop_done_ms":         "playback.stop",
+	}
+	seen := map[string]map[string]any{}
+	for _, rawStage := range rawStages {
+		stage, ok := rawStage.(map[string]any)
+		if !ok {
+			t.Fatalf("stage availability has unexpected shape: %#v", rawStage)
+		}
+		name, _ := stage["stage"].(string)
+		seen[name] = stage
+	}
+	for stageName, traceMarker := range required {
+		stage, ok := seen[stageName]
+		if !ok {
+			t.Fatalf("stage_availability missing WS-6 stage %q: %#v", stageName, rawStages)
+		}
+		if available, _ := stage["available"].(bool); available {
+			t.Fatalf("WS-6 stage %q unexpectedly available: %#v", stageName, stage)
+		}
+		if placeholder, _ := stage["placeholder"].(bool); !placeholder {
+			t.Fatalf("WS-6 stage %q should remain placeholder: %#v", stageName, stage)
+		}
+		if got, _ := stage["source_trace_marker"].(string); got != traceMarker {
+			t.Fatalf("WS-6 stage %q source marker = %q, want %q: %#v", stageName, got, traceMarker, stage)
+		}
+		for _, field := range []string{"samples", "p50_ms", "p95_ms", "p99_ms"} {
+			if _, ok := stage[field]; !ok {
+				t.Fatalf("WS-6 stage %q missing %q redacted stats: %#v", stageName, field, stage)
+			}
+		}
+	}
+}
+
 func assertProviderLatencyBenchMetricTerms(t *testing.T, report map[string]any) {
 	t.Helper()
 	rawTerms, ok := report["metric_terms"].([]any)
