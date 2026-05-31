@@ -8,6 +8,13 @@
 
 **Tech Stack:** Go, `cmd/a21`, `internal/providers`, `internal/gateway`, existing reports under `reports/`, Markdown engineering docs.
 
+**Control note, 2026-05-31:** Task 2 and Task 3 are already present in the
+current integration baseline through the accepted
+`codex/a21-provider-spine-deepseek-textstream` slice and the
+`codex/a21-integration-governance-slices` branch. Do not duplicate parser or
+stream-smoke implementation from this plan. Future workers should audit the
+existing code first, then continue from Task 4 or a new control-approved slice.
+
 ---
 
 ### Task 1: Provider Profile Registry
@@ -40,28 +47,34 @@ Run: `git commit -m "feat(providers): add provider reference profiles"`
 ### Task 2: Text Stream Parser
 
 **Files:**
-- Create: `internal/providers/textstream.go`
-- Create: `internal/providers/textstream_test.go`
+- Present: `internal/providers/textstream.go`
+- Present: `internal/providers/textstream_client.go`
+- Present: `internal/providers/textstream_test.go`
 
-- [ ] **Step 1: Write parser tests**
+- [x] **Step 1: Write parser tests**
 
 Cover OpenAI-style `delta.content`, StepFun-style `delta.reasoning`, `[DONE]`, non-2xx redacted error bodies, first-byte and first-content timing fields.
 
-- [ ] **Step 2: Run parser tests**
+- [x] **Step 2: Run parser tests**
 
 Run: `go test ./internal/providers -run TextStream`
 
-- [ ] **Step 3: Implement parser and event types**
+- [x] **Step 3: Implement parser and event types**
 
-Add `TextStreamRequest`, `TextMessage`, `TextStreamEvent`, `ProviderUsage`, and `ProviderTiming` with redaction-safe errors.
+Accepted implementation uses `TextStreamEvent`, `TextStreamParseResult`,
+`TextStreamCompletionOptions`, and `TextStreamCompletionResult`; the earlier
+draft type names `TextStreamRequest`, `TextMessage`, `ProviderUsage`, and
+`ProviderTiming` were not adopted because no current caller needs that wider
+API surface.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `go test ./internal/providers -run TextStream`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git commit -m "feat: add text stream provider parser"`
+Covered by accepted Provider Spine commits in the current integration baseline;
+do not create a duplicate parser commit from this stale task text.
 
 ### Task 3: Streaming Provider Smoke
 
@@ -72,25 +85,26 @@ Run: `git commit -m "feat: add text stream provider parser"`
 - Modify: `internal/app/app_test.go`
 - Modify: `docs/engineering/PHASE4C_PROVIDER_SMOKE.md`
 
-- [ ] **Step 1: Write CLI tests for `--stream --repeat`**
+- [x] **Step 1: Write CLI tests for `--stream --repeat`**
 
 Use `httptest` to simulate streaming chunks. Assert reports include provider, protocol, first_byte_ms, first_content_ms, total_duration_ms, repeat count, p50/p95 summary, and no key/model/prompt/proxy values.
 
-- [ ] **Step 2: Run CLI tests**
+- [x] **Step 2: Run CLI tests**
 
 Run: `go test ./internal/app ./internal/providers -run 'ProviderSmoke|TextStream'`
 
-- [ ] **Step 3: Implement stream smoke options**
+- [x] **Step 3: Implement stream smoke options**
 
 Add `--stream`, `--repeat`, and redacted timing output without executing any provider unless `--execute` is set.
 
-- [ ] **Step 4: Re-run tests**
+- [x] **Step 4: Re-run tests**
 
 Run: `go test ./internal/app ./internal/providers -run 'ProviderSmoke|TextStream'`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git commit -m "feat: add streaming provider smoke timing"`
+Covered by accepted Provider Spine commits in the current integration baseline;
+do not create a duplicate stream-smoke commit from this stale task text.
 
 ### Task 4: Fast Companion Hybrid Boundary
 

@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `5e54eb9`.
+Last accepted integration commit before this ledger update: `4d356e7`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `5e54eb9 docs(control): accept promotion readiness review`.
+  `4d356e7 feat(providers): add provider reference profiles`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -38,7 +38,7 @@ defines policy; this ledger records the current queue and accepted state.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
-  `e55b652`, and `5e54eb9`.
+  `e55b652`, `5e54eb9`, and `4d356e7`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -59,6 +59,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` | Provider Spine text-stream parser coverage audit | `/Users/jiyurun/.codex/worktrees/9136/New project` | completed; no P0/P1 implementation gaps; no diff | T1/T2 | no |
 | `019e7bce-bacf-76e3-98f3-1e53fffe1377` | Promotion-readiness gate review | `/Users/jiyurun/.codex/worktrees/9f7f/New project` | completed; no P0/P1/P2 findings on `3ddcc45` | T0/T1 | no |
 | `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | completed; no P0/P1/P2 findings on `1872ca9` | T0/T1 | no |
 | `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | completed; committed `a031f3d` | T0/T1 | no |
@@ -89,6 +90,76 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Provider Spine Plan Reconciliation
+
+Accepted by the control tower as a governance correction after opening the
+Text Stream Parser follow-up thread.
+
+Evidence:
+
+- Current branch: `codex/a21-integration-governance-slices`.
+- Current HEAD before this ledger update:
+  `4d356e7 feat(providers): add provider reference profiles`.
+- Thread `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` was created for Task 2 of
+  `docs/superpowers/plans/2026-05-31-provider-spine-mainline.md`, then
+  corrected by the control tower after current-state inspection showed the
+  parser and streaming smoke already exist in the integration baseline.
+- Audit handoff branch: `codex/a21-provider-textstream-parser`.
+- Audit handoff HEAD: `4d356e7ca1ba`.
+- Audit handoff dirty files: none.
+- Audit handoff diff files: none.
+- Audit result: no P0/P1 implementation gaps for Task 2 or Task 3.
+- Existing files present in the current baseline:
+  `internal/providers/textstream.go`,
+  `internal/providers/textstream_client.go`,
+  `internal/providers/textstream_test.go`,
+  `internal/providers/smoke.go`, `internal/providers/smoke_test.go`, and
+  `internal/app/app.go`.
+- Current parser tests cover OpenAI-compatible `delta.content`,
+  `delta.reasoning`, `delta.reasoning_content`, `[DONE]`, redacted HTTP
+  errors, first-byte timing, and first-content timing that excludes reasoning
+  deltas.
+- Current provider-smoke tests cover `--stream`, `--repeat`, repeated
+  first-byte/first-content/total timing, fallback trace/metrics, report
+  redaction, and no provider execution unless `--execute` is set.
+- Control-tower verification passed:
+  `go test ./internal/providers -run TextStream -count=1`.
+- Control-tower verification passed:
+  `go test ./internal/app ./internal/providers -run 'ProviderSmoke|TextStream' -count=1`.
+- Control-tower verification passed: `make verify`.
+- Control-tower preflight passed: `go run ./cmd/a21 preflight`.
+- Control-tower doctor passed: `go run ./cmd/a21 doctor`, with the expected
+  warning that no release-ledger-validated A21 firmware artifact matches commit
+  `4d356e7ca1ba`.
+- Audit thread verification passed:
+  `go test ./internal/providers -run TextStream -count=1`.
+- Audit thread verification passed:
+  `go test ./internal/providers -run ProviderSmoke -count=1`.
+- Audit thread verification passed:
+  `go test ./internal/app -run RunProviderSmokeAcceptsStreamRepeatFlags -count=1`.
+- Audit thread verification passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke' -count=1`.
+- Audit thread verification passed:
+  `go test ./internal/app -run 'RunProviderSmoke|ProviderSmoke' -count=1`.
+- Audit thread verification passed: `go run ./cmd/a21 namespace-audit`.
+- Audit thread verification passed: `go run ./cmd/a21 preflight`.
+- Audit thread verification passed: `make verify`.
+- Audit thread `doctor` reported local-environment blockers in the isolated
+  worktree, including `reserved_port_in_use` for `127.0.0.1:21080`, while the
+  control-tower worktree doctor passed on the same integration commit.
+- The plan was reconciled so Task 2 and Task 3 are not treated as fresh
+  implementation work.
+- No provider execute, V21 execute, Gateway runtime, durable provider report,
+  NVS execute, flash execute, raw upload, serial write, app partition write,
+  `/v1/devices/control`, or physical device path was touched.
+
+Decision:
+
+- Keep thread `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` closed as a
+  coverage-audit thread, not a duplicate parser implementation thread.
+- No T4 provider execution window is needed for Task 2 or Task 3 coverage.
+- Continue Provider Spine from Task 4 or a new control-approved slice.
 
 ### Provider Spine Reference Profile Registry
 
@@ -635,11 +706,20 @@ Decision:
      V21 execute without control approval.
 
 3. Provider Spine / text-stream hot plug.
-   - Branch: `codex/a21-provider-spine-deepseek-textstream`.
-   - Status: accepted code slice at
+   - Accepted implementation branch:
+     `codex/a21-provider-spine-deepseek-textstream`.
+   - Accepted implementation status:
      `6b7fdf0 fix(providers): measure first content from content deltas`.
+   - Current integration registry extension:
+     `4d356e7 feat(providers): add provider reference profiles`.
+   - Completed audit thread:
+     `019e7bdf-a187-7f02-9cce-0f9d605ac9c9`.
+   - Completed audit worktree:
+     `/Users/jiyurun/.codex/worktrees/9136/New project`.
    - Max tier: T1/T2 by default. T4 only with explicit provider execution
      declaration, redaction check, and local env confirmation.
+   - Purpose: continue from Fast Companion Hybrid or a new control-approved
+     Provider Spine slice; Task 2/3 implementation is already covered.
    - Forbidden: provider keys in docs/reports/logs, provider URLs in firmware,
      hidden proxy inheritance, Baidu/Huawei expansion, provider execute without
      control approval, or turning A21 into an agent router.
