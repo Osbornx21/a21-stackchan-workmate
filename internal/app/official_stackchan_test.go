@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/runtimeguard"
 )
 
 func TestRunStackChanOfficialBaselinePlansFromCleanGitHead(t *testing.T) {
@@ -246,6 +247,7 @@ func TestRunStackChanOfficialAudioSmokeFlashExecuteRequiresConfirmationToken(t *
 }
 
 func TestRunStackChanOfficialAudioSmokeFlashExecuteRunsGuardedCommand(t *testing.T) {
+	allowA21ControlGuardForTest(t)
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
@@ -285,6 +287,9 @@ func TestRunStackChanOfficialAudioSmokeFlashExecuteRunsGuardedCommand(t *testing
 	}
 	if !strings.Contains(stdout.String(), `"flash_executed": true`) {
 		t.Fatalf("execution receipt missing flash_executed: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"control_guard"`) {
+		t.Fatalf("execution receipt missing control guard evidence: %s", stdout.String())
 	}
 }
 
@@ -424,7 +429,62 @@ func TestRunStackChanOfficialPCMBridgeNVSExecuteRequiresConfirmationToken(t *tes
 	}
 }
 
+func TestRunStackChanOfficialPCMBridgeNVSExecuteStopsWhenControlGuardBlocks(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalGuard := runA21ControlGuard
+	runA21ControlGuard = func(ctx context.Context, input runtimeguard.ControlGuardInput) runtimeguard.ControlGuardReport {
+		return runtimeguard.ControlGuardReport{
+			Command: input.Command,
+			Tier:    "T7",
+			Result: runtimeguard.NewResult([]runtimeguard.Finding{{
+				Code:     "control_hardware_window_branch_required",
+				Severity: runtimeguard.SeverityBlock,
+				Message:  "A21 hardware writes require a hardware-window branch",
+			}}),
+		}
+	}
+	defer func() {
+		runA21ControlGuard = originalGuard
+	}()
+	originalRunner := runStackChanOfficialPCMBridgeNVSCommand
+	var scripts []string
+	runStackChanOfficialPCMBridgeNVSCommand = func(ctx context.Context, logPath string, script string) error {
+		scripts = append(scripts, script)
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialPCMBridgeNVSCommand = originalRunner
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-nvs-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if len(scripts) != 0 {
+		t.Fatalf("scripts ran despite control guard block: %v", scripts)
+	}
+	if !strings.Contains(stderr.String(), "control_hardware_window_branch_required") {
+		t.Fatalf("stderr missing control guard finding: %s", stderr.String())
+	}
+}
+
 func TestRunStackChanOfficialPCMBridgeNVSExecuteRunsGuardedReadGenerateWriteFlow(t *testing.T) {
+	allowA21ControlGuardForTest(t)
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
@@ -491,6 +551,7 @@ func TestRunStackChanOfficialPCMBridgeNVSExecuteRunsGuardedReadGenerateWriteFlow
 		`"schema_version": "a21.stackchan.official_pcm_bridge_nvs_execution.v1"`,
 		`"write_allowed": true`,
 		`"write_executed": true`,
+		`"control_guard"`,
 		`"preserved_entry_count": 5`,
 		`"mutated_entry_count": 2`,
 		`"servo_calibration_present": true`,

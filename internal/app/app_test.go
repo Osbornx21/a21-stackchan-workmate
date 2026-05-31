@@ -4345,6 +4345,7 @@ func TestRunFirmwareBootstrapFlashExecuteRequiresConfirmationToken(t *testing.T)
 }
 
 func TestRunFirmwareBootstrapFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T) {
+	allowA21ControlGuardForTest(t)
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 		return firmwarecheck.PortUsage{Exists: true}, nil
@@ -4391,6 +4392,7 @@ func TestRunFirmwareBootstrapFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T
 		"firmware bootstrap flash executed",
 		`"schema_version": "a21.firmware.bootstrap_flash_execution.v1"`,
 		`"flash_executed": true`,
+		`"control_guard"`,
 		`"dry_run": false`,
 		`"port": "/dev/cu.usbmodemA21"`,
 	} {
@@ -4501,6 +4503,7 @@ func TestRunFirmwareMicProbeFlashExecuteRequiresConfirmationToken(t *testing.T) 
 }
 
 func TestRunFirmwareMicProbeFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T) {
+	allowA21ControlGuardForTest(t)
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 		return firmwarecheck.PortUsage{Exists: true}, nil
@@ -4552,6 +4555,7 @@ func TestRunFirmwareMicProbeFlashExecuteRunsEsptoolCommandWithPlan(t *testing.T)
 		"firmware mic probe flash executed",
 		`"schema_version": "a21.firmware.mic_probe_flash_execution.v1"`,
 		`"flash_executed": true`,
+		`"control_guard"`,
 		`"platformio_env": "a21_stackchan_cores3_mic_probe"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {

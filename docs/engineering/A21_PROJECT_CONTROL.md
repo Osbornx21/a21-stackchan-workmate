@@ -19,6 +19,10 @@ faster than the governance docs can catch up.
 - The official PCM bridge NVS-only lane may be reviewed and stabilized.
 - The official PCM bridge app flash-execute lane is blocked until an ADR,
   reviewed guard, and fresh verification approve it.
+- `go run ./cmd/a21 control-guard` is now the machine-readable control gate.
+  T7 execute paths consume it before hardware writes and write its branch,
+  commit, worktree, dirty-state, tier, and command evidence into execution
+  receipts.
 - No raw `pio upload`, `idf.py flash`, copied esptool command, or generic
   firmware path is allowed.
 
@@ -58,21 +62,26 @@ will touch before execution.
 | --- | --- | --- | --- |
 | T0 | Read-only inspection | `rg`, `git status`, `git diff`, `go list` | Always allowed in control/review threads |
 | T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `make verify` | Allowed when no hardware/service side effect is expected |
-| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `v21-adapter-smoke` without `--execute` | Reports must stay redacted |
+| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
 | T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
-| T4 | External/provider execution | `provider-smoke --execute`, `v21-adapter-smoke --execute` | Requires explicit env, redaction, no key in command output |
+| T4 | External/provider execution | `provider-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
 | T5 | Firmware build/package | `firmware-tools`, `firmware-test`, `firmware-build`, `firmware-package`, official StackChan build lanes | No physical writes; package requires clean worktree |
 | T6 | Physical validation commands | `stackchan-*acceptance`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
-| T7 | Physical writes | NVS execute, guarded flash execute, bootstrap/probe flash execute | One foreground thread only, exact confirmation token, explicit port |
-| T8 | Blocked until ADR | official PCM bridge app flash execute, raw upload, generic esptool/idf flash | Not allowed from normal threads |
+| T7 | Physical writes | `stackchan-official-pcm-bridge-nvs-execute`, `stackchan-official-audio-smoke-flash-execute`, `firmware-*-flash-execute` | One foreground thread only, exact confirmation token, explicit port, `control-guard` receipt |
+| T8 | Blocked until ADR | `stackchan-official-pcm-bridge-flash-execute`, raw `pio run -t upload`, raw `idf.py flash`, copied `esptool write_flash` | Not allowed from normal threads |
 
 T7/T8 rules:
 
 - No background Codex thread may run hardware-write commands.
-- No hardware write may run while another A21 thread is active in the same
-  worktree.
+- No hardware write may run while another A21 thread is active in any A21
+  worktree for the same repository.
+- T7 commands must run from a clean `codex/a21-hardware-window-*` branch.
+- T7 commands must not run from detached HEAD or from `.codex/worktrees`
+  background worktrees.
 - The command must identify the artifact, branch, commit, port, device ID, and
   expected report path before execution.
+- The execution report must include a `control_guard` object proving command,
+  tier, branch, commit, worktree path, detached/dirty state, and guard result.
 - The operator must preserve NVS calibration and report whether servo
   calibration was present.
 - After execution, the device must be returned to an honest idle or safe state,
@@ -92,7 +101,8 @@ Codex threads are treated as project actors.
 
 Rules:
 
-- Only one thread may edit `/Users/jiyurun/Documents/New project` at a time.
+- Only one write-capable thread may edit any A21 worktree for this repository
+  at a time.
 - If two active threads target the same worktree, the control tower pauses the
   non-control thread before editing.
 - A thread must state its branch, dirty files, intended files, highest tool
@@ -143,11 +153,11 @@ Stop and return to the control tower if any of these happen:
 
 To resume the paused main execution thread:
 
-1. The control branch must be green on `go test ./...`, `git diff --check`, and
-   `go run ./cmd/a21 namespace-audit`.
+1. The control branch must be green on `go test ./...`, `git diff --check`,
+   `go run ./cmd/a21 namespace-audit`, `make verify`,
+   `go run ./cmd/a21 preflight`, and `go run ./cmd/a21 doctor`.
 2. Dirty files must be classified and either committed, intentionally left as a
    narrow working set, or moved to a new branch.
 3. The resumed thread receives a single-slice prompt with forbidden actions.
 4. If hardware writes are needed, create a hardware-window branch/thread and do
    not run it in the background.
-

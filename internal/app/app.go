@@ -36,6 +36,7 @@ var detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, 
 }
 
 var runFirmwareBootstrapFlashCommand = runFirmwareBootstrapFlashCommandExec
+var runA21ControlGuard = runA21ControlGuardExec
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
 var runSherpaONNXASR = audio.RunSherpaONNXASR
@@ -76,6 +77,7 @@ type firmwareBootstrapFlashExecutionReport struct {
 	GeneratedAtMS  int64                                  `json:"generated_at_ms"`
 	DryRun         bool                                   `json:"dry_run"`
 	FlashExecuted  bool                                   `json:"flash_executed"`
+	ControlGuard   *runtimeguard.ControlGuardReport       `json:"control_guard,omitempty"`
 	Port           string                                 `json:"port"`
 	ArtifactPath   string                                 `json:"artifact_path"`
 	ArtifactSHA256 string                                 `json:"artifact_sha256"`
@@ -90,6 +92,7 @@ type firmwareMicProbeFlashExecutionReport struct {
 	GeneratedAtMS  int64                                 `json:"generated_at_ms"`
 	DryRun         bool                                  `json:"dry_run"`
 	FlashExecuted  bool                                  `json:"flash_executed"`
+	ControlGuard   *runtimeguard.ControlGuardReport      `json:"control_guard,omitempty"`
 	Port           string                                `json:"port"`
 	ArtifactPath   string                                `json:"artifact_path"`
 	ArtifactSHA256 string                                `json:"artifact_sha256"`
@@ -105,6 +108,7 @@ type firmwareIMUProbeFlashExecutionReport struct {
 	GeneratedAtMS  int64                                 `json:"generated_at_ms"`
 	DryRun         bool                                  `json:"dry_run"`
 	FlashExecuted  bool                                  `json:"flash_executed"`
+	ControlGuard   *runtimeguard.ControlGuardReport      `json:"control_guard,omitempty"`
 	Port           string                                `json:"port"`
 	ArtifactPath   string                                `json:"artifact_path"`
 	ArtifactSHA256 string                                `json:"artifact_sha256"`
@@ -120,6 +124,7 @@ type firmwareSensorProbeFlashExecutionReport struct {
 	GeneratedAtMS  int64                                    `json:"generated_at_ms"`
 	DryRun         bool                                     `json:"dry_run"`
 	FlashExecuted  bool                                     `json:"flash_executed"`
+	ControlGuard   *runtimeguard.ControlGuardReport         `json:"control_guard,omitempty"`
 	Port           string                                   `json:"port"`
 	ArtifactPath   string                                   `json:"artifact_path"`
 	ArtifactSHA256 string                                   `json:"artifact_sha256"`
@@ -165,6 +170,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "namespace-audit":
 		return runNamespaceAudit(stdout, stderr)
+	case "control-guard":
+		return runControlGuard(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
@@ -228,7 +235,13 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "stackchan-official-pcm-bridge-flash-plan":
 		return runStackChanOfficialPCMBridgeFlashPlan(args[1:], stdout, stderr)
 	case "stackchan-official-pcm-bridge-flash-execute":
-		fmt.Fprintln(stderr, "stackchan official pcm bridge app flash execute is blocked; write an ADR and add a reviewed execute guard before app partition writes are allowed")
+		report := runA21ControlGuard(context.Background(), runtimeguard.ControlGuardInput{
+			Config:  runtimeguard.DefaultConfig(),
+			Command: "stackchan-official-pcm-bridge-flash-execute",
+			Env:     os.Environ(),
+			Runner:  runtimeguard.OSRunner{},
+		})
+		fmt.Fprintf(stderr, "stackchan official pcm bridge app flash execute is blocked by A21 control guard (%s); write an ADR and add a reviewed execute guard before app partition writes are allowed\n", summarizeControlFindings(report.Result.Findings))
 		return 2
 	case "stackchan-official-pcm-bridge-nvs-plan":
 		return runStackChanOfficialPCMBridgeNVS(args[1:], false, stdout, stderr)
@@ -274,6 +287,116 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+}
+
+func runA21ControlGuardExec(ctx context.Context, input runtimeguard.ControlGuardInput) runtimeguard.ControlGuardReport {
+	if input.Config.ProjectName == "" {
+		input.Config = runtimeguard.DefaultConfig()
+	}
+	if strings.TrimSpace(input.CWD) == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			input.CWD = cwd
+		}
+	}
+	if input.Runner == nil {
+		input.Runner = runtimeguard.OSRunner{}
+	}
+	return runtimeguard.EvaluateControlGuard(ctx, input)
+}
+
+func runControlGuard(args []string, stdout io.Writer, stderr io.Writer) int {
+	input := runtimeguard.ControlGuardInput{
+		Config: runtimeguard.DefaultConfig(),
+		Env:    os.Environ(),
+		Runner: runtimeguard.OSRunner{},
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 control-guard --command <a21-command-or-command-with-flags> [--tier T0|T1|T2|T3|T4|T5|T6|T7|T8] [--cwd <path>]")
+			return 0
+		case "--command":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--command requires a value")
+				return 2
+			}
+			i++
+			input.Command = args[i]
+		case "--tier":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--tier requires a value")
+				return 2
+			}
+			i++
+			input.Tier = args[i]
+		case "--cwd":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--cwd requires a value")
+				return 2
+			}
+			i++
+			input.CWD = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown control-guard option %q\n", args[i])
+			return 2
+		}
+	}
+	if strings.TrimSpace(input.Command) == "" {
+		fmt.Fprintln(stderr, "--command requires a value")
+		return 2
+	}
+	report := runA21ControlGuard(context.Background(), input)
+	if err := writeJSONControlGuard(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode control guard report: %v\n", err)
+		return 1
+	}
+	if !report.Result.OK {
+		return 1
+	}
+	return 0
+}
+
+func ensureA21ControlAllowed(command string, stderr io.Writer) int {
+	_, code := requireA21ControlAllowed(command, stderr)
+	return code
+}
+
+func requireA21ControlAllowed(command string, stderr io.Writer) (runtimeguard.ControlGuardReport, int) {
+	report := runA21ControlGuard(context.Background(), runtimeguard.ControlGuardInput{
+		Config:  runtimeguard.DefaultConfig(),
+		Command: command,
+		Env:     os.Environ(),
+		Runner:  runtimeguard.OSRunner{},
+	})
+	if report.Result.OK {
+		return report, 0
+	}
+	fmt.Fprintf(stderr, "a21 control guard blocked %s at %s: %s\n", report.Command, report.Tier, summarizeControlFindings(report.Result.Findings))
+	return report, 1
+}
+
+func summarizeControlFindings(findings []runtimeguard.Finding) string {
+	parts := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Severity != runtimeguard.SeverityBlock {
+			continue
+		}
+		if finding.Detail != "" {
+			parts = append(parts, finding.Code+"="+finding.Detail)
+		} else {
+			parts = append(parts, finding.Code)
+		}
+	}
+	if len(parts) == 0 {
+		return "unknown control guard block"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func writeJSONControlGuard(writer io.Writer, report runtimeguard.ControlGuardReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
 }
 
 func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -8654,6 +8777,10 @@ func runFirmwareBootstrapFlashExecute(args []string, stdout io.Writer, stderr io
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_FIRMWARE is required")
 		return 2
 	}
+	controlGuard, code := requireA21ControlAllowed("firmware-bootstrap-flash-execute", stderr)
+	if code != 0 {
+		return code
+	}
 	plan, code := buildFirmwareBootstrapFlashPlanFromCLI(options, "", stderr)
 	if code != 0 {
 		return code
@@ -8672,6 +8799,7 @@ func runFirmwareBootstrapFlashExecute(args []string, stdout io.Writer, stderr io
 		GeneratedAtMS:  time.Now().UnixMilli(),
 		DryRun:         false,
 		FlashExecuted:  true,
+		ControlGuard:   &controlGuard,
 		Port:           plan.Port,
 		ArtifactPath:   plan.ArtifactPath,
 		ArtifactSHA256: plan.ArtifactSHA256,
@@ -8857,6 +8985,10 @@ func runFirmwareMicProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_MIC_PROBE_FIRMWARE is required")
 		return 2
 	}
+	controlGuard, code := requireA21ControlAllowed("firmware-mic-probe-flash-execute", stderr)
+	if code != 0 {
+		return code
+	}
 	plan, code := buildFirmwareMicProbeFlashPlanFromCLI(options, "", stderr)
 	if code != 0 {
 		return code
@@ -8875,6 +9007,7 @@ func runFirmwareMicProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 		GeneratedAtMS:  time.Now().UnixMilli(),
 		DryRun:         false,
 		FlashExecuted:  true,
+		ControlGuard:   &controlGuard,
 		Port:           plan.Port,
 		ArtifactPath:   plan.ArtifactPath,
 		ArtifactSHA256: plan.ArtifactSHA256,
@@ -9061,6 +9194,10 @@ func runFirmwareIMUProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_IMU_PROBE_FIRMWARE is required")
 		return 2
 	}
+	controlGuard, code := requireA21ControlAllowed("firmware-imu-probe-flash-execute", stderr)
+	if code != 0 {
+		return code
+	}
 	plan, code := buildFirmwareIMUProbeFlashPlanFromCLI(options, "", stderr)
 	if code != 0 {
 		return code
@@ -9079,6 +9216,7 @@ func runFirmwareIMUProbeFlashExecute(args []string, stdout io.Writer, stderr io.
 		GeneratedAtMS:  time.Now().UnixMilli(),
 		DryRun:         false,
 		FlashExecuted:  true,
+		ControlGuard:   &controlGuard,
 		Port:           plan.Port,
 		ArtifactPath:   plan.ArtifactPath,
 		ArtifactSHA256: plan.ArtifactSHA256,
@@ -9265,6 +9403,10 @@ func runFirmwareSensorProbeFlashExecute(args []string, stdout io.Writer, stderr 
 		fmt.Fprintln(stderr, "--confirm WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE is required")
 		return 2
 	}
+	controlGuard, code := requireA21ControlAllowed("firmware-sensor-probe-flash-execute", stderr)
+	if code != 0 {
+		return code
+	}
 	plan, code := buildFirmwareSensorProbeFlashPlanFromCLI(options, "", stderr)
 	if code != 0 {
 		return code
@@ -9283,6 +9425,7 @@ func runFirmwareSensorProbeFlashExecute(args []string, stdout io.Writer, stderr 
 		GeneratedAtMS:  time.Now().UnixMilli(),
 		DryRun:         false,
 		FlashExecuted:  true,
+		ControlGuard:   &controlGuard,
 		Port:           plan.Port,
 		ArtifactPath:   plan.ArtifactPath,
 		ArtifactSHA256: plan.ArtifactSHA256,

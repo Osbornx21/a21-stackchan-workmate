@@ -174,7 +174,8 @@ Rules:
 - the app artifact must be `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000` in `flash_args`;
 - the bridge reads only `a21/device_id` and `a21/audio_ws_url` from NVS; it does not embed Wi-Fi credentials, provider keys, Gateway IPs, proxy URLs, or V21/X21 identity;
 - `stackchan-official-pcm-bridge-nvs-plan` is no-write and records the NVS partition offset `0x9000`, size `0x4000`, redacted audio websocket fields, and the exact confirmation required for execution;
-- `stackchan-official-pcm-bridge-nvs-execute` first backs up the existing NVS partition, parses it with ESP-IDF `nvs_tool.py`, regenerates a partition with `nvs_partition_gen.py`, preserves existing entries including calibration, mutates only `a21/device_id` and `a21/audio_ws_url`, then writes only the NVS partition back to `0x9000`;
+- `stackchan-official-pcm-bridge-nvs-execute` first passes `a21 control-guard`, which rejects detached HEAD, background Codex worktrees, dirty trees, and branches outside `codex/a21-hardware-window-*`; only then does it back up the existing NVS partition, parse it with ESP-IDF `nvs_tool.py`, regenerate a partition with `nvs_partition_gen.py`, preserve existing entries including calibration, mutate only `a21/device_id` and `a21/audio_ws_url`, then write only the NVS partition back to `0x9000`;
+- every NVS or flash execution receipt must include the `control_guard` evidence object so later review can prove branch, commit, worktree, dirty-state, and tier;
 - NVS run artifacts live under `.a21-run/` and are intentionally gitignored because they may contain Wi-Fi or historical device secrets; reports must remain value-redacted;
 - the flash-plan receipt validates the bridge artifact and USB serial port, but stores only the audio websocket scheme, host, path, and `device_id` query presence instead of the full URL;
 - when `a21/audio_ws_url` is missing, the device must stay on a black A21 status screen and remain silent;

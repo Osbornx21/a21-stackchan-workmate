@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"a21.local/a21/internal/runtimeguard"
 )
 
 const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
@@ -133,6 +135,7 @@ type stackChanOfficialSmokeFlashReport struct {
 	DryRun                   bool                               `json:"dry_run"`
 	FlashAllowed             bool                               `json:"flash_allowed"`
 	FlashExecuted            bool                               `json:"flash_executed"`
+	ControlGuard             *runtimeguard.ControlGuardReport   `json:"control_guard,omitempty"`
 	Port                     string                             `json:"port"`
 	BuildDir                 string                             `json:"build_dir"`
 	IDFExport                string                             `json:"idf_export"`
@@ -167,6 +170,7 @@ type stackChanOfficialPCMBridgeNVSReport struct {
 	DryRun                   bool                                   `json:"dry_run"`
 	WriteAllowed             bool                                   `json:"write_allowed"`
 	WriteExecuted            bool                                   `json:"write_executed"`
+	ControlGuard             *runtimeguard.ControlGuardReport       `json:"control_guard,omitempty"`
 	Port                     string                                 `json:"port"`
 	IDFExport                string                                 `json:"idf_export"`
 	RunDir                   string                                 `json:"run_dir"`
@@ -394,16 +398,25 @@ func runStackChanOfficialAudioSmokeFlash(args []string, execute bool, stdout io.
 		}
 	}
 
+	var controlGuard runtimeguard.ControlGuardReport
 	if execute {
 		if options.Confirm != stackChanOfficialAudioSmokeFlashConfirm {
 			fmt.Fprintf(stderr, "stackchan official audio smoke flash requires --confirm %s\n", stackChanOfficialAudioSmokeFlashConfirm)
 			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-audio-smoke-flash-execute", stderr)
+		if code != 0 {
+			return code
 		}
 	}
 	report, err := buildStackChanOfficialSmokeFlashReport(options)
 	if err != nil {
 		fmt.Fprintf(stderr, "stackchan official audio smoke flash: %v\n", err)
 		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
 	}
 	if execute {
 		if err := executeStackChanOfficialSmokeFlash(context.Background(), options, &report); err != nil {
@@ -598,14 +611,25 @@ func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Wri
 		}
 	}
 
-	if execute && options.Confirm != stackChanOfficialPCMBridgeNVSConfirm {
-		fmt.Fprintf(stderr, "stackchan official pcm bridge nvs execute requires --confirm %s\n", stackChanOfficialPCMBridgeNVSConfirm)
-		return 2
+	var controlGuard runtimeguard.ControlGuardReport
+	if execute {
+		if options.Confirm != stackChanOfficialPCMBridgeNVSConfirm {
+			fmt.Fprintf(stderr, "stackchan official pcm bridge nvs execute requires --confirm %s\n", stackChanOfficialPCMBridgeNVSConfirm)
+			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-nvs-execute", stderr)
+		if code != 0 {
+			return code
+		}
 	}
 	report, err := buildStackChanOfficialPCMBridgeNVSReport(options)
 	if err != nil {
 		fmt.Fprintf(stderr, "stackchan official pcm bridge nvs: %v\n", err)
 		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
 	}
 	if execute {
 		if err := executeStackChanOfficialPCMBridgeNVS(context.Background(), options, &report); err != nil {
