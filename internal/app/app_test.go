@@ -928,6 +928,32 @@ func TestRunProviderLatencyBenchFixtureRedactsFixturePath(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchHostLoopbackUsesCanonicalMode(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--iterations", "1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"execution_mode": "host_loopback"`) {
+		t.Fatalf("stdout missing canonical host_loopback mode: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "host_baseline") {
+		t.Fatalf("stdout contains deprecated host_baseline mode: %s", stdout.String())
+	}
+}
+
+func TestRunProviderLatencyBenchRejectsDeprecatedHostBaselineMode(t *testing.T) {
+	var stderr bytes.Buffer
+	code := Run([]string{"provider-latency-bench", "--mode", "host_baseline"}, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "--mode must be mock, fixture, or host_loopback") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunProviderLatencyBenchRejectsExecute(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"provider-latency-bench", "--execute"}, &bytes.Buffer{}, &stderr)

@@ -111,7 +111,7 @@ func runProviderLatencyBench(args []string, stdout io.Writer, stderr io.Writer) 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 provider-latency-bench [--provider <provider>] [--fixture <path>] [--mode mock|fixture|host_baseline] [--iterations 5] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 provider-latency-bench [--provider <provider>] [--fixture <path>] [--mode mock|fixture|host_loopback] [--iterations 5] [--output-dir reports]")
 			return 0
 		case "--provider":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -203,7 +203,7 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 	}
 	mode := normalizeProviderLatencyBenchMode(options.ExecutionMode, options.FixturePath)
 	if mode == "" {
-		return providerLatencyBenchReport{}, fmt.Errorf("--mode must be mock, fixture, or host_baseline")
+		return providerLatencyBenchReport{}, fmt.Errorf("--mode must be mock, fixture, or host_loopback")
 	}
 	iterations := options.Iterations
 	if iterations <= 0 {
@@ -266,8 +266,8 @@ func normalizeProviderLatencyBenchMode(mode string, fixturePath string) string {
 	switch normalized {
 	case "mock", "fixture":
 		return normalized
-	case "host_baseline", "host-only", "host_only", "host-only-baseline":
-		return "host_baseline"
+	case "host_loopback", "host-loopback":
+		return "host_loopback"
 	default:
 		return ""
 	}
@@ -279,7 +279,7 @@ func buildProviderLatencyBenchSamples(iterations int, mode string) []providerLat
 	switch mode {
 	case "fixture":
 		modeOffset = 7
-	case "host_baseline":
+	case "host_loopback":
 		modeOffset = 3
 	}
 	for i := 0; i < iterations; i++ {

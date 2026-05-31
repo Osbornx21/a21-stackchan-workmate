@@ -134,7 +134,7 @@ Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineerin
 
 `provider-latency-bench` now exists as a mock/fixture scaffold for the shared
 candidate-chain report. It accepts `--provider`, `--fixture`, `--mode
-mock|fixture|host_baseline`, `--iterations`, and `--output-dir`, but it
+mock|fixture|host_loopback`, `--iterations`, and `--output-dir`, but it
 intentionally rejects `--execute`. The report includes A21 trace/session/device
 IDs, provider profile/family/protocol labels, redacted network/proxy metadata,
 ASR/provider/TTS/downlink/device/barge-in placeholder timings, p50/p95/p99
