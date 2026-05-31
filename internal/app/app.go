@@ -892,7 +892,7 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 		var err error
 		report, err = audio.RunFrontEndEvalFromFixture(fixturePath)
 		if err != nil {
-			fmt.Fprintf(stderr, "audio front-end fixture eval failed: %v\n", err)
+			fmt.Fprintf(stderr, "audio front-end fixture eval failed for %s: %s\n", filepath.Base(fixturePath), redactAudioFrontEndFixtureEvalError(fixturePath, err))
 			return 1
 		}
 	}
@@ -914,6 +914,22 @@ func runAudioFrontEndEval(args []string, stdout io.Writer, stderr io.Writer) int
 		return 1
 	}
 	return 0
+}
+
+func redactAudioFrontEndFixtureEvalError(path string, err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if path == "" {
+		return message
+	}
+	message = strings.ReplaceAll(message, path, filepath.Base(path))
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		message = strings.ReplaceAll(message, dir, "[redacted-dir]")
+	}
+	return message
 }
 
 func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {

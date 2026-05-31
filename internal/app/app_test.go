@@ -2993,6 +2993,27 @@ func TestRunAudioFrontEndEvalFixtureReportsQualityMetrics(t *testing.T) {
 	}
 }
 
+func TestRunAudioFrontEndEvalFixtureReadErrorRedactsFullPath(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-secret-fixture-missing.json")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"audio-front-end-eval", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), filepath.Base(fixture)) {
+		t.Fatalf("stderr missing fixture basename: %s", stderr.String())
+	}
+	for _, forbidden := range []string{fixture, dir} {
+		if strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("stderr leaked full fixture path %q: %s", forbidden, stderr.String())
+		}
+	}
+}
+
 func TestRunAudioFrontEndEvalWritesReportArtifact(t *testing.T) {
 	dir := t.TempDir()
 	var stdout bytes.Buffer
