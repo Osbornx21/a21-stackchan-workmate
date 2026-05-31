@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `819fe8b`.
+Last accepted integration commit before this ledger update: `22c90ae`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `819fe8b docs(control): track fast companion post review`.
+  `22c90ae fix(gateway): use local ASR timing in fast companion trace`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -40,7 +40,7 @@ defines policy; this ledger records the current queue and accepted state.
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
   `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
   `193a1f3`; Task 4 acceptance is `7af0259`, and post-commit review tracking
-  is `819fe8b`.
+  is `819fe8b`; the Task 4 trace-fidelity P2 fix is `22c90ae`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -253,6 +253,46 @@ Decision:
 - Accept the post-commit review and close its P2 finding in the control branch.
 - Do not open a Task 5 execution window from the review thread; Task 5 remains
   under control-tower authorization.
+
+### Provider Spine Task 5 Verification
+
+Accepted by the control tower after closing the Fast Companion Hybrid
+trace-fidelity P2 at `22c90ae`.
+
+Evidence:
+
+- Verification branch: `codex/a21-integration-governance-slices`.
+- Verification HEAD: `22c90ae fix(gateway): use local ASR timing in fast
+  companion trace`.
+- Worktree status before doc update: clean.
+- Verification passed: `make verify`.
+- Verification passed: `go run ./cmd/a21 preflight`.
+- Verification passed: `go run ./cmd/a21 doctor`, with the expected
+  `firmware_current_artifact_missing` warning for commit `22c90aecc381`.
+- Verification passed without provider execution:
+  `go run ./cmd/a21 provider-smoke --provider deepseek` returned `skipped`,
+  `configured=false`, `executed=false`, and missing
+  `A21_LAB_DEEPSEEK_API_KEY`.
+- Verification passed without provider execution:
+  `go run ./cmd/a21 provider-smoke --provider bailian_dashscope` returned
+  `skipped`, `configured=false`, `executed=false`, and missing
+  `A21_DASHSCOPE_API_KEY` plus `A21_DASHSCOPE_MODEL`.
+- Namespace verification passed: `make namespace-audit`.
+- Firmware status check: `git status --short --branch` showed a clean
+  `codex/a21-integration-governance-slices` worktree before this docs update;
+  no firmware artifacts were created or modified by Task 5.
+- No provider/V21 execute, Gateway runtime startup, firmware/NVS/flash/serial
+  writes, `/v1/devices/control`, durable provider report, or physical device
+  path was used.
+
+Decision:
+
+- Mark Provider Spine Task 5 complete for the dry-run verification scope
+  authorized by the current plan.
+- Keep external promotion closed until a git remote and explicit target branch
+  exist.
+- Keep real provider/V21 execution as a separate T4 window requiring explicit
+  env, redaction, and control-guard authorization.
 
 ### Provider Spine Plan Reconciliation
 

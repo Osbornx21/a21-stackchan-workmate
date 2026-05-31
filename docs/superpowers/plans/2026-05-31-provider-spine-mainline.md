@@ -152,10 +152,16 @@ Run: `git commit -m "feat(gateway): add fast companion hybrid boundary"`
 
 ### Task 5: Verification
 
+**Control acceptance, 2026-05-31:** The control tower completed Provider Spine
+verification after the Fast Companion Hybrid trace-fidelity follow-up at
+`22c90ae`. Provider smoke checks were dry-run only and did not execute provider
+network calls because the required provider env vars are absent. Firmware was
+not touched.
+
 **Files:**
 - Modify only docs needed by the previous tasks.
 
-- [ ] **Step 1: Run full verification**
+- [x] **Step 1: Run full verification**
 
 Run:
 
@@ -167,14 +173,14 @@ go run ./cmd/a21 provider-smoke --provider deepseek
 go run ./cmd/a21 provider-smoke --provider bailian_dashscope
 ```
 
-- [ ] **Step 2: Check namespace**
+- [x] **Step 2: Check namespace**
 
 Run: `make namespace-audit`
 
-- [ ] **Step 3: Confirm no firmware artifacts changed unless a firmware task ran**
+- [x] **Step 3: Confirm no firmware artifacts changed unless a firmware task ran**
 
 Run: `git status --short`
 
-- [ ] **Step 4: Commit verification doc updates**
+- [x] **Step 4: Commit verification doc updates**
 
-Run: `git commit -m "docs: record provider spine verification"`
+Run: `git commit -m "docs(control): record provider spine verification"`
