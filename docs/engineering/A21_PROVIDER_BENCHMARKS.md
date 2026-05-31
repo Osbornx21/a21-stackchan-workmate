@@ -93,9 +93,15 @@ This scaffold does not execute real providers, V21, Gateway runtime services, or
 physical StackChan paths. It emits A21-owned `trace_id`, `session_id`,
 `device_id=none_host_fixture`, provider profile/family labels, redacted
 network/proxy metadata, stage waterfall placeholders, p50/p95/p99 summaries,
-fallback/failure counts, and `promotion_gate=not_production`. Reports must not
-store prompt text, transcript text, provider output, provider reasoning, key
-values, full provider URLs, proxy URLs, or full local fixture paths.
+fallback/failure counts, and `promotion_gate=not_production`. When `--fixture`
+points at a redacted JSON sidecar, the report may include
+`schema_version=a21.provider_latency_fixture.v1`, fixture identity, audio
+format, sample rate, channel count, duration, sample count, window length, and
+window count. The report stores only the fixture basename. Invalid or unsafe
+sidecars produce structured redacted findings instead of panics or raw errors.
+Reports must not store prompt text, transcript text, provider output, provider
+reasoning, raw PCM, base64 audio, key values, full provider URLs, proxy URLs, or
+full local fixture paths.
 
 Until a later T4/T6 window adds real measurements, provider comparisons must
 cite this scaffold only as report-shape evidence and must list unmeasured real

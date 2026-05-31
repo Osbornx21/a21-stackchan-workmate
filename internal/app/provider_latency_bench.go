@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 )
 
 const providerLatencyBenchSchemaVersion = "a21.provider_latency_bench.v1"
+const providerLatencyFixtureSchemaVersion = "a21.provider_latency_fixture.v1"
+const providerLatencyFixtureSidecarMaxBytes = 64 * 1024
 
 type providerLatencyBenchReport struct {
 	SchemaVersion string                        `json:"schema_version"`
@@ -33,6 +36,7 @@ type providerLatencyBenchReport struct {
 	PromotionGate string                        `json:"promotion_gate"`
 	Execution     providerLatencyBenchExecution `json:"execution"`
 	Redaction     providerLatencyBenchRedaction `json:"redaction"`
+	Findings      []providerLatencyBenchFinding `json:"findings,omitempty"`
 	ReportPath    string                        `json:"report_path,omitempty"`
 }
 
@@ -49,8 +53,38 @@ type providerLatencyBenchProvider struct {
 }
 
 type providerLatencyBenchFixture struct {
-	FixtureID string `json:"fixture_id"`
-	Stored    bool   `json:"stored"`
+	FixtureID string                               `json:"fixture_id"`
+	Stored    bool                                 `json:"stored"`
+	Metadata  *providerLatencyBenchFixtureMetadata `json:"metadata,omitempty"`
+}
+
+type providerLatencyBenchFixtureMetadata struct {
+	SchemaVersion string                                    `json:"schema_version"`
+	Identity      string                                    `json:"identity"`
+	Audio         providerLatencyBenchFixtureAudioMetadata  `json:"audio"`
+	Sample        providerLatencyBenchFixtureSampleMetadata `json:"sample"`
+	Window        providerLatencyBenchFixtureWindowMetadata `json:"window"`
+}
+
+type providerLatencyBenchFixtureAudioMetadata struct {
+	Format       string `json:"format"`
+	SampleRateHz int    `json:"sample_rate_hz"`
+	Channels     int    `json:"channels"`
+	DurationMS   int    `json:"duration_ms"`
+}
+
+type providerLatencyBenchFixtureSampleMetadata struct {
+	SampleCount int `json:"sample_count"`
+}
+
+type providerLatencyBenchFixtureWindowMetadata struct {
+	WindowMS    int `json:"window_ms"`
+	WindowCount int `json:"window_count"`
+}
+
+type providerLatencyBenchFinding struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type providerLatencyBenchSample struct {
@@ -245,14 +279,142 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 		},
 	}
 	if options.FixturePath != "" {
+		fixtureMetadata, fixtureFindings := loadProviderLatencyBenchFixtureMetadata(options.FixturePath)
 		report.Fixture = &providerLatencyBenchFixture{
 			FixtureID: filepath.Base(options.FixturePath),
 			Stored:    false,
+			Metadata:  fixtureMetadata,
 		}
+		report.Findings = append(report.Findings, fixtureFindings...)
 	}
 	report.Samples = buildProviderLatencyBenchSamples(iterations, mode)
 	report.Summary = summarizeProviderLatencyBenchSamples(report.Samples)
+	report.Counts.FailureCount = len(report.Findings)
 	return report, nil
+}
+
+type providerLatencyBenchFixtureSidecar struct {
+	SchemaVersion string                                    `json:"schema_version"`
+	Identity      string                                    `json:"identity"`
+	Audio         providerLatencyBenchFixtureAudioMetadata  `json:"audio"`
+	Sample        providerLatencyBenchFixtureSampleMetadata `json:"sample"`
+	Window        providerLatencyBenchFixtureWindowMetadata `json:"window"`
+}
+
+func loadProviderLatencyBenchFixtureMetadata(fixturePath string) (*providerLatencyBenchFixtureMetadata, []providerLatencyBenchFinding) {
+	if strings.ToLower(filepath.Ext(fixturePath)) != ".json" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	if len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	var sidecar providerLatencyBenchFixtureSidecar
+	decoder = json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&sidecar); err != nil {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	if !validProviderLatencyFixtureSidecar(sidecar) {
+		return nil, []providerLatencyBenchFinding{invalidProviderLatencyFixtureFinding()}
+	}
+	metadata := providerLatencyBenchFixtureMetadata{
+		SchemaVersion: providerLatencyFixtureSchemaVersion,
+		Identity:      strings.TrimSpace(sidecar.Identity),
+		Audio: providerLatencyBenchFixtureAudioMetadata{
+			Format:       strings.ToLower(strings.TrimSpace(sidecar.Audio.Format)),
+			SampleRateHz: sidecar.Audio.SampleRateHz,
+			Channels:     sidecar.Audio.Channels,
+			DurationMS:   sidecar.Audio.DurationMS,
+		},
+		Sample: sidecar.Sample,
+		Window: sidecar.Window,
+	}
+	return &metadata, nil
+}
+
+func invalidProviderLatencyFixtureFinding() providerLatencyBenchFinding {
+	return providerLatencyBenchFinding{
+		Code:    "fixture_sidecar_invalid",
+		Message: "fixture metadata sidecar is invalid or unsafe",
+	}
+}
+
+func validProviderLatencyFixtureSidecar(sidecar providerLatencyBenchFixtureSidecar) bool {
+	if sidecar.SchemaVersion != providerLatencyFixtureSchemaVersion {
+		return false
+	}
+	if !safeProviderLatencyFixtureString(sidecar.Identity) || strings.TrimSpace(sidecar.Identity) == "" {
+		return false
+	}
+	if !safeProviderLatencyFixtureString(sidecar.Audio.Format) || strings.TrimSpace(sidecar.Audio.Format) == "" {
+		return false
+	}
+	return sidecar.Audio.SampleRateHz > 0 &&
+		sidecar.Audio.Channels > 0 &&
+		sidecar.Audio.DurationMS > 0 &&
+		sidecar.Sample.SampleCount > 0 &&
+		sidecar.Window.WindowMS > 0 &&
+		sidecar.Window.WindowCount > 0
+}
+
+func safeProviderLatencyFixtureString(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if strings.Contains(trimmed, "://") ||
+		strings.Contains(trimmed, "/") ||
+		strings.Contains(trimmed, "\\") ||
+		strings.Contains(trimmed, "..") {
+		return false
+	}
+	return true
+}
+
+func providerLatencyFixtureContainsForbiddenKey(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if forbiddenProviderLatencyFixtureKey(key) || providerLatencyFixtureContainsForbiddenKey(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if providerLatencyFixtureContainsForbiddenKey(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func forbiddenProviderLatencyFixtureKey(key string) bool {
+	normalized := strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(key)))
+	switch normalized {
+	case "raw_pcm", "raw_audio", "pcm_bytes", "data_base64", "audio_base64", "base64_audio",
+		"prompt", "transcript", "provider_output", "reasoning", "credential_values",
+		"api_key", "access_token", "token", "full_url", "url", "proxy_url", "local_path", "path":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeProviderLatencyBenchMode(mode string, fixturePath string) string {

@@ -928,6 +928,161 @@ func TestRunProviderLatencyBenchFixtureRedactsFixturePath(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchFixtureReadsRedactedAudioMetadataSidecar(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-redacted-audio-fixture.json")
+	data := `{
+  "schema_version": "a21.provider_latency_fixture.v1",
+  "identity": "a21_fixture_alpha",
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "duration_ms": 1200
+  },
+  "sample": {
+    "sample_count": 19200
+  },
+  "window": {
+    "window_ms": 20,
+    "window_count": 60
+  }
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", fixture, "--iterations", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"execution_mode": "fixture"`,
+		`"fixture_id": "a21-redacted-audio-fixture.json"`,
+		`"schema_version": "a21.provider_latency_fixture.v1"`,
+		`"identity": "a21_fixture_alpha"`,
+		`"format": "pcm_s16le"`,
+		`"sample_rate_hz": 16000`,
+		`"channels": 1`,
+		`"duration_ms": 1200`,
+		`"sample_count": 19200`,
+		`"window_ms": 20`,
+		`"window_count": 60`,
+		`"failure_count": 0`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{dir, "raw_pcm", "data_base64", "prompt", "transcript", "provider output", "reasoning", "http://"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchFixtureReportsInvalidSidecarWithoutPayloadLeak(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-invalid-audio-fixture.json")
+	data := `{
+  "schema_version": "a21.provider_latency_fixture.v1",
+  "identity": "/tmp/private/leaky-fixture",
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate_hz": 0,
+    "channels": 1
+  },
+  "sample": {},
+  "window": {
+    "window_ms": 20
+  },
+  "prompt": "secret prompt text",
+  "transcript": "secret transcript text",
+  "raw_pcm": "secret pcm bytes",
+  "proxy_url": "http://user:pass@example.invalid:8080"
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", fixture, "--iterations", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"execution_mode": "fixture"`,
+		`"fixture_id": "a21-invalid-audio-fixture.json"`,
+		`"findings"`,
+		`"code": "fixture_sidecar_invalid"`,
+		`"message": "fixture metadata sidecar is invalid or unsafe"`,
+		`"failure_count": 1`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{dir, "/tmp/private", "leaky-fixture", "secret", "example.invalid", "8080", "user:pass"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchFixtureRejectsTrailingSidecarPayload(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-trailing-payload-fixture.json")
+	data := `{
+  "schema_version": "a21.provider_latency_fixture.v1",
+  "identity": "a21_fixture_alpha",
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "duration_ms": 1200
+  },
+  "sample": {
+    "sample_count": 19200
+  },
+  "window": {
+    "window_ms": 20,
+    "window_count": 60
+  }
+}
+{"prompt": "secret trailing prompt"}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", fixture, "--iterations", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"execution_mode": "fixture"`,
+		`"fixture_id": "a21-trailing-payload-fixture.json"`,
+		`"code": "fixture_sidecar_invalid"`,
+		`"failure_count": 1`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{dir, "secret trailing prompt", `"prompt"`} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunProviderLatencyBenchHostLoopbackUsesCanonicalMode(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

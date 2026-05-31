@@ -140,9 +140,14 @@ IDs, provider profile/family/protocol labels, redacted network/proxy metadata,
 ASR/provider/TTS/downlink/device/barge-in placeholder timings, p50/p95/p99
 summaries, fallback/failure counts, execution flags showing no provider/V21/
 hardware execution, and `promotion_gate=not_production`. Fixture reports store
-only the fixture basename, not the full local path, and never store prompt,
-transcript, provider output, reasoning, key values, full URLs, proxy URLs, or
-raw audio payloads.
+only the fixture basename, not the full local path. A JSON fixture sidecar can
+contribute `a21.provider_latency_fixture.v1` audio metadata: fixture identity,
+format, sample rate, channel count, duration, sample count, window length, and
+window count. Missing, invalid, oversized, unknown-field, payload-bearing, or
+unsafe sidecars are reported as structured redacted findings and increment the
+failure count without panicking or echoing raw error text. The report never
+stores prompt, transcript, provider output, reasoning, key values, full URLs,
+proxy URLs, full local paths, raw PCM, or base64 audio payloads.
 
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary through a direct no-ambient-proxy HTTP client and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
