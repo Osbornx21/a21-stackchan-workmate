@@ -538,6 +538,48 @@ Next queue:
   flash/raw upload/serial writes, real `/v1/devices/control`, physical device
   paths, production dependency additions, secrets, or provider payloads.
 
+Review result:
+
+- Thread `019e7c41-1842-7a30-a185-aafc73ba2d73` reported no P0, P1, or P2
+  findings for `a4e3a6f^..447b917`.
+- Review confirmed the sidecar hardening tests exercise the
+  `provider-latency-bench --fixture` JSON sidecar path. Oversized sidecars hit
+  the existing `providerLatencyFixtureSidecarMaxBytes` guard, and unknown-field
+  sidecars hit the existing `DisallowUnknownFields` decoder path.
+- Review confirmed the shared assertion covers fixed `fixture_sidecar_invalid`,
+  `failure_count=1`, basename-only fixture ID, nil invalid metadata, false
+  provider/V21/hardware execution flags, false redaction storage flags, and no
+  full path, payload, prompt/transcript/raw PCM/base64/full URL/proxy/
+  credential-like leakage.
+- Review confirmed the slice changed no production Go code, added no
+  dependency, introduced no namespace pollution, and did not restore
+  `host_baseline`.
+
+Review verification evidence:
+
+- Passed: `git diff --check a4e3a6f^..447b917`.
+- Passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Passed: `go run ./cmd/a21 namespace-audit`.
+- Passed: `make verify`.
+- Passed: `go run ./cmd/a21 doctor`.
+- Passed: `go run ./cmd/a21 preflight` on review rerun.
+- First review `preflight` attempt saw transient `127.0.0.1:21080` occupancy;
+  immediate review `lsof` found no listener, and control tower separately
+  verified no main-worktree listener plus a passing `preflight`.
+- Review `promotion-readiness` returned `review_ready=false` only because the
+  review worktree was detached at `447b917`; this matches the documented
+  detached-worktree caveat and is not a sidecar hardening regression.
+
+Post-review decision:
+
+- Keep the sidecar hardening slice accepted.
+- Do not block control-tower progress on this slice.
+- Keep provider/V21/Gateway/hardware latency evidence reserved for a separately
+  authorized T4/T6 window.
+
 ### Fast Companion Hybrid Boundary Audit
 
 Accepted from thread `019e7be6-bca3-71f2-9770-857b9da48b67`.
