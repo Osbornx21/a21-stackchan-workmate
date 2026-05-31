@@ -1183,6 +1183,76 @@ func TestXiaozhiWebSocketHelloAcceptsStockProtocol(t *testing.T) {
 	if registry["device_id"] != "stackchan-001" || registry["identity_status"] != "unknown" {
 		t.Fatalf("registry = %#v, want xiaozhi device with unknown firmware identity", registry)
 	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("registry capabilities = %#v, want sanitized xiaozhi feature map", registry["capabilities"])
+	}
+	for key, want := range map[string]any{
+		"xiaozhi_profile":     "stock",
+		"xiaozhi_feature_mcp": "true",
+		"xiaozhi_feature_aec": "true",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+	for _, forbidden := range []string{"xiaozhi_feature_debug_metrics", "xiaozhi_feature_device_events"} {
+		if _, ok := capabilities[forbidden]; ok {
+			t.Fatalf("stock registry leaked debug feature %q: %#v", forbidden, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "stackchan-debug-001",
+		"features": map[string]any{
+			"mcp":           true,
+			"aec":           true,
+			"device_events": true,
+			"debug_metrics": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	replyJSON, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"debug_metrics", "device_events"} {
+		if strings.Contains(strings.ToLower(string(replyJSON)), forbidden) {
+			t.Fatalf("hello reply leaked debug field %q: %s", forbidden, replyJSON)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("registry capabilities = %#v, want xiaozhi debug feature map", registry["capabilities"])
+	}
+	for key, want := range map[string]any{
+		"xiaozhi_profile":                  "debug",
+		"xiaozhi_feature_mcp":              "true",
+		"xiaozhi_feature_aec":              "true",
+		"xiaozhi_feature_device_events":    "true",
+		"xiaozhi_feature_debug_metrics":    "true",
+		"xiaozhi_debug_extension_isolated": "true",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
 }
 
 func TestXiaozhiWebSocketUsesStockHandshakeHeaders(t *testing.T) {

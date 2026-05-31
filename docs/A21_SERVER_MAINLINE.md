@@ -42,6 +42,9 @@ thin sensing and expression device.
 - WS-2 precursor: decoded xiaozhi PCM16 now feeds existing `audio.Ingress`,
   VAD markers, and loopback-only recent-audio redaction without provider
   execution.
+- P0-1 feature/profile guard: `/v1/xiaozhi` parses `hello.features` and records
+  stock versus debug profile state in the sanitized device registry without
+  echoing debug extensions into the server hello.
 - Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
   seam.
 - Host-only `gate --scope host`: passing with only

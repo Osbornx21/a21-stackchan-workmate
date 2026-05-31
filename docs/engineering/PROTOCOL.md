@@ -46,12 +46,16 @@ stock-style xiaozhi JSON control messages:
 - `abort`
 
 The server hello includes stock `audio_params` and an `audio` alias for current
-local tests. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after
-a valid `hello` and active `listen/start`. Version 1 is a raw Opus payload. Version 2
-unwraps the 16-byte metadata header and preserves the timestamp. Version 3
-unwraps the compact 4-byte header. The current server seam records Opus frame
-count and byte count, propagates or derives `device_id`, `trace_id`, and
-`session_id`, and rejects legacy-looking X21/V21 identities.
+local tests. The client `hello.features` object is parsed for `mcp`, `aec`,
+`device_events`, and `debug_metrics`; `mcp` and `aec` remain stock xiaozhi
+capability hints, while `device_events` and `debug_metrics` mark an isolated
+debug profile in the device registry and are never echoed into the stock server
+hello. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after a
+valid `hello` and active `listen/start`. Version 1 is a raw Opus payload.
+Version 2 unwraps the 16-byte metadata header and preserves the timestamp.
+Version 3 unwraps the compact 4-byte header. The current server seam records
+Opus frame count and byte count, propagates or derives `device_id`, `trace_id`,
+and `session_id`, and rejects legacy-looking X21/V21 identities.
 
 This is not yet the complete product voice chain. The current WS-1 seam decodes
 valid uplink Opus frames to PCM16 to produce aggregate telemetry

@@ -74,6 +74,9 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 `xiaozhi.opus_partial_decode_error`, `xiaozhi.abort.received`, and
 `xiaozhi.tts.stop`. Valid decoded xiaozhi Opus frames also emit the ordinary
 `audio.ingress.buffered` and VAD markers through the existing ingress path.
+Client `hello.features` are represented only as sanitized `/v1/devices`
+capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
+`device_events` and `debug_metrics` are marked as an isolated debug profile.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 

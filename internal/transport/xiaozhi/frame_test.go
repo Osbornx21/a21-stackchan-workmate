@@ -150,6 +150,49 @@ func TestParseHelloAcceptsAudioAliasAndRejectsUnsafeParams(t *testing.T) {
 	}
 }
 
+func TestParseHelloCapturesFeatureProfile(t *testing.T) {
+	frame, err := ParseTextFrame([]byte(`{
+		"type": "hello",
+		"device_id": "stackchan-001",
+		"features": {
+			"mcp": true,
+			"aec": true,
+			"device_events": true,
+			"debug_metrics": true
+		},
+		"audio": {
+			"format": "opus",
+			"sample_rate": 16000,
+			"channels": 1,
+			"frame_duration": 60
+		}
+	}`), DirectionDeviceToServer, Identity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	features := frame.Control.Hello.Features
+	if !features.MCP || !features.AEC || !features.DeviceEvents || !features.DebugMetrics {
+		t.Fatalf("features = %+v, want all advertised flags captured", features)
+	}
+
+	frame, err = ParseTextFrame([]byte(`{
+		"type": "hello",
+		"device_id": "stackchan-002",
+		"audio": {
+			"format": "opus",
+			"sample_rate": 16000,
+			"channels": 1,
+			"frame_duration": 60
+		}
+	}`), DirectionDeviceToServer, Identity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Control.Hello.Features != (HelloFeatures{}) {
+		t.Fatalf("features = %+v, want zero-value stock feature set", frame.Control.Hello.Features)
+	}
+}
+
 func TestParseControlUsesDeviceIDFromMessageWhenConnectionIdentityIsAbsent(t *testing.T) {
 	frame, err := ParseTextFrame([]byte(`{"type":"listen","state":"stop","device_id":"stackchan-message-01"}`), DirectionDeviceToServer, Identity{})
 	if err != nil {

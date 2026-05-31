@@ -74,6 +74,14 @@ type HelloMessage struct {
 	Version     int
 	Transport   string
 	AudioParams AudioParams
+	Features    HelloFeatures
+}
+
+type HelloFeatures struct {
+	MCP          bool
+	AEC          bool
+	DeviceEvents bool
+	DebugMetrics bool
 }
 
 type AudioParams struct {
@@ -109,14 +117,22 @@ type controlWire struct {
 }
 
 type helloWire struct {
-	Type        MessageType     `json:"type"`
-	DeviceID    string          `json:"device_id,omitempty"`
-	TraceID     string          `json:"trace_id,omitempty"`
-	SessionID   string          `json:"session_id,omitempty"`
-	Version     int             `json:"version"`
-	Transport   string          `json:"transport"`
-	Audio       audioParamsWire `json:"audio"`
-	AudioParams audioParamsWire `json:"audio_params"`
+	Type        MessageType       `json:"type"`
+	DeviceID    string            `json:"device_id,omitempty"`
+	TraceID     string            `json:"trace_id,omitempty"`
+	SessionID   string            `json:"session_id,omitempty"`
+	Version     int               `json:"version"`
+	Transport   string            `json:"transport"`
+	Features    helloFeaturesWire `json:"features"`
+	Audio       audioParamsWire   `json:"audio"`
+	AudioParams audioParamsWire   `json:"audio_params"`
+}
+
+type helloFeaturesWire struct {
+	MCP          bool `json:"mcp"`
+	AEC          bool `json:"aec"`
+	DeviceEvents bool `json:"device_events"`
+	DebugMetrics bool `json:"debug_metrics"`
 }
 
 type audioParamsWire struct {
@@ -175,6 +191,12 @@ func ParseTextFrame(data []byte, direction Direction, identity Identity) (Frame,
 		hello := &HelloMessage{
 			Version:   msg.Version,
 			Transport: strings.TrimSpace(msg.Transport),
+			Features: HelloFeatures{
+				MCP:          msg.Features.MCP,
+				AEC:          msg.Features.AEC,
+				DeviceEvents: msg.Features.DeviceEvents,
+				DebugMetrics: msg.Features.DebugMetrics,
+			},
 			AudioParams: AudioParams{
 				Format:                strings.TrimSpace(params.Format),
 				SampleRate:            params.SampleRate,
@@ -190,6 +212,7 @@ func ParseTextFrame(data []byte, direction Direction, identity Identity) (Frame,
 			Version:     hello.Version,
 			Transport:   hello.Transport,
 			AudioParams: hello.AudioParams,
+			Features:    hello.Features,
 		}
 	case MessageTypeListen:
 		var msg listenWire

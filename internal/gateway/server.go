@@ -705,6 +705,7 @@ type xiaozhiSession struct {
 	traceID                string
 	sessionID              string
 	deviceID               string
+	features               xiaozhitransport.HelloFeatures
 	helloReceived          bool
 	listening              bool
 	binaryProtocolVersion  int
@@ -852,6 +853,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.listening = false
 		session.ttsStopSent = false
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
+		session.features = frame.Control.Hello.Features
 		s.recordXiaozhiDeviceSeen(frame)
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
 		_ = wsjson.Write(ctx, conn, s.xiaozhiHelloReply(session))
@@ -994,6 +996,10 @@ func pcm16Base64(pcm []int16) string {
 
 func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
 	nowMS := s.now().UnixMilli()
+	capabilities := map[string]string(nil)
+	if frame.Control != nil && frame.Control.Hello != nil {
+		capabilities = xiaozhiFeatureCapabilities(frame.Control.Hello.Features)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record := s.devices[frame.DeviceID]
@@ -1004,10 +1010,62 @@ func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
+	if len(capabilities) > 0 {
+		record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
+	}
 	record.LastTraceID = frame.TraceID
 	record.LastSessionID = frame.SessionID
 	record.LastSeenMS = nowMS
 	s.devices[frame.DeviceID] = record
+}
+
+func xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures) map[string]string {
+	capabilities := map[string]string{
+		"xiaozhi_profile":   xiaozhiClientProfile(features),
+		"xiaozhi_transport": "websocket",
+		"xiaozhi_audio":     "opus_16000hz_mono_60ms",
+	}
+	if features.MCP {
+		capabilities["xiaozhi_feature_mcp"] = "true"
+	}
+	if features.AEC {
+		capabilities["xiaozhi_feature_aec"] = "true"
+	}
+	if features.DeviceEvents {
+		capabilities["xiaozhi_feature_device_events"] = "true"
+	}
+	if features.DebugMetrics {
+		capabilities["xiaozhi_feature_debug_metrics"] = "true"
+	}
+	if xiaozhiClientProfile(features) == "debug" {
+		capabilities["xiaozhi_debug_extension_isolated"] = "true"
+	}
+	return capabilities
+}
+
+func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
+	if features.DeviceEvents || features.DebugMetrics {
+		return "debug"
+	}
+	return "stock"
+}
+
+func mergeDeviceCapabilities(existing map[string]string, additions map[string]string) map[string]string {
+	if len(existing) == 0 {
+		merged := make(map[string]string, len(additions))
+		for key, value := range additions {
+			merged[key] = value
+		}
+		return merged
+	}
+	merged := make(map[string]string, len(existing)+len(additions))
+	for key, value := range existing {
+		merged[key] = value
+	}
+	for key, value := range additions {
+		merged[key] = value
+	}
+	return merged
 }
 
 func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) {
