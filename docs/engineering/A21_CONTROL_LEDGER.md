@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `9fc73de`.
+Last accepted integration commit before this ledger update: `0478774`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `9fc73de fix(app): cover legacy downlink metric in latency report`.
+  `0478774 docs(control): close latency report v2 post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -79,9 +79,13 @@ defines policy; this ledger records the current queue and accepted state.
 - Current integration HEAD after Provider Latency Report v2 post-review P2
   fix:
   `9fc73de fix(app): cover legacy downlink metric in latency report`.
-- Current control-tower action: Provider Latency Report v2 post-commit review
-  thread `019e7c70-eea3-7883-94bb-2c63ddc0460a` found one P2, now fixed by
-  control at `9fc73de`; record closure before selecting the next PRD slice.
+- Current integration HEAD after Provider Latency Report v2 post-review
+  closure:
+  `0478774 docs(control): close latency report v2 post review`.
+- Current control-tower action: PRD next-slice audit after Provider Latency
+  Report v2 closure is active in thread
+  `019e7c80-f077-78c1-8962-58c53bb1779e`; wait for a read-only handoff before
+  opening any implementation slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -100,6 +104,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c80-f077-78c1-8962-58c53bb1779e` | PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/9959/New project` | active; read-only audit in progress | T0/T1/T2 | no |
 | `019e7c70-eea3-7883-94bb-2c63ddc0460a` | Provider Latency Report v2 post-commit review | `/Users/jiyurun/.codex/worktrees/ded7/New project` | completed; P2 legacy downlink coverage fixed by control at `9fc73de` | T0/T1/T2 | no |
 | `019e7c65-5abb-77d3-9e43-04b53147a1ae` | Provider Latency Report v2 implementation | `/Users/jiyurun/.codex/worktrees/45f5/New project` | completed; accepted into integration branch at `101d590` | T1/T2 | no |
 | `019e7c5f-e333-7871-8c02-245a435b06cd` | PRD next-slice audit after AgentTask closure | `/Users/jiyurun/.codex/worktrees/2dea/New project` | completed; recommended Provider Latency Report v2 | T0/T1/T2 | no |
@@ -1085,6 +1090,52 @@ Decision:
 - Accept the P2 fix and close the Provider Latency Report v2 post-commit
   review.
 - Open a new PRD next-slice audit before authorizing further implementation.
+
+### PRD Next-Slice Audit After Latency v2 Closure
+
+Opened by the control tower after closing Provider Latency Report v2
+post-review at `0478774`.
+
+Evidence:
+
+- Audit thread: `019e7c80-f077-78c1-8962-58c53bb1779e`.
+- Audit thread title:
+  `A21 PRD：Next Slice Audit After Latency v2`.
+- Audit worktree:
+  `/Users/jiyurun/.codex/worktrees/9959/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `0478774 docs(control): close latency report v2 post review`.
+- Scope: read-only comparison of the current PRD and engineering docs against
+  the codebase after Provider Spine, Fast Companion boundary, provider latency
+  report/fixture sidecar work, AgentTask bridge scaffold, V21 adapter, and
+  StackChan hardware capability honesty slices.
+- Candidate next slices to evaluate: Fast Companion audio-front-end hardening,
+  binary Opus/media transport planning, provider latency real-execute
+  authorization gate design, Professional V21 evidence contract continuation,
+  StackChan hardware diagnostic planning, and Agent I/O Layer follow-up only if
+  it remains explicit user-selected I/O rather than routing/runtime.
+- Required handoff: branch, HEAD, dirty state, P0/P1/P2 PRD gap matrix,
+  recommended next slice, file scope, maximum tier, implementation-thread
+  need, acceptance commands, forbidden actions, and whether the audit blocks
+  control-tower continuation.
+- Maximum tier: T0/T1/T2.
+- Allowed validation: status/log/read-only grep/sed, focused Go tests if
+  useful, `go run ./cmd/a21 namespace-audit`, `git diff --check`,
+  `go run ./cmd/a21 preflight`, `go run ./cmd/a21 doctor`, and
+  `go run ./cmd/a21 promotion-readiness`.
+- Forbidden: file edits, commits, pushes, provider `--execute`, real provider
+  calls, V21 execute, Gateway runtime/service startup, durable payload reports,
+  firmware/NVS/flash/raw upload/serial writes, real `/v1/devices/control`,
+  physical device paths, production dependencies, secrets, prompt/transcript/
+  provider output/reasoning/raw audio/full URL/proxy/local path leakage, and
+  AgentTask runtime.
+
+Control-tower next gate:
+
+- Wait for the read-only audit handoff.
+- Open only one narrow implementation thread after the audit recommends a
+  PRD-aligned slice and the control tower records the decision.
 
 ### Fast Companion Hybrid Boundary Audit
 
