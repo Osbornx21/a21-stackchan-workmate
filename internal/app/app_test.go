@@ -2925,9 +2925,9 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	}
 }
 
-func TestV21AdapterBridgeExecutesRealBackendVoiceQueryContract(t *testing.T) {
+func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 	activeReleaseID := "rel_active"
-	var sawVoiceQuery bool
+	var sawRetrievalQuery bool
 	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/healthz":
@@ -2941,26 +2941,18 @@ func TestV21AdapterBridgeExecutesRealBackendVoiceQueryContract(t *testing.T) {
 				Name:            "Vehicle Knowledge",
 				ActiveReleaseID: &activeReleaseID,
 			}})
-		case "/internal/v1/knowledge/voice-query":
+		case "/api/v1/collections/col_vehicle/retrieval/query":
 			var request struct {
-				CollectionIDs []string `json:"collection_ids"`
-				Question      string   `json:"question"`
-				Mode          string   `json:"mode"`
-				ResponseStyle string   `json:"response_style"`
+				Query string `json:"query"`
+				Limit int    `json:"limit"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			sawVoiceQuery = len(request.CollectionIDs) == 1 &&
-				request.CollectionIDs[0] == "col_vehicle" &&
-				request.Question == "哪些车有儿童锁" &&
-				request.Mode == "grounded_qa" &&
-				request.ResponseStyle == "short_spoken"
-			writeV21BridgeJSON(w, http.StatusOK, v21VoiceQueryResponse{
-				QueryRunID:   "qry_bridge",
-				SpokenAnswer: "G02 支持儿童锁。",
-				Confidence:   0.91,
-				Evidence: []v21VoiceEvidence{{
+			sawRetrievalQuery = request.Query == "哪些车有儿童锁" && request.Limit == 5
+			writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
+				CollectionID: "col_vehicle",
+				Results: []v21RetrievalResult{{
 					AnchorID:    "ca_child_lock",
 					SourceLabel: "儿童锁证据",
 					Excerpt:     "G02ES、G02ESVR 支持座椅儿童锁。",
@@ -2986,8 +2978,8 @@ func TestV21AdapterBridgeExecutesRealBackendVoiceQueryContract(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if !sawVoiceQuery {
-		t.Fatal("bridge did not call V21 voice query with the adapter contract")
+	if !sawRetrievalQuery {
+		t.Fatal("bridge did not call V21 retrieval query with the adapter contract")
 	}
 	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"confidence": 0.91`} {
 		if !strings.Contains(stdout.String(), want) {

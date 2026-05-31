@@ -47,6 +47,21 @@ type v21VoiceEvidence struct {
 	Score        float64 `json:"score"`
 }
 
+type v21RetrievalQueryResponse struct {
+	CollectionID string               `json:"collection_id"`
+	Results      []v21RetrievalResult `json:"results"`
+}
+
+type v21RetrievalResult struct {
+	ChunkID      string  `json:"chunk_id"`
+	VersionID    string  `json:"version_id"`
+	AnchorID     string  `json:"anchor_id"`
+	SourceUnitID string  `json:"source_unit_id"`
+	SourceLabel  string  `json:"source_label"`
+	Excerpt      string  `json:"excerpt"`
+	Score        float64 `json:"score"`
+}
+
 func runV21AdapterBridge(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := v21AdapterBridgeOptions{
 		Addr:         firstNonEmpty(strings.TrimSpace(os.Getenv("A21_V21_ADAPTER_ADDR")), "127.0.0.1:21121"),
@@ -125,7 +140,7 @@ func newV21AdapterBridgeHandler(ctx context.Context, options v21AdapterBridgeOpt
 			http.Error(w, "invalid query request", http.StatusBadRequest)
 			return
 		}
-		response, err := executeV21VoiceQuery(r.Context(), client, v21Base, collectionID, request)
+		response, err := executeV21RetrievalQuery(r.Context(), client, v21Base, collectionID, request)
 		if err != nil {
 			http.Error(w, "v21 query unavailable", http.StatusServiceUnavailable)
 			return
@@ -256,6 +271,90 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
 	return response, nil
+}
+
+func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	utterance := strings.TrimSpace(request.Utterance)
+	if utterance == "" {
+		return v21adapter.QueryResponse{}, fmt.Errorf("utterance is required")
+	}
+	body := map[string]interface{}{
+		"query": utterance,
+		"limit": 5,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return v21adapter.QueryResponse{}, err
+	}
+	endpoint := v21Base + "/api/v1/collections/" + url.PathEscape(collectionID) + "/retrieval/query"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return v21adapter.QueryResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	setV21DevHeaders(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return v21adapter.QueryResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return v21adapter.QueryResponse{}, fmt.Errorf("v21 retrieval query returned status %d", resp.StatusCode)
+	}
+	var retrieval v21RetrievalQueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&retrieval); err != nil {
+		return v21adapter.QueryResponse{}, err
+	}
+	response := v21adapter.QueryResponse{
+		TraceID:    firstNonEmpty(strings.TrimSpace(request.TraceID), "a21-trace-v21-retrieval"),
+		FastAnswer: buildV21RetrievalFastAnswer(retrieval.Results),
+		Confidence: v21RetrievalConfidence(retrieval.Results),
+	}
+	for _, result := range retrieval.Results {
+		response.Evidence = append(response.Evidence, v21adapter.Evidence{
+			Title:    firstNonEmpty(strings.TrimSpace(result.SourceLabel), strings.TrimSpace(result.SourceUnitID), strings.TrimSpace(result.ChunkID)),
+			Type:     "v21_retrieval_evidence",
+			SourceID: firstNonEmpty(strings.TrimSpace(result.AnchorID), strings.TrimSpace(result.SourceUnitID), strings.TrimSpace(result.ChunkID)),
+			Summary:  truncateV21BridgeRunes(strings.TrimSpace(result.Excerpt), 240),
+		})
+	}
+	if response.FastAnswer != "" {
+		response.SpeechBlocks = []string{response.FastAnswer}
+	}
+	if len(response.Evidence) > 0 {
+		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
+	}
+	return response, nil
+}
+
+func buildV21RetrievalFastAnswer(results []v21RetrievalResult) string {
+	if len(results) == 0 {
+		return "V21 当前没有找到可引用证据。"
+	}
+	label := strings.TrimSpace(results[0].SourceLabel)
+	if label == "" {
+		label = "已找到相关证据"
+	}
+	return truncateV21BridgeRunes("V21 找到证据："+label, 120)
+}
+
+func v21RetrievalConfidence(results []v21RetrievalResult) float64 {
+	if len(results) == 0 {
+		return 0
+	}
+	best := results[0].Score
+	for _, result := range results[1:] {
+		if result.Score > best {
+			best = result.Score
+		}
+	}
+	if best < 0 {
+		return 0
+	}
+	if best > 1 {
+		return 1
+	}
+	return best
 }
 
 func setV21DevHeaders(req *http.Request) {
