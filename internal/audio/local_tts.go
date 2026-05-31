@@ -12,16 +12,17 @@ import (
 )
 
 type LocalTTSOptions struct {
-	Text          string
-	Voice         string
-	OutputDir     string
-	CommandRunner CommandRunner
-	SayPath       string
-	AFConvertPath string
-	PythonPath    string
-	ScriptPath    string
-	ModelDir      string
-	SpeakerID     int
+	Text               string
+	Voice              string
+	OutputDir          string
+	CommandRunner      CommandRunner
+	SayPath            string
+	AFConvertPath      string
+	PythonPath         string
+	ScriptPath         string
+	ModelDir           string
+	SpeakerID          int
+	OutputSampleRateHz int
 }
 
 type CommandRunner interface {
@@ -54,13 +55,14 @@ func (execCommandRunner) Run(ctx context.Context, name string, args ...string) e
 
 func SynthesizeMacOSSay(ctx context.Context, options LocalTTSOptions) (LocalTTSReport, error) {
 	start := time.Now()
+	outputSampleRateHz := localTTSOutputSampleRateHz(options)
 	report := LocalTTSReport{
 		SchemaVersion: "a21.audio.local_tts.v1",
 		GeneratedAtMS: time.Now().UnixMilli(),
 		Status:        "failed",
 		Provider:      "macos_say",
 		Voice:         firstNonEmptyLocalTTS(options.Voice, "Tingting"),
-		OutputFormat:  "wav_pcm_s16le_16000_mono",
+		OutputFormat:  fmt.Sprintf("wav_pcm_s16le_%d_mono", outputSampleRateHz),
 		TextBytes:     len([]byte(options.Text)),
 	}
 	if strings.TrimSpace(options.Text) == "" {
@@ -116,7 +118,7 @@ func SynthesizeMacOSSay(ctx context.Context, options LocalTTSOptions) (LocalTTSR
 		report.Findings = append(report.Findings, "say command failed")
 		return report, err
 	}
-	if err := runner.Run(ctx, afconvertPath, "-f", "WAVE", "-d", "LEI16@16000", aiffPath, wavPath); err != nil {
+	if err := runner.Run(ctx, afconvertPath, "-f", "WAVE", "-d", fmt.Sprintf("LEI16@%d", outputSampleRateHz), aiffPath, wavPath); err != nil {
 		report.Findings = append(report.Findings, "afconvert command failed")
 		return report, err
 	}
@@ -135,6 +137,7 @@ func SynthesizeMacOSSay(ctx context.Context, options LocalTTSOptions) (LocalTTSR
 
 func SynthesizeSherpaONNX(ctx context.Context, options LocalTTSOptions) (LocalTTSReport, error) {
 	start := time.Now()
+	outputSampleRateHz := localTTSOutputSampleRateHz(options)
 	speakerID := options.SpeakerID
 	if speakerID == 0 {
 		speakerID = 21
@@ -146,7 +149,7 @@ func SynthesizeSherpaONNX(ctx context.Context, options LocalTTSOptions) (LocalTT
 		Provider:      "sherpa_onnx",
 		Engine:        "vits_icefall_zh_aishell3",
 		Voice:         "sid_" + strconv.Itoa(speakerID),
-		OutputFormat:  "wav_pcm_s16le_16000_mono",
+		OutputFormat:  fmt.Sprintf("wav_pcm_s16le_%d_mono", outputSampleRateHz),
 		TextBytes:     len([]byte(options.Text)),
 	}
 	if strings.TrimSpace(options.Text) == "" {
@@ -219,7 +222,7 @@ func SynthesizeSherpaONNX(ctx context.Context, options LocalTTSOptions) (LocalTT
 		report.Findings = append(report.Findings, "sherpa-onnx synthesis command failed")
 		return report, err
 	}
-	if err := runner.Run(ctx, afconvertPath, "-f", "WAVE", "-d", "LEI16@16000", rawWAVPath, wavPath); err != nil {
+	if err := runner.Run(ctx, afconvertPath, "-f", "WAVE", "-d", fmt.Sprintf("LEI16@%d", outputSampleRateHz), rawWAVPath, wavPath); err != nil {
 		report.Findings = append(report.Findings, "afconvert command failed")
 		return report, err
 	}
@@ -303,4 +306,11 @@ func firstNonEmptyLocalTTS(values ...string) string {
 
 func elapsedLocalTTSMS(start time.Time) float64 {
 	return float64(time.Since(start).Microseconds()) / 1000
+}
+
+func localTTSOutputSampleRateHz(options LocalTTSOptions) int {
+	if options.OutputSampleRateHz > 0 {
+		return options.OutputSampleRateHz
+	}
+	return 16000
 }

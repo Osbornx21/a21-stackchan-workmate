@@ -16,10 +16,14 @@ type PCMPlaybackChunk struct {
 }
 
 func ReadPCM16MonoWAVChunks(path string, durationMS int) ([]PCMPlaybackChunk, error) {
+	return ReadPCM16MonoWAVChunksForSampleRate(path, durationMS, 16000)
+}
+
+func ReadPCM16MonoWAVChunksForSampleRate(path string, durationMS int, expectedSampleRateHz int) ([]PCMPlaybackChunk, error) {
 	if durationMS <= 0 {
 		durationMS = 20
 	}
-	sampleRateHz, pcm, err := readPCM16MonoWAV(path)
+	sampleRateHz, pcm, err := readPCM16MonoWAV(path, expectedSampleRateHz)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +50,39 @@ func ReadPCM16MonoWAVChunks(path string, durationMS int) ([]PCMPlaybackChunk, er
 	return chunks, nil
 }
 
-func readPCM16MonoWAV(path string) (int, []byte, error) {
+func WritePCM16MonoWAV(path string, sampleRateHz int, pcm []byte) error {
+	if sampleRateHz <= 0 {
+		return fmt.Errorf("wav sample rate must be positive")
+	}
+	if len(pcm) == 0 {
+		return fmt.Errorf("wav pcm payload is empty")
+	}
+	if len(pcm)%2 != 0 {
+		return fmt.Errorf("wav pcm payload must contain 16-bit samples")
+	}
+	dataSize := uint32(len(pcm))
+	riffSize := uint32(36) + dataSize
+	byteRate := uint32(sampleRateHz * 2)
+	blockAlign := uint16(2)
+	header := make([]byte, 44)
+	copy(header[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(header[4:8], riffSize)
+	copy(header[8:12], "WAVE")
+	copy(header[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(header[16:20], 16)
+	binary.LittleEndian.PutUint16(header[20:22], 1)
+	binary.LittleEndian.PutUint16(header[22:24], 1)
+	binary.LittleEndian.PutUint32(header[24:28], uint32(sampleRateHz))
+	binary.LittleEndian.PutUint32(header[28:32], byteRate)
+	binary.LittleEndian.PutUint16(header[32:34], blockAlign)
+	binary.LittleEndian.PutUint16(header[34:36], 16)
+	copy(header[36:40], "data")
+	binary.LittleEndian.PutUint32(header[40:44], dataSize)
+	data := append(header, pcm...)
+	return os.WriteFile(path, data, 0o600)
+}
+
+func readPCM16MonoWAV(path string, expectedSampleRateHz int) (int, []byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, nil, err
@@ -103,8 +139,8 @@ func readPCM16MonoWAV(path string) (int, []byte, error) {
 	if channels != 1 {
 		return 0, nil, fmt.Errorf("wav channels must be mono")
 	}
-	if sampleRateHz != 16000 {
-		return 0, nil, fmt.Errorf("wav sample rate must be 16000 Hz")
+	if expectedSampleRateHz > 0 && sampleRateHz != expectedSampleRateHz {
+		return 0, nil, fmt.Errorf("wav sample rate must be %d Hz", expectedSampleRateHz)
 	}
 	if bitsPerSample != 16 {
 		return 0, nil, fmt.Errorf("wav bit depth must be 16")

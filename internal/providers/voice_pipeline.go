@@ -26,6 +26,7 @@ type VoicePipelinePCMFrame struct {
 	DurationMS   int
 	ByteCount    int
 	RMS          float64
+	PCM16LE      []byte `json:"-"`
 }
 
 type VoicePipelineRequest struct {
@@ -121,8 +122,10 @@ type ASRAdapterRequest struct {
 }
 
 type ASRAdapterEvent struct {
-	Text  string
-	Final bool
+	Text    string
+	Final   bool
+	Finding string
+	Err     error
 }
 
 type TextStreamAdapter interface {
@@ -148,10 +151,11 @@ type TTSAdapterRequest struct {
 }
 
 type VoicePipelineAdapters struct {
-	ASR        ASRAdapter
-	TextStream TextStreamAdapter
-	TTS        TTSAdapter
-	Selection  VoicePipelineSelection
+	ASR           ASRAdapter
+	TextStream    TextStreamAdapter
+	TTS           TTSAdapter
+	Selection     VoicePipelineSelection
+	ExecutionMode string
 }
 
 type VoicePipelineRunner struct {
@@ -181,7 +185,7 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 			SpeechEndToFirstTokenMS: -1,
 		},
 	}
-	report := newVoicePipelineReport(req, r.adapters.Selection)
+	report := newVoicePipelineReport(req, r.adapters.Selection, r.adapters.ExecutionMode)
 	if err := validateVoicePipelineAdapters(r.adapters); err != nil {
 		report.Status = string(VoicePipelineStatusFailed)
 		report.Findings = append(report.Findings, err.Error())
@@ -202,6 +206,17 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 	}
 	var transcript string
 	for event := range asrEvents {
+		if event.Finding != "" {
+			report.Findings = append(report.Findings, event.Finding)
+		}
+		if event.Err != nil {
+			report.Status = string(VoicePipelineStatusFailed)
+			if event.Finding == "" {
+				report.Findings = append(report.Findings, "asr adapter failed")
+			}
+			result.Report = report
+			return result, event.Err
+		}
 		if result.Timing.ASRFirstPartialMS < 0 && strings.TrimSpace(event.Text) != "" {
 			result.Timing.ASRFirstPartialMS = pipelineElapsedMS(start)
 		}
@@ -225,6 +240,17 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 	}
 	var response strings.Builder
 	for event := range textEvents {
+		if event.Finding != "" {
+			report.Findings = append(report.Findings, event.Finding)
+		}
+		if event.Err != nil {
+			report.Status = string(VoicePipelineStatusFailed)
+			if event.Finding == "" {
+				report.Findings = append(report.Findings, "text stream adapter failed")
+			}
+			result.Report = report
+			return result, event.Err
+		}
 		if event.Kind != TextStreamDeltaContent {
 			continue
 		}
@@ -346,7 +372,7 @@ func sanitizeVoicePipelineValue(value string, fallback string) string {
 	return value
 }
 
-func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSelection) VoicePipelineReport {
+func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSelection, executionMode string) VoicePipelineReport {
 	input := VoicePipelineInputReport{FrameCount: len(req.Frames)}
 	for i, frame := range req.Frames {
 		input.TotalBytes += frame.ByteCount
@@ -357,16 +383,26 @@ func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSel
 			input.FrameDurationMS = frame.DurationMS
 		}
 	}
+	executionMode = sanitizeVoicePipelineValue(executionMode, "fixture")
+	schemaVersion := "a21.voice_pipeline.fixture.v1"
+	var findings []string
+	if executionMode == "host_local" {
+		schemaVersion = "a21.voice_pipeline.host_local.v1"
+		findings = append(findings, "host_local_voice_pipeline_candidate_not_prd_accepted")
+	} else {
+		executionMode = "fixture"
+	}
 	return VoicePipelineReport{
-		SchemaVersion: "a21.voice_pipeline.fixture.v1",
+		SchemaVersion: schemaVersion,
 		Status:        string(VoicePipelineStatusFailed),
 		TraceID:       req.Session.TraceID,
 		SessionID:     req.Session.SessionID,
 		DeviceID:      req.Session.DeviceID,
 		Mode:          req.Mode,
-		ExecutionMode: "fixture",
+		ExecutionMode: executionMode,
 		Selection:     selection,
 		Input:         input,
+		Findings:      findings,
 		Redaction: VoicePipelineRedactionPolicies{
 			TranscriptPolicy:     "transcript_not_recorded",
 			ProviderOutputPolicy: "provider_output_not_recorded",

@@ -42,6 +42,40 @@ func TestReadPCM16MonoWAVChunksRejectsNonA21Format(t *testing.T) {
 	}
 }
 
+func TestWritePCM16MonoWAVAndRead24KDownlinkChunks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a21-24k.wav")
+	pcm := make([]byte, 3000)
+	for i := range pcm {
+		pcm[i] = byte(i % 251)
+	}
+
+	if err := WritePCM16MonoWAV(path, 24000, pcm); err != nil {
+		t.Fatal(err)
+	}
+	chunks, err := ReadPCM16MonoWAVChunksForSampleRate(path, 60, 24000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %d, want 2 padded 24k chunks", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if chunk.SampleRateHz != 24000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
+			t.Fatalf("chunk format = %+v, want 24k mono 60ms", chunk)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(decoded) != 2880 {
+			t.Fatalf("decoded bytes = %d, want 2880", len(decoded))
+		}
+	}
+	if _, err := ReadPCM16MonoWAVChunks(path, 60); err == nil {
+		t.Fatal("ReadPCM16MonoWAVChunks() error = nil, want default 16k reader to reject 24k")
+	}
+}
+
 func writeTestWAV(t *testing.T, path string, sampleRate int, pcm []byte) {
 	t.Helper()
 	writeTestWAVHeader(t, path, sampleRate, 1, 16, pcm)

@@ -19,8 +19,10 @@ const (
 )
 
 type TextStreamEvent struct {
-	Kind TextStreamDeltaKind
-	Text string
+	Kind    TextStreamDeltaKind
+	Text    string
+	Finding string
+	Err     error
 }
 
 type TextStreamParseResult struct {
