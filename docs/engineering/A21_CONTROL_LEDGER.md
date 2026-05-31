@@ -450,6 +450,12 @@ Decision:
   `0e46761`.
 - Treat detached-worktree doctor and promotion-readiness differences as review
   environment evidence, not product or contract regressions.
+- `promotion-readiness` assertions that require `review_ready=true` must be
+  run from the integration branch's main worktree or another worktree with the
+  candidate branch checked out. A detached review worktree may record branch,
+  ancestor, toolchain, or environment differences, but a detached-HEAD
+  `review_ready=false` result is not evidence of a provider fixture contract
+  regression by itself.
 
 Next queue:
 

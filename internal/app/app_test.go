@@ -1034,6 +1034,108 @@ func TestRunProviderLatencyBenchFixtureReportsInvalidSidecarWithoutPayloadLeak(t
 	}
 }
 
+func TestRunProviderLatencyBenchFixtureRejectsOversizedSidecarWithoutPayloadLeak(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-oversized-audio-fixture.json")
+	payload := strings.Repeat("secret prompt transcript raw_pcm data_base64 http://user:pass@example.invalid:8080 /tmp/a21/private sk-a21-secret\n", 700)
+	if err := os.WriteFile(fixture, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", fixture, "--iterations", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	assertProviderLatencyBenchInvalidSidecarFinding(t, stdout.Bytes(), "a21-oversized-audio-fixture.json")
+	for _, forbidden := range []string{dir, payload, "secret", "prompt", "transcript", "raw_pcm", "data_base64", "example.invalid", "8080", "user:pass", "/tmp/a21/private", "sk-a21-secret"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderLatencyBenchFixtureRejectsUnknownFieldSidecarWithoutValueLeak(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-unknown-field-audio-fixture.json")
+	data := `{
+  "schema_version": "a21.provider_latency_fixture.v1",
+  "identity": "a21_fixture_alpha",
+  "audio": {
+    "format": "pcm_s16le",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "duration_ms": 1200
+  },
+  "sample": {
+    "sample_count": 19200
+  },
+  "window": {
+    "window_ms": 20,
+    "window_count": 60
+  },
+  "unexpected_metadata": "secret prompt transcript raw_pcm data_base64 http://user:pass@example.invalid:8080 /tmp/a21/private sk-a21-secret"
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--fixture", fixture, "--iterations", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	assertProviderLatencyBenchInvalidSidecarFinding(t, stdout.Bytes(), "a21-unknown-field-audio-fixture.json")
+	for _, forbidden := range []string{dir, "unexpected_metadata", "secret", "prompt", "transcript", "raw_pcm", "data_base64", "example.invalid", "8080", "user:pass", "/tmp/a21/private", "sk-a21-secret"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func assertProviderLatencyBenchInvalidSidecarFinding(t *testing.T, reportJSON []byte, fixtureID string) {
+	t.Helper()
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(reportJSON, &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, string(reportJSON))
+	}
+	if report.ExecutionMode != "fixture" {
+		t.Fatalf("execution mode = %q, want fixture: %s", report.ExecutionMode, string(reportJSON))
+	}
+	if report.Fixture == nil {
+		t.Fatalf("fixture missing: %s", string(reportJSON))
+	}
+	if report.Fixture.FixtureID != fixtureID {
+		t.Fatalf("fixture id = %q, want %q: %s", report.Fixture.FixtureID, fixtureID, string(reportJSON))
+	}
+	if report.Fixture.Metadata != nil {
+		t.Fatalf("metadata should not be retained for invalid sidecar: %#v", report.Fixture.Metadata)
+	}
+	if report.Counts.FailureCount != 1 {
+		t.Fatalf("failure count = %d, want 1: %s", report.Counts.FailureCount, string(reportJSON))
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1: %s", len(report.Findings), string(reportJSON))
+	}
+	finding := report.Findings[0]
+	if finding.Code != "fixture_sidecar_invalid" || finding.Message != "fixture metadata sidecar is invalid or unsafe" {
+		t.Fatalf("finding = %#v, want fixed redacted invalid sidecar finding", finding)
+	}
+	if report.Redaction.PayloadsStored ||
+		report.Redaction.CredentialValuesStored ||
+		report.Redaction.FullURLsStored ||
+		report.Redaction.LocalPathsStored {
+		t.Fatalf("redaction flags indicate stored sensitive material: %#v", report.Redaction)
+	}
+	if report.Execution.ProviderExecuted || report.Execution.V21Executed || report.Execution.HardwareExecuted {
+		t.Fatalf("execution flags indicate forbidden execution: %#v", report.Execution)
+	}
+}
+
 func TestRunProviderLatencyBenchFixtureRejectsTrailingSidecarPayload(t *testing.T) {
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "a21-trailing-payload-fixture.json")
