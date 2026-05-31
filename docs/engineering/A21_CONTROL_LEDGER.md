@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `b8d46f8`.
+Last accepted integration commit before this ledger update: `f69c6b8`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `b8d46f8 docs(control): record provider latency post review`.
+  `f69c6b8 feat(app): add provider fixture metadata contract`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -45,8 +45,10 @@ defines policy; this ledger records the current queue and accepted state.
   `52c64d2`, provider latency slice-open tracking is `28171ad`, and provider
   latency bench scaffold acceptance is `4532df8`; provider latency handoff
   acceptance is `8bc41f6`, and provider latency post-review tracking is
-  `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`, and
-  provider latency post-review acceptance is `b8d46f8`.
+  `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`, provider
+  latency post-review acceptance is `b8d46f8`, provider fixture schema
+  slice-open tracking is `44d6c76`, and provider fixture metadata contract
+  acceptance is `f69c6b8`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -67,7 +69,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | active; no-execute fixture metadata slice | T1/T2 | no |
+| `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | accepted into integration branch at `f69c6b8` | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
 | `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
@@ -323,16 +325,76 @@ Control verification after the P2 fix:
   firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, or
   physical device path was used.
 
-Next queue:
+### Provider Latency Fixture Schema Implementation
 
-- Opened implementation thread `019e7c25-ec43-7591-9954-5227c7288e89` for the
-  T1/T2 `Provider Latency Fixture Schema / Audio Metadata` slice.
+Accepted from thread `019e7c25-ec43-7591-9954-5227c7288e89`.
+
+Evidence:
+
+- Implementation branch: `codex/a21-provider-latency-fixture-schema`.
+- Implementation worktree:
+  `/Users/jiyurun/.codex/worktrees/6b8d/New project`.
+- Starting integration HEAD:
+  `b8d46f8 docs(control): record provider latency post review`.
+- Control tower opened the slice at
+  `44d6c76 docs(control): open provider fixture schema slice`.
 - Scope: add no-execute fixture metadata/report contract coverage for fixture
   identity, audio format, sample rate, channels, duration/sample/window
   metadata, and redacted structured findings for invalid fixture metadata.
-- The slice must not execute provider/V21 calls, start Gateway/runtime, write
-  durable provider payload reports, touch firmware/NVS/flash/serial paths, call
-  `/v1/devices/control`, or use physical device paths.
+- Expected files: `internal/app/provider_latency_bench.go`,
+  `internal/app/app_test.go`, `docs/engineering/A21_PROVIDER_BENCHMARKS.md`,
+  `docs/engineering/LATENCY_BUDGET.md`, and `docs/engineering/DOCTOR.md`.
+- Maximum tier: T1/T2.
+- Forbidden: provider `--execute`, V21 execute, Gateway runtime/service
+  startup, durable provider reports with payloads, firmware/NVS/flash/raw
+  upload/serial writes, `/v1/devices/control`, physical device paths,
+  production dependency additions, secrets, raw PCM, base64 audio, prompt,
+  transcript, provider output, reasoning text, full URLs, proxy URLs, or full
+  local paths in reports.
+
+Decision:
+
+- Accept the fixture schema handoff into the integration branch at
+  `f69c6b8 feat(app): add provider fixture metadata contract`.
+- The accepted report contract still stores only fixture basenames. Redacted
+  JSON sidecars may contribute `a21.provider_latency_fixture.v1` metadata:
+  fixture identity, audio format, sample rate, channel count, duration, sample
+  count, window length, and window count.
+- Invalid, missing, oversized, unknown-field, payload-bearing, unsafe, or
+  trailing-content sidecars produce a fixed structured finding
+  `fixture_sidecar_invalid` and increment `failure_count` without panicking or
+  echoing raw file contents, full paths, full URLs, proxy URLs, credentials, or
+  payload text.
+- The control tower added an extra trailing-payload regression test before
+  committing the handoff, so a valid JSON object followed by a second prompt or
+  payload object is also rejected.
+- This remains report-shape evidence only. It does not authorize real
+  provider/V21/Gateway/hardware measurement.
+
+Acceptance evidence:
+
+- Control verification passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Control verification passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Control verification passed: `go run ./cmd/a21 namespace-audit`.
+- Control verification passed: `git diff --check`.
+- Control verification passed: `make verify`.
+- Control dry run passed without provider/V21/hardware execution:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --fixture /tmp/a21-secret-path-fixture.json --iterations 1`.
+  The report kept only `a21-secret-path-fixture.json`, returned
+  `failure_count=1`, and emitted the fixed `fixture_sidecar_invalid` finding.
+- No provider execute, V21 execute, Gateway runtime/service startup,
+  firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, physical
+  device path, durable provider payload report, production dependency, secret,
+  prompt/transcript/provider output/reasoning payload, full URL, proxy URL, or
+  full local path was used or saved.
+
+Residual gaps:
+
+- Real ASR/provider/TTS/downlink/playback latency, LAN behavior, physical
+  StackChan acceptance, and barge-in timing remain unmeasured until a separately
+  authorized T4/T6 window.
 
 ### Fast Companion Hybrid Boundary Audit
 
