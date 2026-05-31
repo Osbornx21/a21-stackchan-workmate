@@ -73,9 +73,9 @@ will touch before execution.
 | --- | --- | --- | --- |
 | T0 | Read-only inspection | `rg`, `git status`, `git diff`, `go list` | Always allowed in control/review threads |
 | T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `go run ./cmd/a21 promotion-readiness`, `make verify` | Allowed when no hardware/service side effect is expected |
-| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
+| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `agent-plan`, `agent-io-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
 | T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
-| T4 | External/provider execution | `provider-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
+| T4 | External/provider execution | `provider-smoke --execute`, `agent-io-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
 | T5 | Firmware build/package | `firmware-tools`, `firmware-test`, `firmware-build`, `firmware-package`, official StackChan build lanes | No physical writes; package requires clean worktree |
 | T6 | Physical validation commands | `stackchan-*acceptance`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
 | T7 | Physical writes | `stackchan-official-pcm-bridge-nvs-execute`, `stackchan-official-audio-smoke-flash-execute`, `firmware-*-flash-execute` | One foreground thread only, exact confirmation token, explicit port, `control-guard` receipt |

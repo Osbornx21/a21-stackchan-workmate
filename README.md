@@ -42,6 +42,13 @@ make release-check
 
 `make v21-adapter-smoke` writes an ignored `reports/a21-v21-adapter-smoke-*.json` readiness report. `A21_V21_ADAPTER_URL=<adapter-boundary> make v21-adapter-smoke-execute` is the explicit query smoke; it never stores query text, answer text, evidence content, full adapter URLs, credentials, proxy URLs, or API keys.
 
+`make agent-plan` and `make agent-io-smoke` write ignored Agent I/O plan/smoke
+reports for Hermes/MiMo-style background agents. For explicit host-only Hermes
+smoke, set `A21_HERMES_AGENT_URL` and `A21_HERMES_AGENT_KEY`, then run
+`make agent-io-smoke-execute`. It never stores task text, memory text,
+external-agent output, credentials, full URLs, provider env values, V21 evidence
+bodies, firmware commands, or device commands.
+
 `make release-check` runs Go tests, namespace audit, latency mock benchmarks, firmware tests/build, raw-upload blocker verification, firmware packaging, current-artifact validation, artifact retention planning, office handoff manifest generation, and doctor. It does not flash hardware or delete artifacts.
 
 ## Local Gateway

@@ -64,14 +64,24 @@ metadata. They must not store raw PCM, base64 audio, Opus payload bytes,
 prompts, transcripts, provider output, reasoning, credentials, full URLs, proxy
 URLs, model values, or full local paths.
 
-AgentTask bridge reports currently exist only as package-level T1/T2 semantic
-reports in `internal/providers`. They use schema
+AgentTask bridge reports include package-level T1/T2 semantic reports in
+`internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI
+reports. Provider semantic reports use schema
 `a21.agent_task.semantic_report.v1`, preserve A21 `trace_id` and `session_id`,
-and store event kind/final markers plus redacted text/tool markers. They must
-not store external-agent text, tool payloads, credentials, full URLs, local
-paths, provider env values, or raw agent control payloads. This scaffold is not
-a Gateway runtime path and does not execute Hermes, MiMo, V21, providers, or
-hardware.
+and store event kind/final markers plus redacted text/tool markers. Planner
+reports use `a21.agent_plan.v1`; smoke reports use `a21.agent_io_smoke.v1`.
+They must not store external-agent text, tool payloads, credentials, full URLs,
+local paths, provider env values, or raw agent control payloads. This scaffold
+is not a Gateway runtime path and does not execute V21, providers, realtime
+voice, firmware, or hardware.
+
+Current Agent I/O planner markers are:
+
+- `agent.plan.start`
+- `memory.policy.selected`
+- `scenario.selected`
+- `agent_io.message.sent`
+- `agent.plan.selected`
 
 Reserved AgentTask semantic marker names for future runtime work are:
 
