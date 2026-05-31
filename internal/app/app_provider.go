@@ -222,6 +222,60 @@ func runV21AdapterSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	return 0
 }
+
+func runV21ProfessionalReadiness(args []string, stdout io.Writer, stderr io.Writer) int {
+	adapterURL := strings.TrimSpace(os.Getenv("A21_V21_ADAPTER_URL"))
+	outputDir := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 v21-professional-readiness [--adapter-url http://127.0.0.1:21121] [--output-dir reports]")
+			return 0
+		case "--adapter-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--adapter-url requires a value")
+				return 2
+			}
+			i++
+			adapterURL = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
+		case "--execute":
+			fmt.Fprintln(stderr, "v21-professional-readiness is host-only and does not support --execute")
+			return 2
+		default:
+			fmt.Fprintf(stderr, "unknown v21-professional-readiness option %q\n", args[i])
+			return 2
+		}
+	}
+	report := v21adapter.ProfessionalReadiness(context.Background(), adapterURL, nil)
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "v21 professional readiness report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeV21ProfessionalReadinessReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write v21 professional readiness report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONV21ProfessionalReadiness(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode v21 professional readiness report: %v\n", err)
+		return 1
+	}
+	if report.Status != "passed" {
+		return 1
+	}
+	return 0
+}
+
 func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -271,12 +325,36 @@ func writeV21AdapterSmokeReport(outputDir string, report v21adapter.SmokeReport)
 	}
 	return reportPath, nil
 }
+
+func writeV21ProfessionalReadinessReport(outputDir string, report v21adapter.ProfessionalReadinessReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-v21-professional-readiness-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = filepath.Base(reportPath)
+	if err := writeJSONV21ProfessionalReadiness(file, report); err != nil {
+		return "", err
+	}
+	return filepath.Base(reportPath), nil
+}
+
 func writeJSONProviderSmoke(writer io.Writer, report providers.ProviderSmokeReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
 }
 func writeJSONV21AdapterSmoke(writer io.Writer, report v21adapter.SmokeReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONV21ProfessionalReadiness(writer io.Writer, report v21adapter.ProfessionalReadinessReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

@@ -122,6 +122,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runProviderRealtimeFixture(args[1:], stdout, stderr), true
 	case "v21-adapter-smoke":
 		return runV21AdapterSmoke(args[1:], stdout, stderr), true
+	case "v21-professional-readiness":
+		return runV21ProfessionalReadiness(args[1:], stdout, stderr), true
 	case "v21-adapter-bridge":
 		return runV21AdapterBridge(args[1:], stdout, stderr), true
 	case "audio-front-end-plan":

@@ -121,6 +121,7 @@ Implemented clients:
 - `ProbeHealth(ctx, baseURL, httpClient)` checks adapter `/healthz`.
 - `NewMockClient()` returns deterministic evidence, speech blocks, screen cards, and follow-ups for Gateway/simulator tests.
 - `v21-adapter-smoke` emits a redacted readiness or execution report for the adapter boundary.
+- `v21-professional-readiness` emits a host-only mock report for the professional-mode bridge: it records the local checking acknowledgement separately from mock evidence/cards/follow-ups, validates redaction, and never executes the adapter query path.
 
 Safety rules:
 
@@ -128,9 +129,12 @@ Safety rules:
 - `doctor` skips V21 health when `A21_V21_ADAPTER_URL` is unset.
 - `doctor` checks `/healthz` when `A21_V21_ADAPTER_URL` is set, uses a direct no-ambient-proxy HTTP client, and redacts URL credentials from error details.
 - `v21-adapter-smoke` does not execute a professional query unless `--execute` is present.
+- `v21-professional-readiness` never supports `--execute`; `adapter_executed` remains `false` and adapter disabled/misconfigured states are reported with fixed findings.
 - `v21-adapter-smoke` uses a direct HTTP client when executing so ambient `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` do not catch local/LAN adapter traffic.
 - `v21-adapter-smoke --output-dir reports` writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json`.
+- `v21-professional-readiness --output-dir reports` writes `reports/a21-v21-professional-readiness-YYYYMMDD-HHMMSS.json` with a basename-only `report_path`.
 - V21 smoke reports may include adapter name, protocol, status, configured/executed flags, endpoint host, fixed health/query paths, latency, confidence, and response counts. They must not include the user query text, response text, full adapter URL, credentials, API keys, or V21 document content.
+- Professional readiness reports may include acknowledgement timing, adapter configured/executed flags, evidence/card/follow-up availability booleans, counts, low-information evidence types, redaction status, and fixed findings. They must not include query text, retrieved text, prompts, transcripts, provider output, reasoning, full URLs, proxy values, local paths, or secrets.
 - HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
 - HTTP client and bridge handler validate the professional query contract before
   network or retrieval execution: explicit non-`professional` mode, explicit
@@ -156,6 +160,7 @@ Dry-run readiness:
 ```bash
 go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 make v21-adapter-smoke
+go run ./cmd/a21 v21-professional-readiness --adapter-url http://127.0.0.1:21121 --output-dir reports
 ```
 
 Explicit execution after the A21 V21 adapter endpoint is identified:

@@ -3951,6 +3951,102 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	}
 }
 
+func TestRunV21ProfessionalReadinessWritesRedactedHostReport(t *testing.T) {
+	dir, err := os.MkdirTemp("", "a21-prof-readiness-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"v21-professional-readiness",
+		"--adapter-url", "http://127.0.0.1:21121",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.v21_professional_readiness.v1"`,
+		`"checking_ack_available": true`,
+		`"checking_ack_within_1200": true`,
+		`"evidence_available": true`,
+		`"cards_available": true`,
+		`"follow_ups_available": true`,
+		`"adapter_configured": true`,
+		`"adapter_executed": false`,
+		`"redaction_ok": true`,
+		`"professional_acceptance_status": "host_mock_ready"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %s: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-v21-professional-readiness-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("professional readiness reports = %d, %v", len(matches), err)
+	}
+	reportJSON, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"professional readiness fixture query",
+		"语音唤醒体验复盘",
+		"提到多人说话",
+		"要不要按车型",
+		"http://",
+		"https://",
+		dir,
+		"secret",
+		"api_key",
+		"provider output",
+		"reasoning",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportJSON), forbidden) {
+			t.Fatalf("professional readiness leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+	if !strings.Contains(stdout.String(), `"report_path": "a21-v21-professional-readiness-`) {
+		t.Fatalf("stdout report_path should be basename-only: %s", stdout.String())
+	}
+}
+
+func TestRunV21ProfessionalReadinessReportsMisconfigurationWithoutLeak(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"v21-professional-readiness",
+		"--adapter-url", "http://user:secret-token@127.0.0.1:21121/a21/v21/query",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"status": "blocked"`,
+		`"adapter_configured": true`,
+		`"adapter_executed": false`,
+		`"professional_acceptance_status": "adapter_misconfigured"`,
+		`"code": "v21_adapter_misconfigured"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %s: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"secret-token", "user:", "http://", "127.0.0.1:21121", "/a21/v21/query"} {
+		if strings.Contains(stdout.String()+stderr.String(), forbidden) {
+			t.Fatalf("misconfigured readiness leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 	activeReleaseID := "rel_active"
 	var sawRetrievalQuery bool

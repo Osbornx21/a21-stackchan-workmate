@@ -214,6 +214,95 @@ func TestProfessionalBridgeReadinessReportsDisabledAndMisconfiguredWithoutQueryE
 	}
 }
 
+func TestProfessionalReadinessReportRecordsAckAndEvidenceSeparately(t *testing.T) {
+	report := ProfessionalReadiness(context.Background(), "http://127.0.0.1:21121", delayedReadinessClient{delay: 2 * time.Millisecond})
+	if report.Status != "passed" || report.ProfessionalAcceptanceStatus != "host_mock_ready" {
+		t.Fatalf("status = %+v", report)
+	}
+	if !report.CheckingAckAvailable || !report.CheckingAckWithin1200 || report.CheckingAckMS > 1200 {
+		t.Fatalf("checking ack fields = %+v", report)
+	}
+	if !report.EvidenceAvailable || !report.CardsAvailable || !report.FollowUpsAvailable {
+		t.Fatalf("evidence readiness fields = %+v", report)
+	}
+	if report.EvidenceCompletedMS < report.CheckingAckMS || !report.EvidenceCompletedAfterAck {
+		t.Fatalf("evidence completion not recorded after ack: %+v", report)
+	}
+	if !report.AdapterConfigured || report.AdapterExecuted {
+		t.Fatalf("adapter execution fields = %+v", report)
+	}
+	if report.EvidenceCount != 1 || report.CardCount != 1 || report.FollowUpCount != 1 {
+		t.Fatalf("shape counts = %+v", report)
+	}
+	if len(report.EvidenceTypes) != 1 || report.EvidenceTypes[0] != "meeting" {
+		t.Fatalf("evidence types = %+v", report.EvidenceTypes)
+	}
+	if !report.RedactionOK || len(report.Findings) != 0 {
+		t.Fatalf("redaction/findings = %+v", report)
+	}
+}
+
+func TestProfessionalReadinessReportRedactsContentAndExecutionInputs(t *testing.T) {
+	report := ProfessionalReadiness(context.Background(), "http://127.0.0.1:21121", contentHeavyReadinessClient{})
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"professional readiness fixture query",
+		"raw retrieved evidence",
+		"raw prompt text",
+		"raw transcript text",
+		"raw provider output",
+		"raw reasoning text",
+		"http://",
+		"https://",
+		"/Users/",
+		"secret-token",
+		"api_key",
+	} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("professional readiness report leaked %q: %s", forbidden, encoded)
+		}
+	}
+	if !report.RedactionOK {
+		t.Fatalf("redaction flag = false: %+v", report)
+	}
+}
+
+func TestProfessionalReadinessReportFindingsForDisabledAndMisconfiguredAdapter(t *testing.T) {
+	disabled := ProfessionalReadiness(context.Background(), "", nil)
+	if disabled.Status != "blocked" || disabled.ProfessionalAcceptanceStatus != "adapter_disabled" {
+		t.Fatalf("disabled report = %+v", disabled)
+	}
+	if disabled.AdapterConfigured || disabled.AdapterExecuted {
+		t.Fatalf("disabled adapter flags = %+v", disabled)
+	}
+	if !hasProfessionalReadinessFinding(disabled, "v21_adapter_disabled") {
+		t.Fatalf("disabled findings = %+v", disabled.Findings)
+	}
+
+	misconfigured := ProfessionalReadiness(context.Background(), "http://user:secret-token@127.0.0.1:21121/a21/v21/query", nil)
+	if misconfigured.Status != "blocked" || misconfigured.ProfessionalAcceptanceStatus != "adapter_misconfigured" {
+		t.Fatalf("misconfigured report = %+v", misconfigured)
+	}
+	if !misconfigured.AdapterConfigured || misconfigured.AdapterExecuted {
+		t.Fatalf("misconfigured adapter flags = %+v", misconfigured)
+	}
+	if !hasProfessionalReadinessFinding(misconfigured, "v21_adapter_misconfigured") {
+		t.Fatalf("misconfigured findings = %+v", misconfigured.Findings)
+	}
+	encoded, err := json.Marshal(misconfigured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"secret-token", "user:", "http://", "127.0.0.1:21121", "/a21/v21/query"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("misconfigured report leaked %q: %s", forbidden, encoded)
+		}
+	}
+}
+
 func TestHTTPClientRejectsNonProfessionalQueryBeforeNetwork(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +328,63 @@ func TestHTTPClientRejectsNonProfessionalQueryBeforeNetwork(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("network calls = %d, want 0", calls)
 	}
+}
+
+type delayedReadinessClient struct {
+	delay time.Duration
+}
+
+func (c delayedReadinessClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	timer := time.NewTimer(c.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return QueryResponse{}, ctx.Err()
+	case <-timer.C:
+	}
+	return QueryResponse{
+		TraceID:    request.TraceID,
+		FastAnswer: "redacted by readiness report",
+		Confidence: 0.8,
+		Evidence: []Evidence{{
+			Title:    "redacted title",
+			Type:     "meeting",
+			SourceID: "redacted-source",
+			Summary:  "redacted summary",
+		}},
+		SpeechBlocks: []string{"redacted speech"},
+		ScreenCards:  []ScreenCard{{Label: "redacted label", Text: "redacted text"}},
+		FollowUps:    []string{"redacted follow-up"},
+	}, nil
+}
+
+type contentHeavyReadinessClient struct{}
+
+func (contentHeavyReadinessClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	return QueryResponse{
+		TraceID:    request.TraceID,
+		FastAnswer: "raw provider output raw reasoning text",
+		Confidence: 0.7,
+		Evidence: []Evidence{{
+			Title:    "raw prompt text",
+			Type:     "meeting",
+			SourceID: "secret-token",
+			Summary:  "raw retrieved evidence /Users/example/local.txt http://127.0.0.1/private",
+			Quote:    "raw transcript text",
+		}},
+		SpeechBlocks: []string{"raw provider output"},
+		ScreenCards:  []ScreenCard{{Label: "raw reasoning text", Text: "raw prompt text"}},
+		FollowUps:    []string{"raw transcript text"},
+	}, nil
+}
+
+func hasProfessionalReadinessFinding(report ProfessionalReadinessReport, code string) bool {
+	for _, finding := range report.Findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func TestValidateProfessionalQueryRequestRejectsUnsafeScopeAndEmptyUtterance(t *testing.T) {

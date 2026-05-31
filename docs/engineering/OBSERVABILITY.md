@@ -301,6 +301,16 @@ Current trace summary fields:
 - `barge_in_stop_ms`
 - `provider_commit_to_first_audio_ms`
 
+`v21-professional-readiness` emits schema `a21.v21_professional_readiness.v1`
+as host-only report-contract evidence. It records `checking_ack_ms`,
+`checking_ack_within_1200`, `evidence_completed_ms`, and
+`evidence_completed_after_ack` to prove the local “checking” acknowledgement is
+available before mock evidence completion. The report also carries
+`evidence_available`, `cards_available`, `follow_ups_available`,
+`adapter_configured`, `adapter_executed=false`, `redaction_ok`, fixed findings,
+and `professional_acceptance_status`. It is not real V21 execution, physical
+device acceptance, retrieval-quality proof, or PRD completion evidence.
+
 ## Voice Waterfall Events
 
 Every voice turn should eventually expose:
