@@ -477,14 +477,21 @@ type providerLatencyBenchHostLoopbackEvidence struct {
 }
 
 type providerLatencyBenchHostLoopbackReport struct {
-	SchemaVersion string                                  `json:"schema_version"`
-	ExecutionMode string                                  `json:"execution_mode"`
-	BaselineScope string                                  `json:"baseline_scope"`
-	DeviceID      string                                  `json:"device_id"`
-	AnswerTurns   []providerLatencyBenchHostLoopbackTurn  `json:"answer_turns"`
-	BargeInTurns  []providerLatencyBenchHostLoopbackTurn  `json:"barge_in_turns"`
-	Samples       []providerLatencyBenchHostLoopbackTrace `json:"samples"`
-	Execution     providerLatencyBenchExecution           `json:"execution"`
+	SchemaVersion       string                                  `json:"schema_version"`
+	Schema              string                                  `json:"schema"`
+	ExecutionMode       string                                  `json:"execution_mode"`
+	BaselineScope       string                                  `json:"baseline_scope"`
+	DeviceID            string                                  `json:"device_id"`
+	AnswerTurns         []providerLatencyBenchHostLoopbackTurn  `json:"answer_turns"`
+	BargeInTurns        []providerLatencyBenchHostLoopbackTurn  `json:"barge_in_turns"`
+	Samples             []providerLatencyBenchHostLoopbackTrace `json:"samples"`
+	FirstAudioSamplesMS []float64                               `json:"first_audio_samples_ms"`
+	AbortStopSamplesMS  []float64                               `json:"abort_stop_samples_ms"`
+	FirstAudioP95MS     *float64                                `json:"first_audio_p95_ms"`
+	AbortStopP95MS      *float64                                `json:"abort_stop_p95_ms"`
+	HostCandidate       bool                                    `json:"host_candidate"`
+	PRDAccepted         bool                                    `json:"prd_accepted"`
+	Execution           providerLatencyBenchExecution           `json:"execution"`
 }
 
 type providerLatencyBenchHostLoopbackTurn struct {
@@ -566,13 +573,24 @@ func invalidProviderLatencyHostLoopbackFinding() providerLatencyBenchFinding {
 }
 
 func validProviderLatencyHostLoopbackReport(report providerLatencyBenchHostLoopbackReport) bool {
-	switch report.SchemaVersion {
-	case "a21.xiaozhi_voice_bench.v1", "a21.audio.local_voice_loopback.v1", "a21.provider_latency_host_loopback.v1":
+	switch providerLatencyHostLoopbackSchema(report) {
+	case "a21.xiaozhi_voice_bench.v1", "a21.audio.local_voice_loopback.v1", "a21.provider_latency_host_loopback.v1", "a21.virtual_xiaozhi_harness.v1":
 	default:
 		return false
 	}
 	mode := strings.TrimSpace(report.ExecutionMode)
 	return mode == "" || mode == "host_loopback"
+}
+
+func providerLatencyHostLoopbackSchema(report providerLatencyBenchHostLoopbackReport) string {
+	if strings.TrimSpace(report.SchemaVersion) != "" {
+		return strings.TrimSpace(report.SchemaVersion)
+	}
+	return strings.TrimSpace(report.Schema)
+}
+
+func providerLatencyHostLoopbackIsVirtualXiaozhi(report providerLatencyBenchHostLoopbackReport) bool {
+	return providerLatencyHostLoopbackSchema(report) == "a21.virtual_xiaozhi_harness.v1"
 }
 
 func providerLatencyHostLoopbackHasPhysicalEvidence(report providerLatencyBenchHostLoopbackReport) bool {
@@ -583,6 +601,9 @@ func providerLatencyHostLoopbackHasPhysicalEvidence(report providerLatencyBenchH
 }
 
 func providerLatencyHostLoopbackSamples(report providerLatencyBenchHostLoopbackReport, physicalEvidence bool) []providerLatencyBenchSample {
+	if providerLatencyHostLoopbackIsVirtualXiaozhi(report) {
+		return providerLatencyVirtualXiaozhiSamples(report)
+	}
 	samples := make([]providerLatencyBenchSample, 0, len(report.AnswerTurns)+len(report.BargeInTurns)+len(report.Samples))
 	for _, trace := range report.Samples {
 		samples = append(samples, providerLatencyHostLoopbackSampleFromTrace(len(samples)+1, trace, physicalEvidence))
@@ -602,6 +623,30 @@ func providerLatencyHostLoopbackSamples(report providerLatencyBenchHostLoopbackR
 			continue
 		}
 		samples = append(samples, providerLatencyHostLoopbackSampleFromTrace(len(samples)+1, *turn.TraceSummary, physicalEvidence))
+	}
+	return samples
+}
+
+func providerLatencyVirtualXiaozhiSamples(report providerLatencyBenchHostLoopbackReport) []providerLatencyBenchSample {
+	count := len(report.FirstAudioSamplesMS)
+	if len(report.AbortStopSamplesMS) > count {
+		count = len(report.AbortStopSamplesMS)
+	}
+	samples := make([]providerLatencyBenchSample, 0, count)
+	for index := 0; index < count; index++ {
+		sample := providerLatencyBenchSample{
+			Index:       index + 1,
+			Placeholder: false,
+		}
+		if index < len(report.FirstAudioSamplesMS) {
+			sample.AnswerFirstAudioMS = report.FirstAudioSamplesMS[index]
+		}
+		if index < len(report.AbortStopSamplesMS) {
+			sample.BargeInStopMS = report.AbortStopSamplesMS[index]
+			sample.PlaybackStopMS = report.AbortStopSamplesMS[index]
+			sample.PlaybackStopDoneMS = report.AbortStopSamplesMS[index]
+		}
+		samples = append(samples, sample)
 	}
 	return samples
 }

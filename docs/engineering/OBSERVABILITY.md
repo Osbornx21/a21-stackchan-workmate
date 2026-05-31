@@ -86,12 +86,15 @@ production acceptance evidence.
 
 `provider-latency-bench --mode host_loopback --fixture <report.json>` can also
 ingest an already-redacted host-loopback report, such as the
-`local-voice-loopback` or `xiaozhi-voice-bench` family. Ingested reports map
-available host-only timing fields into the same stage and canonical-metric
-taxonomy, including `answer_first_audio_p95_ms` and `barge_in_stop_p95_ms` when
-enough samples exist. Missing stages stay explicit findings. Physical-only
-acceptance remains blocked unless the source report contains physical
-StackChan evidence for device playback.
+`local-voice-loopback`, `xiaozhi-voice-bench`, or
+`a21.virtual_xiaozhi_harness.v1` family. Ingested reports map available
+host-only timing fields into the same stage and canonical-metric taxonomy,
+including `answer_first_audio_p95_ms` and `barge_in_stop_p95_ms` when enough
+samples exist. For virtual Xiaozhi harness aggregate reports,
+`first_audio_samples_ms` feeds answer-first-audio metrics and
+`abort_stop_samples_ms` feeds barge-in-stop metrics. Missing stages stay
+explicit findings. Physical-only acceptance remains blocked unless the source
+report contains physical StackChan evidence for device playback.
 
 The live protocol contract reserves future observability fields for binary Opus
 media. It is planning-only: reserved trace markers such as

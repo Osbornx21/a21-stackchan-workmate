@@ -126,11 +126,14 @@ redacted stats. The canonical block covers `transport_ingress_ms`,
 `answer_first_audio_p95_ms`, and `barge_in_stop_p95_ms`. Mock and fixture
 placeholder stages remain `available=false`, `placeholder=true`, and carry a
 fixed placeholder reason. When `--mode host_loopback --fixture <report.json>`
-ingests a redacted `local-voice-loopback` or `xiaozhi-voice-bench` style report,
-available host-only ASR/provider/TTS/downlink/barge-in fields may be marked
-`available=true`, `placeholder=false`, and summarized as
-`acceptance_status=candidate_host_only` if enough samples satisfy the PRD
-host-only latency thresholds. Physical-only fields such as
+ingests a redacted `local-voice-loopback`, `xiaozhi-voice-bench`, or
+`a21.virtual_xiaozhi_harness.v1` aggregate report, available host-only
+ASR/provider/TTS/downlink/barge-in fields may be marked `available=true`,
+`placeholder=false`, and summarized as `acceptance_status=candidate_host_only`
+if enough samples satisfy the PRD host-only latency thresholds. Virtual Xiaozhi
+harness reports contribute `first_audio_samples_ms` / `first_audio_p95_ms` to
+`answer_first_audio_*` metrics and `abort_stop_samples_ms` /
+`abort_stop_p95_ms` to `barge_in_stop_*` metrics. Physical-only fields such as
 `device_playback_start_ms` and `speech_end_to_first_audible_response_ms` remain
 unavailable unless the report contains physical StackChan evidence.
 When `--fixture` points at a redacted JSON sidecar, the report may include

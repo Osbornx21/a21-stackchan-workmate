@@ -2060,6 +2060,185 @@ func TestRunProviderLatencyBenchHostLoopbackPartialReportFindsMissingStages(t *t
 	}
 }
 
+func TestRunProviderLatencyBenchIngestsVirtualXiaozhiHarnessReport(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-virtual-xiaozhi-report.json")
+	writeProviderLatencyBenchVirtualXiaozhiFixture(t, fixture)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	if report.Fixture == nil || report.Fixture.FixtureID != "a21-virtual-xiaozhi-report.json" {
+		t.Fatalf("fixture id not redacted to basename: %#v", report.Fixture)
+	}
+	answer := report.CanonicalMetrics["answer_first_audio_p95_ms"]
+	if !answer.Available || answer.P95MS != 1200 || answer.SourceStage != "answer_first_audio_ms" {
+		t.Fatalf("answer_first_audio_p95_ms = %#v, want virtual harness p95", answer)
+	}
+	barge := report.CanonicalMetrics["barge_in_stop_p95_ms"]
+	if !barge.Available || barge.P95MS != 260 || barge.SourceStage != "barge_in_stop_ms" {
+		t.Fatalf("barge_in_stop_p95_ms = %#v, want virtual harness abort-stop p95", barge)
+	}
+	answerStage := providerLatencyBenchStageByName(t, report, "answer_first_audio_ms")
+	if !answerStage.Available || answerStage.Samples != 3 || answerStage.P95MS != 1200 {
+		t.Fatalf("answer stage = %#v, want three virtual first-audio samples", answerStage)
+	}
+	bargeStage := providerLatencyBenchStageByName(t, report, "barge_in_stop_ms")
+	if !bargeStage.Available || bargeStage.Samples != 3 || bargeStage.P95MS != 260 {
+		t.Fatalf("barge stage = %#v, want three virtual abort-stop samples", bargeStage)
+	}
+	physicalStage := providerLatencyBenchStageByName(t, report, "device_playback_start_ms")
+	if physicalStage.Available || physicalStage.Placeholder {
+		t.Fatalf("physical playback should remain unavailable without physical evidence: %#v", physicalStage)
+	}
+	physicalMetric := report.CanonicalMetrics["speech_end_to_first_audible_response_ms"]
+	if physicalMetric.Available || physicalMetric.Placeholder {
+		t.Fatalf("physical audible response should not be available from virtual fixture: %#v", physicalMetric)
+	}
+	if report.PRDAccepted {
+		t.Fatalf("virtual host harness must not claim PRD acceptance")
+	}
+	if report.Execution.ProviderExecuted || report.Execution.V21Executed || report.Execution.HardwareExecuted {
+		t.Fatalf("virtual harness ingestion should not mark execution flags true: %#v", report.Execution)
+	}
+}
+
+func TestRunProviderLatencyBenchVirtualXiaozhiPartialReportFindsMissingAbortStop(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-virtual-xiaozhi-partial.json")
+	data := `{
+  "schema": "a21.virtual_xiaozhi_harness.v1",
+  "target": "127.0.0.1:21080/v1/xiaozhi",
+  "profile": "xiaozhi",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "trace_id": "a21-trace-virtual-001",
+  "session_id": "a21-session-virtual-001",
+  "runs": 3,
+  "successful_runs": 3,
+  "first_audio_samples_ms": [820, 930, 1200],
+  "first_audio_p95_ms": 1200,
+  "abort_stop_samples_ms": [],
+  "abort_stop_p95_ms": null,
+  "host_candidate": false,
+  "prd_accepted": false
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	answer := report.CanonicalMetrics["answer_first_audio_p95_ms"]
+	if !answer.Available || answer.P95MS != 1200 {
+		t.Fatalf("partial virtual report should keep first-audio timing: %#v", answer)
+	}
+	barge := report.CanonicalMetrics["barge_in_stop_p95_ms"]
+	if barge.Available || barge.Samples != 0 {
+		t.Fatalf("missing abort-stop should be unavailable: %#v", barge)
+	}
+	if report.Counts.FailureCount == 0 || len(report.Findings) == 0 {
+		t.Fatalf("partial virtual report should include honest findings: %#v", report.Findings)
+	}
+}
+
+func TestRunProviderLatencyBenchVirtualXiaozhiRedactsUnsafeReportPayload(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-virtual-xiaozhi-leaky.json")
+	data := `{
+  "schema": "a21.virtual_xiaozhi_harness.v1",
+  "target": "https://user:pass@example.invalid/v1/xiaozhi",
+  "profile": "xiaozhi",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "trace_id": "a21-trace-virtual-001",
+  "session_id": "a21-session-virtual-001",
+  "first_audio_samples_ms": [820, 930, 1200],
+  "first_audio_p95_ms": 1200,
+  "abort_stop_samples_ms": [180, 220, 260],
+  "abort_stop_p95_ms": 260,
+  "run_reports": [
+    {
+      "prompt": "secret prompt",
+      "transcript": "secret transcript",
+      "provider_output": "secret provider output",
+      "data_base64": "c2VjcmV0",
+      "proxy_url": "http://user:pass@example.invalid:7890"
+    }
+  ],
+  "prd_accepted": false
+}`
+	if err := os.WriteFile(fixture, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"fixture_id": "a21-virtual-xiaozhi-leaky.json"`,
+		`"code": "host_loopback_report_invalid"`,
+		`"failure_count": 1`,
+		`"local_paths_stored": false`,
+		`"full_urls_stored": false`,
+		`"payloads_stored": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{dir, fixture, "https://", "http://", "example.invalid", "user:pass", "secret", "prompt", "transcript", "provider_output", "data_base64", "proxy_url", "c2VjcmV0"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func writeProviderLatencyBenchVirtualXiaozhiFixture(t *testing.T, path string) {
+	t.Helper()
+	data := `{
+  "schema": "a21.virtual_xiaozhi_harness.v1",
+  "target": "127.0.0.1:21080/v1/xiaozhi",
+  "profile": "xiaozhi",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "trace_id": "a21-trace-virtual-001",
+  "session_id": "a21-session-virtual-001",
+  "protocol_version": 1,
+  "runs": 3,
+  "successful_runs": 3,
+  "exit_codes": [0, 0, 0],
+  "first_audio_samples_ms": [820, 930, 1200],
+  "first_audio_p95_ms": 1200,
+  "abort_stop_samples_ms": [180, 220, 260],
+  "abort_stop_p95_ms": 260,
+  "host_candidate": true,
+  "prd_accepted": false
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeProviderLatencyBenchHostLoopbackFixture(t *testing.T, path string) {
 	t.Helper()
 	data := `{
