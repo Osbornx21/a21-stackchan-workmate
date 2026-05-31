@@ -3,7 +3,7 @@
 Status: active control ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-project-control`.
-Last accepted control commit before this ledger update: `2df39b984558`.
+Last accepted control commit before this ledger update: `3a12986`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -16,12 +16,14 @@ defines policy; this ledger records the current queue and accepted state.
 ## Current Accepted State
 
 - Control branch: `codex/a21-project-control`.
-- Control HEAD before this ledger update: `2df39b984558 docs(control): add A21 control ledger`.
+- Control HEAD before this ledger update: `3a12986 docs(control): record hardware diagnostic handoff`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
 - StackChan hardware mainline diagnostic branch is committed at
   `1e38804 fix(hardware): enforce StackChan capability honesty`.
+- Provider Spine DeepSeek text-stream readiness branch is committed at
+  `6b7fdf0 fix(providers): measure first content from content deltas`.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked until an
@@ -34,7 +36,8 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | active | T1/T2; T4 only after explicit provider-execute window | no |
+| `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | active | T1/T2; T4 only after explicit V21-execute window | no |
+| `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | completed; committed `6b7fdf0` | T1/T2 | no |
 | `019e7b99-141e-70a3-b0fd-c5dd38b5cab5` | StackChan hardware mainline diagnostic consolidation | `/Users/jiyurun/.codex/worktrees/ddec/New project` | completed; committed `1e38804` | T1/T2 | no |
 | `019e7b91-537b-7233-b682-276f77e1b871` | Mainline NVS closure review | `/Users/jiyurun/.codex/worktrees/88f4/New project` | completed; no diff | T1 | no |
 | `019e7b80-25e2-73e3-9e6c-05112ebbf82f` | Governance review | `/Users/jiyurun/.codex/worktrees/0caf/New project` | completed | T0 | no |
@@ -60,6 +63,43 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Provider Spine / DeepSeek Text-Stream Readiness
+
+Accepted from thread `019e7ba1-d81e-74c3-bd2e-a6191344085a`.
+
+Evidence:
+
+- Branch: `codex/a21-provider-spine-deepseek-textstream`.
+- Worktree: `/Users/jiyurun/.codex/worktrees/84d6/New project`.
+- Committed HEAD: `6b7fdf0 fix(providers): measure first content from content deltas`.
+- Dirty state after commit: clean.
+- Changed files: `internal/providers/smoke.go`,
+  `internal/providers/smoke_test.go`,
+  `internal/providers/textstream_client.go`,
+  `internal/providers/textstream_test.go`.
+- `first_content_ms` now starts only on `content` deltas, not on reasoning
+  deltas, so DeepSeek reasoning tokens do not understate first visible content
+  latency.
+- Added reasoning-only SSE tests for provider smoke and text-stream completion.
+- Redaction checks cover synthetic key, model name, and reasoning text.
+- Control-tower verification passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke' -count=1`.
+- Control-tower verification passed: `git diff --check`.
+- Control-tower verification passed: `make verify`.
+- Thread verification also passed `go test ./...`, `go run ./cmd/a21 namespace-audit`,
+  `go run ./cmd/a21 preflight`, `go run ./cmd/a21 doctor`, and redacted
+  `provider-smoke` dry-run checks.
+- No real provider execute, key use, external provider call, durable report,
+  firmware change, Gateway runtime, V21 execute, or hardware path was touched.
+
+Decision:
+
+- Accept the Provider Spine readiness code slice.
+- Do not open T4 automatically. Real DeepSeek execution is a separate explicit
+  provider window only if the control tower wants live first-byte/first-content
+  evidence.
+- Continue to keep A21 as provider-neutral input/output, not an agent router.
 
 ### StackChan Hardware Mainline Diagnostic Consolidation
 
@@ -139,18 +179,29 @@ Decision:
 
 ## Authorized Next Queue
 
-1. Provider Spine / text-stream hot plug.
-   - Thread: `019e7ba1-d81e-74c3-bd2e-a6191344085a`.
-   - Worktree: `/Users/jiyurun/.codex/worktrees/84d6/New project`.
+1. Professional V21 evidence lane.
+   - Thread: `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9`.
+   - Worktree: `/Users/jiyurun/.codex/worktrees/ab7a/New project`.
+   - Branch: `codex/a21-mainline-professional-v21-contract`.
+   - Gate: active read/plan/minimal T1/T2 adapter-contract work only.
+   - Max tier: T1/T2 by default. V21 execute is T4 and requires explicit
+     adapter URL, redacted reports, and no query/answer/evidence text in saved
+     output.
+   - Forbidden: treating A21 as V21's voice skin, copying V21 internals,
+     storing evidence bodies in reports, Gateway runtime, provider execute, or
+     V21 execute without control approval.
+
+2. Provider Spine / text-stream hot plug.
    - Branch: `codex/a21-provider-spine-deepseek-textstream`.
-   - Gate: active read/plan/minimal T1/T2 readiness work only.
+   - Status: accepted code slice at
+     `6b7fdf0 fix(providers): measure first content from content deltas`.
    - Max tier: T1/T2 by default. T4 only with explicit provider execution
      declaration, redaction check, and local env confirmation.
    - Forbidden: provider keys in docs/reports/logs, provider URLs in firmware,
      hidden proxy inheritance, Baidu/Huawei expansion, provider execute without
      control approval, or turning A21 into an agent router.
 
-2. StackChan hardware mainline diagnostic consolidation.
+3. StackChan hardware mainline diagnostic consolidation.
    - Branch: `codex/a21-mainline-stackchan-hardware-diagnostic`.
    - Status: accepted code slice at
      `1e38804 fix(hardware): enforce StackChan capability honesty`.
@@ -164,13 +215,6 @@ Decision:
    - Forbidden: firmware writes, app flash, NVS execute, provider/V21 execute,
      Gateway background runtime left running, or claiming physical acceptance
      without fresh physical evidence.
-
-3. Professional V21 evidence lane.
-   - Branch: `codex/a21-mainline-professional-v21-contract`.
-   - Gate: start only after Provider Spine queue state is explicit.
-   - Max tier: T1/T2 by default. V21 execute is T4 and requires explicit
-     adapter URL, redacted reports, and no query/answer/evidence text in saved
-     output.
 
 4. Official PCM bridge app flash ADR.
    - Branch: `codex/a21-docs-pcm-bridge-flash-adr`.
