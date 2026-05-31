@@ -299,7 +299,7 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 		if device.DeviceID == deviceID && online && !strings.Contains(strings.ToLower(device.DeviceID), "sim") {
 			readiness.PhysicalDeviceOnline = true
 			readiness.MicrophoneStatus = strings.TrimSpace(device.Capabilities["microphone"])
-			readiness.PhysicalMicrophoneReady = readiness.MicrophoneStatus == "available"
+			readiness.PhysicalMicrophoneReady = productMicrophoneReady(readiness.MicrophoneStatus)
 		}
 		if online && strings.Contains(strings.ToLower(device.DeviceID), "sim") {
 			readiness.SimulatorDeviceOnline = true
@@ -317,6 +317,11 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 		readiness.Status = "physical_offline"
 	}
 	return readiness
+}
+
+func productMicrophoneReady(status string) bool {
+	status = strings.ToLower(strings.TrimSpace(status))
+	return status == "available" || strings.HasPrefix(status, "available_")
 }
 
 func buildProductVoiceReadiness(env []string, provider productProviderReadiness, stackchan productStackChanReadiness) productVoiceReadiness {

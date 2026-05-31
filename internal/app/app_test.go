@@ -87,7 +87,7 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 }
 
 func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
-	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
@@ -118,8 +118,8 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	if !report.V21.Healthy || !report.StackChan.PhysicalDeviceOnline || !report.Voice.ContinuousVoiceReady {
 		t.Fatalf("readiness = v21:%+v stackchan:%+v voice:%+v", report.V21, report.StackChan, report.Voice)
 	}
-	if !report.StackChan.PhysicalMicrophoneReady || report.StackChan.MicrophoneStatus != "available" {
-		t.Fatalf("stackchan microphone readiness = %+v, want product-ready microphone", report.StackChan)
+	if !report.StackChan.PhysicalMicrophoneReady || report.StackChan.MicrophoneStatus != "available_core_s3_i2s_24k_to_a21_16k" {
+		t.Fatalf("stackchan microphone readiness = %+v, want official bridge product microphone", report.StackChan)
 	}
 	if len(report.NextActions) != 0 {
 		t.Fatalf("next actions = %#v, want none", report.NextActions)
@@ -2921,6 +2921,77 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	for _, forbidden := range []string{"语音唤醒", "历史讨论", server.URL} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("v21 adapter smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestV21AdapterBridgeExecutesRealBackendVoiceQueryContract(t *testing.T) {
+	activeReleaseID := "rel_active"
+	var sawVoiceQuery bool
+	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/v1/collections":
+			if r.Header.Get("X-Dev-Role") != "VIEWER" {
+				t.Fatalf("missing viewer dev header")
+			}
+			writeV21BridgeJSON(w, http.StatusOK, []v21CollectionView{{
+				ID:              "col_vehicle",
+				Name:            "Vehicle Knowledge",
+				ActiveReleaseID: &activeReleaseID,
+			}})
+		case "/internal/v1/knowledge/voice-query":
+			var request struct {
+				CollectionIDs []string `json:"collection_ids"`
+				Question      string   `json:"question"`
+				Mode          string   `json:"mode"`
+				ResponseStyle string   `json:"response_style"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			sawVoiceQuery = len(request.CollectionIDs) == 1 &&
+				request.CollectionIDs[0] == "col_vehicle" &&
+				request.Question == "哪些车有儿童锁" &&
+				request.Mode == "grounded_qa" &&
+				request.ResponseStyle == "short_spoken"
+			writeV21BridgeJSON(w, http.StatusOK, v21VoiceQueryResponse{
+				QueryRunID:   "qry_bridge",
+				SpokenAnswer: "G02 支持儿童锁。",
+				Confidence:   0.91,
+				Evidence: []v21VoiceEvidence{{
+					AnchorID:    "ca_child_lock",
+					SourceLabel: "儿童锁证据",
+					Excerpt:     "G02ES、G02ESVR 支持座椅儿童锁。",
+					Score:       0.91,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer v21Backend.Close()
+	handler, err := newV21AdapterBridgeHandler(context.Background(), v21AdapterBridgeOptions{V21URL: v21Backend.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := httptest.NewServer(handler)
+	defer adapter.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"v21-adapter-smoke", "--adapter-url", adapter.URL, "--query", "哪些车有儿童锁", "--execute"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !sawVoiceQuery {
+		t.Fatal("bridge did not call V21 voice query with the adapter contract")
+	}
+	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"confidence": 0.91`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
 }
