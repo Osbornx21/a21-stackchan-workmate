@@ -93,8 +93,21 @@ This scaffold does not execute real providers, V21, Gateway runtime services, or
 physical StackChan paths. It emits A21-owned `trace_id`, `session_id`,
 `device_id=none_host_fixture`, provider profile/family labels, redacted
 network/proxy metadata, stage waterfall placeholders, p50/p95/p99 summaries,
-fallback/failure counts, and `promotion_gate=not_production`. When `--fixture`
-points at a redacted JSON sidecar, the report may include
+fallback/failure counts, and `promotion_gate=not_production`. The v2 report
+shape also includes machine-readable `metric_terms`, `canonical_metrics`, and
+`stage_availability` blocks so TTFS, TTFT, FTTS, and TTFA vocabulary can be
+compared against A21 canonical fields without promoting the numbers as real
+latency. The canonical block covers `asr_first_partial_ms`,
+`provider_first_byte_ms`, `provider_first_content_ms`, `tts_first_audio_ms`,
+`audio_downlink_first_frame_ms`, `device_playback_start_ms`,
+`barge_in_stop_ms`, `provider_cancel_ms`, `playback_stop_ms`,
+`speech_end_to_final_asr_ms`, `speech_end_to_first_llm_token_ms`,
+`llm_request_to_first_token_ms`, `first_llm_token_to_first_tts_audio_ms`,
+`tts_request_to_first_audio_ms`, `provider_commit_to_first_audio_ms`,
+`gateway_downlink_first_frame_ms`, `device_downlink_first_frame_ms`, and
+`speech_end_to_first_audible_response_ms`. Every current stage is marked
+`available=false`, `placeholder=true`, and carries a fixed placeholder reason.
+When `--fixture` points at a redacted JSON sidecar, the report may include
 `schema_version=a21.provider_latency_fixture.v1`, fixture identity, audio
 format, sample rate, channel count, duration, sample count, window length, and
 window count. The report stores only the fixture basename. Invalid or unsafe
@@ -103,9 +116,13 @@ Reports must not store prompt text, transcript text, provider output, provider
 reasoning, raw PCM, base64 audio, key values, full provider URLs, proxy URLs, or
 full local fixture paths.
 
-Until a later T4/T6 window adds real measurements, provider comparisons must
-cite this scaffold only as report-shape evidence and must list unmeasured real
-ASR, provider, TTS, downlink, physical playback, and barge-in stages explicitly.
+This v2 hardening is a report-contract and metric-shape change only. It does
+not authorize provider execute, V21 execute, Gateway runtime startup, binary
+Opus transport, AEC adapter implementation, WebRTC/ESP-SR native adapters, or
+hardware acceptance. Until a later T4/T6/T8 window adds real measurements,
+provider comparisons must cite this scaffold only as report-shape evidence and
+must list unmeasured real ASR, provider, TTS, downlink, physical playback, and
+barge-in stages explicitly.
 
 ## Non-Goals
 

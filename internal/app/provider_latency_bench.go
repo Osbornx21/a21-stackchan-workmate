@@ -17,27 +17,31 @@ import (
 const providerLatencyBenchSchemaVersion = "a21.provider_latency_bench.v1"
 const providerLatencyFixtureSchemaVersion = "a21.provider_latency_fixture.v1"
 const providerLatencyFixtureSidecarMaxBytes = 64 * 1024
+const providerLatencyBenchPlaceholderReason = "report_contract_shape_only_no_provider_v21_gateway_or_hardware_execute"
 
 type providerLatencyBenchReport struct {
-	SchemaVersion string                        `json:"schema_version"`
-	ExecutionMode string                        `json:"execution_mode"`
-	BaselineScope string                        `json:"baseline_scope"`
-	Iterations    int                           `json:"iterations"`
-	TraceID       string                        `json:"trace_id"`
-	SessionID     string                        `json:"session_id"`
-	DeviceID      string                        `json:"device_id"`
-	Provider      providerLatencyBenchProvider  `json:"provider"`
-	Fixture       *providerLatencyBenchFixture  `json:"fixture,omitempty"`
-	Metadata      latencyBenchMetadata          `json:"metadata"`
-	Network       providers.NetworkReport       `json:"network"`
-	Samples       []providerLatencyBenchSample  `json:"samples"`
-	Summary       providerLatencyBenchSummary   `json:"summary"`
-	Counts        providerLatencyBenchCounts    `json:"counts"`
-	PromotionGate string                        `json:"promotion_gate"`
-	Execution     providerLatencyBenchExecution `json:"execution"`
-	Redaction     providerLatencyBenchRedaction `json:"redaction"`
-	Findings      []providerLatencyBenchFinding `json:"findings,omitempty"`
-	ReportPath    string                        `json:"report_path,omitempty"`
+	SchemaVersion     string                                  `json:"schema_version"`
+	ExecutionMode     string                                  `json:"execution_mode"`
+	BaselineScope     string                                  `json:"baseline_scope"`
+	Iterations        int                                     `json:"iterations"`
+	TraceID           string                                  `json:"trace_id"`
+	SessionID         string                                  `json:"session_id"`
+	DeviceID          string                                  `json:"device_id"`
+	Provider          providerLatencyBenchProvider            `json:"provider"`
+	Fixture           *providerLatencyBenchFixture            `json:"fixture,omitempty"`
+	Metadata          latencyBenchMetadata                    `json:"metadata"`
+	Network           providers.NetworkReport                 `json:"network"`
+	MetricTerms       []providerLatencyBenchMetricTerm        `json:"metric_terms"`
+	StageAvailability []providerLatencyBenchStageAvailability `json:"stage_availability"`
+	Samples           []providerLatencyBenchSample            `json:"samples"`
+	Summary           providerLatencyBenchSummary             `json:"summary"`
+	CanonicalMetrics  map[string]providerLatencyCanonical     `json:"canonical_metrics"`
+	Counts            providerLatencyBenchCounts              `json:"counts"`
+	PromotionGate     string                                  `json:"promotion_gate"`
+	Execution         providerLatencyBenchExecution           `json:"execution"`
+	Redaction         providerLatencyBenchRedaction           `json:"redaction"`
+	Findings          []providerLatencyBenchFinding           `json:"findings,omitempty"`
+	ReportPath        string                                  `json:"report_path,omitempty"`
 }
 
 type providerLatencyBenchProvider struct {
@@ -87,28 +91,46 @@ type providerLatencyBenchFinding struct {
 	Message string `json:"message"`
 }
 
+type providerLatencyBenchMetricTerm struct {
+	Term            string `json:"term"`
+	A21Stage        string `json:"a21_stage"`
+	CanonicalMetric string `json:"canonical_metric"`
+	Meaning         string `json:"meaning"`
+}
+
+type providerLatencyBenchStageAvailability struct {
+	Stage             string `json:"stage"`
+	Available         bool   `json:"available"`
+	Placeholder       bool   `json:"placeholder"`
+	PlaceholderReason string `json:"placeholder_reason"`
+}
+
 type providerLatencyBenchSample struct {
-	Index                  int     `json:"index"`
-	ASRFirstPartialMS      float64 `json:"asr_first_partial_ms"`
-	ProviderFirstByteMS    float64 `json:"provider_first_byte_ms"`
-	ProviderFirstContentMS float64 `json:"provider_first_content_ms"`
-	TTSFirstAudioMS        float64 `json:"tts_first_audio_ms"`
-	DownlinkFirstFrameMS   float64 `json:"downlink_first_frame_ms"`
-	DevicePlaybackStartMS  float64 `json:"device_playback_start_ms"`
-	BargeInStopMS          float64 `json:"barge_in_stop_ms"`
-	ProviderCancelMS       float64 `json:"provider_cancel_ms"`
-	Placeholder            bool    `json:"placeholder"`
+	Index                     int     `json:"index"`
+	ASRFirstPartialMS         float64 `json:"asr_first_partial_ms"`
+	ProviderFirstByteMS       float64 `json:"provider_first_byte_ms"`
+	ProviderFirstContentMS    float64 `json:"provider_first_content_ms"`
+	TTSFirstAudioMS           float64 `json:"tts_first_audio_ms"`
+	DownlinkFirstFrameMS      float64 `json:"downlink_first_frame_ms"`
+	AudioDownlinkFirstFrameMS float64 `json:"audio_downlink_first_frame_ms"`
+	DevicePlaybackStartMS     float64 `json:"device_playback_start_ms"`
+	BargeInStopMS             float64 `json:"barge_in_stop_ms"`
+	ProviderCancelMS          float64 `json:"provider_cancel_ms"`
+	PlaybackStopMS            float64 `json:"playback_stop_ms"`
+	Placeholder               bool    `json:"placeholder"`
 }
 
 type providerLatencyBenchSummary struct {
-	ASRFirstPartialMS      providerLatencyBenchSeries `json:"asr_first_partial_ms"`
-	ProviderFirstByteMS    providerLatencyBenchSeries `json:"provider_first_byte_ms"`
-	ProviderFirstContentMS providerLatencyBenchSeries `json:"provider_first_content_ms"`
-	TTSFirstAudioMS        providerLatencyBenchSeries `json:"tts_first_audio_ms"`
-	DownlinkFirstFrameMS   providerLatencyBenchSeries `json:"downlink_first_frame_ms"`
-	DevicePlaybackStartMS  providerLatencyBenchSeries `json:"device_playback_start_ms"`
-	BargeInStopMS          providerLatencyBenchSeries `json:"barge_in_stop_ms"`
-	ProviderCancelMS       providerLatencyBenchSeries `json:"provider_cancel_ms"`
+	ASRFirstPartialMS         providerLatencyBenchSeries `json:"asr_first_partial_ms"`
+	ProviderFirstByteMS       providerLatencyBenchSeries `json:"provider_first_byte_ms"`
+	ProviderFirstContentMS    providerLatencyBenchSeries `json:"provider_first_content_ms"`
+	TTSFirstAudioMS           providerLatencyBenchSeries `json:"tts_first_audio_ms"`
+	DownlinkFirstFrameMS      providerLatencyBenchSeries `json:"downlink_first_frame_ms"`
+	AudioDownlinkFirstFrameMS providerLatencyBenchSeries `json:"audio_downlink_first_frame_ms"`
+	DevicePlaybackStartMS     providerLatencyBenchSeries `json:"device_playback_start_ms"`
+	BargeInStopMS             providerLatencyBenchSeries `json:"barge_in_stop_ms"`
+	ProviderCancelMS          providerLatencyBenchSeries `json:"provider_cancel_ms"`
+	PlaybackStopMS            providerLatencyBenchSeries `json:"playback_stop_ms"`
 }
 
 type providerLatencyBenchSeries struct {
@@ -116,6 +138,17 @@ type providerLatencyBenchSeries struct {
 	P50MS   float64 `json:"p50_ms"`
 	P95MS   float64 `json:"p95_ms"`
 	P99MS   float64 `json:"p99_ms"`
+}
+
+type providerLatencyCanonical struct {
+	SourceStage       string  `json:"source_stage"`
+	Samples           int     `json:"samples"`
+	P50MS             float64 `json:"p50_ms"`
+	P95MS             float64 `json:"p95_ms"`
+	P99MS             float64 `json:"p99_ms"`
+	Available         bool    `json:"available"`
+	Placeholder       bool    `json:"placeholder"`
+	PlaceholderReason string  `json:"placeholder_reason"`
 }
 
 type providerLatencyBenchCounts struct {
@@ -265,6 +298,7 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 		},
 		Metadata:      buildLatencyBenchMetadata(),
 		Network:       network,
+		MetricTerms:   providerLatencyBenchMetricTerms(),
 		PromotionGate: "not_production",
 		Execution: providerLatencyBenchExecution{
 			ProviderExecuted: false,
@@ -287,10 +321,65 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 		}
 		report.Findings = append(report.Findings, fixtureFindings...)
 	}
+	report.StageAvailability = buildProviderLatencyBenchStageAvailability()
 	report.Samples = buildProviderLatencyBenchSamples(iterations, mode)
 	report.Summary = summarizeProviderLatencyBenchSamples(report.Samples)
+	report.CanonicalMetrics = buildProviderLatencyCanonicalMetrics(report.Summary)
 	report.Counts.FailureCount = len(report.Findings)
 	return report, nil
+}
+
+func providerLatencyBenchMetricTerms() []providerLatencyBenchMetricTerm {
+	return []providerLatencyBenchMetricTerm{
+		{
+			Term:            "TTFS",
+			A21Stage:        "asr_first_partial_ms",
+			CanonicalMetric: "speech_end_to_final_asr_ms",
+			Meaning:         "speech end to first or final ASR signal; this scaffold records first partial placeholder only",
+		},
+		{
+			Term:            "TTFT",
+			A21Stage:        "provider_first_content_ms",
+			CanonicalMetric: "llm_request_to_first_token_ms",
+			Meaning:         "text provider request to first content token",
+		},
+		{
+			Term:            "FTTS",
+			A21Stage:        "tts_first_audio_ms",
+			CanonicalMetric: "first_llm_token_to_first_tts_audio_ms",
+			Meaning:         "first provider content to first playable TTS audio",
+		},
+		{
+			Term:            "TTFA",
+			A21Stage:        "tts_first_audio_ms",
+			CanonicalMetric: "tts_request_to_first_audio_ms",
+			Meaning:         "TTS request to first playable audio",
+		},
+	}
+}
+
+func buildProviderLatencyBenchStageAvailability() []providerLatencyBenchStageAvailability {
+	stages := []string{
+		"asr_first_partial_ms",
+		"provider_first_byte_ms",
+		"provider_first_content_ms",
+		"tts_first_audio_ms",
+		"audio_downlink_first_frame_ms",
+		"device_playback_start_ms",
+		"barge_in_stop_ms",
+		"provider_cancel_ms",
+		"playback_stop_ms",
+	}
+	availability := make([]providerLatencyBenchStageAvailability, 0, len(stages))
+	for _, stage := range stages {
+		availability = append(availability, providerLatencyBenchStageAvailability{
+			Stage:             stage,
+			Available:         false,
+			Placeholder:       true,
+			PlaceholderReason: providerLatencyBenchPlaceholderReason,
+		})
+	}
+	return availability
 }
 
 type providerLatencyBenchFixtureSidecar struct {
@@ -447,16 +536,18 @@ func buildProviderLatencyBenchSamples(iterations int, mode string) []providerLat
 	for i := 0; i < iterations; i++ {
 		n := float64(i + modeOffset)
 		samples = append(samples, providerLatencyBenchSample{
-			Index:                  i + 1,
-			ASRFirstPartialMS:      120 + n,
-			ProviderFirstByteMS:    210 + n,
-			ProviderFirstContentMS: 260 + n,
-			TTSFirstAudioMS:        420 + n,
-			DownlinkFirstFrameMS:   460 + n,
-			DevicePlaybackStartMS:  540 + n,
-			BargeInStopMS:          180 + n,
-			ProviderCancelMS:       40 + n,
-			Placeholder:            true,
+			Index:                     i + 1,
+			ASRFirstPartialMS:         120 + n,
+			ProviderFirstByteMS:       210 + n,
+			ProviderFirstContentMS:    260 + n,
+			TTSFirstAudioMS:           420 + n,
+			DownlinkFirstFrameMS:      460 + n,
+			AudioDownlinkFirstFrameMS: 460 + n,
+			DevicePlaybackStartMS:     540 + n,
+			BargeInStopMS:             180 + n,
+			ProviderCancelMS:          40 + n,
+			PlaybackStopMS:            180 + n,
+			Placeholder:               true,
 		})
 	}
 	return samples
@@ -468,28 +559,124 @@ func summarizeProviderLatencyBenchSamples(samples []providerLatencyBenchSample) 
 	firstContent := make([]time.Duration, 0, len(samples))
 	tts := make([]time.Duration, 0, len(samples))
 	downlink := make([]time.Duration, 0, len(samples))
+	audioDownlink := make([]time.Duration, 0, len(samples))
 	playback := make([]time.Duration, 0, len(samples))
 	bargeIn := make([]time.Duration, 0, len(samples))
 	cancel := make([]time.Duration, 0, len(samples))
+	playbackStop := make([]time.Duration, 0, len(samples))
 	for _, sample := range samples {
 		asr = append(asr, msDuration(sample.ASRFirstPartialMS))
 		firstByte = append(firstByte, msDuration(sample.ProviderFirstByteMS))
 		firstContent = append(firstContent, msDuration(sample.ProviderFirstContentMS))
 		tts = append(tts, msDuration(sample.TTSFirstAudioMS))
 		downlink = append(downlink, msDuration(sample.DownlinkFirstFrameMS))
+		audioDownlink = append(audioDownlink, msDuration(sample.AudioDownlinkFirstFrameMS))
 		playback = append(playback, msDuration(sample.DevicePlaybackStartMS))
 		bargeIn = append(bargeIn, msDuration(sample.BargeInStopMS))
 		cancel = append(cancel, msDuration(sample.ProviderCancelMS))
+		playbackStop = append(playbackStop, msDuration(sample.PlaybackStopMS))
 	}
 	return providerLatencyBenchSummary{
-		ASRFirstPartialMS:      providerLatencySeries(asr),
-		ProviderFirstByteMS:    providerLatencySeries(firstByte),
-		ProviderFirstContentMS: providerLatencySeries(firstContent),
-		TTSFirstAudioMS:        providerLatencySeries(tts),
-		DownlinkFirstFrameMS:   providerLatencySeries(downlink),
-		DevicePlaybackStartMS:  providerLatencySeries(playback),
-		BargeInStopMS:          providerLatencySeries(bargeIn),
-		ProviderCancelMS:       providerLatencySeries(cancel),
+		ASRFirstPartialMS:         providerLatencySeries(asr),
+		ProviderFirstByteMS:       providerLatencySeries(firstByte),
+		ProviderFirstContentMS:    providerLatencySeries(firstContent),
+		TTSFirstAudioMS:           providerLatencySeries(tts),
+		DownlinkFirstFrameMS:      providerLatencySeries(downlink),
+		AudioDownlinkFirstFrameMS: providerLatencySeries(audioDownlink),
+		DevicePlaybackStartMS:     providerLatencySeries(playback),
+		BargeInStopMS:             providerLatencySeries(bargeIn),
+		ProviderCancelMS:          providerLatencySeries(cancel),
+		PlaybackStopMS:            providerLatencySeries(playbackStop),
+	}
+}
+
+func buildProviderLatencyCanonicalMetrics(summary providerLatencyBenchSummary) map[string]providerLatencyCanonical {
+	return map[string]providerLatencyCanonical{
+		"asr_first_partial_ms": providerLatencyCanonicalFromSeries(
+			"asr_first_partial_ms",
+			summary.ASRFirstPartialMS,
+		),
+		"provider_first_byte_ms": providerLatencyCanonicalFromSeries(
+			"provider_first_byte_ms",
+			summary.ProviderFirstByteMS,
+		),
+		"provider_first_content_ms": providerLatencyCanonicalFromSeries(
+			"provider_first_content_ms",
+			summary.ProviderFirstContentMS,
+		),
+		"tts_first_audio_ms": providerLatencyCanonicalFromSeries(
+			"tts_first_audio_ms",
+			summary.TTSFirstAudioMS,
+		),
+		"audio_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
+			"audio_downlink_first_frame_ms",
+			summary.AudioDownlinkFirstFrameMS,
+		),
+		"device_playback_start_ms": providerLatencyCanonicalFromSeries(
+			"device_playback_start_ms",
+			summary.DevicePlaybackStartMS,
+		),
+		"barge_in_stop_ms": providerLatencyCanonicalFromSeries(
+			"barge_in_stop_ms",
+			summary.BargeInStopMS,
+		),
+		"provider_cancel_ms": providerLatencyCanonicalFromSeries(
+			"provider_cancel_ms",
+			summary.ProviderCancelMS,
+		),
+		"playback_stop_ms": providerLatencyCanonicalFromSeries(
+			"playback_stop_ms",
+			summary.PlaybackStopMS,
+		),
+		"speech_end_to_final_asr_ms": providerLatencyCanonicalFromSeries(
+			"asr_first_partial_ms",
+			summary.ASRFirstPartialMS,
+		),
+		"speech_end_to_first_llm_token_ms": providerLatencyCanonicalFromSeries(
+			"provider_first_content_ms",
+			summary.ProviderFirstContentMS,
+		),
+		"llm_request_to_first_token_ms": providerLatencyCanonicalFromSeries(
+			"provider_first_content_ms",
+			summary.ProviderFirstContentMS,
+		),
+		"first_llm_token_to_first_tts_audio_ms": providerLatencyCanonicalFromSeries(
+			"tts_first_audio_ms",
+			summary.TTSFirstAudioMS,
+		),
+		"tts_request_to_first_audio_ms": providerLatencyCanonicalFromSeries(
+			"tts_first_audio_ms",
+			summary.TTSFirstAudioMS,
+		),
+		"provider_commit_to_first_audio_ms": providerLatencyCanonicalFromSeries(
+			"tts_first_audio_ms",
+			summary.TTSFirstAudioMS,
+		),
+		"gateway_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
+			"audio_downlink_first_frame_ms",
+			summary.AudioDownlinkFirstFrameMS,
+		),
+		"device_downlink_first_frame_ms": providerLatencyCanonicalFromSeries(
+			"audio_downlink_first_frame_ms",
+			summary.AudioDownlinkFirstFrameMS,
+		),
+		"speech_end_to_first_audible_response_ms": providerLatencyCanonicalFromSeries(
+			"device_playback_start_ms",
+			summary.DevicePlaybackStartMS,
+		),
+	}
+}
+
+func providerLatencyCanonicalFromSeries(sourceStage string, series providerLatencyBenchSeries) providerLatencyCanonical {
+	return providerLatencyCanonical{
+		SourceStage:       sourceStage,
+		Samples:           series.Samples,
+		P50MS:             series.P50MS,
+		P95MS:             series.P95MS,
+		P99MS:             series.P99MS,
+		Available:         false,
+		Placeholder:       true,
+		PlaceholderReason: providerLatencyBenchPlaceholderReason,
 	}
 }
 

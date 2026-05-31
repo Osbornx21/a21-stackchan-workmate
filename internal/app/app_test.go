@@ -904,6 +904,152 @@ func TestRunProviderLatencyBenchMockEmitsRedactedCandidateChainReport(t *testing
 	}
 }
 
+func TestRunProviderLatencyBenchV2ReportsMetricShapeContract(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--iterations", "2"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	assertProviderLatencyBenchMetricTerms(t, report)
+	assertProviderLatencyBenchCanonicalMetrics(t, report)
+	assertProviderLatencyBenchStageAvailability(t, report)
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"promotion_gate": "not_production"`,
+		`"execution_mode": "host_loopback"`,
+		`"audio_downlink_first_frame_ms"`,
+		`"playback_stop_ms"`,
+		`"provider_cancel_ms"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{"host_baseline", `"provider_executed": true`, `"v21_executed": true`, `"hardware_executed": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout contains forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func assertProviderLatencyBenchMetricTerms(t *testing.T, report map[string]any) {
+	t.Helper()
+	rawTerms, ok := report["metric_terms"].([]any)
+	if !ok || len(rawTerms) == 0 {
+		t.Fatalf("metric_terms missing or empty: %#v", report["metric_terms"])
+	}
+	seenTerms := map[string]bool{}
+	for _, rawTerm := range rawTerms {
+		term, ok := rawTerm.(map[string]any)
+		if !ok {
+			t.Fatalf("metric term has unexpected shape: %#v", rawTerm)
+		}
+		name, _ := term["term"].(string)
+		stage, _ := term["a21_stage"].(string)
+		canonical, _ := term["canonical_metric"].(string)
+		if name == "" || stage == "" || canonical == "" {
+			t.Fatalf("metric term missing required fields: %#v", term)
+		}
+		seenTerms[name] = true
+	}
+	for _, want := range []string{"TTFS", "TTFT", "FTTS", "TTFA"} {
+		if !seenTerms[want] {
+			t.Fatalf("metric_terms missing %s: %#v", want, rawTerms)
+		}
+	}
+}
+
+func assertProviderLatencyBenchCanonicalMetrics(t *testing.T, report map[string]any) {
+	t.Helper()
+	metrics, ok := report["canonical_metrics"].(map[string]any)
+	if !ok || len(metrics) == 0 {
+		t.Fatalf("canonical_metrics missing or empty: %#v", report["canonical_metrics"])
+	}
+	for _, want := range []string{
+		"asr_first_partial_ms",
+		"provider_first_byte_ms",
+		"provider_first_content_ms",
+		"tts_first_audio_ms",
+		"audio_downlink_first_frame_ms",
+		"device_playback_start_ms",
+		"barge_in_stop_ms",
+		"provider_cancel_ms",
+		"playback_stop_ms",
+		"speech_end_to_final_asr_ms",
+		"speech_end_to_first_llm_token_ms",
+		"llm_request_to_first_token_ms",
+		"first_llm_token_to_first_tts_audio_ms",
+		"tts_request_to_first_audio_ms",
+		"provider_commit_to_first_audio_ms",
+		"gateway_downlink_first_frame_ms",
+		"device_downlink_first_frame_ms",
+		"speech_end_to_first_audible_response_ms",
+	} {
+		raw, ok := metrics[want]
+		if !ok {
+			t.Fatalf("canonical_metrics missing %q: %#v", want, metrics)
+		}
+		series, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("canonical metric %q has unexpected shape: %#v", want, raw)
+		}
+		for _, field := range []string{"samples", "p50_ms", "p95_ms", "p99_ms", "available", "placeholder_reason"} {
+			if _, ok := series[field]; !ok {
+				t.Fatalf("canonical metric %q missing %q: %#v", want, field, series)
+			}
+		}
+	}
+}
+
+func assertProviderLatencyBenchStageAvailability(t *testing.T, report map[string]any) {
+	t.Helper()
+	rawStages, ok := report["stage_availability"].([]any)
+	if !ok || len(rawStages) == 0 {
+		t.Fatalf("stage_availability missing or empty: %#v", report["stage_availability"])
+	}
+	seenStages := map[string]bool{}
+	for _, rawStage := range rawStages {
+		stage, ok := rawStage.(map[string]any)
+		if !ok {
+			t.Fatalf("stage availability has unexpected shape: %#v", rawStage)
+		}
+		name, _ := stage["stage"].(string)
+		reason, _ := stage["placeholder_reason"].(string)
+		if name == "" || reason == "" {
+			t.Fatalf("stage availability missing stage/reason: %#v", stage)
+		}
+		if available, _ := stage["available"].(bool); available {
+			t.Fatalf("stage %q unexpectedly available in report-shape scaffold: %#v", name, stage)
+		}
+		if placeholder, _ := stage["placeholder"].(bool); !placeholder {
+			t.Fatalf("stage %q should be marked placeholder: %#v", name, stage)
+		}
+		seenStages[name] = true
+	}
+	for _, want := range []string{
+		"asr_first_partial_ms",
+		"provider_first_byte_ms",
+		"provider_first_content_ms",
+		"tts_first_audio_ms",
+		"audio_downlink_first_frame_ms",
+		"device_playback_start_ms",
+		"barge_in_stop_ms",
+		"provider_cancel_ms",
+		"playback_stop_ms",
+	} {
+		if !seenStages[want] {
+			t.Fatalf("stage_availability missing %q: %#v", want, rawStages)
+		}
+	}
+}
+
 func TestRunProviderLatencyBenchFixtureRedactsFixturePath(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

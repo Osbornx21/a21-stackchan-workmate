@@ -76,17 +76,24 @@ make provider-latency-bench
 records the required A21 candidate-chain report shape for ASR first partial,
 provider first byte, provider first content, TTS first audio, Gateway downlink
 first frame, device playback start, barge-in stop, and provider cancel
-placeholders, with p50/p95/p99 summaries and fallback/failure counts. It sets
+placeholders, with p50/p95/p99 summaries and fallback/failure counts. The v2
+shape additionally records TTFS/TTFT/FTTS/TTFA term mappings, A21 canonical
+metric fields, an explicit `audio_downlink_first_frame_ms` alias, and
+stage-level `available=false` / `placeholder=true` reasons. It sets
 `baseline_scope=host_only`, `device_id=none_host_fixture`, and
 `promotion_gate=not_production` until real provider, TTS, Gateway runtime, and
 physical StackChan evidence are captured under a later authorized window. It
-must not be used as proof of real first-audible latency. Redacted JSON fixture
-sidecars may add `a21.provider_latency_fixture.v1` metadata for fixture identity,
-audio format, sample rate, channels, duration, sample count, window length, and
-window count. The CLI keeps only the fixture basename and returns structured
-redacted findings for missing, invalid, or unsafe sidecars without preserving
-raw PCM, base64 audio, prompts, transcripts, provider output, reasoning, full
-URLs, proxy URLs, credentials, or full local paths.
+must not be used as proof of real first-audible latency or production barge-in
+latency. Redacted JSON fixture sidecars may add
+`a21.provider_latency_fixture.v1` metadata for fixture identity, audio format,
+sample rate, channels, duration, sample count, window length, and window count.
+The CLI keeps only the fixture basename and returns structured redacted findings
+for missing, invalid, or unsafe sidecars without preserving raw PCM, base64
+audio, prompts, transcripts, provider output, reasoning, full URLs, proxy URLs,
+credentials, or full local paths. This report-contract hardening does not
+authorize provider execution, V21 execution, Gateway runtime startup, binary
+Opus transport, AEC adapter work, WebRTC/ESP-SR native adapter work, or hardware
+acceptance.
 
 The report currently measures in-process Gateway paths for:
 
