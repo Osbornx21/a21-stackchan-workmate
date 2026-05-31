@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `cc27176`.
+Last accepted integration commit before this ledger update: `affe0ad`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `cc27176 docs(control): accept post-audio prd audit`.
+  `affe0ad docs(media): add binary opus transport contract`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -69,8 +69,10 @@ defines policy; this ledger records the current queue and accepted state.
   implementation is `2106a30`; audio front-end evidence acceptance is
   `213cbf0`, audio front-end post-review tracking is `df20df5`, and audio
   front-end post-review P2 fix is `a892ac9`; audio front-end post-review
-  closure is `3ed7ffd`, post-audio PRD audit tracking is `2810593`, and
-  post-audio PRD audit acceptance is `cc27176`.
+  closure is `3ed7ffd`, post-audio PRD audit tracking is `2810593`,
+  post-audio PRD audit acceptance is `cc27176`, binary Opus planning slice
+  opening is `c458be7`, and binary Opus transport contract implementation is
+  `affe0ad`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -106,10 +108,14 @@ defines policy; this ledger records the current queue and accepted state.
   `2810593 docs(control): open post-audio prd audit`.
 - Current integration HEAD after post-audio PRD audit acceptance:
   `cc27176 docs(control): accept post-audio prd audit`.
+- Current integration HEAD after binary Opus planning slice opening:
+  `c458be7 docs(control): open binary opus planning slice`.
+- Current integration HEAD after binary Opus media transport contract
+  implementation:
+  `affe0ad docs(media): add binary opus transport contract`.
 - Current control-tower action: binary Opus media transport planning contract
-  implementation is active in thread
-  `019e7ca7-84bf-7a92-9eb5-c9815a11de4f`; wait for its no-commit handoff
-  before accepting any docs or code.
+  implementation has been accepted into the integration branch at `affe0ad`;
+  open a read-only post-commit review before selecting the next PRD slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -128,7 +134,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7ca7-84bf-7a92-9eb5-c9815a11de4f` | Binary Opus media transport planning contract implementation | `/Users/jiyurun/.codex/worktrees/d078/New project` | active; no-commit implementation handoff pending | T1/T2 | no |
+| `019e7ca7-84bf-7a92-9eb5-c9815a11de4f` | Binary Opus media transport planning contract implementation | `/Users/jiyurun/.codex/worktrees/d078/New project` | completed; accepted into integration branch at `affe0ad` | T1/T2 | no |
 | `019e7ca2-7551-7852-8c66-5bcc76d449bb` | PRD next-slice audit after audio-front-end closure | `/Users/jiyurun/.codex/worktrees/b764/New project` | completed; recommended binary Opus media transport planning contract | T0/T1/T2 | no |
 | `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | completed; one P2 fixed by control at `a892ac9` | T0/T1/T2 | no |
 | `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
@@ -1629,11 +1635,46 @@ Forbidden:
   audio/full URL/proxy/local path leakage, AgentTask runtime, and actual
   binary Opus runtime or native codec implementation.
 
+Handoff accepted:
+
+- Implementation branch: `codex/a21-binary-opus-media-contract`.
+- Implementation branch HEAD:
+  `cc27176 docs(control): accept post-audio prd audit`.
+- Implementation dirty files: five modified docs and one new doc; no code,
+  firmware, Gateway runtime, provider, V21, or hardware files changed.
+- Main integration acceptance commit:
+  `affe0ad docs(media): add binary opus transport contract`.
+- Accepted scope: docs-only planning contract. The slice adds
+  `docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` and planning-only
+  anchors in `PROTOCOL.md`, `A21_MATURE_VOICE_REUSE.md`,
+  `LATENCY_BUDGET.md`, `OBSERVABILITY.md`, and `DOCTOR.md`.
+- The accepted contract defines purpose, goals, non-goals, current
+  JSON/base64 PCM boundary, draft binary Opus media profile, frame/envelope
+  draft, trace/metrics contract, redaction, direct-connect/proxy rules,
+  fallback, future gates, forbidden actions, and docs-only handoff rationale.
+- Control verification passed in the main integration worktree:
+  `git diff --check`.
+- Control verification passed:
+  `go run ./cmd/a21 namespace-audit`.
+- Control verification passed: `make verify`.
+- Control verification passed:
+  `go run ./cmd/a21 audio-front-end-plan`.
+- Control verification passed:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Mock provider latency smoke reported `provider_executed=false`,
+  `v21_executed=false`, `hardware_executed=false`, and
+  `promotion_gate=not_production`.
+- No provider `--execute`, real provider call, V21 execute, Gateway/runtime
+  startup, durable payload report, firmware/NVS/flash/raw upload/serial write,
+  real `/v1/devices/control`, physical device path, production dependency,
+  native Opus/WebRTC dependency, AgentTask runtime, prompt/transcript/provider
+  output/reasoning/raw audio/full URL/proxy/local path leakage, or binary Opus
+  runtime implementation was accepted.
+
 Control-tower next gate:
 
-- Wait for the no-commit implementation handoff.
-- Control tower must re-run the gates in the main integration worktree before
-  accepting any docs or code.
+- Open a read-only post-commit review over the implementation and this ledger
+  acceptance before selecting the next PRD slice.
 
 ### Fast Companion Hybrid Boundary Audit
 
