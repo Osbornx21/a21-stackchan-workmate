@@ -431,11 +431,11 @@ func executeOpenAICompatibleStreamingSmokeAttempt(ctx context.Context, env []str
 			if event.Text == "" {
 				continue
 			}
-			if attempt.FirstContentMS == 0 {
-				attempt.FirstContentMS = elapsedMS(start)
-			}
 			switch event.Kind {
 			case TextStreamDeltaContent:
+				if attempt.FirstContentMS == 0 {
+					attempt.FirstContentMS = elapsedMS(start)
+				}
 				attempt.ContentDeltaCount++
 			case TextStreamDeltaReasoning:
 				attempt.ReasoningDeltaCount++
