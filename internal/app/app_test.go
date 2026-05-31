@@ -460,6 +460,24 @@ func TestGatewayServerOptionsFromEnvWiresXiaozhiVoicePipelineAdapters(t *testing
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresSileroVADConfig(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_VAD_PREFERENCE=silero",
+		"A21_SILERO_VAD_COMMAND=/tmp/a21-silero-runner",
+		"A21_SILERO_VAD_MODEL=/tmp/a21-silero.onnx",
+		"A21_SILERO_VAD_TIMEOUT_MS=90",
+	})
+	if options.AudioIngressConfig.VADPreference != audio.VADDetectorPreferenceSilero {
+		t.Fatalf("VAD preference = %q, want silero", options.AudioIngressConfig.VADPreference)
+	}
+	if options.AudioIngressConfig.SileroRunner == nil {
+		t.Fatal("Silero runner was not configured from env")
+	}
+	if options.AudioIngressConfig.VADTimeout != 90*time.Millisecond {
+		t.Fatalf("VAD timeout = %s, want 90ms", options.AudioIngressConfig.VADTimeout)
+	}
+}
+
 func TestGatewayServerFromEnvUsesSelectedProviderOnlyWhenExplicit(t *testing.T) {
 	server := newGatewayServerFromEnv([]string{
 		"A21_GATEWAY_VOICE_PROVIDER=selected",

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/protocol"
@@ -876,6 +877,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 	options := gateway.ServerOptions{
 		VoiceProvider:                providers.NewGatewayVoiceProviderFromEnv(env),
 		XiaozhiVoicePipelineAdapters: &xiaozhiVoicePipelineAdapters,
+		AudioIngressConfig:           newAudioIngressConfigFromEnv(env),
 	}
 	if adapterURL := strings.TrimSpace(appEnvValue(env, "A21_V21_ADAPTER_URL")); adapterURL != "" {
 		client, err := v21adapter.NewHTTPClient(adapterURL)
@@ -886,6 +888,26 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		}
 	}
 	return options
+}
+
+func newAudioIngressConfigFromEnv(env []string) audio.IngressConfig {
+	config := audio.DefaultIngressConfig()
+	switch strings.ToLower(strings.TrimSpace(appEnvValue(env, "A21_VAD_PREFERENCE"))) {
+	case "silero":
+		config.VADPreference = audio.VADDetectorPreferenceSilero
+		config.SileroRunner = audio.NewCommandSileroVADRunner(audio.CommandSileroVADRunnerConfig{
+			CommandPath: appEnvValue(env, "A21_SILERO_VAD_COMMAND"),
+			ModelPath:   appEnvValue(env, "A21_SILERO_VAD_MODEL"),
+		})
+	case "rms", "":
+		config.VADPreference = audio.VADDetectorPreferenceRMS
+	default:
+		config.VADPreference = audio.VADDetectorPreferenceRMS
+	}
+	if timeoutMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_SILERO_VAD_TIMEOUT_MS"))); err == nil && timeoutMS > 0 {
+		config.VADTimeout = time.Duration(timeoutMS) * time.Millisecond
+	}
+	return config
 }
 
 type v21ConfigurationErrorClient struct {
