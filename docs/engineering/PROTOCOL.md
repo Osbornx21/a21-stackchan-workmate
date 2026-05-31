@@ -122,6 +122,31 @@ device-control integration:
 - Optional motion parameters clamp `y_angle` to the stock-safe 5-85 degree
   range before any later adapter may send them.
 
+### A21 StackChan Device Extension
+
+WS-5 also defines an A21-only StackChan semantic device extension in
+`internal/transport/xiaozhi`. It is host-only schema, builder, and parser
+proof for future Gateway-to-device integration; it does not make `type=device`
+part of the stock xiaozhi profile. Stock hello and server hello remain free of
+debug or device-extension requirements. A host may build `type=device`
+extension events only when the connected profile explicitly advertises
+`features.device_events=true` or the host has selected an A21 debug/StackChan
+extension profile.
+
+Current extension event kinds are `state`, `face`, `display`, `motion`, and
+`heartbeat`. Values are provider-neutral A21 semantics:
+
+- `state`: `idle`, `listening`, `thinking`, `speaking`, `error`
+- `face`: `idle`, `attentive`, `thinking`, `speaking`, `happy`, `error`
+- `display`: `status`, `asr`, `tts`
+- `motion`: `look_up`, `nod`, `shake`, `stop`, `dance`
+
+Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
+such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping
+the marks from spoken text and returning semantic extension events. Unsupported
+kinds or values return stable transport errors and must not leak legacy
+identity strings into reports or stdout.
+
 This is a protocol contract only. It is not actual servo, RGB, screen, MCP
 tool, Gateway, firmware, or physical hardware acceptance. Future
 Gateway/device-control integration must first consume tools discovered from the
