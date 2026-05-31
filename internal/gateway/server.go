@@ -752,6 +752,15 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 			registeredDeviceID = frame.DeviceID
 			s.registerAudioSocket(registeredDeviceID, conn, writeMu)
 		}
+		if frame.Kind == protocol.KindDeviceEvent {
+			events := s.controlEventsForDeviceEvent(frame)
+			for _, event := range events {
+				if err := writeAudioEnvelope(ctx, conn, writeMu, event); err != nil {
+					return
+				}
+			}
+			continue
+		}
 		if frame.Kind == protocol.KindAudioFrame {
 			s.metrics.audioFrameTotal.Inc()
 		}

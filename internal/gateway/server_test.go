@@ -2471,6 +2471,61 @@ func TestAudioProbeOnlyDeviceControlSuppressesMockPlayback(t *testing.T) {
 	}
 }
 
+func TestAudioWebSocketRegistersRuntimeEchoWithoutAudioPlayback(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeDeviceEvent(t, ctx, conn, protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       12,
+		TraceID:   "a21-trace-audio-runtime-echo",
+		SessionID: "a21-session-audio-runtime-echo",
+	}, protocol.DeviceEventPayload{
+		Event:           protocol.DeviceEventRuntimeEcho,
+		Mode:            protocol.ModeWorkmate,
+		FirmwareID:      "a21-stackchan",
+		FirmwareVersion: "0.1.0",
+		FirmwareBoard:   "m5stack-cores3",
+		FirmwareCommit:  "082eb938b713",
+		RuntimeEcho: map[string]string{
+			"screen":               "listening",
+			"audio_ws_sent_frames": "24",
+		},
+	})
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+
+	resp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var registry DeviceRegistryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1", len(registry.Devices))
+	}
+	device := registry.Devices[0]
+	if device.Firmware.ID != "a21-stackchan" || device.IdentityStatus != "ok" {
+		t.Fatalf("device identity = %+v status=%q, want ok a21-stackchan", device.Firmware, device.IdentityStatus)
+	}
+	if device.RuntimeEcho["screen"] != "listening" {
+		t.Fatalf("runtime echo screen = %q, want listening; all=%#v", device.RuntimeEcho["screen"], device.RuntimeEcho)
+	}
+}
+
 func TestDeviceControlEndpointRequiresConnectedAudioSocket(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
