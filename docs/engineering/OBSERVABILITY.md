@@ -210,6 +210,7 @@ Current mock trace events include:
 - `audio.downlink.first_frame`
 - `device.playback.start`
 - `audio.playback.chunk.sent`
+- `professional.checking_feedback.sent`
 - `v21.query.start`
 - `v21.query.first_result`
 - `v21.query.error`

@@ -76,7 +76,7 @@ thin sensing and expression device.
 | Presence and workmate experience | user-visible StackChan expression, voice, and office-mode behavior | not accepted |
 | First audible companion response | P50 < 900 ms, P95 < 1500 ms on accepted chain | not accepted |
 | Barge-in | playback/speaking stop P95 < 300 ms plus provider cancel/playback stop trace | not accepted |
-| Professional mode | within 1200 ms "checking" feedback, final answer has conclusion, evidence, confidence, follow-up | not accepted |
+| Professional mode | within 1200 ms "checking" feedback, final answer has conclusion, evidence, confidence, follow-up | host contract has pre-V21 checking feedback marker; product acceptance still not accepted |
 | Provider hot plug | new OpenAI-compatible text provider through profile/env/smoke without Gateway business edits | partially scaffolded, not accepted |
 | Safety | provider keys only in env/secret manager; no secrets in Git, reports, logs, firmware, traces | host gate passing, ongoing |
 

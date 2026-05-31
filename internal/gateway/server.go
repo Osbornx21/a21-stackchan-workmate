@@ -2281,10 +2281,13 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 
 func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
-	payloads := []protocol.ControlEventPayload{
+	preQueryPayloads := []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: protocol.ModeProfessional, Text: "我在听"},
 		{State: protocol.ExpressionProfessional, Mode: protocol.ModeProfessional, Text: "进入专业模式。情绪先放旁边，现在只看证据。"},
+		{State: protocol.ExpressionThinking, Mode: protocol.ModeProfessional, Text: "我在查，先把证据和置信度拉出来。"},
 	}
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, preQueryPayloads)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
 	defer cancel()
@@ -2295,13 +2298,14 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		Utterance: req.Text,
 	})
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
+	postQueryPayloads := make([]protocol.ControlEventPayload, 0, 1)
 	if err != nil {
 		marker := "v21.query.error"
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			marker = "v21.query.timeout"
 		}
 		s.recordTrace(traceID, sessionID, req.DeviceID, marker, s.now().UnixMilli())
-		payloads = append(payloads, protocol.ControlEventPayload{
+		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State: protocol.ExpressionError,
 			Mode:  protocol.ModeProfessional,
 			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
@@ -2309,7 +2313,7 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		})
 	} else {
 		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.first_result", s.now().UnixMilli())
-		payloads = append(payloads, protocol.ControlEventPayload{
+		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State:        protocol.ExpressionSpeaking,
 			Mode:         protocol.ModeProfessional,
 			Text:         response.FastAnswer,
@@ -2321,7 +2325,7 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 			FollowUps:    response.FollowUps,
 		})
 	}
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, payloads)
+	events = append(events, s.controlSequenceFrom(req.DeviceID, traceID, sessionID, uint64(len(events)+1), postQueryPayloads)...)
 	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
 }
 
@@ -2407,6 +2411,10 @@ func (s *Server) ids(traceID string, sessionID string) (string, string) {
 }
 
 func (s *Server) controlSequence(deviceID string, traceID string, sessionID string, payloads []protocol.ControlEventPayload) []protocol.Envelope {
+	return s.controlSequenceFrom(deviceID, traceID, sessionID, 1, payloads)
+}
+
+func (s *Server) controlSequenceFrom(deviceID string, traceID string, sessionID string, startSeq uint64, payloads []protocol.ControlEventPayload) []protocol.Envelope {
 	events := make([]protocol.Envelope, 0, len(payloads))
 	sentAt := s.now().UnixMilli()
 	for i, payload := range payloads {
@@ -2415,7 +2423,7 @@ func (s *Server) controlSequence(deviceID string, traceID string, sessionID stri
 			Protocol:  protocol.ProtocolVersion,
 			DeviceID:  deviceID,
 			Kind:      protocol.KindControlEvent,
-			Seq:       uint64(i + 1),
+			Seq:       startSeq + uint64(i),
 			TraceID:   traceID,
 			SessionID: sessionID,
 			SentAtMS:  sentAt + int64(i),

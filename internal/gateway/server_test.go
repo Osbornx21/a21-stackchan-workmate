@@ -785,8 +785,8 @@ func TestProfessionalModeUsesV21AdapterEvidence(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if len(response.Events) != 3 {
-		t.Fatalf("events = %d, want 3", len(response.Events))
+	if len(response.Events) != 4 {
+		t.Fatalf("events = %d, want 4", len(response.Events))
 	}
 	var pro protocol.ControlEventPayload
 	if err := json.Unmarshal(response.Events[1].Payload, &pro); err != nil {
@@ -795,8 +795,15 @@ func TestProfessionalModeUsesV21AdapterEvidence(t *testing.T) {
 	if pro.State != protocol.ExpressionProfessional || pro.Mode != protocol.ModeProfessional {
 		t.Fatalf("professional payload = %+v", pro)
 	}
+	var checking protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[2].Payload, &checking); err != nil {
+		t.Fatal(err)
+	}
+	if checking.State != protocol.ExpressionThinking || checking.Mode != protocol.ModeProfessional || !strings.Contains(checking.Text, "我在查") {
+		t.Fatalf("checking payload = %+v", checking)
+	}
 	var answer protocol.ControlEventPayload
-	if err := json.Unmarshal(response.Events[2].Payload, &answer); err != nil {
+	if err := json.Unmarshal(response.Events[3].Payload, &answer); err != nil {
 		t.Fatal(err)
 	}
 	if answer.State != protocol.ExpressionSpeaking || answer.Mode != protocol.ModeProfessional {
@@ -814,6 +821,68 @@ func TestProfessionalModeUsesV21AdapterEvidence(t *testing.T) {
 	}
 	if !strings.Contains(traceRec.Body.String(), "v21.query.start") || !strings.Contains(traceRec.Body.String(), "v21.query.first_result") {
 		t.Fatalf("trace missing v21 markers: %s", traceRec.Body.String())
+	}
+}
+
+func TestProfessionalModeEmitsCheckingFeedbackBeforeV21Query(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21adapter.NewMockClient(),
+	})
+	handler := server.Handler()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-checking","session_id":"a21-session-pro-checking"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	checkingEventIndex := -1
+	for i, event := range response.Events {
+		var payload protocol.ControlEventPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Mode == protocol.ModeProfessional && payload.State == protocol.ExpressionThinking && strings.Contains(payload.Text, "我在查") {
+			checkingEventIndex = i
+			break
+		}
+	}
+	if checkingEventIndex < 0 {
+		t.Fatalf("professional response missing checking feedback event: %+v", response.Events)
+	}
+	if checkingEventIndex >= len(response.Events)-1 {
+		t.Fatalf("checking feedback must be before final evidence answer: index=%d events=%d", checkingEventIndex, len(response.Events))
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-checking", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.Unmarshal(traceRec.Body.Bytes(), &traces); err != nil {
+		t.Fatal(err)
+	}
+	checkingAt, ok := traceEventAtMS(traces.Events, "professional.checking_feedback.sent")
+	if !ok {
+		t.Fatalf("trace missing professional.checking_feedback.sent: %s", traceRec.Body.String())
+	}
+	v21StartAt, ok := traceEventAtMS(traces.Events, "v21.query.start")
+	if !ok {
+		t.Fatalf("trace missing v21.query.start: %s", traceRec.Body.String())
+	}
+	if checkingAt > v21StartAt {
+		t.Fatalf("checking feedback at %d must be before v21 query start at %d", checkingAt, v21StartAt)
+	}
+	if v21StartAt-checkingAt > 1200 {
+		t.Fatalf("checking feedback to v21 start = %dms, want <=1200ms", v21StartAt-checkingAt)
 	}
 }
 
@@ -4091,4 +4160,13 @@ func (c slowV21Client) Query(ctx context.Context, request v21adapter.QueryReques
 	case <-timer.C:
 		return v21adapter.NewMockClient().Query(ctx, request)
 	}
+}
+
+func traceEventAtMS(events []TraceEvent, name string) (int64, bool) {
+	for _, event := range events {
+		if event.Name == name {
+			return event.AtMS, true
+		}
+	}
+	return 0, false
 }
