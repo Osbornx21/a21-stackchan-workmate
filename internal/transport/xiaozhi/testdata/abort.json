@@ -1,0 +1,5 @@
+{
+  "type": "abort",
+  "reason": "wake_word_detected",
+  "trace_id": "a21-trace-fixture-abort"
+}
