@@ -14,6 +14,7 @@ All A21-owned ports must be documented here before code starts depending on them
 | 21086 | A21 Observability | reserved | future trace/observability UI |
 | 21095 | A21 ASR Sidecar | reserved | future local ASR sidecar |
 | 21114 | A21 LLM Adapter | reserved | future local model/LLM adapter |
+| 21130 | A21 Agent I/O Bridge | optional | host-only Hermes/MiMo HTTP smoke endpoint; A21 does not start it |
 | 21434 | A21 Local Model Bridge | reserved | future Ollama-compatible adapter |
 
 Phase 2B binds `21080` only when `a21 gateway` is running. Runtime preflight probes reserved ports on loopback and fails if they are occupied.

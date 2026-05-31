@@ -33,6 +33,11 @@ These targets must not silently route through global proxies:
 
 Future provider adapters may use explicit proxy settings, but LAN/device/V21-local traffic must stay direct unless a migration/audit command says otherwise.
 
+Agent I/O endpoint smoke follows the same direct-connect rule. Local Hermes or
+MiMo bridges configured by `A21_HERMES_AGENT_URL` or
+`A21_AGENT_IO_ENDPOINT_URL` must not inherit ambient `HTTP_PROXY`,
+`HTTPS_PROXY`, or `ALL_PROXY`.
+
 ## Current Proxy Guard
 
 `preflight` and `doctor` now evaluate a proxy policy report. When any global proxy env var is configured (`HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`), A21 requires `NO_PROXY` or `A21_NO_PROXY` to cover the full direct-connect set above. Missing coverage blocks startup with `proxy_direct_bypass_missing`.
@@ -46,6 +51,10 @@ The report records env variable names only. It does not print proxy URLs, creden
 Future HTTP-based provider adapters must build clients through `internal/providers.NewProviderHTTPClient`. The default mode is `direct`, which disables ambient environment proxy inheritance. If `A21_PROVIDER_PROXY_URL` is set, provider HTTP clients switch to `explicit_proxy` mode and use that URL for cloud provider egress only.
 
 The current HTTP provider proxy support accepts `http` and `https` proxy URLs. SOCKS and provider-specific WebSocket dialers need a separate adapter implementation and tests before use. Doctor reports only the env variable name and network mode; it never prints provider proxy values.
+
+`agent-io-smoke --execute` is intentionally not a cloud provider egress client.
+It uses an HTTP transport with `Proxy: nil`, records only a coarse endpoint
+label, and refuses URL credentials or device-control paths.
 
 ## Required Diagnostics
 

@@ -42,6 +42,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDemo(args[1:], stdout, stderr)
 	case "product-readiness":
 		return runProductReadiness(args[1:], stdout, stderr)
+	case "agent-plan":
+		return runAgentPlan(args[1:], stdout, stderr)
+	case "agent-io-smoke":
+		return runAgentIOSmoke(args[1:], stdout, stderr)
 	case "preflight":
 		return runPreflight(stdout, stderr)
 	case "namespace-audit":

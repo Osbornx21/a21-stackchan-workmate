@@ -121,9 +121,22 @@ are not realtime-capable. The lane is disabled by default and becomes locally
 configured only when `A21_AGENT_PROVIDER_PRIMARY` explicitly selects one of
 those profile names. `A21_PROVIDER_PRIMARY` does not configure the agent-task
 lane and reports an invalid agent-task primary if pointed at `hermes_agent` or
-`mimo_agent`. The current T1/T2 scaffold has package-level fake `sse`, `http`,
-and `stdio` event streams plus A21 semantic redaction tests; there is no doctor
-or Gateway execution path for real Hermes/MiMo yet.
+`mimo_agent`. The package-level scaffold has fake `sse`, `http`, and `stdio`
+event streams plus A21 semantic redaction tests. Real Hermes/MiMo execution is
+limited to the explicit host-only `agent-io-smoke --execute` command; there is
+still no doctor, Gateway runtime, realtime, V21, or hardware execution path.
+
+```bash
+go run ./cmd/a21 agent-plan --mode co_creation --agent hermes_agent --endpoint-url http://127.0.0.1:21130/a21/agent-task --output-dir reports
+go run ./cmd/a21 agent-io-smoke --endpoint-url http://127.0.0.1:21130/a21/agent-task --output-dir reports
+A21_HERMES_AGENT_URL=http://127.0.0.1:21130/a21/agent-task make agent-io-smoke-execute
+A21_HERMES_AGENT_URL=http://127.0.0.1:8642/v1 A21_HERMES_AGENT_KEY=<redacted> make agent-io-smoke-execute
+```
+
+`agent-io-smoke` reports endpoint readiness without network I/O unless
+`--execute` is present. With `--execute`, it uses a direct no-ambient-proxy HTTP
+client and writes only redacted status, duration, safe content type, text
+length, event count, planner markers, and redaction booleans.
 
 When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 
