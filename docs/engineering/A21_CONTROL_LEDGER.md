@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `d03365f`.
+Last accepted integration commit before this ledger update: `b8d46f8`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `d03365f fix(app): align provider latency mode vocabulary`.
+  `b8d46f8 docs(control): record provider latency post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -45,7 +45,8 @@ defines policy; this ledger records the current queue and accepted state.
   `52c64d2`, provider latency slice-open tracking is `28171ad`, and provider
   latency bench scaffold acceptance is `4532df8`; provider latency handoff
   acceptance is `8bc41f6`, and provider latency post-review tracking is
-  `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`.
+  `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`, and
+  provider latency post-review acceptance is `b8d46f8`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -66,6 +67,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | active; no-execute fixture metadata slice | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
 | `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
@@ -320,6 +322,17 @@ Control verification after the P2 fix:
 - No provider execute, V21 execute, Gateway runtime/service startup,
   firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, or
   physical device path was used.
+
+Next queue:
+
+- Opened implementation thread `019e7c25-ec43-7591-9954-5227c7288e89` for the
+  T1/T2 `Provider Latency Fixture Schema / Audio Metadata` slice.
+- Scope: add no-execute fixture metadata/report contract coverage for fixture
+  identity, audio format, sample rate, channels, duration/sample/window
+  metadata, and redacted structured findings for invalid fixture metadata.
+- The slice must not execute provider/V21 calls, start Gateway/runtime, write
+  durable provider payload reports, touch firmware/NVS/flash/serial paths, call
+  `/v1/devices/control`, or use physical device paths.
 
 ### Fast Companion Hybrid Boundary Audit
 
