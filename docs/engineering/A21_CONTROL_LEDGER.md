@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `193a1f3`.
+Last accepted integration commit before this ledger update: `7af0259`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `193a1f3 docs(control): start fast companion boundary implementation`.
+  `7af0259 feat(gateway): add fast companion hybrid boundary`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -39,7 +39,7 @@ defines policy; this ledger records the current queue and accepted state.
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
   `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
-  `193a1f3`.
+  `193a1f3`; Task 4 acceptance is `7af0259`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -60,6 +60,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | active; reviewing `7af0259` | T0/T1/T2 | no |
 | `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | completed; handoff accepted into integration branch | T1/T2 | no |
 | `019e7be6-bca3-71f2-9770-857b9da48b67` | Provider Spine Fast Companion Hybrid boundary audit | `/Users/jiyurun/.codex/worktrees/0d72/New project` | completed; no P0/P1 regression; Task 4 Gateway gap confirmed; no diff | T1/T2 | no |
 | `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` | Provider Spine text-stream parser coverage audit | `/Users/jiyurun/.codex/worktrees/9136/New project` | completed; no P0/P1 implementation gaps; no diff | T1/T2 | no |
@@ -215,6 +216,31 @@ Decision:
 - Keep `PHASE7H_FAST_COMPANION_HYBRID.md` as the source of truth for this
   placeholder trace contract until a later ADR promotes real provider, TTS,
   downlink, or device playback timings.
+
+### Fast Companion Hybrid Post-Commit Review Thread
+
+Opened by the control tower after committing
+`7af0259 feat(gateway): add fast companion hybrid boundary`.
+
+Evidence:
+
+- Review thread: `019e7c00-ff6c-7f72-9851-a6e3ce637baf`.
+- Review worktree: `/Users/jiyurun/.codex/worktrees/de55/New project`.
+- Review target: `193a1f3..7af0259`.
+- Scope: read-only review of the Task 4 Gateway route, mode guard,
+  professional/V21 boundary, mock default safety, trace markers, and docs.
+- Allowed tier: T0/T1/T2 only.
+- Forbidden: file edits, commits, pushes, Gateway runtime startup,
+  provider/V21 execute, durable provider reports with payloads, firmware/NVS/
+  flash/raw upload/serial writes, `/v1/devices/control`, and physical device
+  paths.
+
+Decision:
+
+- Keep this thread active until it hands back a P0/P1/P2 finding list or a
+  no-finding receipt.
+- Do not open a Task 5 execution window from this review thread; Task 5 remains
+  under control-tower authorization.
 
 ### Provider Spine Plan Reconciliation
 
