@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `4d356e7`.
+Last accepted integration commit before this ledger update: `3b9f05d`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `4d356e7 feat(providers): add provider reference profiles`.
+  `3b9f05d docs(control): reconcile provider spine parser plan`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -38,7 +38,7 @@ defines policy; this ledger records the current queue and accepted state.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
-  `e55b652`, `5e54eb9`, and `4d356e7`.
+  `e55b652`, `5e54eb9`, `4d356e7`, and `3b9f05d`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -59,6 +59,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7be6-bca3-71f2-9770-857b9da48b67` | Provider Spine Fast Companion Hybrid boundary audit | `/Users/jiyurun/.codex/worktrees/0d72/New project` | active; coverage audit before any implementation | T1/T2 | no unless a P0/P1 minimal fix is reported first |
 | `019e7bdf-a187-7f02-9cce-0f9d605ac9c9` | Provider Spine text-stream parser coverage audit | `/Users/jiyurun/.codex/worktrees/9136/New project` | completed; no P0/P1 implementation gaps; no diff | T1/T2 | no |
 | `019e7bce-bacf-76e3-98f3-1e53fffe1377` | Promotion-readiness gate review | `/Users/jiyurun/.codex/worktrees/9f7f/New project` | completed; no P0/P1/P2 findings on `3ddcc45` | T0/T1 | no |
 | `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | completed; no P0/P1/P2 findings on `1872ca9` | T0/T1 | no |
@@ -716,10 +717,14 @@ Decision:
      `019e7bdf-a187-7f02-9cce-0f9d605ac9c9`.
    - Completed audit worktree:
      `/Users/jiyurun/.codex/worktrees/9136/New project`.
+   - Active next audit thread:
+     `019e7be6-bca3-71f2-9770-857b9da48b67`.
+   - Active next audit worktree:
+     `/Users/jiyurun/.codex/worktrees/0d72/New project`.
    - Max tier: T1/T2 by default. T4 only with explicit provider execution
      declaration, redaction check, and local env confirmation.
-   - Purpose: continue from Fast Companion Hybrid or a new control-approved
-     Provider Spine slice; Task 2/3 implementation is already covered.
+   - Purpose: audit Fast Companion Hybrid boundary coverage before deciding
+     whether Task 4 needs a new implementation thread.
    - Forbidden: provider keys in docs/reports/logs, provider URLs in firmware,
      hidden proxy inheritance, Baidu/Huawei expansion, provider execute without
      control approval, or turning A21 into an agent router.
