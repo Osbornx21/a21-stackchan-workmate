@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,9 +20,16 @@ import (
 const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
 const stackChanOfficialAudioSmokeFlashSchema = "a21.stackchan.official_audio_smoke_flash.v1"
 const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_bridge_flash_plan.v1"
+const stackChanOfficialPCMBridgeNVSPlanSchema = "a21.stackchan.official_pcm_bridge_nvs_plan.v1"
+const stackChanOfficialPCMBridgeNVSExecutionSchema = "a21.stackchan.official_pcm_bridge_nvs_execution.v1"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
+const stackChanOfficialPCMBridgeNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS"
+const stackChanOfficialPCMBridgeNVSOffset = "0x9000"
+const stackChanOfficialPCMBridgeNVSSizeHex = "0x4000"
+const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
+var runStackChanOfficialPCMBridgeNVSCommand = runStackChanOfficialSmokeFlashCommandExec
 
 type stackChanOfficialBaselineOptions struct {
 	SourceRoot string
@@ -106,6 +115,17 @@ type stackChanOfficialPCMBridgeFlashPlanOptions struct {
 	AudioWSURL string
 }
 
+type stackChanOfficialPCMBridgeNVSOptions struct {
+	IDFExport  string
+	Port       string
+	OutputDir  string
+	RunDir     string
+	DeviceID   string
+	AudioWSURL string
+	Confirm    string
+	Execute    bool
+}
+
 type stackChanOfficialSmokeFlashReport struct {
 	SchemaVersion            string                             `json:"schema_version"`
 	GeneratedAtMS            int64                              `json:"generated_at_ms"`
@@ -138,6 +158,63 @@ type stackChanOfficialPCMBridgeFlashPlanReport struct {
 	Parts                    []stackChanOfficialSmokeFlashPart  `json:"parts"`
 	Findings                 []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
 	ReportPath               string                             `json:"report_path,omitempty"`
+}
+
+type stackChanOfficialPCMBridgeNVSReport struct {
+	SchemaVersion            string                                 `json:"schema_version"`
+	GeneratedAtMS            int64                                  `json:"generated_at_ms"`
+	Status                   string                                 `json:"status"`
+	DryRun                   bool                                   `json:"dry_run"`
+	WriteAllowed             bool                                   `json:"write_allowed"`
+	WriteExecuted            bool                                   `json:"write_executed"`
+	Port                     string                                 `json:"port"`
+	IDFExport                string                                 `json:"idf_export"`
+	RunDir                   string                                 `json:"run_dir"`
+	DeviceID                 string                                 `json:"device_id"`
+	AudioWS                  stackChanOfficialPCMBridgeAudioWS      `json:"audio_ws"`
+	Partition                stackChanOfficialPCMBridgeNVSPartition `json:"partition"`
+	Safety                   stackChanOfficialPCMBridgeNVSSafety    `json:"safety"`
+	Tools                    stackChanOfficialPCMBridgeNVSTools     `json:"tools"`
+	Summary                  *stackChanOfficialPCMBridgeNVSSummary  `json:"summary,omitempty"`
+	BackupPath               string                                 `json:"backup_path,omitempty"`
+	BackupSHA256             string                                 `json:"backup_sha256,omitempty"`
+	ProvisionCSVPath         string                                 `json:"provision_csv_path,omitempty"`
+	ProvisionedBinPath       string                                 `json:"provisioned_bin_path,omitempty"`
+	ProvisionedBinSHA256     string                                 `json:"provisioned_bin_sha256,omitempty"`
+	ReadLogPath              string                                 `json:"read_log_path,omitempty"`
+	ParseLogPath             string                                 `json:"parse_log_path,omitempty"`
+	GenerateLogPath          string                                 `json:"generate_log_path,omitempty"`
+	VerifyLogPath            string                                 `json:"verify_log_path,omitempty"`
+	WriteLogPath             string                                 `json:"write_log_path,omitempty"`
+	NextRequiredConfirmation string                                 `json:"next_required_confirmation,omitempty"`
+	Findings                 []stackChanOfficialBaselineFinding     `json:"findings,omitempty"`
+	ReportPath               string                                 `json:"report_path,omitempty"`
+}
+
+type stackChanOfficialPCMBridgeNVSPartition struct {
+	Offset    string `json:"offset"`
+	SizeHex   string `json:"size_hex"`
+	SizeBytes int    `json:"size_bytes"`
+}
+
+type stackChanOfficialPCMBridgeNVSSafety struct {
+	BackupBeforeWrite       bool `json:"backup_before_write"`
+	PreserveExistingEntries bool `json:"preserve_existing_entries"`
+	OnlyMutatesA21Namespace bool `json:"only_mutates_a21_namespace"`
+	ReportRedactsValues     bool `json:"report_redacts_values"`
+}
+
+type stackChanOfficialPCMBridgeNVSTools struct {
+	NVSToolPath       string `json:"nvs_tool_path"`
+	NVSGeneratorPath  string `json:"nvs_generator_path"`
+	EsptoolModuleName string `json:"esptool_module_name"`
+}
+
+type stackChanOfficialPCMBridgeNVSSummary struct {
+	PreservedEntryCount     int  `json:"preserved_entry_count"`
+	MutatedEntryCount       int  `json:"mutated_entry_count"`
+	ExistingA21EntryCount   int  `json:"existing_a21_entry_count"`
+	ServoCalibrationPresent bool `json:"servo_calibration_present"`
 }
 
 type stackChanOfficialPCMBridgeAudioWS struct {
@@ -448,6 +525,119 @@ func runStackChanOfficialPCMBridgeFlashPlan(args []string, stdout io.Writer, std
 	return 0
 }
 
+func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
+	options := stackChanOfficialPCMBridgeNVSOptions{
+		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:       strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		RunDir:     firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_RUN_DIR"), filepath.Join(".a21-run", "firmware", "official-pcm-bridge-nvs")),
+		DeviceID:   firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001"),
+		AudioWSURL: strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL")),
+		Execute:    execute,
+	}
+	if execute {
+		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM"))
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-nvs-plan --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-pcm-bridge-nvs] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-nvs-execute --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-pcm-bridge-nvs] [--output-dir reports]")
+			return 0
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--run-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--run-dir requires a value")
+				return 2
+			}
+			i++
+			options.RunDir = args[i]
+		case "--device-id":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--device-id requires a value")
+				return 2
+			}
+			i++
+			options.DeviceID = args[i]
+		case "--audio-ws-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--audio-ws-url requires a value")
+				return 2
+			}
+			i++
+			options.AudioWSURL = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan official pcm bridge nvs option %q\n", args[i])
+			return 2
+		}
+	}
+
+	if execute && options.Confirm != stackChanOfficialPCMBridgeNVSConfirm {
+		fmt.Fprintf(stderr, "stackchan official pcm bridge nvs execute requires --confirm %s\n", stackChanOfficialPCMBridgeNVSConfirm)
+		return 2
+	}
+	report, err := buildStackChanOfficialPCMBridgeNVSReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan official pcm bridge nvs: %v\n", err)
+		return 1
+	}
+	if execute {
+		if err := executeStackChanOfficialPCMBridgeNVS(context.Background(), options, &report); err != nil {
+			report.Status = "failed"
+			report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
+				Code:    "nvs_execute_failed",
+				Message: err.Error(),
+			})
+		}
+	}
+	if options.OutputDir != "" {
+		if err := validateA21ReportDir(options.OutputDir); err != nil {
+			fmt.Fprintf(stderr, "official pcm bridge nvs report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeStackChanOfficialPCMBridgeNVSReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write official pcm bridge nvs report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanOfficialPCMBridgeNVS(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode official pcm bridge nvs report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	return 0
+}
+
 func normalizeOfficialOverlayPaths(options *stackChanOfficialBaselineOptions) error {
 	if len(options.Overlays) == 0 {
 		return nil
@@ -627,6 +817,69 @@ func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCM
 	}, nil
 }
 
+func buildStackChanOfficialPCMBridgeNVSReport(options stackChanOfficialPCMBridgeNVSOptions) (stackChanOfficialPCMBridgeNVSReport, error) {
+	runDir := filepath.Clean(options.RunDir)
+	if err := validateA21OfficialRunDir(runDir); err != nil {
+		return stackChanOfficialPCMBridgeNVSReport{}, fmt.Errorf("run dir invalid: %w", err)
+	}
+	deviceID := strings.TrimSpace(options.DeviceID)
+	if err := validateOfficialPCMBridgeDeviceID(deviceID); err != nil {
+		return stackChanOfficialPCMBridgeNVSReport{}, err
+	}
+	audioWS, err := parseOfficialPCMBridgeAudioWSURL(options.AudioWSURL, deviceID)
+	if err != nil {
+		return stackChanOfficialPCMBridgeNVSReport{}, err
+	}
+	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
+		return stackChanOfficialPCMBridgeNVSReport{}, err
+	}
+	usage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		return stackChanOfficialPCMBridgeNVSReport{}, fmt.Errorf("inspect upload port: %w", err)
+	}
+	if !usage.Exists {
+		return stackChanOfficialPCMBridgeNVSReport{}, fmt.Errorf("upload port %s does not exist", options.Port)
+	}
+	if usage.InUse {
+		return stackChanOfficialPCMBridgeNVSReport{}, fmt.Errorf("upload port %s is already in use: %s", options.Port, usage.Detail)
+	}
+
+	schema := stackChanOfficialPCMBridgeNVSPlanSchema
+	if options.Execute {
+		schema = stackChanOfficialPCMBridgeNVSExecutionSchema
+	}
+	return stackChanOfficialPCMBridgeNVSReport{
+		SchemaVersion: schema,
+		GeneratedAtMS: time.Now().UnixMilli(),
+		Status:        "ready",
+		DryRun:        !options.Execute,
+		WriteAllowed:  false,
+		WriteExecuted: false,
+		Port:          options.Port,
+		IDFExport:     filepath.Clean(options.IDFExport),
+		RunDir:        runDir,
+		DeviceID:      deviceID,
+		AudioWS:       audioWS,
+		Partition: stackChanOfficialPCMBridgeNVSPartition{
+			Offset:    stackChanOfficialPCMBridgeNVSOffset,
+			SizeHex:   stackChanOfficialPCMBridgeNVSSizeHex,
+			SizeBytes: stackChanOfficialPCMBridgeNVSSizeBytes,
+		},
+		Safety: stackChanOfficialPCMBridgeNVSSafety{
+			BackupBeforeWrite:       true,
+			PreserveExistingEntries: true,
+			OnlyMutatesA21Namespace: true,
+			ReportRedactsValues:     true,
+		},
+		Tools: stackChanOfficialPCMBridgeNVSTools{
+			NVSToolPath:       officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_tool/nvs_tool.py"),
+			NVSGeneratorPath:  officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"),
+			EsptoolModuleName: "esptool",
+		},
+		NextRequiredConfirmation: "stackchan-official-pcm-bridge-nvs-execute_with_confirmation_token",
+	}, nil
+}
+
 func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
 	return collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-audio-smoke.bin")
 }
@@ -734,6 +987,187 @@ func parseOfficialPCMBridgeAudioWSURL(rawURL string, deviceID string) (stackChan
 	}, nil
 }
 
+type stackChanNVSMinimalEntry struct {
+	Namespace string      `json:"namespace"`
+	Key       string      `json:"key"`
+	Encoding  string      `json:"encoding"`
+	Data      interface{} `json:"data"`
+	State     string      `json:"state"`
+	IsEmpty   bool        `json:"is_empty"`
+}
+
+func readStackChanNVSMinimalEntries(path string) ([]stackChanNVSMinimalEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read NVS JSON dump: %w", err)
+	}
+	var entries []stackChanNVSMinimalEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("decode NVS JSON dump: %w", err)
+	}
+	return entries, nil
+}
+
+func writeOfficialPCMBridgeNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, deviceID string, audioWSURL string) (stackChanOfficialPCMBridgeNVSSummary, error) {
+	csvWriter := csv.NewWriter(writer)
+	if err := csvWriter.Write([]string{"key", "type", "encoding", "value"}); err != nil {
+		return stackChanOfficialPCMBridgeNVSSummary{}, err
+	}
+
+	namespaceOrder := make([]string, 0)
+	seenNamespaces := make(map[string]bool)
+	grouped := make(map[string][][]string)
+	summary := stackChanOfficialPCMBridgeNVSSummary{}
+	for _, entry := range entries {
+		if entry.IsEmpty || entry.State != "Written" {
+			continue
+		}
+		namespace := strings.TrimSpace(entry.Namespace)
+		key := strings.TrimSpace(entry.Key)
+		if namespace == "" || key == "" {
+			continue
+		}
+		if namespace == "a21" && (key == "device_id" || key == "audio_ws_url") {
+			summary.ExistingA21EntryCount += 1
+			continue
+		}
+		encoding, err := nvsCSVEncoding(entry.Encoding)
+		if err != nil {
+			return stackChanOfficialPCMBridgeNVSSummary{}, err
+		}
+		value, err := nvsCSVValue(entry.Data)
+		if err != nil {
+			return stackChanOfficialPCMBridgeNVSSummary{}, err
+		}
+		if !seenNamespaces[namespace] {
+			seenNamespaces[namespace] = true
+			namespaceOrder = append(namespaceOrder, namespace)
+		}
+		grouped[namespace] = append(grouped[namespace], []string{key, "data", encoding, value})
+		summary.PreservedEntryCount += 1
+		if namespace == "servo" && (key == "zero_pos_1" || key == "zero_pos_2") {
+			if hasNVSEntry(entries, "servo", "zero_pos_1") && hasNVSEntry(entries, "servo", "zero_pos_2") {
+				summary.ServoCalibrationPresent = true
+			}
+		}
+	}
+	if !seenNamespaces["a21"] {
+		seenNamespaces["a21"] = true
+		namespaceOrder = append(namespaceOrder, "a21")
+	}
+	grouped["a21"] = append(grouped["a21"],
+		[]string{"device_id", "data", "string", deviceID},
+		[]string{"audio_ws_url", "data", "string", audioWSURL},
+	)
+	summary.MutatedEntryCount = 2
+
+	for _, namespace := range namespaceOrder {
+		if err := csvWriter.Write([]string{namespace, "namespace", "", ""}); err != nil {
+			return stackChanOfficialPCMBridgeNVSSummary{}, err
+		}
+		for _, row := range grouped[namespace] {
+			if err := csvWriter.Write(row); err != nil {
+				return stackChanOfficialPCMBridgeNVSSummary{}, err
+			}
+		}
+	}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return stackChanOfficialPCMBridgeNVSSummary{}, err
+	}
+	return summary, nil
+}
+
+func hasNVSEntry(entries []stackChanNVSMinimalEntry, namespace string, key string) bool {
+	for _, entry := range entries {
+		if entry.IsEmpty || entry.State != "Written" {
+			continue
+		}
+		if entry.Namespace == namespace && entry.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func nvsCSVEncoding(encoding string) (string, error) {
+	switch encoding {
+	case "string":
+		return "string", nil
+	case "blob_data":
+		return "base64", nil
+	case "uint8_t":
+		return "u8", nil
+	case "int8_t":
+		return "i8", nil
+	case "uint16_t":
+		return "u16", nil
+	case "int16_t":
+		return "i16", nil
+	case "uint32_t":
+		return "u32", nil
+	case "int32_t":
+		return "i32", nil
+	case "uint64_t":
+		return "u64", nil
+	case "int64_t":
+		return "i64", nil
+	default:
+		return "", fmt.Errorf("unsupported NVS encoding %q", encoding)
+	}
+}
+
+func nvsCSVValue(value interface{}) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return typed, nil
+	case float64:
+		if typed != float64(int64(typed)) {
+			return "", fmt.Errorf("unsupported non-integer NVS number")
+		}
+		return strconv.FormatInt(int64(typed), 10), nil
+	case int:
+		return strconv.Itoa(typed), nil
+	case int64:
+		return strconv.FormatInt(typed, 10), nil
+	case uint64:
+		return strconv.FormatUint(typed, 10), nil
+	default:
+		return "", fmt.Errorf("unsupported NVS value type %T", value)
+	}
+}
+
+func verifyOfficialPCMBridgeNVSProvision(path string, deviceID string, audioWSURL string) error {
+	entries, err := readStackChanNVSMinimalEntries(path)
+	if err != nil {
+		return err
+	}
+	if !nvsEntryEquals(entries, "a21", "device_id", deviceID) {
+		return fmt.Errorf("provisioned NVS missing a21/device_id")
+	}
+	if !nvsEntryEquals(entries, "a21", "audio_ws_url", audioWSURL) {
+		return fmt.Errorf("provisioned NVS missing a21/audio_ws_url")
+	}
+	return nil
+}
+
+func nvsEntryEquals(entries []stackChanNVSMinimalEntry, namespace string, key string, expected string) bool {
+	for _, entry := range entries {
+		if entry.IsEmpty || entry.State != "Written" {
+			continue
+		}
+		if entry.Namespace == namespace && entry.Key == key {
+			actual, err := nvsCSVValue(entry.Data)
+			return err == nil && actual == expected
+		}
+	}
+	return false
+}
+
+func officialIDFToolPath(idfExport string, relativePath string) string {
+	return filepath.Join(filepath.Dir(filepath.Clean(idfExport)), filepath.FromSlash(relativePath))
+}
+
 func executeStackChanOfficialSmokeFlash(ctx context.Context, options stackChanOfficialSmokeFlashOptions, report *stackChanOfficialSmokeFlashReport) error {
 	if _, err := os.Stat(options.IDFExport); err != nil {
 		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
@@ -752,6 +1186,135 @@ func executeStackChanOfficialSmokeFlash(ctx context.Context, options stackChanOf
 		return err
 	}
 	report.FlashExecuted = true
+	report.Status = "passed"
+	return nil
+}
+
+func executeStackChanOfficialPCMBridgeNVS(ctx context.Context, options stackChanOfficialPCMBridgeNVSOptions, report *stackChanOfficialPCMBridgeNVSReport) error {
+	if _, err := os.Stat(options.IDFExport); err != nil {
+		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
+	}
+	if _, err := os.Stat(report.Tools.NVSToolPath); err != nil {
+		return fmt.Errorf("ESP-IDF nvs_tool.py is missing: %w", err)
+	}
+	if _, err := os.Stat(report.Tools.NVSGeneratorPath); err != nil {
+		return fmt.Errorf("ESP-IDF nvs_partition_gen.py is missing: %w", err)
+	}
+	if err := os.MkdirAll(options.RunDir, 0o700); err != nil {
+		return fmt.Errorf("create nvs run dir: %w", err)
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-before-"+timestamp+".bin")
+	beforeJSONPath := filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-before-"+timestamp+".json")
+	provisionCSVPath := filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-provision-"+timestamp+".csv")
+	provisionedBinPath := filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-provision-"+timestamp+".bin")
+	afterJSONPath := filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-provision-"+timestamp+".json")
+	report.ReadLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-read-"+timestamp+".log")
+	report.ParseLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-parse-"+timestamp+".log")
+	report.GenerateLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-generate-"+timestamp+".log")
+	report.VerifyLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-verify-"+timestamp+".log")
+	report.WriteLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-pcm-bridge-nvs-write-"+timestamp+".log")
+
+	report.DryRun = false
+	report.WriteAllowed = true
+	report.NextRequiredConfirmation = ""
+	report.BackupPath = backupPath
+	report.ProvisionCSVPath = provisionCSVPath
+	report.ProvisionedBinPath = provisionedBinPath
+
+	readScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after no_reset read_flash %s %s %s",
+			shellSingleQuote(options.Port),
+			stackChanOfficialPCMBridgeNVSOffset,
+			stackChanOfficialPCMBridgeNVSSizeHex,
+			shellSingleQuote(backupPath)),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeNVSCommand(ctx, report.ReadLogPath, readScript); err != nil {
+		return fmt.Errorf("read current NVS partition: %w", err)
+	}
+	backupSHA, err := sha256File(backupPath)
+	if err != nil {
+		return fmt.Errorf("hash NVS backup: %w", err)
+	}
+	report.BackupSHA256 = backupSHA
+
+	parseScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+			shellSingleQuote(report.Tools.NVSToolPath),
+			shellSingleQuote(backupPath),
+			shellSingleQuote(beforeJSONPath)),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeNVSCommand(ctx, report.ParseLogPath, parseScript); err != nil {
+		return fmt.Errorf("parse current NVS partition: %w", err)
+	}
+	entries, err := readStackChanNVSMinimalEntries(beforeJSONPath)
+	if err != nil {
+		return err
+	}
+	csvFile, err := os.Create(provisionCSVPath)
+	if err != nil {
+		return fmt.Errorf("create NVS provision CSV: %w", err)
+	}
+	summary, csvErr := writeOfficialPCMBridgeNVSCSV(csvFile, entries, report.DeviceID, options.AudioWSURL)
+	closeErr := csvFile.Close()
+	if csvErr != nil {
+		return csvErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close NVS provision CSV: %w", closeErr)
+	}
+	report.Summary = &summary
+
+	generateScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s generate %s %s %s",
+			shellSingleQuote(report.Tools.NVSGeneratorPath),
+			shellSingleQuote(provisionCSVPath),
+			shellSingleQuote(provisionedBinPath),
+			stackChanOfficialPCMBridgeNVSSizeHex),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeNVSCommand(ctx, report.GenerateLogPath, generateScript); err != nil {
+		return fmt.Errorf("generate provisioned NVS partition: %w", err)
+	}
+	provisionedSHA, err := sha256File(provisionedBinPath)
+	if err != nil {
+		return fmt.Errorf("hash provisioned NVS partition: %w", err)
+	}
+	report.ProvisionedBinSHA256 = provisionedSHA
+
+	verifyScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+			shellSingleQuote(report.Tools.NVSToolPath),
+			shellSingleQuote(provisionedBinPath),
+			shellSingleQuote(afterJSONPath)),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeNVSCommand(ctx, report.VerifyLogPath, verifyScript); err != nil {
+		return fmt.Errorf("verify provisioned NVS partition: %w", err)
+	}
+	if err := verifyOfficialPCMBridgeNVSProvision(afterJSONPath, report.DeviceID, options.AudioWSURL); err != nil {
+		return err
+	}
+
+	writeScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash %s %s",
+			shellSingleQuote(options.Port),
+			stackChanOfficialPCMBridgeNVSOffset,
+			shellSingleQuote(provisionedBinPath)),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeNVSCommand(ctx, report.WriteLogPath, writeScript); err != nil {
+		return fmt.Errorf("write provisioned NVS partition: %w", err)
+	}
+	report.WriteExecuted = true
 	report.Status = "passed"
 	return nil
 }
@@ -1087,6 +1650,21 @@ func validateA21OfficialScratchDir(path string) error {
 	return nil
 }
 
+func validateA21OfficialRunDir(path string) error {
+	clean := filepath.Clean(path)
+	lower := strings.ToLower(clean)
+	if clean == "." || clean == string(filepath.Separator) {
+		return fmt.Errorf("run dir must be an explicit A21 work directory")
+	}
+	if strings.Contains(lower, "x21") || strings.Contains(lower, "v21") {
+		return fmt.Errorf("run dir contains forbidden legacy identity")
+	}
+	if !strings.Contains(lower, "a21") {
+		return fmt.Errorf("run dir must contain a21")
+	}
+	return nil
+}
+
 func discoverLocalOfficialStackChanSource() (string, bool) {
 	candidates := []string{
 		"/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan",
@@ -1161,6 +1739,23 @@ func writeStackChanOfficialPCMBridgeFlashPlanReport(outputDir string, report sta
 	return reportPath, nil
 }
 
+func writeStackChanOfficialPCMBridgeNVSReport(outputDir string, report stackChanOfficialPCMBridgeNVSReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-pcm-bridge-nvs-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := writeJSONStackChanOfficialPCMBridgeNVS(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeJSONStackChanOfficialBaseline(writer io.Writer, report stackChanOfficialBaselineReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -1174,6 +1769,12 @@ func writeJSONStackChanOfficialSmokeFlash(writer io.Writer, report stackChanOffi
 }
 
 func writeJSONStackChanOfficialPCMBridgeFlashPlan(writer io.Writer, report stackChanOfficialPCMBridgeFlashPlanReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanOfficialPCMBridgeNVS(writer io.Writer, report stackChanOfficialPCMBridgeNVSReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

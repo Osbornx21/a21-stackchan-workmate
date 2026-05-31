@@ -136,6 +136,7 @@ The generated evidence report uses `schema_version: a21.stackchan_physical_evide
 
 - [AGENTS.md](AGENTS.md)
 - [A21 Codex Masterplan](docs/engineering/A21_CODEX_MASTERPLAN.md)
+- [A21 Project Control](docs/engineering/A21_PROJECT_CONTROL.md)
 - [Firmware Release Discipline](docs/engineering/FIRMWARE_RELEASE_DISCIPLINE.md)
 - [Network](docs/engineering/NETWORK.md)
 - [Latency Budget](docs/engineering/LATENCY_BUDGET.md)

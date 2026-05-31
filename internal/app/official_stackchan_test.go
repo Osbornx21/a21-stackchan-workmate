@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -343,6 +344,281 @@ func TestRunStackChanOfficialPCMBridgeFlashPlanBuildsRedactedNoFlashReceipt(t *t
 	if strings.Contains(stdout.String(), "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001") {
 		t.Fatalf("plan leaked full audio ws url: %s", stdout.String())
 	}
+}
+
+func TestRunStackChanOfficialPCMBridgeFlashExecuteIsExplicitlyBlocked(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-flash-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"bridge app flash execute is blocked", "ADR"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr.String())
+		}
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgeNVSPlanBuildsRedactedNoWriteReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-nvs-plan",
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_pcm_bridge_nvs_plan.v1"`,
+		`"dry_run": true`,
+		`"write_allowed": false`,
+		`"write_executed": false`,
+		`"offset": "0x9000"`,
+		`"size_hex": "0x4000"`,
+		`"preserve_existing_entries": true`,
+		`"only_mutates_a21_namespace": true`,
+		`"next_required_confirmation": "stackchan-official-pcm-bridge-nvs-execute_with_confirmation_token"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("nvs plan missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001") {
+		t.Fatalf("nvs plan leaked full audio ws url: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgeNVSExecuteRequiresConfirmationToken(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-nvs-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS") {
+		t.Fatalf("stderr missing confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgeNVSExecuteRunsGuardedReadGenerateWriteFlow(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialPCMBridgeNVSCommand
+	var scripts []string
+	runStackChanOfficialPCMBridgeNVSCommand = func(ctx context.Context, logPath string, script string) error {
+		scripts = append(scripts, script)
+		switch {
+		case strings.Contains(script, " read_flash "):
+			writeTestFile(t, lastSingleQuotedPath(script), "backup")
+		case strings.Contains(script, "nvs_partition_tool/nvs_tool.py") && strings.Contains(script, "before-"):
+			writeTestFile(t, redirectSingleQuotedPath(script), testNVSJSONForBridgeProvision("old-device", "ws://old/ws/audio?device_id=old-device"))
+		case strings.Contains(script, "nvs_partition_generator/nvs_partition_gen.py"):
+			writeTestFile(t, lastSingleQuotedPath(script), "provisioned")
+		case strings.Contains(script, "nvs_partition_tool/nvs_tool.py") && strings.Contains(script, "provision-"):
+			writeTestFile(t, redirectSingleQuotedPath(script), testNVSJSONForBridgeProvision("stackchan-001", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001"))
+		}
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialPCMBridgeNVSCommand = originalRunner
+	}()
+
+	idfRoot := filepath.Join(t.TempDir(), "esp-idf-v5.5.2")
+	idfExport := filepath.Join(idfRoot, "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_tool", "nvs_tool.py"), "#!/usr/bin/env python\n")
+	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_generator", "nvs_partition_gen.py"), "#!/usr/bin/env python\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-nvs-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", idfExport,
+		"--run-dir", filepath.Join(t.TempDir(), "a21-official-nvs-run"),
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if len(scripts) != 5 {
+		t.Fatalf("scripts = %d, want 5: %v", len(scripts), scripts)
+	}
+	joined := strings.Join(scripts, "\n")
+	for _, want := range []string{
+		"read_flash 0x9000 0x4000",
+		"nvs_partition_tool/nvs_tool.py",
+		"nvs_partition_generator/nvs_partition_gen.py",
+		"write_flash 0x9000",
+		"--after hard_reset",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("scripts missing %q:\n%s", want, joined)
+		}
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_pcm_bridge_nvs_execution.v1"`,
+		`"write_allowed": true`,
+		`"write_executed": true`,
+		`"preserved_entry_count": 5`,
+		`"mutated_entry_count": 2`,
+		`"servo_calibration_present": true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001") ||
+		strings.Contains(stdout.String(), "existing-secret") {
+		t.Fatalf("execution report leaked sensitive values: %s", stdout.String())
+	}
+}
+
+func TestOfficialPCMBridgeNVSCSVPreservesExistingEntriesAndOnlyOverwritesA21Keys(t *testing.T) {
+	entries := []stackChanNVSMinimalEntry{
+		{Namespace: "board", Key: "uuid", Encoding: "string", Data: "device-uuid", State: "Written"},
+		{Namespace: "wifi", Key: "ssid", Encoding: "string", Data: "existing-wifi", State: "Written"},
+		{Namespace: "wifi", Key: "password", Encoding: "string", Data: "existing-secret", State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_1", Encoding: "int32_t", Data: float64(460), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_2", Encoding: "int32_t", Data: float64(620), State: "Written"},
+		{Namespace: "a21", Key: "device_id", Encoding: "string", Data: "old-device", State: "Written"},
+		{Namespace: "a21", Key: "audio_ws_url", Encoding: "string", Data: "ws://old/ws/audio?device_id=old-device", State: "Written"},
+	}
+
+	var csv bytes.Buffer
+	summary, err := writeOfficialPCMBridgeNVSCSV(&csv, entries, "stackchan-001", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001")
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	text := csv.String()
+	for _, want := range []string{
+		"board,namespace,,",
+		"uuid,data,string,device-uuid",
+		"wifi,namespace,,",
+		"ssid,data,string,existing-wifi",
+		"password,data,string,existing-secret",
+		"servo,namespace,,",
+		"zero_pos_1,data,i32,460",
+		"zero_pos_2,data,i32,620",
+		"a21,namespace,,",
+		"device_id,data,string,stackchan-001",
+		"audio_ws_url,data,string,ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("csv missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "old-device") {
+		t.Fatalf("csv retained stale a21 value:\n%s", text)
+	}
+	if summary.PreservedEntryCount != 5 || summary.MutatedEntryCount != 2 || !summary.ServoCalibrationPresent {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func lastSingleQuotedPath(text string) string {
+	end := strings.LastIndex(text, "'")
+	if end <= 0 {
+		return ""
+	}
+	start := strings.LastIndex(text[:end], "'")
+	if start < 0 {
+		return ""
+	}
+	return text[start+1 : end]
+}
+
+func redirectSingleQuotedPath(text string) string {
+	redirect := strings.LastIndex(text, "> ")
+	if redirect < 0 {
+		return ""
+	}
+	return lastSingleQuotedPath(text[redirect:])
+}
+
+func testNVSJSONForBridgeProvision(deviceID string, audioWSURL string) string {
+	return fmt.Sprintf(`[
+  {"namespace":"board","key":"uuid","encoding":"string","data":"device-uuid","state":"Written","is_empty":false},
+  {"namespace":"wifi","key":"ssid","encoding":"string","data":"existing-wifi","state":"Written","is_empty":false},
+  {"namespace":"wifi","key":"password","encoding":"string","data":"existing-secret","state":"Written","is_empty":false},
+  {"namespace":"servo","key":"zero_pos_1","encoding":"int32_t","data":460,"state":"Written","is_empty":false},
+  {"namespace":"servo","key":"zero_pos_2","encoding":"int32_t","data":620,"state":"Written","is_empty":false},
+  {"namespace":"a21","key":"device_id","encoding":"string","data":%q,"state":"Written","is_empty":false},
+  {"namespace":"a21","key":"audio_ws_url","encoding":"string","data":%q,"state":"Written","is_empty":false}
+]`, deviceID, audioWSURL)
+}
+
+func writeTestOfficialPCMBridgeNVSExecutionReport(t *testing.T, deviceID string, host string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "a21-stackchan-official-pcm-bridge-nvs-execution.json")
+	report := stackChanOfficialPCMBridgeNVSReport{
+		SchemaVersion: stackChanOfficialPCMBridgeNVSExecutionSchema,
+		Status:        "passed",
+		DryRun:        false,
+		WriteAllowed:  true,
+		WriteExecuted: true,
+		Port:          "/dev/cu.usbmodemA21",
+		DeviceID:      deviceID,
+		AudioWS: stackChanOfficialPCMBridgeAudioWS{
+			Scheme:        "ws",
+			Host:          host,
+			Path:          "/ws/audio",
+			DeviceIDQuery: true,
+		},
+		Partition: stackChanOfficialPCMBridgeNVSPartition{
+			Offset:    stackChanOfficialPCMBridgeNVSOffset,
+			SizeHex:   stackChanOfficialPCMBridgeNVSSizeHex,
+			SizeBytes: stackChanOfficialPCMBridgeNVSSizeBytes,
+		},
+		Safety: stackChanOfficialPCMBridgeNVSSafety{
+			BackupBeforeWrite:       true,
+			PreserveExistingEntries: true,
+			OnlyMutatesA21Namespace: true,
+			ReportRedactsValues:     true,
+		},
+		Summary: &stackChanOfficialPCMBridgeNVSSummary{
+			PreservedEntryCount:     39,
+			MutatedEntryCount:       2,
+			ServoCalibrationPresent: true,
+		},
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal nvs report: %v", err)
+	}
+	writeTestFile(t, path, string(data))
+	return path
 }
 
 func writeTestOfficialStackChanRepo(t *testing.T, includeCodecEvidence bool) string {

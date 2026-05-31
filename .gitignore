@@ -1,4 +1,5 @@
 reports/
+.a21-run/
 .a21-tools/
 .pio/
 firmware/**/.pio/

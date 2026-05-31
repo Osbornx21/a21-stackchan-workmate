@@ -227,6 +227,13 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runStackChanOfficialAudioSmokeFlash(args[1:], true, stdout, stderr)
 	case "stackchan-official-pcm-bridge-flash-plan":
 		return runStackChanOfficialPCMBridgeFlashPlan(args[1:], stdout, stderr)
+	case "stackchan-official-pcm-bridge-flash-execute":
+		fmt.Fprintln(stderr, "stackchan official pcm bridge app flash execute is blocked; write an ADR and add a reviewed execute guard before app partition writes are allowed")
+		return 2
+	case "stackchan-official-pcm-bridge-nvs-plan":
+		return runStackChanOfficialPCMBridgeNVS(args[1:], false, stdout, stderr)
+	case "stackchan-official-pcm-bridge-nvs-execute":
+		return runStackChanOfficialPCMBridgeNVS(args[1:], true, stdout, stderr)
 	case "latency-bench":
 		return runLatencyBench(args[1:], stdout, stderr)
 	case "serial-list":

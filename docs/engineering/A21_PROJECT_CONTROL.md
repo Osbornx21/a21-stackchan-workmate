@@ -1,0 +1,153 @@
+# A21 Project Control
+
+Status: active control document.
+Date: 2026-05-31.
+
+This document exists because A21 has moved from a clean foundation into
+high-speed hardware, provider, and real-device work. The codebase is not
+uncontrolled by design, but the execution surface can become uncontrolled when
+multiple threads edit the same worktree or when hardware-write commands appear
+faster than the governance docs can catch up.
+
+## Current Control State
+
+- Control branch: `codex/a21-project-control`.
+- Previous branch name `codex/a21-phase1-clean-skeleton` is stale for current
+  M3, StackChan hardware, provider, NVS, and official bridge work.
+- Main execution thread is paused until the control thread explicitly resumes
+  it.
+- The official PCM bridge NVS-only lane may be reviewed and stabilized.
+- The official PCM bridge app flash-execute lane is blocked until an ADR,
+  reviewed guard, and fresh verification approve it.
+- No raw `pio upload`, `idf.py flash`, copied esptool command, or generic
+  firmware path is allowed.
+
+## Branch Model
+
+A21 branches must name the lane they control. A branch name is part of the
+safety system, not cosmetic metadata.
+
+| Branch pattern | Purpose | Allowed work |
+| --- | --- | --- |
+| `codex/a21-project-control` | Control tower | governance docs, red build fixes, thread/branch/tool triage |
+| `codex/a21-mainline-<milestone>` | Product implementation | one milestone slice after control approval |
+| `codex/a21-provider-<provider-or-spine>` | Provider work | provider contracts, smoke tests, redacted reports |
+| `codex/a21-firmware-<capability>` | Firmware build/probe lane | build/test/report work without physical writes |
+| `codex/a21-hardware-window-<date>-<capability>` | Foreground hardware window | one physical-device write or acceptance window |
+| `codex/a21-docs-<topic>` | Documentation-only | docs, diagrams, ADR drafts, no runtime edits |
+
+Rules:
+
+- Do not continue feature work on a stale branch name.
+- Do not mix provider, firmware write, V21 adapter, and product UX work in one
+  branch unless the control thread explicitly declares it a release branch.
+- Hardware-write branches are single-thread and foreground-only.
+- Provider branches cannot touch firmware write paths.
+- Firmware branches cannot add provider keys, provider URLs, or V21 internals.
+- A branch that touches `Makefile`, `internal/app`, or firmware flash guards
+  must run `make verify` before handoff.
+- If the tree is dirty, new work must first classify every dirty file as
+  keep, finish, quarantine, or discard-by-user-approval.
+
+## Tool Tree
+
+Commands are grouped by blast radius. A task must declare the highest tier it
+will touch before execution.
+
+| Tier | Label | Examples | Rules |
+| --- | --- | --- | --- |
+| T0 | Read-only inspection | `rg`, `git status`, `git diff`, `go list` | Always allowed in control/review threads |
+| T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `make verify` | Allowed when no hardware/service side effect is expected |
+| T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `v21-adapter-smoke` without `--execute` | Reports must stay redacted |
+| T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
+| T4 | External/provider execution | `provider-smoke --execute`, `v21-adapter-smoke --execute` | Requires explicit env, redaction, no key in command output |
+| T5 | Firmware build/package | `firmware-tools`, `firmware-test`, `firmware-build`, `firmware-package`, official StackChan build lanes | No physical writes; package requires clean worktree |
+| T6 | Physical validation commands | `stackchan-*acceptance`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
+| T7 | Physical writes | NVS execute, guarded flash execute, bootstrap/probe flash execute | One foreground thread only, exact confirmation token, explicit port |
+| T8 | Blocked until ADR | official PCM bridge app flash execute, raw upload, generic esptool/idf flash | Not allowed from normal threads |
+
+T7/T8 rules:
+
+- No background Codex thread may run hardware-write commands.
+- No hardware write may run while another A21 thread is active in the same
+  worktree.
+- The command must identify the artifact, branch, commit, port, device ID, and
+  expected report path before execution.
+- The operator must preserve NVS calibration and report whether servo
+  calibration was present.
+- After execution, the device must be returned to an honest idle or safe state,
+  or the report must mark the failure plainly.
+
+## Thread Roles
+
+Codex threads are treated as project actors.
+
+| Role | Thread | Rules |
+| --- | --- | --- |
+| Control tower | `A21 control tower` | Owns branch names, stop/resume decisions, governance docs, and release gates |
+| Main execution | `A21 mainline execution` | One implementation slice at a time; paused when control detects risk |
+| Read-only review | `A21 read-only review` | May inspect and report; no file writes, no build/service/hardware side effects |
+| Procurement/research | `A21 API procurement` | No repo edits; no secrets in files or reports |
+| Hardware window | created per session | Foreground only; one device action; no parallel thread |
+
+Rules:
+
+- Only one thread may edit `/Users/jiyurun/Documents/New project` at a time.
+- If two active threads target the same worktree, the control tower pauses the
+  non-control thread before editing.
+- A thread must state its branch, dirty files, intended files, highest tool
+  tier, and forbidden actions before making changes.
+- A paused thread may only report status until the control tower resumes it.
+- Read-only threads must not turn into implementation threads; open a new
+  execution branch/thread instead.
+- Procurement threads must not import external recommendations directly into
+  A21 architecture. They create proposals only.
+
+## Handoff Contract
+
+Every implementation handoff must include:
+
+- branch name and HEAD commit;
+- dirty files, staged files, and untracked files;
+- exact commands run and their result;
+- report paths for generated evidence;
+- hardware/device state when StackChan was involved;
+- next action, blocked reason, or required ADR.
+
+Every hardware handoff must additionally include:
+
+- USB serial port;
+- device ID;
+- firmware identity and commit reported by the device;
+- whether Gateway was left running;
+- whether the device ended in `idle`, `listening`, `speaking`, `error`, or
+  bootloader state;
+- whether any NVS, app partition, or release artifact was written.
+
+## Immediate Stop Rules
+
+Stop and return to the control tower if any of these happen:
+
+- `go test ./...` stops compiling.
+- A branch adds a flash-execute command not documented in this file and
+  `FIRMWARE_RELEASE_DISCIPLINE.md`.
+- A report or stdout includes a provider key, full proxy URL, Wi-Fi password,
+  full audio websocket URL, or transcript text that should be redacted.
+- A thread wants to mix T7 hardware writes with provider execution.
+- StackChan overheats, white-screens, remains speaking after playback, or fails
+  to return to a safe state.
+- X21 or V21 runtime naming appears outside guardrails, tests, docs, or the
+  explicit V21 adapter boundary.
+
+## Resume Rules
+
+To resume the paused main execution thread:
+
+1. The control branch must be green on `go test ./...`, `git diff --check`, and
+   `go run ./cmd/a21 namespace-audit`.
+2. Dirty files must be classified and either committed, intentionally left as a
+   narrow working set, or moved to a new branch.
+3. The resumed thread receives a single-slice prompt with forbidden actions.
+4. If hardware writes are needed, create a hardware-window branch/thread and do
+   not run it in the background.
+
