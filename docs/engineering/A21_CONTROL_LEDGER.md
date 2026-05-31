@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `cfc1658`.
+Last accepted integration commit before this ledger update: `7eb3a8d`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `cfc1658 docs(control): open provider fixture post review`.
+  `7eb3a8d docs(control): record provider fixture post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -49,7 +49,8 @@ defines policy; this ledger records the current queue and accepted state.
   latency post-review acceptance is `b8d46f8`, provider fixture schema
   slice-open tracking is `44d6c76`, provider fixture metadata contract
   acceptance is `f69c6b8`, provider fixture metadata ledger acceptance is
-  `0e46761`, and provider fixture metadata post-review tracking is `cfc1658`.
+  `0e46761`, provider fixture metadata post-review tracking is `cfc1658`, and
+  provider fixture metadata post-review acceptance is `7eb3a8d`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -70,6 +71,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | active; T1/T2 sidecar test and docs hardening | T1/T2 | no |
 | `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | accepted into integration branch at `f69c6b8` | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
@@ -451,10 +453,21 @@ Decision:
 
 Next queue:
 
-- Open a narrow T1/T2 hardening slice for dedicated tests around oversized
-  fixture sidecars and unknown-field sidecars, plus documentation clarifying
-  that promotion-readiness `review_ready=true` should be asserted on the
-  integration branch, not on detached review worktrees.
+- Opened implementation thread `019e7c36-4617-73a1-aba0-1d35acc26efe` for the
+  narrow T1/T2 Provider Fixture Sidecar Hardening slice.
+- Implementation worktree:
+  `/Users/jiyurun/.codex/worktrees/38a4/New project`.
+- Scope: dedicated tests around oversized fixture sidecars and unknown-field
+  sidecars, plus documentation clarifying that promotion-readiness
+  `review_ready=true` should be asserted on the integration branch, not on
+  detached review worktrees.
+- Expected files: `internal/app/app_test.go`, and optionally
+  `docs/engineering/A21_CONTROL_LEDGER.md` or `docs/engineering/DOCTOR.md`.
+- Forbidden: production code changes unless tests prove a gap, provider
+  `--execute`, V21 execute, Gateway runtime/service startup, durable provider
+  reports with payloads, firmware/NVS/flash/raw upload/serial write,
+  `/v1/devices/control`, physical device paths, production dependency
+  additions, secrets, or provider payloads.
 - Keep real provider/V21/Gateway/hardware latency measurement reserved for a
   separately authorized T4/T6 window.
 
