@@ -54,6 +54,10 @@ func (c *AudioRateController) Reset() {
 	c.startedAt = time.Time{}
 }
 
+func (c *AudioRateController) SentFrames() int {
+	return c.sentFrames
+}
+
 func (c *AudioRateController) Send(ctx context.Context, frame []byte, send func(context.Context, []byte) error, shouldAbort func() bool) (bool, error) {
 	if send == nil {
 		return false, ErrAudioRateControllerSendNil

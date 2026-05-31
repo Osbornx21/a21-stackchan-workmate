@@ -1255,6 +1255,93 @@ func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.
 	}
 }
 
+func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
+	session := &xiaozhiSession{}
+	turn := session.startXiaozhiTurn(context.Background())
+	if turn.id != 1 {
+		t.Fatalf("turn id = %d, want 1", turn.id)
+	}
+	if session.shouldAbortXiaozhiTurn(turn) {
+		t.Fatal("fresh current turn should not abort")
+	}
+
+	ok, err := turn.pacer.Send(context.Background(), []byte("a"), func(context.Context, []byte) error {
+		return nil
+	}, nil)
+	if err != nil || !ok {
+		t.Fatalf("pacer send = ok:%v err:%v", ok, err)
+	}
+	if turn.pacer.SentFrames() != 1 {
+		t.Fatalf("sent frames = %d, want 1 before cancel", turn.pacer.SentFrames())
+	}
+
+	session.cancelCurrentXiaozhiTurn("abort")
+	if session.currentTurn != nil {
+		t.Fatalf("current turn = %+v, want cleared", session.currentTurn)
+	}
+	if turn.ctx.Err() == nil {
+		t.Fatal("cancelled turn context is still active")
+	}
+	if !session.shouldAbortXiaozhiTurn(turn) {
+		t.Fatal("cancelled turn should abort frame send checks")
+	}
+	if turn.pacer.SentFrames() != 0 {
+		t.Fatalf("sent frames = %d, want pacer reset on cancel", turn.pacer.SentFrames())
+	}
+
+	next := session.startXiaozhiTurn(context.Background())
+	if next.id != 2 {
+		t.Fatalf("next turn id = %d, want 2", next.id)
+	}
+	if session.shouldAbortXiaozhiTurn(next) {
+		t.Fatal("new current turn should not abort")
+	}
+}
+
+func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "stackchan-001",
+		"trace_id":   "a21-trace-xiaozhi-turn-cancel",
+		"session_id": "a21-session-xiaozhi-turn-cancel",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-turn-cancel", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.turn.start") || !traceContains(traces.Events, "xiaozhi.turn.cancel") {
+		t.Fatalf("trace missing turn lifecycle markers: %+v", traces.Events)
+	}
+}
+
 func TestXiaozhiWebSocketUsesStockHandshakeHeaders(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

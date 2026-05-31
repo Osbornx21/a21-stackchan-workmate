@@ -73,6 +73,11 @@ primitive before writing frames: default 60 ms frame slots, five-frame
 prebuffer, per-frame abort checks, and reset on turn cancellation. Raw unpaced
 binary writes are not accepted as an A21 product path.
 
+Each `listen/start` creates a Gateway-owned xiaozhi turn. Each `abort` cancels
+the current turn context, clears current-turn ownership, and resets the downlink
+pacer. Future provider and TTS frame code must check current-turn ownership
+before every device-facing frame send.
+
 ## Protocol Rules
 
 - Every message family must be versioned.

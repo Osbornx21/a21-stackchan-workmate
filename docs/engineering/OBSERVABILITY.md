@@ -77,6 +77,9 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 Client `hello.features` are represented only as sanitized `/v1/devices`
 capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 `device_events` and `debug_metrics` are marked as an isolated debug profile.
+The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
+`xiaozhi.turn.cancel` on `abort`; these are turn-control markers only, not
+provider cancel or device playback stop proof yet.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 

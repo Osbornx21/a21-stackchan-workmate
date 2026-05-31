@@ -706,6 +706,8 @@ type xiaozhiSession struct {
 	sessionID              string
 	deviceID               string
 	features               xiaozhitransport.HelloFeatures
+	currentTurn            *xiaozhiTurn
+	nextTurnID             uint64
 	helloReceived          bool
 	listening              bool
 	binaryProtocolVersion  int
@@ -721,6 +723,14 @@ type xiaozhiSession struct {
 	ttsStopSent            bool
 }
 
+type xiaozhiTurn struct {
+	id           uint64
+	ctx          context.Context
+	cancel       context.CancelFunc
+	pacer        *audio.AudioRateController
+	cancelReason string
+}
+
 func (session *xiaozhiSession) identity() xiaozhitransport.Identity {
 	return xiaozhitransport.Identity{
 		DeviceID:  session.deviceID,
@@ -733,6 +743,43 @@ func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
 	session.deviceID = frame.DeviceID
 	session.traceID = frame.TraceID
 	session.sessionID = frame.SessionID
+}
+
+func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhiTurn {
+	session.cancelCurrentXiaozhiTurn("new_turn")
+	if parent == nil {
+		parent = context.Background()
+	}
+	session.nextTurnID++
+	ctx, cancel := context.WithCancel(parent)
+	turn := &xiaozhiTurn{
+		id:     session.nextTurnID,
+		ctx:    ctx,
+		cancel: cancel,
+		pacer: audio.NewAudioRateController(audio.AudioRateControllerConfig{
+			FrameDuration:   60 * time.Millisecond,
+			PrebufferFrames: 5,
+		}),
+	}
+	session.currentTurn = turn
+	return turn
+}
+
+func (session *xiaozhiSession) cancelCurrentXiaozhiTurn(reason string) {
+	if session.currentTurn == nil {
+		return
+	}
+	turn := session.currentTurn
+	turn.cancelReason = strings.TrimSpace(reason)
+	turn.cancel()
+	if turn.pacer != nil {
+		turn.pacer.Reset()
+	}
+	session.currentTurn = nil
+}
+
+func (session *xiaozhiSession) shouldAbortXiaozhiTurn(turn *xiaozhiTurn) bool {
+	return turn == nil || session.currentTurn != turn || turn.ctx.Err() != nil
 }
 
 func (session *xiaozhiSession) configureXiaozhiAudio(params xiaozhitransport.AudioParams) error {
@@ -864,9 +911,11 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		}
 		switch frame.Control.Listen.State {
 		case "start":
+			session.startXiaozhiTurn(ctx)
 			session.listening = true
 			session.resetXiaozhiOpusIngress()
 			session.ttsStopSent = false
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
 			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
 		case "detect":
@@ -888,6 +937,8 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			return true
 		}
 		session.listening = false
+		session.cancelCurrentXiaozhiTurn(frame.Control.Abort.Reason)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", s.now().UnixMilli())
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.abort.received", s.now().UnixMilli())
 		s.writeXiaozhiTTSStop(ctx, conn, session, "abort")
 	}
