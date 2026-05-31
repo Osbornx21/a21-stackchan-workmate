@@ -3,7 +3,7 @@
 Status: active control ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-project-control`.
-Last accepted control commit before this ledger update: `3a12986`.
+Last accepted control commit before this ledger update: `5de3f9c`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -16,7 +16,7 @@ defines policy; this ledger records the current queue and accepted state.
 ## Current Accepted State
 
 - Control branch: `codex/a21-project-control`.
-- Control HEAD before this ledger update: `3a12986 docs(control): record hardware diagnostic handoff`.
+- Control HEAD before this ledger update: `5de3f9c docs(control): record provider handoff`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -24,6 +24,8 @@ defines policy; this ledger records the current queue and accepted state.
   `1e38804 fix(hardware): enforce StackChan capability honesty`.
 - Provider Spine DeepSeek text-stream readiness branch is committed at
   `6b7fdf0 fix(providers): measure first content from content deltas`.
+- Professional V21 evidence adapter readiness branch is committed at
+  `fc61793 fix(v21): wire configured adapter into gateway env`.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked until an
@@ -36,7 +38,8 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | active | T1/T2; T4 only after explicit V21-execute window | no |
+| `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | active | T0/T1 | no |
+| `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | completed; committed `fc61793` | T1/T2 | no |
 | `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | completed; committed `6b7fdf0` | T1/T2 | no |
 | `019e7b99-141e-70a3-b0fd-c5dd38b5cab5` | StackChan hardware mainline diagnostic consolidation | `/Users/jiyurun/.codex/worktrees/ddec/New project` | completed; committed `1e38804` | T1/T2 | no |
 | `019e7b91-537b-7233-b682-276f77e1b871` | Mainline NVS closure review | `/Users/jiyurun/.codex/worktrees/88f4/New project` | completed; no diff | T1 | no |
@@ -63,6 +66,48 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Professional V21 Evidence Adapter Readiness
+
+Accepted from thread `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9`, with control
+tower verification and commit.
+
+Evidence:
+
+- Branch: `codex/a21-mainline-professional-v21-contract`.
+- Worktree: `/Users/jiyurun/.codex/worktrees/ab7a/New project`.
+- Committed HEAD: `fc61793 fix(v21): wire configured adapter into gateway env`.
+- Dirty state after commit: clean.
+- Changed files: `internal/app/app.go`, `internal/app/app_test.go`,
+  `internal/v21adapter/client.go`, `internal/v21adapter/client_test.go`.
+- `newGatewayServerFromEnv` now honors explicit `A21_V21_ADAPTER_URL` for
+  professional Gateway turns.
+- Invalid adapter configuration fails honestly through the professional path
+  instead of silently falling back to mock V21 evidence.
+- V21 adapter HTTP client now uses direct networking rather than inheriting
+  ambient proxy variables.
+- Added tests for configured adapter routing, invalid-adapter honest failure,
+  and no ambient proxy inheritance.
+- Control-tower verification passed:
+  `go test ./internal/app ./internal/v21adapter -run 'GatewayServerFromEnv|HTTPClientDoesNotUseAmbientProxy|V21|Professional' -count=1`.
+- Control-tower verification passed: `git diff --check`.
+- Control-tower verification passed: `make verify`.
+- Control-tower verification passed: `go run ./cmd/a21 namespace-audit`.
+- Control-tower verification passed: `go run ./cmd/a21 preflight`.
+- Control-tower verification passed: `go run ./cmd/a21 doctor`, with only
+  expected isolated worktree firmware tool/artifact warnings.
+- Control-tower verification passed: `go run ./cmd/a21 v21-adapter-smoke`
+  dry-run, without `--execute`.
+- No real V21 execute, provider execute, key use, Gateway runtime, firmware,
+  hardware, NVS, flash, serial write, or `/v1/devices/control` path was touched.
+
+Decision:
+
+- Accept the V21 professional adapter readiness code slice.
+- Do not open T4 automatically. Real V21 adapter execution requires explicit
+  adapter URL, redacted report path, and no saved query/answer/evidence bodies.
+- Keep A21 as the professional-mode caller and presentation owner, not V21's
+  voice skin.
 
 ### Provider Spine / DeepSeek Text-Stream Readiness
 
@@ -179,11 +224,20 @@ Decision:
 
 ## Authorized Next Queue
 
-1. Professional V21 evidence lane.
-   - Thread: `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9`.
-   - Worktree: `/Users/jiyurun/.codex/worktrees/ab7a/New project`.
+1. Official PCM bridge app flash ADR.
+   - Thread: `019e7bb0-bf95-74f3-a935-1e89644bd417`.
+   - Worktree: `/Users/jiyurun/.codex/worktrees/42b1/New project`.
+   - Branch: `codex/a21-docs-pcm-bridge-flash-adr`.
+   - Max tier: T0/T1.
+   - Purpose: draft ADR and reviewed execute-guard design only.
+   - Forbidden: build, Gateway, provider/V21 execute, NVS execute, flash
+     execute, raw upload, serial write, `/v1/devices/control`, or hardware
+     window claims.
+
+2. Professional V21 evidence lane.
    - Branch: `codex/a21-mainline-professional-v21-contract`.
-   - Gate: active read/plan/minimal T1/T2 adapter-contract work only.
+   - Status: accepted code slice at
+     `fc61793 fix(v21): wire configured adapter into gateway env`.
    - Max tier: T1/T2 by default. V21 execute is T4 and requires explicit
      adapter URL, redacted reports, and no query/answer/evidence text in saved
      output.
@@ -191,7 +245,7 @@ Decision:
      storing evidence bodies in reports, Gateway runtime, provider execute, or
      V21 execute without control approval.
 
-2. Provider Spine / text-stream hot plug.
+3. Provider Spine / text-stream hot plug.
    - Branch: `codex/a21-provider-spine-deepseek-textstream`.
    - Status: accepted code slice at
      `6b7fdf0 fix(providers): measure first content from content deltas`.
@@ -201,7 +255,7 @@ Decision:
      hidden proxy inheritance, Baidu/Huawei expansion, provider execute without
      control approval, or turning A21 into an agent router.
 
-3. StackChan hardware mainline diagnostic consolidation.
+4. StackChan hardware mainline diagnostic consolidation.
    - Branch: `codex/a21-mainline-stackchan-hardware-diagnostic`.
    - Status: accepted code slice at
      `1e38804 fix(hardware): enforce StackChan capability honesty`.
@@ -215,12 +269,6 @@ Decision:
    - Forbidden: firmware writes, app flash, NVS execute, provider/V21 execute,
      Gateway background runtime left running, or claiming physical acceptance
      without fresh physical evidence.
-
-4. Official PCM bridge app flash ADR.
-   - Branch: `codex/a21-docs-pcm-bridge-flash-adr`.
-   - Max tier: T0/T1.
-   - Purpose: draft ADR and reviewed execute-guard design only.
-   - Forbidden: implementing or running app flash-execute before ADR acceptance.
 
 ## Ledger Update Checklist
 
