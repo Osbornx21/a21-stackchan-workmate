@@ -2540,23 +2540,38 @@ type stackChanHardwareTrack struct {
 	NextAction       string `json:"next_action"`
 }
 
+type stackChanHardwareCapabilityInvariant struct {
+	Capability     string `json:"capability"`
+	DeclaredStatus string `json:"declared_status,omitempty"`
+	Requirement    string `json:"requirement"`
+	Accepted       bool   `json:"accepted"`
+}
+
+type stackChanHardwareCapabilityInvariantSpec struct {
+	Capability      string
+	Requirement     string
+	AllowedExact    []string
+	AllowedPrefixes []string
+}
+
 type stackChanHardwareMainlineReport struct {
-	SchemaVersion          string                               `json:"schema_version"`
-	GeneratedAtMS          int64                                `json:"generated_at_ms"`
-	Metadata               latencyBenchMetadata                 `json:"metadata"`
-	DryRun                 bool                                 `json:"dry_run"`
-	FlashAllowed           bool                                 `json:"flash_allowed"`
-	DeleteAllowed          bool                                 `json:"delete_allowed"`
-	HardwareMainlineStatus string                               `json:"hardware_mainline_status"`
-	GatewayURL             string                               `json:"gateway_url"`
-	DeviceID               string                               `json:"device_id"`
-	Firmware               firmwarecheck.DeviceIdentityFirmware `json:"firmware"`
-	Capabilities           map[string]string                    `json:"capabilities,omitempty"`
-	RuntimeEcho            map[string]string                    `json:"runtime_echo,omitempty"`
-	OrderedTracks          []stackChanHardwareTrack             `json:"ordered_tracks"`
-	NextRequiredActions    []string                             `json:"next_required_actions"`
-	ReportPath             string                               `json:"report_path,omitempty"`
-	Findings               []officePreflightFinding             `json:"findings,omitempty"`
+	SchemaVersion          string                                 `json:"schema_version"`
+	GeneratedAtMS          int64                                  `json:"generated_at_ms"`
+	Metadata               latencyBenchMetadata                   `json:"metadata"`
+	DryRun                 bool                                   `json:"dry_run"`
+	FlashAllowed           bool                                   `json:"flash_allowed"`
+	DeleteAllowed          bool                                   `json:"delete_allowed"`
+	HardwareMainlineStatus string                                 `json:"hardware_mainline_status"`
+	GatewayURL             string                                 `json:"gateway_url"`
+	DeviceID               string                                 `json:"device_id"`
+	Firmware               firmwarecheck.DeviceIdentityFirmware   `json:"firmware"`
+	Capabilities           map[string]string                      `json:"capabilities,omitempty"`
+	RuntimeEcho            map[string]string                      `json:"runtime_echo,omitempty"`
+	CapabilityInvariants   []stackChanHardwareCapabilityInvariant `json:"capability_invariants"`
+	OrderedTracks          []stackChanHardwareTrack               `json:"ordered_tracks"`
+	NextRequiredActions    []string                               `json:"next_required_actions"`
+	ReportPath             string                                 `json:"report_path,omitempty"`
+	Findings               []officePreflightFinding               `json:"findings,omitempty"`
 }
 
 func (report *stackChanTouchAcceptanceReport) addFinding(code string, message string) {
@@ -5846,52 +5861,106 @@ var stackChanHardwareMainlineTracks = []stackChanHardwareTrack{
 	},
 	{
 		Capability:       "ambient_light",
-		TargetStatus:     "planned_adaptive_brightness",
+		TargetStatus:     "planned_ambient_light_sensor",
 		Track:            "read_only_diagnostic_probe",
 		PromotionAllowed: false,
 		NextAction:       "Add adaptive brightness telemetry and acceptance evidence without changing expression behavior first.",
 	},
 	{
 		Capability:       "proximity",
-		TargetStatus:     "planned_presence_distance",
+		TargetStatus:     "planned_proximity_sensor",
 		Track:            "read_only_diagnostic_probe",
 		PromotionAllowed: false,
 		NextAction:       "Add wake, sleep, and interaction-distance telemetry with false-positive protection.",
 	},
 	{
 		Capability:       "battery",
-		TargetStatus:     "planned_power_state",
+		TargetStatus:     "planned_550mah_battery",
 		Track:            "read_only_diagnostic_probe",
 		PromotionAllowed: false,
 		NextAction:       "Add honest power-state reporting and low-power local fallback evidence.",
 	},
 	{
 		Capability:       "servo_x",
-		TargetStatus:     "planned_second_axis_servo",
+		TargetStatus:     "planned_continuous_rotation_axis",
 		Track:            "motion_safety_spike",
 		PromotionAllowed: false,
 		NextAction:       "Prove second-axis range, clamps, and coordinated head pose before enabling motion.",
 	},
 	{
 		Capability:       "camera",
-		TargetStatus:     "planned_privacy_safe_vision",
+		TargetStatus:     "planned_core_s3_camera",
 		Track:            "privacy_safe_vision_spike",
 		PromotionAllowed: false,
 		NextAction:       "Design explicit opt-in local presence or gesture context with no silent surveillance.",
 	},
 	{
 		Capability:       "nfc",
-		TargetStatus:     "planned_opt_in_interaction",
+		TargetStatus:     "planned_nfc",
 		Track:            "explicit_opt_in_interaction_spike",
 		PromotionAllowed: false,
 		NextAction:       "Define visible consent and desk interaction semantics before runtime use.",
 	},
 	{
 		Capability:       "infrared",
-		TargetStatus:     "planned_opt_in_remote",
+		TargetStatus:     "planned_infrared_tx_rx",
 		Track:            "explicit_opt_in_interaction_spike",
 		PromotionAllowed: false,
 		NextAction:       "Define explicit opt-in remote interaction semantics before runtime use.",
+	},
+}
+
+var stackChanHardwareCapabilityInvariantSpecs = []stackChanHardwareCapabilityInvariantSpec{
+	{
+		Capability:      "microphone",
+		Requirement:     "release microphone remains disabled or diagnostic-only until separate production evidence exists",
+		AllowedPrefixes: []string{"disabled_", "diagnostic_"},
+	},
+	{Capability: "speaker", Requirement: "stable expression/playback surface must be available", AllowedExact: []string{"available"}},
+	{Capability: "screen", Requirement: "stable expression/playback surface must be available", AllowedExact: []string{"available"}},
+	{Capability: "screen_touch", Requirement: "stable touch surface must be available", AllowedExact: []string{"available"}},
+	{Capability: "top_touch", Requirement: "stable touch surface must be available", AllowedExact: []string{"available"}},
+	{Capability: "servo_y", Requirement: "stable Y-axis expression surface must be available", AllowedExact: []string{"available"}},
+	{Capability: "rgb", Requirement: "stable RGB expression surface must be available", AllowedExact: []string{"available"}},
+	{
+		Capability:      "imu",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "ambient_light",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "proximity",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "battery",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "servo_x",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "camera",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "nfc",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
+	},
+	{
+		Capability:      "infrared",
+		Requirement:     "planned hardware must stay planned, disabled, or diagnostic-only; product availability needs separate evidence",
+		AllowedPrefixes: []string{"planned_", "disabled_", "diagnostic_"},
 	},
 }
 
@@ -6000,6 +6069,21 @@ func buildStackChanHardwareMainlineReport(options stackChanHardwareMainlineOptio
 	report.Firmware = device.Firmware
 	report.Capabilities = cloneStringMap(device.Capabilities)
 	report.RuntimeEcho = cloneStringMap(device.RuntimeEcho)
+	for _, spec := range stackChanHardwareCapabilityInvariantSpecs {
+		declaredStatus := strings.TrimSpace(report.Capabilities[spec.Capability])
+		invariant := stackChanHardwareCapabilityInvariant{
+			Capability:     spec.Capability,
+			DeclaredStatus: declaredStatus,
+			Requirement:    spec.Requirement,
+			Accepted:       stackChanHardwareCapabilityStatusAccepted(declaredStatus, spec),
+		}
+		if declaredStatus == "" {
+			report.addFinding("capability_missing", fmt.Sprintf("StackChan capability %q must be declared before the hardware mainline can proceed", spec.Capability))
+		} else if !invariant.Accepted {
+			report.addFinding("capability_status_not_honest", fmt.Sprintf("StackChan capability %q declared status %q violates hardware mainline invariant", spec.Capability, declaredStatus))
+		}
+		report.CapabilityInvariants = append(report.CapabilityInvariants, invariant)
+	}
 	for _, spec := range stackChanHardwareMainlineTracks {
 		track := spec
 		declaredStatus, ok := report.Capabilities[track.Capability]
@@ -6020,6 +6104,24 @@ func buildStackChanHardwareMainlineReport(options stackChanHardwareMainlineOptio
 		report.HardwareMainlineStatus = "ready_for_diagnostic_spikes"
 	}
 	return report
+}
+
+func stackChanHardwareCapabilityStatusAccepted(status string, spec stackChanHardwareCapabilityInvariantSpec) bool {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return false
+	}
+	for _, exact := range spec.AllowedExact {
+		if status == exact {
+			return true
+		}
+	}
+	for _, prefix := range spec.AllowedPrefixes {
+		if strings.HasPrefix(status, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (report *stackChanHardwareMainlineReport) addFinding(code string, message string) {

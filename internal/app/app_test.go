@@ -6553,7 +6553,7 @@ func TestRunStackChanHardwareMainlineReportsOrderedPlannedTracks(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_second_axis_servo","rgb":"available","camera":"planned_privacy_safe_vision","imu":"planned_9_axis_imu","ambient_light":"planned_adaptive_brightness","proximity":"planned_presence_distance","battery":"planned_power_state","nfc":"planned_opt_in_interaction","infrared":"planned_opt_in_remote"},"runtime_echo":{"screen":"idle","servo_y":"48deg","rgb":"#002430"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_continuous_rotation_axis","rgb":"available","camera":"planned_core_s3_camera","imu":"planned_9_axis_imu","ambient_light":"planned_ambient_light_sensor","proximity":"planned_proximity_sensor","battery":"planned_550mah_battery","nfc":"planned_nfc","infrared":"planned_infrared_tx_rx"},"runtime_echo":{"screen":"idle","servo_y":"48deg","rgb":"#002430"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
 	}))
 	defer server.Close()
 
@@ -6573,6 +6573,10 @@ func TestRunStackChanHardwareMainlineReportsOrderedPlannedTracks(t *testing.T) {
 		`"schema_version": "a21.stackchan_hardware_mainline.v1"`,
 		`"hardware_mainline_status": "ready_for_diagnostic_spikes"`,
 		`"flash_allowed": false`,
+		`"delete_allowed": false`,
+		`"capability_invariants":`,
+		`"capability": "microphone"`,
+		`"accepted": true`,
 		`"capability": "imu"`,
 		`"declared_status": "planned_9_axis_imu"`,
 		`"promotion_allowed": false`,
@@ -6594,6 +6598,77 @@ func TestRunStackChanHardwareMainlineReportsOrderedPlannedTracks(t *testing.T) {
 	}
 }
 
+func TestRunStackChanHardwareMainlineBlocksFalseAvailablePromotion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_continuous_rotation_axis","rgb":"available","camera":"planned_core_s3_camera","imu":"available","ambient_light":"planned_ambient_light_sensor","proximity":"planned_proximity_sensor","battery":"planned_550mah_battery","nfc":"planned_nfc","infrared":"planned_infrared_tx_rx"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-hardware-mainline",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"hardware_mainline_status": "blocked"`,
+		`"code": "capability_status_not_honest"`,
+		`"capability": "imu"`,
+		`"declared_status": "available"`,
+		`"accepted": false`,
+		"stackchan hardware mainline blocked (no flash performed)",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunStackChanHardwareMainlineBlocksReleaseMicrophonePromotion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"available","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_continuous_rotation_axis","rgb":"available","camera":"planned_core_s3_camera","imu":"planned_9_axis_imu","ambient_light":"planned_ambient_light_sensor","proximity":"planned_proximity_sensor","battery":"planned_550mah_battery","nfc":"planned_nfc","infrared":"planned_infrared_tx_rx"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-hardware-mainline",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--output-dir", t.TempDir(),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"hardware_mainline_status": "blocked"`,
+		`"code": "capability_status_not_honest"`,
+		`"capability": "microphone"`,
+		`"declared_status": "available"`,
+		`"accepted": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanHardwareMainlineBlocksMissingPlannedCapability(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/devices" {
@@ -6601,7 +6676,7 @@ func TestRunStackChanHardwareMainlineBlocksMissingPlannedCapability(t *testing.T
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_second_axis_servo","rgb":"available","ambient_light":"planned_adaptive_brightness","proximity":"planned_presence_distance","battery":"planned_power_state","nfc":"planned_opt_in_interaction","infrared":"planned_opt_in_remote"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
+		fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef123456"},"capabilities":{"microphone":"disabled_m5unified_i2s_stop_crash_guard","speaker":"available","screen":"available","screen_touch":"available","top_touch":"available","servo_y":"available","servo_x":"planned_continuous_rotation_axis","rgb":"available","ambient_light":"planned_ambient_light_sensor","proximity":"planned_proximity_sensor","battery":"planned_550mah_battery","nfc":"planned_nfc","infrared":"planned_infrared_tx_rx"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","current_expression":"idle","last_session_id":"a21-session-hardware-mainline","last_seen_ms":%d}]}`, time.Now().UnixMilli())
 	}))
 	defer server.Close()
 
