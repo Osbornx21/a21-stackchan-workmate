@@ -63,7 +63,11 @@ audio.downlink.first_frame
 device.playback.start
 ```
 
-`provider.first_byte`, `provider.first_content`, `tts.first_audio`, `audio.downlink.first_frame`, and `device.playback.start` are placeholders in this phase. They reserve the Gateway trace shape so later provider, TTS, downlink, and device work can fill real timings without changing the trace contract.
+`asr.first_partial` uses `local_audio.first_partial_ms` from the local audio front-end result.
+`provider.first_byte`, `provider.first_content`, `tts.first_audio`,
+`audio.downlink.first_frame`, and `device.playback.start` are placeholders in this phase.
+They reserve the Gateway trace shape so later provider, TTS, downlink, and device work
+can fill real timings without changing the trace contract.
 
 ## Mode Boundary
 

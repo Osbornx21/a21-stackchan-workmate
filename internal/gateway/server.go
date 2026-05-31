@@ -1557,21 +1557,23 @@ func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request)
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
 	req.SessionID = sessionID
-	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.turn.received", s.now().UnixMilli())
-	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(req))
+	receivedAtMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.turn.received", receivedAtMS)
+	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(req, receivedAtMS))
 }
 
-func (s *Server) fastCompanionTurnResponse(req FastCompanionTurnRequest) FastCompanionTurnResponse {
+func (s *Server) fastCompanionTurnResponse(req FastCompanionTurnRequest, receivedAtMS int64) FastCompanionTurnResponse {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
-	now := s.now().UnixMilli()
-	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", now)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "asr.first_partial", now+1)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.text_stream.route.placeholder", now+2)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_byte", now+3)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_content", now+4)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "tts.first_audio", now+5)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "audio.downlink.first_frame", now+6)
-	s.recordTrace(traceID, sessionID, req.DeviceID, "device.playback.start", now+7)
+	asrFirstPartialAtMS := receivedAtMS + req.LocalAudio.FirstPartialMS
+	placeholderStartAtMS := asrFirstPartialAtMS + 1
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", receivedAtMS)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "asr.first_partial", asrFirstPartialAtMS)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.text_stream.route.placeholder", placeholderStartAtMS)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_byte", placeholderStartAtMS+1)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "provider.first_content", placeholderStartAtMS+2)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "tts.first_audio", placeholderStartAtMS+3)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "audio.downlink.first_frame", placeholderStartAtMS+4)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "device.playback.start", placeholderStartAtMS+5)
 	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
 		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我把本地语音结果接到文本流边界。"},

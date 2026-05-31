@@ -389,6 +389,22 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	if traceRec.Code != http.StatusOK {
 		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
 	}
+	var traceResponse TraceResponse
+	if err := json.Unmarshal(traceRec.Body.Bytes(), &traceResponse); err != nil {
+		t.Fatal(err)
+	}
+	foundASRFirstPartial := false
+	for _, event := range traceResponse.Events {
+		if event.Name == "asr.first_partial" {
+			foundASRFirstPartial = true
+			if event.OffsetMS != 42 {
+				t.Fatalf("asr first partial offset = %d, want 42", event.OffsetMS)
+			}
+		}
+	}
+	if !foundASRFirstPartial {
+		t.Fatalf("trace missing asr.first_partial event: %s", traceRec.Body.String())
+	}
 	for _, want := range []string{
 		"fast_companion.local_audio.frontend.accepted",
 		"asr.first_partial",
