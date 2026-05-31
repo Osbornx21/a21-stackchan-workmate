@@ -1,0 +1,426 @@
+diff --git a/firmware/CMakeLists.txt b/firmware/CMakeLists.txt
+index 6f0c64a..93ef3a3 100644
+--- a/firmware/CMakeLists.txt
++++ b/firmware/CMakeLists.txt
+@@ -2,11 +2,11 @@
+ # CMakeLists in this exact order for cmake to work correctly
+ cmake_minimum_required(VERSION 3.16)
+ 
+-set(PROJECT_VER "1.4.1")
++set(PROJECT_VER "0.1.0-a21-official-pcm-bridge")
+ add_definitions(-DFIRMWARE_VERSION=\"${PROJECT_VER}\")
+ 
+ # Add this line to disable the specific warning
+ add_compile_options(-Wno-missing-field-initializers)
+ 
+ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+-project(stack-chan)
++project(a21-stackchan-official-pcm-bridge)
+diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
+index 5e49344..a00d376 100644
+--- a/firmware/main/main.cpp
++++ b/firmware/main/main.cpp
+@@ -3,55 +3,366 @@
+  *
+  * SPDX-License-Identifier: MIT
+  */
+-#include <smooth_ui_toolkit.hpp>
+-#include <uitk/short_namespace.hpp>
++#include <algorithm>
++#include <atomic>
++#include <cstdint>
++#include <cstring>
++#include <memory>
++#include <string>
++#include <vector>
++
++#include <cJSON.h>
++#include <esp_log.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/queue.h>
++#include <freertos/task.h>
++#include <lvgl.h>
++#include <mbedtls/base64.h>
+ #include <mooncake_log.h>
+-#include <mooncake.h>
+-#include <apps/apps.h>
++#include <audio/audio_codec.h>
++#include <board.h>
+ #include <hal/hal.h>
++#include <settings.h>
++#include <web_socket.h>
+ 
+-using namespace mooncake;
+-using namespace smooth_ui_toolkit;
++namespace {
++
++constexpr const char* kTag = "A21OfficialPCMBridge";
++constexpr const char* kSettingsNamespace = "a21";
++constexpr const char* kDefaultDeviceID = "stackchan-001";
++constexpr int kQueueDepth = 24;
++constexpr int kMaxOutputFrames = 960;
++constexpr int kConnectRetryDelayMS = 1500;
++
++struct A21PCMFrame {
++    int sample_rate_hz = 0;
++    int duration_ms = 0;
++    size_t frame_count = 0;
++    int16_t samples[kMaxOutputFrames] = {};
++};
++
++std::atomic<bool> g_network_connected{false};
++QueueHandle_t g_audio_queue = nullptr;
++AudioCodec* g_codec = nullptr;
++std::string g_status = "booting";
++std::string g_device_id = kDefaultDeviceID;
++int g_played_chunks = 0;
++int g_dropped_chunks = 0;
++int g_invalid_messages = 0;
++
++void setStatus(const std::string& status)
++{
++    g_status = status;
++    ESP_LOGI(kTag, "status=%s", g_status.c_str());
++}
++
++void renderStatus()
++{
++    GetHAL().lvglLock();
++    lv_obj_t* screen = lv_screen_active();
++    lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
++    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
++    lv_obj_clean(screen);
++
++    lv_obj_t* title = lv_label_create(screen);
++    lv_label_set_text(title, "A21 BRIDGE");
++    lv_obj_set_style_text_color(title, lv_color_hex(0xFFFFFF), 0);
++    lv_obj_align(title, LV_ALIGN_CENTER, 0, -42);
++
++    lv_obj_t* status = lv_label_create(screen);
++    std::string status_text = g_status + "\n" + g_device_id +
++                              "\nchunks=" + std::to_string(g_played_chunks) +
++                              " drop=" + std::to_string(g_dropped_chunks) +
++                              " bad=" + std::to_string(g_invalid_messages);
++    lv_label_set_text(status, status_text.c_str());
++    lv_obj_set_style_text_color(status, lv_color_hex(0x9FE6FF), 0);
++    lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
++    lv_obj_align(status, LV_ALIGN_CENTER, 0, 18);
++
++    lv_timer_handler();
++    GetHAL().lvglUnlock();
++}
++
++void idleDelay(int delay_ms)
++{
++    const int step_ms = 50;
++    int elapsed = 0;
++    while (elapsed < delay_ms) {
++        GetHAL().feedTheDog();
++        vTaskDelay(pdMS_TO_TICKS(step_ms));
++        elapsed += step_ms;
++    }
++}
++
++std::string withDeviceIDQuery(std::string url)
++{
++    if (url.empty() || url.find("device_id=") != std::string::npos) {
++        return url;
++    }
++    url += (url.find('?') == std::string::npos) ? "?" : "&";
++    url += "device_id=" + g_device_id;
++    return url;
++}
++
++std::string readAudioWSURL()
++{
++    Settings settings(kSettingsNamespace, false);
++    g_device_id = settings.GetString("device_id", kDefaultDeviceID);
++    return withDeviceIDQuery(settings.GetString("audio_ws_url", ""));
++}
++
++bool base64Decode(const char* encoded, std::vector<uint8_t>* decoded)
++{
++    if (encoded == nullptr || decoded == nullptr || encoded[0] == '\0') {
++        return false;
++    }
++    const size_t encoded_len = std::strlen(encoded);
++    size_t required = 0;
++    int ret = mbedtls_base64_decode(nullptr, 0, &required,
++                                    reinterpret_cast<const unsigned char*>(encoded), encoded_len);
++    if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL || required == 0) {
++        return false;
++    }
++    decoded->assign(required, 0);
++    size_t actual = 0;
++    ret = mbedtls_base64_decode(decoded->data(), decoded->size(), &actual,
++                                reinterpret_cast<const unsigned char*>(encoded), encoded_len);
++    if (ret != 0 || actual == 0 || actual > decoded->size()) {
++        decoded->clear();
++        return false;
++    }
++    decoded->resize(actual);
++    return true;
++}
++
++bool bytesToPCM16(const std::vector<uint8_t>& bytes, std::vector<int16_t>* samples)
++{
++    if (samples == nullptr || bytes.empty() || (bytes.size() % 2) != 0) {
++        return false;
++    }
++    samples->assign(bytes.size() / 2, 0);
++    for (size_t i = 0; i < samples->size(); ++i) {
++        const uint16_t lo = bytes[i * 2];
++        const uint16_t hi = bytes[i * 2 + 1];
++        (*samples)[i] = static_cast<int16_t>(lo | (hi << 8));
++    }
++    return true;
++}
++
++void copyOrUpsampleToOutputRate(const std::vector<int16_t>& input, int sample_rate_hz, A21PCMFrame* frame)
++{
++    const int output_rate = g_codec != nullptr && g_codec->output_sample_rate() > 0 ? g_codec->output_sample_rate() : 24000;
++    frame->sample_rate_hz = output_rate;
++    if (sample_rate_hz == output_rate) {
++        frame->frame_count = std::min(input.size(), static_cast<size_t>(kMaxOutputFrames));
++        std::copy_n(input.begin(), frame->frame_count, frame->samples);
++        return;
++    }
++
++    const size_t out_count = std::min(static_cast<size_t>(
++                                          (static_cast<uint64_t>(input.size()) * output_rate) /
++                                          static_cast<uint64_t>(sample_rate_hz)),
++                                      static_cast<size_t>(kMaxOutputFrames));
++    frame->frame_count = out_count;
++    for (size_t out = 0; out < out_count; ++out) {
++        const size_t in = std::min((out * static_cast<size_t>(sample_rate_hz)) /
++                                       static_cast<size_t>(output_rate),
++                                   input.size() - 1);
++        frame->samples[out] = input[in];
++    }
++}
++
++bool enqueueAudioPlaybackChunk(const cJSON* root)
++{
++    if (root == nullptr || g_audio_queue == nullptr) {
++        return false;
++    }
++    const cJSON* payload = cJSON_GetObjectItem(root, "payload");
++    if (!cJSON_IsObject(payload)) {
++        return false;
++    }
++    const cJSON* codec = cJSON_GetObjectItem(payload, "codec");
++    const cJSON* sample_rate = cJSON_GetObjectItem(payload, "sample_rate_hz");
++    const cJSON* channels = cJSON_GetObjectItem(payload, "channels");
++    const cJSON* duration = cJSON_GetObjectItem(payload, "duration_ms");
++    const cJSON* data = cJSON_GetObjectItem(payload, "data_base64");
++    if (!cJSON_IsString(codec) || std::strcmp(codec->valuestring, "pcm_s16le") != 0 ||
++        !cJSON_IsNumber(sample_rate) || !cJSON_IsNumber(channels) ||
++        !cJSON_IsNumber(duration) || !cJSON_IsString(data) ||
++        channels->valueint != 1 || duration->valueint <= 0 || duration->valueint > 100 ||
++        (sample_rate->valueint != 16000 && sample_rate->valueint != 24000)) {
++        return false;
++    }
++
++    std::vector<uint8_t> decoded;
++    std::vector<int16_t> samples;
++    if (!base64Decode(data->valuestring, &decoded) || !bytesToPCM16(decoded, &samples)) {
++        return false;
++    }
++
++    A21PCMFrame frame;
++    frame.duration_ms = duration->valueint;
++    copyOrUpsampleToOutputRate(samples, sample_rate->valueint, &frame);
++    if (frame.frame_count == 0) {
++        return false;
++    }
++    if (xQueueSend(g_audio_queue, &frame, 0) != pdTRUE) {
++        g_dropped_chunks += 1;
++        return true;
++    }
++    return true;
++}
++
++void applyControlEvent(const cJSON* root)
++{
++    if (root == nullptr || g_audio_queue == nullptr) {
++        return;
++    }
++    const cJSON* payload = cJSON_GetObjectItem(root, "payload");
++    const cJSON* state = cJSON_IsObject(payload) ? cJSON_GetObjectItem(payload, "state") : nullptr;
++    if (cJSON_IsString(state)) {
++        setStatus(state->valuestring);
++        if (std::strcmp(state->valuestring, "speaking") != 0) {
++            xQueueReset(g_audio_queue);
++        }
++    }
++}
++
++void handleTextMessage(const char* data, size_t len)
++{
++    std::string message(data, data + len);
++    std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(message.c_str()), cJSON_Delete);
++    if (!root) {
++        g_invalid_messages += 1;
++        return;
++    }
++    const cJSON* kind = cJSON_GetObjectItem(root.get(), "kind");
++    if (!cJSON_IsString(kind)) {
++        g_invalid_messages += 1;
++        return;
++    }
++    if (std::strcmp(kind->valuestring, "audio.playback.chunk") == 0) {
++        if (!enqueueAudioPlaybackChunk(root.get())) {
++            g_invalid_messages += 1;
++        }
++        return;
++    }
++    if (std::strcmp(kind->valuestring, "control.event") == 0) {
++        applyControlEvent(root.get());
++    }
++}
++
++void audioOutputTask(void*)
++{
++    A21PCMFrame frame;
++    while (true) {
++        if (xQueueReceive(g_audio_queue, &frame, portMAX_DELAY) != pdTRUE) {
++            continue;
++        }
++        if (g_codec == nullptr || frame.frame_count == 0) {
++            continue;
++        }
++        std::vector<int16_t> chunk(frame.samples, frame.samples + frame.frame_count);
++        g_codec->OutputData(chunk);
++        g_played_chunks += 1;
++    }
++}
++
++std::unique_ptr<WebSocket> connectAudioWebSocket(const std::string& url)
++{
++    auto* network = Board::GetInstance().GetNetwork();
++    if (network == nullptr) {
++        return nullptr;
++    }
++    auto ws = network->CreateWebSocket(1);
++    if (ws == nullptr) {
++        return nullptr;
++    }
++    ws->SetReceiveBufferSize(4096);
++    ws->SetHeader("Device-Id", g_device_id.c_str());
++    ws->SetHeader("A21-Device-Role", "stackchan-official-pcm-bridge");
++    ws->OnConnected([]() { setStatus("ws connected"); });
++    ws->OnDisconnected([]() { setStatus("ws disconnected"); });
++    ws->OnError([](int error) {
++        ESP_LOGW(kTag, "websocket error=%d", error);
++        setStatus("ws error");
++    });
++    ws->OnData([](const char* data, size_t len, bool binary) {
++        if (binary) {
++            return;
++        }
++        handleTextMessage(data, len);
++    });
++    if (!ws->Connect(url.c_str())) {
++        ESP_LOGW(kTag, "connect failed: error=%d", ws->GetLastError());
++        return nullptr;
++    }
++    return ws;
++}
++
++void waitForNetwork()
++{
++    setStatus("wifi starting");
++    renderStatus();
++    Board::GetInstance().SetNetworkEventCallback([](NetworkEvent event, const std::string&) {
++        if (event == NetworkEvent::Connected) {
++            g_network_connected = true;
++            setStatus("wifi connected");
++        } else if (event == NetworkEvent::Disconnected) {
++            g_network_connected = false;
++            setStatus("wifi disconnected");
++        } else if (event == NetworkEvent::WifiConfigModeEnter) {
++            setStatus("wifi config");
++        }
++    });
++    Board::GetInstance().StartNetwork();
++    while (!g_network_connected.load()) {
++        renderStatus();
++        idleDelay(500);
++    }
++}
++
++}  // namespace
+ 
+ extern "C" void app_main(void)
+ {
+-    // Setup logger
+     mclog::set_level(mclog::level_info);
+     mclog::set_time_format(mclog::time_format_unix_milliseconds);
+ 
+-    // HAL init
+     GetHAL().init();
++    renderStatus();
+ 
+-    // Setup ui hal
+-    ui_hal::on_delay([](uint32_t ms) { GetHAL().delay(ms); });
+-    ui_hal::on_get_tick([]() { return GetHAL().millis(); });
+-
+-    // Install apps
+-    GetMooncake().installApp(std::make_unique<AppLauncher>());
+-    GetMooncake().installApp(std::make_unique<AppAiAgent>());
+-    GetMooncake().installApp(std::make_unique<AppAvatar>());
+-    GetMooncake().installApp(std::make_unique<AppEspnowControl>());
+-    GetMooncake().installApp(std::make_unique<AppAppCenter>());
+-    GetMooncake().installApp(std::make_unique<AppEzdata>());
+-    GetMooncake().installApp(std::make_unique<AppDance>());
+-    GetMooncake().installApp(std::make_unique<AppSetup>());
+-
+-    // Main loop
+-    while (1) {
+-        GetHAL().feedTheDog();
+-        GetHAL().updateHeapStatusLog();
+-
+-        GetMooncake().update();
+-
+-        if (GetHAL().isXiaozhiStartRequested()) {
+-            break;
+-        }
++    g_codec = Board::GetInstance().GetAudioCodec();
++    if (g_codec == nullptr) {
++        setStatus("codec missing");
++        while (true) {
++            renderStatus();
++            idleDelay(1000);
++        }
+     }
++    g_codec->Start();
++    g_codec->SetOutputVolume(82);
++    g_codec->EnableOutput(true);
++    g_audio_queue = xQueueCreate(kQueueDepth, sizeof(A21PCMFrame));
++    xTaskCreate(audioOutputTask, "a21_audio_out", 4096, nullptr, 5, nullptr);
+ 
+-    // Uninstall all apps and destroy mooncake
+-    GetMooncake().uninstallAllApps();
+-    DestroyMooncake();
++    waitForNetwork();
++    std::string audio_ws_url = readAudioWSURL();
++    if (audio_ws_url.empty()) {
++        setStatus("set a21 audio_ws_url");
++        while (true) {
++            renderStatus();
++            idleDelay(1000);
++        }
++    }
+ 
+-    // Start xiaozhi, never returns
+-    GetHAL().startXiaozhi();
++    while (true) {
++        renderStatus();
++        auto ws = connectAudioWebSocket(audio_ws_url);
++        while (ws && ws->IsConnected()) {
++            renderStatus();
++            idleDelay(1000);
++        }
++        idleDelay(kConnectRetryDelayMS);
++    }
+ }

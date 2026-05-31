@@ -143,6 +143,61 @@ func TestCollectOfficialStackChanBuildArtifactsFindsAppFromFlashArgs(t *testing.
 	}
 }
 
+func TestCollectOfficialStackChanBuildArtifactsFindsPCMBridgeAppFromFlashArgs(t *testing.T) {
+	buildDir := t.TempDir()
+	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
+	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
+	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
+	writeTestFile(t, filepath.Join(buildDir, "generated_assets.bin"), "assets")
+	writeTestFile(t, filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin"), "app")
+	writeTestFile(t, filepath.Join(buildDir, "flash_args"), strings.Join([]string{
+		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
+		"0x0 bootloader/bootloader.bin",
+		"0x20000 a21-stackchan-official-pcm-bridge.bin",
+		"0x8000 partition_table/partition-table.bin",
+		"0xd000 ota_data_initial.bin",
+		"0xa00000 generated_assets.bin",
+	}, "\n")+"\n")
+
+	artifacts := collectOfficialStackChanBuildArtifacts(buildDir)
+	var appArtifact stackChanOfficialBaselineBuildArtifact
+	for _, artifact := range artifacts {
+		if artifact.Name == "app" {
+			appArtifact = artifact
+			break
+		}
+	}
+	if appArtifact.Path == "" {
+		t.Fatalf("app artifact missing: %+v", artifacts)
+	}
+	if appArtifact.FlashOffset != "0x20000" {
+		t.Fatalf("app flash offset = %q, want 0x20000", appArtifact.FlashOffset)
+	}
+	if !strings.HasSuffix(appArtifact.Path, "a21-stackchan-official-pcm-bridge.bin") {
+		t.Fatalf("app artifact path = %q", appArtifact.Path)
+	}
+}
+
+func TestCollectOfficialStackChanBuildArtifactsFindsPCMBridgeFallbackApp(t *testing.T) {
+	buildDir := t.TempDir()
+	writeTestFile(t, filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin"), "app")
+
+	artifacts := collectOfficialStackChanBuildArtifacts(buildDir)
+	var appArtifact stackChanOfficialBaselineBuildArtifact
+	for _, artifact := range artifacts {
+		if artifact.Name == "app" {
+			appArtifact = artifact
+			break
+		}
+	}
+	if appArtifact.Path == "" {
+		t.Fatalf("app artifact missing: %+v", artifacts)
+	}
+	if !strings.HasSuffix(appArtifact.Path, "a21-stackchan-official-pcm-bridge.bin") {
+		t.Fatalf("app artifact path = %q", appArtifact.Path)
+	}
+}
+
 func TestRunStackChanOfficialAudioSmokeFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {

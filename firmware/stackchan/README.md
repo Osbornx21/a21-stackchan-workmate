@@ -24,6 +24,7 @@ make firmware-mic-probe-build
 make firmware-imu-probe-build
 make firmware-sensor-probe-build
 make stackchan-official-audio-smoke-build
+make stackchan-official-pcm-bridge-build
 make firmware-mic-probe-upload-blocker-check
 make firmware-imu-probe-upload-blocker-check
 make firmware-sensor-probe-upload-blocker-check
@@ -56,6 +57,8 @@ A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX make stackchan-official-audio-smoke-flash-p
 `make firmware-sensor-probe-flash-plan` and `make firmware-sensor-probe-flash-execute` are the matching read-only diagnostic sensor flash lane. They rebuild `a21_stackchan_cores3_sensor_probe`, require a clean git source tree, check the embedded A21 identity plus `diagnostic_probe_ltr553_ambient_light`, `diagnostic_probe_ltr553_proximity`, and `diagnostic_probe_ina226_battery` markers, and require `A21_SENSOR_PROBE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_SENSOR_PROBE_FIRMWARE` before any write. Use this only for sensor bring-up evidence, not for production release packaging.
 
 `make stackchan-official-audio-smoke-build`, `make stackchan-official-audio-smoke-flash-plan`, and `make stackchan-official-audio-smoke-flash-execute` are the official StackChan/CoreS3 codec speaker-smoke lane. This lane exports official StackChan from Git `HEAD`, applies only the A21 audio-smoke overlay, verifies mature codec evidence, builds with ESP-IDF, records all `flash_args` parts and hashes, and requires `A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE` before any write. Use this only to validate clear physical speaker output through the official codec/HAL boundary. It is not production A21 firmware and does not replace A21 release packaging.
+
+`make stackchan-official-pcm-bridge-build` exports official StackChan from Git `HEAD`, applies the A21 PCM bridge overlay, and builds `a21-stackchan-official-pcm-bridge.bin` through ESP-IDF. It is intentionally build-only for now: no flash-plan or flash-execute target exists until A21 adds NVS provisioning evidence for `a21/device_id` and `a21/audio_ws_url` plus the normal serial/artifact/confirmation guards. If flashed by a future guarded lane without `a21/audio_ws_url`, the bridge must stay on a black A21 status page and remain silent.
 
 ## Runtime Surface
 

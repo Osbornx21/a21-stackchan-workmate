@@ -43,9 +43,10 @@ The accepted speaker baseline is now the official StackChan/CoreS3 codec path:
 - CoreS3 output goes through the official `AudioCodec` abstraction and `OutputData`, not a custom A21 `playRaw` loop;
 - the codec evidence includes `esp_codec_dev_open`, `esp_codec_dev_write`, `CreateDuplexChannels`, StackChan `audio.cpp`, CoreS3 board config, and Xiaozhi `AudioService` output-task usage;
 - the A21 official audio-smoke overlay builds `a21-stackchan-official-audio-smoke.bin` with ESP-IDF and writes only through the guarded `stackchan-official-audio-smoke-flash-*` commands;
+- the A21 official PCM bridge overlay builds `a21-stackchan-official-pcm-bridge.bin` with ESP-IDF and uses official `AudioCodec::OutputData` plus a Xiaozhi-style output queue for Gateway-driven PCM playback experiments;
 - real-device acceptance requires a continuous two-tone pattern to be heard clearly without the earlier "telegraph" artifact.
 
-Any future real speech downlink work must migrate toward this official codec lane or an A21 adapter over the same mature codec/HAL boundary. The old A21 speaker parser may remain only as a host-side protocol fixture until removed.
+Any future real speech downlink work must migrate toward this official codec lane or an A21 adapter over the same mature codec/HAL boundary. The official PCM bridge is a build-only M3-prep lane until a separate flash plan/execute guard and NVS provisioning receipt exist. The old A21 speaker parser may remain only as a host-side protocol fixture until removed.
 
 ## Mature Inputs To Prefer
 

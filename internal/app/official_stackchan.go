@@ -718,6 +718,7 @@ func collectOfficialStackChanBuildArtifacts(buildDir string) []stackChanOfficial
 		{name: "ota_data_initial", path: filepath.Join(buildDir, "ota_data_initial.bin")},
 		{name: "app", path: filepath.Join(buildDir, "stack-chan.bin")},
 		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-audio-smoke.bin")},
+		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin")},
 		{name: "assets", path: filepath.Join(buildDir, "generated_assets.bin")},
 	}
 	for _, candidate := range fallbackCandidates {
