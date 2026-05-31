@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `f69c6b8`.
+Last accepted integration commit before this ledger update: `0e46761`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `f69c6b8 feat(app): add provider fixture metadata contract`.
+  `0e46761 docs(control): accept provider fixture metadata slice`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -47,8 +47,9 @@ defines policy; this ledger records the current queue and accepted state.
   acceptance is `8bc41f6`, and provider latency post-review tracking is
   `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`, provider
   latency post-review acceptance is `b8d46f8`, provider fixture schema
-  slice-open tracking is `44d6c76`, and provider fixture metadata contract
-  acceptance is `f69c6b8`.
+  slice-open tracking is `44d6c76`, provider fixture metadata contract
+  acceptance is `f69c6b8`, and provider fixture metadata ledger acceptance is
+  `0e46761`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -69,6 +70,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | active; read-only review of `f69c6b8` and `0e46761` | T0/T1/T2 | no |
 | `019e7c25-ec43-7591-9954-5227c7288e89` | Provider latency fixture schema implementation | `/Users/jiyurun/.codex/worktrees/6b8d/New project` | accepted into integration branch at `f69c6b8` | T1/T2 | no |
 | `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
@@ -395,6 +397,21 @@ Residual gaps:
 - Real ASR/provider/TTS/downlink/playback latency, LAN behavior, physical
   StackChan acceptance, and barge-in timing remain unmeasured until a separately
   authorized T4/T6 window.
+
+Next queue:
+
+- Opened post-commit review thread `019e7c30-7329-7a32-996e-0566c9746e5d` for
+  the accepted fixture metadata contract commits `f69c6b8` and `0e46761`.
+- Review worktree:
+  `/Users/jiyurun/.codex/worktrees/1181/New project`.
+- Scope: read-only P0/P1/P2 review against A21 PRD, fixture redaction contract,
+  provider/V21/Gateway/hardware no-execute boundaries, docs, ledger, namespace,
+  default gates, and residual T4/T6 gaps.
+- Maximum tier: T0/T1/T2.
+- Forbidden: file edits, commits, pushes, provider `--execute`, V21 execute,
+  Gateway runtime/service startup, durable provider reports with payloads,
+  firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, physical
+  device paths, secrets, or provider payloads.
 
 ### Fast Companion Hybrid Boundary Audit
 
