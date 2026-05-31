@@ -654,7 +654,7 @@ diff --git a/firmware/fetch_repos.py b/firmware/fetch_repos.py
 +
 +
  def clone_or_update_repo(
-@@ -6,14 +11,24 @@ def clone_or_update_repo(
+@@ -6,14 +11,30 @@ def clone_or_update_repo(
      repo_url, path, ref=None, with_submodules=False, patch_path=None
  ):
      import os
@@ -662,11 +662,16 @@ diff --git a/firmware/fetch_repos.py b/firmware/fetch_repos.py
 +
      if not os.path.exists(path):
 -        subprocess.run(["git", "clone", repo_url, path], check=True)
-+        clone_cmd = ["git", "clone", "--depth", "1"]
-+        if ref and not is_commit_ref(ref):
-+            clone_cmd.extend(["--branch", ref])
-+        clone_cmd.extend([repo_url, path])
-+        subprocess.run(clone_cmd, check=True)
++        if ref and is_commit_ref(ref):
++            os.makedirs(path, exist_ok=True)
++            subprocess.run(["git", "-C", path, "init"], check=True)
++            subprocess.run(["git", "-C", path, "remote", "add", "origin", repo_url], check=True)
++        else:
++            clone_cmd = ["git", "clone", "--depth", "1"]
++            if ref:
++                clone_cmd.extend(["--branch", ref])
++            clone_cmd.extend([repo_url, path])
++            subprocess.run(clone_cmd, check=True)
      else:
 -        subprocess.run(["git", "-C", path, "fetch"], check=True)
 +        subprocess.run(["git", "-C", path, "fetch", "--depth", "1"], check=True)
@@ -678,7 +683,10 @@ diff --git a/firmware/fetch_repos.py b/firmware/fetch_repos.py
 +                ["git", "-C", path, "fetch", "--depth", "1", "origin", ref],
 +                check=True,
 +            )
-         subprocess.run(["git", "-C", path, "checkout", ref], check=True)
+-        subprocess.run(["git", "-C", path, "checkout", ref], check=True)
++            subprocess.run(["git", "-C", path, "checkout", "FETCH_HEAD"], check=True)
++        else:
++            subprocess.run(["git", "-C", path, "checkout", ref], check=True)
 -
 +
      if with_submodules:
