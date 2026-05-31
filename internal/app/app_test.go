@@ -2306,7 +2306,7 @@ func TestRunStackChanLocalTTSPlaybackKeepsSteadyBatchesLargeEnoughForSpeakerPump
 	}
 }
 
-func TestRunStackChanLocalTTSPlaybackPrebuffersAheadOfSpeakerPump(t *testing.T) {
+func TestRunStackChanLocalTTSPlaybackPacesOfficialCodecBridge(t *testing.T) {
 	original := synthesizeSherpaONNX
 	t.Cleanup(func() { synthesizeSherpaONNX = original })
 	var requestTimes []time.Time
@@ -2359,8 +2359,8 @@ func TestRunStackChanLocalTTSPlaybackPrebuffersAheadOfSpeakerPump(t *testing.T) 
 		t.Fatalf("audio request count = %d, want at least 5", len(requestTimes))
 	}
 	for i := 1; i <= 2; i++ {
-		if gap := requestTimes[i].Sub(requestTimes[i-1]); gap > 80*time.Millisecond {
-			t.Fatalf("initial prebuffer request gap %d = %s, want <= 80ms", i, gap)
+		if gap := requestTimes[i].Sub(requestTimes[i-1]); gap < 120*time.Millisecond {
+			t.Fatalf("official codec bridge pacing gap %d = %s, want >= 120ms", i, gap)
 		}
 	}
 }

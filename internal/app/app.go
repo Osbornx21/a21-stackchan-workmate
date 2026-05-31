@@ -46,7 +46,7 @@ const (
 	stackChanSpeakerProbeChunkDurationMS = 20
 	stackChanSpeakerProbeBatchChunks     = 8
 	stackChanSpeakerPrerollBatchChunks   = 8
-	stackChanPlaybackPrebufferBatches    = 3
+	stackChanPlaybackPrebufferBatches    = 1
 	stackChanSpeakerProbeMaxChunks       = 64
 )
 
@@ -6260,7 +6260,7 @@ func postStackChanAudioPlaybackBatch(gatewayBaseURL string, deviceID string, tra
 		return gateway.DeviceControlResponse{}, err
 	}
 	client := http.Client{
-		Timeout:   5 * time.Second,
+		Timeout:   15 * time.Second,
 		Transport: &http.Transport{Proxy: nil},
 	}
 	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
