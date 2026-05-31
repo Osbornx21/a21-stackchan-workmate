@@ -477,6 +477,51 @@ Next queue:
 - Keep real provider/V21/Gateway/hardware latency measurement reserved for a
   separately authorized T4/T6 window.
 
+### Provider Fixture Sidecar Hardening Acceptance
+
+Accepted from thread `019e7c36-4617-73a1-aba0-1d35acc26efe`.
+
+Evidence:
+
+- Implementation branch: `codex/a21-provider-fixture-sidecar-hardening`.
+- Implementation worktree:
+  `/Users/jiyurun/.codex/worktrees/38a4/New project`.
+- Implementation handoff state: branch dirty only with the intended
+  `internal/app/app_test.go` and `docs/engineering/A21_CONTROL_LEDGER.md`
+  changes; no production code changes.
+- Accepted integration commit:
+  `a4e3a6f test(app): harden provider fixture sidecar rejection`.
+- Added dedicated tests for oversized fixture sidecars and unknown-field
+  sidecars. Both assert fixed `fixture_sidecar_invalid` findings,
+  `failure_count=1`, basename-only fixture identity, nil invalid metadata,
+  false provider/V21/hardware execution flags, and no payload, path,
+  prompt/transcript/raw PCM/base64/full URL/proxy/credential leakage.
+- Clarified that `promotion-readiness review_ready=true` assertions must be
+  taken from the integration branch main worktree or a checked-out candidate
+  branch, not from detached review worktrees.
+
+Control-tower verification on the integration branch:
+
+- Passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Passed: `go run ./cmd/a21 namespace-audit`.
+- Passed: `git diff --check`.
+- Passed: `make verify`.
+- Passed after commit `a4e3a6f`: `go run ./cmd/a21 preflight`.
+- Passed after commit `a4e3a6f`: `go run ./cmd/a21 doctor`, with only the
+  expected non-blocking `firmware_current_artifact_missing` warning.
+- `go run ./cmd/a21 promotion-readiness` after commit `a4e3a6f` reported
+  `review_ready=true`, `dirty_file_count=0`, and external promotion blocked
+  only by missing remote, target remote, and target branch.
+
+Decision:
+
+- Accept the sidecar hardening slice as T1/T2 closure.
+- Keep real provider/V21/Gateway/hardware latency evidence outside this slice
+  until a separately authorized T4/T6 window.
+
 ### Fast Companion Hybrid Boundary Audit
 
 Accepted from thread `019e7be6-bca3-71f2-9770-857b9da48b67`.
