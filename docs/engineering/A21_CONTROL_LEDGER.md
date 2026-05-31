@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `22c90ae`.
+Last accepted integration commit before this ledger update: `ac2ab42`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `22c90ae fix(gateway): use local ASR timing in fast companion trace`.
+  `ac2ab42 docs(control): record provider spine verification`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -39,8 +39,9 @@ defines policy; this ledger records the current queue and accepted state.
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
   `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
   `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
-  `193a1f3`; Task 4 acceptance is `7af0259`, and post-commit review tracking
-  is `819fe8b`; the Task 4 trace-fidelity P2 fix is `22c90ae`.
+  `193a1f3`; Task 4 acceptance is `7af0259`, post-commit review tracking is
+  `819fe8b`, the Task 4 trace-fidelity P2 fix is `22c90ae`, and Provider
+  Spine Task 5 verification tracking is `ac2ab42`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -61,6 +62,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | active; read-only gap audit after Provider Spine Task 5 | T0/T1 | no |
 | `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | completed; P2 trace-fidelity finding fixed by control | T0/T1/T2 | no |
 | `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | completed; handoff accepted into integration branch | T1/T2 | no |
 | `019e7be6-bca3-71f2-9770-857b9da48b67` | Provider Spine Fast Companion Hybrid boundary audit | `/Users/jiyurun/.codex/worktrees/0d72/New project` | completed; no P0/P1 regression; Task 4 Gateway gap confirmed; no diff | T1/T2 | no |
@@ -95,6 +97,37 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### PRD Next-Slice Audit Thread
+
+Opened by the control tower after accepting Provider Spine Task 5 verification
+at `ac2ab42`.
+
+Evidence:
+
+- Audit thread: `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b`.
+- Audit worktree: `/Users/jiyurun/.codex/worktrees/ed15/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `ac2ab42 docs(control): record provider spine verification`.
+- Scope: compare `docs/prd/A21_PRD.md`, current code, and engineering docs
+  after Provider Spine completion, then recommend the next PRD-aligned slice.
+- Required output: current branch/HEAD/dirty state, P0/P1/P2 PRD gap matrix,
+  recommended next slice, file scope, verification commands, maximum tool tier,
+  forbidden actions, and whether a new implementation thread is needed.
+- Maximum tier: T0/T1.
+- Forbidden: file edits, commits, pushes, Gateway runtime or service startup,
+  provider/V21 execute, durable provider reports with payloads, firmware/NVS/
+  flash/raw upload/serial writes, `/v1/devices/control`, and physical device
+  paths.
+
+Decision:
+
+- Keep this as a read-only audit thread; do not promote it into implementation.
+- Do not open provider/V21 execution, Gateway runtime, firmware, NVS, flash,
+  serial, or physical-device windows from this audit.
+- The control tower will choose the next implementation slice only after
+  reading the audit handoff and reconciling it with the ledger.
 
 ### Fast Companion Hybrid Boundary Audit
 
