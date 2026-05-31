@@ -68,6 +68,62 @@ func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRejectsNonProfessionalQueryBeforeNetwork(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:      "a21-trace-v21-mode",
+		SessionID:    "a21-session-v21-mode",
+		Mode:         "workmate",
+		Utterance:    "查一下语音唤醒误触发",
+		PrivacyScope: "professional_only",
+	})
+	if err == nil {
+		t.Fatal("expected non-professional V21 query mode to be rejected")
+	}
+	if calls != 0 {
+		t.Fatalf("network calls = %d, want 0", calls)
+	}
+}
+
+func TestValidateProfessionalQueryRequestRejectsUnsafeScopeAndEmptyUtterance(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		request QueryRequest
+	}{
+		{
+			name: "public privacy",
+			request: QueryRequest{
+				Mode:         "professional",
+				PrivacyScope: "public",
+				Utterance:    "查一下语音唤醒误触发",
+			},
+		},
+		{
+			name: "empty utterance",
+			request: QueryRequest{
+				Mode:         "professional",
+				PrivacyScope: "professional_only",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateProfessionalQueryRequest(tc.request); err == nil {
+				t.Fatal("expected professional query validation error")
+			}
+		})
+	}
+}
+
 func TestHTTPClientRejectsLegacyInternalPorts(t *testing.T) {
 	_, err := NewHTTPClient("http://127.0.0.1:18080")
 	if err == nil {

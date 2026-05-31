@@ -140,6 +140,10 @@ func newV21AdapterBridgeHandler(ctx context.Context, options v21AdapterBridgeOpt
 			http.Error(w, "invalid query request", http.StatusBadRequest)
 			return
 		}
+		if err := v21adapter.ValidateProfessionalQueryRequest(request); err != nil {
+			http.Error(w, "invalid professional query request", http.StatusBadRequest)
+			return
+		}
 		response, err := executeV21RetrievalQuery(r.Context(), client, v21Base, collectionID, request)
 		if err != nil {
 			http.Error(w, "v21 query unavailable", http.StatusServiceUnavailable)
@@ -274,10 +278,10 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 }
 
 func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
-	utterance := strings.TrimSpace(request.Utterance)
-	if utterance == "" {
-		return v21adapter.QueryResponse{}, fmt.Errorf("utterance is required")
+	if err := v21adapter.ValidateProfessionalQueryRequest(request); err != nil {
+		return v21adapter.QueryResponse{}, err
 	}
+	utterance := strings.TrimSpace(request.Utterance)
 	body := map[string]interface{}{
 		"query": utterance,
 		"limit": 5,

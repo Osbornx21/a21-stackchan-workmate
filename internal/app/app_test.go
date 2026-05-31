@@ -23,6 +23,7 @@ import (
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/providers"
+	"a21.local/a21/internal/v21adapter"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -2986,6 +2987,53 @@ func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+}
+
+func TestV21AdapterBridgeRejectsNonProfessionalModeBeforeRetrieval(t *testing.T) {
+	activeReleaseID := "rel_active"
+	var retrievalCalls int
+	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/v1/collections":
+			writeV21BridgeJSON(w, http.StatusOK, []v21CollectionView{{
+				ID:              "col_vehicle",
+				Name:            "Vehicle Knowledge",
+				ActiveReleaseID: &activeReleaseID,
+			}})
+		case "/api/v1/collections/col_vehicle/retrieval/query":
+			retrievalCalls++
+			http.Error(w, "should not be called", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer v21Backend.Close()
+	handler, err := newV21AdapterBridgeHandler(context.Background(), v21AdapterBridgeOptions{V21URL: v21Backend.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := httptest.NewServer(handler)
+	defer adapter.Close()
+
+	resp, err := http.Post(adapter.URL+v21adapter.QueryPath, "application/json", strings.NewReader(`{
+		"trace_id":"a21-trace-v21-unsafe",
+		"session_id":"a21-session-v21-unsafe",
+		"mode":"workmate",
+		"privacy_scope":"professional_only",
+		"utterance":"查一下语音唤醒误触发"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	if retrievalCalls != 0 {
+		t.Fatalf("retrieval calls = %d, want 0", retrievalCalls)
 	}
 }
 

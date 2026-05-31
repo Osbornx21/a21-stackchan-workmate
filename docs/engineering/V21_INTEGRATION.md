@@ -132,6 +132,9 @@ Safety rules:
 - `v21-adapter-smoke --output-dir reports` writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json`.
 - V21 smoke reports may include adapter name, protocol, status, configured/executed flags, endpoint host, fixed health/query paths, latency, confidence, and response counts. They must not include the user query text, response text, full adapter URL, credentials, API keys, or V21 document content.
 - HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
+- HTTP client and bridge handler validate the professional query contract before
+  network or retrieval execution: explicit non-`professional` mode, explicit
+  non-`professional_only` privacy, and empty utterance are rejected locally.
 - HTTP client rejects adapter URLs containing credentials.
 - HTTP client rejects known X21/V21 internal legacy ports such as `8000`, `8080`, `18080`, `4173`, `42173`, `16686`, and `16687`. A21 must target an adapter boundary, not V21 internals.
 - Gateway calls V21 only when the request mode is `professional`.

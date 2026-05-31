@@ -81,6 +81,9 @@ func NewHTTPClient(baseURL string) (*HTTPClient, error) {
 }
 
 func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	if err := ValidateProfessionalQueryRequest(request); err != nil {
+		return QueryResponse{}, err
+	}
 	request = withDefaults(request)
 	body, err := json.Marshal(request)
 	if err != nil {
@@ -147,6 +150,9 @@ func NewMockClient() MockClient {
 }
 
 func (MockClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	if err := ValidateProfessionalQueryRequest(request); err != nil {
+		return QueryResponse{}, err
+	}
 	request = withDefaults(request)
 	return QueryResponse{
 		TraceID:    request.TraceID,
@@ -176,8 +182,23 @@ func (MockClient) Query(ctx context.Context, request QueryRequest) (QueryRespons
 	}, nil
 }
 
+func ValidateProfessionalQueryRequest(request QueryRequest) error {
+	if strings.TrimSpace(request.Utterance) == "" {
+		return fmt.Errorf("v21 professional query utterance is required")
+	}
+	if mode := strings.TrimSpace(request.Mode); mode != "" && mode != "professional" {
+		return fmt.Errorf("v21 adapter accepts only professional mode")
+	}
+	if privacyScope := strings.TrimSpace(request.PrivacyScope); privacyScope != "" && privacyScope != "professional_only" {
+		return fmt.Errorf("v21 adapter accepts only professional_only privacy scope")
+	}
+	return nil
+}
+
 func withDefaults(request QueryRequest) QueryRequest {
-	request.Mode = "professional"
+	if request.Mode == "" {
+		request.Mode = "professional"
+	}
 	if request.LatencyProfile == "" {
 		request.LatencyProfile = "fast_first"
 	}
