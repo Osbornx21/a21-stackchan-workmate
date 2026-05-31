@@ -114,6 +114,21 @@ func TestDirectHTTPClientDoesNotUseAmbientProxy(t *testing.T) {
 	}
 }
 
+func TestHTTPClientDoesNotUseAmbientProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://proxy.invalid:8080")
+	client, err := NewHTTPClient("http://127.0.0.1:21121")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := client.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", client.httpClient.Transport)
+	}
+	if transport.Proxy != nil {
+		t.Fatal("v21 adapter HTTP client must not inherit ambient proxy env")
+	}
+}
+
 func TestMockClientReturnsDeterministicEvidence(t *testing.T) {
 	client := NewMockClient()
 	response, err := client.Query(context.Background(), QueryRequest{
