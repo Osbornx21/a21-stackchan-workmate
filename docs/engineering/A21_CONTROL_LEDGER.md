@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `54af08b`.
+Last accepted integration commit before this ledger update: `2339d4e`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `54af08b docs(control): track integration review thread`.
+  `2339d4e docs(control): choose integration promotion path`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -34,7 +34,7 @@ defines policy; this ledger records the current queue and accepted state.
   `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
-  `1872ca9` and `54af08b`.
+  `1872ca9`, `54af08b`, `045147d`, and `2339d4e`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -84,6 +84,46 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Promotion Candidate Full Gate Refresh
+
+Accepted by the control tower after full local verification of the selected
+promotion candidate.
+
+Evidence:
+
+- Current branch: `codex/a21-integration-governance-slices`.
+- Current HEAD before this ledger update:
+  `2339d4e docs(control): choose integration promotion path`.
+- Worktree: `/Users/jiyurun/Documents/New project`.
+- Dirty state before this ledger update: clean.
+- Project verification passed: `make verify`.
+- Preflight passed: `go run ./cmd/a21 preflight`.
+- Doctor passed: `go run ./cmd/a21 doctor`, with one warning that no
+  release-ledger-validated A21 firmware artifact matches commit
+  `2339d4ee06c9`.
+- Provider dry-run passed without execution:
+  `go run ./cmd/a21 provider-smoke --provider deepseek --stream --repeat 3`
+  reported `executed=false`, `configured=false`, and missing
+  `A21_LAB_DEEPSEEK_API_KEY`.
+- V21 adapter dry-run passed without execution:
+  `go run ./cmd/a21 v21-adapter-smoke` reported `executed=false`,
+  `configured=false`, and missing adapter URL.
+- `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-flash-execute'`
+  returned the expected non-zero T8 blocked result.
+- `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-nvs-execute'`
+  returned the expected non-zero T7 hardware-window branch requirement.
+- No provider execute, V21 execute, Gateway runtime, durable report, NVS
+  execute, flash execute, raw upload, serial write, app partition write,
+  `/v1/devices/control`, or physical device path was touched.
+
+Decision:
+
+- Keep `codex/a21-integration-governance-slices` as the current verified local
+  promotion candidate.
+- The only remaining promotion blocker is target selection: choose/configure a
+  git remote and target branch, or explicitly approve a local-only mainline
+  branch.
 
 ### Integration Promotion Shape
 
