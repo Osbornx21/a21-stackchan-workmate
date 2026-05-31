@@ -72,6 +72,10 @@ Future xiaozhi TTS binary downlink must use the Go `AudioRateController`
 primitive before writing frames: default 60 ms frame slots, five-frame
 prebuffer, per-frame abort checks, and reset on turn cancellation. Raw unpaced
 binary writes are not accepted as an A21 product path.
+The current downlink primitive accepts only validated 24 kHz mono 60 ms
+`pcm_s16le` provider audio, encodes it to Opus, and writes one xiaozhi binary
+frame through the current-turn pacer. This is a downlink building block, not
+ASR/LLM/TTS product acceptance.
 
 Each `listen/start` creates a Gateway-owned xiaozhi turn. Each `abort` cancels
 the current turn context, clears current-turn ownership, and resets the downlink

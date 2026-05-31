@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1179,6 +1180,66 @@ func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, 
 		"device_id":  session.deviceID,
 		"reason":     reason,
 	})
+}
+
+func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, chunk providers.VoiceAudioChunk) (bool, error) {
+	if session == nil || session.shouldAbortXiaozhiTurn(turn) {
+		return false, nil
+	}
+	if conn == nil {
+		return false, fmt.Errorf("xiaozhi downlink websocket is nil")
+	}
+	if turn.pacer == nil {
+		turn.pacer = audio.NewAudioRateController(audio.AudioRateControllerConfig{
+			FrameDuration:   60 * time.Millisecond,
+			PrebufferFrames: 5,
+		})
+	}
+	pcm, err := xiaozhiDownlinkPCM16(chunk)
+	if err != nil {
+		return false, err
+	}
+	codec, err := opuscodec.New(chunk.SampleRateHz, chunk.Channels, chunk.DurationMS)
+	if err != nil {
+		return false, err
+	}
+	packet, err := codec.EncodePCM16(pcm)
+	if err != nil {
+		return false, err
+	}
+	return turn.pacer.Send(ctx, packet, func(ctx context.Context, frame []byte) error {
+		if session.shouldAbortXiaozhiTurn(turn) {
+			return context.Canceled
+		}
+		if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
+			return err
+		}
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.opus_frame.downlink", s.now().UnixMilli())
+		return nil
+	}, func() bool {
+		return session.shouldAbortXiaozhiTurn(turn)
+	})
+}
+
+func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
+	if chunk.Codec != string(protocol.AudioCodecPCMS16LE) {
+		return nil, fmt.Errorf("xiaozhi downlink requires pcm_s16le provider audio")
+	}
+	if chunk.SampleRateHz != 24000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
+		return nil, fmt.Errorf("xiaozhi downlink requires 24kHz mono 60ms audio")
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(chunk.DataBase64))
+	if err != nil {
+		return nil, fmt.Errorf("xiaozhi downlink audio must be valid base64")
+	}
+	if len(data)%2 != 0 {
+		return nil, fmt.Errorf("xiaozhi downlink pcm_s16le byte length must be even")
+	}
+	pcm := make([]int16, len(data)/2)
+	for i := range pcm {
+		pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2 : i*2+2]))
+	}
+	return pcm, nil
 }
 
 func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {

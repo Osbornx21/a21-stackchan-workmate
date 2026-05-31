@@ -85,6 +85,8 @@ provider cancel or device playback stop proof yet.
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,
 `audio_downlink_first_frame_ms`, `device_playback_start_ms`, and
 `answer_first_audio_total_ms` when the corresponding markers exist.
+Paced xiaozhi TTS downlink frames record `xiaozhi.tts.opus_frame.downlink` only
+after a binary frame write succeeds through the current turn guard.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 

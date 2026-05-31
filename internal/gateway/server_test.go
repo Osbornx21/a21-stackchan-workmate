@@ -1374,6 +1374,91 @@ func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
+	server := NewServer()
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-downlink",
+		sessionID: "a21-session-xiaozhi-downlink",
+	}
+	turn := session.startXiaozhiTurn(context.Background())
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		ok, err := server.writeXiaozhiOpusDownlink(context.Background(), conn, session, turn, providers.VoiceAudioChunk{
+			Codec:        string(protocol.AudioCodecPCMS16LE),
+			SampleRateHz: 24000,
+			Channels:     1,
+			DurationMS:   60,
+			DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 6000),
+		})
+		if err != nil || !ok {
+			t.Errorf("downlink = ok:%v err:%v", ok, err)
+		}
+	}))
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, ""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	messageType, packet, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary {
+		t.Fatalf("message type = %v, want binary", messageType)
+	}
+	codec, err := opuscodec.New(24000, 1, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pcm, err := codec.DecodePCM16(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pcm) != codec.FrameSamples() {
+		t.Fatalf("decoded samples = %d, want %d", len(pcm), codec.FrameSamples())
+	}
+	if turn.pacer.SentFrames() != 1 {
+		t.Fatalf("pacer sent frames = %d, want 1", turn.pacer.SentFrames())
+	}
+	if !traceContains(server.traceEvents("a21-trace-xiaozhi-downlink"), "xiaozhi.tts.opus_frame.downlink") {
+		t.Fatalf("trace missing downlink marker: %+v", server.traceEvents("a21-trace-xiaozhi-downlink"))
+	}
+}
+
+func TestWriteXiaozhiOpusDownlinkSkipsStaleTurn(t *testing.T) {
+	server := NewServer()
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-stale-turn",
+		sessionID: "a21-session-xiaozhi-stale-turn",
+	}
+	turn := session.startXiaozhiTurn(context.Background())
+	session.cancelCurrentXiaozhiTurn("abort")
+
+	ok, err := server.writeXiaozhiOpusDownlink(context.Background(), nil, session, turn, providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 6000),
+	})
+	if err != nil {
+		t.Fatalf("stale turn err = %v", err)
+	}
+	if ok {
+		t.Fatal("stale turn downlink unexpectedly sent")
+	}
+}
+
 func TestXiaozhiWebSocketUsesStockHandshakeHeaders(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -3790,6 +3875,15 @@ func xiaozhiTestSpeechOpusPacket(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return packet
+}
+
+func xiaozhiTestPCM16Base64(sampleRate int, durationMS int, sample int16) string {
+	sampleCount := sampleRate * durationMS / 1000
+	data := make([]byte, sampleCount*2)
+	for i := 0; i < sampleCount; i++ {
+		binary.LittleEndian.PutUint16(data[i*2:i*2+2], uint16(sample))
+	}
+	return base64.StdEncoding.EncodeToString(data)
 }
 
 func readXiaozhiJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]any {

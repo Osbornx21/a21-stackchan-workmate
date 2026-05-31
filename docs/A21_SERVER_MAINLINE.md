@@ -48,6 +48,9 @@ thin sensing and expression device.
 - P0-2 pacing primitive: `internal/audio.AudioRateController` provides 60 ms
   frame pacing, five-frame prebuffer, abort checks, and reset semantics for the
   future xiaozhi TTS Opus downlink.
+- P0-2 downlink primitive: Gateway can encode a validated 24 kHz mono 60 ms
+  PCM TTS chunk into xiaozhi Opus and write it only through the current-turn
+  pacer; the full ASR/LLM/TTS product route is still not accepted.
 - P0-3 turn foundation: `/v1/xiaozhi` now creates a current turn on
   `listen/start` and cancels it on `abort`, resetting the downlink pacer before
   future frame sends can observe stale turn state.
