@@ -30,6 +30,8 @@ thin sensing and expression device.
 
 - Archived previous hardware line tag: `archive/hardware-line-20260601`.
 - Server mainline base commit: `37f156701d99f66675efbad6d62bd6e60d4959d2`.
+- Pivot ADR: `docs/engineering/adr/0006-xiaozhi-firmware-websocket-protocol.md`.
+- Embedded freeze record: `docs/engineering/A21_EMBEDDED_FREEZE_ARCHIVE.md`.
 - Baseline `make verify`: passing after the server-mainline bootstrap rename.
 - Baseline `gate --scope host`: passing with only
   `firmware_current_artifact_missing` warning for the current commit.
