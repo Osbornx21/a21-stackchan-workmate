@@ -166,6 +166,10 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	case "gateway":
 		return runGateway(args[1:], stdout, stderr)
+	case "demo":
+		return runDemo(args[1:], stdout, stderr)
+	case "product-readiness":
+		return runProductReadiness(args[1:], stdout, stderr)
 	case "preflight":
 		return runPreflight(stdout, stderr)
 	case "namespace-audit":
@@ -7677,13 +7681,13 @@ func writeLatencyBenchReport(outputDir string, report latencyBenchReport) (strin
 		return "", err
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	report.ReportPath = filepath.Base(reportPath)
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(report); err != nil {
 		return "", err
 	}
-	return reportPath, nil
+	return filepath.Base(reportPath), nil
 }
 
 func measureGatewayAudioDownlink(serverURL string, seq uint64) (time.Duration, error) {

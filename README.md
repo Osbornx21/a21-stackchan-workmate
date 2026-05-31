@@ -58,6 +58,18 @@ http://127.0.0.1:21080/simulator
 
 The simulator is the current no-hardware development surface for mock turns, professional evidence rendering, audio downlink buffering, and interruption behavior.
 
+For product demos and internal testing, use:
+
+```bash
+make demo
+make product-readiness
+```
+
+`make demo` starts the A21 Gateway and opens the Simulator. `make
+product-readiness` writes an A21 readiness report that separates the mock demo
+surface from true launch requirements: real provider env, V21 adapter health,
+physical StackChan online state, and real local ASR configuration.
+
 ## Firmware Safety
 
 ```bash

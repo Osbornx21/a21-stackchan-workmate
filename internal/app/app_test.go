@@ -47,6 +47,135 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+	})
+
+	if report.Status != "mock_demo_ready" || !report.DemoReady || report.LaunchReady {
+		t.Fatalf("status/demo/launch = %q/%v/%v, want mock_demo_ready/true/false", report.Status, report.DemoReady, report.LaunchReady)
+	}
+	if !report.StackChan.SimulatorDeviceOnline || report.StackChan.PhysicalDeviceOnline {
+		t.Fatalf("stackchan readiness = %+v, want simulator only", report.StackChan)
+	}
+	if report.Provider.Selected != "mock" || report.Provider.RealProviderReady {
+		t.Fatalf("provider readiness = %+v, want mock selected and not real-ready", report.Provider)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/redacted/tts"} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/asr",
+	})
+
+	if report.Status != "real_launch_ready" || !report.LaunchReady || !report.DemoReady {
+		t.Fatalf("status/launch/demo = %q/%v/%v, want real_launch_ready/true/true", report.Status, report.LaunchReady, report.DemoReady)
+	}
+	if !report.Provider.RealProviderReady || report.Provider.Selected != "deepseek" {
+		t.Fatalf("provider readiness = %+v, want deepseek real-ready", report.Provider)
+	}
+	if !report.V21.Healthy || !report.StackChan.PhysicalDeviceOnline || !report.Voice.ContinuousVoiceReady {
+		t.Fatalf("readiness = v21:%+v stackchan:%+v voice:%+v", report.V21, report.StackChan, report.Voice)
+	}
+	if len(report.NextActions) != 0 {
+		t.Fatalf("next actions = %#v, want none", report.NextActions)
+	}
+}
+
+func TestRunProductReadinessCommandWritesReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	t.Setenv("A21_V21_ADAPTER_URL", "")
+	t.Setenv("A21_LOCAL_TTS_ENGINE", "sherpa_onnx")
+	t.Setenv("A21_SHERPA_ONNX_MODEL_DIR", "/redacted/tts")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"status": "mock_demo_ready"`) {
+		t.Fatalf("stdout missing mock demo readiness: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), server.URL) || strings.Contains(stdout.String(), "http://") {
+		t.Fatalf("stdout leaked full URL: %s", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-product-readiness-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("product readiness report matches = %v, %v", matches, err)
+	}
+}
+
+func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-gateway","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(devicesJSON))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
 func TestRunPromotionReadinessBlocksExternalPromotionWithoutTarget(t *testing.T) {
 	dir := t.TempDir()
 	writePromotionReadinessGitScript(t, dir, promotionGitScriptOptions{})
