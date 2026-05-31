@@ -88,6 +88,24 @@ func TestGatewayVoiceProviderFromEnvUsesSelectedDoubaoRealtimeWhenExplicit(t *te
 	}
 }
 
+func TestGatewayVoiceProviderFromEnvRejectsSelectedAgentTaskPrimary(t *testing.T) {
+	provider := NewGatewayVoiceProviderFromEnv([]string{
+		"A21_GATEWAY_VOICE_PROVIDER=selected",
+		"A21_PROVIDER_PRIMARY=hermes_agent",
+	})
+	health, err := provider.Health(context.Background())
+	if err == nil {
+		t.Fatal("expected selected agent task provider to be unavailable")
+	}
+	if health.Provider != "invalid_agent_task_primary" || health.Status != VoiceProviderUnavailable {
+		t.Fatalf("health = %#v, want invalid agent task unavailable", health)
+	}
+	rendered := runtimeProviderMustJSON(t, health) + err.Error()
+	if strings.Contains(rendered, "hermes_agent") {
+		t.Fatalf("agent task provider leaked as gateway voice provider: %s", rendered)
+	}
+}
+
 func TestGatewayVoiceProviderFromEnvRejectsLegacyRuntimeModeWithoutEchoingValue(t *testing.T) {
 	provider := NewGatewayVoiceProviderFromEnv([]string{"A21_GATEWAY_VOICE_PROVIDER=x21-runtime"})
 	health, err := provider.Health(context.Background())

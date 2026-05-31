@@ -28,6 +28,12 @@ func NewVoiceProviderFromEnv(env []string) VoiceProvider {
 				detail: "provider target rejected",
 			}
 		}
+		if providerProfileIsAgentTask(primary) {
+			return unavailableVoiceProvider{
+				name:   "invalid_agent_task_primary",
+				detail: "agent-task profiles are not A21 voice providers",
+			}
+		}
 		if knownProvider(primary) {
 			return unavailableVoiceProvider{
 				name:   primary,

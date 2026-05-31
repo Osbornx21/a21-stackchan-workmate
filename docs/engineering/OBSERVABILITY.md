@@ -43,6 +43,16 @@ paths, provider env values, or raw agent control payloads. This scaffold is not
 a Gateway runtime path and does not execute Hermes, MiMo, V21, providers, or
 hardware.
 
+Reserved AgentTask semantic marker names for future runtime work are:
+
+- `agent_task.started`
+- `agent_task.progress`
+- `agent_task.text_delta.redacted`
+- `agent_task.tool_call.redacted`
+- `agent_task.result.redacted`
+- `agent_task.error`
+- `agent_task.final`
+
 Gateway also exposes `GET /v1/providers/voice/health` for the current voice provider adapter. It returns provider name, health status, configured state, realtime capability, optional active child provider, and detail text. Unavailable providers return HTTP 503 so future real-provider failures can be distinguished from device and firmware failures.
 
 Gateway now exposes the first provider-neutral realtime session boundary:
@@ -115,13 +125,6 @@ Current mock trace events include:
 - `asr.first_partial`
 - `provider.first_byte`
 - `provider.first_content`
-- `agent_task.started`
-- `agent_task.progress`
-- `agent_task.text_delta.redacted`
-- `agent_task.tool_call.redacted`
-- `agent_task.result.redacted`
-- `agent_task.error`
-- `agent_task.final`
 - `tts.first_audio`
 - `audio.downlink.first_frame`
 - `device.playback.start`

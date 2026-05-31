@@ -353,6 +353,12 @@ func knownProvider(name string) bool {
 	return knownProviderInProfiles(profiles, name)
 }
 
+func providerProfileIsAgentTask(name string) bool {
+	profiles, _ := ProviderProfilesFromEnv(nil)
+	profile, ok := providerProfileByName(profiles, name)
+	return ok && profile.Family == ProviderFamilyAgentTask
+}
+
 func containsLegacyProviderIdentity(value string) bool {
 	lower := strings.ToLower(value)
 	return strings.Contains(lower, "x21") || strings.Contains(lower, "v21")

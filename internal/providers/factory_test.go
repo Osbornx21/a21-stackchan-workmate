@@ -129,6 +129,21 @@ func TestVoiceProviderFromEnvRejectsLegacyPrimaryWithoutEchoingValue(t *testing.
 	}
 }
 
+func TestVoiceProviderFromEnvRejectsAgentTaskPrimary(t *testing.T) {
+	provider := NewVoiceProviderFromEnv([]string{"A21_PROVIDER_PRIMARY=hermes_agent"})
+	health, err := provider.Health(context.Background())
+	if err == nil {
+		t.Fatal("expected agent task provider health to return unavailable error")
+	}
+	if health.Provider != "invalid_agent_task_primary" || health.Status != VoiceProviderUnavailable {
+		t.Fatalf("health = %#v, want invalid agent task unavailable", health)
+	}
+	rendered := factoryMustJSON(t, health) + err.Error()
+	if strings.Contains(rendered, "hermes_agent") {
+		t.Fatalf("agent task provider leaked as voice provider: %s", rendered)
+	}
+}
+
 func factoryMustJSON(t *testing.T, value any) string {
 	t.Helper()
 	data, err := json.Marshal(value)
