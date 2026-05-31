@@ -1777,6 +1777,80 @@ func TestRunProviderLatencyBenchHostLoopbackUsesCanonicalMode(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
+	gatewayServer := newGatewayServerFromEnv(nil)
+	httpServer := httptest.NewServer(gatewayServer.Handler())
+	t.Cleanup(httpServer.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-voice-bench",
+		"--gateway-url", httpServer.URL,
+		"--repeat", "1",
+		"--timeout-ms", "5000",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_voice_bench.v1"`,
+		`"execution_mode": "host_loopback"`,
+		`"baseline_scope": "host_only"`,
+		`"gateway": "loopback:`,
+		`"profile": "xiaozhi"`,
+		`"protocol_version": 1`,
+		`"hello_accepted": true`,
+		`"listen_ack": true`,
+		`"binary_downlink_frames"`,
+		`"answer_first_audio_total_p95_ms"`,
+		`"barge_in_stop_p95_ms"`,
+		`"acceptance_status": "candidate_host_only"`,
+		`"prd_accepted": false`,
+		`"provider_executed": false`,
+		`"v21_executed": false`,
+		`"hardware_executed": false`,
+		`"payloads_stored": false`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		httpServer.URL,
+		dir,
+		"data_base64",
+		"transcript",
+		"provider output",
+		"secret",
+		`"prd_accepted": true`,
+		`"acceptance_status": "accepted"`,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-voice-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("xiaozhi voice bench reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), httpServer.URL) || strings.Contains(string(data), dir) {
+		t.Fatalf("report leaked gateway URL or output dir: %s", string(data))
+	}
+}
+
 func TestRunProviderLatencyBenchRejectsDeprecatedHostBaselineMode(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"provider-latency-bench", "--mode", "host_baseline"}, &bytes.Buffer{}, &stderr)

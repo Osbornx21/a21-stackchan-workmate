@@ -34,3 +34,13 @@ acceptance.
 No PRD latency gate is accepted on `codex/a21-server-mainline` yet. The next
 valid step is WS-1 protocol transport evidence, followed by streaming pipeline
 and physical-device evidence.
+
+`go run ./cmd/a21 xiaozhi-voice-bench` is the current host-loopback Xiaozhi
+candidate gate. It connects to an already-running Gateway `/v1/xiaozhi`, sends
+synthetic Opus uplink through the stock profile, measures answer first-audio and
+abort-to-stop timing across repeated turns, and writes a redacted
+`a21.xiaozhi_voice_bench.v1` report. A passing run uses
+`acceptance_status=candidate_host_only` and always keeps `prd_accepted=false`
+because it does not prove physical StackChan microphone capture, device
+playback start, visible/speaking state, multi-frame TTS cancellation, or
+real-device barge-in stop.

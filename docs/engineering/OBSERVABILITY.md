@@ -126,6 +126,16 @@ after a binary frame write succeeds through the current turn guard.
 These markers prove protocol/session/codec/ingress telemetry only; they are not
 ASR, TTS, real-device playback, or PRD latency acceptance evidence.
 
+`xiaozhi-voice-bench` packages those host markers into schema
+`a21.xiaozhi_voice_bench.v1`. The report includes a loopback/remote Gateway
+label, stock/debug profile name, protocol version, answer turn receipts,
+barge-in turn receipts, first-audio p50/p95, abort-stop p50/p95, execution
+booleans, and redaction booleans. It intentionally stores no raw Opus/PCM,
+base64 payload, transcript, prompt, provider output, credential value, full URL,
+proxy value, or full local path. Even when the host loopback p95 values satisfy
+the PRD numbers, the report remains candidate evidence and keeps
+`prd_accepted=false` until physical StackChan markers are present.
+
 AgentTask bridge reports include package-level T1/T2 semantic reports in
 `internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI
 reports. Provider semantic reports use schema

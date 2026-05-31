@@ -49,6 +49,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderSmoke(args[1:], stdout, stderr)
 	case "provider-latency-bench":
 		return runProviderLatencyBench(args[1:], stdout, stderr)
+	case "xiaozhi-voice-bench":
+		return runXiaozhiVoiceBench(args[1:], stdout, stderr)
 	case "lan-probe":
 		return runLANProbe(args[1:], stdout, stderr)
 	case "local-voice-loopback":

@@ -78,6 +78,13 @@ Professional mode must not be promoted through an opaque realtime S2S benchmark 
 
 The current `latency-bench --mock`, `audio-front-end-eval`, `provider-smoke --stream`, `local-voice-loopback`, and `stackchan-fast-companion-turn` reports are partial pieces of this contract. Future real-provider work should extend this family instead of creating separate ad hoc gates.
 
+`xiaozhi-voice-bench` is the Xiaozhi-protocol host-loopback member of the same
+family. It is allowed to contact an already-running local Gateway and exercise
+`/v1/xiaozhi` with synthetic Opus uplink, but it does not start Gateway,
+providers, V21, firmware, or hardware. Its successful state is
+`candidate_host_only`, not `accepted`, and it exists to compare answer
+first-audio and barge-in stop timings before physical StackChan promotion.
+
 The first `provider-latency-bench` scaffold now exists as a mock/fixture-only
 candidate-chain report shape:
 
