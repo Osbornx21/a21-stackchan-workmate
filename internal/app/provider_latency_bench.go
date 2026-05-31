@@ -708,11 +708,11 @@ func writeProviderLatencyBenchReport(outputDir string, report providerLatencyBen
 		return "", err
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	report.ReportPath = filepath.Base(reportPath)
 	if err := writeJSONProviderLatencyBench(file, report); err != nil {
 		return "", err
 	}
-	return reportPath, nil
+	return filepath.Base(reportPath), nil
 }
 
 func writeJSONProviderLatencyBench(writer io.Writer, report providerLatencyBenchReport) error {

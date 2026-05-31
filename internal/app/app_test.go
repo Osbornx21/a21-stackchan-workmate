@@ -1145,6 +1145,7 @@ func TestRunProviderLatencyBenchMockEmitsRedactedCandidateChainReport(t *testing
 		"reasoning",
 		"provider output",
 		"/tmp/",
+		dir,
 	} {
 		if strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, reportJSON)
@@ -1167,7 +1168,7 @@ func TestRunProviderLatencyBenchMockEmitsRedactedCandidateChainReport(t *testing
 			t.Fatalf("report missing %q: %s", want, fileJSON)
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "secret", "example.invalid", "8080", "9000", "/tmp/"} {
+	for _, forbidden := range []string{"sk-a21-secret", "secret", "example.invalid", "8080", "9000", "/tmp/", dir} {
 		if strings.Contains(fileJSON, forbidden) {
 			t.Fatalf("report leaked forbidden fragment %q: %s", forbidden, fileJSON)
 		}
