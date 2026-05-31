@@ -2,6 +2,8 @@ package providers
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -252,6 +254,130 @@ func TestProviderCatalogAgentTaskLaneRequiresExplicitAgentPrimary(t *testing.T) 
 	}
 }
 
+func TestProviderCatalogLoadsConfiguredHotPlugTextStreamProfile(t *testing.T) {
+	profilePath := writeProviderProfileFile(t, `[
+		{
+			"name": "a21_lab_vendor",
+			"label": "A21 Lab Vendor",
+			"family": "text_stream",
+			"protocol": "openai_chat_completions",
+			"capabilities": ["llm", "text_stream", "mainland_latency_candidate"],
+			"api_key_env": "A21_LAB_VENDOR_API_KEY",
+			"model_env": "A21_LAB_VENDOR_MODEL",
+			"base_url_env": "A21_LAB_VENDOR_BASE_URL",
+			"default_base_url": "https://example.invalid/a21-compatible/v1",
+			"endpoint_path": "/chat/completions",
+			"required_env": ["A21_LAB_VENDOR_REGION"],
+			"route_eligible": true
+		}
+	]`)
+
+	report := ProviderCatalogFromEnv([]string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_lab_vendor",
+		"A21_LAB_VENDOR_API_KEY=sk-a21-secret",
+		"A21_LAB_VENDOR_MODEL=vendor-model",
+		"A21_LAB_VENDOR_REGION=cn-lab",
+	})
+
+	if report.Primary != "a21_lab_vendor" {
+		t.Fatalf("primary = %q, want a21_lab_vendor", report.Primary)
+	}
+	readiness := providerReadinessByName(t, report, "a21_lab_vendor")
+	if !readiness.Selected || !readiness.Configured || !readiness.RouteEligible {
+		t.Fatalf("loaded readiness = %+v, want selected/configured/route eligible", readiness)
+	}
+	if readiness.Family != string(ProviderFamilyTextStream) || readiness.Protocol != "openai_chat_completions" {
+		t.Fatalf("family/protocol = %q/%q", readiness.Family, readiness.Protocol)
+	}
+	for _, want := range []string{"A21_LAB_VENDOR_API_KEY", "A21_LAB_VENDOR_MODEL", "A21_LAB_VENDOR_REGION"} {
+		if !stringSliceContains(readiness.RequiredEnv, want) || !stringSliceContains(readiness.PresentEnv, want) {
+			t.Fatalf("readiness lacks env %q: %+v", want, readiness)
+		}
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{profilePath, "sk-a21-secret", "vendor-model", "cn-lab", "https://example.invalid/a21-compatible/v1"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("catalog report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestProviderCatalogRejectsUnsafeHotPlugProfilesWithoutEchoingValues(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		body       string
+		wantCode   string
+		forbidden  []string
+		wantAbsent string
+	}{
+		{
+			name: "blocked provider",
+			body: `[{
+				"name": "baidu_qianfan",
+				"label": "Blocked",
+				"family": "text_stream",
+				"protocol": "openai_chat_completions",
+				"api_key_env": "A21_BLOCKED_API_KEY",
+				"model_env": "A21_BLOCKED_MODEL",
+				"default_base_url": "https://example.invalid/v1",
+				"endpoint_path": "/chat/completions"
+			}]`,
+			wantCode:   "provider_profile_blocked",
+			forbidden:  []string{"baidu_qianfan"},
+			wantAbsent: "baidu_qianfan",
+		},
+		{
+			name: "non A21 env",
+			body: `[{
+				"name": "a21_bad_env_vendor",
+				"label": "Bad Env",
+				"family": "text_stream",
+				"protocol": "openai_chat_completions",
+				"api_key_env": "VENDOR_API_KEY",
+				"model_env": "A21_BAD_ENV_MODEL",
+				"default_base_url": "https://example.invalid/v1",
+				"endpoint_path": "/chat/completions"
+			}]`,
+			wantCode:   "provider_profile_invalid_env",
+			forbidden:  []string{"VENDOR_API_KEY"},
+			wantAbsent: "a21_bad_env_vendor",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profilePath := writeProviderProfileFile(t, tc.body)
+
+			report := ProviderCatalogFromEnv([]string{"A21_PROVIDER_PROFILES_PATH=" + profilePath})
+
+			if len(report.Findings) == 0 {
+				t.Fatalf("findings = none, want %s", tc.wantCode)
+			}
+			if report.Findings[0].Code != tc.wantCode {
+				t.Fatalf("code = %q, want %q; findings=%#v", report.Findings[0].Code, tc.wantCode, report.Findings)
+			}
+			for _, provider := range report.Providers {
+				if provider.Name == tc.wantAbsent {
+					t.Fatalf("unsafe profile was loaded: %+v", provider)
+				}
+			}
+			data, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rendered := string(data)
+			for _, forbidden := range append(tc.forbidden, profilePath) {
+				if strings.Contains(rendered, forbidden) {
+					t.Fatalf("catalog report leaked %q: %s", forbidden, rendered)
+				}
+			}
+		})
+	}
+}
+
 func providerReadinessByName(t *testing.T, report ProviderCatalogReport, name string) ProviderReadiness {
 	t.Helper()
 	for _, readiness := range report.Providers {
@@ -270,4 +396,13 @@ func stringSliceContains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func writeProviderProfileFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

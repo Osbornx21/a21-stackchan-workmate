@@ -273,3 +273,79 @@ func TestRunTextStreamCompletionDoesNotTreatReasoningAsFirstContent(t *testing.T
 		t.Fatalf("unexpected stream result: %+v", result)
 	}
 }
+
+func TestRunTextStreamCompletionFromEnvUsesHotPlugProfile(t *testing.T) {
+	var sawAuth bool
+	var sawModel bool
+	var sawPrompt bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("Authorization") == "Bearer sk-a21-secret"
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+			Stream bool `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		sawModel = body.Model == "vendor-model" && body.Stream
+		sawPrompt = len(body.Messages) == 1 && body.Messages[0].Content == "prompt must stay out"
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"loaded output"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+	profilePath := writeProviderProfileFile(t, `[
+		{
+			"name": "a21_lab_vendor",
+			"label": "A21 Lab Vendor",
+			"family": "text_stream",
+			"protocol": "openai_chat_completions",
+			"capabilities": ["llm", "text_stream"],
+			"api_key_env": "A21_LAB_VENDOR_API_KEY",
+			"model_env": "A21_LAB_VENDOR_MODEL",
+			"default_base_url": "`+server.URL+`/v1",
+			"endpoint_path": "/chat/completions",
+			"route_eligible": true
+		}
+	]`)
+
+	result, err := RunTextStreamCompletionFromEnv(context.Background(), []string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_lab_vendor",
+		"A21_LAB_VENDOR_API_KEY=sk-a21-secret",
+		"A21_LAB_VENDOR_MODEL=vendor-model",
+	}, TextStreamCompletionOptions{
+		ProviderName: "a21_lab_vendor",
+		Prompt:       "prompt must stay out",
+		Client:       server.Client(),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawAuth || !sawModel || !sawPrompt {
+		t.Fatalf("saw auth/model/prompt = %v/%v/%v, want all true", sawAuth, sawModel, sawPrompt)
+	}
+	if result.Provider != "a21_lab_vendor" || result.Protocol != "openai_chat_completions" || result.ContentText != "loaded output" {
+		t.Fatalf("result = %+v", result)
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{profilePath, server.URL, "sk-a21-secret", "vendor-model", "prompt must stay out", "loaded output"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("text stream result leaked %q: %s", forbidden, rendered)
+		}
+	}
+}

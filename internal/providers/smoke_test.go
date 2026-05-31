@@ -366,3 +366,79 @@ func TestProviderSmokeKnowsRealtimeProfilesButDoesNotExecuteThemDuringP0(t *test
 		t.Fatalf("realtime smoke report leaked secret/model: %s", data)
 	}
 }
+
+func TestProviderSmokeExecutesHotPlugOpenAICompatibleProfile(t *testing.T) {
+	var sawAuth bool
+	var sawModel bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("Authorization") == "Bearer sk-a21-secret"
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+			Stream bool `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		sawModel = body.Model == "vendor-model" && !body.Stream && len(body.Messages) == 1
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"provider output must stay out"}}]}`))
+	}))
+	defer server.Close()
+	profilePath := writeProviderProfileFile(t, `[
+		{
+			"name": "a21_lab_vendor",
+			"label": "A21 Lab Vendor",
+			"family": "text_stream",
+			"protocol": "openai_chat_completions",
+			"capabilities": ["llm", "text_stream"],
+			"api_key_env": "A21_LAB_VENDOR_API_KEY",
+			"model_env": "A21_LAB_VENDOR_MODEL",
+			"default_base_url": "`+server.URL+`/v1",
+			"endpoint_path": "/chat/completions",
+			"route_eligible": true
+		}
+	]`)
+
+	dryRun := ProviderSmokeFromEnv(context.Background(), []string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_lab_vendor",
+		"A21_LAB_VENDOR_API_KEY=sk-a21-secret",
+		"A21_LAB_VENDOR_MODEL=vendor-model",
+	}, "a21_lab_vendor", false, nil)
+	if dryRun.Status != ProviderSmokeReady || !dryRun.Configured || dryRun.Executed {
+		t.Fatalf("dry-run report = %+v, want ready/configured/not executed", dryRun)
+	}
+
+	report := ProviderSmokeFromEnv(context.Background(), []string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_lab_vendor",
+		"A21_LAB_VENDOR_API_KEY=sk-a21-secret",
+		"A21_LAB_VENDOR_MODEL=vendor-model",
+	}, "a21_lab_vendor", true, server.Client())
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if report.Provider != "a21_lab_vendor" || report.Protocol != "openai_chat_completions" || !report.Executed {
+		t.Fatalf("provider/protocol/executed = %q/%q/%v", report.Provider, report.Protocol, report.Executed)
+	}
+	if !sawAuth || !sawModel {
+		t.Fatalf("saw auth/model = %v/%v, want true/true", sawAuth, sawModel)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, forbidden := range []string{profilePath, server.URL, "sk-a21-secret", "vendor-model", "provider output must stay out"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("smoke report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}

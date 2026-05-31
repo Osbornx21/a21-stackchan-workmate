@@ -112,7 +112,7 @@ func RunTextStreamCompletionFromEnv(ctx context.Context, env []string, options T
 	resp, err := client.Do(req)
 	if err != nil {
 		result.TotalDurationMS = elapsedMS(start)
-		return result, err
+		return result, fmt.Errorf("%s", redactProviderSmokeDetail(err.Error()))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -206,7 +206,7 @@ func runOllamaTextStreamCompletion(ctx context.Context, env []string, spec provi
 	resp, err := client.Do(req)
 	if err != nil {
 		result.TotalDurationMS = elapsedMS(start)
-		return result, err
+		return result, fmt.Errorf("%s", redactProviderSmokeDetail(err.Error()))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

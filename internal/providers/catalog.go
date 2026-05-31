@@ -1,6 +1,16 @@
 package providers
 
-import "strings"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
 
 type ProviderFamily string
 
@@ -218,7 +228,10 @@ func BuiltinProviderProfiles() []ProviderProfile {
 }
 
 func ProviderProfilesFromEnv(env []string) ([]ProviderProfile, []ProviderCatalogFinding) {
-	return BuiltinProviderProfiles(), nil
+	profiles := BuiltinProviderProfiles()
+	loaded, findings := loadProviderProfilesFromEnv(env, profiles)
+	profiles = append(profiles, loaded...)
+	return profiles, findings
 }
 
 func ProviderProfileByNameFromEnv(env []string, name string) (ProviderProfile, []ProviderCatalogFinding, bool) {
@@ -302,6 +315,208 @@ func providerProfileByName(profiles []ProviderProfile, name string) (ProviderPro
 		}
 	}
 	return ProviderProfile{}, false
+}
+
+func loadProviderProfilesFromEnv(env []string, builtins []ProviderProfile) ([]ProviderProfile, []ProviderCatalogFinding) {
+	rawPath := strings.TrimSpace(envValue(env, "A21_PROVIDER_PROFILES_PATH"))
+	if rawPath == "" {
+		return nil, nil
+	}
+	var loaded []ProviderProfile
+	var findings []ProviderCatalogFinding
+	for _, path := range providerProfilePaths(rawPath) {
+		profiles, profileFindings := loadProviderProfilesFile(path, builtins, append(builtins, loaded...))
+		findings = append(findings, profileFindings...)
+		loaded = append(loaded, profiles...)
+	}
+	return loaded, findings
+}
+
+func providerProfilePaths(rawPath string) []string {
+	var paths []string
+	for _, path := range filepath.SplitList(rawPath) {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return []string{rawPath}
+	}
+	return paths
+}
+
+func loadProviderProfilesFile(path string, builtins []ProviderProfile, existing []ProviderProfile) ([]ProviderProfile, []ProviderCatalogFinding) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, []ProviderCatalogFinding{providerProfileFinding("provider_profile_load_failed")}
+	}
+	profiles, err := decodeProviderProfiles(data)
+	if err != nil {
+		return nil, []ProviderCatalogFinding{providerProfileFinding("provider_profile_invalid_json")}
+	}
+	var loaded []ProviderProfile
+	var findings []ProviderCatalogFinding
+	for _, profile := range profiles {
+		normalized, finding := validateLoadedProviderProfile(profile, builtins, append(existing, loaded...))
+		if finding != nil {
+			findings = append(findings, *finding)
+			continue
+		}
+		loaded = append(loaded, normalized)
+	}
+	return loaded, findings
+}
+
+func decodeProviderProfiles(data []byte) ([]ProviderProfile, error) {
+	var profiles []ProviderProfile
+	if err := decodeJSONStrict(data, &profiles); err == nil {
+		return profiles, nil
+	}
+	var profile ProviderProfile
+	if err := decodeJSONStrict(data, &profile); err != nil {
+		return nil, err
+	}
+	return []ProviderProfile{profile}, nil
+}
+
+func decodeJSONStrict(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("extra JSON content")
+	}
+	return nil
+}
+
+var loadedProviderNamePattern = regexp.MustCompile(`^a21_[a-z0-9_]+$`)
+var providerEnvNamePattern = regexp.MustCompile(`^A21_[A-Z0-9_]+$`)
+
+func validateLoadedProviderProfile(profile ProviderProfile, builtins []ProviderProfile, existing []ProviderProfile) (ProviderProfile, *ProviderCatalogFinding) {
+	profile.Name = strings.ToLower(strings.TrimSpace(profile.Name))
+	profile.Label = strings.TrimSpace(profile.Label)
+	profile.Protocol = strings.TrimSpace(profile.Protocol)
+	profile.APIKeyEnv = strings.TrimSpace(profile.APIKeyEnv)
+	profile.ModelEnv = strings.TrimSpace(profile.ModelEnv)
+	profile.BaseURLEnv = strings.TrimSpace(profile.BaseURLEnv)
+	profile.DefaultBaseURL = strings.TrimSpace(profile.DefaultBaseURL)
+	profile.EndpointPath = strings.TrimSpace(profile.EndpointPath)
+	profile.Capabilities = normalizeProviderStringSlice(profile.Capabilities)
+	profile.RequiredEnv = normalizeProviderStringSlice(profile.RequiredEnv)
+
+	switch {
+	case profile.Name == "":
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_name")
+	case containsBlockedProviderIdentity(profile.Name):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_blocked")
+	case containsLegacyProviderIdentity(profile.Name):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_legacy_identity")
+	case !loadedProviderNamePattern.MatchString(profile.Name):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_name")
+	case knownProviderInProfiles(existing, profile.Name) || knownProviderInProfiles(builtins, profile.Name):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_duplicate")
+	case profile.Family != ProviderFamilyTextStream || profile.Protocol != "openai_chat_completions":
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_unsupported")
+	case profile.EndpointPath == "":
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_endpoint")
+	case strings.Contains(profile.EndpointPath, "://") || !strings.HasPrefix(profile.EndpointPath, "/"):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_endpoint")
+	case strings.Contains(profile.EndpointPath, "@"):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_endpoint_credentials")
+	case containsLegacyProviderIdentity(profile.EndpointPath):
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_legacy_identity")
+	}
+	if profile.DefaultBaseURL != "" {
+		parsed, err := url.Parse(profile.DefaultBaseURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_endpoint")
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_endpoint")
+		}
+		if parsed.User != nil {
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_endpoint_credentials")
+		}
+		if containsLegacyProviderIdentity(parsed.Path) {
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_legacy_identity")
+		}
+	}
+	if profile.BaseURLEnv == "" && profile.DefaultBaseURL == "" {
+		return ProviderProfile{}, providerProfileFindingPtr("provider_profile_missing_endpoint")
+	}
+	for _, name := range append([]string{profile.APIKeyEnv, profile.ModelEnv, profile.BaseURLEnv}, profile.RequiredEnv...) {
+		if name == "" {
+			continue
+		}
+		switch {
+		case !providerEnvNamePattern.MatchString(name):
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_invalid_env")
+		case containsLegacyProviderIdentity(name):
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_legacy_identity")
+		case containsBlockedProviderIdentity(name):
+			return ProviderProfile{}, providerProfileFindingPtr("provider_profile_blocked")
+		}
+	}
+	if profile.Label == "" {
+		profile.Label = profile.Name
+	}
+	return profile, nil
+}
+
+func normalizeProviderStringSlice(values []string) []string {
+	var normalized []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !stringSliceHas(normalized, value) {
+			normalized = append(normalized, value)
+		}
+	}
+	return normalized
+}
+
+func providerProfileFindingPtr(code string) *ProviderCatalogFinding {
+	finding := providerProfileFinding(code)
+	return &finding
+}
+
+func providerProfileFinding(code string) ProviderCatalogFinding {
+	return ProviderCatalogFinding{
+		Code:    code,
+		Message: providerProfileFindingMessage(code),
+		Detail:  "A21_PROVIDER_PROFILES_PATH",
+	}
+}
+
+func providerProfileFindingMessage(code string) string {
+	switch code {
+	case "provider_profile_load_failed":
+		return "A21 provider profile file could not be loaded"
+	case "provider_profile_invalid_json":
+		return "A21 provider profile file is not valid JSON"
+	case "provider_profile_invalid_name":
+		return "A21 provider profile name is invalid"
+	case "provider_profile_blocked":
+		return "A21 provider profile is blocked by project policy"
+	case "provider_profile_legacy_identity":
+		return "A21 provider profile contains a forbidden legacy identity"
+	case "provider_profile_duplicate":
+		return "A21 provider profile duplicates an existing provider"
+	case "provider_profile_unsupported":
+		return "A21 provider profile uses an unsupported family or protocol"
+	case "provider_profile_invalid_endpoint":
+		return "A21 provider profile endpoint is invalid"
+	case "provider_profile_endpoint_credentials":
+		return "A21 provider profile endpoint must not contain credentials"
+	case "provider_profile_missing_endpoint":
+		return "A21 provider profile must declare a base URL env or default base URL"
+	case "provider_profile_invalid_env":
+		return "A21 provider profile env names must use the A21_ namespace"
+	default:
+		return "A21 provider profile was rejected"
+	}
 }
 
 func knownProviderInProfiles(profiles []ProviderProfile, name string) bool {

@@ -282,6 +282,9 @@ func providerSmokeEndpointHost(env []string, spec providerSmokeSpec) string {
 	if parsed.Host == "" {
 		return "invalid_base_url"
 	}
+	if parsed.User != nil {
+		return "invalid_base_url"
+	}
 	return parsed.Host
 }
 
@@ -700,6 +703,9 @@ func providerSmokeEndpoint(env []string, spec providerSmokeSpec) (string, error)
 	if parsed.Host == "" {
 		return "", fmt.Errorf("provider smoke base URL host is required")
 	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("provider smoke base URL must not contain credentials")
+	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + spec.EndpointPath
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
@@ -707,10 +713,12 @@ func providerSmokeEndpoint(env []string, spec providerSmokeSpec) (string, error)
 }
 
 var providerSmokeURLCredentialPattern = regexp.MustCompile(`(https?://)[^/\s"']+@`)
+var providerSmokeFullURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 
 func redactProviderSmokeDetail(text string) string {
 	if text == "" {
 		return ""
 	}
-	return providerSmokeURLCredentialPattern.ReplaceAllString(text, "${1}<redacted>@")
+	text = providerSmokeURLCredentialPattern.ReplaceAllString(text, "${1}<redacted>@")
+	return providerSmokeFullURLPattern.ReplaceAllString(text, "<redacted-url>")
 }
