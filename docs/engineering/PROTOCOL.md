@@ -77,6 +77,18 @@ The current downlink primitive accepts only validated 24 kHz mono 60 ms
 frame through the current-turn pacer. This is a downlink building block, not
 ASR/LLM/TTS product acceptance.
 
+WS-2 adds a host-side product voice pipeline contract under
+`internal/providers`. It models decoded PCM frame metadata flowing through ASR,
+streaming text, and TTS adapters, then returns downlink-ready
+`VoiceAudioChunk` values: `pcm_s16le`, 24 kHz, mono, 60 ms. The current
+implementation is fixture/mock only. It records stage markers such as
+`asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`, and
+`audio_downlink_first_frame_ms`, preserves provider selection by A21 env/profile
+names, and emits a redacted report that stores counts, format metadata, timing,
+and policy fields only. It must not be cited as real provider execution,
+physical StackChan first-audio acceptance, transcript quality evidence, or PRD
+latency acceptance.
+
 Each `listen/start` creates a Gateway-owned xiaozhi turn. Each `abort` cancels
 the current turn context, clears current-turn ownership, and resets the downlink
 pacer. Future provider and TTS frame code must check current-turn ownership

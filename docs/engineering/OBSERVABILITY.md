@@ -34,6 +34,20 @@ Gateway also exposes `GET /v1/audio/recent` as a loopback-only development captu
 
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
+The WS-2 product voice pipeline contract emits schema
+`a21.voice_pipeline.fixture.v1` from `internal/providers` tests and future
+host-side callers. This report is deliberately redacted: it keeps
+`trace_id`, `session_id`, `device_id`, execution mode, adapter profile/env
+names, audio format counts, output chunk counts, and stage timings, while
+recording only policy markers for transcript, provider output, audio payload,
+full URL, proxy value, and local path handling. Current fixture timings include
+`asr_first_partial_ms`, `asr_final_ms`, `llm_first_content_ms`,
+`tts_first_audio_ms`, `audio_downlink_first_frame_ms`,
+`speech_end_to_final_asr_ms`, `speech_end_to_first_llm_token_ms`, and, on
+cancel, `provider_cancel_ms` plus `barge_in_stop_ms`. These are contract fields
+for the mock pipeline and must not be promoted to physical first-audio or real
+provider latency evidence without later measured runs.
+
 `provider-latency-bench` is now hardened as a Fast Companion candidate-chain
 report shape. Its `metric_terms` block maps TTFS, TTFT, FTTS, and TTFA onto A21
 stages and canonical metrics. Its `canonical_metrics` block preserves
