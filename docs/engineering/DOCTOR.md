@@ -184,9 +184,9 @@ does not authorize provider execute, V21 execute, Gateway runtime startup,
 binary Opus transport, AEC adapter work, WebRTC/ESP-SR native adapters, or
 hardware acceptance.
 
-Binary Opus media transport is currently documented only in
-`PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md`. There is no `doctor` Opus runtime
-check, no Gateway startup, no native codec probe, and no production dependency.
+Binary Opus media transport remains a planned direction captured in the live
+protocol and mature-voice contracts. There is no `doctor` Opus runtime check,
+no Gateway startup, no native codec probe, and no production dependency.
 A future doctor check may report binary media readiness only after the
 wire-format compatibility fixture, Gateway loopback fixture, encoder/decoder
 adapter spike, LAN jitter/fallback report, CPU/memory profile, device playback

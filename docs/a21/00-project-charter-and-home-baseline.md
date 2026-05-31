@@ -139,7 +139,8 @@ These resources should enter A21 through provider adapters with explicit health 
 
 ## Phase 1 Implementation Pointer
 
-Phase 1 starts the clean A21 skeleton from `docs/superpowers/plans/2026-05-29-a21-phase1-clean-skeleton.md`.
+Phase 1 starts from the clean A21 skeleton represented by the current Go-first
+repository baseline and the live engineering mainline.
 
 The first verification target is:
 

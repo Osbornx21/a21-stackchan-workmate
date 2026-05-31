@@ -454,7 +454,7 @@ Provider 事件进入 Gateway 前必须转换为 A21 provider-neutral event，�
 
 端口和命名沿用 A21 主线文档。原则：
 
-- 新端口必须写入 `docs/engineering/PORTS.md`。
+- 新端口必须写入 `docs/engineering/NETWORK.md` 的端口登记区。
 - 新进程必须以 `a21-` 开头。
 - 新 env 必须以 `A21_` 开头。
 - A21 不得误用 X21/V21 端口。

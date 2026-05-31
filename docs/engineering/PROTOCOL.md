@@ -95,10 +95,9 @@ For a single mock trace/session, Gateway keeps the same `stream_id` across conse
 
 ## Planned Binary Opus Media Profile
 
-`docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` is the planning
-contract for the future A21 binary Opus media profile. It is not a production
-protocol acceptance and does not change the current JSON/base64 `pcm_s16le`
-runtime contract.
+The future A21 binary Opus media profile is a planning contract inside this
+live protocol document. It is not a production protocol acceptance and does not
+change the current JSON/base64 `pcm_s16le` runtime contract.
 
 The planned profile keeps A21 control metadata separate from binary media
 payloads: JSON control negotiation carries `trace_id`, `session_id`,

@@ -49,9 +49,9 @@ a fixed reason because this command remains host-only report-contract evidence.
 These fields are durable JSON report fields, not Prometheus runtime metrics and
 not production acceptance evidence.
 
-`PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` reserves the future observability
-contract for binary Opus media. It is planning-only: reserved trace markers such
-as `media.opus.profile.negotiated`, `media.opus.uplink.frame.received`,
+The live protocol contract reserves future observability fields for binary Opus
+media. It is planning-only: reserved trace markers such as
+`media.opus.profile.negotiated`, `media.opus.uplink.frame.received`,
 `media.opus.downlink.frame.sent`, `media.opus.decode.error`, and
 `media.opus.fallback_to_pcm` are not current runtime events. Reserved metrics
 such as `a21_media_opus_frames_total`, `a21_media_opus_bytes_total`,

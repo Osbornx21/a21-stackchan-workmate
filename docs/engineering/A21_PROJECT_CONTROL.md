@@ -30,9 +30,9 @@ faster than the governance docs can catch up.
   integration promotion gate. It separates local review readiness from external
   promotion readiness, and it must stay host-only: no provider execution, V21
   execution, Gateway runtime, or hardware/device side effect.
-- `docs/engineering/A21_CONTROL_LEDGER.md` is the current control tower queue:
-  it records accepted handoffs, active/paused thread roles, worktree ownership,
-  and the next PRD-authorized implementation slice.
+- This document is the current control tower queue: it records accepted
+  handoffs, active/paused thread roles, worktree ownership, and the next
+  PRD-authorized implementation slice.
 - No raw `pio upload`, `idf.py flash`, copied esptool command, or generic
   firmware path is allowed.
 

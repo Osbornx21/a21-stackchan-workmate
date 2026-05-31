@@ -66,6 +66,19 @@ Phase 1 already records:
 - proxy/no-proxy coverage for the direct-connect set
 - explicit LAN TCP probe receipts through `a21 lan-probe`
 
+## Port Registry
+
+Current A21-owned ports are `21080` for Gateway HTTP/WebSocket, reserved
+`21081` realtime, `21073` console, `21086` observability, `21095` ASR sidecar,
+`21114` LLM adapter, optional host-only `21130` Agent I/O bridge, `21121` V21
+adapter boundary, and reserved `21434` local-model bridge. A21 must not adopt
+new ports without updating this section and the runtime guards.
+
+Known legacy ports are treated as contaminated for A21 endpoint env vars and
+LAN probes: `8000`, `8080`, `10095`, `18080`, `4173`, `42173`, `16686`, and
+`16687`. A21 may reach V21 only through the A21 adapter boundary, not V21
+internals.
+
 ## LAN Probe
 
 `lan-probe` is an explicit office/home reachability command. It does not run as a default doctor side effect because StackChan and office-only endpoints may legitimately be offline during home development.
