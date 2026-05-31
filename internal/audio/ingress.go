@@ -52,6 +52,10 @@ type VADDetector interface {
 	Detect(frame Frame) VADDecision
 }
 
+type SileroVADRunner interface {
+	Detect(frame Frame) (VADDecision, error)
+}
+
 type Ingress struct {
 	mu     sync.Mutex
 	config IngressConfig
@@ -63,12 +67,23 @@ type RMSVADDetector struct {
 	threshold float64
 }
 
+type SileroVADAdapter struct {
+	runner   SileroVADRunner
+	fallback RMSVADDetector
+}
+
 type streamState struct {
 	buffer        []Frame
 	dropped       int
 	speechActive  bool
 	silenceFrames int
 }
+
+const (
+	VADDetectorRMS               = "a21-rms-vad"
+	VADDetectorSilero            = "a21-silero-vad"
+	VADDetectorSileroFallbackRMS = "a21-silero-vad-fallback-rms"
+)
 
 func DefaultIngressConfig() IngressConfig {
 	return IngressConfig{
@@ -157,8 +172,33 @@ func (d RMSVADDetector) Detect(frame Frame) VADDecision {
 	return VADDecision{
 		SpeechDetected: score >= d.threshold,
 		Score:          score,
-		Detector:       "a21-rms-vad",
+		Detector:       VADDetectorRMS,
 	}
+}
+
+func NewSileroVADAdapter(runner SileroVADRunner, fallbackThreshold float64) SileroVADAdapter {
+	return SileroVADAdapter{
+		runner:   runner,
+		fallback: NewRMSVADDetector(fallbackThreshold),
+	}
+}
+
+func (d SileroVADAdapter) Detect(frame Frame) VADDecision {
+	if d.runner == nil {
+		return d.fallbackDecision(frame)
+	}
+	decision, err := d.runner.Detect(frame)
+	if err != nil {
+		return d.fallbackDecision(frame)
+	}
+	decision.Detector = VADDetectorSilero
+	return decision
+}
+
+func (d SileroVADAdapter) fallbackDecision(frame Frame) VADDecision {
+	decision := d.fallback.Detect(frame)
+	decision.Detector = VADDetectorSileroFallbackRMS
+	return decision
 }
 
 func frameKey(frame Frame) string {

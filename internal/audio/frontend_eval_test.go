@@ -81,6 +81,15 @@ func TestBaselineFrontEndPlanExposesCandidateEvidenceShape(t *testing.T) {
 	if available, _ := candidates["a21_rms_vad"]["available"].(bool); !available {
 		t.Fatalf("a21_rms_vad baseline should be available as host-only development evidence: %#v", candidates["a21_rms_vad"])
 	}
+	if status, _ := candidates["silero_vad"]["status"].(string); status == "" || !strings.Contains(status, "adapter_boundary") {
+		t.Fatalf("silero_vad status = %q, want adapter boundary status without product acceptance", status)
+	}
+	if placeholder, _ := candidates["silero_vad"]["placeholder"].(bool); !placeholder {
+		t.Fatalf("silero_vad must remain placeholder until recorded-office and physical evidence exists: %#v", candidates["silero_vad"])
+	}
+	if available, _ := candidates["silero_vad"]["available"].(bool); available {
+		t.Fatalf("silero_vad must not be marked product-available from adapter boundary alone: %#v", candidates["silero_vad"])
+	}
 }
 
 func TestRunMockFrontEndEvalExposesFastCompanionEvidenceContract(t *testing.T) {

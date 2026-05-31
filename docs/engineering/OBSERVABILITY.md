@@ -26,6 +26,14 @@ Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock 
 
 The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.
 
+`internal/audio` now has a Silero VAD adapter boundary with an injectable runner.
+It is fixture-ready only: successful runner decisions use the stable
+`a21-silero-vad` detector label, and unavailable or failing runners fall back to
+RMS with `a21-silero-vad-fallback-rms`. The fallback path must not expose model
+paths, local paths, or runner error text in detector labels or reports. This is
+not PRD physical VAD acceptance, first-audio acceptance, or evidence that a
+Silero model runtime is installed.
+
 Gateway also exposes `GET /v1/audio/recent` as a loopback-only development capture surface. It is intentionally not a LAN or cloud API. Default responses redact raw PCM and expose only recent frame metadata; `include_audio=1` is for local CLI use when building a temporary ASR WAV for physical StackChan mic-driven evidence. Reports may cite frame count, byte count, RMS, and WAV basename, but must not persist `data_base64` or raw audio.
 
 `audio-front-end-eval --mock` emits a JSON report for the deterministic RMS baseline. `audio-front-end-eval --fixture <path>` emits the same report shape for labelled PCM frame fixtures, including measurable `speech_start_lag_ms` and `speech_end_lag_ms`. With `--output-dir reports`, it also writes `reports/a21-audio-front-end-eval-YYYYMMDD-HHMMSS.json`. The report includes generated timestamp, current commit, network/DNS fingerprint, and redacted proxy-policy metadata without raw PCM frames or proxy secrets. It also carries `candidate_evidence`, `fast_companion_evidence_contract`, host-only identity (`device_id=none_host_fixture`, `baseline_scope=host_only`), explicit no-execute flags for provider, V21, and hardware, and redaction booleans for raw audio, base64 audio, transcripts, prompts, provider output, reasoning, credentials, full URLs, proxy URLs, and full local paths. `report_path` is stored as a basename. These are not runtime Prometheus endpoints; they are offline report shapes future recorded-office and physical-device VAD/AEC evaluations must preserve.
