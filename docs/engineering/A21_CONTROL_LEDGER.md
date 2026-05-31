@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `213cbf0`.
+Last accepted integration commit before this ledger update: `a892ac9`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `213cbf0 docs(control): accept audio front-end evidence slice`.
+  `a892ac9 fix(app): redact audio fixture read errors`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -66,7 +66,9 @@ defines policy; this ledger records the current queue and accepted state.
   post-review P2 fix is `9fc73de`, latency report v2 post-review closure is
   `0478774`, post-latency PRD audit tracking is `2b4f2ad`, audio front-end
   slice-opening tracking is `bbca97b`, and audio front-end evidence contract
-  implementation is `2106a30`.
+  implementation is `2106a30`; audio front-end evidence acceptance is
+  `213cbf0`, audio front-end post-review tracking is `df20df5`, and audio
+  front-end post-review P2 fix is `a892ac9`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -92,10 +94,14 @@ defines policy; this ledger records the current queue and accepted state.
 - Current integration HEAD after audio front-end evidence contract
   implementation:
   `2106a30 feat(audio): add front-end evidence contract`.
+- Current integration HEAD after audio front-end evidence acceptance:
+  `213cbf0 docs(control): accept audio front-end evidence slice`.
+- Current integration HEAD after audio front-end post-review P2 fix:
+  `a892ac9 fix(app): redact audio fixture read errors`.
 - Current control-tower action: audio-front-end evidence contract
-  post-commit review is active in thread
-  `019e7c99-bbc3-7d33-8b77-a32000d1281d`; wait for its read-only handoff
-  before selecting the next PRD implementation slice.
+  post-commit review found one P2, fixed by control at `a892ac9`, and can be
+  closed. Start the next read-only PRD next-slice audit from the latest
+  integration HEAD before selecting another implementation slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -114,7 +120,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | active; read-only review of `2b4f2ad..213cbf0` | T0/T1/T2 | no |
+| `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | completed; one P2 fixed by control at `a892ac9` | T0/T1/T2 | no |
 | `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
 | `019e7c80-f077-78c1-8962-58c53bb1779e` | PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/9959/New project` | completed; recommended audio-front-end evidence contract | T0/T1/T2 | no |
 | `019e7c81-9963-74d1-b860-f6cebd73ed6f` | Supporting PRD next-slice audit after Provider Latency Report v2 closure | `/Users/jiyurun/.codex/worktrees/ce27/New project` | completed; converged on same audio-front-end report-hardening slice | T0/T1/T2 | no |
@@ -1405,14 +1411,65 @@ Allowed review verification:
 - `go run ./cmd/a21 preflight`.
 - `go run ./cmd/a21 doctor`.
 
+Review result:
+
+- Review worktree state: clean detached HEAD at
+  `213cbf0 docs(control): accept audio front-end evidence slice`.
+- Review result: no P0 findings and no P1 findings.
+- Review P2 finding: `audio-front-end-eval --fixture <missing absolute path>`
+  could print the full fixture path through the underlying `os.ReadFile`
+  error. This violated the slice's full-local-path redaction contract.
+- Control tower fixed the P2 at
+  `a892ac9 fix(app): redact audio fixture read errors`.
+- The fix keeps fixture stderr useful by retaining the fixture basename, but
+  removes the full path and directory from the error text. It adds
+  `TestRunAudioFrontEndEvalFixtureReadErrorRedactsFullPath`.
+- The review thread inspected `a892ac9` read-only and reported no new
+  P0/P1/P2 findings after the control fix.
+
+Review verification evidence:
+
+- Review passed: `git diff --check 2b4f2ad..213cbf0`.
+- Review passed:
+  `go test ./internal/audio ./internal/app -run 'AudioFrontEnd|FrontEnd|ProviderLatencyBench|LatencyBench' -count=1`.
+- Review passed:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|AudioWSBargeIn|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Review passed: `go run ./cmd/a21 audio-front-end-plan`.
+- Review passed: `go run ./cmd/a21 audio-front-end-eval --mock`.
+- Review passed:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Review passed: `go run ./cmd/a21 namespace-audit`.
+- Review passed: `make verify`.
+- Review passed: `go run ./cmd/a21 preflight`.
+- Review passed: `go run ./cmd/a21 doctor`, with only detached-worktree
+  firmware/tooling warnings.
+- Control fix verification passed:
+  `go test ./internal/app -run 'TestRunAudioFrontEndEvalFixtureReadErrorRedactsFullPath' -count=1`.
+- Control fix verification passed:
+  `go test ./internal/audio ./internal/app -run 'AudioFrontEnd|FrontEnd|ProviderLatencyBench|LatencyBench' -count=1`.
+- Control fix verification passed:
+  `go test ./internal/gateway -run 'FastCompanionHybrid|AudioWSBargeIn|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`.
+- Control fix verification passed: `go run ./cmd/a21 audio-front-end-plan`.
+- Control fix verification passed: `go run ./cmd/a21 audio-front-end-eval --mock`.
+- Control fix verification passed:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Control fix verification passed: `go run ./cmd/a21 namespace-audit`.
+- Control fix verification passed: `git diff --check`.
+- Control fix verification passed: `make verify`.
+- Post-fix default gate passed: `go run ./cmd/a21 preflight`.
+- Post-fix default gate passed with the expected non-blocking
+  `firmware_current_artifact_missing` warning for commit `a892ac947824`:
+  `go run ./cmd/a21 doctor`.
+- Post-fix promotion gate result:
+  `go run ./cmd/a21 promotion-readiness` reported `review_ready=true` and
+  `dirty_file_count=0`, while external promotion remains blocked because the
+  repository has no configured remote, target remote, or target branch.
+
 Control-tower next gate:
 
-- Wait for the post-commit review handoff from thread
-  `019e7c99-bbc3-7d33-8b77-a32000d1281d`.
-- If the review finds P0/P1/P2 issues, fix them in the control tower or open a
-  narrow fix thread.
-- If the review has no blocking findings, close the review in the ledger and
-  then run the next PRD next-slice audit from the latest integration HEAD.
+- Close the post-commit review as accepted with the P2 fixed.
+- Run the next PRD next-slice audit from the latest integration HEAD before
+  selecting another implementation slice.
 
 ### Fast Companion Hybrid Boundary Audit
 
