@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `598c0d9`.
+Last accepted integration commit before this ledger update: `31eea31`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `598c0d9 fix(providers): reject agent profiles as voice primary`.
+  `31eea31 docs(control): close agent task post review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -56,8 +56,9 @@ defines policy; this ledger records the current queue and accepted state.
   `447b917`, fixture sidecar post-review tracking is `0633b2b`, fixture
   sidecar post-review closure is `a1742ae`, AgentTaskProvider Bridge scaffold
   opening is `8974460`, AgentTaskProvider Bridge scaffold acceptance is
-  `560df00`, AgentTaskProvider Bridge post-review tracking is `f15b4f2`, and
-  AgentTaskProvider Bridge post-review P2 fix is `598c0d9`.
+  `560df00`, AgentTaskProvider Bridge post-review tracking is `f15b4f2`,
+  AgentTaskProvider Bridge post-review P2 fix is `598c0d9`, and
+  AgentTaskProvider Bridge post-review closure is `31eea31`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -66,8 +67,12 @@ defines policy; this ledger records the current queue and accepted state.
 - The local repository has no configured remote and no `main` or `master`
   branch. Remote PR creation or local mainline merge therefore requires a
   later explicit target decision outside this ledger update.
-- Current integration HEAD after AgentTaskProvider Bridge post-review fix:
-  `598c0d9 fix(providers): reject agent profiles as voice primary`.
+- Current integration HEAD after AgentTaskProvider Bridge post-review closure:
+  `31eea31 docs(control): close agent task post review`.
+- Current control-tower action: PRD next-slice audit after AgentTask closure
+  completed in thread `019e7c5f-e333-7871-8c02-245a435b06cd`; the selected
+  next slice is `Provider Latency Report v2 / Fast Companion Metric Shape
+  Hardening`.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -86,6 +91,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c5f-e333-7871-8c02-245a435b06cd` | PRD next-slice audit after AgentTask closure | `/Users/jiyurun/.codex/worktrees/2dea/New project` | completed; recommended Provider Latency Report v2 | T0/T1/T2 | no |
 | `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | completed; two P2 findings fixed by control at `598c0d9` | T0/T1/T2 | no |
 | `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | completed; accepted into integration branch at `560df00` | T1/T2 | no |
 | `019e7c41-1842-7a30-a185-aafc73ba2d73` | Provider fixture sidecar post-commit review | `/Users/jiyurun/.codex/worktrees/8922/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
@@ -774,6 +780,89 @@ Post-review decision:
 - Continue to keep real Hermes/MiMo/OpenClaw runtime, provider execution, V21
   execution, Gateway runtime, and hardware/device-control paths behind future
   explicit windows.
+
+### PRD Next-Slice Audit After AgentTask Closure
+
+Opened by the control tower after closing the AgentTaskProvider Bridge
+post-commit review.
+
+Evidence:
+
+- Audit thread: `019e7c5f-e333-7871-8c02-245a435b06cd`.
+- Audit thread title: `A21 PRD：Next Slice Audit After AgentTask`.
+- Audit worktree: `/Users/jiyurun/.codex/worktrees/2dea/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `31eea31 docs(control): close agent task post review`.
+- Scope: compare the current PRD, development mainline, Codex masterplan,
+  mature voice reuse guidance, provider benchmarks, audio front-end
+  evaluation, observability, protocol, and Makefile after AgentTask closure.
+- Candidate slices under review: Fast Companion Hybrid audio-front-end
+  hardening, A21 binary Opus media planning, provider-latency report hardening,
+  Professional V21 evidence contract work, and StackChan hardware diagnostic
+  planning.
+- Required output: current branch/HEAD/dirty state, P0/P1/P2 gap matrix,
+  recommended next slice, file scope, acceptance commands, maximum tool tier,
+  implementation-thread need, and forbidden actions.
+- Maximum tier: T0/T1/T2.
+- Forbidden: file edits, commits, pushes, provider/V21 execute, Gateway
+  runtime or service startup, durable reports with payload bodies, firmware/
+  NVS/flash/raw upload/serial writes, real `/v1/devices/control`, and physical
+  device paths.
+
+Audit handoff:
+
+- Audit status: detached `HEAD (no branch)`, decorated by
+  `codex/a21-integration-governance-slices`.
+- Audit HEAD:
+  `31eea318b8ef docs(control): close agent task post review`.
+- Audit dirty files: none.
+- Recommended next slice:
+  `Provider Latency Report v2 / Fast Companion Metric Shape Hardening`.
+- Goal: keep the work no-execute and harden the existing
+  `provider-latency-bench` report contract into a PRD-comparable candidate
+  chain: TTFS/TTFT/FTTS/TTFA terminology mapping, A21 canonical metric fields,
+  device downlink/playback marker placeholders, stage availability and
+  placeholder reasons, failure/fallback counts, and
+  `promotion_gate=not_production`.
+- File scope: `internal/app/provider_latency_bench.go`,
+  `internal/app/app_test.go`, `docs/engineering/A21_PROVIDER_BENCHMARKS.md`,
+  `docs/engineering/LATENCY_BUDGET.md`,
+  `docs/engineering/OBSERVABILITY.md`, `docs/engineering/DOCTOR.md`, and
+  optionally `docs/engineering/PHASE7H_FAST_COMPANION_HYBRID.md`.
+- Acceptance commands:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|AudioFrontEnd|LocalVoiceLoopback|StackChanFastCompanion' -count=1`;
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|AgentTask' -count=1`;
+  `go test ./internal/gateway -run 'FastCompanionHybrid|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`;
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`;
+  `go run ./cmd/a21 namespace-audit`; and `git diff --check`.
+- Maximum tier: T1/T2.
+- Implementation thread: needed as a separate narrow slice.
+
+Audit gap matrix:
+
+- P0 Fast Companion: Gateway Fast Companion boundary exists, but provider/
+  TTS/downlink/device playback remain placeholders; the latency report still
+  needs a stronger TTFS/TTFT/FTTS/TTFA and device-marker contract.
+- P0 Audio Front-End: `audio-front-end-eval` and RMS baseline exist, but
+  mature WebRTC APM/ESP-SR/Silero adapter evidence remains future work.
+- P0 Professional V21: adapter contract and readiness are guarded; real V21
+  execute remains a T4 window, not this slice.
+- P1 Binary Opus: important media-transport planning remains queued, but the
+  metric/report contract should be stabilized first so later Opus evidence can
+  be compared through the same surface.
+- P1/P2 Hardware/Product: StackChan hardware capability honesty stays guarded;
+  physical acceptance remains a T6/T7/T8 risk surface and must not be opened
+  from this report-contract slice.
+
+Decision:
+
+- Accept the audit result.
+- Open a separate T1/T2 implementation thread for Provider Latency Report v2.
+- Keep AgentTask runtime work closed. AgentTask remains T1/T2 scaffold only.
+- Do not open real provider execution, real V21 adapter execution, Gateway
+  runtime startup, hardware/firmware paths, real `/v1/devices/control`, or
+  physical device paths from this audit.
 
 ### Fast Companion Hybrid Boundary Audit
 
