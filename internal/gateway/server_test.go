@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1443,6 +1444,71 @@ func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestXiaozhiWebSocketManualAbortCancelsTurnWithoutBargeInMarkers(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "stackchan-001",
+		"trace_id":   "a21-trace-xiaozhi-manual-abort",
+		"session_id": "a21-session-xiaozhi-manual-abort",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "manual"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("manual abort stop = %#v", stop)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-manual-abort", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.abort.received", "xiaozhi.turn.cancel"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	for _, forbidden := range []string{"barge_in.detected", "playback.stop"} {
+		if traceContains(traces.Events, forbidden) {
+			t.Fatalf("trace unexpectedly contains %q: %+v", forbidden, traces.Events)
+		}
+	}
+	if traces.Summary.BargeInStopMS != nil {
+		t.Fatalf("manual abort barge-in summary = %v, want nil", traces.Summary.BargeInStopMS)
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	if strings.Contains(metricsRec.Body.String(), "a21_barge_in_total 1") {
+		t.Fatalf("manual abort incremented barge-in metric:\n%s", metricsRec.Body.String())
+	}
+}
+
 func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	server := NewServer()
 	session := &xiaozhiSession{
@@ -1761,6 +1827,10 @@ func TestXiaozhiWebSocketDecodedOpusFeedsAudioIngress(t *testing.T) {
 
 func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing.T) {
 	server := NewServer()
+	runner := newRecordingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -1830,6 +1900,18 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_fixture_completed" {
 		t.Fatalf("tts stop = %#v", ttsStop)
 	}
+	var captured providers.VoicePipelineRequest
+	select {
+	case captured = <-runner.requests:
+	case <-time.After(time.Second):
+		t.Fatal("voice pipeline runner did not capture request")
+	}
+	if len(captured.Frames) != 1 {
+		t.Fatalf("captured frames = %d, want 1", len(captured.Frames))
+	}
+	if len(captured.Frames[0].PCM16LE) != captured.Frames[0].ByteCount || len(captured.Frames[0].PCM16LE) == 0 {
+		t.Fatalf("captured frame PCM bytes = %d, byte_count = %d", len(captured.Frames[0].PCM16LE), captured.Frames[0].ByteCount)
+	}
 
 	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-pipeline")
 	if err != nil {
@@ -1853,6 +1935,93 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
 	}
+}
+
+func TestXiaozhiWebSocketAbortCancelsBlockedTurnTaskWithinBargeInBudget(t *testing.T) {
+	server := NewServer()
+	runner := newBlockingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.unblock)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-blocked-abort",
+		"session_id": "a21-session-xiaozhi-blocked-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("xiaozhi turn task did not enter blocking pipeline")
+	}
+
+	abortAt := time.Now()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	stopAfter := time.Since(abortAt)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	if stopAfter >= 300*time.Millisecond {
+		t.Fatalf("abort stop latency = %s, want <300ms", stopAfter)
+	}
+	select {
+	case <-runner.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("blocked xiaozhi pipeline did not observe turn cancellation")
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-blocked-abort", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"barge_in.detected",
+		"provider.cancel.end",
+		"playback.stop",
+		"xiaozhi.turn.cancel",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	if traces.Summary.BargeInStopMS == nil || *traces.Summary.BargeInStopMS >= 300 {
+		t.Fatalf("barge-in summary = %v, want <300ms", traces.Summary.BargeInStopMS)
+	}
+	t.Logf("xiaozhi abort stop latency=%s trace_barge_in_stop_ms=%d", stopAfter, *traces.Summary.BargeInStopMS)
 }
 
 func TestXiaozhiWebSocketAcceptsProtocolVersion3BinaryFrames(t *testing.T) {
@@ -4013,6 +4182,102 @@ func writeXiaozhiHello(t *testing.T, ctx context.Context, conn *websocket.Conn, 
 	if err := wsjson.Write(ctx, conn, hello); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type blockingXiaozhiPipelineRunner struct {
+	entered  chan struct{}
+	canceled chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func newBlockingXiaozhiPipelineRunner() *blockingXiaozhiPipelineRunner {
+	return &blockingXiaozhiPipelineRunner{
+		entered:  make(chan struct{}),
+		canceled: make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+}
+
+func (r *blockingXiaozhiPipelineRunner) unblock() {
+	r.once.Do(func() {
+		close(r.release)
+	})
+}
+
+func (r *blockingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	close(r.entered)
+	select {
+	case <-ctx.Done():
+		close(r.canceled)
+		return providers.VoicePipelineResult{
+			Status:       providers.VoicePipelineStatusCancelled,
+			CancelReason: providers.CancelBargeIn,
+			Timing: providers.VoicePipelineTiming{
+				ASRFirstPartialMS:       -1,
+				ASRFinalMS:              -1,
+				LLMFirstContentMS:       -1,
+				TTSFirstAudioMS:         -1,
+				AudioDownlinkFirstMS:    -1,
+				ProviderCancelMS:        1,
+				BargeInStopMS:           1,
+				SpeechEndToFinalASRMS:   -1,
+				SpeechEndToFirstTokenMS: -1,
+			},
+			Report: providers.VoicePipelineReport{
+				SchemaVersion: "a21.voice_pipeline.fixture.v1",
+				Status:        string(providers.VoicePipelineStatusCancelled),
+				TraceID:       req.Session.TraceID,
+				SessionID:     req.Session.SessionID,
+				DeviceID:      req.Session.DeviceID,
+				Mode:          req.Mode,
+				ExecutionMode: "fixture",
+			},
+		}, nil
+	case <-r.release:
+		return providers.VoicePipelineResult{
+			Status: providers.VoicePipelineStatusFailed,
+			Report: providers.VoicePipelineReport{
+				SchemaVersion: "a21.voice_pipeline.fixture.v1",
+				Status:        string(providers.VoicePipelineStatusFailed),
+				TraceID:       req.Session.TraceID,
+				SessionID:     req.Session.SessionID,
+				DeviceID:      req.Session.DeviceID,
+				Mode:          req.Mode,
+				ExecutionMode: "fixture",
+			},
+		}, nil
+	}
+}
+
+type recordingXiaozhiPipelineRunner struct {
+	requests chan providers.VoicePipelineRequest
+	delegate xiaozhiVoicePipelineRunner
+}
+
+func newRecordingXiaozhiPipelineRunner() *recordingXiaozhiPipelineRunner {
+	return &recordingXiaozhiPipelineRunner{
+		requests: make(chan providers.VoicePipelineRequest, 1),
+		delegate: providers.NewVoicePipelineRunner(providers.VoicePipelineAdapters{
+			ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		}),
+	}
+}
+
+func (r *recordingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	captured := req
+	captured.Frames = append([]providers.VoicePipelinePCMFrame(nil), req.Frames...)
+	for i := range captured.Frames {
+		captured.Frames[i].PCM16LE = append([]byte(nil), req.Frames[i].PCM16LE...)
+	}
+	select {
+	case r.requests <- captured:
+	default:
+	}
+	return r.delegate.Run(ctx, req)
 }
 
 func xiaozhiTestOpusPacket(t *testing.T) []byte {

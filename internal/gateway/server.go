@@ -48,6 +48,7 @@ type Server struct {
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
 	audioCaptureFrames         []AudioCaptureFrame
+	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
 }
 
 type ServerOptions struct {
@@ -311,6 +312,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
+		xiaozhiVoicePipelineRunner: defaultXiaozhiVoicePipelineRunner,
 	}
 }
 
@@ -711,6 +713,8 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 type xiaozhiSession struct {
+	mu                     sync.Mutex
+	writeMu                sync.Mutex
 	traceID                string
 	sessionID              string
 	deviceID               string
@@ -737,9 +741,32 @@ type xiaozhiSession struct {
 type xiaozhiTurn struct {
 	id           uint64
 	ctx          context.Context
-	cancel       context.CancelFunc
+	cancel       context.CancelCauseFunc
 	pacer        *audio.AudioRateController
 	cancelReason string
+}
+
+type xiaozhiVoicePipelineRunner interface {
+	Run(context.Context, providers.VoicePipelineRequest) (providers.VoicePipelineResult, error)
+}
+
+type xiaozhiTurnTask struct {
+	turn                   *xiaozhiTurn
+	traceID                string
+	sessionID              string
+	deviceID               string
+	audioIngressBase       map[string]any
+	voicePipelineFrames    []providers.VoicePipelinePCMFrame
+	voicePipelineHasSpeech bool
+}
+
+func defaultXiaozhiVoicePipelineRunner() xiaozhiVoicePipelineRunner {
+	return providers.NewVoicePipelineRunner(providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+		TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+	})
 }
 
 func (session *xiaozhiSession) identity() xiaozhitransport.Identity {
@@ -757,12 +784,14 @@ func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
 }
 
 func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhiTurn {
-	session.cancelCurrentXiaozhiTurn("new_turn")
 	if parent == nil {
 		parent = context.Background()
 	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.cancelCurrentXiaozhiTurnLocked("new_turn")
 	session.nextTurnID++
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancelCause(parent)
 	turn := &xiaozhiTurn{
 		id:     session.nextTurnID,
 		ctx:    ctx,
@@ -776,21 +805,103 @@ func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhi
 	return turn
 }
 
-func (session *xiaozhiSession) cancelCurrentXiaozhiTurn(reason string) {
+func (session *xiaozhiSession) currentXiaozhiTurn() *xiaozhiTurn {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.currentTurn
+}
+
+func (session *xiaozhiSession) cancelCurrentXiaozhiTurn(reason string) *xiaozhiTurn {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.cancelCurrentXiaozhiTurnLocked(reason)
+}
+
+func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xiaozhiTurn {
 	if session.currentTurn == nil {
-		return
+		return nil
 	}
 	turn := session.currentTurn
 	turn.cancelReason = strings.TrimSpace(reason)
-	turn.cancel()
+	turn.cancel(xiaozhiTurnCancelCause(reason))
 	if turn.pacer != nil {
 		turn.pacer.Reset()
 	}
 	session.currentTurn = nil
+	return turn
 }
 
 func (session *xiaozhiSession) shouldAbortXiaozhiTurn(turn *xiaozhiTurn) bool {
-	return turn == nil || session.currentTurn != turn || turn.ctx.Err() != nil
+	if turn == nil {
+		return true
+	}
+	session.mu.Lock()
+	currentTurn := session.currentTurn
+	session.mu.Unlock()
+	return currentTurn != turn || turn.ctx.Err() != nil
+}
+
+func (session *xiaozhiSession) completeXiaozhiTurn(turn *xiaozhiTurn) {
+	if turn == nil {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.currentTurn == turn {
+		session.currentTurn = nil
+	}
+}
+
+func (session *xiaozhiSession) resetXiaozhiTTSStop() {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.ttsStopSent = false
+}
+
+func (session *xiaozhiSession) claimXiaozhiTTSStop() bool {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.ttsStopSent {
+		return false
+	}
+	session.ttsStopSent = true
+	return true
+}
+
+func xiaozhiTurnCancelCause(reason string) error {
+	if xiaozhiAbortIsBargeIn(reason) {
+		return providers.ErrVoicePipelineBargeIn
+	}
+	return context.Canceled
+}
+
+func xiaozhiAbortIsBargeIn(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	return reason == "" || strings.Contains(reason, "barge") || strings.Contains(reason, "wake")
+}
+
+func (session *xiaozhiSession) writeXiaozhiJSON(ctx context.Context, conn *websocket.Conn, turn *xiaozhiTurn, value any) error {
+	if conn == nil {
+		return fmt.Errorf("xiaozhi websocket is nil")
+	}
+	session.writeMu.Lock()
+	defer session.writeMu.Unlock()
+	if turn != nil && session.shouldAbortXiaozhiTurn(turn) {
+		return context.Canceled
+	}
+	return wsjson.Write(ctx, conn, value)
+}
+
+func (session *xiaozhiSession) writeXiaozhiBinary(ctx context.Context, conn *websocket.Conn, turn *xiaozhiTurn, frame []byte) error {
+	if conn == nil {
+		return fmt.Errorf("xiaozhi websocket is nil")
+	}
+	session.writeMu.Lock()
+	defer session.writeMu.Unlock()
+	if turn != nil && session.shouldAbortXiaozhiTurn(turn) {
+		return context.Canceled
+	}
+	return conn.Write(ctx, websocket.MessageBinary, frame)
 }
 
 func (session *xiaozhiSession) configureXiaozhiAudio(params xiaozhitransport.AudioParams) error {
@@ -895,31 +1006,31 @@ func parseXiaozhiProtocolVersionHeader(raw string) (int, error) {
 func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
 	frame, err := xiaozhitransport.ParseTextFrame(data, xiaozhitransport.DirectionDeviceToServer, session.identity())
 	if err != nil {
-		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
 		return true
 	}
 	session.adoptFrame(frame)
 	if frame.Control == nil {
-		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "unsupported_message_type", "unsupported xiaozhi message"))
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_message_type", "unsupported xiaozhi message"))
 		return true
 	}
 	switch frame.Control.Type {
 	case xiaozhitransport.MessageTypeHello:
 		if err := session.configureXiaozhiAudio(frame.Control.Hello.AudioParams); err != nil {
-			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "unsupported_audio_params", err.Error()))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_audio_params", err.Error()))
 			return true
 		}
 		session.helloReceived = true
 		session.listening = false
-		session.ttsStopSent = false
+		session.resetXiaozhiTTSStop()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
 		s.recordXiaozhiDeviceSeen(frame)
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
-		_ = wsjson.Write(ctx, conn, s.xiaozhiHelloReply(session))
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiHelloReply(session))
 	case xiaozhitransport.MessageTypeListen:
 		if !session.helloReceived {
-			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
 			return true
 		}
 		switch frame.Control.Listen.State {
@@ -927,45 +1038,50 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.startXiaozhiTurn(ctx)
 			session.listening = true
 			session.resetXiaozhiOpusIngress()
-			session.ttsStopSent = false
+			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
-			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "accepted"))
 		case "detect":
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
-			_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "detect", "accepted"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "detect", "accepted"))
 		case "stop":
 			if !session.listening {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
-				_ = wsjson.Write(ctx, conn, s.xiaozhiBaseReply(session, "listen", "stop", "ignored"))
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "stop", "ignored"))
 				return true
 			}
 			session.listening = false
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
-			s.writeXiaozhiTTS(ctx, conn, session)
+			task := s.newXiaozhiTurnTask(session, session.currentXiaozhiTurn())
+			s.startXiaozhiTurnTask(ctx, conn, session, task)
 		}
 	case xiaozhitransport.MessageTypeAbort:
 		if !session.helloReceived {
-			_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before abort"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before abort"))
 			return true
 		}
 		session.listening = false
-		session.cancelCurrentXiaozhiTurn(frame.Control.Abort.Reason)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", s.now().UnixMilli())
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.abort.received", s.now().UnixMilli())
-		s.writeXiaozhiTTSStop(ctx, conn, session, "abort")
+		abortReason := frame.Control.Abort.Reason
+		turn := session.cancelCurrentXiaozhiTurn(abortReason)
+		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
+		s.writeXiaozhiTTSStop(ctx, conn, session, nil, xiaozhiTurnTask{
+			traceID:   session.traceID,
+			sessionID: session.sessionID,
+			deviceID:  session.deviceID,
+		}, "abort")
 	}
 	return true
 }
 
 func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
 	if !session.helloReceived {
-		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, "hello_required", "hello is required before binary audio"))
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before binary audio"))
 		return true
 	}
 	frame, err := xiaozhitransport.ParseBinaryFrameVersion(data, xiaozhitransport.DirectionDeviceToServer, session.identity(), session.binaryProtocolVersion)
 	if err != nil {
-		_ = wsjson.Write(ctx, conn, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
 		return true
 	}
 	session.adoptFrame(frame)
@@ -1033,6 +1149,7 @@ func (s *Server) observeXiaozhiDecodedIngress(session *xiaozhiSession, pcm []int
 		DurationMS:   chunk.DurationMS,
 		ByteCount:    len(pcm) * 2,
 		RMS:          result.RMS,
+		PCM16LE:      pcm16Bytes(pcm),
 	})
 	if result.SpeechDetected || result.SpeechActive || containsAudioIngressEvent(result.Events, audio.EventVADSpeechStart) {
 		session.voicePipelineHasSpeech = true
@@ -1058,16 +1175,22 @@ func (s *Server) observeXiaozhiDecodedIngress(session *xiaozhiSession, pcm []int
 }
 
 func pcm16Base64(pcm []int16) string {
-	if len(pcm) == 0 {
+	data := pcm16Bytes(pcm)
+	if len(data) == 0 {
 		return ""
+	}
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+func pcm16Bytes(pcm []int16) []byte {
+	if len(pcm) == 0 {
+		return nil
 	}
 	data := make([]byte, len(pcm)*2)
 	for i, sample := range pcm {
-		value := uint16(sample)
-		data[i*2] = byte(value)
-		data[i*2+1] = byte(value >> 8)
+		binary.LittleEndian.PutUint16(data[i*2:i*2+2], uint16(sample))
 	}
-	return base64.StdEncoding.EncodeToString(data)
+	return data
 }
 
 func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
@@ -1144,92 +1267,164 @@ func mergeDeviceCapabilities(existing map[string]string, additions map[string]st
 	return merged
 }
 
-func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) {
-	if s.writeXiaozhiVoicePipelineTTS(ctx, conn, session) {
-		return
+func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) xiaozhiTurnTask {
+	decodeStatus := session.xiaozhiOpusDecodeStatus()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
+	return xiaozhiTurnTask{
+		turn:      turn,
+		traceID:   session.traceID,
+		sessionID: session.sessionID,
+		deviceID:  session.deviceID,
+		audioIngressBase: map[string]any{
+			"codec":                "opus",
+			"profile":              xiaozhiBinaryProfile(session.binaryProtocolVersion),
+			"sample_rate_hz":       session.opusSampleRateHz,
+			"channels":             session.opusChannels,
+			"frame_duration_ms":    session.opusFrameDurationMS,
+			"decode_status":        decodeStatus,
+			"frame_count":          session.opusFrameCount,
+			"byte_count":           session.opusByteCount,
+			"decoded_frame_count":  session.opusDecodedFrameCount,
+			"decoded_sample_count": session.opusDecodedSampleCount,
+			"decoded_duration_ms":  session.xiaozhiDecodedDurationMS(),
+			"decode_error_count":   session.opusDecodeErrorCount,
+		},
+		voicePipelineFrames:    append([]providers.VoicePipelinePCMFrame(nil), session.voicePipelineFrames...),
+		voicePipelineHasSpeech: session.voicePipelineHasSpeech,
 	}
-	s.writeXiaozhiPlaceholderTTS(ctx, conn, session)
 }
 
-func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) bool {
-	turn := session.currentTurn
-	if session.shouldAbortXiaozhiTurn(turn) || len(session.voicePipelineFrames) == 0 || !session.voicePipelineHasSpeech {
+func (task xiaozhiTurnTask) audioIngressSummary(asrStatus string, ttsStatus string) map[string]any {
+	summary := make(map[string]any, len(task.audioIngressBase)+2)
+	for key, value := range task.audioIngressBase {
+		summary[key] = value
+	}
+	summary["asr_status"] = asrStatus
+	summary["tts_status"] = ttsStatus
+	return summary
+}
+
+func (s *Server) startXiaozhiTurnTask(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	go func() {
+		defer session.completeXiaozhiTurn(task.turn)
+		s.writeXiaozhiTTS(ctx, conn, session, task)
+	}()
+}
+
+func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason string, hadTurn bool) {
+	now := s.now().UnixMilli()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.abort.received", now)
+	if !hadTurn {
+		return
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
+	if !xiaozhiAbortIsBargeIn(reason) {
+		return
+	}
+	s.metrics.bargeInTotal.Inc()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+}
+
+func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	if s.writeXiaozhiVoicePipelineTTS(ctx, conn, session, task) {
+		return
+	}
+	if session.shouldAbortXiaozhiTurn(task.turn) {
+		return
+	}
+	s.writeXiaozhiPlaceholderTTS(ctx, conn, session, task)
+}
+
+func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) bool {
+	turn := task.turn
+	if session.shouldAbortXiaozhiTurn(turn) || len(task.voicePipelineFrames) == 0 || !task.voicePipelineHasSpeech {
 		return false
 	}
 	startAtMS := s.now().UnixMilli()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.start", startAtMS)
-	runner := providers.NewVoicePipelineRunner(providers.VoicePipelineAdapters{
-		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
-		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
-		TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
-		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
-	})
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.start", startAtMS)
+	newRunner := s.xiaozhiVoicePipelineRunner
+	if newRunner == nil {
+		newRunner = defaultXiaozhiVoicePipelineRunner
+	}
+	runner := newRunner()
 	result, err := runner.Run(turn.ctx, providers.VoicePipelineRequest{
 		Session: providers.VoiceSession{
-			TraceID:   session.traceID,
-			SessionID: session.sessionID,
-			DeviceID:  session.deviceID,
+			TraceID:   task.traceID,
+			SessionID: task.sessionID,
+			DeviceID:  task.deviceID,
 		},
 		Mode:   string(protocol.ModeWorkmate),
-		Frames: append([]providers.VoicePipelinePCMFrame(nil), session.voicePipelineFrames...),
+		Frames: append([]providers.VoicePipelinePCMFrame(nil), task.voicePipelineFrames...),
 	})
 	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
+		if session.shouldAbortXiaozhiTurn(turn) || result.Status == providers.VoicePipelineStatusCancelled {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
+			return true
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
 		return false
 	}
-	s.recordXiaozhiVoicePipelineStageMarkers(session, startAtMS, result.Timing)
-	_ = wsjson.Write(ctx, conn, map[string]any{
+	s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, result.Timing)
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":           "tts",
 		"state":          "start",
-		"trace_id":       session.traceID,
-		"session_id":     session.sessionID,
-		"device_id":      session.deviceID,
-		"audio_ingress":  s.xiaozhiAudioIngressSummary(session, "fixture_completed", "opus_downlink_fixture"),
+		"trace_id":       task.traceID,
+		"session_id":     task.sessionID,
+		"device_id":      task.deviceID,
+		"audio_ingress":  task.audioIngressSummary("fixture_completed", "opus_downlink_fixture"),
 		"voice_pipeline": xiaozhiVoicePipelineSummary(result.Report),
-	})
-	_ = wsjson.Write(ctx, conn, map[string]any{
+	}); err != nil {
+		return true
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":                   "tts",
 		"state":                  "sentence_start",
-		"trace_id":               session.traceID,
-		"session_id":             session.sessionID,
-		"device_id":              session.deviceID,
+		"trace_id":               task.traceID,
+		"session_id":             task.sessionID,
+		"device_id":              task.deviceID,
 		"voice_pipeline_fixture": true,
 		"text":                   "",
-	})
+	}); err != nil {
+		return true
+	}
 	firstDownlink := true
 	for _, chunk := range result.AudioChunks {
 		ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, chunk)
 		if err != nil {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.downlink_error", s.now().UnixMilli())
-			s.writeXiaozhiTTSStop(ctx, conn, session, "voice_pipeline_downlink_error")
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.downlink_error", s.now().UnixMilli())
+			s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_downlink_error")
 			return true
 		}
 		if !ok {
-			s.writeXiaozhiTTSStop(ctx, conn, session, "voice_pipeline_aborted")
+			s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_aborted")
 			return true
 		}
 		if firstDownlink {
 			firstDownlink = false
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
 		}
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
-	s.writeXiaozhiTTSStop(ctx, conn, session, "voice_pipeline_fixture_completed")
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
+	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_fixture_completed")
 	return true
 }
 
-func (s *Server) recordXiaozhiVoicePipelineStageMarkers(session *xiaozhiSession, startAtMS int64, timing providers.VoicePipelineTiming) {
+func (s *Server) recordXiaozhiVoicePipelineStageMarkers(traceID string, sessionID string, deviceID string, startAtMS int64, timing providers.VoicePipelineTiming) {
 	if timing.ASRFirstPartialMS >= 0 {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.first_partial", startAtMS+timing.ASRFirstPartialMS)
+		s.recordTrace(traceID, sessionID, deviceID, "asr.first_partial", startAtMS+timing.ASRFirstPartialMS)
 	}
 	if timing.ASRFinalMS >= 0 {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.final", startAtMS+timing.ASRFinalMS)
+		s.recordTrace(traceID, sessionID, deviceID, "asr.final", startAtMS+timing.ASRFinalMS)
 	}
 	if timing.LLMFirstContentMS >= 0 {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.first_content", startAtMS+timing.LLMFirstContentMS)
+		s.recordTrace(traceID, sessionID, deviceID, "provider.first_content", startAtMS+timing.LLMFirstContentMS)
 	}
 	if timing.TTSFirstAudioMS >= 0 {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "tts.first_audio", startAtMS+timing.TTSFirstAudioMS)
+		s.recordTrace(traceID, sessionID, deviceID, "tts.first_audio", startAtMS+timing.TTSFirstAudioMS)
 	}
 }
 
@@ -1272,41 +1467,55 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 	}
 }
 
-func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) {
-	_ = wsjson.Write(ctx, conn, map[string]any{
+func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	if err := session.writeXiaozhiJSON(ctx, conn, task.turn, map[string]any{
 		"type":          "tts",
 		"state":         "start",
-		"trace_id":      session.traceID,
-		"session_id":    session.sessionID,
-		"device_id":     session.deviceID,
-		"audio_ingress": s.xiaozhiAudioIngressSummary(session, "not_connected", "placeholder_only"),
-	})
-	_ = wsjson.Write(ctx, conn, map[string]any{
-		"type":        "tts",
-		"state":       "sentence_start",
-		"trace_id":    session.traceID,
-		"session_id":  session.sessionID,
-		"device_id":   session.deviceID,
-		"placeholder": true,
-		"text":        "",
-	})
-	s.writeXiaozhiTTSStop(ctx, conn, session, "placeholder_no_asr_tts")
-}
-
-func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, reason string) {
-	if session.ttsStopSent {
+		"trace_id":      task.traceID,
+		"session_id":    task.sessionID,
+		"device_id":     task.deviceID,
+		"audio_ingress": task.audioIngressSummary("not_connected", "placeholder_only"),
+	}); err != nil {
 		return
 	}
-	session.ttsStopSent = true
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.stop", s.now().UnixMilli())
-	_ = wsjson.Write(ctx, conn, map[string]any{
+	if err := session.writeXiaozhiJSON(ctx, conn, task.turn, map[string]any{
+		"type":        "tts",
+		"state":       "sentence_start",
+		"trace_id":    task.traceID,
+		"session_id":  task.sessionID,
+		"device_id":   task.deviceID,
+		"placeholder": true,
+		"text":        "",
+	}); err != nil {
+		return
+	}
+	s.writeXiaozhiTTSStop(ctx, conn, session, task.turn, task, "placeholder_no_asr_tts")
+}
+
+func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string) bool {
+	if conn == nil {
+		return false
+	}
+	session.writeMu.Lock()
+	defer session.writeMu.Unlock()
+	if turn != nil && session.shouldAbortXiaozhiTurn(turn) {
+		return false
+	}
+	if !session.claimXiaozhiTTSStop() {
+		return false
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.tts.stop", s.now().UnixMilli())
+	if err := wsjson.Write(ctx, conn, map[string]any{
 		"type":       "tts",
 		"state":      "stop",
-		"trace_id":   session.traceID,
-		"session_id": session.sessionID,
-		"device_id":  session.deviceID,
+		"trace_id":   task.traceID,
+		"session_id": task.sessionID,
+		"device_id":  task.deviceID,
 		"reason":     reason,
-	})
+	}); err != nil {
+		return false
+	}
+	return true
 }
 
 func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, chunk providers.VoiceAudioChunk) (bool, error) {
@@ -1338,7 +1547,7 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 		if session.shouldAbortXiaozhiTurn(turn) {
 			return context.Canceled
 		}
-		if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
+		if err := session.writeXiaozhiBinary(ctx, conn, turn, frame); err != nil {
 			return err
 		}
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.opus_frame.downlink", s.now().UnixMilli())
