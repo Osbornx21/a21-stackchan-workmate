@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `2810593`.
+Last accepted integration commit before this ledger update: `cc27176`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `2810593 docs(control): open post-audio prd audit`.
+  `cc27176 docs(control): accept post-audio prd audit`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -69,7 +69,8 @@ defines policy; this ledger records the current queue and accepted state.
   implementation is `2106a30`; audio front-end evidence acceptance is
   `213cbf0`, audio front-end post-review tracking is `df20df5`, and audio
   front-end post-review P2 fix is `a892ac9`; audio front-end post-review
-  closure is `3ed7ffd`, and post-audio PRD audit tracking is `2810593`.
+  closure is `3ed7ffd`, post-audio PRD audit tracking is `2810593`, and
+  post-audio PRD audit acceptance is `cc27176`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -103,10 +104,12 @@ defines policy; this ledger records the current queue and accepted state.
   `3ed7ffd docs(control): close audio front-end post review`.
 - Current integration HEAD after post-audio PRD audit tracking:
   `2810593 docs(control): open post-audio prd audit`.
-- Current control-tower action: PRD next-slice audit after audio-front-end
-  closure has completed and recommends the `A21 Binary Opus Media Transport
-  Planning Contract` as the next T1/T2 slice. Open a narrow no-commit
-  implementation thread before accepting any docs or code.
+- Current integration HEAD after post-audio PRD audit acceptance:
+  `cc27176 docs(control): accept post-audio prd audit`.
+- Current control-tower action: binary Opus media transport planning contract
+  implementation is active in thread
+  `019e7ca7-84bf-7a92-9eb5-c9815a11de4f`; wait for its no-commit handoff
+  before accepting any docs or code.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -125,6 +128,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7ca7-84bf-7a92-9eb5-c9815a11de4f` | Binary Opus media transport planning contract implementation | `/Users/jiyurun/.codex/worktrees/d078/New project` | active; no-commit implementation handoff pending | T1/T2 | no |
 | `019e7ca2-7551-7852-8c66-5bcc76d449bb` | PRD next-slice audit after audio-front-end closure | `/Users/jiyurun/.codex/worktrees/b764/New project` | completed; recommended binary Opus media transport planning contract | T0/T1/T2 | no |
 | `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | completed; one P2 fixed by control at `a892ac9` | T0/T1/T2 | no |
 | `019e7c88-90c4-75f1-ba01-2f5bcc5bef90` | Audio front-end evidence contract implementation | `/Users/jiyurun/.codex/worktrees/7d61/New project` | completed; accepted into integration branch at `2106a30` | T1/T2 | no |
@@ -1572,6 +1576,64 @@ Control-tower next gate:
   transport planning contract.
 - Do not open provider/V21/Gateway runtime, hardware, AgentTask runtime, or
   native codec execution from this decision.
+
+### Binary Opus Media Transport Planning Contract Implementation Thread
+
+Opened by the control tower after accepting the post-audio PRD audit.
+
+Evidence:
+
+- Implementation thread: `019e7ca7-84bf-7a92-9eb5-c9815a11de4f`.
+- Implementation thread title:
+  `A21 Binary Opus Media：Planning Contract Implementation`.
+- Implementation worktree:
+  `/Users/jiyurun/.codex/worktrees/d078/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting control HEAD:
+  `cc27176 docs(control): accept post-audio prd audit`.
+- Target branch: `codex/a21-binary-opus-media-contract`.
+- Scope: T1/T2 planning/contract-only slice for a future A21 binary Opus
+  media transport profile. It may produce docs and, only if low-risk, a
+  plan-only machine-readable CLI/report shape. It must not implement runtime,
+  add native codec dependencies, start Gateway/runtime, or touch firmware or
+  hardware.
+- Expected docs:
+  `docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md`,
+  `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/A21_MATURE_VOICE_REUSE.md`,
+  `docs/engineering/LATENCY_BUDGET.md`,
+  `docs/engineering/OBSERVABILITY.md`, and `docs/engineering/DOCTOR.md`.
+- Optional code scope: `internal/protocol`, `internal/app`, and tests only for
+  a plan-only media transport report/CLI. Runtime/media implementation is out
+  of scope.
+- Maximum tier: T1/T2.
+
+Acceptance gates:
+
+- Required: `git diff --check`.
+- Required: `go run ./cmd/a21 namespace-audit`.
+- Required if docs-only: `make verify`.
+- Required if code is touched:
+  `go test ./internal/protocol ./internal/app -run 'Opus|Audio|Protocol|Doctor|LatencyBench|AudioFrontEnd' -count=1`.
+- Required if code is touched: `make verify`.
+- Required smoke: `go run ./cmd/a21 audio-front-end-plan`.
+- Required smoke:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+
+Forbidden:
+
+- Provider `--execute`, real provider calls, V21 execute, Gateway/runtime
+  startup, durable payload reports, firmware/NVS/flash/raw upload/serial
+  writes, real `/v1/devices/control`, physical device paths, production
+  dependencies, secrets, prompt/transcript/provider output/reasoning/raw
+  audio/full URL/proxy/local path leakage, AgentTask runtime, and actual
+  binary Opus runtime or native codec implementation.
+
+Control-tower next gate:
+
+- Wait for the no-commit implementation handoff.
+- Control tower must re-run the gates in the main integration worktree before
+  accepting any docs or code.
 
 ### Fast Companion Hybrid Boundary Audit
 
