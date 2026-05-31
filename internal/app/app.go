@@ -7954,9 +7954,39 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func newGatewayServerFromEnv(env []string) *gateway.Server {
-	return gateway.NewServerWithOptions(gateway.ServerOptions{
+	options := gateway.ServerOptions{
 		VoiceProvider: providers.NewGatewayVoiceProviderFromEnv(env),
-	})
+	}
+	if adapterURL := strings.TrimSpace(appEnvValue(env, "A21_V21_ADAPTER_URL")); adapterURL != "" {
+		client, err := v21adapter.NewHTTPClient(adapterURL)
+		if err != nil {
+			options.V21Client = v21ConfigurationErrorClient{err: err}
+		} else {
+			options.V21Client = client
+		}
+	}
+	return gateway.NewServerWithOptions(options)
+}
+
+type v21ConfigurationErrorClient struct {
+	err error
+}
+
+func (c v21ConfigurationErrorClient) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	if c.err == nil {
+		return v21adapter.QueryResponse{}, fmt.Errorf("v21 adapter configuration invalid")
+	}
+	return v21adapter.QueryResponse{}, fmt.Errorf("v21 adapter configuration invalid: %w", c.err)
+}
+
+func appEnvValue(env []string, want string) string {
+	prefix := want + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
 }
 
 func runFirmwareCheck(args []string, stdout io.Writer, stderr io.Writer) int {

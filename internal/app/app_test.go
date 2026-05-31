@@ -232,6 +232,72 @@ func TestGatewayServerSelectedDoubaoRealtimeRejectsRealtimeSessionWithoutSecrets
 	}
 }
 
+func TestGatewayServerFromEnvUsesConfiguredV21AdapterForProfessionalMode(t *testing.T) {
+	var sawProfessionalRequest bool
+	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/a21/v21/query" {
+			t.Fatalf("path = %q, want /a21/v21/query", r.URL.Path)
+		}
+		var request struct {
+			Mode         string `json:"mode"`
+			Utterance    string `json:"utterance"`
+			PrivacyScope string `json:"privacy_scope"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		sawProfessionalRequest = request.Mode == "professional" &&
+			request.Utterance == "查一下真实 adapter" &&
+			request.PrivacyScope == "professional_only"
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-env-v21",
+			"fast_answer":"adapter answer marker",
+			"confidence":0.91,
+			"evidence":[{"title":"adapter source","type":"doc","source_id":"v21-adapter-source","summary":"adapter summary"}],
+			"speech_blocks":["adapter speech"],
+			"screen_cards":[{"label":"adapter","text":"adapter card"}],
+			"follow_ups":["adapter followup"]
+		}`))
+	}))
+	defer adapter.Close()
+	server := newGatewayServerFromEnv([]string{"A21_V21_ADAPTER_URL=" + adapter.URL})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下真实 adapter","mode":"professional","trace_id":"a21-trace-env-v21","session_id":"a21-session-env-v21"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !sawProfessionalRequest {
+		t.Fatal("gateway did not call configured A21 V21 adapter")
+	}
+	if !strings.Contains(rec.Body.String(), "adapter answer marker") {
+		t.Fatalf("response did not use adapter answer: %s", rec.Body.String())
+	}
+}
+
+func TestGatewayServerFromEnvInvalidV21AdapterURLFailsProfessionalModeWithoutMockEvidence(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{"A21_V21_ADAPTER_URL=http://127.0.0.1:18080"})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下真实 adapter","mode":"professional","trace_id":"a21-trace-env-v21-invalid","session_id":"a21-session-env-v21-invalid"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "V21 现在没接上") {
+		t.Fatalf("response should fail honestly instead of using mock evidence: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "历史讨论主要集中") {
+		t.Fatalf("response used mock V21 evidence despite invalid configured adapter: %s", rec.Body.String())
+	}
+}
+
 func TestRunSerialListEmitsSerialDevices(t *testing.T) {
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {

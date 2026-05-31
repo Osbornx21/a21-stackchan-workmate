@@ -77,7 +77,7 @@ func NewHTTPClient(baseURL string) (*HTTPClient, error) {
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
-	return &HTTPClient{baseURL: parsed.String(), httpClient: http.DefaultClient}, nil
+	return &HTTPClient{baseURL: parsed.String(), httpClient: directHTTPClient(0)}, nil
 }
 
 func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
