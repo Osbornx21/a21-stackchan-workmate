@@ -93,6 +93,27 @@ This proves A21 protocol shape, trace/session propagation, device-to-Gateway and
 
 For a single mock trace/session, Gateway keeps the same `stream_id` across consecutive playback chunks. New traces may allocate a new stream. This mirrors the future TTS stream contract and prevents device/simulator buffers from treating every chunk as a replacement stream.
 
+## Planned Binary Opus Media Profile
+
+`docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` is the planning
+contract for the future A21 binary Opus media profile. It is not a production
+protocol acceptance and does not change the current JSON/base64 `pcm_s16le`
+runtime contract.
+
+The planned profile keeps A21 control metadata separate from binary media
+payloads: JSON control negotiation carries `trace_id`, `session_id`,
+`device_id`, `stream_id`, media profile, codec, frame duration, and direction;
+future binary frames carry compact references plus Opus payload bytes. PCM
+fixtures remain the compatibility and fallback lane until an encoder/decoder
+adapter spike, wire-format fixture, Gateway loopback fixture, provider
+first-audio waterfall report, device playback receipt, CPU/memory profile, LAN
+jitter/fallback report, and hardware window acceptance all pass under explicit
+authorization.
+
+Current `AudioCodecOpus` is reserved vocabulary only. Current validation still
+accepts `pcm_s16le` frames, and no Gateway, provider, firmware, or physical
+device path should treat Opus as implemented from this document.
+
 ## Control And Device Events
 
 Phase 2B supports:

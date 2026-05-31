@@ -171,6 +171,15 @@ does not authorize provider execute, V21 execute, Gateway runtime startup,
 binary Opus transport, AEC adapter work, WebRTC/ESP-SR native adapters, or
 hardware acceptance.
 
+Binary Opus media transport is currently documented only in
+`PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md`. There is no `doctor` Opus runtime
+check, no Gateway startup, no native codec probe, and no production dependency.
+A future doctor check may report binary media readiness only after the
+wire-format compatibility fixture, Gateway loopback fixture, encoder/decoder
+adapter spike, LAN jitter/fallback report, CPU/memory profile, device playback
+receipt, and hardware-window acceptance each have redacted A21 evidence. Until
+then, doctor output must not imply that Opus transport is available or accepted.
+
 The V21 section is skipped when `A21_V21_ADAPTER_URL` is unset. When set, doctor probes `/healthz` on the adapter boundary through a direct no-ambient-proxy HTTP client and reports `healthy` or `unhealthy`. It does not print adapter credentials or raw secret-bearing URLs in findings.
 
 V21 adapter query smoke is intentionally a separate command, not a doctor side effect:

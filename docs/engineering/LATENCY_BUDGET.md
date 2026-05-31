@@ -53,6 +53,13 @@ Every latency report should include:
 
 Provider and ASR/TTS/LLM combination benchmarks must follow `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. A21 may reuse public benchmark methods such as TTFS, TTFA, FTTS, TTFT, semantic WER, and speech-to-speech first-audio timing, but promotion evidence must still be rerun through A21-owned trace IDs, redacted report shape, explicit network/proxy metadata, and StackChan device markers when physical behavior is claimed.
 
+Binary Opus media planning is tracked in
+`docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md`. It does not change
+these latency budgets and must not be cited as latency improvement evidence.
+Future Opus work must measure provider first-audio waterfall impact, Gateway
+loopback, device playback receipt, CPU/memory cost, LAN jitter, fallback
+behavior, and hardware-window playback acceptance before any target is revised.
+
 ## Current Mock Benchmark
 
 A21 has a mock-only latency benchmark:
@@ -117,6 +124,11 @@ The Gateway audio ingress path now has a small bounded frame buffer and an expli
 `go run ./cmd/a21 audio-front-end-eval --mock` now preserves the deterministic RMS baseline as an explicit report. `go run ./cmd/a21 audio-front-end-eval --fixture <path>` runs the same report shape over labelled PCM frame fixtures. Reports include speech start/end lag in milliseconds when expected and detected transitions are both present. `--output-dir reports` stores timestamped evidence artifacts. Each artifact includes the current commit, network/DNS fingerprint, and redacted proxy-policy metadata, but not raw PCM/base64 frames, transcripts, prompts, provider output, reasoning, proxy URLs, full local paths, or proxy secrets. The report path is stored as a basename only. These are evaluation reports only, but they give future WebRTC APM, ESP-SR, provider-side VAD, and neural VAD spikes a report shape to match before any production promotion.
 
 The current audio front-end report also carries Fast Companion evidence placeholders for mock benchmark preservation, labelled fixture preservation, office noise, speaker-to-mic echo, speech start/end lag, barge-in stop timing, first-audio waterfall impact, CPU/memory profile, and metrics continuity. Unimplemented runtime adapters remain marked unavailable or placeholder. This does not authorize provider execution, V21 execution, Gateway runtime startup, native WebRTC/ESP-SR/Silero dependencies, binary Opus media, or physical StackChan acceptance.
+
+The binary Opus media transport contract is similarly placeholder-only. Its
+future gates must explicitly connect to this latency report family instead of
+claiming that smaller media frames automatically improve first audible response.
+Until then, JSON/base64 PCM remains the measured Gateway/simulator/fixture path.
 
 When the selected Gateway voice provider exposes an explicit realtime session interface, `/ws/audio` now starts or reuses that session on detected speech, forwards non-silent speech frames, and calls provider commit/create-response on `vad.speech.end`. It records `provider.realtime_session.start`, `provider.audio.append`, and `provider.audio.commit`, and exposes `a21_realtime_audio_uplink_frames_total` plus `a21_realtime_audio_commit_total`. Gateway also consumes provider `VoiceEvent` downlink events, records `provider.audio.downlink`, emits A21 `audio.playback.chunk`, and exposes `a21_realtime_audio_downlink_events_total`. The first audio-bearing downlink after commit records `provider.audio.first_downlink` and observes `a21_realtime_first_audio_ms`. This proves the A21-owned provider-neutral uplink/downlink control points; it still does not prove real provider first-audio latency, AEC, or StackChan hardware full-duplex.
 

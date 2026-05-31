@@ -57,6 +57,12 @@ Any future real speech downlink work must migrate toward this official codec lan
 - Opus is the default mature codec target for interactive speech. A21 should evaluate 20 ms, 40 ms, and 60 ms frames with real StackChan CPU, Wi-Fi, and playback evidence instead of copying X21's 60 ms value blindly.
 - PCM16 JSON/base64 remains acceptable for fixtures, loopback, and diagnostic visibility, not for the final low-latency physical media path.
 
+`docs/engineering/PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` is the current
+planning contract for that direction. It defines frame/envelope, redaction,
+direct-connect/proxy, fallback, metrics, and gate expectations only. It does
+not approve a runtime Opus path, a native codec dependency, WebRTC dependency,
+Gateway startup, provider execution, firmware change, or hardware acceptance.
+
 ### Audio Front End
 
 - WebRTC Audio Processing Module is the first Gateway/desktop-side candidate for AEC, noise suppression, automatic gain control, and classic voice frontend behavior.
@@ -92,7 +98,7 @@ For changes touching latency-sensitive behavior, the default answer "we can hand
 
 1. `docs/engineering/PHASE7G_AUDIO_FRONT_END_EVALUATION.md` remains the promotion gate for VAD/AEC/noise suppression. Its candidate list is now a machine-readable evidence contract with availability and placeholder state for WebRTC APM, ESP-SR, provider-side VAD, Silero VAD, and the A21 RMS baseline. The contract should grow before the RMS detector grows features.
 2. `docs/engineering/A21_PROVIDER_BENCHMARKS.md` is the shared gate for provider latency and quality. Do not create provider-specific one-off benchmarks unless the shared report shape cannot express the result.
-3. The next real media slice should be an A21 binary Opus transport plan, not more JSON/base64 tuning.
+3. The next real media slice should build from the A21 binary Opus transport plan, not more JSON/base64 tuning. Phase 7I is now that plan, but it is contract-only; it keeps JSON/base64 PCM as the current runtime and fixture lane until future adapter and hardware gates pass.
 4. The next full-duplex slice should evaluate WebRTC APM and/or ESP-SR AEC with a speaker-to-mic echo fixture before changing barge-in thresholds. The current report contract explicitly marks those native/runtime adapters unavailable; it is not approval to add native dependencies or execute hardware work.
 5. X21-derived fixes must be rewritten through A21 packages and commit messages must cite the X21 source according to `A21_LEGACY_ONE_WAY_REFERENCE.md`.
 

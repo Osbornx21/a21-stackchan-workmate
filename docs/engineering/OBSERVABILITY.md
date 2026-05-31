@@ -49,6 +49,21 @@ a fixed reason because this command remains host-only report-contract evidence.
 These fields are durable JSON report fields, not Prometheus runtime metrics and
 not production acceptance evidence.
 
+`PHASE7I_BINARY_OPUS_MEDIA_TRANSPORT.md` reserves the future observability
+contract for binary Opus media. It is planning-only: reserved trace markers such
+as `media.opus.profile.negotiated`, `media.opus.uplink.frame.received`,
+`media.opus.downlink.frame.sent`, `media.opus.decode.error`, and
+`media.opus.fallback_to_pcm` are not current runtime events. Reserved metrics
+such as `a21_media_opus_frames_total`, `a21_media_opus_bytes_total`,
+`a21_media_opus_decode_error_total`, and `a21_media_opus_jitter_ms_bucket` are
+not current Prometheus metrics.
+
+Future Opus reports may store schema/profile names, codec labels, aggregate
+frame counts, aggregate byte counts, timing summaries, and redacted proxy mode
+metadata. They must not store raw PCM, base64 audio, Opus payload bytes,
+prompts, transcripts, provider output, reasoning, credentials, full URLs, proxy
+URLs, model values, or full local paths.
+
 AgentTask bridge reports currently exist only as package-level T1/T2 semantic
 reports in `internal/providers`. They use schema
 `a21.agent_task.semantic_report.v1`, preserve A21 `trace_id` and `session_id`,
@@ -227,6 +242,9 @@ Future Prometheus metrics should include:
 - `a21_proxy_misconfig_total`
 - `a21_device_disconnect_total`
 - `a21_fallback_total`
+- `a21_media_opus_frames_total`
+- `a21_media_opus_decode_error_total`
+- `a21_media_opus_fallback_total`
 
 ## Logs
 
