@@ -95,7 +95,7 @@ func TestControlGuardBlocksDetachedT7Worktree(t *testing.T) {
 	}
 }
 
-func TestControlGuardBlocksT8UntilADR(t *testing.T) {
+func TestControlGuardAllowsPCMBridgeFlashFromHardwareWindow(t *testing.T) {
 	report := EvaluateControlGuard(context.Background(), ControlGuardInput{
 		Command: "stackchan-official-pcm-bridge-flash-execute",
 		CWD:     "/work/a21",
@@ -106,14 +106,11 @@ func TestControlGuardBlocksT8UntilADR(t *testing.T) {
 		},
 	})
 
-	if report.Result.OK {
-		t.Fatalf("guard unexpectedly passed: %+v", report)
+	if !report.Result.OK {
+		t.Fatalf("guard failed: %+v", report.Result.Findings)
 	}
-	if report.Tier != "T8" {
-		t.Fatalf("tier = %q, want T8", report.Tier)
-	}
-	if !hasFindingCode(report.Result.Findings, "control_t8_blocked_until_adr") {
-		t.Fatalf("missing T8 finding: %+v", report.Result.Findings)
+	if report.Tier != "T7" {
+		t.Fatalf("tier = %q, want T7", report.Tier)
 	}
 }
 

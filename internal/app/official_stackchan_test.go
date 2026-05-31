@@ -351,7 +351,7 @@ func TestRunStackChanOfficialPCMBridgeFlashPlanBuildsRedactedNoFlashReceipt(t *t
 	}
 }
 
-func TestRunStackChanOfficialPCMBridgeFlashExecuteIsExplicitlyBlocked(t *testing.T) {
+func TestRunStackChanOfficialPCMBridgeFlashExecuteRequiresConfirmation(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run([]string{
@@ -363,10 +363,63 @@ func TestRunStackChanOfficialPCMBridgeFlashExecuteIsExplicitlyBlocked(t *testing
 	if code != 2 {
 		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	for _, want := range []string{"bridge app flash execute is blocked", "ADR"} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Fatalf("stderr missing %q: %s", want, stderr.String())
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP") {
+		t.Fatalf("stderr missing confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgeFlashExecuteRunsGuardedCommand(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialPCMBridgeFlashCommand
+	var ranScript string
+	runStackChanOfficialPCMBridgeFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		ranScript = script
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialPCMBridgeFlashCommand = originalRunner
+	}()
+
+	buildDir := writeTestOfficialPCMBridgeBuild(t)
+	idfExport := filepath.Join(t.TempDir(), "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-pcm-bridge-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--device-id", "stackchan-001",
+		"--audio-ws-url", "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001",
+		"--idf-export", idfExport,
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"python -m esptool", "--chip esp32s3", "--port '/dev/cu.usbmodemA21'", "write_flash @flash_args"} {
+		if !strings.Contains(ranScript, want) {
+			t.Fatalf("flash script missing %q: %s", want, ranScript)
 		}
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_pcm_bridge_flash_execution.v1"`,
+		`"flash_executed": true`,
+		`"control_guard"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("execution receipt missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "ws://127.0.0.1:21080/ws/audio?device_id=stackchan-001") {
+		t.Fatalf("execution receipt leaked full audio ws url: %s", stdout.String())
 	}
 }
 

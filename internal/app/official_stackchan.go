@@ -22,15 +22,18 @@ import (
 const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
 const stackChanOfficialAudioSmokeFlashSchema = "a21.stackchan.official_audio_smoke_flash.v1"
 const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_bridge_flash_plan.v1"
+const stackChanOfficialPCMBridgeFlashExecutionSchema = "a21.stackchan.official_pcm_bridge_flash_execution.v1"
 const stackChanOfficialPCMBridgeNVSPlanSchema = "a21.stackchan.official_pcm_bridge_nvs_plan.v1"
 const stackChanOfficialPCMBridgeNVSExecutionSchema = "a21.stackchan.official_pcm_bridge_nvs_execution.v1"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
 const stackChanOfficialPCMBridgeNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS"
+const stackChanOfficialPCMBridgeAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP"
 const stackChanOfficialPCMBridgeNVSOffset = "0x9000"
 const stackChanOfficialPCMBridgeNVSSizeHex = "0x4000"
 const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
+var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeNVSCommand = runStackChanOfficialSmokeFlashCommandExec
 
 type stackChanOfficialBaselineOptions struct {
@@ -115,6 +118,8 @@ type stackChanOfficialPCMBridgeFlashPlanOptions struct {
 	OutputDir  string
 	DeviceID   string
 	AudioWSURL string
+	Confirm    string
+	Execute    bool
 }
 
 type stackChanOfficialPCMBridgeNVSOptions struct {
@@ -152,11 +157,14 @@ type stackChanOfficialPCMBridgeFlashPlanReport struct {
 	Status                   string                             `json:"status"`
 	DryRun                   bool                               `json:"dry_run"`
 	FlashAllowed             bool                               `json:"flash_allowed"`
+	FlashExecuted            bool                               `json:"flash_executed"`
+	ControlGuard             *runtimeguard.ControlGuardReport   `json:"control_guard,omitempty"`
 	Port                     string                             `json:"port"`
 	BuildDir                 string                             `json:"build_dir"`
 	IDFExport                string                             `json:"idf_export"`
 	DeviceID                 string                             `json:"device_id"`
 	AudioWS                  stackChanOfficialPCMBridgeAudioWS  `json:"audio_ws"`
+	FlashLogPath             string                             `json:"flash_log_path,omitempty"`
 	NextRequiredConfirmation string                             `json:"next_required_confirmation,omitempty"`
 	Parts                    []stackChanOfficialSmokeFlashPart  `json:"parts"`
 	Findings                 []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
@@ -449,7 +457,7 @@ func runStackChanOfficialAudioSmokeFlash(args []string, execute bool, stdout io.
 	return 0
 }
 
-func runStackChanOfficialPCMBridgeFlashPlan(args []string, stdout io.Writer, stderr io.Writer) int {
+func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialPCMBridgeFlashPlanOptions{
 		BuildDir:   firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
 		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
@@ -457,11 +465,17 @@ func runStackChanOfficialPCMBridgeFlashPlan(args []string, stdout io.Writer, std
 		DeviceID:   firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001"),
 		AudioWSURL: strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL")),
 		OutputDir:  "",
+		Confirm:    "",
+		Execute:    execute,
+	}
+	if execute {
+		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM"))
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
 			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash-plan --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-pcm-bridge-flash-execute --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX --device-id stackchan-001 --audio-ws-url ws://host:21080/ws/audio?device_id=stackchan-001 --confirm WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP [--idf-export /path/to/export.sh] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -505,31 +519,60 @@ func runStackChanOfficialPCMBridgeFlashPlan(args []string, stdout io.Writer, std
 			}
 			i++
 			options.OutputDir = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
 		default:
-			fmt.Fprintf(stderr, "unknown stackchan official pcm bridge flash plan option %q\n", args[i])
+			fmt.Fprintf(stderr, "unknown stackchan official pcm bridge flash option %q\n", args[i])
 			return 2
 		}
 	}
 
+	var controlGuard runtimeguard.ControlGuardReport
+	if execute {
+		if options.Confirm != stackChanOfficialPCMBridgeAppFlashConfirm {
+			fmt.Fprintf(stderr, "stackchan official pcm bridge app flash requires --confirm %s\n", stackChanOfficialPCMBridgeAppFlashConfirm)
+			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-pcm-bridge-flash-execute", stderr)
+		if code != 0 {
+			return code
+		}
+	}
 	report, err := buildStackChanOfficialPCMBridgeFlashPlanReport(options)
 	if err != nil {
-		fmt.Fprintf(stderr, "stackchan official pcm bridge flash plan: %v\n", err)
+		fmt.Fprintf(stderr, "stackchan official pcm bridge flash: %v\n", err)
 		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
+		if err := executeStackChanOfficialPCMBridgeFlash(context.Background(), options, &report); err != nil {
+			report.Status = "failed"
+			report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
+				Code:    "flash_execute_failed",
+				Message: err.Error(),
+			})
+		}
 	}
 	if options.OutputDir != "" {
 		if err := validateA21ReportDir(options.OutputDir); err != nil {
-			fmt.Fprintf(stderr, "official pcm bridge flash plan report dir invalid: %v\n", err)
+			fmt.Fprintf(stderr, "official pcm bridge flash report dir invalid: %v\n", err)
 			return 1
 		}
 		reportPath, err := writeStackChanOfficialPCMBridgeFlashPlanReport(options.OutputDir, report)
 		if err != nil {
-			fmt.Fprintf(stderr, "write official pcm bridge flash plan report: %v\n", err)
+			fmt.Fprintf(stderr, "write official pcm bridge flash report: %v\n", err)
 			return 1
 		}
 		report.ReportPath = reportPath
 	}
 	if err := writeJSONStackChanOfficialPCMBridgeFlashPlan(stdout, report); err != nil {
-		fmt.Fprintf(stderr, "encode official pcm bridge flash plan report: %v\n", err)
+		fmt.Fprintf(stderr, "encode official pcm bridge flash report: %v\n", err)
 		return 1
 	}
 	if report.Status == "failed" {
@@ -825,12 +868,17 @@ func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCM
 	if err != nil {
 		return stackChanOfficialPCMBridgeFlashPlanReport{}, err
 	}
+	schema := stackChanOfficialPCMBridgeFlashPlanSchema
+	if options.Execute {
+		schema = stackChanOfficialPCMBridgeFlashExecutionSchema
+	}
 	return stackChanOfficialPCMBridgeFlashPlanReport{
-		SchemaVersion:            stackChanOfficialPCMBridgeFlashPlanSchema,
+		SchemaVersion:            schema,
 		GeneratedAtMS:            time.Now().UnixMilli(),
 		Status:                   "ready",
-		DryRun:                   true,
+		DryRun:                   !options.Execute,
 		FlashAllowed:             false,
+		FlashExecuted:            false,
 		Port:                     options.Port,
 		BuildDir:                 buildDir,
 		IDFExport:                filepath.Clean(options.IDFExport),
@@ -1207,6 +1255,28 @@ func executeStackChanOfficialSmokeFlash(ctx context.Context, options stackChanOf
 		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
 	}, "\n")
 	if err := runStackChanOfficialSmokeFlashCommand(ctx, report.FlashLogPath, script); err != nil {
+		return err
+	}
+	report.FlashExecuted = true
+	report.Status = "passed"
+	return nil
+}
+
+func executeStackChanOfficialPCMBridgeFlash(ctx context.Context, options stackChanOfficialPCMBridgeFlashPlanOptions, report *stackChanOfficialPCMBridgeFlashPlanReport) error {
+	if _, err := os.Stat(options.IDFExport); err != nil {
+		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
+	}
+	report.DryRun = false
+	report.FlashAllowed = true
+	report.NextRequiredConfirmation = ""
+	report.FlashLogPath = filepath.Join(options.BuildDir, fmt.Sprintf("a21-official-pcm-bridge-flash-%s.log", time.Now().Format("20060102-150405")))
+	script := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
+	}, "\n")
+	if err := runStackChanOfficialPCMBridgeFlashCommand(ctx, report.FlashLogPath, script); err != nil {
 		return err
 	}
 	report.FlashExecuted = true

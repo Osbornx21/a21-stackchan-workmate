@@ -2,13 +2,15 @@
 
 ## Status
 
-Draft. Not accepted.
+Accepted for the foreground A21 hardware window opened on 2026-05-31.
 
-`stackchan-official-pcm-bridge-flash-execute` remains T8 blocked. This ADR is
-the precondition document for a future reviewed execute guard; it does not
-authorize implementation, app flashing, NVS writes, provider execution, V21
-execution, Gateway runtime, serial writes, raw uploads, or `/v1/devices/control`
-traffic.
+`stackchan-official-pcm-bridge-flash-execute` is downgraded from T8 to T7 only
+when the reviewed execute guard passes from a clean
+`codex/a21-hardware-window-*` branch, with an explicit USB port, a fresh bridge
+build/flash plan, scoped NVS provisioning, and the exact
+`WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP` operator token. Raw `pio upload`,
+raw `idf.py flash`, copied `esptool write_flash`, provider execution, V21
+execution, and unguarded `/v1/devices/control` traffic remain outside this ADR.
 
 ## Context
 
@@ -29,18 +31,19 @@ official StackChan, A21 bridge, X21/V21 assumptions, and local hardware state.
 
 ## Decision
 
-Keep `stackchan-official-pcm-bridge-flash-execute` classified as T8 until a
-future accepted ADR and reviewed execute guard prove that it can be operated as
-a foreground hardware-write lane.
+Implement `stackchan-official-pcm-bridge-flash-execute` as a guarded T7
+foreground hardware-write lane. The command must consume the current bridge
+build directory, validate the app artifact and `flash_args`, pass the A21
+control guard, require the exact app-flash confirmation token, write a durable
+execution receipt, and invoke ESP-IDF esptool only from the reviewed build
+directory using `write_flash @flash_args`.
 
-No implementation should add the execute command until the guard consumes all
-of the evidence listed below and writes a durable execution receipt. Raw
-`pio upload`, raw `idf.py flash`, copied `esptool write_flash`, and generic app
-flashing remain forbidden regardless of this ADR.
+Raw `pio upload`, raw `idf.py flash`, copied `esptool write_flash`, and generic
+app flashing remain forbidden regardless of this ADR.
 
-## Why The Lane Is Still T8 Blocked
+## Why The Lane Needs A Strict T7 Gate
 
-- The current `stackchan-official-pcm-bridge-flash-plan` is deliberately
+- The `stackchan-official-pcm-bridge-flash-plan` is deliberately
   no-write. It validates the app artifact and required flash parts but does not
   prove that a foreground hardware window is open.
 - The accepted NVS lane only proves scoped NVS mutation. It does not prove that
@@ -53,16 +56,15 @@ flashing remain forbidden regardless of this ADR.
 - Current control policy requires hardware writes to run only from a clean
   `codex/a21-hardware-window-*` branch in a foreground thread. Background
   `.codex/worktrees` and detached HEADs must be rejected.
-- The existing control ledger records the app flash-execute lane as blocked
-  until ADR, reviewed guard, and fresh verification are accepted.
+- The control ledger records the app flash-execute lane as allowed only after
+  this ADR, the reviewed guard, and fresh verification are accepted.
 
-## Evidence Required To Downgrade To T7
+## Evidence Required For T7 Execution
 
 T7 means a real physical write is allowed only inside a foreground hardware
-window. Downgrading this command from T8 to T7 requires all of the following:
+window. Executing this command requires all of the following:
 
-- Accepted ADR replacing this draft, with explicit owner, scope, rollback
-  policy, and stop rules.
+- Accepted ADR, with explicit owner, scope, rollback policy, and stop rules.
 - Reviewed execute guard implemented in A21 code, with tests proving it rejects
   detached HEAD, background `.codex/worktrees`, dirty worktrees, wrong branch
   patterns, missing confirmation token, missing port, missing artifact, missing
@@ -112,9 +114,9 @@ it proves:
 - It leaves the device in the same state it found it, or marks the validation
   failed if idle/safe state cannot be established without control traffic.
 
-## Future Execute Guard Shape
+## Execute Guard Shape
 
-A future execute guard should be a two-step gate:
+The execute guard is a two-step gate:
 
 1. Rebuild the no-write flash plan from the selected build directory and compare
    it with the NVS receipt, rollback package, current commit, and control-guard
@@ -130,11 +132,11 @@ servo uncertainty, or report redaction failure must keep the command blocked.
 
 ## Consequences
 
-- A21 can keep the official codec/HAL bridge direction without normalizing a
-  risky app flash path.
+- A21 can keep the official codec/HAL bridge direction while keeping app
+  flashing inside a foreground, receipt-backed hardware window.
 - The NVS-only lane remains useful evidence, but it is not enough to approve an
   app partition write.
-- Future implementation work has a concrete checklist for moving the command to
+- Future implementation work has a concrete checklist for keeping the command
   T7, while read-only physical validation can be designed separately as T6.
 - The control tower can reject any proposed execute command that lacks ADR,
   guard, rollback, NVS, identity, upload-target, idle/safety, operator-token, and

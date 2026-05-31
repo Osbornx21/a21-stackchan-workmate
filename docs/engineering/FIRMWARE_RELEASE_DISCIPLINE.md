@@ -165,11 +165,15 @@ make stackchan-official-pcm-bridge-nvs-execute
 A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL='ws://HOST:21080/ws/audio?device_id=stackchan-001' \
 make stackchan-official-pcm-bridge-flash-plan
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL='ws://HOST:21080/ws/audio?device_id=stackchan-001' \
+A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP \
+make stackchan-official-pcm-bridge-flash-execute
 ```
 
 Rules:
 
-- this lane builds and plans the app; app flashing still has no flash-execute target until NVS evidence and the final bridge flash guard are reviewed;
+- this lane builds, plans, provisions NVS, and can flash the app only through the reviewed foreground T7 bridge flash guard;
 - source is exported from official StackChan Git `HEAD`, then `firmware/stackchan-official/overlays/a21-official-pcm-bridge.patch` is applied;
 - the app artifact must be `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000` in `flash_args`;
 - the bridge reads only `a21/device_id` and `a21/audio_ws_url` from NVS; it does not embed Wi-Fi credentials, provider keys, Gateway IPs, proxy URLs, or V21/X21 identity;
@@ -180,8 +184,8 @@ Rules:
 - the flash-plan receipt validates the bridge artifact and USB serial port, but stores only the audio websocket scheme, host, path, and `device_id` query presence instead of the full URL;
 - when `a21/audio_ws_url` is missing, the device must stay on a black A21 status screen and remain silent;
 - playback is accepted only as `pcm_s16le`, mono, 16 kHz or 24 kHz, 1-100 ms chunks, queued through the official `AudioCodec::OutputData` path;
-- a future real-device bridge app flash lane must consume NVS provisioning evidence plus the same explicit USB serial, artifact hash, flash-part hash, and confirmation-token discipline before any app write is allowed;
-- `docs/engineering/adr/0005-official-pcm-bridge-app-flash.md` records the current draft ADR gate. Until an accepted ADR and reviewed execute guard replace that draft, `stackchan-official-pcm-bridge-flash-execute` remains T8 blocked.
+- the real-device bridge app flash lane consumes the same explicit USB serial, artifact hash, flash-part hash, control guard, and confirmation-token discipline before any app write is allowed;
+- `docs/engineering/adr/0005-official-pcm-bridge-app-flash.md` records the accepted foreground hardware-window gate for `stackchan-official-pcm-bridge-flash-execute`.
 
 This lane exists to move M3 away from the rejected M5Unified `playRaw` path. It is not production firmware and must not bypass the existing A21 release package/flash discipline.
 

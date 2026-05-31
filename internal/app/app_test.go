@@ -87,7 +87,7 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 }
 
 func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
-	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
 		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
@@ -118,8 +118,48 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	if !report.V21.Healthy || !report.StackChan.PhysicalDeviceOnline || !report.Voice.ContinuousVoiceReady {
 		t.Fatalf("readiness = v21:%+v stackchan:%+v voice:%+v", report.V21, report.StackChan, report.Voice)
 	}
+	if !report.StackChan.PhysicalMicrophoneReady || report.StackChan.MicrophoneStatus != "available" {
+		t.Fatalf("stackchan microphone readiness = %+v, want product-ready microphone", report.StackChan)
+	}
 	if len(report.NextActions) != 0 {
 		t.Fatalf("next actions = %#v, want none", report.NextActions)
+	}
+}
+
+func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"diagnostic_probe_m5unified_i2s_capture"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_SHERPA_ONNX_MODEL_DIR=/redacted/tts",
+		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/asr",
+	})
+
+	if report.LaunchReady || report.Voice.ContinuousVoiceReady {
+		t.Fatalf("launch/voice = %v/%v, want both blocked by diagnostic microphone", report.LaunchReady, report.Voice.ContinuousVoiceReady)
+	}
+	if !report.StackChan.PhysicalDeviceOnline || report.StackChan.PhysicalMicrophoneReady {
+		t.Fatalf("stackchan readiness = %+v, want online physical device without product microphone", report.StackChan)
+	}
+	if report.StackChan.MicrophoneStatus != "diagnostic_probe_m5unified_i2s_capture" {
+		t.Fatalf("microphone status = %q, want diagnostic status", report.StackChan.MicrophoneStatus)
+	}
+	if !containsProductAction(report.NextActions, "promote StackChan microphone") {
+		t.Fatalf("next actions = %#v, want microphone promotion action", report.NextActions)
 	}
 }
 
@@ -174,6 +214,15 @@ func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.S
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func containsProductAction(actions []string, want string) bool {
+	for _, action := range actions {
+		if strings.Contains(action, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunPromotionReadinessBlocksExternalPromotionWithoutTarget(t *testing.T) {

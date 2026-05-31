@@ -72,6 +72,8 @@ type productV21Readiness struct {
 type productStackChanReadiness struct {
 	DeviceID                string `json:"device_id"`
 	PhysicalDeviceOnline    bool   `json:"physical_device_online"`
+	PhysicalMicrophoneReady bool   `json:"physical_microphone_ready"`
+	MicrophoneStatus        string `json:"microphone_status,omitempty"`
 	SimulatorDeviceOnline   bool   `json:"simulator_device_online"`
 	USBSerialCandidateCount int    `json:"usb_serial_candidate_count"`
 	Status                  string `json:"status"`
@@ -296,6 +298,8 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 		online := device.ConnectionStatus == "" || device.ConnectionStatus == "online"
 		if device.DeviceID == deviceID && online && !strings.Contains(strings.ToLower(device.DeviceID), "sim") {
 			readiness.PhysicalDeviceOnline = true
+			readiness.MicrophoneStatus = strings.TrimSpace(device.Capabilities["microphone"])
+			readiness.PhysicalMicrophoneReady = readiness.MicrophoneStatus == "available"
 		}
 		if online && strings.Contains(strings.ToLower(device.DeviceID), "sim") {
 			readiness.SimulatorDeviceOnline = true
@@ -336,7 +340,8 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 	readiness.ContinuousVoiceReady = readiness.LocalTTSReady &&
 		readiness.RealASRReady &&
 		provider.RealProviderReady &&
-		stackchan.PhysicalDeviceOnline
+		stackchan.PhysicalDeviceOnline &&
+		stackchan.PhysicalMicrophoneReady
 	return readiness
 }
 
@@ -353,6 +358,10 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		actions = append(actions, "bring a physical StackChan online against the A21 Gateway")
+	}
+	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalMicrophoneReady {
+		status := firstNonEmpty(report.StackChan.MicrophoneStatus, "unknown")
+		actions = append(actions, "promote StackChan microphone to a product-ready firmware capability; current status: "+status)
 	}
 	if !report.Voice.RealASRReady {
 		actions = append(actions, "configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")

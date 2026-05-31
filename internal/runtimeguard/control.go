@@ -188,12 +188,7 @@ func controlCommandSpecs() map[string]ControlCommandSpec {
 		"firmware-mic-probe-flash-execute":             t7HardwareWrite("firmware-mic-probe-flash-execute", "mic probe firmware flash execute"),
 		"firmware-imu-probe-flash-execute":             t7HardwareWrite("firmware-imu-probe-flash-execute", "IMU probe firmware flash execute"),
 		"firmware-sensor-probe-flash-execute":          t7HardwareWrite("firmware-sensor-probe-flash-execute", "sensor probe firmware flash execute"),
-		"stackchan-official-pcm-bridge-flash-execute": {
-			Command:         "stackchan-official-pcm-bridge-flash-execute",
-			Tier:            "T8",
-			Label:           "official StackChan PCM bridge app flash execute",
-			BlockedUntilADR: true,
-		},
+		"stackchan-official-pcm-bridge-flash-execute":  t7HardwareWrite("stackchan-official-pcm-bridge-flash-execute", "official StackChan PCM bridge app flash execute"),
 		"raw-firmware-write": {
 			Command:         "raw-firmware-write",
 			Tier:            "T8",

@@ -34,6 +34,7 @@ A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_OVERLAY ?= firmware/stackchan-official/overlay
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL ?=
 A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM ?=
+A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM ?=
 A21_CONTROL_COMMAND ?=
 A21_CONTROL_TIER ?=
 A21_IDF_EXPORT ?= /Users/jiyurun/esp/esp-idf-v5.5.2/export.sh
@@ -151,6 +152,12 @@ stackchan-official-pcm-bridge-flash-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
 	go run ./cmd/a21 stackchan-official-pcm-bridge-flash-plan --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --output-dir reports
+
+stackchan-official-pcm-bridge-flash-execute:
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
+	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM is required"; exit 2)
+	go run ./cmd/a21 stackchan-official-pcm-bridge-flash-execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM)" --output-dir reports
 
 stackchan-official-pcm-bridge-nvs-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
