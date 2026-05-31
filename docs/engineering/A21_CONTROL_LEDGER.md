@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `37697b9`.
+Last accepted integration commit before this ledger update: `d03365f`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `37697b9 docs(control): open provider latency post review`.
+  `d03365f fix(app): align provider latency mode vocabulary`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -45,7 +45,7 @@ defines policy; this ledger records the current queue and accepted state.
   `52c64d2`, provider latency slice-open tracking is `28171ad`, and provider
   latency bench scaffold acceptance is `4532df8`; provider latency handoff
   acceptance is `8bc41f6`, and provider latency post-review tracking is
-  `37697b9`.
+  `37697b9`; the post-review P2 mode vocabulary fix is `d03365f`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -66,7 +66,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | active; read-only review of `4532df8` and `8bc41f6` | T0/T1/T2 | no |
+| `019e7c1d-4678-7eb2-8666-9c5c331585d0` | Provider latency bench post-commit review | `/Users/jiyurun/.codex/worktrees/0a27/New project` | completed; P2 mode vocabulary finding fixed by control at `d03365f` | T0/T1/T2 | no |
 | `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
 | `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
 | `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | completed; P2 trace-fidelity finding fixed by control | T0/T1/T2 | no |
@@ -255,6 +255,71 @@ Residual gaps:
 - The scaffold is report-shape evidence only. ASR, real provider, TTS, Gateway
   runtime, LAN, physical StackChan playback, and barge-in timing remain
   unmeasured until a separately authorized T4/T6 window.
+
+### Provider Latency Bench Post-Commit Review
+
+Accepted from thread `019e7c1d-4678-7eb2-8666-9c5c331585d0`.
+
+Evidence:
+
+- Review worktree: `/Users/jiyurun/.codex/worktrees/0a27/New project`.
+- Review HEAD: `8bc41f6 docs(control): accept provider latency bench scaffold`.
+- Review dirty files: none.
+- Review result: no P0 findings and no P1 findings.
+- Review P2 finding: `provider-latency-bench` used `host_baseline` while
+  `A21_PROVIDER_BENCHMARKS.md` defines the canonical execution mode vocabulary
+  as `mock`, `fixture`, `host_loopback`, `physical_stackchan`, or
+  `external_lab`.
+- Control tower fixed the P2 at
+  `d03365f fix(app): align provider latency mode vocabulary`.
+- The fix changes CLI help, validation, and report output to canonical
+  `host_loopback`, rejects deprecated `host_baseline`, and adds tests for both
+  behaviors.
+
+Review verification evidence:
+
+- Review thread passed:
+  `git diff --check 28171ad..8bc41f6`.
+- Review thread passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Review thread passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Review thread passed:
+  `go run ./cmd/a21 provider-latency-bench --provider deepseek --iterations 2`.
+- Review thread confirmed synthetic secret/path redaction had no matches.
+- Review thread confirmed `go run ./cmd/a21 provider-latency-bench --execute`
+  was rejected.
+- Review thread passed: `go run ./cmd/a21 namespace-audit`.
+- Review thread passed: `make verify`.
+- Review thread passed: `go run ./cmd/a21 preflight`.
+
+Control verification after the P2 fix:
+
+- Verification passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Verification passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|Network' -count=1`.
+- Verification passed:
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 1`.
+- Verification passed:
+  `go run ./cmd/a21 provider-latency-bench --mode host_baseline` rejected the
+  deprecated spelling with `--mode must be mock, fixture, or host_loopback`.
+- Verification passed: `go run ./cmd/a21 namespace-audit`.
+- Verification passed: `git diff --check`.
+- Verification passed: `make verify`.
+- Post-fix default gate passed: `go run ./cmd/a21 doctor`. It still reports the
+  non-blocking `firmware_current_artifact_missing` warning for commit
+  `d03365f98c8f`; this slice did not build or promote firmware artifacts.
+- Post-fix promotion gate result:
+  `go run ./cmd/a21 promotion-readiness` reported `review_ready=true` and
+  `dirty_file_count=0`, while external promotion remains blocked because the
+  repository has no configured remote, target remote, or target branch.
+- A transient `reserved_port_in_use` doctor result on port `127.0.0.1:21080`
+  was not reproducible; `lsof` found no listener on `21080`, `21081`, or
+  `21073`, and the subsequent doctor run passed.
+- No provider execute, V21 execute, Gateway runtime/service startup,
+  firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, or
+  physical device path was used.
 
 ### Fast Companion Hybrid Boundary Audit
 
