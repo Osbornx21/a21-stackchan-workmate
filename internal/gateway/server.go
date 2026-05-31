@@ -1433,6 +1433,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		return true
 	}
 	if !s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task) {
+		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_unavailable")
 		return true
 	}
 	result, err := runner.Run(turn.ctx, providers.VoicePipelineRequest{

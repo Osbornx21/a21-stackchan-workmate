@@ -2208,6 +2208,53 @@ func TestXiaozhiWebSocketAbortAfterFastAckSuppressesAnswerFrames(t *testing.T) {
 	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
 }
 
+func TestXiaozhiWebSocketStopsLifecycleWhenFastAckUnavailable(t *testing.T) {
+	server := NewServer()
+	server.xiaozhiFastAckTTS = failingXiaozhiTTSAdapter{}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-fast-ack-unavailable",
+		"session_id": "a21-session-xiaozhi-fast-ack-unavailable",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "fast_ack_unavailable" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+}
+
 func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testing.T) {
 	adapters := providers.VoicePipelineAdapters{
 		ASR:        providers.NewMockASRAdapter("a21-test-asr"),
@@ -4714,6 +4761,16 @@ func (r *recordingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.
 	default:
 	}
 	return r.delegate.Run(ctx, req)
+}
+
+type failingXiaozhiTTSAdapter struct{}
+
+func (failingXiaozhiTTSAdapter) Name() string {
+	return "a21-failing-tts"
+}
+
+func (failingXiaozhiTTSAdapter) Synthesize(ctx context.Context, req providers.TTSAdapterRequest) (<-chan providers.VoiceAudioChunk, error) {
+	return nil, errors.New("a21 tts unavailable")
 }
 
 type slowAnswerXiaozhiPipelineRunner struct {
