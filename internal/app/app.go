@@ -868,8 +868,14 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func newGatewayServerFromEnv(env []string) *gateway.Server {
+	return gateway.NewServerWithOptions(newGatewayServerOptionsFromEnv(env))
+}
+
+func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
+	xiaozhiVoicePipelineAdapters := providers.VoicePipelineAdaptersFromEnv(env)
 	options := gateway.ServerOptions{
-		VoiceProvider: providers.NewGatewayVoiceProviderFromEnv(env),
+		VoiceProvider:                providers.NewGatewayVoiceProviderFromEnv(env),
+		XiaozhiVoicePipelineAdapters: &xiaozhiVoicePipelineAdapters,
 	}
 	if adapterURL := strings.TrimSpace(appEnvValue(env, "A21_V21_ADAPTER_URL")); adapterURL != "" {
 		client, err := v21adapter.NewHTTPClient(adapterURL)
@@ -879,7 +885,7 @@ func newGatewayServerFromEnv(env []string) *gateway.Server {
 			options.V21Client = client
 		}
 	}
-	return gateway.NewServerWithOptions(options)
+	return options
 }
 
 type v21ConfigurationErrorClient struct {

@@ -1937,6 +1937,68 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	}
 }
 
+func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testing.T) {
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("a21-test-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("a21-test-text"),
+		TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		Selection: providers.VoicePipelineSelection{
+			ASRMode:    "local",
+			ASRProfile: "a21-test-asr",
+			LLMProfile: "a21-test-text",
+			TTSMode:    "fast",
+			TTSProfile: "a21-test-tts",
+		},
+		ExecutionMode: "host_local",
+	}
+	server := NewServerWithOptions(ServerOptions{XiaozhiVoicePipelineAdapters: &adapters})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-configured-pipeline",
+		"session_id": "a21-session-xiaozhi-configured-pipeline",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
+	}
+	for _, want := range []string{
+		`"execution_mode":"host_local"`,
+		`"schema_version":"a21.voice_pipeline.host_local.v1"`,
+		`"asr_profile":"a21-test-asr"`,
+		`"llm_profile":"a21-test-text"`,
+		`"tts_profile":"a21-test-tts"`,
+	} {
+		if !strings.Contains(mustJSON(t, pipeline), want) {
+			t.Fatalf("voice pipeline missing %q: %#v", want, pipeline)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketAbortCancelsBlockedTurnTaskWithinBargeInBudget(t *testing.T) {
 	server := NewServer()
 	runner := newBlockingXiaozhiPipelineRunner()

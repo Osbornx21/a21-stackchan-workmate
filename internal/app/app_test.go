@@ -433,6 +433,33 @@ func TestGatewayServerFromEnvDefaultsToMockDespiteSelectedPrimary(t *testing.T) 
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresXiaozhiVoicePipelineAdapters(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-secret",
+		"A21_TTS_FAST_PROFILE=macos_say",
+	})
+	if options.XiaozhiVoicePipelineAdapters == nil {
+		t.Fatal("xiaozhi voice pipeline adapters not configured")
+	}
+	adapters := *options.XiaozhiVoicePipelineAdapters
+	if adapters.ExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local", adapters.ExecutionMode)
+	}
+	if adapters.ASR.Name() != "sherpa_onnx" || adapters.TextStream.Name() != "deepseek" || adapters.TTS.Name() != "macos_say" {
+		t.Fatalf("adapters = %s/%s/%s, want sherpa_onnx/deepseek/macos_say", adapters.ASR.Name(), adapters.TextStream.Name(), adapters.TTS.Name())
+	}
+	selectionBytes, err := json.Marshal(adapters.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionPayload := string(selectionBytes)
+	if strings.Contains(selectionPayload, "sk-a21-secret") {
+		t.Fatalf("selection leaked secret: %s", selectionPayload)
+	}
+}
+
 func TestGatewayServerFromEnvUsesSelectedProviderOnlyWhenExplicit(t *testing.T) {
 	server := newGatewayServerFromEnv([]string{
 		"A21_GATEWAY_VOICE_PROVIDER=selected",

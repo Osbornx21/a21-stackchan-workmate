@@ -52,9 +52,10 @@ type Server struct {
 }
 
 type ServerOptions struct {
-	VoiceProvider providers.VoiceProvider
-	V21Client     v21adapter.Client
-	V21Timeout    time.Duration
+	VoiceProvider                providers.VoiceProvider
+	V21Client                    v21adapter.Client
+	V21Timeout                   time.Duration
+	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 }
 
 type MockTurnRequest struct {
@@ -293,6 +294,13 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if v21TTL <= 0 {
 		v21TTL = 3 * time.Second
 	}
+	xiaozhiRunnerFactory := defaultXiaozhiVoicePipelineRunner
+	if options.XiaozhiVoicePipelineAdapters != nil {
+		adapters := *options.XiaozhiVoicePipelineAdapters
+		xiaozhiRunnerFactory = func() xiaozhiVoicePipelineRunner {
+			return providers.NewVoicePipelineRunner(adapters)
+		}
+	}
 	return &Server{
 		now:                        time.Now,
 		metrics:                    newMetrics(),
@@ -312,7 +320,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioIngress:               audio.NewIngress(audio.DefaultIngressConfig()),
 		audioSockets:               make(map[string]*deviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
-		xiaozhiVoicePipelineRunner: defaultXiaozhiVoicePipelineRunner,
+		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
 	}
 }
 
@@ -1455,6 +1463,16 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 		"status":            report.Status,
 		"execution_mode":    report.ExecutionMode,
 		"audio_chunk_count": report.Output.AudioChunkCount,
+		"selection": map[string]any{
+			"asr_mode":        report.Selection.ASRMode,
+			"asr_profile":     report.Selection.ASRProfile,
+			"asr_profile_env": report.Selection.ASRProfileEnv,
+			"llm_profile":     report.Selection.LLMProfile,
+			"llm_profile_env": report.Selection.LLMProfileEnv,
+			"tts_mode":        report.Selection.TTSMode,
+			"tts_profile":     report.Selection.TTSProfile,
+			"tts_profile_env": report.Selection.TTSProfileEnv,
+		},
 		"timing": map[string]any{
 			"asr_first_partial_ms":             report.Timing.ASRFirstPartialMS,
 			"asr_final_ms":                     report.Timing.ASRFinalMS,
