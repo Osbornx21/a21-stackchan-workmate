@@ -1,9 +1,9 @@
 # A21 Control Ledger
 
-Status: active control ledger.
+Status: active integration ledger.
 Date: 2026-05-31.
-Ledger branch: `codex/a21-project-control`.
-Last accepted control commit before this ledger update: `f6d55f9`.
+Ledger branch: `codex/a21-integration-governance-slices`.
+Last accepted integration commit before this ledger update: `acdd929`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -16,7 +16,11 @@ defines policy; this ledger records the current queue and accepted state.
 ## Current Accepted State
 
 - Control branch: `codex/a21-project-control`.
-- Control HEAD before this ledger update: `f6d55f9 docs(control): record v21 handoff`.
+- Control HEAD before this integration update:
+  `7bdfe9d docs(control): record PCM flash ADR handoff`.
+- Integration branch: `codex/a21-integration-governance-slices`.
+- Integration HEAD before this ledger update:
+  `acdd929 merge: integrate StackChan hardware diagnostic honesty`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -28,6 +32,8 @@ defines policy; this ledger records the current queue and accepted state.
   `fc61793 fix(v21): wire configured adapter into gateway env`.
 - Official PCM bridge app flash ADR docs-only branch is committed at
   `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
+- Integration branch merged all four accepted slices:
+  `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
@@ -68,6 +74,63 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Integrated Governance Slices Baseline
+
+Accepted on the control tower main worktree after merging the four accepted
+slices.
+
+Evidence:
+
+- Branch: `codex/a21-integration-governance-slices`.
+- Worktree: `/Users/jiyurun/Documents/New project`.
+- Base control commit:
+  `7bdfe9d docs(control): record PCM flash ADR handoff`.
+- Integration HEAD before this ledger update:
+  `acdd929 merge: integrate StackChan hardware diagnostic honesty`.
+- Merged branches:
+  `codex/a21-docs-pcm-bridge-flash-adr`,
+  `codex/a21-provider-spine-deepseek-textstream`,
+  `codex/a21-mainline-professional-v21-contract`,
+  `codex/a21-mainline-stackchan-hardware-diagnostic`.
+- Merge commits: `5674b08`, `3c3ae1f`, `6abf8d7`, `acdd929`.
+- Merge conflict state: no manual conflict resolution required. Git `ort`
+  auto-merged the shared `internal/app` changes.
+- Dirty state after merges and before this ledger update: clean.
+- Targeted integration tests passed:
+  `go test ./internal/app ./internal/providers ./internal/v21adapter -count=1`.
+- Project verification passed: `make verify`.
+- Whitespace verification passed: `git diff --check`.
+- Namespace verification passed: `go run ./cmd/a21 namespace-audit`.
+- Preflight passed: `go run ./cmd/a21 preflight`.
+- Doctor passed: `go run ./cmd/a21 doctor`, with a warning that no
+  release-ledger-validated firmware artifact matches integration commit
+  `acdd9291835a`.
+- Provider dry-run passed without execution:
+  `go run ./cmd/a21 provider-smoke --provider deepseek --stream --repeat 3`
+  reported `executed=false`, `configured=false`, and missing
+  `A21_LAB_DEEPSEEK_API_KEY`.
+- V21 adapter dry-run passed without execution:
+  `go run ./cmd/a21 v21-adapter-smoke` reported `executed=false`,
+  `configured=false`, and missing adapter URL.
+- `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-flash-execute'`
+  rejected the command as T8 blocked until ADR plus reviewed execute guard.
+- `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-nvs-execute'`
+  rejected the command because the integration branch is not a
+  `codex/a21-hardware-window-*` branch.
+- No provider execute, V21 execute, Gateway runtime, durable report, NVS
+  execute, flash execute, raw upload, serial write, app partition write,
+  `/v1/devices/control`, or physical device path was touched.
+
+Decision:
+
+- Accept `codex/a21-integration-governance-slices` as the current combined
+  verification baseline for these four PRD/governance slices.
+- Keep the original slice branches available as reviewable units of work.
+- Do not treat this integration branch as permission for T4 provider/V21
+  execution or T6/T7/T8 hardware operations.
+- Next control decision is whether to use this integration branch as the PR
+  branch, or split review into the four already-accepted topic branches.
 
 ### Official PCM Bridge App Flash ADR Docs-Only Gate
 
@@ -261,15 +324,17 @@ Decision:
 
 ## Authorized Next Queue
 
-1. Branch integration / PR decision.
-   - Branches ready for integration decision:
+1. PR / mainline integration decision.
+   - Combined verification branch:
+     `codex/a21-integration-governance-slices`.
+   - Topic branches remain available:
      `codex/a21-mainline-stackchan-hardware-diagnostic`,
      `codex/a21-provider-spine-deepseek-textstream`,
      `codex/a21-mainline-professional-v21-contract`,
      `codex/a21-docs-pcm-bridge-flash-adr`.
    - Max tier: T1/T2.
-   - Purpose: decide merge order, PR shape, conflict risk, and whether a
-     combined verification branch is needed.
+   - Purpose: choose one combined PR versus four topic PRs, or merge the
+     verified integration branch into the project mainline.
    - Forbidden: provider/V21 execute, Gateway runtime, hardware writes,
      background flash, NVS execute, raw upload, or changing PRD scope while
      integrating.
