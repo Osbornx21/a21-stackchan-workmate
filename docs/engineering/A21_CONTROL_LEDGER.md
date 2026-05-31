@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `101d590`.
+Last accepted integration commit before this ledger update: `5f22ecc`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `101d590 feat(app): harden provider latency report v2`.
+  `5f22ecc docs(control): accept latency report v2`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -61,7 +61,7 @@ defines policy; this ledger records the current queue and accepted state.
   AgentTaskProvider Bridge post-review closure is `31eea31`; post-AgentTask
   PRD next-slice audit tracking is `2f34854`, latency report v2
   implementation tracking is `3dbec02`, and latency report v2 implementation
-  acceptance is `101d590`.
+  acceptance is `101d590`; latency report v2 ledger acceptance is `5f22ecc`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -73,10 +73,10 @@ defines policy; this ledger records the current queue and accepted state.
 - Current integration HEAD after AgentTaskProvider Bridge post-review closure:
   `31eea31 docs(control): close agent task post review`.
 - Current integration HEAD after Provider Latency Report v2 acceptance:
-  `101d590 feat(app): harden provider latency report v2`.
-- Current control-tower action: Provider Latency Report v2 implementation
-  thread `019e7c65-5abb-77d3-9e43-04b53147a1ae` has been accepted; open a
-  post-commit review thread before selecting the next PRD slice.
+  `5f22ecc docs(control): accept latency report v2`.
+- Current control-tower action: Provider Latency Report v2 post-commit review
+  thread `019e7c70-eea3-7883-94bb-2c63ddc0460a` is active; wait for the
+  read-only review handoff before selecting the next PRD slice.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -95,6 +95,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7c70-eea3-7883-94bb-2c63ddc0460a` | Provider Latency Report v2 post-commit review | `/Users/jiyurun/.codex/worktrees/ded7/New project` | active; read-only review in progress | T0/T1/T2 | no |
 | `019e7c65-5abb-77d3-9e43-04b53147a1ae` | Provider Latency Report v2 implementation | `/Users/jiyurun/.codex/worktrees/45f5/New project` | completed; accepted into integration branch at `101d590` | T1/T2 | no |
 | `019e7c5f-e333-7871-8c02-245a435b06cd` | PRD next-slice audit after AgentTask closure | `/Users/jiyurun/.codex/worktrees/2dea/New project` | completed; recommended Provider Latency Report v2 | T0/T1/T2 | no |
 | `019e7c57-bd71-72d0-9cf8-ec9674f41bf0` | AgentTaskProvider Bridge post-commit review | `/Users/jiyurun/.codex/worktrees/7077/New project` | completed; two P2 findings fixed by control at `598c0d9` | T0/T1/T2 | no |
@@ -967,6 +968,55 @@ Acceptance evidence:
   implementation, WebRTC/ESP-SR native adapter, production dependency, secret,
   prompt/transcript/provider output/reasoning text, raw audio, full URL,
   proxy URL, or full local path was added or run.
+
+### Provider Latency Report v2 Post-Commit Review Thread
+
+Opened by the control tower after accepting Provider Latency Report v2 at
+`5f22ecc`.
+
+Evidence:
+
+- Review thread: `019e7c70-eea3-7883-94bb-2c63ddc0460a`.
+- Review thread title:
+  `A21 Provider Latency Report v2：Post-Commit Review`.
+- Review worktree:
+  `/Users/jiyurun/.codex/worktrees/ded7/New project`.
+- Starting branch: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `5f22ecc docs(control): accept latency report v2`.
+- Scope: read-only review of
+  `101d590 feat(app): harden provider latency report v2` and
+  `5f22ecc docs(control): accept latency report v2`.
+- Focus: confirm the v2 report remains no-execute report-contract evidence,
+  `metric_terms`, `canonical_metrics`, and `stage_availability` are
+  machine-readable and A21-scoped, `host_loopback` remains host-only, fixture
+  path and payload redaction still holds, tests cover no-execute invariants,
+  docs do not promote placeholders to production latency evidence, and no
+  production dependency or namespace pollution was introduced.
+- Maximum tier: T0/T1/T2.
+- Allowed verification:
+  `git diff --check 101d590^..5f22ecc`;
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|AudioFrontEnd|LocalVoiceLoopback|StackChanFastCompanion' -count=1`;
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog|AgentTask' -count=1`;
+  `go test ./internal/gateway -run 'FastCompanionHybrid|RealtimeSessionStartRejectsProfessional|ProfessionalModeUsesV21' -count=1`;
+  `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`;
+  `go run ./cmd/a21 namespace-audit`; `make verify`;
+  `go run ./cmd/a21 preflight`; `go run ./cmd/a21 doctor`; and
+  `go run ./cmd/a21 promotion-readiness`.
+- Forbidden: file edits, commits, pushes, provider `--execute`, real provider
+  calls, V21 execute, Gateway runtime or service startup, durable reports with
+  payload bodies, firmware/NVS/flash/raw upload/serial writes, real
+  `/v1/devices/control`, physical device paths, production dependencies,
+  secrets, prompt/transcript/provider output/reasoning/raw audio/full URL/
+  proxy/local path leakage, AgentTask runtime, binary Opus transport
+  implementation, and WebRTC/ESP-SR native dependency implementation.
+
+Control-tower next gate:
+
+- Wait for the review handoff.
+- If no P0/P1/P2 findings, record closure and open the next PRD slice audit.
+- If a finding exists, fix only the narrow accepted finding on the integration
+  branch and rerun the required gates before continuing.
 
 ### Fast Companion Hybrid Boundary Audit
 
