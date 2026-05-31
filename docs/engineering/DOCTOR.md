@@ -110,7 +110,7 @@ go run ./cmd/a21 provider-smoke --provider deepseek --execute --stream --repeat 
 go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 ```
 
-Only the DeepSeek OpenAI-compatible Chat Completions smoke path is executable in this P0 phase. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
+The provider catalog includes the PRD reference profiles for mainland text-stream candidates, local text providers, existing realtime references, and future agent-task bridges. Catalog visibility is not execution authorization: only `mock` and `deepseek` are route-eligible in the P0 provider-smoke path. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
 
 When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 

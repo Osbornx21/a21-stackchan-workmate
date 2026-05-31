@@ -38,11 +38,11 @@ The saved report is useful for paid OpenAI-compatible text-stream smoke runs bec
 
 ## Executable Providers
 
-Current executable P0 text-stream smoke providers are derived from `ProviderProfile` records instead of a separate smoke-only table:
+Current executable P0 text-stream smoke providers are derived from route-eligible `ProviderProfile` records instead of a separate smoke-only table:
 
 - `deepseek`
 
-It uses OpenAI-compatible Chat Completions with a tiny request. DeepSeek is the current P0 route-eligible `text_stream` profile for A21's fast companion provider spine. Other cloud/local candidates stay out of the executable P0 registry until M3 evidence is clean and an ADR or follow-up slice promotes them. Streaming smoke uses OpenAI-compatible data-only SSE chunks and records redacted timing evidence.
+It uses OpenAI-compatible Chat Completions with a tiny request. DeepSeek is the current P0 route-eligible `text_stream` profile for A21's fast companion provider spine. The catalog also knows the PRD reference profiles `siliconflow`, `stepfun`, `bailian_dashscope`, `moonshot`, `volcengine_ark`, `local_ollama`, `local_vllm`, `openai_realtime`, `doubao_realtime`, `doubao_tts_realtime`, `hermes_agent`, and `mimo_agent` so doctor and readiness reports can show env names and family/protocol without treating them as unknown. Those profiles stay out of the executable P0 registry until a follow-up slice promotes them. Streaming smoke uses OpenAI-compatible data-only SSE chunks and records redacted timing evidence.
 
 `A21_PROVIDER_PROFILES_PATH` is intentionally not active in the P0 smoke path. Local profile override remains a later extension point after the single-provider route has real latency and failure evidence.
 
@@ -50,7 +50,7 @@ The provider network client defaults to `direct` mode and ignores ambient `HTTP_
 
 ## Non-Executable Providers
 
-Realtime providers and agent bridges are not part of the P0 `provider-smoke` registry. Existing OpenAI/Doubao realtime code remains as a guarded plan/fixture boundary, but Phase 4C does not expose it as a selectable smoke target and does not pretend an HTTP chat request proves realtime audio or agent readiness.
+Realtime providers and agent bridges are known profiles but are not route-eligible in the P0 `provider-smoke` execution surface. Existing OpenAI/Doubao realtime code remains as a guarded plan/fixture boundary, and agent bridges remain disabled until explicit agent provider configuration and smoke. Phase 4C does not pretend an HTTP chat request proves realtime audio or agent readiness.
 
 Later realtime planning phases add lower-level realtime WebSocket readiness reports in `internal/providers/realtime.go`. That path can build redacted OpenAI realtime, Doubao realtime speech-to-speech, and Doubao realtime TTS connection plans and send generic test events through injected fake WebSocket connections, but it still does not execute realtime provider smoke from `provider-smoke`.
 

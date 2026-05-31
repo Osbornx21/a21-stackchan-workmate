@@ -5,8 +5,12 @@ import "strings"
 type ProviderFamily string
 
 const (
-	ProviderFamilyMock       ProviderFamily = "mock"
-	ProviderFamilyTextStream ProviderFamily = "text_stream"
+	ProviderFamilyMock          ProviderFamily = "mock"
+	ProviderFamilyTextStream    ProviderFamily = "text_stream"
+	ProviderFamilyVoiceRealtime ProviderFamily = "voice_realtime"
+	ProviderFamilyVoiceHybrid   ProviderFamily = "voice_hybrid"
+	ProviderFamilyAgentTask     ProviderFamily = "agent_task"
+	ProviderFamilyLocalAudio    ProviderFamily = "local_audio"
 )
 
 const DeepSeekDefaultModel = "deepseek-chat"
@@ -78,6 +82,137 @@ func BuiltinProviderProfiles() []ProviderProfile {
 			EndpointPath:   "/chat/completions",
 			RouteEligible:  true,
 		},
+		{
+			Name:           "siliconflow",
+			Label:          "SiliconFlow text stream",
+			Family:         ProviderFamilyTextStream,
+			Protocol:       "openai_chat_completions",
+			Capabilities:   []string{"llm", "streaming_text", "text_stream", "mainland_latency_candidate"},
+			APIKeyEnv:      "A21_LAB_SILICONFLOW_API_KEY",
+			ModelEnv:       "A21_SILICONFLOW_MODEL",
+			BaseURLEnv:     "A21_SILICONFLOW_BASE_URL",
+			DefaultBaseURL: "https://api.siliconflow.cn/v1",
+			EndpointPath:   "/chat/completions",
+		},
+		{
+			Name:           "stepfun",
+			Label:          "StepFun text stream",
+			Family:         ProviderFamilyTextStream,
+			Protocol:       "openai_chat_completions",
+			Capabilities:   []string{"llm", "streaming_text", "text_stream", "mainland_latency_candidate"},
+			APIKeyEnv:      "A21_LAB_STEPFUN_API_KEY",
+			ModelEnv:       "A21_STEPFUN_MODEL",
+			BaseURLEnv:     "A21_STEPFUN_BASE_URL",
+			DefaultBaseURL: "https://api.stepfun.com/v1",
+			EndpointPath:   "/chat/completions",
+		},
+		{
+			Name:           "bailian_dashscope",
+			Label:          "Alibaba Bailian DashScope text stream",
+			Family:         ProviderFamilyTextStream,
+			Protocol:       "openai_chat_completions",
+			Capabilities:   []string{"llm", "streaming_text", "text_stream", "dashscope_candidate"},
+			APIKeyEnv:      "A21_DASHSCOPE_API_KEY",
+			ModelEnv:       "A21_DASHSCOPE_MODEL",
+			BaseURLEnv:     "A21_DASHSCOPE_BASE_URL",
+			DefaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+			EndpointPath:   "/chat/completions",
+		},
+		{
+			Name:           "moonshot",
+			Label:          "Moonshot text stream",
+			Family:         ProviderFamilyTextStream,
+			Protocol:       "openai_chat_completions",
+			Capabilities:   []string{"llm", "streaming_text", "text_stream", "long_context_candidate"},
+			APIKeyEnv:      "A21_LAB_MOONSHOT_API_KEY",
+			ModelEnv:       "A21_MOONSHOT_MODEL",
+			BaseURLEnv:     "A21_MOONSHOT_BASE_URL",
+			DefaultBaseURL: "https://api.moonshot.cn/v1",
+			EndpointPath:   "/chat/completions",
+		},
+		{
+			Name:           "volcengine_ark",
+			Label:          "Volcengine Ark text stream",
+			Family:         ProviderFamilyTextStream,
+			Protocol:       "openai_chat_completions",
+			Capabilities:   []string{"llm", "streaming_text", "text_stream", "cold_start_candidate"},
+			APIKeyEnv:      "A21_LAB_VOLCENGINE_ARK_API_KEY",
+			ModelEnv:       "A21_VOLCENGINE_ARK_MODEL",
+			BaseURLEnv:     "A21_VOLCENGINE_ARK_BASE_URL",
+			DefaultBaseURL: "https://ark.cn-beijing.volces.com/api/v3",
+			EndpointPath:   "/chat/completions",
+		},
+		{
+			Name:         "local_ollama",
+			Label:        "Local Ollama text stream",
+			Family:       ProviderFamilyTextStream,
+			Protocol:     "ollama_chat",
+			Capabilities: []string{"llm", "local", "text_stream", "local_fallback"},
+			ModelEnv:     "A21_LOCAL_OLLAMA_MODEL",
+			BaseURLEnv:   "A21_LOCAL_OLLAMA_BASE_URL",
+			RequiredEnv:  []string{"A21_LOCAL_OLLAMA_BASE_URL", "A21_LOCAL_OLLAMA_MODEL"},
+			EndpointPath: "/api/chat",
+		},
+		{
+			Name:         "local_vllm",
+			Label:        "Local vLLM text stream",
+			Family:       ProviderFamilyTextStream,
+			Protocol:     "openai_chat_completions",
+			Capabilities: []string{"llm", "local", "text_stream", "local_fallback"},
+			ModelEnv:     "A21_LOCAL_VLLM_MODEL",
+			BaseURLEnv:   "A21_LOCAL_VLLM_BASE_URL",
+			RequiredEnv:  []string{"A21_LOCAL_VLLM_BASE_URL", "A21_LOCAL_VLLM_MODEL"},
+			EndpointPath: "/chat/completions",
+		},
+		{
+			Name:           "openai_realtime",
+			Label:          "OpenAI realtime voice",
+			Family:         ProviderFamilyVoiceRealtime,
+			Protocol:       "openai_realtime_websocket",
+			Capabilities:   []string{"voice", "realtime", "speech_to_speech", "barge_in"},
+			APIKeyEnv:      "A21_OPENAI_API_KEY",
+			ModelEnv:       "A21_OPENAI_REALTIME_MODEL",
+			BaseURLEnv:     "A21_OPENAI_REALTIME_URL",
+			DefaultBaseURL: openAIRealtimeDefaultURL,
+		},
+		{
+			Name:         "doubao_realtime",
+			Label:        "Doubao realtime speech-to-speech",
+			Family:       ProviderFamilyVoiceRealtime,
+			Protocol:     "doubao_realtime_s2s_websocket",
+			Capabilities: []string{"voice", "realtime", "speech_to_speech", "barge_in"},
+			APIKeyEnv:    "A21_DOUBAO_API_KEY",
+			ModelEnv:     "A21_DOUBAO_REALTIME_MODEL",
+			RequiredEnv:  []string{"A21_DOUBAO_APP_ID", "A21_DOUBAO_RESOURCE_ID"},
+			BaseURLEnv:   "A21_DOUBAO_REALTIME_URL",
+		},
+		{
+			Name:         "doubao_tts_realtime",
+			Label:        "Doubao realtime TTS",
+			Family:       ProviderFamilyVoiceHybrid,
+			Protocol:     "doubao_realtime_tts_websocket",
+			Capabilities: []string{"voice", "tts", "realtime", "voice_hybrid"},
+			APIKeyEnv:    "A21_DOUBAO_API_KEY",
+			ModelEnv:     "A21_DOUBAO_TTS_MODEL",
+			RequiredEnv:  []string{"A21_DOUBAO_TTS_VOICE"},
+			BaseURLEnv:   "A21_DOUBAO_TTS_REALTIME_URL",
+		},
+		{
+			Name:         "hermes_agent",
+			Label:        "Hermes agent task bridge",
+			Family:       ProviderFamilyAgentTask,
+			Protocol:     "agent_task_bridge",
+			Capabilities: []string{"agent_task", "background_task", "tool_use"},
+			RequiredEnv:  []string{"A21_AGENT_PROVIDER_PRIMARY"},
+		},
+		{
+			Name:         "mimo_agent",
+			Label:        "Mimo agent task bridge",
+			Family:       ProviderFamilyAgentTask,
+			Protocol:     "agent_task_bridge",
+			Capabilities: []string{"agent_task", "background_task", "co_creation"},
+			RequiredEnv:  []string{"A21_AGENT_PROVIDER_PRIMARY"},
+		},
 	}
 }
 
@@ -116,7 +251,7 @@ func ProviderCatalogFromEnv(env []string) ProviderCatalogReport {
 			Family:        string(profile.Family),
 			Protocol:      profile.Protocol,
 			Selected:      primaryKnown && profile.Name == primary,
-			Realtime:      profile.Family == ProviderFamilyMock,
+			Realtime:      providerProfileRealtime(profile),
 			RouteEligible: profile.RouteEligible,
 			Capabilities:  append([]string(nil), profile.Capabilities...),
 			RequiredEnv:   providerProfileRequiredEnv(profile),
@@ -144,6 +279,15 @@ func ProviderCatalogFromEnv(env []string) ProviderCatalogReport {
 		report.Findings = append(report.Findings, ProviderCatalogFinding{Code: code, Message: message, Detail: "A21_PROVIDER_PRIMARY"})
 	}
 	return report
+}
+
+func providerProfileRealtime(profile ProviderProfile) bool {
+	switch profile.Family {
+	case ProviderFamilyMock, ProviderFamilyVoiceRealtime, ProviderFamilyVoiceHybrid:
+		return true
+	default:
+		return false
+	}
 }
 
 func providerProfileByName(profiles []ProviderProfile, name string) (ProviderProfile, bool) {

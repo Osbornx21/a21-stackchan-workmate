@@ -527,13 +527,18 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 		`"gateway_provider": "a21-mock-voice"`,
 		`"status": "healthy"`,
 		`"configured": true`,
-		`"primary": "unknown_provider"`,
-		`"provider_unknown"`,
+		`"primary": "doubao_tts_realtime"`,
+		`"name": "doubao_tts_realtime"`,
+		`"family": "voice_hybrid"`,
+		`"status": "unsupported"`,
 		`"endpoint_host": "ai-gateway.vei.volces.com"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), `"provider_unknown"`) {
+		t.Fatalf("doctor reported selected realtime TTS profile as unknown: %s", stdout.String())
 	}
 	if strings.Contains(stdout.String(), `"provider": "a21-mock-voice"`) {
 		t.Fatalf("doctor voice health still reports mock provider: %s", stdout.String())
@@ -564,14 +569,19 @@ func TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets(t *test
 		`"healthy": false`,
 		`"configured": true`,
 		`"detail": "execution disabled pending verified Doubao realtime speech-to-speech adapter"`,
-		`"primary": "unknown_provider"`,
-		`"provider_unknown"`,
+		`"primary": "doubao_realtime"`,
+		`"name": "doubao_realtime"`,
+		`"family": "voice_realtime"`,
+		`"status": "unsupported"`,
 		`"status": "ready"`,
 		`"endpoint_host": "ai-gateway.vei.volces.com"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), `"provider_unknown"`) {
+		t.Fatalf("doctor reported selected realtime profile as unknown: %s", stdout.String())
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "app-a21-secret", "resource-a21-secret", "doubao-s2s", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) {

@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `9f9d5e6`.
+Last accepted integration commit before this ledger update: `5e54eb9`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `9f9d5e6 docs(control): record promotion gate refresh`.
+  `5e54eb9 docs(control): accept promotion readiness review`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -37,7 +37,8 @@ defines policy; this ledger records the current queue and accepted state.
   `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
-  `1872ca9`, `54af08b`, `045147d`, `2339d4e`, and `9f9d5e6`.
+  `1872ca9`, `54af08b`, `045147d`, `2339d4e`, `9f9d5e6`, `3ddcc45`,
+  `e55b652`, and `5e54eb9`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -88,6 +89,59 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Provider Spine Reference Profile Registry
+
+Accepted by the control tower as the next PRD-aligned Provider Spine slice.
+
+Evidence:
+
+- Current branch: `codex/a21-integration-governance-slices`.
+- Current HEAD before this ledger update:
+  `5e54eb9 docs(control): accept promotion readiness review`.
+- Added provider-family vocabulary for `text_stream`, `voice_realtime`,
+  `voice_hybrid`, `agent_task`, and `local_audio` while preserving the
+  existing `mock` family.
+- The built-in `ProviderProfile` catalog now covers PRD reference profiles:
+  `siliconflow`, `deepseek`, `stepfun`, `bailian_dashscope`, `moonshot`,
+  `volcengine_ark`, `local_ollama`, `local_vllm`, `openai_realtime`,
+  `doubao_realtime`, `doubao_tts_realtime`, `hermes_agent`, and
+  `mimo_agent`.
+- P0 route eligibility remains deliberately narrow: only `mock` and
+  `deepseek` are route-eligible.
+- Doctor/provider reports now treat realtime references such as
+  `doubao_realtime` and `doubao_tts_realtime` as known profiles instead of
+  `unknown_provider`, while `provider-smoke` still refuses to execute realtime
+  protocols.
+- Baidu/Huawei and legacy provider names remain redacted and blocked.
+- Focused provider tests passed:
+  `go test ./internal/providers -run 'ProviderCatalog|ProviderProfile|ProviderSmoke' -count=1`.
+- App/provider package tests passed:
+  `go test ./internal/app ./internal/providers -count=1`.
+- Project verification passed: `make verify`.
+- Namespace audit passed: `go run ./cmd/a21 namespace-audit`.
+- Provider dry-runs passed without execution:
+  `go run ./cmd/a21 provider-smoke --provider deepseek`,
+  `go run ./cmd/a21 provider-smoke --provider bailian_dashscope`, and
+  `go run ./cmd/a21 provider-smoke --provider openai_realtime` all reported
+  `executed=false`.
+- Preflight passed: `go run ./cmd/a21 preflight`.
+- Doctor passed: `go run ./cmd/a21 doctor`, with the expected warning that no
+  release-ledger-validated A21 firmware artifact matches commit
+  `5e54eb9a33f5`.
+- No provider execute, V21 execute, Gateway runtime, durable report, NVS
+  execute, flash execute, raw upload, serial write, app partition write,
+  `/v1/devices/control`, or physical device path was touched.
+
+Decision:
+
+- Keep the Provider Spine catalog broad enough for PRD readiness and doctor
+  visibility.
+- Keep execution narrow until a future provider-latency or lane-promotion
+  slice supplies redacted evidence and explicit authorization.
+- Continue next Provider Spine work from the existing plan with Text Stream
+  Parser or Streaming Provider Smoke only after this registry slice is
+  committed and reviewed as needed.
 
 ### Machine-Readable Promotion Readiness Gate
 

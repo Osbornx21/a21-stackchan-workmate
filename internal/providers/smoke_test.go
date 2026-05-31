@@ -284,17 +284,24 @@ func TestProviderSmokeRedactsLegacyProviderName(t *testing.T) {
 	}
 }
 
-func TestProviderSmokeDoesNotExposeRealtimeProvidersDuringP0(t *testing.T) {
+func TestProviderSmokeKnowsRealtimeProfilesButDoesNotExecuteThemDuringP0(t *testing.T) {
 	report := ProviderSmokeFromEnv(context.Background(), []string{
 		"A21_PROVIDER_PRIMARY=openai_realtime",
 		"A21_OPENAI_API_KEY=sk-a21-secret",
 		"A21_OPENAI_REALTIME_MODEL=gpt-realtime",
 	}, "openai_realtime", true, nil)
 
-	if report.Provider != "unknown_provider" || report.Status != ProviderSmokeFailed {
-		t.Fatalf("provider/status = %q/%q, want unknown_provider/failed", report.Provider, report.Status)
+	if report.Provider != "openai_realtime" || report.Status != ProviderSmokeUnsupported {
+		t.Fatalf("provider/status = %q/%q, want openai_realtime/unsupported", report.Provider, report.Status)
 	}
 	if report.Executed {
 		t.Fatal("executed = true, want false for non-P0 provider")
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "sk-a21-secret") || strings.Contains(string(data), "gpt-realtime") {
+		t.Fatalf("realtime smoke report leaked secret/model: %s", data)
 	}
 }

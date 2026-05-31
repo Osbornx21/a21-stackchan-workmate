@@ -108,6 +108,7 @@ type providerSmokeSpec struct {
 	RequiredEnv    []string
 	DefaultBaseURL string
 	EndpointPath   string
+	RouteEligible  bool
 	Executable     bool
 }
 
@@ -227,7 +228,8 @@ func providerSmokeSpecFromProfile(profile ProviderProfile) providerSmokeSpec {
 		RequiredEnv:    append([]string(nil), profile.RequiredEnv...),
 		DefaultBaseURL: profile.DefaultBaseURL,
 		EndpointPath:   profile.EndpointPath,
-		Executable:     profile.Family == ProviderFamilyTextStream && profile.Protocol == "openai_chat_completions",
+		RouteEligible:  profile.RouteEligible,
+		Executable:     profile.RouteEligible && profile.Family == ProviderFamilyTextStream && profile.Protocol == "openai_chat_completions",
 	}
 }
 

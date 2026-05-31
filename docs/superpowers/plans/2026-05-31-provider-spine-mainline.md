@@ -17,25 +17,25 @@
 - Modify: `internal/providers/catalog_test.go`
 - Modify: `docs/engineering/A21_DEVELOPMENT_MAINLINE.md`
 
-- [ ] **Step 1: Write failing tests for provider families and built-ins**
+- [x] **Step 1: Write failing tests for provider families and built-ins**
 
 Add tests asserting profiles exist for `siliconflow`, `deepseek`, `stepfun`, `bailian_dashscope`, `moonshot`, `volcengine_ark`, `local_ollama`, `local_vllm`, `openai_realtime`, `doubao_realtime`, `doubao_tts_realtime`, `hermes_agent`, and `mimo_agent`. Also assert Baidu/Huawei primary names are blocked and redacted.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run: `go test ./internal/providers -run 'ProviderCatalog|ProviderProfile'`
 
-- [ ] **Step 3: Add `ProviderFamily` and `ProviderProfile` fields**
+- [x] **Step 3: Add `ProviderFamily` and `ProviderProfile` fields**
 
 Represent family, protocol, env names, capability labels, route eligibility, and default host without storing any key values.
 
-- [ ] **Step 4: Re-run focused tests**
+- [x] **Step 4: Re-run focused tests**
 
 Run: `go test ./internal/providers -run 'ProviderCatalog|ProviderProfile'`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
-Run: `git commit -m "feat: add provider spine profile registry"`
+Run: `git commit -m "feat(providers): add provider reference profiles"`
 
 ### Task 2: Text Stream Parser
 

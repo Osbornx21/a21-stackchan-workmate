@@ -117,20 +117,96 @@ func TestProviderCatalogBlocksBaiduAndHuaweiPrimaryWithoutEchoingValue(t *testin
 	}
 }
 
-func TestProviderCatalogP0BuiltInsStayNarrow(t *testing.T) {
+func TestProviderCatalogIncludesPRDReferenceProfiles(t *testing.T) {
 	report := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
 	var names []string
 	for _, provider := range report.Providers {
 		names = append(names, provider.Name)
 	}
-	for _, want := range []string{"mock", "deepseek"} {
+	for _, want := range []string{
+		"mock",
+		"siliconflow",
+		"deepseek",
+		"stepfun",
+		"bailian_dashscope",
+		"moonshot",
+		"volcengine_ark",
+		"local_ollama",
+		"local_vllm",
+		"openai_realtime",
+		"doubao_realtime",
+		"doubao_tts_realtime",
+		"hermes_agent",
+		"mimo_agent",
+	} {
 		if !stringSliceContains(names, want) {
 			t.Fatalf("providers = %#v, missing %q", names, want)
 		}
 	}
-	for _, forbidden := range []string{"siliconflow", "stepfun", "bailian_dashscope", "moonshot", "volcengine_ark", "local_ollama", "local_vllm", "openai_realtime", "doubao_realtime", "doubao_tts_realtime", "hermes_agent", "mimo_agent"} {
-		if stringSliceContains(names, forbidden) {
-			t.Fatalf("P0 catalog horizontally expanded to %q: %#v", forbidden, names)
+}
+
+func TestProviderCatalogKeepsP0RouteEligibleProfilesNarrow(t *testing.T) {
+	report := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
+
+	var routeEligible []string
+	for _, provider := range report.Providers {
+		if provider.RouteEligible {
+			routeEligible = append(routeEligible, provider.Name)
+		}
+	}
+	if len(routeEligible) != 2 || !stringSliceContains(routeEligible, "mock") || !stringSliceContains(routeEligible, "deepseek") {
+		t.Fatalf("route eligible providers = %#v, want only mock and deepseek", routeEligible)
+	}
+}
+
+func TestProviderCatalogClassifiesReferenceProviderFamilies(t *testing.T) {
+	report := ProviderCatalogFromEnv([]string{"A21_ENV=development"})
+
+	for _, tc := range []struct {
+		name         string
+		family       ProviderFamily
+		protocol     string
+		requiredEnvs []string
+	}{
+		{
+			name:         "siliconflow",
+			family:       ProviderFamilyTextStream,
+			protocol:     "openai_chat_completions",
+			requiredEnvs: []string{"A21_LAB_SILICONFLOW_API_KEY"},
+		},
+		{
+			name:         "openai_realtime",
+			family:       ProviderFamilyVoiceRealtime,
+			protocol:     "openai_realtime_websocket",
+			requiredEnvs: []string{"A21_OPENAI_API_KEY", "A21_OPENAI_REALTIME_MODEL"},
+		},
+		{
+			name:         "doubao_tts_realtime",
+			family:       ProviderFamilyVoiceHybrid,
+			protocol:     "doubao_realtime_tts_websocket",
+			requiredEnvs: []string{"A21_DOUBAO_API_KEY", "A21_DOUBAO_TTS_MODEL", "A21_DOUBAO_TTS_VOICE"},
+		},
+		{
+			name:         "hermes_agent",
+			family:       ProviderFamilyAgentTask,
+			protocol:     "agent_task_bridge",
+			requiredEnvs: []string{"A21_AGENT_PROVIDER_PRIMARY"},
+		},
+	} {
+		readiness := providerReadinessByName(t, report, tc.name)
+		if readiness.Family != string(tc.family) {
+			t.Fatalf("%s family = %q, want %q", tc.name, readiness.Family, tc.family)
+		}
+		if readiness.Protocol != tc.protocol {
+			t.Fatalf("%s protocol = %q, want %q", tc.name, readiness.Protocol, tc.protocol)
+		}
+		if readiness.RouteEligible {
+			t.Fatalf("%s route eligible = true, want false until explicitly promoted", tc.name)
+		}
+		for _, envName := range tc.requiredEnvs {
+			if !stringSliceContains(readiness.RequiredEnv, envName) || !stringSliceContains(readiness.MissingEnv, envName) {
+				t.Fatalf("%s required/missing env lacks %q: required=%#v missing=%#v", tc.name, envName, readiness.RequiredEnv, readiness.MissingEnv)
+			}
 		}
 	}
 }
