@@ -115,7 +115,8 @@ defines policy; this ledger records the current queue and accepted state.
   `affe0ad docs(media): add binary opus transport contract`.
 - Current control-tower action: binary Opus media transport planning contract
   implementation has been accepted into the integration branch at `affe0ad`;
-  open a read-only post-commit review before selecting the next PRD slice.
+  post-commit review is active in thread
+  `019e7cb4-5314-7fa2-9c78-255618d7874d`.
 - Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
   second brain, backend orchestrator, or realtime first-response owner. Real
@@ -134,6 +135,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
+| `019e7cb4-5314-7fa2-9c78-255618d7874d` | Binary Opus media transport planning contract post-commit review | `/Users/jiyurun/.codex/worktrees/76ca/New project` | active; read-only post-review over `c458be7..d87346c` | T0/T1/T2 | no |
 | `019e7ca7-84bf-7a92-9eb5-c9815a11de4f` | Binary Opus media transport planning contract implementation | `/Users/jiyurun/.codex/worktrees/d078/New project` | completed; accepted into integration branch at `affe0ad` | T1/T2 | no |
 | `019e7ca2-7551-7852-8c66-5bcc76d449bb` | PRD next-slice audit after audio-front-end closure | `/Users/jiyurun/.codex/worktrees/b764/New project` | completed; recommended binary Opus media transport planning contract | T0/T1/T2 | no |
 | `019e7c99-bbc3-7d33-8b77-a32000d1281d` | Audio front-end evidence contract post-commit review | `/Users/jiyurun/.codex/worktrees/002c/New project` | completed; one P2 fixed by control at `a892ac9` | T0/T1/T2 | no |
@@ -1675,6 +1677,60 @@ Control-tower next gate:
 
 - Open a read-only post-commit review over the implementation and this ledger
   acceptance before selecting the next PRD slice.
+
+### Binary Opus Media Transport Planning Contract Post-Commit Review
+
+Opened by the control tower after accepting the binary Opus media transport
+planning contract implementation.
+
+Evidence:
+
+- Review thread: `019e7cb4-5314-7fa2-9c78-255618d7874d`.
+- Review thread title:
+  `A21 Binary Opus Media：Post-Commit Review`.
+- Review worktree: `/Users/jiyurun/.codex/worktrees/76ca/New project`.
+- Review branch context: `codex/a21-integration-governance-slices`.
+- Starting HEAD:
+  `d87346c21764 docs(control): accept binary opus planning slice`.
+- Review range: `c458be7..d87346c21764`.
+- Focus commits:
+  `affe0ad docs(media): add binary opus transport contract` and
+  `d87346c docs(control): accept binary opus planning slice`.
+- Scope: read-only P0/P1/P2 review of the binary Opus planning contract and
+  ledger acceptance. The review must check for wording that implies Opus
+  runtime, production acceptance, latency/quality improvement, provider/V21/
+  Gateway/hardware authorization, missing future gates, redaction gaps, A21
+  namespace drift, and ledger inaccuracies.
+- Maximum tier: T0/T1/T2.
+
+Allowed verification:
+
+- `git diff --check`.
+- `go run ./cmd/a21 namespace-audit`.
+- `make verify`.
+- `go run ./cmd/a21 preflight`.
+- `go run ./cmd/a21 doctor`.
+- `go run ./cmd/a21 audio-front-end-plan`.
+- `go run ./cmd/a21 provider-latency-bench --provider mock --mode host_loopback --iterations 2`.
+- Read-only grep/rg checks.
+
+Forbidden:
+
+- File edits, staging, commits, pushes, provider `--execute`, real provider
+  calls, V21 execute, Gateway/runtime startup, durable payload reports,
+  firmware/NVS/flash/raw upload/serial writes, real `/v1/devices/control`,
+  physical device paths, production dependencies, native Opus/WebRTC
+  dependency, AgentTask runtime, actual binary Opus runtime/native codec
+  implementation, and any prompt/transcript/provider output/reasoning/raw
+  audio/full URL/proxy/local path leakage.
+
+Control-tower next gate:
+
+- Wait for post-review handoff.
+- If the review finds P0/P1/P2 issues, fix them in the main integration
+  worktree and close the review.
+- If the review finds no P0/P1/P2 issues, close the post-review and run the
+  next PRD slice audit.
 
 ### Fast Companion Hybrid Boundary Audit
 
