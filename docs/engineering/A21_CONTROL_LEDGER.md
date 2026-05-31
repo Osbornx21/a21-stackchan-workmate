@@ -58,7 +58,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7bce-bacf-76e3-98f3-1e53fffe1377` | Promotion-readiness gate review | `/Users/jiyurun/.codex/worktrees/9f7f/New project` | active; read-only review of `3ddcc45` | T0/T1 | no |
+| `019e7bce-bacf-76e3-98f3-1e53fffe1377` | Promotion-readiness gate review | `/Users/jiyurun/.codex/worktrees/9f7f/New project` | completed; no P0/P1/P2 findings on `3ddcc45` | T0/T1 | no |
 | `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | completed; no P0/P1/P2 findings on `1872ca9` | T0/T1 | no |
 | `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | completed; committed `a031f3d` | T0/T1 | no |
 | `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | completed; committed `fc61793` | T1/T2 | no |
@@ -132,6 +132,43 @@ Decision:
   explicitly configured.
 - External promotion remains blocked on the same target-selection decision:
   choose/configure a git remote and target branch, or explicitly approve a
+  local-only mainline branch.
+
+### Promotion Readiness Gate Review
+
+Accepted from thread `019e7bce-bacf-76e3-98f3-1e53fffe1377`.
+
+Evidence:
+
+- Review worktree: `/Users/jiyurun/.codex/worktrees/9f7f/New project`.
+- Reviewed implementation commit:
+  `3ddcc45 feat(control): add promotion readiness gate`.
+- Control tower HEAD at review close:
+  `e55b652 docs(control): track promotion readiness review thread`.
+- Review result: no P0, P1, or P2 findings.
+- Review conclusion: `promotion-readiness` is acceptable as the current
+  integration branch's local promotion gate.
+- Review confirmed the implementation is host-only and only reads cwd plus
+  git metadata; it does not enter provider execution, V21 execution, Gateway
+  runtime, NVS/flash/serial/write paths, hardware control, or
+  `/v1/devices/control`.
+- Review confirmed the gate distinguishes `review_ready` from
+  `external_promotion_ready` and keeps external promotion blocked without a
+  configured remote and explicit target branch.
+- Review verification passed:
+  `go test ./internal/app -run 'TestRunPromotionReadiness' -count=1`.
+- Review verification passed: `git diff --check`.
+- Review ran `go run ./cmd/a21 promotion-readiness` in the detached review
+  worktree and received the expected non-zero result while confirming all four
+  accepted slice commits are ancestors.
+- Review did not change files, commit, start services, run provider/V21
+  execute, run hardware write paths, or touch physical device control.
+
+Decision:
+
+- Keep the gate as accepted local promotion infrastructure.
+- The only remaining manual promotion decision is still target selection:
+  configure/choose a remote and target branch, or explicitly approve a
   local-only mainline branch.
 
 ### Promotion Candidate Full Gate Refresh
