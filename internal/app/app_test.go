@@ -3016,6 +3016,7 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 		t.Fatal("server did not receive professional V21 adapter smoke request")
 	}
 	for _, want := range []string{
+		`"schema_version": "a21.v21_adapter_smoke.v1"`,
 		`"adapter": "a21-v21-adapter"`,
 		`"status": "passed"`,
 		`"executed": true`,
@@ -3023,6 +3024,7 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 		`"evidence_count": 1`,
 		`"speech_block_count": 1`,
 		`"screen_card_count": 1`,
+		`"follow_up_count": 1`,
 		`"report_path"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -3104,7 +3106,7 @@ func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 	if !sawRetrievalQuery {
 		t.Fatal("bridge did not call V21 retrieval query with the adapter contract")
 	}
-	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"confidence": 0.91`} {
+	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"follow_up_count": 1`, `"confidence": 0.91`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}

@@ -68,6 +68,40 @@ func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRejectsResponseMissingProfessionalEvidenceContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-v21-missing-contract",
+			"fast_answer":"raw answer text that must not leak",
+			"confidence":0.77,
+			"speech_blocks":["raw speech block that must not leak"]
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:   "a21-trace-v21-missing-contract",
+		SessionID: "a21-session-v21-missing-contract",
+		Utterance: "查一下证据",
+	})
+	if err == nil {
+		t.Fatal("expected missing professional evidence contract to be rejected")
+	}
+	if !strings.Contains(err.Error(), "professional response contract") {
+		t.Fatalf("error = %q, want stable professional response contract code", err.Error())
+	}
+	for _, forbidden := range []string{"raw answer", "raw speech", "查一下证据"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("response validation error leaked %q: %q", forbidden, err.Error())
+		}
+	}
+}
+
 func TestHTTPClientRejectsNonProfessionalQueryBeforeNetwork(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

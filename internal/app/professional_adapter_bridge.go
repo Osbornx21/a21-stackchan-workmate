@@ -274,6 +274,7 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 	if len(response.Evidence) > 0 {
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
+	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
 	return response, nil
 }
 
@@ -328,6 +329,7 @@ func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base 
 	if len(response.Evidence) > 0 {
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
+	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
 	return response, nil
 }
 
@@ -359,6 +361,13 @@ func v21RetrievalConfidence(results []v21RetrievalResult) float64 {
 		return 1
 	}
 	return best
+}
+
+func buildV21BridgeFollowUps(evidence []v21adapter.Evidence) []string {
+	if len(evidence) == 0 {
+		return []string{"要不要换一个专业问题继续查？"}
+	}
+	return []string{"要不要打开 V21 工作台查看证据详情？"}
 }
 
 func setV21DevHeaders(req *http.Request) {

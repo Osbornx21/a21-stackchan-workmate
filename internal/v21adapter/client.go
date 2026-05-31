@@ -110,6 +110,9 @@ func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResp
 	if response.TraceID == "" {
 		response.TraceID = request.TraceID
 	}
+	if err := ValidateProfessionalQueryResponse(response); err != nil {
+		return QueryResponse{}, err
+	}
 	return response, nil
 }
 
@@ -193,6 +196,25 @@ func ValidateProfessionalQueryRequest(request QueryRequest) error {
 		return fmt.Errorf("v21 adapter accepts only professional_only privacy scope")
 	}
 	return nil
+}
+
+func ValidateProfessionalQueryResponse(response QueryResponse) error {
+	switch {
+	case strings.TrimSpace(response.FastAnswer) == "":
+		return fmt.Errorf("v21 adapter professional response contract invalid: missing fast_answer")
+	case response.Confidence < 0 || response.Confidence > 1:
+		return fmt.Errorf("v21 adapter professional response contract invalid: confidence out of range")
+	case len(response.Evidence) == 0:
+		return fmt.Errorf("v21 adapter professional response contract invalid: missing evidence")
+	case len(response.SpeechBlocks) == 0:
+		return fmt.Errorf("v21 adapter professional response contract invalid: missing speech_blocks")
+	case len(response.ScreenCards) == 0:
+		return fmt.Errorf("v21 adapter professional response contract invalid: missing screen_cards")
+	case len(response.FollowUps) == 0:
+		return fmt.Errorf("v21 adapter professional response contract invalid: missing follow_ups")
+	default:
+		return nil
+	}
 }
 
 func withDefaults(request QueryRequest) QueryRequest {

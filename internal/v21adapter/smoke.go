@@ -13,6 +13,7 @@ import (
 var smokeURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 
 type SmokeReport struct {
+	SchemaVersion    string  `json:"schema_version"`
 	Adapter          string  `json:"adapter"`
 	Protocol         string  `json:"protocol"`
 	Status           string  `json:"status"`
@@ -33,11 +34,12 @@ type SmokeReport struct {
 
 func Smoke(ctx context.Context, adapterURL string, utterance string, execute bool, httpClient *http.Client) SmokeReport {
 	report := SmokeReport{
-		Adapter:    "a21-v21-adapter",
-		Protocol:   "a21_v21_query",
-		Status:     "failed",
-		QueryPath:  QueryPath,
-		HealthPath: HealthPath,
+		SchemaVersion: "a21.v21_adapter_smoke.v1",
+		Adapter:       "a21-v21-adapter",
+		Protocol:      "a21_v21_query",
+		Status:        "failed",
+		QueryPath:     QueryPath,
+		HealthPath:    HealthPath,
 	}
 	adapterURL = strings.TrimSpace(adapterURL)
 	if adapterURL == "" {

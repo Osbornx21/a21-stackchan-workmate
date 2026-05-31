@@ -2647,9 +2647,14 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	defer cancel()
 	started := time.Now()
 	response, err := s.v21.Query(queryCtx, v21adapter.QueryRequest{
-		TraceID:   traceID,
-		SessionID: sessionID,
-		Utterance: req.Text,
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		Mode:               "professional",
+		Utterance:          req.Text,
+		LatencyProfile:     "fast_first",
+		AnswerStyle:        "voice_first_with_citations",
+		MaxFirstResponseMS: 1200,
+		PrivacyScope:       "professional_only",
 	})
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	postQueryPayloads := make([]protocol.ControlEventPayload, 0, 1)

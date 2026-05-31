@@ -887,6 +887,58 @@ func TestProfessionalModeEmitsCheckingFeedbackBeforeV21Query(t *testing.T) {
 	}
 }
 
+func TestProfessionalModeSendsExplicitV21PlaceholderContract(t *testing.T) {
+	v21 := &capturingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	handler := server.Handler()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下证据","mode":"professional","trace_id":"a21-trace-pro-contract","session_id":"a21-session-pro-contract"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if v21.request.Mode != "professional" ||
+		v21.request.PrivacyScope != "professional_only" ||
+		v21.request.LatencyProfile != "fast_first" ||
+		v21.request.AnswerStyle != "voice_first_with_citations" ||
+		v21.request.MaxFirstResponseMS != 1200 {
+		t.Fatalf("gateway sent incomplete V21 professional placeholder contract: %+v", v21.request)
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var answer protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[len(response.Events)-1].Payload, &answer); err != nil {
+		t.Fatal(err)
+	}
+	if len(answer.Evidence) != 1 || len(answer.ScreenCards) != 1 || len(answer.FollowUps) != 1 {
+		t.Fatalf("professional response missing evidence/cards/follow-ups: %+v", answer)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-contract", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	var traces TraceResponse
+	if err := json.Unmarshal(traceRec.Body.Bytes(), &traces); err != nil {
+		t.Fatal(err)
+	}
+	checkingAt, ok := traceEventAtMS(traces.Events, "professional.checking_feedback.sent")
+	if !ok {
+		t.Fatalf("trace missing checking feedback marker: %s", traceRec.Body.String())
+	}
+	v21StartAt, ok := traceEventAtMS(traces.Events, "v21.query.start")
+	if !ok {
+		t.Fatalf("trace missing V21 start marker: %s", traceRec.Body.String())
+	}
+	if v21StartAt-checkingAt > 1200 {
+		t.Fatalf("placeholder boundary = %dms, want <=1200ms", v21StartAt-checkingAt)
+	}
+}
+
 func TestWorkmateModeDoesNotCallV21Adapter(t *testing.T) {
 	v21 := &countingV21Client{}
 	server := NewServerWithOptions(ServerOptions{V21Client: v21})
@@ -4578,6 +4630,28 @@ type countingV21Client struct {
 func (c *countingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
 	c.calls++
 	return v21adapter.NewMockClient().Query(ctx, request)
+}
+
+type capturingV21Client struct {
+	request v21adapter.QueryRequest
+}
+
+func (c *capturingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	c.request = request
+	return v21adapter.QueryResponse{
+		TraceID:    request.TraceID,
+		FastAnswer: "V21 找到一条可引用证据。",
+		Confidence: 0.9,
+		Evidence: []v21adapter.Evidence{{
+			Title:    "adapter source",
+			Type:     "v21_retrieval_evidence",
+			SourceID: "v21-doc-contract-001",
+			Summary:  "sanitized evidence fixture",
+		}},
+		SpeechBlocks: []string{"V21 找到一条可引用证据。"},
+		ScreenCards:  []v21adapter.ScreenCard{{Label: "结论", Text: "1 条证据"}},
+		FollowUps:    []string{"要不要展开来源？"},
+	}, nil
 }
 
 type failingV21Client struct{}
