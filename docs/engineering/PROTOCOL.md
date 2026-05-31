@@ -54,9 +54,11 @@ count and byte count, propagates or derives `device_id`, `trace_id`, and
 `session_id`, and rejects legacy-looking X21/V21 identities.
 
 This is not yet the complete product voice chain. The current WS-1 seam does
-not decode Opus to PCM, does not run ASR/LLM/TTS providers, and does not send
-binary Opus TTS audio back to the device. On `listen/stop`, it emits an honest
-xiaozhi TTS lifecycle placeholder with
+not decode Opus to PCM inside Gateway, does not run ASR/LLM/TTS providers, and
+does not send binary Opus TTS audio back to the device. A host-only
+`internal/audio/opuscodec` boundary separately proves mono PCM16 60 ms
+Opus encode/decode for xiaozhi's 16 kHz uplink and 24 kHz downlink rates. On
+`listen/stop`, it emits an honest xiaozhi TTS lifecycle placeholder with
 `decode_status=opus_passthrough_unimplemented_decode` so tests and operators
 cannot mistake the transport proof for audible product acceptance.
 
@@ -137,9 +139,10 @@ jitter/fallback report, and hardware window acceptance all pass under explicit
 authorization.
 
 Current `AudioCodecOpus` is reserved vocabulary for the older A21 envelope
-path. The xiaozhi compatibility seam can receive raw Opus binary frames, but it
-does not yet decode them or treat them as ASR-ready audio. Current A21 envelope
-validation still accepts `pcm_s16le` frames, and no Gateway, provider,
+path. The xiaozhi compatibility seam can receive raw Opus binary frames, and
+the host codec boundary can encode/decode 60 ms mono PCM16 frames, but Gateway
+does not yet decode those frames or treat them as ASR-ready audio. Current A21
+envelope validation still accepts `pcm_s16le` frames, and no Gateway, provider,
 firmware, or physical device path should treat Opus media as product-complete
 from this document.
 

@@ -4,6 +4,8 @@ go 1.26
 
 require github.com/coder/websocket v1.8.14
 
+require github.com/thesyncim/gopus v0.0.0-20260530230639-b2b9aae286cb
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

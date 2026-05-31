@@ -55,6 +55,12 @@ Any future real speech downlink work must migrate toward this official codec lan
 - Browser/operator realtime surfaces should prefer WebRTC or a LiveKit-compatible media plane once A21 needs multi-client monitoring or browser audio.
 - StackChan/CoreS3 device media should prefer A21 WebSocket plus Opus before full WebRTC-in-firmware. The A21 protocol stays A21-owned; xiaozhi's `hello/audio_params` and binary Opus behavior are reference material, not identity.
 - Opus is the default mature codec target for interactive speech. A21 should evaluate 20 ms, 40 ms, and 60 ms frames with real StackChan CPU, Wi-Fi, and playback evidence instead of copying X21's 60 ms value blindly.
+- Host WS-1 Opus encode/decode currently wraps the pinned pure-Go
+  `github.com/thesyncim/gopus` library behind `internal/audio/opuscodec`. A21
+  keeps third-party types out of Gateway/protocol surfaces; the local 16 kHz and
+  24 kHz PCM inputs are normalized to 48 kHz only at this boundary so Opus TOC
+  duration stays correct. This is host codec evidence, not a product voice-chain
+  acceptance result.
 - PCM16 JSON/base64 remains acceptable for fixtures, loopback, and diagnostic visibility, not for the final low-latency physical media path.
 
 The live protocol contract defines the frame/envelope, redaction,
