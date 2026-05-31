@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `acdd929`.
+Last accepted integration commit before this ledger update: `54af08b`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `acdd929 merge: integrate StackChan hardware diagnostic honesty`.
+  `54af08b docs(control): track integration review thread`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -33,7 +33,10 @@ defines policy; this ledger records the current queue and accepted state.
 - Official PCM bridge app flash ADR docs-only branch is committed at
   `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
 - Integration branch merged all four accepted slices:
-  `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`.
+  `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
+  `1872ca9` and `54af08b`.
+- Read-only integration review found no P0/P1/P2 issues against the merged
+  governance baseline at `1872ca9`.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
@@ -46,7 +49,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | active; read-only review of `1872ca9` | T0/T1 | no |
+| `019e7bba-71ca-71d0-84cc-78424d4d07ab` | Integration review / governance slices | `/Users/jiyurun/.codex/worktrees/47a6/New project` | completed; no P0/P1/P2 findings on `1872ca9` | T0/T1 | no |
 | `019e7bb0-bf95-74f3-a935-1e89644bd417` | PCM bridge app flash ADR docs-only | `/Users/jiyurun/.codex/worktrees/42b1/New project` | completed; committed `a031f3d` | T0/T1 | no |
 | `019e7ba8-2bec-7f12-83ce-8b0fd1cc06c9` | Professional V21 evidence adapter readiness | `/Users/jiyurun/.codex/worktrees/ab7a/New project` | completed; committed `fc61793` | T1/T2 | no |
 | `019e7ba1-d81e-74c3-bd2e-a6191344085a` | Provider Spine / DeepSeek text-stream readiness | `/Users/jiyurun/.codex/worktrees/84d6/New project` | completed; committed `6b7fdf0` | T1/T2 | no |
@@ -75,6 +78,55 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Read-Only Integration Review
+
+Accepted from thread `019e7bba-71ca-71d0-84cc-78424d4d07ab`.
+
+Evidence:
+
+- Review worktree: `/Users/jiyurun/.codex/worktrees/47a6/New project`.
+- Reviewed commit: `1872ca9 docs(control): record integrated governance baseline`.
+- Review result: no P0, P1, or P2 findings.
+- Review conclusion: `codex/a21-integration-governance-slices` is
+  review-ready.
+- Review confirmed the four accepted slice commits are ancestors of the
+  integration baseline: `a031f3d`, `6b7fdf0`, `fc61793`, and `1e38804`.
+- Review confirmed Provider first-content timing is set only from content
+  deltas, not reasoning deltas.
+- Review confirmed V21 adapter use remains explicit, direct no-ambient-proxy,
+  and does not fall back to mock V21 evidence on invalid configured adapter
+  URLs.
+- Review confirmed StackChan hardware mainline keeps `microphone=available`
+  blocked for release reports and blocks planned hardware from being declared
+  falsely available.
+- Review confirmed the official PCM bridge app flash ADR remains Draft/T8
+  blocked and does not authorize app flash.
+- Review confirmed the control ledger accurately reflects branches, threads,
+  verification, and forbidden T4/T6/T7/T8 actions.
+- Review verification passed: `git diff --check`.
+- Review verification passed:
+  `go test ./internal/app ./internal/providers ./internal/v21adapter -count=1`.
+- Review verification passed: `go run ./cmd/a21 namespace-audit`.
+- Review verification ran
+  `go run ./cmd/a21 control-guard --command 'stackchan-official-pcm-bridge-flash-execute'`
+  and received the expected T8 blocked result.
+- Review did not change files, commit, start services, run provider/V21 execute,
+  run hardware write paths, or touch physical device control.
+
+Control-tower follow-up evidence:
+
+- Latest integration HEAD: `54af08b docs(control): track integration review thread`.
+- Control-tower verification passed on latest HEAD: `make verify`.
+- Control-tower targeted non-cached tests passed:
+  `go test ./internal/app ./internal/providers ./internal/v21adapter ./internal/runtimeguard -count=1`.
+
+Decision:
+
+- Treat `codex/a21-integration-governance-slices` as review-ready for the next
+  PR/mainline integration decision.
+- Keep all T4 provider/V21 execute and T6/T7/T8 hardware operations closed
+  until an explicit future window is opened by the control tower.
 
 ### Integrated Governance Slices Baseline
 
@@ -329,16 +381,18 @@ Decision:
    - Combined verification branch:
      `codex/a21-integration-governance-slices`.
    - Read-only review thread:
-     `019e7bba-71ca-71d0-84cc-78424d4d07ab`.
+     `019e7bba-71ca-71d0-84cc-78424d4d07ab`, completed with no P0/P1/P2
+     findings.
    - Topic branches remain available:
      `codex/a21-mainline-stackchan-hardware-diagnostic`,
      `codex/a21-provider-spine-deepseek-textstream`,
      `codex/a21-mainline-professional-v21-contract`,
      `codex/a21-docs-pcm-bridge-flash-adr`.
    - Max tier: T1/T2.
-   - Purpose: consume the integration review findings, then choose one combined
-     PR versus four topic PRs, or merge the verified integration branch into
-     the project mainline.
+   - Purpose: choose one combined PR versus four topic PRs, or merge the
+     verified integration branch into the project mainline.
+   - Current local repository has no configured git remote, so push/PR requires
+     adding or selecting a remote outside this ledger change.
    - Forbidden: provider/V21 execute, Gateway runtime, hardware writes,
      background flash, NVS execute, raw upload, or changing PRD scope while
      integrating.
