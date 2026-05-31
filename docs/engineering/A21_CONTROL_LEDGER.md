@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `7eb3a8d`.
+Last accepted integration commit before this ledger update: `560df00`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `7eb3a8d docs(control): record provider fixture post review`.
+  `560df00 feat(providers): add agent task bridge scaffold`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -49,8 +49,14 @@ defines policy; this ledger records the current queue and accepted state.
   latency post-review acceptance is `b8d46f8`, provider fixture schema
   slice-open tracking is `44d6c76`, provider fixture metadata contract
   acceptance is `f69c6b8`, provider fixture metadata ledger acceptance is
-  `0e46761`, provider fixture metadata post-review tracking is `cfc1658`, and
-  provider fixture metadata post-review acceptance is `7eb3a8d`.
+  `0e46761`, provider fixture metadata post-review tracking is `cfc1658`,
+  provider fixture metadata post-review acceptance is `7eb3a8d`, provider
+  fixture sidecar hardening tracking is `68e1cc8`, provider fixture sidecar
+  hardening implementation is `a4e3a6f`, sidecar hardening acceptance is
+  `447b917`, fixture sidecar post-review tracking is `0633b2b`, fixture
+  sidecar post-review closure is `a1742ae`, AgentTaskProvider Bridge scaffold
+  opening is `8974460`, and AgentTaskProvider Bridge scaffold acceptance is
+  `560df00`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -59,12 +65,14 @@ defines policy; this ledger records the current queue and accepted state.
 - The local repository has no configured remote and no `main` or `master`
   branch. Remote PR creation or local mainline merge therefore requires a
   later explicit target decision outside this ledger update.
-- Current integration HEAD after provider fixture sidecar hardening and
-  post-review closure:
-  `a1742ae docs(control): record fixture sidecar post review`.
-- Current next PRD Phase 5 T1/T2 slice is AgentTaskProvider Bridge scaffold:
+- Current integration HEAD after AgentTaskProvider Bridge scaffold acceptance:
+  `560df00 feat(providers): add agent task bridge scaffold`.
+- Current PRD Phase 5 AgentTaskProvider Bridge state is T1/T2 scaffold only:
   external agents remain an explicit Agent I/O Layer, not an A21 router,
-  second brain, backend orchestrator, or realtime first-response owner.
+  second brain, backend orchestrator, or realtime first-response owner. Real
+  Hermes/MiMo/OpenClaw runtime, provider execution, V21 execution, Gateway
+  runtime, and hardware/device-control paths remain unauthorized future
+  windows.
 - Official StackChan PCM bridge NVS-only lane is accepted as closed for the
   current M3 governance slice.
 - Official StackChan PCM bridge app flash-execute remains T8 blocked. The new
@@ -77,7 +85,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | active; T1/T2 Agent I/O scaffold, no real agent runtime | T1/T2 | no |
+| `019e7c48-9fc7-7ff0-8563-965fe9da9f72` | AgentTaskProvider Bridge scaffold implementation | `/Users/jiyurun/.codex/worktrees/04c0/New project` | completed; accepted into integration branch at `560df00` | T1/T2 | no |
 | `019e7c41-1842-7a30-a185-aafc73ba2d73` | Provider fixture sidecar post-commit review | `/Users/jiyurun/.codex/worktrees/8922/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
 | `019e7c36-4617-73a1-aba0-1d35acc26efe` | Provider fixture sidecar hardening implementation | `/Users/jiyurun/.codex/worktrees/38a4/New project` | accepted into integration branch at `a4e3a6f`; post-review closed at `a1742ae` | T1/T2 | no |
 | `019e7c30-7329-7a32-996e-0566c9746e5d` | Provider fixture metadata post-commit review | `/Users/jiyurun/.codex/worktrees/1181/New project` | completed; no P0/P1/P2 findings | T0/T1/T2 | no |
@@ -632,6 +640,59 @@ Acceptance gates:
 - `go run ./cmd/a21 namespace-audit`.
 - `git diff --check`.
 - `make verify` if the slice touches shared app CLI or docs.
+
+Decision:
+
+- Accept the implementation handoff into the integration branch at
+  `560df00 feat(providers): add agent task bridge scaffold`.
+- The accepted scaffold is provider-package T1/T2 only. It defines the
+  AgentTask contract, fake `sse`/`http`/`stdio` event streams, an A21-owned
+  semantic report shape, redaction markers, and forbidden request findings.
+- The control tower added a stricter catalog guard before acceptance:
+  `A21_PROVIDER_PRIMARY=hermes_agent` or `mimo_agent` now produces
+  `provider_agent_task_primary` and does not mark the agent profile selected.
+  Agent-task readiness remains controlled only by `A21_AGENT_PROVIDER_PRIMARY`.
+- Do not open real Hermes/MiMo/OpenClaw runtime, provider execution, V21
+  execution, Gateway runtime, durable agent-payload reports, firmware/NVS/
+  flash/raw upload/serial writes, `/v1/devices/control`, or physical device
+  paths from this scaffold.
+
+Acceptance evidence:
+
+- Implementation branch: `codex/a21-agent-task-bridge-scaffold`.
+- Implementation handoff dirty files:
+  `docs/engineering/DOCTOR.md`, `docs/engineering/OBSERVABILITY.md`,
+  `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/PHASE5_AGENT_TASK_BRIDGE.md`,
+  `internal/providers/agent_task.go`,
+  `internal/providers/agent_task_test.go`,
+  `internal/providers/catalog.go`,
+  `internal/providers/catalog_test.go`, and
+  `internal/providers/smoke.go`.
+- Implementation thread reported TDD red on missing `AgentTask*` APIs, then
+  green after the minimal scaffold.
+- Implementation thread caught and fixed an over-broad provider-env safety
+  scan so ordinary A21 semantic context such as `a21_mode` is not rejected.
+- Control tower independently verified before acceptance:
+  `go test ./internal/providers -run 'AgentTask|ProviderCatalog|ProviderProfile' -count=1`.
+- Control tower independently verified: `go test ./internal/providers -count=1`.
+- Control tower independently verified: `go run ./cmd/a21 namespace-audit`.
+- Control tower independently verified: `git diff --check`.
+- Control tower independently verified: `make verify`.
+- Semantic reports store event kind, final marker, trace/session identity,
+  text length, and redaction markers only. They do not store external agent
+  text, tool payloads, credentials, full URLs, local paths, provider env
+  values, or raw external-agent control payloads.
+- No real Hermes/MiMo/OpenClaw runtime, provider execution, V21 execution,
+  Gateway runtime/service startup, durable agent-payload report, firmware/NVS/
+  flash/raw upload/serial write, `/v1/devices/control`, physical device path,
+  production dependency, secret, provider payload, or agent payload was added
+  or run.
+
+Remaining gap:
+
+- Real adapter/runtime work remains a future T4/T6 window with explicit
+  authorization, redacted receipts, and runtime gates.
 
 ### Fast Companion Hybrid Boundary Audit
 
