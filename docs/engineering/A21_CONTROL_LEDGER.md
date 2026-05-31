@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `2339d4e`.
+Last accepted integration commit before this ledger update: `9f9d5e6`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,10 +20,13 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `2339d4e docs(control): choose integration promotion path`.
+  `9f9d5e6 docs(control): record promotion gate refresh`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
+- `a21 promotion-readiness` is the active machine-readable integration
+  promotion gate for separating local review readiness from external promotion
+  readiness.
 - StackChan hardware mainline diagnostic branch is committed at
   `1e38804 fix(hardware): enforce StackChan capability honesty`.
 - Provider Spine DeepSeek text-stream readiness branch is committed at
@@ -34,7 +37,7 @@ defines policy; this ledger records the current queue and accepted state.
   `a031f3d docs(firmware): add PCM bridge flash ADR gate`.
 - Integration branch merged all four accepted slices:
   `5674b08`, `3c3ae1f`, `6abf8d7`, and `acdd929`; ledger follow-ups are
-  `1872ca9`, `54af08b`, `045147d`, and `2339d4e`.
+  `1872ca9`, `54af08b`, `045147d`, `2339d4e`, and `9f9d5e6`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -84,6 +87,51 @@ Rules:
   receipt path, and no key or prompt/output text in saved reports.
 
 ## Accepted Handoffs
+
+### Machine-Readable Promotion Readiness Gate
+
+Accepted by the control tower as the next local governance slice for the
+selected integration promotion candidate.
+
+Evidence:
+
+- Current branch: `codex/a21-integration-governance-slices`.
+- Current HEAD before this ledger update:
+  `9f9d5e6 docs(control): record promotion gate refresh`.
+- Added `go run ./cmd/a21 promotion-readiness` and `make
+  promotion-readiness`.
+- The report schema is `a21.promotion_readiness.v1`.
+- The gate checks integration branch naming, detached HEAD, dirty worktree,
+  accepted slice ancestry for `a031f3d`, `6b7fdf0`, `fc61793`, and
+  `1e38804`, local `main`/`master` presence, configured git remotes, and an
+  explicit target remote/branch.
+- Targeted promotion-readiness tests passed:
+  `go test ./internal/app -run 'TestRunPromotionReadiness' -count=1`.
+- Package verification passed:
+  `go test ./internal/app ./internal/runtimeguard -count=1`.
+- Project verification passed: `make verify`.
+- Namespace audit passed: `go run ./cmd/a21 namespace-audit`.
+- Preflight passed: `go run ./cmd/a21 preflight`.
+- Doctor passed: `go run ./cmd/a21 doctor`, with the expected warning that no
+  release-ledger-validated A21 firmware artifact matches commit
+  `9f9d5e6bdb1c`.
+- A pre-commit `promotion-readiness` dry run returned the expected non-zero
+  result while the worktree was dirty and no remote/target branch was
+  configured.
+- No provider execute, V21 execute, Gateway runtime, durable report, NVS
+  execute, flash execute, raw upload, serial write, app partition write,
+  `/v1/devices/control`, or physical device path was touched.
+
+Decision:
+
+- Use `promotion-readiness` for future integration handoffs and PR/mainline
+  promotion decisions.
+- Treat `review_ready=true` and `external_promotion_ready=false` as the
+  expected clean local state until a target remote and target branch are
+  explicitly configured.
+- External promotion remains blocked on the same target-selection decision:
+  choose/configure a git remote and target branch, or explicitly approve a
+  local-only mainline branch.
 
 ### Promotion Candidate Full Gate Refresh
 

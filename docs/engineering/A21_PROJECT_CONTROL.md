@@ -23,6 +23,10 @@ faster than the governance docs can catch up.
   T7 execute paths consume it before hardware writes and write its branch,
   commit, worktree, dirty-state, tier, and command evidence into execution
   receipts.
+- `go run ./cmd/a21 promotion-readiness` is the machine-readable integration
+  promotion gate. It separates local review readiness from external promotion
+  readiness, and it must stay host-only: no provider execution, V21 execution,
+  Gateway runtime, or hardware/device side effect.
 - `docs/engineering/A21_CONTROL_LEDGER.md` is the current control tower queue:
   it records accepted handoffs, active/paused thread roles, worktree ownership,
   and the next PRD-authorized implementation slice.
@@ -68,7 +72,7 @@ will touch before execution.
 | Tier | Label | Examples | Rules |
 | --- | --- | --- | --- |
 | T0 | Read-only inspection | `rg`, `git status`, `git diff`, `go list` | Always allowed in control/review threads |
-| T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `make verify` | Allowed when no hardware/service side effect is expected |
+| T1 | Host-only verification | `go test ./...`, `git diff --check`, `go run ./cmd/a21 namespace-audit`, `go run ./cmd/a21 promotion-readiness`, `make verify` | Allowed when no hardware/service side effect is expected |
 | T2 | Local reports and dry runs | `preflight`, `doctor`, `latency-bench`, `provider-smoke` without `--execute`, `v21-adapter-smoke` without `--execute`, `provider-realtime-fixture --execute` because it is an offline fixture | Reports must stay redacted |
 | T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
 | T4 | External/provider execution | `provider-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
@@ -127,6 +131,8 @@ Every implementation handoff must include:
 - branch name and HEAD commit;
 - dirty files, staged files, and untracked files;
 - exact commands run and their result;
+- for integration branches, the `promotion-readiness` result and whether any
+  non-zero exit was the expected external-target blocker;
 - report paths for generated evidence;
 - hardware/device state when StackChan was involved;
 - next action, blocked reason, or required ADR.

@@ -47,6 +47,58 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRunPromotionReadinessBlocksExternalPromotionWithoutTarget(t *testing.T) {
+	dir := t.TempDir()
+	writePromotionReadinessGitScript(t, dir, promotionGitScriptOptions{})
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"promotion-readiness"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.promotion_readiness.v1"`,
+		`"branch": "codex/a21-integration-governance-slices"`,
+		`"review_ready": true`,
+		`"external_promotion_ready": false`,
+		`"promotion_remote_missing"`,
+		`"promotion_target_branch_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunPromotionReadinessBlocksMissingTopicAncestor(t *testing.T) {
+	dir := t.TempDir()
+	writePromotionReadinessGitScript(t, dir, promotionGitScriptOptions{
+		remoteNames:            "origin\n",
+		targetBranchConfigured: true,
+		missingAncestor:        "6b7fdf0",
+	})
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"promotion-readiness", "--target-remote", "origin", "--target-branch", "codex/a21-mainline-current"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"review_ready": false`,
+		`"external_promotion_ready": false`,
+		`"promotion_topic_not_ancestor"`,
+		`"branch": "codex/a21-provider-spine-deepseek-textstream"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\ninternal/v21adapter/client.go\n")
@@ -7312,6 +7364,66 @@ func writeNamespaceAuditGitScript(t *testing.T, dir string, files string) {
 	t.Helper()
 	path := filepath.Join(dir, "git")
 	content := "#!/bin/sh\nif [ \"$1\" = \"ls-files\" ]; then\ncat <<'EOF'\n" + files + "EOF\nelse\nexit 2\nfi\n"
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type promotionGitScriptOptions struct {
+	remoteNames            string
+	targetBranchConfigured bool
+	missingAncestor        string
+}
+
+func writePromotionReadinessGitScript(t *testing.T, dir string, options promotionGitScriptOptions) {
+	t.Helper()
+	path := filepath.Join(dir, "git")
+	mainExit := "1"
+	masterExit := "1"
+	remoteNames := options.remoteNames
+	if options.targetBranchConfigured {
+		mainExit = "0"
+	}
+	content := `#!/bin/sh
+if [ "$1" = "-C" ]; then
+  shift
+  shift
+fi
+case "$1 $2 $3" in
+  "rev-parse --abbrev-ref HEAD")
+    echo "codex/a21-integration-governance-slices"
+    exit 0
+    ;;
+  "rev-parse --short=12 HEAD")
+    echo "abcdef123456"
+    exit 0
+    ;;
+  "status --porcelain --untracked-files=all")
+    exit 0
+    ;;
+  "remote  ")
+    cat <<'EOF'
+` + remoteNames + `EOF
+    exit 0
+    ;;
+  "show-ref --verify --quiet")
+    if [ "$4" = "refs/heads/main" ]; then
+      exit ` + mainExit + `
+    fi
+    if [ "$4" = "refs/heads/master" ]; then
+      exit ` + masterExit + `
+    fi
+    exit 1
+    ;;
+  "merge-base --is-ancestor "*)
+    if [ "$3" = "` + options.missingAncestor + `" ]; then
+      exit 1
+    fi
+    exit 0
+    ;;
+esac
+exit 2
+`
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}

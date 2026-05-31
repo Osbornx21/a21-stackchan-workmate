@@ -170,6 +170,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runPreflight(stdout, stderr)
 	case "namespace-audit":
 		return runNamespaceAudit(stdout, stderr)
+	case "promotion-readiness":
+		return runPromotionReadiness(args[1:], stdout, stderr)
 	case "control-guard":
 		return runControlGuard(args[1:], stdout, stderr)
 	case "doctor":
