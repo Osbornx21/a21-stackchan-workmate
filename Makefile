@@ -193,7 +193,7 @@ firmware-tools:
 	A21_PLATFORMIO_VERSION="$(A21_PLATFORMIO_VERSION)" scripts/a21_setup_platformio.sh
 
 firmware-check:
-	go run ./cmd/a21 firmware-check
+	go run ./cmd/a21 firmware-check --kind manifest
 
 firmware-test: firmware-tools firmware-check
 	$(PIO) test -d firmware/stackchan -e a21_stackchan_native
@@ -276,19 +276,19 @@ firmware-package: firmware-clean-check firmware-build
 	go run ./cmd/a21 firmware-package --commit $$(git rev-parse --short=12 HEAD)
 
 firmware-current-artifact-check:
-	go run ./cmd/a21 firmware-current-artifact-check --commit $$(git rev-parse --short=12 HEAD)
+	go run ./cmd/a21 firmware-check --kind current-artifact --commit $$(git rev-parse --short=12 HEAD)
 
 firmware-artifact-prune-plan:
 	go run ./cmd/a21 firmware-artifact-prune-plan --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 firmware-artifact-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
-	go run ./cmd/a21 firmware-artifact-check --artifact "$(A21_FIRMWARE_ARTIFACT)"
+	go run ./cmd/a21 firmware-check --kind artifact --artifact "$(A21_FIRMWARE_ARTIFACT)"
 
 firmware-upload-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 firmware-upload-check --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD)
+	go run ./cmd/a21 firmware-check --kind upload --artifact "$(A21_FIRMWARE_ARTIFACT)" --port "$(A21_UPLOAD_PORT)" --commit $$(git rev-parse --short=12 HEAD)
 
 firmware-device-report:
 	go run ./cmd/a21 firmware-device-report --gateway-url "$(A21_GATEWAY_URL)" --output-dir reports
@@ -362,7 +362,7 @@ firmware-device-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)
 	@test -n "$(A21_DEVICE_REPORT)" || (echo "A21_DEVICE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 firmware-device-check --artifact "$(A21_FIRMWARE_ARTIFACT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)"
+	go run ./cmd/a21 firmware-check --kind device --artifact "$(A21_FIRMWARE_ARTIFACT)" --device-report "$(A21_DEVICE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)"
 
 firmware-flash-plan:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)

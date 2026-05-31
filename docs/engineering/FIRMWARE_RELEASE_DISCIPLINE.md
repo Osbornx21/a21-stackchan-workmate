@@ -64,7 +64,7 @@ The first firmware protocol parser uses pinned mature dependencies:
 - `scripts/a21_build_identity.py` PlatformIO pre-build script for generated commit metadata
 - diagnostic-only microphone probe environment: `a21_stackchan_cores3_mic_probe`
 
-`firmware-check` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. It also treats `firmware/stackchan/a21-firmware.json` as the firmware release identity source of truth: every `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flag in the CoreS3 and native test environments must exactly match the manifest. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
+`firmware-check --kind manifest` rejects unpinned or missing core firmware dependencies and rejects PlatformIO configs that omit the raw upload blocker. It also treats `firmware/stackchan/a21-firmware.json` as the firmware release identity source of truth: every `A21_FIRMWARE_ID`, `A21_FIRMWARE_VERSION`, and `A21_FIRMWARE_BOARD` build flag in the CoreS3 and native test environments must exactly match the manifest. This is intentional: firmware builds must be reproducible, must not silently drift under A21, and must fail fast before any unguarded flash path can run.
 
 The microphone probe environment is deliberately not the release environment. It enables `A21_ENABLE_CORES3_M5UNIFIED_MIC_CAPTURE=1` and `A21_ENABLE_MIC_DIAGNOSTIC_PROBE=1`, causing the device capability status to report `diagnostic_probe_m5unified_i2s_capture` rather than production `available`. Existing firmware package and upload guards continue to accept only the production `a21_stackchan_cores3` release provenance, so a probe build cannot be silently wrapped as a formal A21 release artifact.
 
@@ -82,7 +82,7 @@ Before any firmware build:
 
 ```bash
 make firmware-tools
-go run ./cmd/a21 firmware-check
+go run ./cmd/a21 firmware-check --kind manifest
 PLATFORMIO_CORE_DIR=$PWD/.a21-tools/platformio-core .a21-tools/platformio-venv/bin/pio run -d firmware/stackchan
 ```
 
@@ -301,7 +301,7 @@ make stackchan-speaker-acceptance
 
 This writes `reports/a21-stackchan-speaker-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway playback metrics, sends about 1000 ms of non-silent A21 `audio.playback.chunk` frames as bounded `SPEAKING` batches of at most four chunks per `/v1/devices/control` request, waits 1500 ms by default so the last speaker-pump frame and runtime echo have margin, checks playback-buffer and speaker-pump deltas, and then clears back to `IDLE`. A passing report confirms the commanded stream moved through Gateway downlink, firmware buffer, and speaker-pump instrumentation. It intentionally records `physical_sound_observed=false`; use later operator or instrument evidence before claiming physical audibility or product-quality TTS.
 
-`firmware-current-artifact-check` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
+`firmware-check --kind current-artifact` validates the newest packaged artifact for the current git commit by reading `a21-firmware-release-index.jsonl`, selecting the latest matching package, and re-running the artifact, release-index, and per-artifact manifest guards. It is part of `make release-check`, so a package step is not considered release-clean until the generated candidate can be independently re-read from the release ledger.
 
 The release ledger is path-bound as well as checksum-bound. A release-index entry and the per-artifact manifest must point back to the same artifact path and checksum path being checked, and current-artifact selection cannot jump from `firmware/artifacts` to an external directory that happens to contain a same-named A21 binary. This prevents old, copied, or hand-assembled packages from being spliced into a current A21 build receipt.
 
@@ -379,14 +379,14 @@ Packaging rejects input outside the A21 StackChan firmware lane and rejects inpu
 
 Packaging also validates the source PlatformIO `firmware.bin` before copying it. The source binary must already embed the expected A21 firmware ID, version, board, and git commit. This prevents a stale or wrong-board build from being wrapped in a correct-looking A21 artifact name.
 
-Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. `firmware-upload-check`, `firmware-device-check`, and `firmware-flash-plan` also reject manifest, artifact, and device-report input paths containing forbidden X21/V21 identity before opening those paths, and they do not echo the polluted path back to the operator. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-artifact-check`, but it cannot pass upload or flash-planning gates unless:
+Upload-path dry-run guards now require both the release index record and the sibling artifact manifest. `firmware-check --kind upload`, `firmware-check --kind device`, and `firmware-flash-plan` also reject manifest, artifact, and device-report input paths containing forbidden X21/V21 identity before opening those paths, and they do not echo the polluted path back to the operator. A hand-assembled `.bin + .sha256` pair may still be inspected with `firmware-check --kind artifact`, but it cannot pass upload or flash-planning gates unless:
 
 - the same directory's release index contains a matching firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the sibling `.manifest.json` contains matching A21 project, firmware ID, version, board, commit, timestamp, artifact filename, checksum filename, SHA-256, and build provenance
 - the release index entry and sibling manifest resolve to the same checked artifact path and checksum path
 - the release index and sibling manifest full artifact/checksum paths do not contain forbidden X21/V21 identities
 
-`firmware-upload-check` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.
+`firmware-check --kind upload` also rejects older packages when the release index contains a newer artifact for the same firmware ID, version, board, and commit. This keeps the dry-run path aligned with the latest A21 package for that exact checkout and avoids choosing a stale same-commit binary by accident.
 
 ## Artifact Retention Plan
 
@@ -423,7 +423,7 @@ When `--output-dir reports` is used, stdout shows only summary counts plus `repo
 Every packaged firmware binary must pass:
 
 ```bash
-go run ./cmd/a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>
+go run ./cmd/a21 firmware-check --kind artifact --artifact firmware/artifacts/<a21-stackchan...bin>
 ```
 
 or:
@@ -435,7 +435,7 @@ A21_FIRMWARE_ARTIFACT=firmware/artifacts/<a21-stackchan...bin> make firmware-art
 For the current checkout, prefer the ledger-backed command:
 
 ```bash
-go run ./cmd/a21 firmware-current-artifact-check --commit <git-sha>
+go run ./cmd/a21 firmware-check --kind current-artifact --commit <git-sha>
 make firmware-current-artifact-check
 ```
 
@@ -461,7 +461,7 @@ The embedded-identity check matters because a wrong `firmware.bin` could otherwi
 Phase 5B adds an upload dry-run guard, not an upload command:
 
 ```bash
-go run ./cmd/a21 firmware-upload-check \
+go run ./cmd/a21 firmware-check --kind upload \
   --artifact firmware/artifacts/<a21-stackchan...bin> \
   --port /dev/cu.usbmodemXXXX \
   --commit <expected-git-sha>
@@ -477,7 +477,7 @@ make firmware-upload-check
 
 This command verifies the artifact guard and rejects ambiguous upload targets such as `auto`, `default`, `any`, non-`/dev/` paths, and non-serial `/dev/*` paths such as `/dev/null`. Accepted upload paths are deliberately narrow: macOS `cu.*`/`tty.*` names must contain `usbmodem` or `usbserial`, and Linux names must be `ttyUSB*` or `ttyACM*`. Bluetooth, debug-console, and other generic serial-looking ports are rejected before process-ownership checks. It also checks whether the selected serial path is already held by another process. It still does not flash. Actual flashing must only be introduced later as a separate guarded command after physical device identity checks are in place.
 
-Successful `firmware-upload-check` output is intentionally a dry-run receipt. The JSON must include:
+Successful `firmware-check --kind upload` output is intentionally a dry-run receipt. The JSON must include:
 
 - `guard_id: a21.firmware.upload_guard.v1`
 - `dry_run: true`
@@ -500,7 +500,7 @@ go run ./cmd/a21 firmware-device-report \
   --gateway-url http://127.0.0.1:21080 \
   --output-dir reports
 
-go run ./cmd/a21 firmware-device-check \
+go run ./cmd/a21 firmware-check --kind device \
   --artifact firmware/artifacts/<a21-stackchan...bin> \
   --device-report reports/a21-devices-<timestamp>.json \
   --device-id stackchan-001 \
@@ -517,13 +517,13 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-device-check
 ```
 
-`firmware-device-check` requires `--max-device-age-ms`; `make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. It rejects Gateway URLs that target known X21/V21 legacy ports, requires the Gateway response to declare `schema_version=a21.gateway.devices.v1` and `service=a21-gateway`, and rejects Gateway device identity fields that contain forbidden X21/V21 naming before writing the report. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
+`firmware-check --kind device` requires `--max-device-age-ms`; `make firmware-device-report` writes `reports/a21-devices-YYYYMMDD-HHMMSS.json` and uses direct Gateway HTTP without ambient proxy inheritance. It rejects Gateway URLs that target known X21/V21 legacy ports, requires the Gateway response to declare `schema_version=a21.gateway.devices.v1` and `service=a21-gateway`, and rejects Gateway device identity fields that contain forbidden X21/V21 naming before writing the report. `make firmware-device-check` passes `A21_DEVICE_MAX_AGE_MS=300000` by default. Override that value only for an explicitly documented lab reason; physical acceptance should use a freshly captured Gateway `/v1/devices` report.
 
-The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id`. These fields help prove what the office operator was looking at during acceptance, but the guard still uses explicit identity, artifact, commit, and freshness checks rather than trusting display state alone. `firmware-device-check` requires the report to carry A21 Gateway identity, either as the raw Gateway response fields `schema_version=a21.gateway.devices.v1` and `service=a21-gateway`, or as the `gateway_schema_version` / `gateway_service` fields written by `firmware-device-report`. A naked hand-written `{"devices":[...]}` file is not valid acceptance evidence. It also requires `connection_status=online`; stale or unknown Gateway state is a hard stop.
+The captured report preserves Gateway operator fields such as `connection_status`, `device_age_ms`, `current_mode`, `current_expression`, and `playback_stream_id`. These fields help prove what the office operator was looking at during acceptance, but the guard still uses explicit identity, artifact, commit, and freshness checks rather than trusting display state alone. `firmware-check --kind device` requires the report to carry A21 Gateway identity, either as the raw Gateway response fields `schema_version=a21.gateway.devices.v1` and `service=a21-gateway`, or as the `gateway_schema_version` / `gateway_service` fields written by `firmware-device-report`. A naked hand-written `{"devices":[...]}` file is not valid acceptance evidence. It also requires `connection_status=online`; stale or unknown Gateway state is a hard stop.
 
 The guard verifies:
 
-- the artifact still passes `firmware-artifact-check`
+- the artifact still passes `firmware-check --kind artifact`
 - the artifact commit matches the expected git commit
 - the device report contains the explicit `A21_DEVICE_ID`
 - `identity_status` is `ok`
@@ -539,7 +539,7 @@ Successful output includes:
 - `flash_allowed: false`
 - `next_required_confirmation: explicit_guarded_flash_command`
 
-This receipt is a stronger identity confirmation than `firmware-upload-check`, but it is still not permission to flash. It proves that Gateway has seen a StackChan-like A21 device identity matching the candidate artifact. A future real flashing command must require both the upload dry-run receipt and this device identity receipt, then perform its own final confirmation.
+This receipt is a stronger identity confirmation than `firmware-check --kind upload`, but it is still not permission to flash. It proves that Gateway has seen a StackChan-like A21 device identity matching the candidate artifact. A future real flashing command must require both the upload dry-run receipt and this device identity receipt, then perform its own final confirmation.
 
 ## Flash Plan Guard
 
@@ -566,7 +566,7 @@ A21_DEVICE_ID=stackchan-001 \
 make firmware-flash-plan
 ```
 
-`firmware-flash-plan` requires `--max-device-age-ms`; the Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-device-check` and writes a timestamped no-flash receipt to:
+`firmware-flash-plan` requires `--max-device-age-ms`; the Makefile wrapper passes the same `A21_DEVICE_MAX_AGE_MS` freshness guard as `firmware-check --kind device` and writes a timestamped no-flash receipt to:
 
 ```text
 reports/a21-firmware-flash-plan-YYYYMMDD-HHMMSS.json
@@ -576,7 +576,7 @@ This makes flash planning auditable instead of ephemeral stdout. The receipt inc
 
 The guard verifies:
 
-- the artifact passes `firmware-artifact-check`
+- the artifact passes `firmware-check --kind artifact`
 - the upload port is explicit, exists, and is not busy
 - the Gateway device report contains the explicit `A21_DEVICE_ID`
 - the Gateway device report has `connection_status=online`
@@ -677,9 +677,9 @@ Before any future firmware upload:
 3. Confirm `firmware/stackchan/a21-firmware.json`.
 4. Confirm git commit and version.
 5. Confirm generated artifact filename begins with `a21-stackchan-`.
-6. Run `firmware-artifact-check`.
-7. Run `firmware-upload-check`.
-8. Capture `/v1/devices` from the A21 Gateway and run `firmware-device-check`.
+6. Run `firmware-check --kind artifact`.
+7. Run `firmware-check --kind upload`.
+8. Capture `/v1/devices` from the A21 Gateway and run `firmware-check --kind device`.
 9. Run `firmware-flash-plan`.
 10. If the device already reports A21 identity, prefer `firmware-flash-plan` and keep bootstrap flashing out of the path.
 11. If this is initial bring-up or recovery and no A21 identity can be captured, run `firmware-bootstrap-flash-plan`.
@@ -917,6 +917,6 @@ Before choosing an upload port, inspect the current serial state:
 go run ./cmd/a21 serial-list
 ```
 
-Only USB-looking candidates from that inventory should be used with `firmware-upload-check` or `firmware-flash-plan`. A visible `/dev/cu.*` path is not enough by itself.
+Only USB-looking candidates from that inventory should be used with `firmware-check --kind upload` or `firmware-flash-plan`. A visible `/dev/cu.*` path is not enough by itself.
 
-The inventory lists `/dev/cu.*` paths, marks `usbmodem` candidates, and reports whether `lsof` sees another process holding the path. A busy port is a hard stop for `firmware-upload-check`.
+The inventory lists `/dev/cu.*` paths, marks `usbmodem` candidates, and reports whether `lsof` sees another process holding the path. A busy port is a hard stop for `firmware-check --kind upload`.

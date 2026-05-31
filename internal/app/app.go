@@ -100,16 +100,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareCheck(args[1:], stdout, stderr)
 	case "firmware-package":
 		return runFirmwarePackage(args[1:], stdout, stderr)
-	case "firmware-artifact-check":
-		return runFirmwareArtifactCheck(args[1:], stdout, stderr)
-	case "firmware-current-artifact-check":
-		return runFirmwareCurrentArtifactCheck(args[1:], stdout, stderr)
 	case "firmware-artifact-prune-plan":
 		return runFirmwareArtifactPrunePlan(args[1:], stdout, stderr)
-	case "firmware-upload-check":
-		return runFirmwareUploadCheck(args[1:], stdout, stderr)
-	case "firmware-device-check":
-		return runFirmwareDeviceCheck(args[1:], stdout, stderr)
 	case "firmware-flash-plan":
 		return runFirmwareFlashPlan(args[1:], stdout, stderr)
 	case "firmware-bootstrap-flash-plan":
@@ -133,6 +125,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 			return code
 		}
 		if code, ok := runDeprecatedStackChanAcceptAlias(args, stdout, stderr); ok {
+			return code
+		}
+		if code, ok := runDeprecatedFirmwareCheckAlias(args, stdout, stderr); ok {
 			return code
 		}
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])

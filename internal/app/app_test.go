@@ -4140,6 +4140,32 @@ func TestRunFirmwareCheckAcceptsA21Manifest(t *testing.T) {
 	}
 }
 
+func TestRunFirmwareCheckDispatchesKindHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-check", "--kind", "upload", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"a21 firmware-check --kind upload", "--artifact", "--port", "--commit"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunDeprecatedFirmwareCheckAliasStillDispatches(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"firmware-upload-check", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "a21 firmware-check --kind upload") {
+		t.Fatalf("stdout missing upload help: %s", stdout.String())
+	}
+}
+
 func TestRunFirmwareCheckRejectsWrongPlatformIOBoard(t *testing.T) {
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "a21-firmware.json")

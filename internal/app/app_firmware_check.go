@@ -29,11 +29,95 @@ type firmwareArtifactPrunePlanSummary struct {
 }
 
 func runFirmwareCheck(args []string, stdout io.Writer, stderr io.Writer) int {
+	kind := "manifest"
+	passThrough := make([]string, 0, len(args))
+	showHelp := len(args) == 0
+	explicitKind := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			if explicitKind {
+				passThrough = append(passThrough, args[i])
+			} else {
+				showHelp = true
+			}
+		case "--kind":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--kind requires a value")
+				return 2
+			}
+			i++
+			kind = args[i]
+			explicitKind = true
+		default:
+			passThrough = append(passThrough, args[i])
+		}
+	}
+	if showHelp && !explicitKind && len(passThrough) == 0 {
+		fmt.Fprintln(stdout, "a21 firmware-check --kind manifest|artifact|current-artifact|upload|device [kind options]")
+		return 0
+	}
+	return dispatchFirmwareCheck(kind, passThrough, stdout, stderr)
+}
+
+func runDeprecatedFirmwareCheckAlias(args []string, stdout io.Writer, stderr io.Writer) (int, bool) {
+	if len(args) == 0 {
+		return 0, false
+	}
+	kind, ok := firmwareCheckAliasKind(args[0])
+	if !ok {
+		return 0, false
+	}
+	return dispatchFirmwareCheck(kind, args[1:], stdout, stderr), true
+}
+
+func firmwareCheckAliasKind(command string) (string, bool) {
+	switch command {
+	case "firmware-artifact-check":
+		return "artifact", true
+	case "firmware-current-artifact-check":
+		return "current-artifact", true
+	case "firmware-upload-check":
+		return "upload", true
+	case "firmware-device-check":
+		return "device", true
+	default:
+		return "", false
+	}
+}
+
+func dispatchFirmwareCheck(kind string, args []string, stdout io.Writer, stderr io.Writer) int {
+	switch normalizeFirmwareCheckKind(kind) {
+	case "manifest":
+		return runFirmwareManifestCheck(args, stdout, stderr)
+	case "artifact":
+		return runFirmwareArtifactCheck(args, stdout, stderr)
+	case "current-artifact", "current":
+		return runFirmwareCurrentArtifactCheck(args, stdout, stderr)
+	case "upload":
+		return runFirmwareUploadCheck(args, stdout, stderr)
+	case "device":
+		return runFirmwareDeviceCheck(args, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown firmware check kind %q\n", kind)
+		return 2
+	}
+}
+
+func normalizeFirmwareCheckKind(kind string) string {
+	normalized := strings.ToLower(strings.TrimSpace(kind))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	normalized = strings.TrimPrefix(normalized, "firmware-")
+	normalized = strings.TrimSuffix(normalized, "-check")
+	return normalized
+}
+
+func runFirmwareManifestCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	manifestPath := "firmware/stackchan/a21-firmware.json"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-check --manifest firmware/stackchan/a21-firmware.json")
+			fmt.Fprintln(stdout, "a21 firmware-check --kind manifest --manifest firmware/stackchan/a21-firmware.json")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -158,7 +242,7 @@ func runFirmwareArtifactCheck(args []string, stdout io.Writer, stderr io.Writer)
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-artifact-check --artifact firmware/artifacts/<a21-stackchan...bin>")
+			fmt.Fprintln(stdout, "a21 firmware-check --kind artifact --artifact firmware/artifacts/<a21-stackchan...bin>")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -199,7 +283,7 @@ func runFirmwareCurrentArtifactCheck(args []string, stdout io.Writer, stderr io.
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-current-artifact-check --commit <expected-git-commit> [--artifact-dir firmware/artifacts]")
+			fmt.Fprintln(stdout, "a21 firmware-check --kind current-artifact --commit <expected-git-commit> [--artifact-dir firmware/artifacts]")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -369,7 +453,7 @@ func runFirmwareUploadCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-upload-check --artifact firmware/artifacts/<a21-stackchan...bin> --commit <expected-git-commit> --port /dev/cu.usbmodemXXXX")
+			fmt.Fprintln(stdout, "a21 firmware-check --kind upload --artifact firmware/artifacts/<a21-stackchan...bin> --commit <expected-git-commit> --port /dev/cu.usbmodemXXXX")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -451,7 +535,7 @@ func runFirmwareDeviceCheck(args []string, stdout io.Writer, stderr io.Writer) i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 firmware-device-check --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000")
+			fmt.Fprintln(stdout, "a21 firmware-check --kind device --artifact firmware/artifacts/<a21-stackchan...bin> --device-report reports/devices.json --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000")
 			return 0
 		case "--manifest":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
