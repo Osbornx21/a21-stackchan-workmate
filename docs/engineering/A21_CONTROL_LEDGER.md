@@ -3,7 +3,7 @@
 Status: active integration ledger.
 Date: 2026-05-31.
 Ledger branch: `codex/a21-integration-governance-slices`.
-Last accepted integration commit before this ledger update: `52c64d2`.
+Last accepted integration commit before this ledger update: `4532df8`.
 
 This ledger is the control tower's current operating board. It records which
 branch, worktree, thread role, and tool tier are authorized next. Update it
@@ -20,7 +20,7 @@ defines policy; this ledger records the current queue and accepted state.
   `7bdfe9d docs(control): record PCM flash ADR handoff`.
 - Integration branch: `codex/a21-integration-governance-slices`.
 - Integration HEAD before this ledger update:
-  `52c64d2 docs(control): track prd next-slice audit`.
+  `4532df8 feat(app): add provider latency bench scaffold`.
 - Main worktree: `/Users/jiyurun/Documents/New project`.
 - Main worktree status at acceptance: clean.
 - `a21 control-guard` is the active machine-readable tool-tier gate.
@@ -41,8 +41,9 @@ defines policy; this ledger records the current queue and accepted state.
   `e55b652`, `5e54eb9`, `4d356e7`, `3b9f05d`, `f9df726`, `94d87c3`, and
   `193a1f3`; Task 4 acceptance is `7af0259`, post-commit review tracking is
   `819fe8b`, the Task 4 trace-fidelity P2 fix is `22c90ae`, Provider Spine
-  Task 5 verification tracking is `ac2ab42`, and PRD next-slice audit
-  tracking is `52c64d2`.
+  Task 5 verification tracking is `ac2ab42`, PRD next-slice audit tracking is
+  `52c64d2`, provider latency slice-open tracking is `28171ad`, and provider
+  latency bench scaffold acceptance is `4532df8`.
 - Read-only integration review found no P0/P1/P2 issues against the merged
   governance baseline at `1872ca9`.
 - Control tower has selected the single combined integration branch as the
@@ -63,7 +64,7 @@ defines policy; this ledger records the current queue and accepted state.
 | Thread | Role | Worktree | Status | Max tier | Write authority |
 | --- | --- | --- | --- | --- | --- |
 | `019e7b6f-dedb-73c1-aee6-2c438858da03` | Control tower | `/Users/jiyurun/Documents/New project` | active | T1 by default; higher only after declaration | yes |
-| `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | active; TDD implementation handoff pending | T1/T2 | no |
+| `019e7c0d-f7a0-7323-8413-e3e2aac53a94` | Provider latency bench scaffold implementation | `/Users/jiyurun/.codex/worktrees/acc7/New project` | completed; handoff accepted into integration branch at `4532df8` | T1/T2 | no |
 | `019e7c09-98d6-75d0-85a4-f0bf63cd4e3b` | PRD next-slice audit | `/Users/jiyurun/.codex/worktrees/ed15/New project` | completed; recommended provider-latency-bench scaffold | T0/T1 | no |
 | `019e7c00-ff6c-7f72-9851-a6e3ce637baf` | Fast Companion Hybrid post-commit review | `/Users/jiyurun/.codex/worktrees/de55/New project` | completed; P2 trace-fidelity finding fixed by control | T0/T1/T2 | no |
 | `019e7bed-4e1e-7512-8f21-1647b2357c00` | Fast Companion Hybrid Gateway boundary implementation | `/Users/jiyurun/.codex/worktrees/80c8/New project` | completed; handoff accepted into integration branch | T1/T2 | no |
@@ -201,11 +202,56 @@ Evidence:
 
 Decision:
 
-- Keep the implementation thread isolated and non-committing. The control tower
-  will review its dirty diff and verification output before accepting anything
-  into the integration branch.
+- Accept the implementation handoff into the integration branch at
+  `4532df8 feat(app): add provider latency bench scaffold`.
+- The accepted command is a T1/T2 mock/fixture-only report scaffold. It rejects
+  `--execute`, sets `promotion_gate=not_production`, marks
+  `provider_executed=false`, `v21_executed=false`, and
+  `hardware_executed=false`, and stores no prompt, transcript, provider output,
+  reasoning text, credential values, full provider URLs, proxy URLs, raw
+  payloads, or full local fixture paths.
 - Do not open T4 provider/V21 or T6/T7/T8 hardware windows from this
   implementation slice.
+
+Acceptance evidence:
+
+- Implementation thread handoff branch:
+  `codex/a21-provider-latency-bench-scaffold`.
+- Implementation handoff dirty files: `Makefile`,
+  `docs/engineering/A21_PROVIDER_BENCHMARKS.md`,
+  `docs/engineering/DOCTOR.md`, `docs/engineering/LATENCY_BUDGET.md`,
+  `internal/app/app.go`, `internal/app/app_test.go`, and
+  `internal/app/provider_latency_bench.go`.
+- Control tower reapplied the handoff diff onto
+  `codex/a21-integration-governance-slices` after
+  `28171ad docs(control): open provider latency bench slice`.
+- Verification passed:
+  `go test ./internal/app -run 'ProviderLatencyBench|LatencyBench|ProviderSmoke|LocalVoiceLoopback' -count=1`.
+- Verification passed:
+  `go test ./internal/providers -run 'TextStream|ProviderSmoke|ProviderCatalog' -count=1`.
+- Verification passed: `go run ./cmd/a21 namespace-audit`.
+- Verification passed: `git diff --check`.
+- Verification passed:
+  `go run ./cmd/a21 provider-latency-bench --provider deepseek --iterations 2`.
+- Verification passed: `make verify`.
+- Post-commit default gate passed: `go run ./cmd/a21 preflight`.
+- Post-commit default gate passed with a non-blocking firmware artifact warning:
+  `go run ./cmd/a21 doctor`. The warning was
+  `firmware_current_artifact_missing` for commit `4532df8b3780`; this slice did
+  not build or promote firmware artifacts.
+- Post-commit promotion gate result:
+  `go run ./cmd/a21 promotion-readiness` reported `review_ready=true` and
+  `dirty_file_count=0`, while external promotion remains blocked because the
+  repository has no configured remote, target remote, or target branch.
+- No provider execute, V21 execute, Gateway runtime/service startup,
+  firmware/NVS/flash/raw upload/serial write, `/v1/devices/control`, or
+  physical device path was used.
+
+Residual gaps:
+
+- The scaffold is report-shape evidence only. ASR, real provider, TTS, Gateway
+  runtime, LAN, physical StackChan playback, and barge-in timing remain
+  unmeasured until a separately authorized T4/T6 window.
 
 ### Fast Companion Hybrid Boundary Audit
 
