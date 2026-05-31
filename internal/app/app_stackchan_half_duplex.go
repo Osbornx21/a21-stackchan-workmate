@@ -78,7 +78,7 @@ func runStackChanHalfDuplexAcceptance(args []string, stdout io.Writer, stderr io
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-half-duplex-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-mic-frames 1] [--min-playback-chunks 1] [--min-delivery-ratio 0.95] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check half-duplex --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-mic-frames 1] [--min-playback-chunks 1] [--min-delivery-ratio 0.95] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

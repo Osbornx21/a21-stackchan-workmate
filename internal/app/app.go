@@ -72,30 +72,12 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runLocalVoiceLoopback(args[1:], stdout, stderr)
 	case "firmware-device-report":
 		return runFirmwareDeviceReport(args[1:], stdout, stderr)
-	case "stackchan-identity-acceptance":
-		return runStackChanIdentityAcceptance(args[1:], stdout, stderr)
-	case "stackchan-physical-evidence":
-		return runStackChanPhysicalEvidence(args[1:], stdout, stderr)
-	case "stackchan-capability-acceptance":
-		return runStackChanCapabilityAcceptance(args[1:], stdout, stderr)
-	case "stackchan-mic-probe-acceptance":
-		return runStackChanMicProbeAcceptance(args[1:], stdout, stderr)
-	case "stackchan-imu-probe-acceptance":
-		return runStackChanIMUProbeAcceptance(args[1:], stdout, stderr)
-	case "stackchan-sensor-probe-acceptance":
-		return runStackChanSensorProbeAcceptance(args[1:], stdout, stderr)
-	case "stackchan-half-duplex-acceptance":
-		return runStackChanHalfDuplexAcceptance(args[1:], stdout, stderr)
-	case "stackchan-speaker-acceptance":
-		return runStackChanSpeakerAcceptance(args[1:], stdout, stderr)
+	case "stackchan-accept":
+		return runStackChanAccept(args[1:], stdout, stderr)
 	case "stackchan-local-tts-playback":
 		return runStackChanLocalTTSPlayback(args[1:], stdout, stderr)
 	case "stackchan-fast-companion-turn":
 		return runStackChanFastCompanionTurn(args[1:], stdout, stderr)
-	case "stackchan-touch-acceptance":
-		return runStackChanTouchAcceptance(args[1:], stdout, stderr)
-	case "stackchan-hardware-mainline":
-		return runStackChanHardwareMainline(args[1:], stdout, stderr)
 	case "stackchan-official-baseline":
 		return runStackChanOfficialBaseline(args[1:], stdout, stderr)
 	case "stackchan-official-audio-smoke-flash-plan":
@@ -148,6 +130,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runFirmwareSensorProbeFlashExecute(args[1:], stdout, stderr)
 	default:
 		if code, ok := runDeprecatedGateAlias(args, stdout, stderr); ok {
+			return code
+		}
+		if code, ok := runDeprecatedStackChanAcceptAlias(args, stdout, stderr); ok {
 			return code
 		}
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])

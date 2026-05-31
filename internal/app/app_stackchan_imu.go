@@ -72,7 +72,7 @@ func runStackChanIMUProbeAcceptance(args []string, stdout io.Writer, stderr io.W
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-imu-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-samples 10] [--min-accel-total-mg 500] [--max-read-errors 0] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check imu-probe --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-samples 10] [--min-accel-total-mg 500] [--max-read-errors 0] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

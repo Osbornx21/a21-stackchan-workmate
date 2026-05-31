@@ -312,51 +312,51 @@ office-acceptance:
 stackchan-identity-acceptance:
 	@test -n "$(A21_OFFICE_ACCEPTANCE_REPORT)" || (echo "A21_OFFICE_ACCEPTANCE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-identity-acceptance --office-acceptance "$(A21_OFFICE_ACCEPTANCE_REPORT)" --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check identity --office-acceptance "$(A21_OFFICE_ACCEPTANCE_REPORT)" --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --max-device-age-ms "$(A21_DEVICE_MAX_AGE_MS)" --output-dir reports
 
 stackchan-physical-evidence:
 	@test -n "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" || (echo "A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	@if [ "$(A21_DERIVE_GATEWAY_EVIDENCE)" = "1" ]; then \
-		go run ./cmd/a21 stackchan-physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --derive-gateway --gateway-url "$(A21_GATEWAY_URL)" --output-dir reports; \
+		go run ./cmd/a21 stackchan-accept --check physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --derive-gateway --gateway-url "$(A21_GATEWAY_URL)" --output-dir reports; \
 	else \
-		go run ./cmd/a21 stackchan-physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports; \
+		go run ./cmd/a21 stackchan-accept --check physical-evidence --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports; \
 	fi
 
 stackchan-capability-acceptance:
 	@test -n "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" || (echo "A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT)" || (echo "A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT is required"; exit 2)
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-capability-acceptance --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --evidence "$(A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check capability --identity-acceptance "$(A21_STACKCHAN_IDENTITY_ACCEPTANCE_REPORT)" --evidence "$(A21_STACKCHAN_PHYSICAL_EVIDENCE_REPORT)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --output-dir reports
 
 stackchan-mic-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-mic-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --min-delivery-ratio "$(A21_MIC_PROBE_MIN_DELIVERY_RATIO)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check mic-probe --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_MIC_PROBE_WINDOW_MS)" --min-frames "$(A21_MIC_PROBE_MIN_FRAMES)" --min-abs-peak "$(A21_MIC_PROBE_MIN_ABS_PEAK)" --min-nonzero-samples "$(A21_MIC_PROBE_MIN_NONZERO_SAMPLES)" --min-gateway-rms "$(A21_MIC_PROBE_MIN_GATEWAY_RMS)" --min-vad-speech "$(A21_MIC_PROBE_MIN_VAD_SPEECH)" --min-delivery-ratio "$(A21_MIC_PROBE_MIN_DELIVERY_RATIO)" --output-dir reports
 
 stackchan-imu-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-imu-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_IMU_PROBE_WINDOW_MS)" --min-samples "$(A21_IMU_PROBE_MIN_SAMPLES)" --min-accel-total-mg "$(A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG)" --max-read-errors "$(A21_IMU_PROBE_MAX_READ_ERRORS)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check imu-probe --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_IMU_PROBE_WINDOW_MS)" --min-samples "$(A21_IMU_PROBE_MIN_SAMPLES)" --min-accel-total-mg "$(A21_IMU_PROBE_MIN_ACCEL_TOTAL_MG)" --max-read-errors "$(A21_IMU_PROBE_MAX_READ_ERRORS)" --output-dir reports
 
 stackchan-sensor-probe-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-sensor-probe-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SENSOR_PROBE_WINDOW_MS)" --min-samples "$(A21_SENSOR_PROBE_MIN_SAMPLES)" --min-battery-mv "$(A21_SENSOR_PROBE_MIN_BATTERY_MV)" --max-read-errors "$(A21_SENSOR_PROBE_MAX_READ_ERRORS)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check sensor-probe --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SENSOR_PROBE_WINDOW_MS)" --min-samples "$(A21_SENSOR_PROBE_MIN_SAMPLES)" --min-battery-mv "$(A21_SENSOR_PROBE_MIN_BATTERY_MV)" --max-read-errors "$(A21_SENSOR_PROBE_MAX_READ_ERRORS)" --output-dir reports
 
 stackchan-half-duplex-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-half-duplex-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_HALF_DUPLEX_WINDOW_MS)" --min-mic-frames "$(A21_HALF_DUPLEX_MIN_MIC_FRAMES)" --min-playback-chunks "$(A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS)" --min-delivery-ratio "$(A21_HALF_DUPLEX_MIN_DELIVERY_RATIO)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check half-duplex --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_HALF_DUPLEX_WINDOW_MS)" --min-mic-frames "$(A21_HALF_DUPLEX_MIN_MIC_FRAMES)" --min-playback-chunks "$(A21_HALF_DUPLEX_MIN_PLAYBACK_CHUNKS)" --min-delivery-ratio "$(A21_HALF_DUPLEX_MIN_DELIVERY_RATIO)" --output-dir reports
 
 stackchan-speaker-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-speaker-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SPEAKER_WINDOW_MS)" --mock-audio-chunks "$(A21_SPEAKER_MOCK_AUDIO_CHUNKS)" --min-played-frames "$(A21_SPEAKER_MIN_PLAYED_FRAMES)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check speaker --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --commit $$(git rev-parse --short=12 HEAD) --window-ms "$(A21_SPEAKER_WINDOW_MS)" --mock-audio-chunks "$(A21_SPEAKER_MOCK_AUDIO_CHUNKS)" --min-played-frames "$(A21_SPEAKER_MIN_PLAYED_FRAMES)" --output-dir reports
 
 stackchan-touch-acceptance:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
 	@test -n "$(A21_TOUCH_CASE)" || (echo "A21_TOUCH_CASE is required"; exit 2)
-	go run ./cmd/a21 stackchan-touch-acceptance --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --case "$(A21_TOUCH_CASE)" --window-ms "$${A21_TOUCH_WINDOW_MS:-15000}" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check touch --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --case "$(A21_TOUCH_CASE)" --window-ms "$${A21_TOUCH_WINDOW_MS:-15000}" --output-dir reports
 
 stackchan-hardware-mainline:
 	@test -n "$(A21_DEVICE_ID)" || (echo "A21_DEVICE_ID is required"; exit 2)
-	go run ./cmd/a21 stackchan-hardware-mainline --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --output-dir reports
+	go run ./cmd/a21 stackchan-accept --check hardware-mainline --gateway-url "$(A21_GATEWAY_URL)" --device-id "$(A21_DEVICE_ID)" --output-dir reports
 
 firmware-device-check:
 	@test -n "$(A21_FIRMWARE_ARTIFACT)" || (echo "A21_FIRMWARE_ARTIFACT is required"; exit 2)

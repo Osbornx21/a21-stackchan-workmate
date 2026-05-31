@@ -333,6 +333,42 @@ func TestRunGateHardwareWrapsControlGuard(t *testing.T) {
 	}
 }
 
+func TestRunStackChanAcceptRequiresCheck(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"stackchan-accept", "--device-id", "stackchan-001"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--check requires a value") {
+		t.Fatalf("stderr missing check error: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanAcceptDispatchesCheckHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"stackchan-accept", "--check", "touch", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "a21 stackchan-accept --check touch") {
+		t.Fatalf("stdout missing touch help: %s", stdout.String())
+	}
+}
+
+func TestRunDeprecatedStackChanAcceptAliasStillDispatches(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"stackchan-touch-acceptance", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "a21 stackchan-accept --check touch") {
+		t.Fatalf("stdout missing touch help: %s", stdout.String())
+	}
+}
+
 func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\ninternal/v21adapter/client.go\n")

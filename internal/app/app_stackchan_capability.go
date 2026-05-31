@@ -52,7 +52,7 @@ func runStackChanCapabilityAcceptance(args []string, stdout io.Writer, stderr io
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-capability-acceptance --identity-acceptance reports/a21-stackchan-identity-acceptance-...json --evidence reports/a21-stackchan-physical-evidence.json --device-id stackchan-001 --commit <git-sha> [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check capability --identity-acceptance reports/a21-stackchan-identity-acceptance-...json --evidence reports/a21-stackchan-physical-evidence.json --device-id stackchan-001 --commit <git-sha> [--output-dir reports]")
 			return 0
 		case "--identity-acceptance":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

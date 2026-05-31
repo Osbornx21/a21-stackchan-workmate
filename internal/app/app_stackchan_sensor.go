@@ -70,7 +70,7 @@ func runStackChanSensorProbeAcceptance(args []string, stdout io.Writer, stderr i
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-sensor-probe-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-samples 10] [--min-battery-mv 3000] [--max-read-errors 0] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check sensor-probe --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1500] [--min-samples 10] [--min-battery-mv 3000] [--max-read-errors 0] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

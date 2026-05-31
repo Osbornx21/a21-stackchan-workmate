@@ -80,7 +80,7 @@ will touch before execution.
 | T3 | Local runtime/service | `gateway`, simulator, loopback, local ASR/TTS smoke | Must declare ports and stop processes after the window |
 | T4 | External/provider execution | `provider-smoke --execute`, `agent-io-smoke --execute`, `v21-adapter-smoke --execute`, `local-voice-loopback --execute-text-provider`, `stackchan-fast-companion-turn --execute-text-provider` | Requires explicit env, redaction, no key in command output |
 | T5 | Firmware build/package | `firmware-tools`, `firmware-test`, `firmware-build`, `firmware-package`, official StackChan build lanes | No physical writes; package requires clean worktree |
-| T6 | Physical validation commands | `stackchan-*acceptance`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
+| T6 | Physical validation commands | `stackchan-accept --check ...`, `/v1/devices/control` probes | Must use explicit device ID, trace/report path, and final idle check |
 | T7 | Physical writes | `stackchan-official-pcm-bridge-nvs-execute`, `stackchan-official-pcm-bridge-flash-execute`, `stackchan-official-audio-smoke-flash-execute`, `firmware-*-flash-execute` | One foreground thread only, exact confirmation token, explicit port, `gate --scope hardware` receipt |
 | T8 | Blocked until ADR | raw `pio run -t upload`, raw `idf.py flash`, copied `esptool write_flash` | Not allowed from normal threads |
 

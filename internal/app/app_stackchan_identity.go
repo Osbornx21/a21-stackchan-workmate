@@ -54,7 +54,7 @@ func runStackChanIdentityAcceptance(args []string, stdout io.Writer, stderr io.W
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-identity-acceptance --office-acceptance reports/a21-office-acceptance-...json --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000 [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity --office-acceptance reports/a21-office-acceptance-...json --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> --max-device-age-ms 300000 [--output-dir reports]")
 			return 0
 		case "--office-acceptance":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

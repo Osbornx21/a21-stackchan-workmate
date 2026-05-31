@@ -85,7 +85,7 @@ func runStackChanSpeakerAcceptance(args []string, stdout io.Writer, stderr io.Wr
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-speaker-acceptance --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1000] [--mock-audio-chunks 50] [--min-played-frames 50] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check speaker --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 --commit <git-sha> [--window-ms 1000] [--mock-audio-chunks 50] [--min-played-frames 50] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

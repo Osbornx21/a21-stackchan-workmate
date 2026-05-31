@@ -31,6 +31,115 @@ func isRequiredStackChanCapability(capability string) bool {
 	}
 	return false
 }
+
+func runStackChanAccept(args []string, stdout io.Writer, stderr io.Writer) int {
+	var check string
+	passThrough := make([]string, 0, len(args))
+	showHelp := len(args) == 0
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			if check == "" {
+				showHelp = true
+			} else {
+				passThrough = append(passThrough, args[i])
+			}
+		case "--check":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--check requires a value")
+				return 2
+			}
+			i++
+			check = args[i]
+		default:
+			passThrough = append(passThrough, args[i])
+		}
+	}
+	if check == "" {
+		if showHelp {
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity|physical-evidence|capability|mic-probe|imu-probe|sensor-probe|half-duplex|speaker|touch|hardware-mainline [check options]")
+			return 0
+		}
+		fmt.Fprintln(stderr, "--check requires a value")
+		return 2
+	}
+	return dispatchStackChanAccept(check, passThrough, stdout, stderr)
+}
+
+func runDeprecatedStackChanAcceptAlias(args []string, stdout io.Writer, stderr io.Writer) (int, bool) {
+	if len(args) == 0 {
+		return 0, false
+	}
+	check, ok := stackChanAcceptAliasCheck(args[0])
+	if !ok {
+		return 0, false
+	}
+	return dispatchStackChanAccept(check, args[1:], stdout, stderr), true
+}
+
+func stackChanAcceptAliasCheck(command string) (string, bool) {
+	switch command {
+	case "stackchan-identity-acceptance":
+		return "identity", true
+	case "stackchan-physical-evidence":
+		return "physical-evidence", true
+	case "stackchan-capability-acceptance":
+		return "capability", true
+	case "stackchan-mic-probe-acceptance":
+		return "mic-probe", true
+	case "stackchan-imu-probe-acceptance":
+		return "imu-probe", true
+	case "stackchan-sensor-probe-acceptance":
+		return "sensor-probe", true
+	case "stackchan-half-duplex-acceptance":
+		return "half-duplex", true
+	case "stackchan-speaker-acceptance":
+		return "speaker", true
+	case "stackchan-touch-acceptance":
+		return "touch", true
+	case "stackchan-hardware-mainline":
+		return "hardware-mainline", true
+	default:
+		return "", false
+	}
+}
+
+func dispatchStackChanAccept(check string, args []string, stdout io.Writer, stderr io.Writer) int {
+	switch normalizeStackChanAcceptCheck(check) {
+	case "identity":
+		return runStackChanIdentityAcceptance(args, stdout, stderr)
+	case "physical-evidence", "physical":
+		return runStackChanPhysicalEvidence(args, stdout, stderr)
+	case "capability":
+		return runStackChanCapabilityAcceptance(args, stdout, stderr)
+	case "mic-probe", "microphone":
+		return runStackChanMicProbeAcceptance(args, stdout, stderr)
+	case "imu-probe", "imu":
+		return runStackChanIMUProbeAcceptance(args, stdout, stderr)
+	case "sensor-probe", "sensor", "sensors":
+		return runStackChanSensorProbeAcceptance(args, stdout, stderr)
+	case "half-duplex":
+		return runStackChanHalfDuplexAcceptance(args, stdout, stderr)
+	case "speaker":
+		return runStackChanSpeakerAcceptance(args, stdout, stderr)
+	case "touch":
+		return runStackChanTouchAcceptance(args, stdout, stderr)
+	case "hardware-mainline", "mainline":
+		return runStackChanHardwareMainline(args, stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown stackchan acceptance check %q\n", check)
+		return 2
+	}
+}
+
+func normalizeStackChanAcceptCheck(check string) string {
+	normalized := strings.ToLower(strings.TrimSpace(check))
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	normalized = strings.TrimPrefix(normalized, "stackchan-")
+	normalized = strings.TrimSuffix(normalized, "-acceptance")
+	return normalized
+}
+
 func stackChanRuntimeEchoInt(findings *[]officePreflightFinding, runtimeEcho map[string]string, key string) int {
 	value := strings.TrimSpace(runtimeEcho[key])
 	if value == "" {

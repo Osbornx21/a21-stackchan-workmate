@@ -77,7 +77,7 @@ func runStackChanTouchAcceptance(args []string, stdout io.Writer, stderr io.Writ
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-touch-acceptance --case screen_touch|top_tap|top_swipe_forward|top_swipe_backward|top_barge_in --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 [--window-ms 15000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check touch --case screen_touch|top_tap|top_swipe_forward|top_swipe_backward|top_barge_in --gateway-url http://127.0.0.1:21080 --device-id stackchan-001 [--window-ms 15000] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
