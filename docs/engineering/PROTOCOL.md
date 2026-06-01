@@ -169,7 +169,10 @@ advertises client `features.device_events=true` only in that debug build,
 requires the server `a21.profile=debug` / `a21.device_events=true` allowance,
 and emits redacted playback runtime echoes after decoded PCM reaches the
 firmware audio output task and after server TTS stop has moved the device out
-of speaking state.
+of speaking state. For interrupt reasons such as `abort`, `barge`, or `wake`,
+the overlay also clears the firmware decoder/playback queue before reporting
+`stop_done`; normal completion stops still preserve the stock late-stop
+playback-drain behavior.
 
 Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
 such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping

@@ -18,6 +18,7 @@ const xiaozhiPhysicalEvidenceSchemaVersion = "a21.xiaozhi_physical_evidence.v1"
 const xiaozhiInstrumentObservationSchemaVersion = "a21.xiaozhi_instrument_observation.v1"
 const xiaozhiInstrumentTimingToleranceMS = 5
 const xiaozhiInstrumentMaxTimingMS = 60000
+const xiaozhiPhysicalBargeInStopDoneMaxMS = 1000
 
 type xiaozhiPhysicalEvidenceOptions struct {
 	GatewayURL                  string
@@ -216,7 +217,7 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 	report.GatewayMetrics = xiaozhiPhysicalGatewayMetricsFromTrace(trace)
 	report.CanonicalMetrics = physicalStackChanCanonicalMetrics{
 		DeviceDownlinkFirstFrameMS:        physicalStackChanMetric{},
-		DevicePlaybackStartMS:             physicalStackChanMetric{},
+		DevicePlaybackStartMS:             physicalStackChanMetricFromInt64(trace.Summary.DevicePlaybackStartMS, "device_runtime_echo"),
 		SpeechEndToFirstAudibleResponseMS: physicalStackChanMetric{},
 		BargeInDetectedMS:                 xiaozhiPhysicalTracePresenceMetric(trace, "barge_in.detected", "gateway_trace"),
 		BargeInStopMS: physicalStackChanMetricFromNonNegativeInt64(firstNonNilInt64(
@@ -228,7 +229,7 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 			"gateway_trace",
 		),
 		BargeInPlaybackStopDoneMS: physicalStackChanMetricFromNonNegativeInt64(
-			xiaozhiPhysicalTraceDeltaMS(trace, "barge_in.detected", "device.playback.stop_done"),
+			xiaozhiPhysicalBoundedTraceDeltaMS(trace, "barge_in.detected", "device.playback.stop_done", xiaozhiPhysicalBargeInStopDoneMaxMS),
 			"device_runtime_echo",
 		),
 	}
@@ -349,6 +350,14 @@ func xiaozhiPhysicalTraceDeltaMS(trace gateway.TraceResponse, startName string, 
 	return nil
 }
 
+func xiaozhiPhysicalBoundedTraceDeltaMS(trace gateway.TraceResponse, startName string, endName string, maxMS int64) *int64 {
+	delta := xiaozhiPhysicalTraceDeltaMS(trace, startName, endName)
+	if delta == nil || *delta > maxMS {
+		return nil
+	}
+	return delta
+}
+
 func xiaozhiPhysicalTracePresenceMetric(trace gateway.TraceResponse, name string, source string) physicalStackChanMetric {
 	if !xiaozhiTraceHasEvent(trace, name) {
 		return physicalStackChanMetric{}
@@ -360,6 +369,7 @@ func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trac
 	return map[string]physicalStackChanMetric{
 		"physical_xiaozhi.online":      xiaozhiPhysicalBoolMetric(report.PhysicalDeviceOnline, "gateway_device_registry"),
 		"xiaozhi.profile.stock":        xiaozhiPhysicalBoolMetric(report.Profile == "stock", "gateway_device_registry"),
+		"xiaozhi.profile.debug":        xiaozhiPhysicalBoolMetric(report.Profile == "debug", "gateway_device_registry"),
 		"xiaozhi.opus.decode":          xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.opus_frame.decoded"), "gateway_trace"),
 		"audio.ingress.pcm":            xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "audio.ingress.buffered"), "gateway_trace"),
 		"vad.speech.end":               xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "vad.speech.end"), "gateway_trace"),
@@ -377,8 +387,8 @@ func xiaozhiPhysicalFindings(report xiaozhiPhysicalEvidenceReport, trace gateway
 	if !report.StageAvailability["physical_xiaozhi.online"].Available {
 		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_device_offline", "error", "physical Xiaozhi device is not online in the A21 Gateway registry"))
 	}
-	if !report.StageAvailability["xiaozhi.profile.stock"].Available {
-		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_stock_profile_missing", "error", "stock Xiaozhi profile evidence is missing"))
+	if !report.StageAvailability["xiaozhi.profile.stock"].Available && !report.StageAvailability["xiaozhi.profile.debug"].Available {
+		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_profile_missing", "error", "stock or debug Xiaozhi profile evidence is missing"))
 	}
 	for _, stage := range []struct {
 		key  string
@@ -397,7 +407,7 @@ func xiaozhiPhysicalFindings(report xiaozhiPhysicalEvidenceReport, trace gateway
 		}
 	}
 	if report.PhysicalDeviceOnline && report.GatewayMetrics.GatewayAnswerFirstDownlinkMS.Available && xiaozhiTraceHasEvent(trace, "xiaozhi.tts.opus_frame.downlink") {
-		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_gateway_downlink_candidate", "info", "stock Xiaozhi physical device reached Gateway downlink, but this is not audible playback acceptance"))
+		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_gateway_downlink_candidate", "info", "Xiaozhi physical device reached Gateway downlink, but this is not audible playback acceptance"))
 	}
 	if !report.StageAvailability["device.playback.ack"].Available {
 		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_device_playback_ack_missing", "error", "missing device playback ack such as device.playback.start or trusted runtime echo"))

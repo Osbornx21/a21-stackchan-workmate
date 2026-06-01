@@ -3076,8 +3076,15 @@ func traceLatencySummary(events []TraceEvent) TraceLatencySummary {
 	summary.ProviderCommitToFirstAudioMS = traceDeltaMS(events, "provider.audio.commit", "provider.audio.first_downlink")
 	summary.XiaozhiListenToAudioIngressMS = traceDeltaMS(events, "xiaozhi.listen.start", "audio.ingress.buffered")
 	summary.XiaozhiOpusDecodeMS = traceDeltaMS(events, "xiaozhi.opus_frame.received", "xiaozhi.opus_frame.decoded")
-	summary.ASRFirstPartialMS = traceDeltaMS(events, "audio.ingress.buffered", "asr.first_partial")
-	summary.LLMFirstContentMS = traceDeltaMS(events, "asr.first_partial", "provider.first_content")
+	summary.ASRFirstPartialMS = firstTraceDelta(
+		traceDeltaMS(events, "audio.ingress.buffered", "asr.first_partial"),
+		traceDeltaMS(events, "audio.ingress.buffered", "asr.final"),
+	)
+	llmStartName := "asr.first_partial"
+	if !traceHasEvent(events, llmStartName) {
+		llmStartName = "asr.final"
+	}
+	summary.LLMFirstContentMS = traceDeltaMS(events, llmStartName, "provider.first_content")
 	summary.TTSFirstAudioMS = traceDeltaMS(events, "provider.first_content", "tts.first_audio")
 	summary.AudioDownlinkFirstFrameMS = traceDeltaMS(events, "tts.first_audio", "audio.downlink.first_frame")
 	summary.DevicePlaybackStartMS = traceDeltaMS(events, "audio.downlink.first_frame", "device.playback.start")
@@ -3102,6 +3109,24 @@ func traceDeltaMS(events []TraceEvent, startName string, endName string) *int64 
 		}
 	}
 	return nil
+}
+
+func firstTraceDelta(values ...*int64) *int64 {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func traceHasEvent(events []TraceEvent, name string) bool {
+	for _, event := range events {
+		if event.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.DeviceEventPayload) DeviceRecord {

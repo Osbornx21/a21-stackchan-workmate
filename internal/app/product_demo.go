@@ -808,7 +808,7 @@ func loadProductPhysicalStackChanReportEvidence(path string) (productPhysicalSta
 		}
 		readiness := buildProductXiaozhiPhysicalReadiness(filepath.Base(filepath.Clean(path)), report)
 		findings := []productReadinessFinding{
-			{Code: "xiaozhi_physical_gateway_downlink_candidate", Message: "Stock Xiaozhi physical evidence reached Gateway downlink but is not PRD audible playback acceptance"},
+			{Code: "xiaozhi_physical_gateway_downlink_candidate", Message: "Xiaozhi physical evidence reached Gateway downlink but is not PRD audible playback acceptance"},
 		}
 		if !readiness.PRDPhysicalAccepted {
 			if !readiness.CanonicalMetricAvailability["device_playback_start_ms"] {
@@ -852,7 +852,7 @@ func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhy
 	status := strings.TrimSpace(report.AcceptanceStatus)
 	gatewayDownlink := mode == "physical_xiaozhi_gateway" &&
 		report.PhysicalDeviceOnline &&
-		report.Profile == "stock" &&
+		xiaozhiProductPhysicalProfileAccepted(report.Profile) &&
 		report.GatewayMetrics.GatewayAnswerFirstDownlinkMS.Available &&
 		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.opus.decode") &&
 		xiaozhiPhysicalStageAvailable(report.StageAvailability, "audio.ingress.pcm") &&
@@ -867,8 +867,10 @@ func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhy
 	findingCodes := productPhysicalStackChanFindingCodes(report.Findings)
 	if candidateVoice {
 		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_gateway_downlink_candidate")
-		if !playbackObserved {
+		if !availability["device_playback_start_ms"] {
 			findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_device_playback_ack_missing")
+		}
+		if !observationAvailable {
 			findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_operator_observation_missing")
 		}
 	} else {
@@ -892,6 +894,15 @@ func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhy
 		PRDPhysicalAccepted:                    false,
 		CanonicalMetricAvailability:            availability,
 		FindingCodes:                           findingCodes,
+	}
+}
+
+func xiaozhiProductPhysicalProfileAccepted(profile string) bool {
+	switch strings.TrimSpace(profile) {
+	case "stock", "debug":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -1322,7 +1333,7 @@ func buildProductNextActions(report productReadinessReport) []string {
 	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
 		switch {
 		case report.StackChan.PhysicalEvidence.CandidatePhysicalVoiceEvidence:
-			actions = append(actions, "collect missing device playback ack and operator audible observation for the stock Xiaozhi physical evidence report")
+			actions = append(actions, productXiaozhiPhysicalEvidenceNextAction(report.StackChan.PhysicalEvidence))
 		case report.StackChan.PhysicalEvidence.CandidatePhysicalEvidence:
 			actions = append(actions, "complete human physical StackChan review for the candidate evidence report")
 		case report.StackChan.PhysicalEvidence.HostLoopbackOnly:
@@ -1335,6 +1346,33 @@ func buildProductNextActions(report productReadinessReport) []string {
 		actions = append(actions, "install or configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")
 	}
 	return actions
+}
+
+func productXiaozhiPhysicalEvidenceNextAction(physical productPhysicalStackChanReadiness) string {
+	availability := physical.CanonicalMetricAvailability
+	var missing []string
+	if !availability["device_playback_start_ms"] {
+		missing = append(missing, "device playback ack")
+	}
+	if !physical.OperatorInstrumentObservationAvailable {
+		missing = append(missing, "operator audible observation or instrumented playback observation")
+	}
+	if !availability["device_downlink_first_frame_ms"] {
+		missing = append(missing, "device downlink first-frame timing")
+	}
+	if !availability["speech_end_to_first_audible_response_ms"] {
+		missing = append(missing, "speech-end to first audible response timing")
+	}
+	if !availability["barge_in_stop_ms"] {
+		missing = append(missing, "barge-in stop timing")
+	}
+	if !availability["barge_in_playback_stop_done_ms"] {
+		missing = append(missing, "barge-in playback stop_done")
+	}
+	if len(missing) == 0 {
+		return "run three consecutive physical Xiaozhi PRD acceptance rounds and attach the evidence report"
+	}
+	return "collect missing " + strings.Join(missing, ", ") + " for the Xiaozhi physical evidence report"
 }
 
 func productSimulatorURL(gatewayURL string) string {

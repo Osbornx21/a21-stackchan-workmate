@@ -361,6 +361,31 @@ func TestTraceEndpointReturnsVoicePipelineSplitSummary(t *testing.T) {
 	assertSummaryDelta(t, "answer_first_audio_total_ms", response.Summary.AnswerFirstAudioTotalMS, 370)
 }
 
+func TestTraceEndpointUsesASRFinalWhenPartialIsUnavailable(t *testing.T) {
+	server := NewServer()
+	server.recordTrace("a21-trace-pipeline-final-001", "a21-session-pipeline-final-001", "stackchan-sim-001", "audio.ingress.buffered", 2000)
+	server.recordTrace("a21-trace-pipeline-final-001", "a21-session-pipeline-final-001", "stackchan-sim-001", "asr.final", 2550)
+	server.recordTrace("a21-trace-pipeline-final-001", "a21-session-pipeline-final-001", "stackchan-sim-001", "provider.first_content", 2830)
+	server.recordTrace("a21-trace-pipeline-final-001", "a21-session-pipeline-final-001", "stackchan-sim-001", "tts.first_audio", 3240)
+	server.recordTrace("a21-trace-pipeline-final-001", "a21-session-pipeline-final-001", "stackchan-sim-001", "audio.downlink.first_frame", 3640)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pipeline-final-001", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response TraceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	assertSummaryDelta(t, "asr_first_partial_ms", response.Summary.ASRFirstPartialMS, 550)
+	assertSummaryDelta(t, "llm_first_content_ms", response.Summary.LLMFirstContentMS, 280)
+	assertSummaryDelta(t, "tts_first_audio_ms", response.Summary.TTSFirstAudioMS, 410)
+	assertSummaryDelta(t, "audio_downlink_first_frame_ms", response.Summary.AudioDownlinkFirstFrameMS, 400)
+	assertSummaryDelta(t, "answer_first_audio_total_ms", response.Summary.AnswerFirstAudioTotalMS, 1640)
+}
+
 func TestTraceEndpointRequiresTraceID(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)

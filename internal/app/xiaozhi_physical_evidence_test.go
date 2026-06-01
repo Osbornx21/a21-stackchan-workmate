@@ -561,13 +561,157 @@ func TestProductReadinessIngestsInstrumentedXiaozhiEvidenceAsBlockedCandidate(t 
 	}
 }
 
+func TestProductReadinessIngestsDebugXiaozhiPhysicalEvidenceAsCandidate(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"unknown","connection_status":"online","capabilities":{"xiaozhi_profile":"debug","xiaozhi_feature_device_events":"true","xiaozhi_debug_extension_isolated":"true","xiaozhi_transport":"websocket","xiaozhi_audio":"opus_16000hz_mono_60ms","microphone":"available_xiaozhi_opus_ingress"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	evidence := writeProductReadinessDebugXiaozhiPhysicalEvidenceReportFixture(t)
+
+	report := buildProductReadinessReport(t.Context(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "44:1b:f6:e2:6a:60",
+		PhysicalStackChanReport: evidence,
+	}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+	physical := report.StackChan.PhysicalEvidence
+	if report.LaunchReady || physical.PRDAccepted || physical.PRDPhysicalAccepted {
+		t.Fatalf("launch/physical = %v/%+v, want debug xiaozhi candidate not accepted", report.LaunchReady, physical)
+	}
+	if !physical.Valid ||
+		!physical.CandidatePhysicalVoiceEvidence ||
+		!physical.GatewayDownlinkPhysicalDeviceEvidence ||
+		physical.CandidatePhysicalEvidence ||
+		physical.HostLoopbackOnly ||
+		physical.AcceptanceStatus != "candidate_gateway_downlink" ||
+		physical.PromotionGate != "not_production" {
+		t.Fatalf("physical evidence = %+v, want debug xiaozhi gateway-downlink candidate", physical)
+	}
+	if !physical.CanonicalMetricAvailability["device_playback_start_ms"] ||
+		physical.CanonicalMetricAvailability["barge_in_playback_stop_done_ms"] {
+		t.Fatalf("canonical availability = %#v, want debug playback start but no false stop_done", physical.CanonicalMetricAvailability)
+	}
+	if containsXiaozhiPhysicalString(physical.FindingCodes, "xiaozhi_physical_device_playback_ack_missing") {
+		t.Fatalf("finding codes = %#v, want no playback ack missing when device_playback_start_ms is available", physical.FindingCodes)
+	}
+	if containsProductAction(report.NextActions, "stock Xiaozhi") {
+		t.Fatalf("next actions = %#v, want profile-neutral Xiaozhi action", report.NextActions)
+	}
+	if containsProductAction(report.NextActions, "device playback ack") {
+		t.Fatalf("next actions = %#v, want no missing playback ack once device_playback_start_ms is available", report.NextActions)
+	}
+	for _, want := range []string{
+		"operator audible observation",
+		"barge-in playback stop_done",
+	} {
+		if !containsProductAction(report.NextActions, want) {
+			t.Fatalf("next actions = %#v, want %q", report.NextActions, want)
+		}
+	}
+}
+
+func TestRunXiaozhiPhysicalEvidenceAcceptsDebugPlaybackRuntimeEcho(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true, true)
+	dir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"profile": "debug"`,
+		`"xiaozhi.profile.debug": {`,
+		`"device.playback.ack": {`,
+		`"device.playback.stop_done": {`,
+		`"device_playback_start_ms": {`,
+		`"value_ms": 30`,
+		`"barge_in_playback_stop_done_ms": {`,
+		`"value_ms": 120`,
+		`"promotion_gate": "not_production"`,
+		`"acceptance_status": "candidate_gateway_downlink"`,
+		`"code": "xiaozhi_physical_operator_observation_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		`"code": "xiaozhi_physical_stock_profile_missing"`,
+		`"code": "xiaozhi_physical_device_playback_ack_missing"`,
+		"stock Xiaozhi physical device reached Gateway downlink",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report should not include %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestRunXiaozhiPhysicalEvidenceRejectsUnrelatedLateStopDone(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true, true, true)
+	dir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"device.playback.stop_done": {` + "\n      " + `"available": false`,
+		`"barge_in_playback_stop_done_ms": {` + "\n      " + `"available": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		`"value_ms": 2000`,
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report should not pair late stop_done %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
 func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ...bool) *httptest.Server {
 	t.Helper()
 	includePlayback := len(playback) > 0 && playback[0]
 	includeBargeIn := len(playback) > 1 && playback[1]
+	debugProfile := len(playback) > 3 && playback[3]
+	lateStopDone := len(playback) > 4 && playback[4]
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/devices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		profile := "stock"
+		if debugProfile {
+			profile = "debug"
+		}
+		capabilities := map[string]string{
+			"xiaozhi_profile":   profile,
+			"xiaozhi_transport": "websocket",
+			"xiaozhi_audio":     "opus_16000hz_mono_60ms",
+		}
+		if debugProfile {
+			capabilities["xiaozhi_feature_device_events"] = "true"
+			capabilities["xiaozhi_debug_extension_isolated"] = "true"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"schema_version": "a21.gateway.devices.v1",
 			"service":        "a21-gateway",
@@ -575,11 +719,7 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 				"device_id":         "44:1b:f6:e2:6a:60",
 				"identity_status":   "unknown",
 				"connection_status": "online",
-				"capabilities": map[string]string{
-					"xiaozhi_profile":   "stock",
-					"xiaozhi_transport": "websocket",
-					"xiaozhi_audio":     "opus_16000hz_mono_60ms",
-				},
+				"capabilities":      capabilities,
 				"last_trace_id":   "a21-trace-44-1b-f6-e2-6a-60",
 				"last_session_id": "a21-session-44-1b-f6-e2-6a-60",
 				"first_seen_ms":   1,
@@ -613,7 +753,13 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 			)
 		}
 		if len(playback) > 2 && playback[2] {
-			events = append(events, map[string]any{"name": "device.playback.stop_done", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1820, "offset_ms": 820})
+			stopDoneAtMS := 1820
+			stopDoneOffsetMS := 820
+			if lateStopDone {
+				stopDoneAtMS = 3700
+				stopDoneOffsetMS = 2700
+			}
+			events = append(events, map[string]any{"name": "device.playback.stop_done", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": stopDoneAtMS, "offset_ms": stopDoneOffsetMS})
 		}
 		if unsafe {
 			events = append(events, map[string]any{"name": "operator transcript should not leak", "trace_id": "http://example.com/unsafe/full/url", "session_id": "/Users/secret-token/session", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1601, "offset_ms": 601})
@@ -835,6 +981,39 @@ func writeProductReadinessXiaozhiInstrumentedPhysicalEvidenceReportFixture(t *te
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-xiaozhi-instrumented-physical-evidence-report.json")
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessDebugXiaozhiPhysicalEvidenceReportFixture(t *testing.T) string {
+	t.Helper()
+	reportPath := writeProductReadinessXiaozhiPhysicalEvidenceReportFixture(t)
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	report["profile"] = "debug"
+	report["canonical_metrics"].(map[string]any)["device_playback_start_ms"] = map[string]any{"available": true, "value_ms": 31, "source": "device_runtime_echo"}
+	stages := report["stage_availability"].(map[string]any)
+	stages["xiaozhi.profile.stock"] = map[string]any{"available": false}
+	stages["xiaozhi.profile.debug"] = map[string]any{"available": true, "source": "gateway_device_registry"}
+	stages["device.playback.ack"] = map[string]any{"available": true, "source": "device_runtime_echo"}
+	report["findings"] = []map[string]any{
+		{"code": "xiaozhi_physical_gateway_downlink_candidate", "severity": "info", "message": "Xiaozhi physical device reached Gateway downlink, but this is not audible playback acceptance"},
+		{"code": "xiaozhi_physical_operator_observation_missing", "severity": "error", "message": "missing operator audible observation or instrumented first audible playback evidence"},
+	}
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-debug-physical-evidence-report.json")
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}

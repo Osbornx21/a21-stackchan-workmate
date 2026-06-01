@@ -25,30 +25,44 @@ index 0a809fa..6c7aacc 100644
 +            });
 +        }
 +    };
-@@ -528,0 +538,2 @@ void Application::InitializeProtocol() {
+@@ -528,0 +529,3 @@ void Application::InitializeProtocol() {
 +                    a21_playback_ack_sent_ = false;
 +                    a21_playback_stop_ack_sent_ = false;
-@@ -533 +544,3 @@ void Application::InitializeProtocol() {
--                    if (GetDeviceState() == kDeviceStateSpeaking) {
++                    a21_force_clear_playback_ = false;
+@@ -531,0 +535,7 @@ void Application::InitializeProtocol() {
++                auto reason = cJSON_GetObjectItem(root, "reason");
++                a21_force_clear_playback_ =
++                    cJSON_IsString(reason) &&
++                    (strstr(reason->valuestring, "abort") != nullptr ||
++                     strstr(reason->valuestring, "barge") != nullptr ||
++                     strstr(reason->valuestring, "wake") != nullptr);
++
+@@ -532,0 +543,6 @@ void Application::InitializeProtocol() {
 +                    bool was_speaking = GetDeviceState() == kDeviceStateSpeaking;
 +                    bool had_playback = a21_playback_ack_sent_.load();
-+                    if (was_speaking) {
-@@ -539,0 +553,6 @@ void Application::InitializeProtocol() {
++                    if (a21_force_clear_playback_.load() && (was_speaking || had_playback)) {
++                        audio_service_.ResetDecoder();
++                    }
++
+@@ -539,0 +556,8 @@ void Application::InitializeProtocol() {
 +                    if ((was_speaking || had_playback) && !a21_playback_stop_ack_sent_.exchange(true)) {
 +                        if (protocol_) {
 +                            protocol_->SendA21PlaybackStopDone();
 +                        }
 +                    }
 +                    a21_playback_ack_sent_ = false;
++                    a21_force_clear_playback_ = false;
++
 diff --git a/main/application.h b/main/application.h
 index 7ca7af4..76c0b82 100644
 --- a/main/application.h
 +++ b/main/application.h
 @@ -12,0 +13 @@
 +#include <atomic>
-@@ -142,0 +144,2 @@ private:
+@@ -142,0 +145,3 @@ private:
 +    std::atomic_bool a21_playback_ack_sent_{false};
 +    std::atomic_bool a21_playback_stop_ack_sent_{false};
++    std::atomic_bool a21_force_clear_playback_{false};
 diff --git a/main/audio/audio_service.cc b/main/audio/audio_service.cc
 index 350ac58..d0baf42 100644
 --- a/main/audio/audio_service.cc
