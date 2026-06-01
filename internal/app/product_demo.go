@@ -880,12 +880,22 @@ func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhy
 		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.listen.auto_stop") &&
 		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.tts.downlink")
 	playbackObserved := availability["device_playback_start_ms"] && availability["speech_end_to_first_audible_response_ms"] && observationAvailable
+	requiredMetrics := productRequiredPhysicalStackChanMetricsAvailable(availability)
+	prdAccepted := gatewayDownlink &&
+		gate == "accepted" &&
+		(status == "prd_accepted" || status == "accepted") &&
+		report.PRDAccepted &&
+		requiredMetrics &&
+		micAvailable &&
+		observationAvailable
 	candidateVoice := gatewayDownlink &&
 		((gate == "not_production" && status == "candidate_gateway_downlink") ||
 			(gate == "candidate" && status == "physical_review_required" && playbackObserved)) &&
 		!report.PRDAccepted
 	findingCodes := productPhysicalStackChanFindingCodes(report.Findings)
-	if candidateVoice {
+	if prdAccepted {
+		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_prd_accepted")
+	} else if candidateVoice {
 		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_gateway_downlink_candidate")
 		if !availability["device_playback_start_ms"] {
 			findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_device_playback_ack_missing")
@@ -904,14 +914,14 @@ func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhy
 		PromotionGate:                          gate,
 		AcceptanceStatus:                       status,
 		PRDAccepted:                            report.PRDAccepted,
-		RequiredPhysicalMetricsAvailable:       productRequiredPhysicalStackChanMetricsAvailable(availability),
+		RequiredPhysicalMetricsAvailable:       requiredMetrics,
 		MicEvidenceAvailable:                   micAvailable,
 		OperatorInstrumentObservationAvailable: observationAvailable,
 		CandidatePhysicalEvidence:              false,
 		CandidatePhysicalVoiceEvidence:         candidateVoice,
 		GatewayDownlinkPhysicalDeviceEvidence:  gatewayDownlink,
 		HostLoopbackOnly:                       false,
-		PRDPhysicalAccepted:                    false,
+		PRDPhysicalAccepted:                    prdAccepted,
 		CanonicalMetricAvailability:            availability,
 		FindingCodes:                           findingCodes,
 	}

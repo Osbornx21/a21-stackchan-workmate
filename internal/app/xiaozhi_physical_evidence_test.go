@@ -607,6 +607,52 @@ func TestProductReadinessIngestsDebugXiaozhiPhysicalEvidenceAsCandidate(t *testi
 	}
 }
 
+func TestProductReadinessIngestsAcceptedXiaozhiPhysicalEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"unknown","connection_status":"online","capabilities":{"xiaozhi_profile":"debug","xiaozhi_feature_device_events":"true","xiaozhi_debug_extension_isolated":"true","xiaozhi_transport":"websocket","xiaozhi_audio":"opus_16000hz_mono_60ms","microphone":"available_xiaozhi_opus_ingress"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	evidence := writeProductReadinessAcceptedXiaozhiPhysicalEvidenceReportFixture(t)
+
+	report := buildProductReadinessReport(t.Context(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "44:1b:f6:e2:6a:60",
+		PhysicalStackChanReport: evidence,
+	}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+	physical := report.StackChan.PhysicalEvidence
+	if !physical.Valid ||
+		!physical.PRDAccepted ||
+		!physical.PRDPhysicalAccepted ||
+		!physical.RequiredPhysicalMetricsAvailable ||
+		!physical.MicEvidenceAvailable ||
+		!physical.OperatorInstrumentObservationAvailable ||
+		!physical.GatewayDownlinkPhysicalDeviceEvidence ||
+		physical.CandidatePhysicalVoiceEvidence ||
+		physical.CandidatePhysicalEvidence ||
+		physical.HostLoopbackOnly ||
+		physical.AcceptanceStatus != "prd_accepted" ||
+		physical.PromotionGate != "accepted" {
+		t.Fatalf("physical evidence = %+v, want accepted xiaozhi physical PRD evidence", physical)
+	}
+	for _, want := range []string{
+		"device_downlink_first_frame_ms",
+		"device_playback_start_ms",
+		"speech_end_to_first_audible_response_ms",
+		"barge_in_detected_ms",
+		"barge_in_stop_ms",
+		"barge_in_playback_stop_requested_ms",
+		"barge_in_playback_stop_done_ms",
+	} {
+		if !physical.CanonicalMetricAvailability[want] {
+			t.Fatalf("canonical availability[%s] = false in %+v", want, physical.CanonicalMetricAvailability)
+		}
+	}
+	if !containsXiaozhiPhysicalString(physical.FindingCodes, "xiaozhi_physical_prd_accepted") {
+		t.Fatalf("finding codes = %#v, want xiaozhi_physical_prd_accepted", physical.FindingCodes)
+	}
+	if containsProductAction(report.NextActions, "physical Xiaozhi PRD acceptance") {
+		t.Fatalf("next actions = %#v, want no xiaozhi physical acceptance action after accepted evidence", report.NextActions)
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceAcceptsDebugPlaybackRuntimeEcho(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true, true)
 	dir := t.TempDir()
@@ -720,10 +766,10 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 				"identity_status":   "unknown",
 				"connection_status": "online",
 				"capabilities":      capabilities,
-				"last_trace_id":   "a21-trace-44-1b-f6-e2-6a-60",
-				"last_session_id": "a21-session-44-1b-f6-e2-6a-60",
-				"first_seen_ms":   1,
-				"last_seen_ms":    2,
+				"last_trace_id":     "a21-trace-44-1b-f6-e2-6a-60",
+				"last_session_id":   "a21-session-44-1b-f6-e2-6a-60",
+				"first_seen_ms":     1,
+				"last_seen_ms":      2,
 			}},
 		})
 	})
@@ -1014,6 +1060,61 @@ func writeProductReadinessDebugXiaozhiPhysicalEvidenceReportFixture(t *testing.T
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-xiaozhi-debug-physical-evidence-report.json")
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessAcceptedXiaozhiPhysicalEvidenceReportFixture(t *testing.T) string {
+	t.Helper()
+	reportPath := writeProductReadinessDebugXiaozhiPhysicalEvidenceReportFixture(t)
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	report["promotion_gate"] = "accepted"
+	report["acceptance_status"] = "prd_accepted"
+	report["prd_accepted"] = true
+
+	metrics := report["canonical_metrics"].(map[string]any)
+	metrics["device_downlink_first_frame_ms"] = map[string]any{"available": true, "value_ms": 392, "source": "gateway_trace"}
+	metrics["device_playback_start_ms"] = map[string]any{"available": true, "value_ms": 30, "source": "device_runtime_echo"}
+	metrics["speech_end_to_first_audible_response_ms"] = map[string]any{"available": true, "value_ms": 422, "source": "instrument_observation"}
+	metrics["barge_in_detected_ms"] = map[string]any{"available": true, "value_ms": 0, "source": "gateway_trace"}
+	metrics["barge_in_stop_ms"] = map[string]any{"available": true, "value_ms": 0, "source": "gateway_trace"}
+	metrics["barge_in_playback_stop_requested_ms"] = map[string]any{"available": true, "value_ms": 0, "source": "gateway_trace"}
+	metrics["barge_in_playback_stop_done_ms"] = map[string]any{"available": true, "value_ms": 108, "source": "device_runtime_echo"}
+
+	stages := report["stage_availability"].(map[string]any)
+	stages["device.playback.ack"] = map[string]any{"available": true, "source": "device_runtime_echo"}
+	stages["device.playback.stop_done"] = map[string]any{"available": true, "source": "device_runtime_echo"}
+	stages["operator.audible_observation"] = map[string]any{"available": true, "source": "instrument_observation"}
+	stages["xiaozhi.profile.stock"] = map[string]any{"available": false}
+	stages["xiaozhi.profile.debug"] = map[string]any{"available": true, "source": "gateway_device_registry"}
+
+	report["observation"] = map[string]any{
+		"available":               true,
+		"physical_sound_observed": true,
+		"operator_confirmed":      false,
+		"method":                  "instrument_nonzero_audible_energy",
+		"instrument":              "calibrated_audio_recorder",
+		"observed_audible_ms":     422,
+	}
+	report["findings"] = []map[string]any{
+		{"code": "xiaozhi_physical_prd_accepted", "severity": "info", "message": "Xiaozhi physical evidence satisfies PRD acceptance after consecutive physical rounds"},
+	}
+
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-accepted-physical-evidence-report.json")
 	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}
