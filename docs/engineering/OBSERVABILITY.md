@@ -111,6 +111,16 @@ fixture evidence may reach `promotion_gate=candidate`, but still keeps
 explicit human review promotes it. Host-loopback fixtures remain
 `candidate_host_only`; missing or unsafe physical evidence remains blocked.
 
+`product-readiness --physical-stackchan-report <report.json>` ingests this
+redacted report into `stackchan.physical_evidence` using the input basename
+only. Candidate physical evidence improves readiness visibility but keeps launch
+blocked with `physical_stackchan_review_required`; host-loopback evidence stays
+host-only; malformed or unsafe evidence emits the fixed
+`physical_stackchan_report_invalid` finding without raw details. A future
+accepted report is represented only when it explicitly carries PRD acceptance
+and all required physical metrics, microphone counters, and operator/instrument
+observations are present.
+
 The live protocol contract reserves future observability fields for binary Opus
 media. It is planning-only: reserved trace markers such as
 `media.opus.profile.negotiated`, `media.opus.uplink.frame.received`,

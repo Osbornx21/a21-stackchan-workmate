@@ -19,15 +19,16 @@ import (
 )
 
 type productReadinessOptions struct {
-	GatewayURL            string
-	Addr                  string
-	DeviceID              string
-	OutputDir             string
-	XiaozhiReport         string
-	V21ProfessionalReport string
-	RequireReal           bool
-	OpenBrowser           bool
-	StatusOnly            bool
+	GatewayURL              string
+	Addr                    string
+	DeviceID                string
+	OutputDir               string
+	XiaozhiReport           string
+	V21ProfessionalReport   string
+	PhysicalStackChanReport string
+	RequireReal             bool
+	OpenBrowser             bool
+	StatusOnly              bool
 }
 
 type productReadinessReport struct {
@@ -97,13 +98,32 @@ type productV21ProfessionalReadiness struct {
 }
 
 type productStackChanReadiness struct {
-	DeviceID                string `json:"device_id"`
-	PhysicalDeviceOnline    bool   `json:"physical_device_online"`
-	PhysicalMicrophoneReady bool   `json:"physical_microphone_ready"`
-	MicrophoneStatus        string `json:"microphone_status,omitempty"`
-	SimulatorDeviceOnline   bool   `json:"simulator_device_online"`
-	USBSerialCandidateCount int    `json:"usb_serial_candidate_count"`
-	Status                  string `json:"status"`
+	DeviceID                string                            `json:"device_id"`
+	PhysicalDeviceOnline    bool                              `json:"physical_device_online"`
+	PhysicalMicrophoneReady bool                              `json:"physical_microphone_ready"`
+	MicrophoneStatus        string                            `json:"microphone_status,omitempty"`
+	SimulatorDeviceOnline   bool                              `json:"simulator_device_online"`
+	USBSerialCandidateCount int                               `json:"usb_serial_candidate_count"`
+	Status                  string                            `json:"status"`
+	PhysicalEvidence        productPhysicalStackChanReadiness `json:"physical_evidence"`
+}
+
+type productPhysicalStackChanReadiness struct {
+	Valid                                  bool            `json:"valid"`
+	Status                                 string          `json:"status"`
+	SourceReport                           string          `json:"source_report,omitempty"`
+	ExecutionMode                          string          `json:"execution_mode,omitempty"`
+	PromotionGate                          string          `json:"promotion_gate,omitempty"`
+	AcceptanceStatus                       string          `json:"acceptance_status,omitempty"`
+	PRDAccepted                            bool            `json:"prd_accepted"`
+	RequiredPhysicalMetricsAvailable       bool            `json:"required_physical_metrics_available"`
+	MicEvidenceAvailable                   bool            `json:"mic_evidence_available"`
+	OperatorInstrumentObservationAvailable bool            `json:"operator_instrument_observation_available"`
+	CandidatePhysicalEvidence              bool            `json:"candidate_physical_evidence"`
+	HostLoopbackOnly                       bool            `json:"host_loopback_only"`
+	PRDPhysicalAccepted                    bool            `json:"prd_physical_accepted"`
+	CanonicalMetricAvailability            map[string]bool `json:"canonical_metric_availability,omitempty"`
+	FindingCodes                           []string        `json:"finding_codes,omitempty"`
 }
 
 type productVoiceReadiness struct {
@@ -150,7 +170,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--physical-stackchan-report report.json] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -170,6 +190,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--v21-professional-report":
 			if !readStringOption(args, &i, stderr, "--v21-professional-report", &options.V21ProfessionalReport) {
+				return 2
+			}
+		case "--physical-stackchan-report":
+			if !readStringOption(args, &i, stderr, "--physical-stackchan-report", &options.PhysicalStackChanReport) {
 				return 2
 			}
 		case "--require-real":
@@ -298,11 +322,15 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	}
 	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
 	report.Findings = append(report.Findings, xiaozhiFindings...)
+	physicalEvidence, physicalFindings := loadProductPhysicalStackChanReportEvidence(options.PhysicalStackChanReport)
+	report.StackChan.PhysicalEvidence = physicalEvidence
+	report.Findings = append(report.Findings, physicalFindings...)
 	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan, xiaozhiEvidence)
 	report.LaunchReady = report.Gateway.Healthy &&
 		report.Provider.RealProviderReady &&
 		report.V21.Healthy &&
 		report.StackChan.PhysicalDeviceOnline &&
+		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady
 	report.DemoReady = report.Gateway.Healthy && report.Gateway.SimulatorReady && report.Voice.LocalTTSReady
 	report.NextActions = buildProductNextActions(report)
@@ -615,6 +643,177 @@ func invalidProductXiaozhiReportFinding() productReadinessFinding {
 	}
 }
 
+func loadProductPhysicalStackChanReportEvidence(path string) (productPhysicalStackChanReadiness, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productPhysicalStackChanReadiness{Status: "no_report", AcceptanceStatus: "not_provided"}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || physicalStackChanValueUnsafe(raw) {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	var report physicalStackChanEvidenceReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	if report.SchemaVersion != physicalStackChanEvidenceSchemaVersion || !productPhysicalStackChanRedactionOK(report.Redaction) {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	readiness := buildProductPhysicalStackChanReadiness(filepath.Base(filepath.Clean(path)), report)
+	var findings []productReadinessFinding
+	switch {
+	case readiness.PRDPhysicalAccepted:
+	case readiness.HostLoopbackOnly:
+		findings = append(findings, productReadinessFinding{Code: "physical_stackchan_host_loopback_only", Message: "Physical StackChan evidence report is host-loopback only"})
+	case readiness.CandidatePhysicalEvidence:
+		findings = append(findings, productReadinessFinding{Code: "physical_stackchan_review_required", Message: "Physical StackChan evidence is candidate quality and requires human physical review"})
+	case report.PRDAccepted && !readiness.PRDPhysicalAccepted:
+		findings = append(findings, productReadinessFinding{Code: "physical_stackchan_acceptance_incomplete", Message: "Physical StackChan report claims PRD acceptance but required physical evidence is incomplete"})
+	default:
+		findings = append(findings, productReadinessFinding{Code: "physical_stackchan_report_blocked", Message: "Physical StackChan evidence report does not satisfy physical acceptance"})
+	}
+	return readiness, findings
+}
+
+func buildProductPhysicalStackChanReadiness(sourceReport string, report physicalStackChanEvidenceReport) productPhysicalStackChanReadiness {
+	availability := productPhysicalStackChanMetricAvailability(report.CanonicalMetrics)
+	requiredMetrics := productRequiredPhysicalStackChanMetricsAvailable(availability)
+	micAvailable := report.Mic.Available && physicalStackChanMicAvailable(report.Mic)
+	observationAvailable := report.Observation.Available && physicalStackChanObservationAvailable(report.Observation)
+	mode := strings.TrimSpace(report.ExecutionMode)
+	gate := strings.TrimSpace(report.PromotionGate)
+	status := strings.TrimSpace(report.AcceptanceStatus)
+	hostOnly := mode != "physical_stackchan" || status == "candidate_host_only"
+	candidate := mode == "physical_stackchan" &&
+		gate == "candidate" &&
+		status == "physical_review_required" &&
+		!report.PRDAccepted &&
+		requiredMetrics &&
+		micAvailable &&
+		observationAvailable &&
+		report.Execution.HardwareExecuted
+	prdAccepted := mode == "physical_stackchan" &&
+		gate == "accepted" &&
+		(status == "prd_accepted" || status == "accepted") &&
+		report.PRDAccepted &&
+		requiredMetrics &&
+		micAvailable &&
+		observationAvailable &&
+		report.Execution.HardwareExecuted
+	findingCodes := productPhysicalStackChanFindingCodes(report.Findings)
+	switch {
+	case prdAccepted:
+		findingCodes = appendProductFindingCode(findingCodes, "physical_stackchan_prd_accepted")
+	case candidate:
+		findingCodes = appendProductFindingCode(findingCodes, "physical_stackchan_review_required")
+	case hostOnly:
+		findingCodes = appendProductFindingCode(findingCodes, "physical_stackchan_host_loopback_only")
+	default:
+		findingCodes = appendProductFindingCode(findingCodes, "physical_stackchan_report_blocked")
+	}
+	return productPhysicalStackChanReadiness{
+		Valid:                                  true,
+		Status:                                 firstNonEmpty(status, "blocked"),
+		SourceReport:                           sourceReport,
+		ExecutionMode:                          mode,
+		PromotionGate:                          gate,
+		AcceptanceStatus:                       status,
+		PRDAccepted:                            report.PRDAccepted,
+		RequiredPhysicalMetricsAvailable:       requiredMetrics,
+		MicEvidenceAvailable:                   micAvailable,
+		OperatorInstrumentObservationAvailable: observationAvailable,
+		CandidatePhysicalEvidence:              candidate,
+		HostLoopbackOnly:                       hostOnly,
+		PRDPhysicalAccepted:                    prdAccepted,
+		CanonicalMetricAvailability:            availability,
+		FindingCodes:                           findingCodes,
+	}
+}
+
+func productPhysicalStackChanMetricAvailability(metrics physicalStackChanCanonicalMetrics) map[string]bool {
+	return map[string]bool{
+		"device_downlink_first_frame_ms":          metrics.DeviceDownlinkFirstFrameMS.Available,
+		"device_playback_start_ms":                metrics.DevicePlaybackStartMS.Available,
+		"speech_end_to_first_audible_response_ms": metrics.SpeechEndToFirstAudibleResponseMS.Available,
+		"barge_in_detected_ms":                    metrics.BargeInDetectedMS.Available,
+		"barge_in_stop_ms":                        metrics.BargeInStopMS.Available,
+		"barge_in_playback_stop_requested_ms":     metrics.BargeInPlaybackStopRequestedMS.Available,
+		"barge_in_playback_stop_done_ms":          metrics.BargeInPlaybackStopDoneMS.Available,
+	}
+}
+
+func productRequiredPhysicalStackChanMetricsAvailable(availability map[string]bool) bool {
+	for _, key := range []string{
+		"device_downlink_first_frame_ms",
+		"device_playback_start_ms",
+		"speech_end_to_first_audible_response_ms",
+		"barge_in_detected_ms",
+		"barge_in_stop_ms",
+		"barge_in_playback_stop_requested_ms",
+		"barge_in_playback_stop_done_ms",
+	} {
+		if !availability[key] {
+			return false
+		}
+	}
+	return true
+}
+
+func productPhysicalStackChanRedactionOK(redaction physicalStackChanEvidenceRedaction) bool {
+	return !redaction.UserTextStored &&
+		!redaction.InstructionTextStored &&
+		!redaction.ModelTextStored &&
+		!redaction.AudioPayloadStored &&
+		!redaction.EncodedAudioPayloadStored &&
+		!redaction.NetworkLocatorStored &&
+		!redaction.NetworkRouteStored &&
+		!redaction.FilesystemLocatorStored &&
+		!redaction.SecretMaterialStored &&
+		!redaction.InternalThoughtStored
+}
+
+func productPhysicalStackChanFindingCodes(findings []physicalStackChanEvidenceFinding) []string {
+	var codes []string
+	for _, finding := range findings {
+		code := strings.TrimSpace(finding.Code)
+		if code != "" {
+			codes = appendProductFindingCode(codes, code)
+		}
+	}
+	return codes
+}
+
+func appendProductFindingCode(codes []string, code string) []string {
+	for _, existing := range codes {
+		if existing == code {
+			return codes
+		}
+	}
+	return append(codes, code)
+}
+
+func invalidProductPhysicalStackChanReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "physical_stackchan_report_invalid",
+		Message: "Physical StackChan evidence report is invalid or unsafe",
+	}
+}
+
 type productV21ProfessionalReportFixture struct {
 	SchemaVersion                string  `json:"schema_version"`
 	Status                       string  `json:"status"`
@@ -800,6 +999,16 @@ func buildProductNextActions(report productReadinessReport) []string {
 	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalMicrophoneReady {
 		status := firstNonEmpty(report.StackChan.MicrophoneStatus, "unknown")
 		actions = append(actions, "promote StackChan microphone to a product-ready firmware capability; current status: "+status)
+	}
+	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
+		switch {
+		case report.StackChan.PhysicalEvidence.CandidatePhysicalEvidence:
+			actions = append(actions, "complete human physical StackChan review for the candidate evidence report")
+		case report.StackChan.PhysicalEvidence.HostLoopbackOnly:
+			actions = append(actions, "collect physical StackChan evidence; host-loopback evidence is not production acceptance")
+		default:
+			actions = append(actions, "attach a PRD-accepted physical StackChan evidence report")
+		}
 	}
 	if !report.Voice.RealASRReady {
 		actions = append(actions, "install or configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")

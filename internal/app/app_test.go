@@ -101,8 +101,9 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	})
 
 	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
-		GatewayURL: server.URL,
-		DeviceID:   "stackchan-001",
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
 	}, []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
 		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
@@ -294,6 +295,168 @@ func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.
 		if strings.Contains(encoded.String(), forbidden) {
 			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
 		}
+	}
+}
+
+func TestProductReadinessIngestsPhysicalStackChanCandidateEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessPhysicalStackChanReportFixture(t, nil)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		PhysicalStackChanReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+	})
+
+	physical := report.StackChan.PhysicalEvidence
+	if report.LaunchReady || physical.PRDAccepted {
+		t.Fatalf("launch/prd = %v/%v, want candidate evidence not accepted", report.LaunchReady, physical.PRDAccepted)
+	}
+	if !physical.Valid ||
+		physical.SourceReport != "a21-physical-stackchan-evidence-report.json" ||
+		physical.ExecutionMode != "physical_stackchan" ||
+		physical.PromotionGate != "candidate" ||
+		physical.AcceptanceStatus != "physical_review_required" ||
+		!physical.RequiredPhysicalMetricsAvailable ||
+		!physical.MicEvidenceAvailable ||
+		!physical.OperatorInstrumentObservationAvailable ||
+		physical.HostLoopbackOnly ||
+		!physical.CandidatePhysicalEvidence {
+		t.Fatalf("physical evidence = %+v, want candidate physical evidence needing review", physical)
+	}
+	for _, want := range []string{"device_downlink_first_frame_ms", "device_playback_start_ms", "speech_end_to_first_audible_response_ms", "barge_in_stop_ms"} {
+		if !physical.CanonicalMetricAvailability[want] {
+			t.Fatalf("metric availability[%s] = false in %+v", want, physical.CanonicalMetricAvailability)
+		}
+	}
+	if !containsProductAction(report.NextActions, "human physical StackChan review") ||
+		!containsProductFinding(report.Findings, "physical_stackchan_review_required", "") {
+		t.Fatalf("next actions/findings = %#v / %#v, want review-required state", report.NextActions, report.Findings)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{fixture, filepath.Dir(fixture), "operator transcript", "raw_audio", "provider output", "secret-token", "http://", "https://", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessIngestsPhysicalStackChanHostLoopbackAsHostOnly(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
+		"execution_mode":    "host_loopback",
+		"promotion_gate":    "not_production",
+		"acceptance_status": "candidate_host_only",
+		"prd_accepted":      false,
+		"execution": map[string]any{
+			"provider_executed": false,
+			"v21_executed":      false,
+			"hardware_executed": false,
+		},
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		PhysicalStackChanReport: fixture,
+	}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+	physical := report.StackChan.PhysicalEvidence
+	if report.LaunchReady || physical.PRDAccepted || !physical.HostLoopbackOnly || physical.CandidatePhysicalEvidence || physical.PRDPhysicalAccepted {
+		t.Fatalf("launch/physical = %v/%+v, want host-only evidence blocked", report.LaunchReady, physical)
+	}
+	if !physical.Valid || physical.AcceptanceStatus != "candidate_host_only" || physical.PromotionGate != "not_production" {
+		t.Fatalf("physical evidence = %+v, want candidate_host_only not production", physical)
+	}
+	if !containsProductFinding(report.Findings, "physical_stackchan_host_loopback_only", "") {
+		t.Fatalf("findings = %#v, want host-loopback physical finding", report.Findings)
+	}
+}
+
+func TestRunProductReadinessCommandRejectsUnsafePhysicalStackChanReportWithoutLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
+		"transcript":      "operator transcript should not leak",
+		"raw_audio":       "raw_audio_bytes",
+		"provider_output": "provider output should not leak",
+		"url":             "http://example.com/unsafe/full/url",
+		"proxy":           "http://user:secret-token@proxy.local:7890",
+		"local_path":      filepath.Join(t.TempDir(), "secret.wav"),
+	})
+	dir := t.TempDir()
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--physical-stackchan-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 with invalid finding: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	if !strings.Contains(rendered, `"code": "physical_stackchan_report_invalid"`) {
+		t.Fatalf("stdout missing fixed invalid finding: %s", rendered)
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "operator transcript should not leak", "raw_audio_bytes", "provider output should not leak", "secret-token", "proxy.local:7890", "http://", "https://"} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("unsafe physical report leaked %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
+func TestProductReadinessFutureAcceptedPhysicalReportRequiresCompleteEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	accepted := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true})
+	incompleteAccepted := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
+		"promotion_gate":    "accepted",
+		"acceptance_status": "prd_accepted",
+		"prd_accepted":      true,
+		"canonical_metrics": map[string]any{
+			"device_downlink_first_frame_ms": map[string]any{"available": true, "value_ms": 430, "source": "device_runtime_echo"},
+			"device_playback_start_ms":       map[string]any{"available": false},
+		},
+	})
+	for _, tc := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "complete accepted", path: accepted, want: true},
+		{name: "incomplete accepted", path: incompleteAccepted, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+				GatewayURL:              server.URL,
+				DeviceID:                "stackchan-001",
+				PhysicalStackChanReport: tc.path,
+			}, []string{
+				"A21_PROVIDER_PRIMARY=mock",
+			})
+			if report.StackChan.PhysicalEvidence.PRDPhysicalAccepted != tc.want {
+				t.Fatalf("physical evidence = %+v, want prd accepted %v", report.StackChan.PhysicalEvidence, tc.want)
+			}
+		})
 	}
 }
 
@@ -855,6 +1018,98 @@ func writeProductReadinessV21ProfessionalReportFixtureFromData(t *testing.T, dat
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-v21-professional-readiness-host.json")
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessPhysicalStackChanReportFixture(t *testing.T, overrides map[string]any) string {
+	t.Helper()
+	report := map[string]any{
+		"schema_version":    "a21.physical_stackchan_evidence.v1",
+		"execution_mode":    "physical_stackchan",
+		"trace_id":          "a21-trace-physical-stackchan-001",
+		"session_id":        "a21-session-physical-stackchan-001",
+		"device_id":         "stackchan-001",
+		"fixture_path":      "physical-stackchan-fixture.json",
+		"promotion_gate":    "candidate",
+		"acceptance_status": "physical_review_required",
+		"prd_accepted":      false,
+		"report_path":       "a21-physical-stackchan-evidence-report.json",
+		"execution": map[string]any{
+			"provider_executed": false,
+			"v21_executed":      false,
+			"hardware_executed": true,
+		},
+		"stage_availability": map[string]any{
+			"device.downlink.first_frame":          map[string]any{"available": true, "value_ms": 430, "source": "device_runtime_echo"},
+			"device.playback.start":                map[string]any{"available": true, "value_ms": 520, "source": "device_runtime_echo"},
+			"speech_end_to_first_audible_response": map[string]any{"available": true, "value_ms": 760, "source": "operator_or_instrument"},
+			"barge_in.detected":                    map[string]any{"available": true, "value_ms": 50, "source": "gateway_trace"},
+			"barge_in.stop":                        map[string]any{"available": true, "value_ms": 130, "source": "operator_or_instrument"},
+			"barge_in.playback_stop_requested":     map[string]any{"available": true, "value_ms": 90, "source": "gateway_trace"},
+			"barge_in.playback_stop_done":          map[string]any{"available": true, "value_ms": 130, "source": "device_runtime_echo"},
+		},
+		"canonical_metrics": map[string]any{
+			"device_downlink_first_frame_ms":          map[string]any{"available": true, "value_ms": 430, "source": "device_runtime_echo"},
+			"device_playback_start_ms":                map[string]any{"available": true, "value_ms": 520, "source": "device_runtime_echo"},
+			"speech_end_to_first_audible_response_ms": map[string]any{"available": true, "value_ms": 760, "source": "operator_or_instrument"},
+			"barge_in_detected_ms":                    map[string]any{"available": true, "value_ms": 50, "source": "gateway_trace"},
+			"barge_in_stop_ms":                        map[string]any{"available": true, "value_ms": 130, "source": "operator_or_instrument"},
+			"barge_in_playback_stop_requested_ms":     map[string]any{"available": true, "value_ms": 90, "source": "gateway_trace"},
+			"barge_in_playback_stop_done_ms":          map[string]any{"available": true, "value_ms": 130, "source": "device_runtime_echo"},
+		},
+		"mic": map[string]any{
+			"available":            true,
+			"frames_captured":      320,
+			"frames_delivered":     318,
+			"rms":                  0.13,
+			"delivery_ratio":       0.99375,
+			"driver_error_count":   0,
+			"queue_drop_count":     0,
+			"nonzero_sample_count": 4096,
+		},
+		"observation": map[string]any{
+			"available":               true,
+			"physical_sound_observed": true,
+			"operator_confirmed":      true,
+			"method":                  "operator_and_instrument",
+			"instrument":              "calibrated_audio_recorder",
+			"observed_audible_ms":     760,
+			"observed_stop_ms":        130,
+		},
+		"findings": []map[string]any{{
+			"code":     "physical_review_required",
+			"severity": "info",
+			"message":  "physical metrics are present but still require explicit review before PRD acceptance",
+		}},
+		"redaction": map[string]any{
+			"user_text_stored":             false,
+			"instruction_text_stored":      false,
+			"model_text_stored":            false,
+			"audio_payload_stored":         false,
+			"encoded_audio_payload_stored": false,
+			"network_locator_stored":       false,
+			"network_route_stored":         false,
+			"filesystem_locator_stored":    false,
+			"secret_material_stored":       false,
+			"internal_thought_stored":      false,
+		},
+	}
+	for key, value := range overrides {
+		if value == nil {
+			delete(report, key)
+			continue
+		}
+		report[key] = value
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-physical-stackchan-evidence-report.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
