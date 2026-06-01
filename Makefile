@@ -128,7 +128,7 @@ provider-realtime-plan:
 
 provider-realtime-fixture:
 	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
-	go run ./cmd/a21 provider-realtime-fixture --provider "$(A21_PROVIDER)" --execute
+	go run ./cmd/a21 provider-realtime-fixture --provider "$(A21_PROVIDER)" --execute --output-dir reports
 
 provider-latency-bench:
 	go run ./cmd/a21 provider-latency-bench --provider "$${A21_PROVIDER:-mock}" --iterations "$${A21_PROVIDER_LATENCY_ITERATIONS:-5}" --output-dir reports

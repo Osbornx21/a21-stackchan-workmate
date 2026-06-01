@@ -336,6 +336,18 @@ These endpoints still run through the A21 `VoiceProvider` interface and are safe
 
 The audio WebSocket realtime path now records provider audio uplink and downlink separately. Uplink covers VAD-driven provider session start, speech-frame append, and commit on speech end. Downlink covers provider `VoiceEvent` output streaming back to A21 `control.event` and `audio.playback.chunk` envelopes.
 
+`provider-realtime-fixture --execute --output-dir reports` records the
+no-network realtime adapter fixture as
+`a21-provider-realtime-fixture-*.json`. `product-readiness` ingests this report
+through `--provider-realtime-fixture-report` or `--use-latest-reports` and
+emits `provider.realtime_evidence_valid`, `provider.realtime_provider`,
+`provider.realtime_family`, `provider.realtime_protocol`,
+`provider.realtime_status`, `provider.realtime_executed`,
+`provider.realtime_route_eligible`, `provider.realtime_evidence_mode`, and
+`provider.realtime_source_report`. These fields are observability evidence
+only; offline fixture evidence must not set `real_provider_ready`,
+`launch_ready`, or PRD acceptance.
+
 ## Trace Fields
 
 Future runtime spans should include:

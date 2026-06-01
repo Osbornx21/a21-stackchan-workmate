@@ -479,6 +479,15 @@ Provider audio uplink is also provider-neutral. Gateway `/ws/audio` may forward 
 
 Provider audio downlink uses the same provider-neutral session interface. Gateway consumes `VoiceEvent` values from `Events()` and serializes them back to the audio WebSocket as A21 envelopes. OpenAI realtime `response.output_audio.delta` is currently read and mapped inside the provider adapter before Gateway sees it.
 
+The offline realtime fixture report is a reporting surface, not a new device or
+Gateway protocol. `provider-realtime-fixture --execute --output-dir reports`
+uses a fake WebSocket connection to exercise the provider adapter and writes
+`a21-provider-realtime-fixture-*.json` with redacted env-name labels,
+endpoint-host-only network metadata, explicit route eligibility, and a
+basename-only `report_path`. `product-readiness` may surface this under
+`provider.realtime_*`; it must not promote offline fixture evidence to
+`real_provider_ready`, `launch_ready`, or PRD acceptance.
+
 ## AgentTask Bridge Events
 
 The AgentTask bridge is currently a provider-package T1/T2 contract, not a

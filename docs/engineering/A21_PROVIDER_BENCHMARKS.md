@@ -192,6 +192,20 @@ quality acceptance. Reports store only aggregate metrics and fixed finding
 codes; audio payloads, prompts, transcripts, provider output, full URLs, proxy
 values, model secrets, and local paths stay out of the quality block.
 
+`provider-realtime-fixture --execute --output-dir reports` writes a redacted
+offline fake-connection report named `a21-provider-realtime-fixture-*.json`.
+The report uses the provider smoke schema with
+`protocol=websocket_realtime_fixture`, a voice realtime or voice hybrid family,
+explicit `route_eligible`, safe env-name labels, endpoint host only, and a
+basename-only `report_path`. It does not dial the provider, play host audio, use
+hardware, or prove launch provider readiness. `product-readiness` can ingest it
+with `--provider-realtime-fixture-report <report.json>` or auto-select it with
+`--use-latest-reports`; it exposes `provider.realtime_*` fields while keeping
+`real_provider_ready=false` and `launch_ready=false` unless separate real
+provider and physical PRD gates are satisfied. `provider.voice_realtime_ready`
+may become true only when the selected provider is configured, executed,
+passed, and route-eligible realtime or voice-hybrid evidence matches it.
+
 `xiaozhi-voice-bench` is the Xiaozhi-protocol host-loopback member of the same
 family. It is allowed to contact an already-running local Gateway and exercise
 `/v1/xiaozhi` with either the default synthetic Opus uplink or `--input-wav`
