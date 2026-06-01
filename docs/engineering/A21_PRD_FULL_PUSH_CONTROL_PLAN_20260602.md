@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `de64e50 merge: voice mode selector slice`
+Current integration checkpoint: `a4e0d6f chore(control): record voice mode merge checkpoint`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `de64e50 merge: voice mode selector slice`
+  `a4e0d6f chore(control): record voice mode merge checkpoint`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -142,7 +142,7 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active write worker as of `de64e50`; start a fresh bounded worker before any new implementation slice |
+| Personality runtime prompt loader | `019e8581-3a1d-7d62-960e-66d729b14644` | `/Users/jiyurun/.codex/worktrees/3d2d/New project` | expected `codex/a21-mainline-personality-runtime-20260602` from `a4e0d6f` | Slice I PRD Phase 2/section 8 personality runtime composer for fast-companion prompts | Active write worker; poll before touching `internal/personality`, `internal/app/app_audio_loopback.go`, or personality prompt docs |
 
 Recently completed workers:
 
@@ -188,11 +188,11 @@ Current next moves:
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. Optional no-hardware polish slice only if it burns a real PRD gap: runtime
-   personality composition validation or operator-facing hardware readiness
-   summary. Do not reopen audio clarity, host voice loopback, voice-mode
-   selector, selected-provider import, or launch false-green guards unless a new
-   regression appears.
+3. Poll active Slice I personality runtime worker. If it lands cleanly, verify
+   and merge; if it stalls, reclaim the narrow write set rather than spawning a
+   duplicate worker. Do not reopen audio clarity, host voice loopback,
+   voice-mode selector, selected-provider import, or launch false-green guards
+   unless a new regression appears.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
