@@ -1278,11 +1278,11 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	session.opusDecodedFrameCount++
 	session.opusDecodedSampleCount += len(pcm)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
-	s.observeXiaozhiDecodedIngress(session, pcm)
+	s.observeXiaozhiDecodedIngress(ctx, conn, session, pcm)
 	return true
 }
 
-func (s *Server) observeXiaozhiDecodedIngress(session *xiaozhiSession, pcm []int16) {
+func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, pcm []int16) {
 	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
 		return
 	}
@@ -1344,6 +1344,7 @@ func (s *Server) observeXiaozhiDecodedIngress(session *xiaozhiSession, pcm []int
 		}
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, string(event), s.now().UnixMilli())
 	}
+	s.maybeAutoStopXiaozhiTurnOnSpeechEnd(ctx, conn, session, result.Events)
 }
 
 func pcm16Base64(pcm []int16) string {
@@ -1490,6 +1491,20 @@ func (s *Server) startXiaozhiTurnTask(ctx context.Context, conn *websocket.Conn,
 		defer session.completeXiaozhiTurn(task.turn)
 		s.writeXiaozhiTTS(ctx, conn, session, task)
 	}()
+}
+
+func (s *Server) maybeAutoStopXiaozhiTurnOnSpeechEnd(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, events []audio.Event) {
+	if !containsAudioIngressEvent(events, audio.EventVADSpeechEnd) || !session.voicePipelineHasSpeech || !session.listening {
+		return
+	}
+	turn := session.currentXiaozhiTurn()
+	if turn == nil {
+		return
+	}
+	session.listening = false
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
+	task := s.newXiaozhiTurnTask(session, turn)
+	s.startXiaozhiTurnTask(ctx, conn, session, task)
 }
 
 func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason string, hadTurn bool) {
