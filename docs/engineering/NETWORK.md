@@ -71,6 +71,11 @@ path must still be A21-owned and provider-neutral: `A21_PROVIDER_PROFILES_PATH`
 may add an `a21_`-namespaced OpenAI-compatible, `route_eligible=true` text
 profile for loopback or Gateway voice-pipeline tests, but real paid execution
 remains a T4/provider window and should be run from the clean lab host.
+The canonical 5080lab command sequence and return-file checklist live in
+`docs/engineering/A21_PROVIDER_BENCHMARKS.md`. The Mac-side control tower may
+ingest the returned `a21-provider-smoke-*.json` with `product-readiness`, but it
+must not substitute a Mac `provider-smoke --execute` run for mainland p50/p95/p99
+evidence.
 
 ## Required Diagnostics
 

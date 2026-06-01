@@ -736,8 +736,11 @@ func validProductProviderSmokeStreamingEvidence(fixture productProviderSmokeRepo
 	}
 	if fixture.TimingSummary.Repeat != fixture.Repeat ||
 		fixture.TimingSummary.FirstByteP95MS <= 0 ||
+		fixture.TimingSummary.FirstByteP99MS <= 0 ||
 		fixture.TimingSummary.FirstContentP95MS <= 0 ||
-		fixture.TimingSummary.TotalDurationP95MS <= 0 {
+		fixture.TimingSummary.FirstContentP99MS <= 0 ||
+		fixture.TimingSummary.TotalDurationP95MS <= 0 ||
+		fixture.TimingSummary.TotalDurationP99MS <= 0 {
 		return false
 	}
 	for _, attempt := range fixture.Attempts {
