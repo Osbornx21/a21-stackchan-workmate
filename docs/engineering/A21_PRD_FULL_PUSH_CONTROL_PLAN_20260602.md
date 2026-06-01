@@ -94,16 +94,19 @@ Current integration branch:
   `go run ./cmd/a21 v21-adapter-smoke --adapter-url http://127.0.0.1:21121 --execute --output-dir reports`
   passed against the explicit A21 adapter bridge and wrote
   `a21-v21-adapter-smoke-20260602-073834.json`. The follow-up
-  `product-readiness --use-latest-reports` wrote
-  `a21-product-readiness-20260602-073848.json`, with
+  `A21_V21_ADAPTER_URL=http://127.0.0.1:21121 product-readiness --use-latest-reports`
+  wrote `a21-product-readiness-20260602-074129.json`, with
+  `v21.configured=true`, `v21.healthy=true`,
   `v21.v21_professional_execution.valid=true`, source
   `a21-v21-adapter-smoke-20260602-073834.json`, and the same remaining
-  server-side gaps: `provider_smoke`, `wake_word`.
+  server-side gaps: `provider_smoke`, `wake_word`. The V21 configure/start
+  next-action is gone when the explicit adapter URL is supplied.
 - Latest server-side bundle refresh:
-  `go run ./cmd/a21 server-side-readiness-bundle --use-latest-reports --output-dir reports`
-  wrote `a21-server-side-readiness-bundle-20260602-073853.json`, with
+  `A21_V21_ADAPTER_URL=http://127.0.0.1:21121 server-side-readiness-bundle --use-latest-reports`
+  wrote `a21-server-side-readiness-bundle-20260602-074129.json`, with
   `v21.ready=true`, `host_voice.ready=true`, `provider.ready=false`,
-  `wake_word.ready=false`, and no PRD fake-green.
+  `wake_word.ready=false`, next actions only for provider and wake-word, and no
+  PRD fake-green.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
