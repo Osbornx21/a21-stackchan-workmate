@@ -1446,6 +1446,9 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 }
 
 func productV21ProfessionalReady(v21 productV21Readiness) bool {
+	if productV21ProfessionalExecutionReady(v21.ProfessionalExecution) {
+		return true
+	}
 	return v21.Healthy &&
 		v21.Professional.Valid &&
 		v21.Professional.CheckingAckWithin1200 &&
@@ -1453,6 +1456,17 @@ func productV21ProfessionalReady(v21 productV21Readiness) bool {
 		v21.Professional.CardsAvailable &&
 		v21.Professional.FollowUpsAvailable &&
 		v21.Professional.AdapterExecuted
+}
+
+func productV21ProfessionalExecutionReady(execution productV21ProfessionalExecutionReadiness) bool {
+	return execution.Valid &&
+		execution.QueryExecuted &&
+		execution.AdapterExecuted &&
+		execution.CheckingAckWithin1200 &&
+		execution.EvidenceAvailable &&
+		execution.CardsAvailable &&
+		execution.FollowUpsAvailable &&
+		execution.RedactionOK
 }
 
 func buildProductV21ProfessionalExecutionReadiness(professional productV21ProfessionalReadiness) productV21ProfessionalExecutionReadiness {

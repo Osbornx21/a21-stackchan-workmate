@@ -1299,6 +1299,38 @@ func TestProductReadinessExposesV21ProfessionalExecutionForRealAdapterReport(t *
 	}
 }
 
+func TestProductReadinessCountsExecutedProfessionalReportWithoutLiveV21Health(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if report.V21.Healthy || !report.V21.ProfessionalExecution.Valid {
+		t.Fatalf("v21 health/execution = %v/%+v, want no live health but accepted external execution", report.V21.Healthy, report.V21.ProfessionalExecution)
+	}
+	if !report.ServerSide.V21ProfessionalEvidenceReady ||
+		containsExactProductString(report.ServerSide.MissingEvidence, "v21_professional_smoke") ||
+		containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "v21_professional_execution") {
+		t.Fatalf("server/canonical = %+v/%+v, want executed professional report to close V21 evidence gap", report.ServerSide, report.CanonicalDecision)
+	}
+	if report.LaunchReady || report.CanonicalDecision.PRDAccepted {
+		t.Fatalf("launch/canonical = %v/%v, want professional evidence to reduce gap without PRD overclaim", report.LaunchReady, report.CanonicalDecision.PRDAccepted)
+	}
+}
+
 func TestProductReadinessRejectsWeakV21AdapterSmokeReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	tests := []struct {
