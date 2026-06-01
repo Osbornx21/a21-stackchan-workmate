@@ -3481,6 +3481,134 @@ func TestRunXiaozhiVoiceBenchSupportsRedactedInputWAVFixture(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiProfessionalBenchReportsHostMockRuntimeContract(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-professional-bench",
+		"--fake-v21-delay-ms", "150",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_professional_bench.v1"`,
+		`"source_profile": "host_mock"`,
+		`"acceptance_status": "host_mock_ready"`,
+		`"prd_accepted": false`,
+		`"checking_feedback_observed": true`,
+		`"checking_feedback_within_1200": true`,
+		`"professional_result_observed": true`,
+		`"professional_result_after_checking": true`,
+		`"abort_stop_observed": true`,
+		`"stale_result_suppressed": true`,
+		`"evidence_count": 1`,
+		`"screen_card_count": 1`,
+		`"follow_up_count": 1`,
+		`"confidence_present": true`,
+		`"no_placeholder_utterance": true`,
+		`"no_asr_text_leak": true`,
+		`"tts_stop_observed": true`,
+		`"failure_count": 0`,
+		`"payloads_stored": false`,
+		`"provider_executed": false`,
+		`"v21_executed": false`,
+		`"hardware_executed": false`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		dir,
+		"a21 host mock professional ASR sentinel",
+		"xiaozhi professional voice turn",
+		"RAW_SECRET_EVIDENCE_BODY",
+		"RAW_SECRET_CARD_TEXT",
+		"RAW_SECRET_FOLLOW_UP",
+		"data_base64",
+		"transcript",
+		"prompt text",
+		"provider output",
+		"http://",
+		"https://",
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-professional-bench-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("xiaozhi professional bench reports = %v, %v", matches, err)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, forbidden := range []string{
+		dir,
+		"a21 host mock professional ASR sentinel",
+		"RAW_SECRET_EVIDENCE_BODY",
+		"RAW_SECRET_CARD_TEXT",
+		"RAW_SECRET_FOLLOW_UP",
+		"http://",
+		"https://",
+	} {
+		if strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report leaked forbidden fragment %q: %s", forbidden, reportJSON)
+		}
+	}
+}
+
+func TestRunXiaozhiProfessionalBenchReportsFailingFakePathWithoutLeak(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-professional-bench",
+		"--scenario", "v21_failure",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_professional_bench.v1"`,
+		`"source_profile": "host_mock"`,
+		`"acceptance_status": "host_mock_blocked"`,
+		`"prd_accepted": false`,
+		`"checking_feedback_observed": true`,
+		`"professional_result_observed": false`,
+		`"code": "professional_result_missing"`,
+		`"failure_count": 1`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"a21 host mock professional ASR sentinel",
+		"RAW_SECRET",
+		"secret-token",
+		"http://",
+		"https://",
+		"provider output",
+		"reasoning",
+	} {
+		if strings.Contains(stdout.String()+stderr.String(), forbidden) {
+			t.Fatalf("failing bench leaked forbidden fragment %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunProviderLatencyBenchRejectsDeprecatedHostBaselineMode(t *testing.T) {
 	var stderr bytes.Buffer
 	code := Run([]string{"provider-latency-bench", "--mode", "host_baseline"}, &bytes.Buffer{}, &stderr)

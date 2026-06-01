@@ -45,3 +45,12 @@ redacted `a21.xiaozhi_voice_bench.v1` report. A passing run uses
 because it does not prove physical StackChan microphone capture, device
 playback start, visible/speaking state, multi-frame TTS cancellation, or
 real-device barge-in stop.
+
+`go run ./cmd/a21 xiaozhi-professional-bench` is the host-only Xiaozhi
+professional-mode runtime report. It starts an in-process Gateway with mock ASR,
+mock TTS, and a fake V21 client, drives `/v1/xiaozhi` with
+`listen/start mode=professional`, one synthetic Opus frame, and `listen/stop`,
+then records only redacted timing/status/count fields. A passing run uses
+`acceptance_status=host_mock_ready` and always keeps `prd_accepted=false`
+because it does not execute real V21, real providers, or physical StackChan
+hardware.
