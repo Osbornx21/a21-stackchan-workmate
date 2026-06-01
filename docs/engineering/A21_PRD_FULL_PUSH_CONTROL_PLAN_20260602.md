@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `3f0162d chore(control): record v21 adapter evidence refresh`
+Current integration checkpoint: `4de78c5 chore(control): record wake package evidence`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -18,7 +18,10 @@ Control-tower rules:
 - Read-only review threads stay read-only and must not become implementation lanes.
 - A worker gets one clear write set, one acceptance command set, and one handoff.
 - Subthreads use the default inherited model/settings unless the user explicitly overrides them; do not invent custom model settings.
-- Provider execution belongs on 5080lab unless the user explicitly approves Mac execution.
+- Cloud or proxy-sensitive provider execution belongs on 5080lab unless the
+  user explicitly approves Mac execution. Local loopback providers such as
+  `local_ollama` may be executed on the Mac when the selected provider env is
+  explicit and no Mac audio is played.
 - The Mac must not play audio; audio output evidence should use simulator files, redacted reports, or user/StackChan observation.
 - Lack of CoreS3 only blocks physical acceptance, not server/provider/protocol/simulator implementation.
 - No fake green: candidate/host-only evidence must never be promoted to PRD accepted by missing fields or zero defaults.
@@ -36,24 +39,34 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `3f0162d chore(control): record v21 adapter evidence refresh`
+  `4de78c5 chore(control): record wake package evidence`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
-- Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
-  `launch_ready=false`, `demo_ready=true`,
-  canonical missing real evidence is `real_provider_smoke`,
-  `physical_stackchan_online`, `physical_stackchan_prd_acceptance`,
-  `wake_word_product_ready`
-- Current server-side missing evidence is `provider_smoke`, `wake_word`.
-- Current positive no-hardware/server evidence: `server_side.v21_professional_evidence_ready=true`
-  and `server_side.host_voice_loopback_ready=true`.
+- Current explicit-provider `product-readiness --use-latest-reports` with
+  `A21_PROVIDER_PRIMARY=local_ollama`,
+  `A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434`,
+  `A21_LOCAL_OLLAMA_MODEL` set to the local model, and
+  `A21_V21_ADAPTER_URL=http://127.0.0.1:21121`:
+  `status=mock_demo_ready`, `launch_ready=false`, `demo_ready=true`, and
+  canonical missing real evidence is now only `physical_stackchan_online`,
+  `physical_stackchan_prd_acceptance`, and `wake_word_product_ready`.
+- Current server-side missing evidence is `wake_word`.
+- Current positive no-hardware/server evidence:
+  `server_side.provider_evidence_ready=true`,
+  `server_side.v21_professional_evidence_ready=true`, and
+  `server_side.host_voice_loopback_ready=true`.
 - Current continuous voice state: `voice.continuous_voice_ready=true`; xiaozhi
   host product-chain evidence now requires `repeat >= 3`, at least three answer
   turns, at least three barge-in turns, zero failures, answer first-audio p95
   under 1500 ms, and barge-in stop p95 under 300 ms before readiness can ingest
   it. Local voice loopback evidence now also requires `repeat >= 3` before it
   can close continuous voice or host voice loopback readiness.
-- Current provider state: `provider.real_provider_ready=false`; the 5080lab
-  operator packet exists, but no real returned bundle has been imported yet.
+- Current provider state: `provider.real_provider_ready=true` for explicit
+  `local_ollama` P0 route-eligible text provider evidence, using
+  `a21-provider-smoke-20260602-075644-199710000.json`
+  (`executed=true`, `stream=true`, `repeat=3`, `first_content_p95_ms=81.684`,
+  `total_duration_p95_ms=138.725`, `p99` fields present, no fallback). The
+  5080lab deepseek operator packet still exists as the cloud-provider evidence
+  lane, but no returned 5080lab bundle has been imported yet.
 - Current wake-word state: `wake_word.product_ready=false` and
   `wake_word.firmware_package_available=true`; a current reviewed custom
   MultiNet package exists at
@@ -91,12 +104,13 @@ Current integration branch:
   `product-readiness --use-latest-reports` stayed `launch_ready=false` with the
   same real-evidence gaps.
 - Latest control-tower refresh:
-  `go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports`
-  wrote `a21-product-readiness-20260602-075224.json` with
+  `A21_PROVIDER_PRIMARY=local_ollama A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434 A21_LOCAL_OLLAMA_MODEL=<local-model> A21_V21_ADAPTER_URL=http://127.0.0.1:21121 go run ./cmd/a21 product-readiness --provider-smoke-report reports/a21-provider-smoke-20260602-075644-199710000.json --use-latest-reports --output-dir reports`
+  wrote `a21-product-readiness-20260602-075650.json` with
   `status=mock_demo_ready`, `launch_ready=false`, `demo_ready=true`,
+  `provider.real_provider_ready=true`,
   `wake_word.firmware_package_available=true`,
-  server-side `missing_evidence=["provider_smoke","wake_word"]`, and canonical
-  `missing_real_evidence=["real_provider_smoke","physical_stackchan_online","physical_stackchan_prd_acceptance","wake_word_product_ready"]`.
+  server-side `missing_evidence=["wake_word"]`, and canonical
+  `missing_real_evidence=["physical_stackchan_online","physical_stackchan_prd_acceptance","wake_word_product_ready"]`.
 - Latest V21 adapter refresh:
   `go run ./cmd/a21 v21-adapter-smoke --adapter-url http://127.0.0.1:21121 --execute --output-dir reports`
   passed against the explicit A21 adapter bridge and wrote
@@ -109,11 +123,11 @@ Current integration branch:
   server-side gaps: `provider_smoke`, `wake_word`. The V21 configure/start
   next-action is gone when the explicit adapter URL is supplied.
 - Latest server-side bundle refresh:
-  `A21_V21_ADAPTER_URL=http://127.0.0.1:21121 server-side-readiness-bundle --use-latest-reports`
-  wrote `a21-server-side-readiness-bundle-20260602-075224.json`, with
-  `v21.ready=true`, `host_voice.ready=true`, `provider.ready=false`,
-  `wake_word.ready=false`, next actions only for provider and wake-word, and no
-  PRD fake-green.
+  `A21_PROVIDER_PRIMARY=local_ollama A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434 A21_LOCAL_OLLAMA_MODEL=<local-model> A21_V21_ADAPTER_URL=http://127.0.0.1:21121 server-side-readiness-bundle --provider-smoke-report reports/a21-provider-smoke-20260602-075644-199710000.json --use-latest-reports`
+  wrote `a21-server-side-readiness-bundle-20260602-075651.json`, with
+  `provider.ready=true`, `v21.ready=true`, `host_voice.ready=true`,
+  `wake_word.ready=false`, next action only for wake-word, and no PRD
+  fake-green.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
@@ -122,9 +136,10 @@ Current integration branch:
   failed with exit 2.
 - Latest provider operator packet refresh:
   `make provider-5080lab-runbook A21_PROVIDER=deepseek` printed the current
-  print-only 5080lab command sequence. The next provider burn-down event is the
-  returned `a21-5080lab-provider-evidence-*.tgz` import, not any Mac-side
-  provider `--execute`.
+  print-only 5080lab command sequence. This remains the cloud-provider evidence
+  lane. The no-hardware server-side provider gap is currently closed by the
+  explicit local `local_ollama` P0 provider smoke above; do not confuse that
+  local fallback evidence with a returned 5080lab cloud bundle.
 - Latest no-hardware CLI smoke:
   `wake-word-firmware-build-receipt` without `--review-report` failed without
   writing a receipt; the same command with matching
@@ -251,24 +266,26 @@ Recently completed workers:
 
 Current canonical PRD gaps from the latest product-readiness run:
 
-- `real_provider_smoke`
 - `physical_stackchan_online`
 - `physical_stackchan_prd_acceptance`
 - `wake_word_product_ready`
 
 Current server-side gaps from the latest product-readiness run:
 
-- `provider_smoke`
 - `wake_word`
 
 Current next moves:
 
-1. Provider execute closure for 5080lab: run
-   `make provider-5080lab-runbook A21_PROVIDER=deepseek`
-   to print the lab packet, execute the printed provider commands on 5080lab,
-   import the returned bundle on the control machine, then rerun
-   product-readiness to reduce `real_provider_smoke`. Do not run provider
-   `--execute` on this Mac.
+1. Preserve the explicit local provider evidence path:
+   `A21_PROVIDER_PRIMARY=local_ollama`,
+   `A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434`,
+   `A21_LOCAL_OLLAMA_MODEL=<local-model>`, and
+   `--provider-smoke-report reports/a21-provider-smoke-20260602-075644-199710000.json`.
+   This is the current no-hardware provider burn-down evidence. If cloud
+   provider acceptance is required for the release profile, run the already
+   printed 5080lab deepseek packet and import the returned bundle as additional
+   evidence; do not replace the local evidence with an unexecuted or proxy-host
+   report.
 2. V21 adapter evidence refresh is current as of
    `a21-v21-adapter-smoke-20260602-073834.json`. Keep it as evidence and do not
    open more V21 implementation work unless the adapter contract regresses or a
@@ -293,8 +310,8 @@ Current next moves:
 | Slice | Current status | Current evidence | Full-launch gap |
 | --- | --- | --- | --- |
 | Phase 0 Go-first foundation | Done | CLI, host gate, doctor, provider default mock, namespace guard | Keep green while integrating |
-| Provider spine and text stream | Server contract done for selected evidence intake, real evidence pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import, selected-provider mismatch rejection | 5080lab real non-mock executed smoke bundle |
-| Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, half-duplex arm hardening, host p95 evidence | Real provider evidence plus physical StackChan audible playback and barge-in acceptance |
+| Provider spine and text stream | Local P0 selected provider evidence ready; cloud 5080lab evidence optional/alternate pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import, selected-provider mismatch rejection, current `local_ollama` executed repeat-3 report | Keep explicit selected-provider env with report; import 5080lab deepseek bundle only if cloud acceptance is required |
+| Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, half-duplex arm hardening, host p95 evidence, explicit local provider evidence | Physical StackChan audible playback and barge-in acceptance |
 | Realtime voice lane | Offline evidence/reporting done; live provider still pending | Provider-neutral fixture, explicit arm concept, `provider-realtime-fixture --output-dir`, product-readiness `provider.realtime_*` fields | Live provider lane smoke and physical playback acceptance |
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
@@ -540,9 +557,10 @@ Run in this order:
 1. Control-tower no-hardware evidence refresh: done for V21 adapter at
    `127.0.0.1:21121`, using explicit A21 adapter smoke only. Do not repeat this
    unless the adapter/backend changes.
-2. External/provider lane: produce or import a real 5080lab provider evidence
-   bundle using the generated runbook. The Mac control tower can package/import
-   returned redacted reports, but executed provider smoke belongs on 5080lab.
+2. Provider lane: current no-hardware provider evidence is closed by explicit
+   local `local_ollama` repeat-3 smoke. Keep the 5080lab deepseek runbook ready
+   as an additional cloud-provider packet only; do not block server-side
+   burn-down on it unless release policy selects a cloud provider.
 3. Wake/package lane: no-hardware package evidence is current. Keep it below
    activation and explicitly not product-ready until the hardware window can
    flash and prove physical custom wake.
@@ -572,8 +590,8 @@ Every control-tower report to the user must answer:
 Do not start Slice H again; explicit `voice_mode` is already merged. The current
 next move is to burn down server-side evidence:
 
-1. Wait for or trigger the approved 5080lab selected-provider execution bundle,
-   then import it with `provider-evidence-import`.
+1. Preserve current explicit-provider readiness commands and reports; the
+   server-side evidence gap is now `wake_word`, not `provider_smoke`.
 2. Hold the current custom wake package as the accepted no-hardware artifact:
    `a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`.
    The next wake action is guarded flash plus physical custom wake proof when
@@ -581,7 +599,8 @@ next move is to burn down server-side evidence:
    rejected because it lacks the matching custom wake receipt.
 3. If neither external evidence lane is immediately available, open one fresh
    no-hardware worker only for a concrete report-ingestion bug or operator
-   helper that reduces `provider_smoke` or `wake_word`.
+   helper that reduces `wake_word` activation evidence or physical evidence
+   import once hardware data exists.
 
 Provider `--execute` still does not run on this Mac. Firmware package evidence is
 not physical wake acceptance, and no CoreS3 absence may block simulator,
