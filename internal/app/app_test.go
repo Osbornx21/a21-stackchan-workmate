@@ -297,6 +297,266 @@ func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.
 	}
 }
 
+func TestProductReadinessIngestsV21ProfessionalReadinessReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21ProfessionalReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if report.LaunchReady || report.V21.Professional.PRDAccepted {
+		t.Fatalf("launch/prd = %v/%v, want host-only professional report not accepted", report.LaunchReady, report.V21.Professional.PRDAccepted)
+	}
+	professional := report.V21.Professional
+	if !professional.Valid ||
+		!professional.CheckingAckWithin1200 ||
+		!professional.EvidenceAvailable ||
+		!professional.CardsAvailable ||
+		!professional.FollowUpsAvailable ||
+		professional.EvidenceCount != 2 ||
+		professional.CardCount != 1 ||
+		professional.FollowUpCount != 2 ||
+		professional.ProfessionalAcceptanceStatus != "host_mock_ready" ||
+		professional.SourceReport != "a21-v21-professional-readiness-host.json" ||
+		professional.AdapterExecuted {
+		t.Fatalf("professional readiness = %+v, want valid host-only professional contract", professional)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"professional"`,
+		`"checking_ack_within_1200": true`,
+		`"evidence_available": true`,
+		`"cards_available": true`,
+		`"follow_ups_available": true`,
+		`"evidence_count": 2`,
+		`"card_count": 1`,
+		`"follow_up_count": 2`,
+		`"professional_acceptance_status": "host_mock_ready"`,
+		`"source_report": "a21-v21-professional-readiness-host.json"`,
+		`"adapter_executed": false`,
+		`"prd_accepted": false`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{
+		fixture,
+		filepath.Dir(fixture),
+		"professional readiness fixture query",
+		"raw evidence text",
+		"provider output",
+		"secret-token",
+		"http://",
+		"https://",
+		`"launch_ready": true`,
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessKeepsProfessionalHostReportBelowLaunchGates(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21ProfessionalReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+	})
+
+	if !report.V21.Professional.Valid {
+		t.Fatalf("professional readiness = %+v, want ingested host report", report.V21.Professional)
+	}
+	if report.V21.Configured || report.V21.Healthy || report.StackChan.PhysicalDeviceOnline || report.LaunchReady || report.V21.Professional.PRDAccepted {
+		t.Fatalf("readiness overclaimed launch from host report: v21=%+v stackchan=%+v launch=%v", report.V21, report.StackChan, report.LaunchReady)
+	}
+	if !containsProductAction(report.NextActions, "A21 V21 adapter boundary") || !containsProductAction(report.NextActions, "physical StackChan") {
+		t.Fatalf("next actions = %#v, want real adapter and physical StackChan gates", report.NextActions)
+	}
+}
+
+func TestProductReadinessRejectsV21ProfessionalReportMissingRequiredFields(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	tests := []struct {
+		name      string
+		mutate    func(string) string
+		wantField string
+	}{
+		{
+			name: "missing checking ack within 1200",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "checking_ack_within_1200": true,`+"\n", "", 1)
+			},
+			wantField: "checking_ack_within_1200",
+		},
+		{
+			name: "missing evidence available",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "evidence_available": true,`+"\n", "", 1)
+			},
+			wantField: "evidence_available",
+		},
+		{
+			name: "missing cards available",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "cards_available": true,`+"\n", "", 1)
+			},
+			wantField: "cards_available",
+		},
+		{
+			name: "missing follow ups available",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "follow_ups_available": true,`+"\n", "", 1)
+			},
+			wantField: "follow_ups_available",
+		},
+		{
+			name: "missing status",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "professional_acceptance_status": "host_mock_ready",`+"\n", "", 1)
+			},
+			wantField: "professional_acceptance_status",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, tt.mutate(productReadinessV21ProfessionalReportFixtureJSON()))
+
+			report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+				GatewayURL:            server.URL,
+				DeviceID:              "stackchan-001",
+				V21ProfessionalReport: fixture,
+			}, []string{
+				"A21_PROVIDER_PRIMARY=mock",
+			})
+
+			if report.V21.Professional.Valid {
+				t.Fatalf("professional readiness = %+v, want missing field to block valid ingestion", report.V21.Professional)
+			}
+			if !containsProductFinding(report.Findings, "v21_professional_report_missing_field", tt.wantField) {
+				t.Fatalf("findings = %#v, want missing-field finding for %s", report.Findings, tt.wantField)
+			}
+		})
+	}
+}
+
+func TestRunProductReadinessCommandAcceptsV21ProfessionalReportAndRedactsOutput(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21ProfessionalReportFixture(t)
+	dir, err := os.MkdirTemp("", "a21-product-readiness-prof-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--v21-professional-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"professional"`,
+		`"checking_ack_within_1200": true`,
+		`"evidence_count": 2`,
+		`"source_report": "a21-v21-professional-readiness-host.json"`,
+		`"adapter_executed": false`,
+		`"prd_accepted": false`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "raw evidence text", "professional readiness fixture query", "provider output", "secret-token", "http://", "https://", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked or overclaimed %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestRunProductReadinessCommandRejectsUnsafeV21ProfessionalReportWithoutLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, strings.Replace(productReadinessV21ProfessionalReportFixtureJSON(), `  "report_path": "a21-v21-professional-readiness-host.json"`, `  "prompt": "professional readiness fixture query",
+  "raw_evidence": "raw evidence text",
+  "local_path": "/Users/private/a21/report.json",
+  "report_path": "a21-v21-professional-readiness-host.json"`, 1))
+	dir, err := os.MkdirTemp("", "a21-product-readiness-prof-unsafe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--v21-professional-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	if !strings.Contains(rendered, `"code": "v21_professional_report_invalid"`) {
+		t.Fatalf("stdout missing fixed invalid finding: %s", rendered)
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "professional readiness fixture query", "raw evidence text", "/Users/private", "http://", "https://"} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("unsafe professional report leaked %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestProductReadinessRejectsXiaozhiReportMissingCandidateFields(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	tests := []struct {
@@ -583,6 +843,45 @@ func writeProductReadinessXiaozhiHostReportFixtureFromData(t *testing.T, data st
 		t.Fatal(err)
 	}
 	return path
+}
+
+func writeProductReadinessV21ProfessionalReportFixture(t *testing.T) string {
+	t.Helper()
+	return writeProductReadinessV21ProfessionalReportFixtureFromData(t, productReadinessV21ProfessionalReportFixtureJSON())
+}
+
+func writeProductReadinessV21ProfessionalReportFixtureFromData(t *testing.T, data string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-v21-professional-readiness-host.json")
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func productReadinessV21ProfessionalReportFixtureJSON() string {
+	return `{
+  "schema_version": "a21.v21_professional_readiness.v1",
+  "status": "passed",
+  "checking_ack_available": true,
+  "checking_ack_ms": 4,
+  "checking_ack_within_1200": true,
+  "evidence_completed_ms": 42,
+  "evidence_completed_after_ack": true,
+  "evidence_available": true,
+  "cards_available": true,
+  "follow_ups_available": true,
+  "evidence_count": 2,
+  "evidence_types": ["meeting", "doc"],
+  "card_count": 1,
+  "follow_up_count": 2,
+  "adapter_configured": true,
+  "adapter_executed": false,
+  "redaction_ok": true,
+  "professional_acceptance_status": "host_mock_ready",
+  "report_path": "a21-v21-professional-readiness-host.json"
+}`
 }
 
 func productReadinessXiaozhiHostReportFixtureJSON() string {

@@ -19,14 +19,15 @@ import (
 )
 
 type productReadinessOptions struct {
-	GatewayURL    string
-	Addr          string
-	DeviceID      string
-	OutputDir     string
-	XiaozhiReport string
-	RequireReal   bool
-	OpenBrowser   bool
-	StatusOnly    bool
+	GatewayURL            string
+	Addr                  string
+	DeviceID              string
+	OutputDir             string
+	XiaozhiReport         string
+	V21ProfessionalReport string
+	RequireReal           bool
+	OpenBrowser           bool
+	StatusOnly            bool
 }
 
 type productReadinessReport struct {
@@ -67,16 +68,32 @@ type productProviderReadiness struct {
 }
 
 type productV21Readiness struct {
-	Configured                bool   `json:"configured"`
-	Healthy                   bool   `json:"healthy"`
-	Status                    string `json:"status"`
-	ProfessionalBridgeReady   bool   `json:"professional_bridge_ready"`
-	CheckingFeedbackSupported bool   `json:"checking_feedback_supported"`
-	MaxFirstResponseMS        int    `json:"max_first_response_ms"`
-	EvidenceContractReady     bool   `json:"evidence_contract_ready"`
-	QueryExecuted             bool   `json:"query_executed"`
-	QueryPath                 string `json:"query_path"`
-	HealthPath                string `json:"health_path"`
+	Configured                bool                            `json:"configured"`
+	Healthy                   bool                            `json:"healthy"`
+	Status                    string                          `json:"status"`
+	ProfessionalBridgeReady   bool                            `json:"professional_bridge_ready"`
+	CheckingFeedbackSupported bool                            `json:"checking_feedback_supported"`
+	MaxFirstResponseMS        int                             `json:"max_first_response_ms"`
+	EvidenceContractReady     bool                            `json:"evidence_contract_ready"`
+	QueryExecuted             bool                            `json:"query_executed"`
+	QueryPath                 string                          `json:"query_path"`
+	HealthPath                string                          `json:"health_path"`
+	Professional              productV21ProfessionalReadiness `json:"professional"`
+}
+
+type productV21ProfessionalReadiness struct {
+	Valid                        bool   `json:"valid"`
+	CheckingAckWithin1200        bool   `json:"checking_ack_within_1200"`
+	EvidenceAvailable            bool   `json:"evidence_available"`
+	CardsAvailable               bool   `json:"cards_available"`
+	FollowUpsAvailable           bool   `json:"follow_ups_available"`
+	EvidenceCount                int    `json:"evidence_count"`
+	CardCount                    int    `json:"card_count"`
+	FollowUpCount                int    `json:"follow_up_count"`
+	ProfessionalAcceptanceStatus string `json:"professional_acceptance_status,omitempty"`
+	SourceReport                 string `json:"source_report,omitempty"`
+	AdapterExecuted              bool   `json:"adapter_executed"`
+	PRDAccepted                  bool   `json:"prd_accepted"`
 }
 
 type productStackChanReadiness struct {
@@ -133,7 +150,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -149,6 +166,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--xiaozhi-report":
 			if !readStringOption(args, &i, stderr, "--xiaozhi-report", &options.XiaozhiReport) {
+				return 2
+			}
+		case "--v21-professional-report":
+			if !readStringOption(args, &i, stderr, "--v21-professional-report", &options.V21ProfessionalReport) {
 				return 2
 			}
 		case "--require-real":
@@ -270,6 +291,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	}
 	report.Provider = buildProductProviderReadiness(env)
 	report.V21 = buildProductV21Readiness(env)
+	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
+	report.Findings = append(report.Findings, professionalFindings...)
+	if professionalEvidence.Valid {
+		report.V21.Professional = professionalEvidence
+	}
 	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
 	report.Findings = append(report.Findings, xiaozhiFindings...)
 	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan, xiaozhiEvidence)
@@ -587,6 +613,163 @@ func invalidProductXiaozhiReportFinding() productReadinessFinding {
 		Code:    "xiaozhi_report_invalid",
 		Message: "Xiaozhi host-loopback report is invalid or unsafe",
 	}
+}
+
+type productV21ProfessionalReportFixture struct {
+	SchemaVersion                string  `json:"schema_version"`
+	Status                       string  `json:"status"`
+	CheckingAckWithin1200        *bool   `json:"checking_ack_within_1200"`
+	EvidenceAvailable            *bool   `json:"evidence_available"`
+	CardsAvailable               *bool   `json:"cards_available"`
+	FollowUpsAvailable           *bool   `json:"follow_ups_available"`
+	EvidenceCount                *int    `json:"evidence_count"`
+	CardCount                    *int    `json:"card_count"`
+	FollowUpCount                *int    `json:"follow_up_count"`
+	AdapterExecuted              *bool   `json:"adapter_executed"`
+	RedactionOK                  *bool   `json:"redaction_ok"`
+	ProfessionalAcceptanceStatus *string `json:"professional_acceptance_status"`
+}
+
+func loadProductV21ProfessionalReportEvidence(path string) (productV21ProfessionalReadiness, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productV21ProfessionalReadiness{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productV21ProfessionalReportContainsForbiddenValue(raw) {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	var fixture productV21ProfessionalReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	if missingField := missingProductV21ProfessionalReportField(fixture); missingField != "" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{missingProductV21ProfessionalReportFieldFinding(missingField)}
+	}
+	if fixture.SchemaVersion != v21adapter.ProfessionalReadinessSchemaVersion ||
+		strings.TrimSpace(fixture.Status) != "passed" ||
+		!*fixture.CheckingAckWithin1200 ||
+		!*fixture.EvidenceAvailable ||
+		!*fixture.CardsAvailable ||
+		!*fixture.FollowUpsAvailable ||
+		*fixture.EvidenceCount <= 0 ||
+		*fixture.CardCount <= 0 ||
+		*fixture.FollowUpCount <= 0 ||
+		*fixture.AdapterExecuted ||
+		!*fixture.RedactionOK ||
+		strings.TrimSpace(*fixture.ProfessionalAcceptanceStatus) == "" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	return productV21ProfessionalReadiness{
+		Valid:                        true,
+		CheckingAckWithin1200:        *fixture.CheckingAckWithin1200,
+		EvidenceAvailable:            *fixture.EvidenceAvailable,
+		CardsAvailable:               *fixture.CardsAvailable,
+		FollowUpsAvailable:           *fixture.FollowUpsAvailable,
+		EvidenceCount:                *fixture.EvidenceCount,
+		CardCount:                    *fixture.CardCount,
+		FollowUpCount:                *fixture.FollowUpCount,
+		ProfessionalAcceptanceStatus: strings.TrimSpace(*fixture.ProfessionalAcceptanceStatus),
+		SourceReport:                 filepath.Base(filepath.Clean(path)),
+		AdapterExecuted:              *fixture.AdapterExecuted,
+		PRDAccepted:                  false,
+	}, nil
+}
+
+func missingProductV21ProfessionalReportField(fixture productV21ProfessionalReportFixture) string {
+	switch {
+	case fixture.CheckingAckWithin1200 == nil:
+		return "checking_ack_within_1200"
+	case fixture.EvidenceAvailable == nil:
+		return "evidence_available"
+	case fixture.CardsAvailable == nil:
+		return "cards_available"
+	case fixture.FollowUpsAvailable == nil:
+		return "follow_ups_available"
+	case fixture.EvidenceCount == nil:
+		return "evidence_count"
+	case fixture.CardCount == nil:
+		return "card_count"
+	case fixture.FollowUpCount == nil:
+		return "follow_up_count"
+	case fixture.AdapterExecuted == nil:
+		return "adapter_executed"
+	case fixture.RedactionOK == nil:
+		return "redaction_ok"
+	case fixture.ProfessionalAcceptanceStatus == nil:
+		return "professional_acceptance_status"
+	default:
+		return ""
+	}
+}
+
+func missingProductV21ProfessionalReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "v21_professional_report_missing_field",
+		Message: "V21 professional readiness report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductV21ProfessionalReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "v21_professional_report_invalid",
+		Message: "V21 professional readiness report is invalid or unsafe",
+	}
+}
+
+func productV21ProfessionalReportContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productV21ProfessionalReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productV21ProfessionalReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		lower := strings.ToLower(typed)
+		for _, forbidden := range []string{
+			"professional readiness fixture query",
+			"raw evidence text",
+			"raw retrieved evidence",
+			"raw prompt text",
+			"raw transcript text",
+			"raw provider output",
+			"provider output",
+			"raw reasoning text",
+			"http://",
+			"https://",
+			"/users/",
+			"api_key",
+			"secret-token",
+		} {
+			if strings.Contains(lower, forbidden) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func productSherpaTTSReady(env []string) bool {
