@@ -15,13 +15,17 @@ import (
 )
 
 const xiaozhiPhysicalEvidenceSchemaVersion = "a21.xiaozhi_physical_evidence.v1"
+const xiaozhiInstrumentObservationSchemaVersion = "a21.xiaozhi_instrument_observation.v1"
+const xiaozhiInstrumentTimingToleranceMS = 5
+const xiaozhiInstrumentMaxTimingMS = 60000
 
 type xiaozhiPhysicalEvidenceOptions struct {
-	GatewayURL string
-	DeviceID   string
-	TraceID    string
-	SessionID  string
-	OutputDir  string
+	GatewayURL                  string
+	DeviceID                    string
+	TraceID                     string
+	SessionID                   string
+	InstrumentObservationReport string
+	OutputDir                   string
 }
 
 type xiaozhiPhysicalEvidenceReport struct {
@@ -53,6 +57,22 @@ type xiaozhiPhysicalEvidenceGatewayMetrics struct {
 	GatewayAnswerFirstDownlinkMS physicalStackChanMetric `json:"gateway_answer_first_downlink_ms"`
 }
 
+type xiaozhiInstrumentObservationReport struct {
+	SchemaVersion                     string                             `json:"schema_version"`
+	TraceID                           string                             `json:"trace_id"`
+	SessionID                         string                             `json:"session_id"`
+	DeviceID                          string                             `json:"device_id"`
+	Method                            string                             `json:"method"`
+	Instrument                        string                             `json:"instrument"`
+	PhysicalSoundObserved             bool                               `json:"physical_sound_observed"`
+	ObservedNonzeroAudibleEnergy      bool                               `json:"observed_nonzero_audible_energy"`
+	GatewayFirstDownlinkToAudibleMS   float64                            `json:"gateway_first_downlink_to_audible_ms"`
+	SpeechEndToFirstAudibleResponseMS float64                            `json:"speech_end_to_first_audible_response_ms"`
+	AudibleEnergyRMS                  float64                            `json:"audible_energy_rms"`
+	NoiseFloorRMS                     float64                            `json:"noise_floor_rms"`
+	Redaction                         physicalStackChanEvidenceRedaction `json:"redaction"`
+}
+
 func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := xiaozhiPhysicalEvidenceOptions{
 		GatewayURL: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
@@ -61,7 +81,7 @@ func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Write
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 xiaozhi-physical-evidence --gateway-url http://127.0.0.1:21080 --device-id <device-id> --trace-id <trace-id> --session-id <session-id> [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 xiaozhi-physical-evidence --gateway-url http://127.0.0.1:21080 --device-id <device-id> --trace-id <trace-id> --session-id <session-id> [--instrument-observation-report report.json] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -77,6 +97,10 @@ func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Write
 			}
 		case "--session-id":
 			if !readStringOption(args, &i, stderr, "--session-id", &options.SessionID) {
+				return 2
+			}
+		case "--instrument-observation-report":
+			if !readStringOption(args, &i, stderr, "--instrument-observation-report", &options.InstrumentObservationReport) {
 				return 2
 			}
 		case "--output-dir":
@@ -102,6 +126,10 @@ func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Write
 			fmt.Fprintln(stderr, "xiaozhi physical evidence gateway data unsafe")
 			return 1
 		}
+		if err.Error() == "instrument observation unsafe" {
+			fmt.Fprintln(stderr, "xiaozhi physical evidence instrument observation unsafe")
+			return 1
+		}
 		fmt.Fprintf(stderr, "xiaozhi physical evidence failed: %v\n", err)
 		return 1
 	}
@@ -123,6 +151,11 @@ func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Write
 func validateXiaozhiPhysicalEvidenceOptions(options xiaozhiPhysicalEvidenceOptions) error {
 	if _, _, err := firmwareGatewayEndpoint(options.GatewayURL, "/v1/devices", nil); err != nil {
 		return err
+	}
+	if strings.TrimSpace(options.InstrumentObservationReport) != "" {
+		if err := validateA21InputPath(options.InstrumentObservationReport); err != nil {
+			return err
+		}
 	}
 	for name, value := range map[string]string{
 		"device_id":  options.DeviceID,
@@ -189,8 +222,38 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 	}
 	report.Mic = xiaozhiPhysicalMicEvidence(audioRecent.Frames)
 	report.Observation = physicalStackChanObservationEvidence{}
+	var instrumentFindings []physicalStackChanEvidenceFinding
+	if strings.TrimSpace(options.InstrumentObservationReport) != "" {
+		observation, findings, err := loadXiaozhiInstrumentObservationReport(options, trace, report.GatewayMetrics.GatewayAnswerFirstDownlinkMS)
+		if err != nil {
+			return xiaozhiPhysicalEvidenceReport{}, err
+		}
+		instrumentFindings = append(instrumentFindings, findings...)
+		if observation != nil {
+			report.CanonicalMetrics.DeviceDownlinkFirstFrameMS = report.GatewayMetrics.GatewayAnswerFirstDownlinkMS
+			report.CanonicalMetrics.DevicePlaybackStartMS = physicalStackChanMetricFromInt64(trace.Summary.DevicePlaybackStartMS, "device_runtime_echo")
+			report.CanonicalMetrics.SpeechEndToFirstAudibleResponseMS = physicalStackChanMetric{
+				Available: true,
+				ValueMS:   observation.SpeechEndToFirstAudibleResponseMS,
+				Source:    "instrument_observation",
+			}
+			report.Observation = physicalStackChanObservationEvidence{
+				Available:             true,
+				PhysicalSoundObserved: true,
+				OperatorConfirmed:     false,
+				Method:                observation.Method,
+				Instrument:            observation.Instrument,
+				ObservedAudibleMS:     observation.SpeechEndToFirstAudibleResponseMS,
+			}
+		}
+	}
+	if report.CanonicalMetrics.DevicePlaybackStartMS.Available && xiaozhiPhysicalObservationAvailable(report.Observation) {
+		report.PromotionGate = "candidate"
+		report.AcceptanceStatus = "physical_review_required"
+	}
 	report.StageAvailability = xiaozhiPhysicalStageAvailability(report, trace)
 	report.Findings = xiaozhiPhysicalFindings(report, trace)
+	report.Findings = append(report.Findings, instrumentFindings...)
 	return report, nil
 }
 
@@ -221,8 +284,8 @@ func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trac
 		"xiaozhi.listen.auto_stop":     xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.listen.auto_stop"), "gateway_trace"),
 		"xiaozhi.tts.downlink":         xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.tts.opus_frame.downlink"), "gateway_trace"),
 		"answer.first_downlink":        report.GatewayMetrics.GatewayAnswerFirstDownlinkMS,
-		"device.playback.ack":          xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "device.playback.start"), "device_runtime_echo"),
-		"operator.audible_observation": xiaozhiPhysicalBoolMetric(report.Observation.Available, "operator_or_instrument"),
+		"device.playback.ack":          xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "device.playback.start") || report.CanonicalMetrics.DevicePlaybackStartMS.Available, "device_runtime_echo"),
+		"operator.audible_observation": xiaozhiPhysicalBoolMetric(xiaozhiPhysicalObservationAvailable(report.Observation), "instrument_observation"),
 	}
 }
 
@@ -259,7 +322,110 @@ func xiaozhiPhysicalFindings(report xiaozhiPhysicalEvidenceReport, trace gateway
 	if !report.StageAvailability["operator.audible_observation"].Available {
 		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_operator_observation_missing", "error", "missing operator audible observation or instrumented first audible playback evidence"))
 	}
+	if report.StageAvailability["operator.audible_observation"].Available {
+		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_instrument_observation_present", "info", "instrument observed nonzero audible energy after Gateway first downlink"))
+	}
+	if report.PromotionGate == "candidate" && (!report.CanonicalMetrics.BargeInStopMS.Available ||
+		!report.CanonicalMetrics.BargeInDetectedMS.Available ||
+		!report.CanonicalMetrics.BargeInPlaybackStopRequestedMS.Available ||
+		!report.CanonicalMetrics.BargeInPlaybackStopDoneMS.Available) {
+		findings = append(findings, physicalStackChanFinding("xiaozhi_physical_barge_in_stop_missing", "error", "physical barge-in stop evidence is missing"))
+	}
 	return findings
+}
+
+func loadXiaozhiInstrumentObservationReport(options xiaozhiPhysicalEvidenceOptions, trace gateway.TraceResponse, gatewayFirstDownlink physicalStackChanMetric) (*xiaozhiInstrumentObservationReport, []physicalStackChanEvidenceFinding, error) {
+	path := strings.TrimSpace(options.InstrumentObservationReport)
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || physicalStackChanValueUnsafe(raw) {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	var observation xiaozhiInstrumentObservationReport
+	if err := json.Unmarshal(data, &observation); err != nil {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	if !xiaozhiInstrumentObservationSafe(observation) {
+		return nil, nil, fmt.Errorf("instrument observation unsafe")
+	}
+	if observation.TraceID != options.TraceID || observation.SessionID != options.SessionID || observation.DeviceID != options.DeviceID {
+		return nil, []physicalStackChanEvidenceFinding{
+			physicalStackChanFinding("xiaozhi_physical_instrument_observation_mismatch", "error", "instrument observation trace/session/device did not match Gateway evidence"),
+		}, nil
+	}
+	if !xiaozhiInstrumentObservationTimingValid(observation, trace, gatewayFirstDownlink) {
+		return nil, []physicalStackChanEvidenceFinding{
+			physicalStackChanFinding("xiaozhi_physical_instrument_observation_timing_invalid", "error", "instrument observation timing did not follow Gateway first downlink"),
+		}, nil
+	}
+	return &observation, nil, nil
+}
+
+func xiaozhiInstrumentObservationSafe(observation xiaozhiInstrumentObservationReport) bool {
+	if observation.SchemaVersion != xiaozhiInstrumentObservationSchemaVersion ||
+		!productPhysicalStackChanRedactionOK(observation.Redaction) {
+		return false
+	}
+	for _, value := range []string{
+		observation.TraceID,
+		observation.SessionID,
+		observation.DeviceID,
+		observation.Method,
+		observation.Instrument,
+	} {
+		if !xiaozhiPhysicalSafeID(value) {
+			return false
+		}
+	}
+	return observation.PhysicalSoundObserved &&
+		observation.ObservedNonzeroAudibleEnergy &&
+		observation.AudibleEnergyRMS > 0 &&
+		observation.NoiseFloorRMS > 0 &&
+		observation.AudibleEnergyRMS > observation.NoiseFloorRMS
+}
+
+func xiaozhiInstrumentObservationTimingValid(observation xiaozhiInstrumentObservationReport, trace gateway.TraceResponse, gatewayFirstDownlink physicalStackChanMetric) bool {
+	if !gatewayFirstDownlink.Available ||
+		!xiaozhiPlausibleInstrumentTiming(observation.GatewayFirstDownlinkToAudibleMS) ||
+		!xiaozhiPlausibleInstrumentTiming(observation.SpeechEndToFirstAudibleResponseMS) {
+		return false
+	}
+	if !xiaozhiTraceHasEvent(trace, "xiaozhi.tts.opus_frame.downlink") && !xiaozhiTraceHasEvent(trace, "audio.downlink.first_frame") {
+		return false
+	}
+	expectedAudibleMS := gatewayFirstDownlink.ValueMS + observation.GatewayFirstDownlinkToAudibleMS
+	return xiaozhiTimingWithinTolerance(expectedAudibleMS, observation.SpeechEndToFirstAudibleResponseMS, xiaozhiInstrumentTimingToleranceMS)
+}
+
+func xiaozhiPlausibleInstrumentTiming(value float64) bool {
+	return value > 0 && value <= xiaozhiInstrumentMaxTimingMS
+}
+
+func xiaozhiTimingWithinTolerance(a float64, b float64, tolerance float64) bool {
+	delta := a - b
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= tolerance
+}
+
+func xiaozhiPhysicalObservationAvailable(observation physicalStackChanObservationEvidence) bool {
+	return observation.Available &&
+		observation.PhysicalSoundObserved &&
+		strings.TrimSpace(observation.Method) != "" &&
+		strings.TrimSpace(observation.Instrument) != "" &&
+		observation.ObservedAudibleMS > 0
 }
 
 func xiaozhiPhysicalMicEvidence(frames []gateway.AudioCaptureFrame) physicalStackChanMicEvidence {

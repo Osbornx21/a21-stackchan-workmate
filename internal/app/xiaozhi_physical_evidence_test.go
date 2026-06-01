@@ -113,6 +113,196 @@ func TestRunXiaozhiPhysicalEvidenceRejectsUnsafeGatewayValuesWithoutLeak(t *test
 	}
 }
 
+func TestRunXiaozhiPhysicalEvidenceConsumesValidInstrumentObservation(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true)
+	dir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"device.playback.ack": {`,
+		`"operator.audible_observation": {`,
+		`"device_playback_start_ms": {`,
+		`"value_ms": 30`,
+		`"speech_end_to_first_audible_response_ms": {`,
+		`"value_ms": 760`,
+		`"source": "instrument_observation"`,
+		`"physical_sound_observed": true`,
+		`"method": "instrument_nonzero_audible_energy"`,
+		`"instrument": "calibrated_audio_recorder"`,
+		`"observed_audible_ms": 760`,
+		`"promotion_gate": "candidate"`,
+		`"acceptance_status": "physical_review_required"`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		observation,
+		filepath.Dir(observation),
+		`"code": "xiaozhi_physical_device_playback_ack_missing"`,
+		`"code": "xiaozhi_physical_operator_observation_missing"`,
+		"data_base64",
+		"raw_audio",
+		"transcript",
+		"provider output",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report leaked or overclaimed %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestRunXiaozhiPhysicalEvidenceIgnoresMismatchedInstrumentObservation(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true)
+	dir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"trace_id": "a21-trace-other",
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want mismatch ignored with blocked report: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"operator.audible_observation": {`,
+		`"available": false`,
+		`"code": "xiaozhi_physical_instrument_observation_mismatch"`,
+		`"code": "xiaozhi_physical_operator_observation_missing"`,
+		`"acceptance_status": "candidate_gateway_downlink"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), observation) || strings.Contains(stdout.String(), filepath.Dir(observation)) {
+		t.Fatalf("stdout leaked observation path: %s", stdout.String())
+	}
+}
+
+func TestRunXiaozhiPhysicalEvidenceIgnoresInconsistentInstrumentTiming(t *testing.T) {
+	cases := []struct {
+		name      string
+		overrides map[string]any
+	}{
+		{name: "inconsistent delta", overrides: map[string]any{"gateway_first_downlink_to_audible_ms": 12}},
+		{name: "negative timing", overrides: map[string]any{"gateway_first_downlink_to_audible_ms": -1}},
+		{name: "implausible timing", overrides: map[string]any{"speech_end_to_first_audible_response_ms": 120000}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := newXiaozhiPhysicalEvidenceTestServer(t, false, true)
+			dir := t.TempDir()
+			observation := writeXiaozhiInstrumentObservationReport(t, tc.overrides)
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run([]string{
+				"xiaozhi-physical-evidence",
+				"--gateway-url", server.URL,
+				"--device-id", "44:1b:f6:e2:6a:60",
+				"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+				"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+				"--instrument-observation-report", observation,
+				"--output-dir", dir,
+			}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("code = %d, want invalid timing ignored with blocked report: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			for _, want := range []string{
+				`"operator.audible_observation": {`,
+				`"available": false`,
+				`"code": "xiaozhi_physical_instrument_observation_timing_invalid"`,
+				`"code": "xiaozhi_physical_operator_observation_missing"`,
+				`"acceptance_status": "candidate_gateway_downlink"`,
+			} {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("stdout missing %q: %s", want, stdout.String())
+				}
+			}
+			for _, forbidden := range []string{
+				observation,
+				filepath.Dir(observation),
+				`"source": "instrument_observation"`,
+				`"promotion_gate": "candidate"`,
+			} {
+				if strings.Contains(stdout.String(), forbidden) {
+					t.Fatalf("stdout leaked or overclaimed %q: %s", forbidden, stdout.String())
+				}
+			}
+		})
+	}
+}
+
+func TestRunXiaozhiPhysicalEvidenceRejectsUnsafeInstrumentObservationWithoutLeak(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true)
+	dir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"local_path":  filepath.Join(dir, "unsafe.wav"),
+		"data_base64": "U0VDUkVUX0FVRElP",
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want unsafe instrument observation rejected: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	rendered := stdout.String() + stderr.String()
+	if !strings.Contains(rendered, "xiaozhi physical evidence instrument observation unsafe") {
+		t.Fatalf("missing safe error: %s", rendered)
+	}
+	for _, forbidden := range []string{
+		observation,
+		filepath.Dir(observation),
+		"unsafe.wav",
+		"U0VDUkVUX0FVRElP",
+		server.URL,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("unsafe observation leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestProductReadinessIngestsXiaozhiPhysicalEvidenceWithoutPRDAcceptance(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"unknown","connection_status":"online","capabilities":{"xiaozhi_profile":"stock","xiaozhi_transport":"websocket","xiaozhi_audio":"opus_16000hz_mono_60ms","microphone":"available_stock_xiaozhi"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	evidence := writeProductReadinessXiaozhiPhysicalEvidenceReportFixture(t)
@@ -163,8 +353,47 @@ func TestProductReadinessIngestsXiaozhiPhysicalEvidenceWithoutPRDAcceptance(t *t
 	}
 }
 
-func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool) *httptest.Server {
+func TestProductReadinessIngestsInstrumentedXiaozhiEvidenceAsBlockedCandidate(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"unknown","connection_status":"online","capabilities":{"xiaozhi_profile":"stock","xiaozhi_transport":"websocket","xiaozhi_audio":"opus_16000hz_mono_60ms","microphone":"available_stock_xiaozhi"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	evidence := writeProductReadinessXiaozhiInstrumentedPhysicalEvidenceReportFixture(t)
+
+	report := buildProductReadinessReport(t.Context(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "44:1b:f6:e2:6a:60",
+		PhysicalStackChanReport: evidence,
+	}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+	physical := report.StackChan.PhysicalEvidence
+	if report.LaunchReady || physical.PRDAccepted || physical.PRDPhysicalAccepted {
+		t.Fatalf("launch/physical = %v/%+v, want instrumented xiaozhi candidate not PRD accepted", report.LaunchReady, physical)
+	}
+	if !physical.Valid ||
+		!physical.CandidatePhysicalVoiceEvidence ||
+		!physical.GatewayDownlinkPhysicalDeviceEvidence ||
+		physical.RequiredPhysicalMetricsAvailable ||
+		!physical.OperatorInstrumentObservationAvailable ||
+		physical.AcceptanceStatus != "physical_review_required" ||
+		physical.PromotionGate != "candidate" {
+		t.Fatalf("physical evidence = %+v, want blocked instrumented physical voice candidate", physical)
+	}
+	if !physical.CanonicalMetricAvailability["device_playback_start_ms"] ||
+		!physical.CanonicalMetricAvailability["speech_end_to_first_audible_response_ms"] ||
+		physical.CanonicalMetricAvailability["barge_in_stop_ms"] {
+		t.Fatalf("canonical availability = %#v, want playback/audible present but barge-in missing", physical.CanonicalMetricAvailability)
+	}
+	for _, code := range []string{
+		"xiaozhi_physical_device_playback_ack_missing",
+		"xiaozhi_physical_operator_observation_missing",
+	} {
+		if containsProductFinding(report.Findings, code, "") || containsXiaozhiPhysicalString(physical.FindingCodes, code) {
+			t.Fatalf("unexpected missing-evidence code %q: findings=%#v physical=%+v", code, report.Findings, physical)
+		}
+	}
+}
+
+func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ...bool) *httptest.Server {
 	t.Helper()
+	includePlayback := len(playback) > 0 && playback[0]
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/devices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -202,6 +431,9 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool) *httptest.S
 			{"name": "audio.downlink.first_frame", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1310, "offset_ms": 310},
 			{"name": "xiaozhi.voice_pipeline.completed", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1600, "offset_ms": 600},
 		}
+		if includePlayback {
+			events = append(events, map[string]any{"name": "device.playback.start", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1340, "offset_ms": 340})
+		}
 		if unsafe {
 			events = append(events, map[string]any{"name": "operator transcript should not leak", "trace_id": "http://example.com/unsafe/full/url", "session_id": "/Users/secret-token/session", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1601, "offset_ms": 601})
 		}
@@ -215,6 +447,7 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool) *httptest.S
 				"xiaozhi_opus_decode_ms":             40,
 				"tts_first_audio_ms":                 290,
 				"audio_downlink_first_frame_ms":      310,
+				"device_playback_start_ms":           map[bool]any{true: 30, false: nil}[includePlayback],
 				"answer_first_audio_total_ms":        310,
 			},
 		})
@@ -234,6 +467,53 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool) *httptest.S
 		})
 	})
 	return httptest.NewServer(mux)
+}
+
+func writeXiaozhiInstrumentObservationReport(t *testing.T, overrides map[string]any) string {
+	t.Helper()
+	report := map[string]any{
+		"schema_version":                       "a21.xiaozhi_instrument_observation.v1",
+		"trace_id":                             "a21-trace-44-1b-f6-e2-6a-60",
+		"session_id":                           "a21-session-44-1b-f6-e2-6a-60",
+		"device_id":                            "44:1b:f6:e2:6a:60",
+		"method":                               "instrument_nonzero_audible_energy",
+		"instrument":                           "calibrated_audio_recorder",
+		"physical_sound_observed":              true,
+		"observed_nonzero_audible_energy":      true,
+		"gateway_first_downlink_to_audible_ms": 450,
+		"speech_end_to_first_audible_response_ms": 760,
+		"audible_energy_rms":                      0.09,
+		"noise_floor_rms":                         0.01,
+		"redaction": map[string]any{
+			"user_text_stored":             false,
+			"instruction_text_stored":      false,
+			"model_text_stored":            false,
+			"audio_payload_stored":         false,
+			"encoded_audio_payload_stored": false,
+			"network_locator_stored":       false,
+			"network_route_stored":         false,
+			"filesystem_locator_stored":    false,
+			"secret_material_stored":       false,
+			"internal_thought_stored":      false,
+		},
+	}
+	for key, value := range overrides {
+		if value == nil {
+			delete(report, key)
+			continue
+		}
+		report[key] = value
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-instrument-observation.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func newestXiaozhiPhysicalEvidenceReport(t *testing.T, outputDir string, stdout string) string {
@@ -332,6 +612,48 @@ func writeProductReadinessXiaozhiPhysicalEvidenceReportFixture(t *testing.T) str
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-xiaozhi-physical-evidence-report.json")
 	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessXiaozhiInstrumentedPhysicalEvidenceReportFixture(t *testing.T) string {
+	t.Helper()
+	reportPath := writeProductReadinessXiaozhiPhysicalEvidenceReportFixture(t)
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report map[string]any
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	report["promotion_gate"] = "candidate"
+	report["acceptance_status"] = "physical_review_required"
+	report["canonical_metrics"].(map[string]any)["device_downlink_first_frame_ms"] = map[string]any{"available": true, "value_ms": 310, "source": "gateway_trace"}
+	report["canonical_metrics"].(map[string]any)["device_playback_start_ms"] = map[string]any{"available": true, "value_ms": 30, "source": "device_runtime_echo"}
+	report["canonical_metrics"].(map[string]any)["speech_end_to_first_audible_response_ms"] = map[string]any{"available": true, "value_ms": 760, "source": "instrument_observation"}
+	report["stage_availability"].(map[string]any)["device.playback.ack"] = map[string]any{"available": true, "source": "device_runtime_echo"}
+	report["stage_availability"].(map[string]any)["operator.audible_observation"] = map[string]any{"available": true, "source": "instrument_observation"}
+	report["observation"] = map[string]any{
+		"available":               true,
+		"physical_sound_observed": true,
+		"operator_confirmed":      false,
+		"method":                  "instrument_nonzero_audible_energy",
+		"instrument":              "calibrated_audio_recorder",
+		"observed_audible_ms":     760,
+	}
+	report["findings"] = []map[string]any{
+		{"code": "xiaozhi_physical_instrument_observation_present", "severity": "info", "message": "instrument observed nonzero audible energy after Gateway first downlink"},
+		{"code": "xiaozhi_physical_barge_in_stop_missing", "severity": "error", "message": "physical barge-in stop evidence is missing"},
+	}
+	encoded, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-instrumented-physical-evidence-report.json")
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
