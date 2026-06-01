@@ -17,6 +17,9 @@ const (
 	wakeWordModeCustomMultinet    = "custom_multinet"
 	wakeWordActivePhrase          = "你好小智"
 	wakeWordActivePinyin          = "ni hao xiao zhi"
+	wakeWordActiveRuntimeProfile  = "builtin_xiaozhi_wakenet"
+	wakeWordFirmwareBuiltinActive = "builtin_active"
+	wakeWordFirmwareCustomPending = "custom_pending_firmware"
 	defaultWakeWordThreshold      = 30
 	wakeWordConfigRequestMaxBytes = 4096
 )
@@ -31,18 +34,23 @@ type WakeWordConfigRequest struct {
 }
 
 type WakeWordConfigResponse struct {
-	SchemaVersion         string `json:"schema_version"`
-	Mode                  string `json:"mode"`
-	ActivePhrase          string `json:"active_phrase"`
-	ActivePinyin          string `json:"active_pinyin"`
-	DesiredPhrase         string `json:"desired_phrase,omitempty"`
-	DesiredPinyin         string `json:"desired_pinyin,omitempty"`
-	Threshold             int    `json:"threshold"`
-	RuntimeStatus         string `json:"runtime_status"`
-	RuntimeConfigurable   bool   `json:"runtime_configurable"`
-	FirmwareBuildRequired bool   `json:"firmware_build_required"`
-	Code                  string `json:"code,omitempty"`
-	Message               string `json:"message"`
+	SchemaVersion           string `json:"schema_version"`
+	Mode                    string `json:"mode"`
+	ActivePhrase            string `json:"active_phrase"`
+	ActivePinyin            string `json:"active_pinyin"`
+	DesiredPhrase           string `json:"desired_phrase,omitempty"`
+	DesiredPinyin           string `json:"desired_pinyin,omitempty"`
+	Threshold               int    `json:"threshold"`
+	RuntimeStatus           string `json:"runtime_status"`
+	RuntimeConfigurable     bool   `json:"runtime_configurable"`
+	FirmwareBuildRequired   bool   `json:"firmware_build_required"`
+	FirmwareStatus          string `json:"firmware_status"`
+	ActiveRuntimeProfile    string `json:"active_runtime_profile"`
+	DesiredFirmwareProfile  string `json:"desired_firmware_profile,omitempty"`
+	RuntimeHotSwapSupported bool   `json:"runtime_hot_swap_supported"`
+	CustomRuntimeActive     bool   `json:"custom_runtime_active"`
+	Code                    string `json:"code,omitempty"`
+	Message                 string `json:"message"`
 }
 
 func wakeWordConfigPath(configured string) string {
@@ -202,23 +210,27 @@ func safeWakeWordPinyin(value string) bool {
 
 func wakeWordResponse(config WakeWordConfigRequest) WakeWordConfigResponse {
 	response := WakeWordConfigResponse{
-		SchemaVersion:       wakeWordConfigSchemaVersion,
-		Mode:                wakeWordModeBuiltin,
-		ActivePhrase:        wakeWordActivePhrase,
-		ActivePinyin:        wakeWordActivePinyin,
-		Threshold:           config.Threshold,
-		RuntimeStatus:       "active_builtin_model",
-		RuntimeConfigurable: false,
-		Message:             "Stock xiaozhi firmware keeps the built-in WakeNet model active until an explicit firmware build is flashed.",
+		SchemaVersion:        wakeWordConfigSchemaVersion,
+		Mode:                 wakeWordModeBuiltin,
+		ActivePhrase:         wakeWordActivePhrase,
+		ActivePinyin:         wakeWordActivePinyin,
+		Threshold:            config.Threshold,
+		RuntimeStatus:        "active_builtin_model",
+		RuntimeConfigurable:  false,
+		FirmwareStatus:       wakeWordFirmwareBuiltinActive,
+		ActiveRuntimeProfile: wakeWordActiveRuntimeProfile,
+		Message:              "Stock xiaozhi firmware keeps the built-in WakeNet model active until an explicit firmware build is flashed.",
 	}
 	if config.Mode == wakeWordModeCustomMultinet {
 		response.Mode = wakeWordModeCustomMultinet
 		response.DesiredPhrase = config.DesiredPhrase
 		response.DesiredPinyin = config.DesiredPinyin
+		response.DesiredFirmwareProfile = wakeWordModeCustomMultinet
 		response.RuntimeStatus = "pending_firmware_build"
 		response.FirmwareBuildRequired = true
+		response.FirmwareStatus = wakeWordFirmwareCustomPending
 		response.Code = "a21_wake_word_firmware_build_required"
-		response.Message = "Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway only persists the requested profile."
+		response.Message = "Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway persists the requested profile but cannot hot-swap the stock wake model."
 	}
 	return response
 }

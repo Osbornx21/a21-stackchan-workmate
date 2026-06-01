@@ -159,6 +159,11 @@ guarded firmware lane. Custom requests therefore return
 `runtime_status=pending_firmware_build`, `firmware_build_required=true`, and
 `code=a21_wake_word_firmware_build_required` instead of pretending the Gateway
 can dynamically replace the device-side wake model.
+All responses also carry machine-readable activation truth:
+`firmware_status=builtin_active|custom_pending_firmware`,
+`active_runtime_profile=builtin_xiaozhi_wakenet`,
+`desired_firmware_profile=custom_multinet` only for custom requests,
+`runtime_hot_swap_supported=false`, and `custom_runtime_active=false`.
 
 The request accepts `mode=custom_multinet`, `desired_phrase`, `desired_pinyin`,
 and a numeric `threshold` in the safe range 1-100. Gateway rejects secret-like,
