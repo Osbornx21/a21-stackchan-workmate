@@ -1617,6 +1617,15 @@ func TestGatewayServerOptionsFromEnvWiresXiaozhiVoicePipelineAdapters(t *testing
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional",
+	})
+	if !options.XiaozhiStockProfessional {
+		t.Fatal("xiaozhi stock professional route not configured")
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresSileroVADConfig(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_VAD_PREFERENCE=silero",

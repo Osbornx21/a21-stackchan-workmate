@@ -918,6 +918,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		VoiceProvider:                providers.NewGatewayVoiceProviderFromEnv(env),
 		XiaozhiVoicePipelineAdapters: &xiaozhiVoicePipelineAdapters,
 		AudioIngressConfig:           newAudioIngressConfigFromEnv(env),
+		XiaozhiStockProfessional:     appEnvBool(env, "A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE"),
 	}
 	if adapterURL := strings.TrimSpace(appEnvValue(env, "A21_V21_ADAPTER_URL")); adapterURL != "" {
 		client, err := v21adapter.NewHTTPClient(adapterURL)
@@ -969,4 +970,13 @@ func appEnvValue(env []string, want string) string {
 		}
 	}
 	return ""
+}
+
+func appEnvBool(env []string, want string) bool {
+	switch strings.ToLower(strings.TrimSpace(appEnvValue(env, want))) {
+	case "1", "true", "yes", "on", "professional":
+		return true
+	default:
+		return false
+	}
 }

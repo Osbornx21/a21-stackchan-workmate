@@ -127,6 +127,13 @@ Implemented clients:
 Safety rules:
 
 - Real adapter configuration uses `A21_V21_ADAPTER_URL`.
+- Physical stock-xiaozhi acceptance may set
+  `A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional` to route stock
+  `realtime`/`auto`/`manual` listen turns into the A21 professional path. This
+  is an explicit Gateway-side override for bounded acceptance windows; it does
+  not change stock firmware protocol, does not require `device_events` or
+  `debug_metrics`, and should be replaced by a user-confirmed professional
+  intent/tool contract before broad product use.
 - `doctor` skips V21 health when `A21_V21_ADAPTER_URL` is unset.
 - `doctor` checks `/healthz` when `A21_V21_ADAPTER_URL` is set, uses a direct no-ambient-proxy HTTP client, and redacts URL credentials from error details.
 - `v21-adapter-smoke` does not execute a professional query unless `--execute` is present.
@@ -156,6 +163,14 @@ Current Gateway professional sequence:
 1. `listening`
 2. `professional`
 3. `speaking` with `fast_answer`, `confidence`, `evidence`, `speech_blocks`, `screen_cards`, and `follow_ups`
+
+For stock xiaozhi physical turns, the shortest safe acceptance path is the
+explicit stock route override above: Gateway maps the transport listen mode to
+product `professional`, sends local checking feedback before ASR/V21 result
+work, then queries V21 with the ASR-derived utterance under
+`privacy_scope=professional_only`. Reports and traces must still omit raw ASR
+text, prompt/provider output, evidence body, full URLs, proxy values, local
+paths, and credentials.
 
 ## Adapter Smoke
 

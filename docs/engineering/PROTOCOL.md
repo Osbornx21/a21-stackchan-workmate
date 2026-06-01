@@ -105,6 +105,12 @@ must check current-turn ownership before every device-facing frame send; stale
 turn downlink attempts are suppressed at the host seam and traced without
 emitting JSON or binary device frames.
 
+Stock xiaozhi listen modes such as `realtime`, `auto`, and `manual` are
+transport hints, not A21 product modes. During bounded physical acceptance,
+`A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional` can explicitly map stock
+listen turns to A21 `professional` inside Gateway without adding debug fields
+to the stock protocol.
+
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future

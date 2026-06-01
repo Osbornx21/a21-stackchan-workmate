@@ -19,6 +19,7 @@ import (
 	"a21.local/a21/internal/audio/opuscodec"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	xiaozhitransport "a21.local/a21/internal/transport/xiaozhi"
 	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -2267,6 +2268,176 @@ func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *tes
 	}
 	if checkingAt > v21StartAt || v21StartAt-checkingAt > 1200 {
 		t.Fatalf("checking/v21 ordering checking=%d v21_start=%d", checkingAt, v21StartAt)
+	}
+}
+
+func TestXiaozhiWebSocketStockProfessionalRouteUsesRealtimeListenMode(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(100 * time.Millisecond)
+	server := NewServerWithOptions(ServerOptions{
+		V21Client:                v21,
+		XiaozhiStockProfessional: true,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "认真查一下座舱报警证据"},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stock-pro-route",
+		"session_id": "a21-session-xiaozhi-stock-pro-route",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ackCtx, ackCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer ackCancel()
+	readXiaozhiJSON(t, ackCtx, conn)
+	checking := readXiaozhiJSON(t, ackCtx, conn)
+	if checking["phase"] != "professional_checking" || checking["mode"] != "professional" || !strings.Contains(asString(checking["text"]), "我在查") {
+		t.Fatalf("checking feedback = %#v", checking)
+	}
+	select {
+	case <-v21.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional V21 query did not start after stock route checking feedback")
+	}
+	if got := v21.lastUtterance(); got != "认真查一下座舱报警证据" {
+		t.Fatalf("v21 utterance = %q, want ASR-derived utterance", got)
+	}
+	result := readXiaozhiJSON(t, ctx, conn)
+	if result["phase"] != "professional_result" || result["mode"] != "professional" {
+		t.Fatalf("professional result = %#v", result)
+	}
+	resultJSON := mustJSON(t, result)
+	for _, forbidden := range []string{"认真查一下座舱报警证据", "RAW_SECRET_EVIDENCE_BODY", "debug_metrics", "device_events"} {
+		if strings.Contains(resultJSON, forbidden) {
+			t.Fatalf("stock professional result leaked %q: %s", forbidden, resultJSON)
+		}
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	if capabilities["xiaozhi_profile"] != "stock" {
+		t.Fatalf("capabilities = %#v, want stock profile", capabilities)
+	}
+	for _, forbidden := range []string{"xiaozhi_feature_debug_metrics", "xiaozhi_feature_device_events"} {
+		if _, ok := capabilities[forbidden]; ok {
+			t.Fatalf("stock route leaked debug feature %q: %#v", forbidden, capabilities)
+		}
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-stock-pro-route")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	traceBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceJSON := string(traceBody)
+	for _, forbidden := range []string{"认真查一下座舱报警证据", "RAW_SECRET_EVIDENCE_BODY"} {
+		if strings.Contains(traceJSON, forbidden) {
+			t.Fatalf("trace leaked %q: %s", forbidden, traceJSON)
+		}
+	}
+	for _, want := range []string{"xiaozhi.professional_route.stock_override", "professional.checking_feedback.sent", "v21.query.start", "v21.query.first_result"} {
+		if !strings.Contains(traceJSON, want) {
+			t.Fatalf("trace missing %q: %s", want, traceJSON)
+		}
+	}
+}
+
+func TestXiaozhiWebSocketStockProfessionalRouteFallbackDoesNotQueryV21OnEmptyASR(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	server := NewServerWithOptions(ServerOptions{
+		V21Client:                v21,
+		XiaozhiStockProfessional: true,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "   "},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stock-pro-empty",
+		"session_id": "a21-session-xiaozhi-stock-pro-empty",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "auto"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "auto"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	checking := readXiaozhiJSON(t, ctx, conn)
+	if checking["phase"] != "professional_checking" {
+		t.Fatalf("checking feedback = %#v", checking)
+	}
+	fallback := readXiaozhiJSON(t, ctx, conn)
+	if fallback["phase"] != "professional_unavailable" || !strings.Contains(asString(fallback["text"]), "V21 现在没接上") {
+		t.Fatalf("fallback = %#v", fallback)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["reason"] != "professional_asr_empty" {
+		t.Fatalf("stop = %#v", stop)
+	}
+	select {
+	case <-v21.started:
+		t.Fatal("V21 query started after stock route empty ASR final text")
+	default:
+	}
+}
+
+func TestXiaozhiStockProfessionalRouteDoesNotApplyToDebugProfile(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{XiaozhiStockProfessional: true})
+	if got := server.xiaozhiListenMode("realtime", xiaozhitransport.HelloFeatures{MCP: true, AEC: true}); got != protocol.ModeProfessional {
+		t.Fatalf("stock mode = %q, want professional", got)
+	}
+	if got := server.xiaozhiListenMode("realtime", xiaozhitransport.HelloFeatures{DeviceEvents: true}); got != protocol.ModeWorkmate {
+		t.Fatalf("debug mode = %q, want workmate", got)
 	}
 }
 

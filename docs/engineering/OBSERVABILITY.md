@@ -154,6 +154,9 @@ The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
 `abort`; barge-in-style abort reasons also add `barge_in_detected` alongside
 the existing `barge_in.detected` compatibility marker. These are
 turn-control markers only, not physical device playback stop proof yet.
+When the explicit stock professional route override is enabled, Gateway records
+`xiaozhi.professional_route.stock_override` without storing the utterance or
+stock listen-mode value.
 `/v1/traces` now summarizes split latency deltas for
 `xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,

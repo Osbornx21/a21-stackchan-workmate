@@ -52,6 +52,7 @@ type Server struct {
 	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
 	xiaozhiProfessionalASR     providers.ASRAdapter
 	xiaozhiFastAckTTS          providers.TTSAdapter
+	xiaozhiStockProfessional   bool
 }
 
 type ServerOptions struct {
@@ -60,6 +61,7 @@ type ServerOptions struct {
 	V21Timeout                   time.Duration
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 	AudioIngressConfig           audio.IngressConfig
+	XiaozhiStockProfessional     bool
 }
 
 type xiaozhiVoicePipelineMeta struct {
@@ -376,6 +378,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
 		xiaozhiProfessionalASR:     xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
+		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
 	}
 }
 
@@ -1199,7 +1202,8 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
 			return true
 		}
-		mode := xiaozhiListenMode(frame.Control.Listen.Mode)
+		rawListenMode := frame.Control.Listen.Mode
+		mode := s.xiaozhiListenMode(rawListenMode, session.features)
 		switch frame.Control.Listen.State {
 		case "start":
 			turn := session.startXiaozhiTurn(ctx, mode)
@@ -1208,6 +1212,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
+			if s.xiaozhiStockProfessionalRouteSelected(rawListenMode, session.features) {
+				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.professional_route.stock_override", s.now().UnixMilli())
+			}
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "accepted", xiaozhiTurnID(turn)))
 		case "detect":
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
@@ -1440,11 +1447,20 @@ func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
 	return "stock"
 }
 
-func xiaozhiListenMode(raw string) protocol.Mode {
+func (s *Server) xiaozhiListenMode(raw string, features xiaozhitransport.HelloFeatures) protocol.Mode {
 	if strings.TrimSpace(strings.ToLower(raw)) == string(protocol.ModeProfessional) {
 		return protocol.ModeProfessional
 	}
+	if s.xiaozhiStockProfessionalRouteSelected(raw, features) {
+		return protocol.ModeProfessional
+	}
 	return protocol.ModeWorkmate
+}
+
+func (s *Server) xiaozhiStockProfessionalRouteSelected(raw string, features xiaozhitransport.HelloFeatures) bool {
+	return s.xiaozhiStockProfessional &&
+		xiaozhiClientProfile(features) == "stock" &&
+		strings.TrimSpace(strings.ToLower(raw)) != string(protocol.ModeProfessional)
 }
 
 func mergeDeviceCapabilities(existing map[string]string, additions map[string]string) map[string]string {
