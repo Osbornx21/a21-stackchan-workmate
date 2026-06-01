@@ -227,6 +227,42 @@ func TestRunXiaozhiPhysicalEvidenceConsumesInstrumentPlaybackRuntimeEcho(t *test
 	}
 }
 
+func TestRunXiaozhiPhysicalEvidenceMapsGatewayBargeInMarkers(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, false, true)
+	dir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"barge_in_detected_ms": {`,
+		`"barge_in_stop_ms": {`,
+		`"value_ms": 65`,
+		`"barge_in_playback_stop_requested_ms": {`,
+		`"source": "gateway_trace"`,
+		`"barge_in_playback_stop_done_ms": {`,
+		`"available": false`,
+		`"code": "xiaozhi_physical_device_playback_ack_missing"`,
+		`"code": "xiaozhi_physical_operator_observation_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceIgnoresInvalidInstrumentPlaybackRuntimeEcho(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, false)
 	dir := t.TempDir()
@@ -498,6 +534,7 @@ func TestProductReadinessIngestsInstrumentedXiaozhiEvidenceAsBlockedCandidate(t 
 func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ...bool) *httptest.Server {
 	t.Helper()
 	includePlayback := len(playback) > 0 && playback[0]
+	includeBargeIn := len(playback) > 1 && playback[1]
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/devices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -538,6 +575,13 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 		if includePlayback {
 			events = append(events, map[string]any{"name": "device.playback.start", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1340, "offset_ms": 340})
 		}
+		if includeBargeIn {
+			events = append(events,
+				map[string]any{"name": "xiaozhi.listen.barge_in", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1700, "offset_ms": 700},
+				map[string]any{"name": "barge_in.detected", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1700, "offset_ms": 700},
+				map[string]any{"name": "playback.stop", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1765, "offset_ms": 765},
+			)
+		}
 		if unsafe {
 			events = append(events, map[string]any{"name": "operator transcript should not leak", "trace_id": "http://example.com/unsafe/full/url", "session_id": "/Users/secret-token/session", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1601, "offset_ms": 601})
 		}
@@ -553,6 +597,7 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 				"audio_downlink_first_frame_ms":      310,
 				"device_playback_start_ms":           map[bool]any{true: 30, false: nil}[includePlayback],
 				"answer_first_audio_total_ms":        310,
+				"barge_in_stop_ms":                   map[bool]any{true: 65, false: nil}[includeBargeIn],
 			},
 		})
 	})

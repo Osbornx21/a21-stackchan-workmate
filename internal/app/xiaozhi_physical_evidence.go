@@ -218,10 +218,16 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 		DeviceDownlinkFirstFrameMS:        physicalStackChanMetric{},
 		DevicePlaybackStartMS:             physicalStackChanMetric{},
 		SpeechEndToFirstAudibleResponseMS: physicalStackChanMetric{},
-		BargeInDetectedMS:                 physicalStackChanMetric{},
-		BargeInStopMS:                     physicalStackChanMetric{},
-		BargeInPlaybackStopRequestedMS:    physicalStackChanMetric{},
-		BargeInPlaybackStopDoneMS:         physicalStackChanMetric{},
+		BargeInDetectedMS:                 xiaozhiPhysicalTracePresenceMetric(trace, "barge_in.detected", "gateway_trace"),
+		BargeInStopMS: physicalStackChanMetricFromNonNegativeInt64(firstNonNilInt64(
+			trace.Summary.BargeInStopMS,
+			xiaozhiPhysicalTraceDeltaMS(trace, "barge_in.detected", "playback.stop"),
+		), "gateway_trace"),
+		BargeInPlaybackStopRequestedMS: physicalStackChanMetricFromNonNegativeInt64(
+			xiaozhiPhysicalTraceDeltaMS(trace, "barge_in.detected", "playback.stop"),
+			"gateway_trace",
+		),
+		BargeInPlaybackStopDoneMS: physicalStackChanMetric{},
 	}
 	report.Mic = xiaozhiPhysicalMicEvidence(audioRecent.Frames)
 	report.Observation = physicalStackChanObservationEvidence{}
@@ -314,6 +320,37 @@ func xiaozhiPhysicalSpeechEndToFirstDownlinkMS(trace gateway.TraceResponse) *int
 		return &delta
 	}
 	return nil
+}
+
+func xiaozhiPhysicalTraceDeltaMS(trace gateway.TraceResponse, startName string, endName string) *int64 {
+	var startAt int64
+	startSeen := false
+	for _, event := range trace.Events {
+		if event.Name != startName {
+			continue
+		}
+		startAt = event.AtMS
+		startSeen = true
+		break
+	}
+	if !startSeen {
+		return nil
+	}
+	for _, event := range trace.Events {
+		if event.Name != endName || event.AtMS < startAt {
+			continue
+		}
+		delta := event.AtMS - startAt
+		return &delta
+	}
+	return nil
+}
+
+func xiaozhiPhysicalTracePresenceMetric(trace gateway.TraceResponse, name string, source string) physicalStackChanMetric {
+	if !xiaozhiTraceHasEvent(trace, name) {
+		return physicalStackChanMetric{}
+	}
+	return physicalStackChanMetric{Available: true, Source: source}
 }
 
 func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trace gateway.TraceResponse) map[string]physicalStackChanMetric {
@@ -627,6 +664,13 @@ func xiaozhiPhysicalBoolMetric(available bool, source string) physicalStackChanM
 
 func physicalStackChanMetricFromInt64(value *int64, source string) physicalStackChanMetric {
 	if value == nil || *value <= 0 {
+		return physicalStackChanMetric{Available: false}
+	}
+	return physicalStackChanMetric{Available: true, ValueMS: float64(*value), Source: source}
+}
+
+func physicalStackChanMetricFromNonNegativeInt64(value *int64, source string) physicalStackChanMetric {
+	if value == nil || *value < 0 {
 		return physicalStackChanMetric{Available: false}
 	}
 	return physicalStackChanMetric{Available: true, ValueMS: float64(*value), Source: source}
