@@ -2626,10 +2626,13 @@ func productReadinessProviderSmokeReportFixtureJSON() string {
     "repeat": 3,
     "first_byte_p50_ms": 118.5,
     "first_byte_p95_ms": 140.1,
+    "first_byte_p99_ms": 142.1,
     "first_content_p50_ms": 198.75,
     "first_content_p95_ms": 220.2,
+    "first_content_p99_ms": 222.2,
     "total_duration_p50_ms": 492.25,
-    "total_duration_p95_ms": 510.3
+    "total_duration_p95_ms": 510.3,
+    "total_duration_p99_ms": 512.3
   },
   "trace_id": "a21-trace-provider-smoke-001",
   "trace_markers": [

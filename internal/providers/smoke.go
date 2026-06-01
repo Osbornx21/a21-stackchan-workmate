@@ -72,10 +72,13 @@ type ProviderSmokeTiming struct {
 	Repeat             int     `json:"repeat,omitempty"`
 	FirstByteP50MS     float64 `json:"first_byte_p50_ms,omitempty"`
 	FirstByteP95MS     float64 `json:"first_byte_p95_ms,omitempty"`
+	FirstByteP99MS     float64 `json:"first_byte_p99_ms,omitempty"`
 	FirstContentP50MS  float64 `json:"first_content_p50_ms,omitempty"`
 	FirstContentP95MS  float64 `json:"first_content_p95_ms,omitempty"`
+	FirstContentP99MS  float64 `json:"first_content_p99_ms,omitempty"`
 	TotalDurationP50MS float64 `json:"total_duration_p50_ms,omitempty"`
 	TotalDurationP95MS float64 `json:"total_duration_p95_ms,omitempty"`
+	TotalDurationP99MS float64 `json:"total_duration_p99_ms,omitempty"`
 }
 
 type ProviderSmokeFallback struct {
@@ -669,10 +672,13 @@ func summarizeProviderSmokeTimings(attempts []ProviderSmokeAttempt) *ProviderSmo
 	}
 	summary.FirstByteP50MS = percentileNearestRank(firstByte, 0.50)
 	summary.FirstByteP95MS = percentileNearestRank(firstByte, 0.95)
+	summary.FirstByteP99MS = percentileNearestRank(firstByte, 0.99)
 	summary.FirstContentP50MS = percentileNearestRank(firstContent, 0.50)
 	summary.FirstContentP95MS = percentileNearestRank(firstContent, 0.95)
+	summary.FirstContentP99MS = percentileNearestRank(firstContent, 0.99)
 	summary.TotalDurationP50MS = percentileNearestRank(total, 0.50)
 	summary.TotalDurationP95MS = percentileNearestRank(total, 0.95)
+	summary.TotalDurationP99MS = percentileNearestRank(total, 0.99)
 	return &summary
 }
 

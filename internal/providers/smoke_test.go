@@ -162,7 +162,12 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 			t.Fatalf("attempt stream counts = %+v", attempt)
 		}
 	}
-	if report.TimingSummary == nil || report.TimingSummary.FirstByteP50MS <= 0 || report.TimingSummary.FirstContentP95MS <= 0 {
+	if report.TimingSummary == nil ||
+		report.TimingSummary.FirstByteP50MS <= 0 ||
+		report.TimingSummary.FirstByteP99MS <= 0 ||
+		report.TimingSummary.FirstContentP95MS <= 0 ||
+		report.TimingSummary.FirstContentP99MS <= 0 ||
+		report.TimingSummary.TotalDurationP99MS <= 0 {
 		t.Fatalf("timing summary not populated: %+v", report.TimingSummary)
 	}
 	data, err := json.Marshal(report)

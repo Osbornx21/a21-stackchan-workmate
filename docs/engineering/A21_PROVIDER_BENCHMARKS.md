@@ -91,10 +91,76 @@ current real text-provider evidence source for product readiness. Its
 `product-readiness --provider-smoke-report <report.json>` sees that the report
 matches the currently selected configured provider, is non-mock and
 route-eligible, contains three or more successful streaming attempts with
-first-byte and first-content timings, has no fallback marker, and passes the
-same no-prompt/no-transcript/no-output/no-reasoning/no-secret/no-full-URL
-redaction checks. It does not prove ASR, TTS, V21, physical playback, barge-in
-stop, or PRD launch acceptance by itself.
+first-byte, first-content, and total-duration p50/p95/p99 timings, has no
+fallback marker, and passes the same
+no-prompt/no-transcript/no-output/no-reasoning/no-secret/no-full-URL redaction
+checks. It does not prove ASR, TTS, V21, physical playback, barge-in stop, or
+PRD launch acceptance by itself.
+
+## 5080lab Selected Provider Execution Package
+
+Run selected-provider closure on `5080lab` or another approved clean mainland
+lab host only. Do not run the executed provider smoke on the proxy-affected Mac.
+The Mac may run dry-run readiness checks and may ingest returned redacted
+reports with `product-readiness`.
+
+Use this exact sequence on `5080lab`, replacing only the provider/env file with
+the selected route-eligible profile:
+
+```bash
+cd "<A21 repo checkout>"
+git status --short --branch
+git rev-parse --short HEAD
+
+mkdir -p .a21-run/5080lab reports/5080lab-provider
+chmod 700 .a21-run/5080lab
+set -a
+. ./.a21-run/5080lab/provider.env
+set +a
+
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY
+export NO_PROXY="localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16"
+
+go run ./cmd/a21 doctor --output-dir reports/5080lab-provider
+go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --stream --repeat 3 --output-dir reports/5080lab-provider
+go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --execute --stream --repeat 10 --output-dir reports/5080lab-provider
+
+LATEST_PROVIDER_REPORT="$(ls -t reports/5080lab-provider/a21-provider-smoke-*.json | head -n 1)"
+go run ./cmd/a21 product-readiness --provider-smoke-report "$LATEST_PROVIDER_REPORT" --output-dir reports/5080lab-provider
+go run ./cmd/a21 server-side-readiness-bundle --provider-smoke-report "$LATEST_PROVIDER_REPORT" --output-dir reports/5080lab-provider
+tar -czf "reports/a21-5080lab-provider-evidence-$(date +%Y%m%d-%H%M%S).tgz" -C reports/5080lab-provider .
+```
+
+`.a21-run/5080lab/provider.env` must stay local to the lab host and should
+contain only `A21_` variables such as `A21_PROVIDER_PRIMARY`, the selected
+provider key env, model env when required, optional base-url env, and optional
+`A21_PROVIDER_PROFILES_PATH` for valid `a21_`-namespaced loaded profiles. Built
+in candidates that are not route-eligible must be loaded as explicit
+route-eligible `a21_` profiles before they can close this package.
+
+The dry-run `provider-smoke` must report `configured=true`,
+`route_eligible=true`, `stream=true`, `executed=false`, and safe env names. The
+executed report must report `status=passed`, `executed=true`, `stream=true`,
+`repeat>=3`, successful attempts, no activated fallback, and these non-zero
+summary fields: `first_byte_p50_ms`, `first_byte_p95_ms`,
+`first_byte_p99_ms`, `first_content_p50_ms`, `first_content_p95_ms`,
+`first_content_p99_ms`, `total_duration_p50_ms`, `total_duration_p95_ms`, and
+`total_duration_p99_ms`.
+
+Return these files to A21:
+
+- `reports/5080lab-provider/a21-doctor-*.json`
+- `reports/5080lab-provider/a21-provider-smoke-*.json` for both dry-run and executed runs
+- `reports/5080lab-provider/a21-product-readiness-*.json`
+- `reports/5080lab-provider/a21-server-side-readiness-bundle-*.json`
+- `reports/a21-5080lab-provider-evidence-*.tgz`
+
+Reject the package if any report stores API key values, model values, prompt
+text, transcript text, provider output, provider reasoning, proxy values, full
+provider URLs, URL credentials, local paths, or non-A21 provider profile names.
+`endpoint_host`, `api_key_env`, `model_env`, and `base_url_env` are allowed
+because they are redacted host/env labels. Provider closure still does not
+prove ASR, TTS, V21, physical StackChan playback, or barge-in acceptance.
 
 `local-tts-smoke`, `local-voice-loopback`, and Gateway voice-pipeline summaries
 also carry an aggregate `audio_quality` block for generated PCM16 TTS audio.
