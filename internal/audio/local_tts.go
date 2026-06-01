@@ -32,21 +32,22 @@ type CommandRunner interface {
 type execCommandRunner struct{}
 
 type LocalTTSReport struct {
-	SchemaVersion   string   `json:"schema_version"`
-	GeneratedAtMS   int64    `json:"generated_at_ms"`
-	Status          string   `json:"status"`
-	Provider        string   `json:"provider"`
-	Engine          string   `json:"engine,omitempty"`
-	Voice           string   `json:"voice"`
-	ModelDir        string   `json:"model_dir,omitempty"`
-	OutputFormat    string   `json:"output_format"`
-	OutputPath      string   `json:"output_path,omitempty"`
-	ReportPath      string   `json:"report_path,omitempty"`
-	OutputBytes     int64    `json:"output_bytes,omitempty"`
-	TextBytes       int      `json:"text_bytes,omitempty"`
-	DurationMS      float64  `json:"duration_ms,omitempty"`
-	TTSFirstAudioMS float64  `json:"tts_first_audio_ms,omitempty"`
-	Findings        []string `json:"findings,omitempty"`
+	SchemaVersion   string            `json:"schema_version"`
+	GeneratedAtMS   int64             `json:"generated_at_ms"`
+	Status          string            `json:"status"`
+	Provider        string            `json:"provider"`
+	Engine          string            `json:"engine,omitempty"`
+	Voice           string            `json:"voice"`
+	ModelDir        string            `json:"model_dir,omitempty"`
+	OutputFormat    string            `json:"output_format"`
+	OutputPath      string            `json:"output_path,omitempty"`
+	ReportPath      string            `json:"report_path,omitempty"`
+	OutputBytes     int64             `json:"output_bytes,omitempty"`
+	TextBytes       int               `json:"text_bytes,omitempty"`
+	DurationMS      float64           `json:"duration_ms,omitempty"`
+	TTSFirstAudioMS float64           `json:"tts_first_audio_ms,omitempty"`
+	AudioQuality    *PCMQualityReport `json:"audio_quality,omitempty"`
+	Findings        []string          `json:"findings,omitempty"`
 }
 
 func (execCommandRunner) Run(ctx context.Context, name string, args ...string) error {
@@ -132,6 +133,7 @@ func SynthesizeMacOSSay(ctx context.Context, options LocalTTSOptions) (LocalTTSR
 	report.OutputBytes = info.Size()
 	report.DurationMS = elapsedLocalTTSMS(start)
 	report.TTSFirstAudioMS = report.DurationMS
+	attachLocalTTSAudioQuality(&report, outputSampleRateHz)
 	return report, nil
 }
 
@@ -236,7 +238,40 @@ func SynthesizeSherpaONNX(ctx context.Context, options LocalTTSOptions) (LocalTT
 	report.OutputBytes = info.Size()
 	report.DurationMS = elapsedLocalTTSMS(start)
 	report.TTSFirstAudioMS = report.DurationMS
+	attachLocalTTSAudioQuality(&report, outputSampleRateHz)
 	return report, nil
+}
+
+func attachLocalTTSAudioQuality(report *LocalTTSReport, expectedSampleRateHz int) {
+	if report == nil || strings.TrimSpace(report.OutputPath) == "" {
+		return
+	}
+	quality, err := AnalyzePCM16MonoWAVQuality(report.OutputPath, expectedSampleRateHz)
+	if err != nil {
+		report.Findings = append(report.Findings, "audio_quality_unavailable")
+		return
+	}
+	report.AudioQuality = &quality
+	report.Findings = appendUniqueLocalTTSFindings(report.Findings, quality.Findings...)
+}
+
+func appendUniqueLocalTTSFindings(findings []string, values ...string) []string {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		seen := false
+		for _, existing := range findings {
+			if existing == value {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			findings = append(findings, value)
+		}
+	}
+	return findings
 }
 
 func validateLocalTTSOutputDir(path string) error {

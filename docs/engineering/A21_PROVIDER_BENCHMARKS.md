@@ -85,6 +85,14 @@ Professional mode must not be promoted through an opaque realtime S2S benchmark 
 
 The current `latency-bench --mock`, `audio-front-end-eval`, `provider-smoke --stream`, `local-voice-loopback`, and `stackchan-fast-companion-turn` reports are partial pieces of this contract. Future real-provider work should extend this family instead of creating separate ad hoc gates.
 
+`local-tts-smoke`, `local-voice-loopback`, and Gateway voice-pipeline summaries
+also carry an aggregate `audio_quality` block for generated PCM16 TTS audio.
+This is a host-side guardrail for symptoms such as clipping, low headroom,
+near-silence, DC offset, and suspicious output format, not physical speaker
+quality acceptance. Reports store only aggregate metrics and fixed finding
+codes; audio payloads, prompts, transcripts, provider output, full URLs, proxy
+values, model secrets, and local paths stay out of the quality block.
+
 `xiaozhi-voice-bench` is the Xiaozhi-protocol host-loopback member of the same
 family. It is allowed to contact an already-running local Gateway and exercise
 `/v1/xiaozhi` with either the default synthetic Opus uplink or `--input-wav`

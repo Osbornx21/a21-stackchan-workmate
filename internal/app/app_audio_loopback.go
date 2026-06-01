@@ -17,60 +17,62 @@ import (
 )
 
 type localVoiceLoopbackReport struct {
-	SchemaVersion              string               `json:"schema_version"`
-	GeneratedAtMS              int64                `json:"generated_at_ms"`
-	Metadata                   latencyBenchMetadata `json:"metadata"`
-	Status                     string               `json:"status"`
-	Repeat                     int                  `json:"repeat"`
-	InputTextBytes             int                  `json:"input_text_bytes"`
-	VADStatus                  string               `json:"vad_status"`
-	VADDetector                string               `json:"vad_detector"`
-	VADSpeechStartEvents       int                  `json:"vad_speech_start_events"`
-	VADSpeechEndEvents         int                  `json:"vad_speech_end_events"`
-	ASRProvider                string               `json:"asr_provider"`
-	ASREngine                  string               `json:"asr_engine,omitempty"`
-	ASRModelDir                string               `json:"asr_model_dir,omitempty"`
-	ASRWAVName                 string               `json:"asr_wav_name,omitempty"`
-	ASRFirstPartialMS          float64              `json:"asr_first_partial_ms"`
-	ASRInputDurationMS         float64              `json:"asr_input_duration_ms,omitempty"`
-	ASRDecodeDurationMS        float64              `json:"asr_decode_duration_ms,omitempty"`
-	ASRRealTimeFactor          float64              `json:"asr_real_time_factor,omitempty"`
-	ASRTextChars               int                  `json:"asr_text_chars,omitempty"`
-	ASRTranscriptPolicy        string               `json:"asr_transcript_policy,omitempty"`
-	TextStreamProvider         string               `json:"text_stream_provider"`
-	TextStreamFamily           string               `json:"text_stream_family"`
-	TextStreamExecuted         bool                 `json:"text_stream_executed"`
-	TextStreamFallbackUsed     bool                 `json:"text_stream_fallback_used,omitempty"`
-	TextStreamFallbackProvider string               `json:"text_stream_fallback_provider,omitempty"`
-	TextStreamFallbackReason   string               `json:"text_stream_fallback_reason,omitempty"`
-	TextStreamEndpointHost     string               `json:"text_stream_endpoint_host,omitempty"`
-	TextStreamFirstContentMS   float64              `json:"text_stream_first_content_ms"`
-	TextStreamContentDeltas    int                  `json:"text_stream_content_delta_count"`
-	TextStreamReasoningDeltas  int                  `json:"text_stream_reasoning_delta_count"`
-	TextStreamDone             bool                 `json:"text_stream_done"`
-	AnswerVoicePreviewChars    int                  `json:"answer_voice_preview_chars,omitempty"`
-	LocalAckEnabled            bool                 `json:"local_ack_enabled"`
-	LocalAckStatus             string               `json:"local_ack_status,omitempty"`
-	LocalAckTTSProvider        string               `json:"local_ack_tts_provider,omitempty"`
-	LocalAckTTSFirstAudioMS    float64              `json:"local_ack_tts_first_audio_ms,omitempty"`
-	LocalAckFirstAudioTotalMS  float64              `json:"local_ack_first_audio_total_ms,omitempty"`
-	LocalAckAudioPath          string               `json:"local_ack_audio_path,omitempty"`
-	TTSProvider                string               `json:"tts_provider"`
-	TTSVoice                   string               `json:"tts_voice"`
-	TTSOutputFormat            string               `json:"tts_output_format"`
-	TTSAudioPath               string               `json:"tts_audio_path,omitempty"`
-	TTSFirstAudioMS            float64              `json:"tts_first_audio_ms"`
-	TTSFirstAudioP50MS         float64              `json:"tts_first_audio_p50_ms,omitempty"`
-	TTSFirstAudioP95MS         float64              `json:"tts_first_audio_p95_ms,omitempty"`
-	AnswerFirstAudioP50MS      float64              `json:"answer_first_audio_total_p50_ms,omitempty"`
-	AnswerFirstAudioP95MS      float64              `json:"answer_first_audio_total_p95_ms,omitempty"`
-	FirstAudioTotalP50MS       float64              `json:"first_audio_total_p50_ms,omitempty"`
-	FirstAudioTotalP95MS       float64              `json:"first_audio_total_p95_ms,omitempty"`
-	TotalDurationMS            float64              `json:"total_duration_ms"`
-	BargeInStatus              string               `json:"barge_in_status"`
-	BargeInStopP95MS           float64              `json:"barge_in_stop_p95_ms,omitempty"`
-	ReportPath                 string               `json:"report_path,omitempty"`
-	Findings                   []string             `json:"findings,omitempty"`
+	SchemaVersion              string                  `json:"schema_version"`
+	GeneratedAtMS              int64                   `json:"generated_at_ms"`
+	Metadata                   latencyBenchMetadata    `json:"metadata"`
+	Status                     string                  `json:"status"`
+	Repeat                     int                     `json:"repeat"`
+	InputTextBytes             int                     `json:"input_text_bytes"`
+	VADStatus                  string                  `json:"vad_status"`
+	VADDetector                string                  `json:"vad_detector"`
+	VADSpeechStartEvents       int                     `json:"vad_speech_start_events"`
+	VADSpeechEndEvents         int                     `json:"vad_speech_end_events"`
+	ASRProvider                string                  `json:"asr_provider"`
+	ASREngine                  string                  `json:"asr_engine,omitempty"`
+	ASRModelDir                string                  `json:"asr_model_dir,omitempty"`
+	ASRWAVName                 string                  `json:"asr_wav_name,omitempty"`
+	ASRFirstPartialMS          float64                 `json:"asr_first_partial_ms"`
+	ASRInputDurationMS         float64                 `json:"asr_input_duration_ms,omitempty"`
+	ASRDecodeDurationMS        float64                 `json:"asr_decode_duration_ms,omitempty"`
+	ASRRealTimeFactor          float64                 `json:"asr_real_time_factor,omitempty"`
+	ASRTextChars               int                     `json:"asr_text_chars,omitempty"`
+	ASRTranscriptPolicy        string                  `json:"asr_transcript_policy,omitempty"`
+	TextStreamProvider         string                  `json:"text_stream_provider"`
+	TextStreamFamily           string                  `json:"text_stream_family"`
+	TextStreamExecuted         bool                    `json:"text_stream_executed"`
+	TextStreamFallbackUsed     bool                    `json:"text_stream_fallback_used,omitempty"`
+	TextStreamFallbackProvider string                  `json:"text_stream_fallback_provider,omitempty"`
+	TextStreamFallbackReason   string                  `json:"text_stream_fallback_reason,omitempty"`
+	TextStreamEndpointHost     string                  `json:"text_stream_endpoint_host,omitempty"`
+	TextStreamFirstContentMS   float64                 `json:"text_stream_first_content_ms"`
+	TextStreamContentDeltas    int                     `json:"text_stream_content_delta_count"`
+	TextStreamReasoningDeltas  int                     `json:"text_stream_reasoning_delta_count"`
+	TextStreamDone             bool                    `json:"text_stream_done"`
+	AnswerVoicePreviewChars    int                     `json:"answer_voice_preview_chars,omitempty"`
+	LocalAckEnabled            bool                    `json:"local_ack_enabled"`
+	LocalAckStatus             string                  `json:"local_ack_status,omitempty"`
+	LocalAckTTSProvider        string                  `json:"local_ack_tts_provider,omitempty"`
+	LocalAckTTSFirstAudioMS    float64                 `json:"local_ack_tts_first_audio_ms,omitempty"`
+	LocalAckFirstAudioTotalMS  float64                 `json:"local_ack_first_audio_total_ms,omitempty"`
+	LocalAckAudioPath          string                  `json:"local_ack_audio_path,omitempty"`
+	LocalAckAudioQuality       *audio.PCMQualityReport `json:"local_ack_audio_quality,omitempty"`
+	TTSProvider                string                  `json:"tts_provider"`
+	TTSVoice                   string                  `json:"tts_voice"`
+	TTSOutputFormat            string                  `json:"tts_output_format"`
+	TTSAudioPath               string                  `json:"tts_audio_path,omitempty"`
+	TTSAudioQuality            *audio.PCMQualityReport `json:"tts_audio_quality,omitempty"`
+	TTSFirstAudioMS            float64                 `json:"tts_first_audio_ms"`
+	TTSFirstAudioP50MS         float64                 `json:"tts_first_audio_p50_ms,omitempty"`
+	TTSFirstAudioP95MS         float64                 `json:"tts_first_audio_p95_ms,omitempty"`
+	AnswerFirstAudioP50MS      float64                 `json:"answer_first_audio_total_p50_ms,omitempty"`
+	AnswerFirstAudioP95MS      float64                 `json:"answer_first_audio_total_p95_ms,omitempty"`
+	FirstAudioTotalP50MS       float64                 `json:"first_audio_total_p50_ms,omitempty"`
+	FirstAudioTotalP95MS       float64                 `json:"first_audio_total_p95_ms,omitempty"`
+	TotalDurationMS            float64                 `json:"total_duration_ms"`
+	BargeInStatus              string                  `json:"barge_in_status"`
+	BargeInStopP95MS           float64                 `json:"barge_in_stop_p95_ms,omitempty"`
+	ReportPath                 string                  `json:"report_path,omitempty"`
+	Findings                   []string                `json:"findings,omitempty"`
 }
 
 const (
@@ -330,6 +332,7 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 		report.TTSVoice = ttsReport.Voice
 		report.TTSOutputFormat = ttsReport.OutputFormat
 		report.TTSAudioPath = ttsReport.OutputPath
+		report.TTSAudioQuality = ttsReport.AudioQuality
 		report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
 		if ttsReport.Status != "passed" {
 			report.Findings = append(report.Findings, "local TTS did not pass")
@@ -377,6 +380,7 @@ func runLocalVoiceLoopbackLocalAck(ctx context.Context, options localTTSRuntimeO
 	report.LocalAckTTSProvider = ackReport.Provider
 	report.LocalAckTTSFirstAudioMS = ackReport.TTSFirstAudioMS
 	report.LocalAckAudioPath = ackReport.OutputPath
+	report.LocalAckAudioQuality = ackReport.AudioQuality
 	report.LocalAckFirstAudioTotalMS = report.ASRFirstPartialMS + ackReport.TTSFirstAudioMS
 	if ackReport.Status != "passed" {
 		report.LocalAckStatus = "failed"

@@ -104,6 +104,40 @@ func TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport(t *
 	}
 }
 
+func TestVoicePipelineReportFlagsTTSClippingWithoutAudioPayload(t *testing.T) {
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR:        scriptedPipelineASRAdapter{text: "private asr words never stored"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{{Kind: TextStreamDeltaContent, Text: "收到。"}, {Kind: TextStreamDeltaDone}}},
+		TTS:        clippingPipelineTTSAdapter{},
+		Selection:  VoicePipelineSelectionFromEnv(nil),
+	})
+
+	result, err := runner.Run(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-audio-quality", SessionID: "a21-session-audio-quality", DeviceID: "stackchan-sim-001"},
+		Mode:    "workmate",
+		Frames:  []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Report.Output.AudioQuality == nil {
+		t.Fatal("audio quality report = nil, want aggregate quality guard")
+	}
+	if result.Report.Output.AudioQuality.Status != "warning" ||
+		result.Report.Output.AudioQuality.ClippedSamples == 0 ||
+		!voicePipelineStringSliceHas(result.Report.Output.AudioQuality.Findings, "audio_quality_clipping_detected") ||
+		!voicePipelineStringSliceHas(result.Report.Findings, "audio_quality_clipping_detected") {
+		t.Fatalf("audio quality/report findings = %+v / %+v", result.Report.Output.AudioQuality, result.Report.Findings)
+	}
+	rendered := mustProviderJSON(t, result.Report)
+	for _, forbidden := range []string{"data_base64", clippingPipelineBase64(), "mock provider output", "private asr words never stored"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("voice pipeline quality report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestVoicePipelineRunnerCancelStopsBeforeTTSChunkOutput(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
@@ -392,4 +426,41 @@ func (a *recordingPipelineTTSAdapter) texts() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]string(nil), a.requests...)
+}
+
+type clippingPipelineTTSAdapter struct{}
+
+func (clippingPipelineTTSAdapter) Name() string {
+	return "a21-clipping-tts"
+}
+
+func (clippingPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
+	out := make(chan VoiceAudioChunk, 1)
+	out <- VoiceAudioChunk{
+		Codec:        "pcm_s16le",
+		SampleRateHz: 48000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   clippingPipelineBase64(),
+	}
+	close(out)
+	return out, nil
+}
+
+func clippingPipelineBase64() string {
+	data := make([]byte, 5760)
+	for i, sample := range []int16{0, 1200, -1200, 32767, -32768, 29491} {
+		data[i*2] = byte(sample)
+		data[i*2+1] = byte(uint16(sample) >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(data)
+}
+
+func mustProviderJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

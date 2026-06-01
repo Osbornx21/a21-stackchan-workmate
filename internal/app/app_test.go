@@ -4448,6 +4448,14 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 			TextBytes:       len([]byte(options.Text)),
 			DurationMS:      10,
 			TTSFirstAudioMS: 10,
+			AudioQuality: &audio.PCMQualityReport{
+				Status:       "passed",
+				Codec:        "pcm_s16le",
+				SampleRateHz: 16000,
+				Channels:     1,
+				PeakAbs:      1600,
+				RMSDBFS:      -28.2,
+			},
 		}, nil
 	}
 	dir := t.TempDir()
@@ -4466,6 +4474,8 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 		`"asr_provider": "mock_asr"`,
 		`"text_stream_provider": "mock_text_stream"`,
 		`"tts_provider": "macos_say"`,
+		`"local_ack_audio_quality"`,
+		`"tts_audio_quality"`,
 		`"repeat": 2`,
 		`"tts_first_audio_p50_ms"`,
 		`"first_audio_total_p95_ms"`,

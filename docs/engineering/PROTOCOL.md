@@ -80,6 +80,13 @@ limit before Opus encode, and writes one xiaozhi binary frame through the
 current-turn pacer. This is a downlink building block, not ASR/LLM/TTS product
 acceptance.
 
+Host-side TTS and voice-pipeline reports now include an aggregate PCM quality
+guard for generated `pcm_s16le` audio. The guard records format, duration,
+sample count, peak/RMS dBFS, clipped-sample ratio, silence ratio, DC offset, and
+fixed finding codes such as `audio_quality_clipping_detected` and
+`audio_quality_low_headroom`. It must not store raw PCM, base64 audio, prompt
+text, transcripts, provider output, full URLs, proxy values, or local paths.
+
 WS-2 adds a host-side product voice pipeline contract under
 `internal/providers`. It models decoded PCM frame metadata flowing through ASR,
 streaming text, and TTS adapters, then returns downlink-ready
@@ -89,9 +96,9 @@ current implementation is fixture/mock only. It records stage markers such as
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`, and
 `audio_downlink_first_frame_ms`, preserves provider selection by A21 env/profile
 names, and emits a redacted report that stores counts, format metadata, timing,
-and policy fields only. It must not be cited as real provider execution,
-physical StackChan first-audio acceptance, transcript quality evidence, or PRD
-latency acceptance.
+aggregate audio-quality metrics, and policy fields only. It must not be cited
+as real provider execution, physical StackChan first-audio acceptance,
+transcript quality evidence, or PRD latency acceptance.
 
 The Gateway xiaozhi fixture path consumes those report fields without storing
 transcripts, provider output, or audio payloads in JSON. Its TTS start message

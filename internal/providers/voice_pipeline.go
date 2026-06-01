@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"a21.local/a21/internal/audio"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -101,15 +102,16 @@ type VoicePipelineInputReport struct {
 }
 
 type VoicePipelineOutputReport struct {
-	AudioChunkCount int    `json:"audio_chunk_count"`
-	AudioCodec      string `json:"audio_codec,omitempty"`
-	SampleRateHz    int    `json:"sample_rate_hz,omitempty"`
-	Channels        int    `json:"channels,omitempty"`
-	ChunkDurationMS int    `json:"chunk_duration_ms,omitempty"`
-	ASRTextChars    int    `json:"asr_text_chars,omitempty"`
-	LLMContentChars int    `json:"llm_content_chars,omitempty"`
-	LLMSegmentCount int    `json:"llm_segment_count,omitempty"`
-	StreamingAnswer bool   `json:"streaming_answer,omitempty"`
+	AudioChunkCount int                     `json:"audio_chunk_count"`
+	AudioCodec      string                  `json:"audio_codec,omitempty"`
+	SampleRateHz    int                     `json:"sample_rate_hz,omitempty"`
+	Channels        int                     `json:"channels,omitempty"`
+	ChunkDurationMS int                     `json:"chunk_duration_ms,omitempty"`
+	AudioQuality    *audio.PCMQualityReport `json:"audio_quality,omitempty"`
+	ASRTextChars    int                     `json:"asr_text_chars,omitempty"`
+	LLMContentChars int                     `json:"llm_content_chars,omitempty"`
+	LLMSegmentCount int                     `json:"llm_segment_count,omitempty"`
+	StreamingAnswer bool                    `json:"streaming_answer,omitempty"`
 }
 
 type VoicePipelineRedactionPolicies struct {
@@ -567,8 +569,72 @@ func finalizeVoicePipelineReport(report VoicePipelineReport, result VoicePipelin
 		report.Output.SampleRateHz = first.SampleRateHz
 		report.Output.Channels = first.Channels
 		report.Output.ChunkDurationMS = first.DurationMS
+		report.Output.AudioQuality = voicePipelineAudioQuality(result.AudioChunks, &report)
 	}
 	return report
+}
+
+func voicePipelineAudioQuality(chunks []VoiceAudioChunk, report *VoicePipelineReport) *audio.PCMQualityReport {
+	if len(chunks) == 0 {
+		return nil
+	}
+	first := chunks[0]
+	var pcm []byte
+	for _, chunk := range chunks {
+		if chunk.Codec != first.Codec || chunk.SampleRateHz != first.SampleRateHz || chunk.Channels != first.Channels || chunk.DurationMS != first.DurationMS {
+			if report != nil {
+				report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "audio_quality_format_mismatch")
+			}
+			return &audio.PCMQualityReport{
+				Status:       "warning",
+				Codec:        first.Codec,
+				SampleRateHz: first.SampleRateHz,
+				Channels:     first.Channels,
+				Findings:     []string{"audio_quality_format_mismatch"},
+			}
+		}
+		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(chunk.DataBase64))
+		if err != nil {
+			if report != nil {
+				report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "audio_quality_invalid_payload")
+			}
+			return &audio.PCMQualityReport{
+				Status:       "failed",
+				Codec:        first.Codec,
+				SampleRateHz: first.SampleRateHz,
+				Channels:     first.Channels,
+				Findings:     []string{"audio_quality_invalid_payload"},
+			}
+		}
+		pcm = append(pcm, data...)
+	}
+	quality, err := audio.AnalyzePCM16LEQuality(first.Codec, first.SampleRateHz, first.Channels, 0, pcm)
+	if err != nil {
+		if report != nil {
+			report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "audio_quality_unavailable")
+		}
+		return &audio.PCMQualityReport{
+			Status:       "failed",
+			Codec:        first.Codec,
+			SampleRateHz: first.SampleRateHz,
+			Channels:     first.Channels,
+			Findings:     []string{"audio_quality_unavailable"},
+		}
+	}
+	if report != nil {
+		report.Findings = appendUniqueVoicePipelineFindings(report.Findings, quality.Findings...)
+	}
+	return &quality
+}
+
+func appendUniqueVoicePipelineFindings(findings []string, values ...string) []string {
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" || voicePipelineStringSliceHas(findings, value) {
+			continue
+		}
+		findings = append(findings, value)
+	}
+	return findings
 }
 
 const voicePipelineSegmentRuneThreshold = 40

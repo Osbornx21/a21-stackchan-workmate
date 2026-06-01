@@ -29,6 +29,20 @@ func (r *fakeTTSCommandRunner) Run(ctx context.Context, name string, args ...str
 	return nil
 }
 
+type validWAVTTSCommandRunner struct{}
+
+func (validWAVTTSCommandRunner) Run(ctx context.Context, name string, args ...string) error {
+	if strings.Contains(name, "afconvert") && len(args) >= 1 {
+		return WritePCM16MonoWAV(args[len(args)-1], 16000, pcm16Bytes(0, 900, -900, 1600, -1600))
+	}
+	for i, arg := range args {
+		if arg == "-o" && i+1 < len(args) {
+			return os.WriteFile(args[i+1], []byte("a21-aiff"), 0o644)
+		}
+	}
+	return nil
+}
+
 func TestMacOSSayLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
 	dir := t.TempDir()
 	runner := &fakeTTSCommandRunner{}
@@ -64,6 +78,37 @@ func TestMacOSSayLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
 	for _, forbidden := range []string{"这句话不能出现在报告里", "Authorization", "Bearer"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestMacOSSayLocalTTSReportIncludesAudioQuality(t *testing.T) {
+	dir := t.TempDir()
+
+	report, err := SynthesizeMacOSSay(context.Background(), LocalTTSOptions{
+		Text:          "质量分析不要记录原文",
+		Voice:         "Tingting",
+		OutputDir:     dir,
+		CommandRunner: validWAVTTSCommandRunner{},
+		SayPath:       "/usr/bin/say",
+		AFConvertPath: "/usr/bin/afconvert",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.AudioQuality == nil {
+		t.Fatal("audio quality = nil, want WAV aggregate report")
+	}
+	if report.AudioQuality.Status != "passed" ||
+		report.AudioQuality.Codec != "pcm_s16le" ||
+		report.AudioQuality.SampleRateHz != 16000 {
+		t.Fatalf("audio quality = %+v", report.AudioQuality)
+	}
+	rendered := mustJSON(t, report.AudioQuality)
+	for _, forbidden := range []string{"质量分析不要记录原文", report.OutputPath, dir, "data_base64", "raw_audio"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("local TTS report leaked %q: %s", forbidden, rendered)
 		}
 	}
 }
