@@ -5478,6 +5478,63 @@ func TestV21AdapterBridgeRejectsNonProfessionalModeBeforeRetrieval(t *testing.T)
 	}
 }
 
+func TestV21AdapterBridgeNoResultsReturnsControlledRedactedFailure(t *testing.T) {
+	activeReleaseID := "rel_active"
+	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/v1/collections":
+			writeV21BridgeJSON(w, http.StatusOK, []v21CollectionView{{
+				ID:              "col_vehicle",
+				Name:            "Vehicle Knowledge",
+				ActiveReleaseID: &activeReleaseID,
+			}})
+		case "/api/v1/collections/col_vehicle/retrieval/query":
+			writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
+				CollectionID: "col_vehicle",
+				Results:      []v21RetrievalResult{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer v21Backend.Close()
+	handler, err := newV21AdapterBridgeHandler(context.Background(), v21AdapterBridgeOptions{V21URL: v21Backend.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := httptest.NewServer(handler)
+	defer adapter.Close()
+
+	resp, err := http.Post(adapter.URL+v21adapter.QueryPath, "application/json", strings.NewReader(`{
+		"trace_id":"a21-trace-v21-no-results",
+		"session_id":"a21-session-v21-no-results",
+		"mode":"professional",
+		"privacy_scope":"professional_only",
+		"utterance":"查一下语音唤醒误触发"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusFailedDependency {
+		t.Fatalf("status = %d, want 424: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), `"code":"no_evidence"`) {
+		t.Fatalf("body missing redacted no_evidence code: %s", body)
+	}
+	for _, forbidden := range []string{"查一下语音唤醒误触发", v21Backend.URL, "col_vehicle"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("bridge failure leaked %q: %s", forbidden, body)
+		}
+	}
+}
+
 func TestRunLANProbeWritesDirectRedactedReport(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "http://user:secret@example.invalid:8080")
 	t.Setenv("A21_PROVIDER_PROXY_URL", "http://provider-secret@example.invalid:9000")

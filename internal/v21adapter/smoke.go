@@ -28,6 +28,8 @@ type SmokeReport struct {
 	SpeechBlockCount int     `json:"speech_block_count,omitempty"`
 	ScreenCardCount  int     `json:"screen_card_count,omitempty"`
 	FollowUpCount    int     `json:"follow_up_count,omitempty"`
+	FailureClass     string  `json:"failure_class,omitempty"`
+	StatusClass      string  `json:"status_class,omitempty"`
 	ReportPath       string  `json:"report_path,omitempty"`
 	Detail           string  `json:"detail,omitempty"`
 }
@@ -79,6 +81,8 @@ func Smoke(ctx context.Context, adapterURL string, utterance string, execute boo
 	report.DurationMS = float64(time.Since(started).Microseconds()) / 1000
 	if err != nil {
 		report.Status = "failed"
+		report.FailureClass = string(QueryFailureClassOf(err))
+		report.StatusClass = QueryFailureStatusClassOf(err)
 		report.Detail = redactSmokeDetail(err.Error())
 		return report
 	}

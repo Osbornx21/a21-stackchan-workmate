@@ -1064,6 +1064,80 @@ func TestProfessionalModeV21FailureIsHonestFallback(t *testing.T) {
 	}
 }
 
+func TestProfessionalModeV21StatusFailureRecordsRedactedReasonMarkers(t *testing.T) {
+	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "raw query 查一下语音唤醒误触发 http://127.0.0.1:18080/internal", http.StatusBadGateway)
+	}))
+	defer adapter.Close()
+	client, err := v21adapter.NewHTTPClient(adapter.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(ServerOptions{V21Client: client})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-status","session_id":"a21-session-pro-status"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-status", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	traceBody := traceRec.Body.String()
+	for _, want := range []string{"v21.query.error", "v21.query.error.upstream_status", "v21.query.error.status_5xx", "v21.query.utterance.length_"} {
+		if !strings.Contains(traceBody, want) {
+			t.Fatalf("trace missing %q: %s", want, traceBody)
+		}
+	}
+	for _, forbidden := range []string{"查一下语音唤醒误触发", adapter.URL, "127.0.0.1:18080", "/internal"} {
+		if strings.Contains(traceBody, forbidden) {
+			t.Fatalf("trace leaked %q: %s", forbidden, traceBody)
+		}
+	}
+}
+
+func TestProfessionalModeV21ContractFailureRecordsReasonMarker(t *testing.T) {
+	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-pro-contract-invalid",
+			"fast_answer":"raw answer that must not leak",
+			"confidence":0.8,
+			"speech_blocks":["raw speech block"]
+		}`))
+	}))
+	defer adapter.Close()
+	client, err := v21adapter.NewHTTPClient(adapter.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(ServerOptions{V21Client: client})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下合同证据","mode":"professional","trace_id":"a21-trace-pro-contract-invalid","session_id":"a21-session-pro-contract-invalid"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-contract-invalid", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	traceBody := traceRec.Body.String()
+	if !strings.Contains(traceBody, "v21.query.error.contract_invalid") {
+		t.Fatalf("trace missing contract_invalid marker: %s", traceBody)
+	}
+	for _, forbidden := range []string{"查一下合同证据", "raw answer", "raw speech"} {
+		if strings.Contains(traceBody, forbidden) {
+			t.Fatalf("trace leaked %q: %s", forbidden, traceBody)
+		}
+	}
+}
+
 func TestProfessionalModeRecordsV21QueryLatencyMetric(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{V21Client: v21adapter.NewMockClient()})
 	handler := server.Handler()

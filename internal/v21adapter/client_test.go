@@ -95,9 +95,43 @@ func TestHTTPClientRejectsResponseMissingProfessionalEvidenceContract(t *testing
 	if !strings.Contains(err.Error(), "professional response contract") {
 		t.Fatalf("error = %q, want stable professional response contract code", err.Error())
 	}
+	if got := QueryFailureClassOf(err); got != QueryFailureContractInvalid {
+		t.Fatalf("failure class = %q, want %q", got, QueryFailureContractInvalid)
+	}
 	for _, forbidden := range []string{"raw answer", "raw speech", "查一下证据"} {
 		if strings.Contains(err.Error(), forbidden) {
 			t.Fatalf("response validation error leaked %q: %q", forbidden, err.Error())
+		}
+	}
+}
+
+func TestHTTPClientClassifiesAdapterStatusWithoutLeakingBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "raw query 查一下语音唤醒误触发 http://127.0.0.1:18080/internal", http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:   "a21-trace-v21-status",
+		SessionID: "a21-session-v21-status",
+		Utterance: "查一下语音唤醒误触发",
+	})
+	if err == nil {
+		t.Fatal("expected adapter status failure")
+	}
+	if got := QueryFailureClassOf(err); got != QueryFailureUpstreamStatus {
+		t.Fatalf("failure class = %q, want %q", got, QueryFailureUpstreamStatus)
+	}
+	if got := QueryFailureStatusClassOf(err); got != "status_5xx" {
+		t.Fatalf("status class = %q, want status_5xx", got)
+	}
+	for _, forbidden := range []string{"查一下语音唤醒误触发", "127.0.0.1:18080", "/internal"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("adapter status error leaked %q: %q", forbidden, err.Error())
 		}
 	}
 }
@@ -442,6 +476,9 @@ func TestSmokeReportRedactsFailureURLs(t *testing.T) {
 	})
 	if report.Status != "failed" {
 		t.Fatalf("status = %q, want failed", report.Status)
+	}
+	if report.FailureClass == "" {
+		t.Fatalf("failure class missing from smoke report: %+v", report)
 	}
 	for _, forbidden := range []string{"http://127.0.0.1:21121", "/a21-adapter", "语音唤醒"} {
 		if strings.Contains(report.Detail, forbidden) {

@@ -1644,6 +1644,7 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
 		PrivacyScope:       "professional_only",
 	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.utterance."+v21UtteranceLengthBucket(utterance), s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
 	defer cancel()
@@ -1651,15 +1652,11 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	response, err := s.v21.Query(queryCtx, request)
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	if err != nil {
-		marker := "v21.query.error"
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
-			marker = "v21.query.timeout"
-		}
 		if errors.Is(err, context.Canceled) || session.shouldAbortXiaozhiTurn(turn) {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
 			return
 		}
-		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker, s.now().UnixMilli())
+		s.recordV21QueryFailure(task.traceID, task.sessionID, task.deviceID, err, queryCtx)
 		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_v21_unavailable")
 		return
 	}
@@ -1670,6 +1667,7 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	report, err := v21adapter.NewProfessionalBridgeEvidenceReport(response)
 	if err != nil {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.error", s.now().UnixMilli())
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.error.contract_invalid", s.now().UnixMilli())
 		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_contract_invalid")
 		return
 	}
@@ -3327,6 +3325,7 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	}
 	events := s.controlSequence(req.DeviceID, traceID, sessionID, preQueryPayloads)
 	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+v21UtteranceLengthBucket(req.Text), s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
 	defer cancel()
@@ -3344,11 +3343,7 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	postQueryPayloads := make([]protocol.ControlEventPayload, 0, 1)
 	if err != nil {
-		marker := "v21.query.error"
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
-			marker = "v21.query.timeout"
-		}
-		s.recordTrace(traceID, sessionID, req.DeviceID, marker, s.now().UnixMilli())
+		s.recordV21QueryFailure(traceID, sessionID, req.DeviceID, err, queryCtx)
 		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State: protocol.ExpressionError,
 			Mode:  protocol.ModeProfessional,
@@ -3371,6 +3366,42 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	}
 	events = append(events, s.controlSequenceFrom(req.DeviceID, traceID, sessionID, uint64(len(events)+1), postQueryPayloads)...)
 	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+}
+
+func (s *Server) recordV21QueryFailure(traceID string, sessionID string, deviceID string, err error, queryCtx context.Context) {
+	for _, marker := range v21QueryFailureMarkers(err, queryCtx) {
+		s.recordTrace(traceID, sessionID, deviceID, marker, s.now().UnixMilli())
+	}
+}
+
+func v21QueryFailureMarkers(err error, queryCtx context.Context) []string {
+	if errors.Is(err, context.DeadlineExceeded) || (queryCtx != nil && errors.Is(queryCtx.Err(), context.DeadlineExceeded)) {
+		return []string{"v21.query.timeout", "v21.query.error.timeout"}
+	}
+	markers := []string{"v21.query.error"}
+	if class := v21adapter.QueryFailureClassOf(err); class != "" {
+		markers = append(markers, "v21.query.error."+string(class))
+	}
+	if statusClass := v21adapter.QueryFailureStatusClassOf(err); statusClass != "" {
+		markers = append(markers, "v21.query.error."+statusClass)
+	}
+	return markers
+}
+
+func v21UtteranceLengthBucket(utterance string) string {
+	length := len([]rune(strings.TrimSpace(utterance)))
+	switch {
+	case length <= 0:
+		return "length_empty"
+	case length <= 16:
+		return "length_1_16"
+	case length <= 64:
+		return "length_17_64"
+	case length <= 160:
+		return "length_65_160"
+	default:
+		return "length_gt_160"
+	}
 }
 
 func (s *Server) mockInterruptResponse(req MockTurnRequest) MockTurnResponse {

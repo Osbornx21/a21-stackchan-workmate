@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,6 +16,71 @@ const QueryPath = "/a21/v21/query"
 const HealthPath = "/healthz"
 const ProfessionalMaxFirstResponseMS = 1200
 const ProfessionalCheckingFeedbackText = "我在查，先把证据和置信度拉出来。"
+
+type QueryFailureClass string
+
+const (
+	QueryFailureUnknown         QueryFailureClass = ""
+	QueryFailureTimeout         QueryFailureClass = "timeout"
+	QueryFailureContractInvalid QueryFailureClass = "contract_invalid"
+	QueryFailureUpstreamStatus  QueryFailureClass = "upstream_status"
+	QueryFailureNoEvidence      QueryFailureClass = "no_evidence"
+	QueryFailureAdapterStatus   QueryFailureClass = "adapter_status"
+	QueryFailureTransport       QueryFailureClass = "transport_error"
+)
+
+type QueryFailure struct {
+	Class       QueryFailureClass
+	StatusCode  int
+	StatusClass string
+}
+
+func (e *QueryFailure) Error() string {
+	if e == nil {
+		return "v21 adapter query failed"
+	}
+	switch e.Class {
+	case QueryFailureContractInvalid:
+		return "v21 adapter professional response contract invalid"
+	case QueryFailureTimeout:
+		return "v21 adapter query timed out"
+	case QueryFailureNoEvidence:
+		return "v21 adapter query completed without evidence"
+	case QueryFailureUpstreamStatus:
+		if e.StatusClass != "" {
+			return "v21 adapter upstream status failure: " + e.StatusClass
+		}
+		return "v21 adapter upstream status failure"
+	case QueryFailureAdapterStatus:
+		if e.StatusClass != "" {
+			return "v21 adapter status failure: " + e.StatusClass
+		}
+		return "v21 adapter status failure"
+	case QueryFailureTransport:
+		return "v21 adapter transport failure"
+	default:
+		return "v21 adapter query failed"
+	}
+}
+
+func QueryFailureClassOf(err error) QueryFailureClass {
+	var failure *QueryFailure
+	if errors.As(err, &failure) && failure != nil {
+		return failure.Class
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return QueryFailureTimeout
+	}
+	return QueryFailureUnknown
+}
+
+func QueryFailureStatusClassOf(err error) string {
+	var failure *QueryFailure
+	if errors.As(err, &failure) && failure != nil {
+		return failure.StatusClass
+	}
+	return ""
+}
 
 type Client interface {
 	Query(ctx context.Context, request QueryRequest) (QueryResponse, error)
@@ -148,7 +214,7 @@ func NewHTTPClient(baseURL string) (*HTTPClient, error) {
 
 func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
 	if err := ValidateProfessionalQueryRequest(request); err != nil {
-		return QueryResponse{}, err
+		return QueryResponse{}, &QueryFailure{Class: QueryFailureContractInvalid}
 	}
 	request = withDefaults(request)
 	body, err := json.Marshal(request)
@@ -163,21 +229,24 @@ func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResp
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return QueryResponse{}, err
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return QueryResponse{}, &QueryFailure{Class: QueryFailureTimeout}
+		}
+		return QueryResponse{}, &QueryFailure{Class: QueryFailureTransport}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return QueryResponse{}, fmt.Errorf("v21 adapter query failed with status %d", resp.StatusCode)
+		return QueryResponse{}, queryFailureForStatus(resp.StatusCode)
 	}
 	var response QueryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return QueryResponse{}, err
+		return QueryResponse{}, &QueryFailure{Class: QueryFailureContractInvalid}
 	}
 	if response.TraceID == "" {
 		response.TraceID = request.TraceID
 	}
 	if err := ValidateProfessionalQueryResponse(response); err != nil {
-		return QueryResponse{}, err
+		return QueryResponse{}, &QueryFailure{Class: QueryFailureContractInvalid}
 	}
 	return response, nil
 }
@@ -294,6 +363,37 @@ func directHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: &http.Transport{Proxy: nil},
+	}
+}
+
+func queryFailureForStatus(status int) *QueryFailure {
+	statusClass := statusClass(status)
+	class := QueryFailureAdapterStatus
+	switch status {
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		class = QueryFailureContractInvalid
+	case http.StatusFailedDependency:
+		class = QueryFailureNoEvidence
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		class = QueryFailureUpstreamStatus
+	}
+	return &QueryFailure{Class: class, StatusCode: status, StatusClass: statusClass}
+}
+
+func statusClass(status int) string {
+	switch {
+	case status >= 100 && status < 200:
+		return "status_1xx"
+	case status >= 200 && status < 300:
+		return "status_2xx"
+	case status >= 300 && status < 400:
+		return "status_3xx"
+	case status >= 400 && status < 500:
+		return "status_4xx"
+	case status >= 500 && status < 600:
+		return "status_5xx"
+	default:
+		return ""
 	}
 }
 

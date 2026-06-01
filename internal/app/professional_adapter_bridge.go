@@ -62,6 +62,19 @@ type v21RetrievalResult struct {
 	Score        float64 `json:"score"`
 }
 
+type v21BridgeQueryError struct {
+	Status      int    `json:"-"`
+	Code        string `json:"code"`
+	StatusClass string `json:"status_class,omitempty"`
+}
+
+func (e v21BridgeQueryError) Error() string {
+	if e.Code == "" {
+		return "v21 bridge query failed"
+	}
+	return "v21 bridge query failed: " + e.Code
+}
+
 func runV21AdapterBridge(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := v21AdapterBridgeOptions{
 		Addr:         firstNonEmpty(strings.TrimSpace(os.Getenv("A21_V21_ADAPTER_ADDR")), "127.0.0.1:21121"),
@@ -146,7 +159,7 @@ func newV21AdapterBridgeHandler(ctx context.Context, options v21AdapterBridgeOpt
 		}
 		response, err := executeV21RetrievalQuery(r.Context(), client, v21Base, collectionID, request)
 		if err != nil {
-			http.Error(w, "v21 query unavailable", http.StatusServiceUnavailable)
+			writeV21BridgeQueryError(w, err)
 			return
 		}
 		writeV21BridgeJSON(w, http.StatusOK, response)
@@ -300,15 +313,31 @@ func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base 
 	setV21DevHeaders(req)
 	resp, err := client.Do(req)
 	if err != nil {
-		return v21adapter.QueryResponse{}, err
+		return v21adapter.QueryResponse{}, v21BridgeQueryError{
+			Status: http.StatusBadGateway,
+			Code:   "upstream_unavailable",
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return v21adapter.QueryResponse{}, fmt.Errorf("v21 retrieval query returned status %d", resp.StatusCode)
+		return v21adapter.QueryResponse{}, v21BridgeQueryError{
+			Status:      http.StatusBadGateway,
+			Code:        "upstream_status",
+			StatusClass: v21BridgeStatusClass(resp.StatusCode),
+		}
 	}
 	var retrieval v21RetrievalQueryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&retrieval); err != nil {
-		return v21adapter.QueryResponse{}, err
+		return v21adapter.QueryResponse{}, v21BridgeQueryError{
+			Status: http.StatusBadGateway,
+			Code:   "upstream_contract_invalid",
+		}
+	}
+	if len(retrieval.Results) == 0 {
+		return v21adapter.QueryResponse{}, v21BridgeQueryError{
+			Status: http.StatusFailedDependency,
+			Code:   "no_evidence",
+		}
 	}
 	response := v21adapter.QueryResponse{
 		TraceID:    firstNonEmpty(strings.TrimSpace(request.TraceID), "a21-trace-v21-retrieval"),
@@ -387,6 +416,37 @@ func writeV21BridgeJSON(w http.ResponseWriter, status int, value interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func writeV21BridgeQueryError(w http.ResponseWriter, err error) {
+	bridgeErr, ok := err.(v21BridgeQueryError)
+	if !ok {
+		bridgeErr = v21BridgeQueryError{Status: http.StatusServiceUnavailable, Code: "query_unavailable"}
+	}
+	if bridgeErr.Status == 0 {
+		bridgeErr.Status = http.StatusServiceUnavailable
+	}
+	if bridgeErr.StatusClass == "" {
+		bridgeErr.StatusClass = v21BridgeStatusClass(bridgeErr.Status)
+	}
+	writeV21BridgeJSON(w, bridgeErr.Status, bridgeErr)
+}
+
+func v21BridgeStatusClass(status int) string {
+	switch {
+	case status >= 100 && status < 200:
+		return "status_1xx"
+	case status >= 200 && status < 300:
+		return "status_2xx"
+	case status >= 300 && status < 400:
+		return "status_3xx"
+	case status >= 400 && status < 500:
+		return "status_4xx"
+	case status >= 500 && status < 600:
+		return "status_5xx"
+	default:
+		return ""
+	}
 }
 
 func truncateV21BridgeRunes(value string, maxRunes int) string {

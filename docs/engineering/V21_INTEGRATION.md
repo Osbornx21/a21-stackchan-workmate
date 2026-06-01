@@ -159,7 +159,8 @@ Safety rules:
 - Gateway calls V21 only when the request mode is `professional`.
 - Workmate, companion, co-creation, roleplay, focus, public, private, muted, and local-fallback mock turns do not call V21.
 - Gateway professional responses carry explicit evidence fields in `control.event` payloads rather than flattening evidence into generic chat text.
-- Gateway wraps V21 queries in a 3000 ms default timeout and records `v21.query.start`, `v21.query.first_result`, `v21.query.error`, or `v21.query.timeout` trace markers.
+- Gateway wraps V21 queries in a 3000 ms default timeout and records `v21.query.start`, `v21.query.first_result`, `v21.query.error`, or `v21.query.timeout` trace markers. Failure traces may add redacted low-information reason markers such as `v21.query.error.upstream_status`, `v21.query.error.contract_invalid`, `v21.query.error.no_evidence`, and `v21.query.error.status_5xx`; they must not include query text, response text, evidence bodies, full URLs, proxy values, local paths, or secrets.
+- Gateway may record a coarse `v21.query.utterance.length_*` bucket for diagnostics, but must not store the ASR utterance text or an utterance hash in traces or reports.
 - Gateway observes `a21_v21_query_ms_bucket` for professional-mode V21 adapter latency on success, error, and timeout.
 
 Current Gateway professional sequence:
