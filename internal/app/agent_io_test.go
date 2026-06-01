@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"a21.local/a21/internal/agentplan"
 )
 
 func TestRunAgentPlanBuildsAgentIOPlan(t *testing.T) {
@@ -330,6 +332,36 @@ func TestRunAgentIOSmokeBlocksProfessionalAndPrivateModes(t *testing.T) {
 	}
 }
 
+func TestRunAgentPlanPrivateProfessionalBlocksV21InReport(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"agent-plan",
+		"--mode", "professional",
+		"--privacy-state", "private",
+		"--task", "private detail must not become V21 context",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stderr=%s", code, stderr.String())
+	}
+	var report agentPlanCLIReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Plan.V21Allowed || report.Plan.ExecutionPath != agentplan.ExecutionNativeCore {
+		t.Fatalf("plan = %#v, want native private block", report.Plan)
+	}
+	if report.Plan.PrivacyState != agentplan.PrivacyPrivate {
+		t.Fatalf("privacy_state = %q, want private", report.Plan.PrivacyState)
+	}
+	if !agentIOReportFindingContains(report.Plan.Findings, "v21_blocked_private") {
+		t.Fatalf("findings = %#v, want v21_blocked_private", report.Plan.Findings)
+	}
+	if strings.Contains(stdout.String(), "private detail must not become V21 context") {
+		t.Fatalf("agent-plan report leaked task text: %s", stdout.String())
+	}
+}
+
 func TestRunAgentIOSmokeRejectsUnsafeEndpointWithoutEchoingURL(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -349,4 +381,13 @@ func TestRunAgentIOSmokeRejectsUnsafeEndpointWithoutEchoingURL(t *testing.T) {
 			t.Fatalf("unsafe endpoint leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
 		}
 	}
+}
+
+func agentIOReportFindingContains(findings []agentplan.Finding, want string) bool {
+	for _, finding := range findings {
+		if finding.Code == want {
+			return true
+		}
+	}
+	return false
 }

@@ -89,6 +89,42 @@ func TestProfessionalModeUsesV21AndBlocksAgentIO(t *testing.T) {
 	}
 }
 
+func TestPrivatePrivacyBlocksProfessionalV21Routing(t *testing.T) {
+	plan := BuildPlan(PlannerRequest{
+		TraceID:      "a21-trace-private-pro-1",
+		SessionID:    "a21-session-private-pro-1",
+		DeviceID:     "stackchan-sim-001",
+		Mode:         protocol.ModeProfessional,
+		PrivacyState: PrivacyPrivate,
+		TaskSummary:  "private complaint must not become evidence context",
+		V21Requested: true,
+		AgentBinding: AgentIOBinding{Enabled: true, Name: "Hermes", EndpointConfigured: true},
+		TaskWindowMemory: []MemoryItem{
+			{ID: "private", Source: MemorySourcePrivate, Text: "private red-line detail"},
+			{ID: "evidence", Source: MemorySourceV21Evidence, Text: "raw V21 evidence body"},
+		},
+	})
+
+	if plan.ExecutionPath != ExecutionNativeCore || plan.V21Allowed || plan.AgentIOAllowed || plan.AgentIO != nil {
+		t.Fatalf("private professional plan = %#v, want native core without V21 or Agent I/O", plan)
+	}
+	if plan.MemoryPolicy != MemoryPolicyEphemeral {
+		t.Fatalf("memory policy = %q, want ephemeral", plan.MemoryPolicy)
+	}
+	if plan.Expression.Screen != "PRIVATE" || plan.Expression.OutputHint != "local_only" {
+		t.Fatalf("expression = %#v, want private local-only visibility", plan.Expression)
+	}
+	if !findingContains(plan.Findings, "v21_blocked_private") {
+		t.Fatalf("findings = %#v, want private V21 block", plan.Findings)
+	}
+	rendered := mustJSON(t, plan)
+	for _, forbidden := range []string{"private red-line detail", "raw V21 evidence body"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("private professional plan leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestPrivateModeBlocksAgentIOEvenWhenBound(t *testing.T) {
 	plan := BuildPlan(PlannerRequest{
 		TraceID:      "a21-trace-private-1",
@@ -107,6 +143,36 @@ func TestPrivateModeBlocksAgentIOEvenWhenBound(t *testing.T) {
 	}
 	if !findingContains(plan.Findings, "agent_io_blocked_private") {
 		t.Fatalf("findings = %#v, want private block", plan.Findings)
+	}
+}
+
+func TestPublicPrivateFocusRequestsDoNotBecomeProfessionalRetrievalContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		mode        protocol.Mode
+		wantFinding string
+	}{
+		{name: "public", mode: protocol.ModePublic, wantFinding: "v21_requires_professional"},
+		{name: "private", mode: protocol.ModePrivate, wantFinding: "v21_blocked_private"},
+		{name: "focus", mode: protocol.ModeFocus, wantFinding: "v21_requires_professional"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := BuildPlan(PlannerRequest{
+				TraceID:      "a21-trace-" + tc.name,
+				SessionID:    "a21-session-" + tc.name,
+				DeviceID:     "stackchan-sim-001",
+				Mode:         tc.mode,
+				V21Requested: true,
+			})
+
+			if plan.Mode != tc.mode || plan.ExecutionPath != ExecutionNativeCore || plan.V21Allowed || plan.MemoryPolicy == MemoryPolicyProfessionalPointerOnly {
+				t.Fatalf("plan = %#v, want native non-professional context", plan)
+			}
+			if !findingContains(plan.Findings, tc.wantFinding) {
+				t.Fatalf("findings = %#v, want %q", plan.Findings, tc.wantFinding)
+			}
+		})
 	}
 }
 

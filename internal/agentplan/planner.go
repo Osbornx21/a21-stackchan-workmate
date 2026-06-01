@@ -134,6 +134,7 @@ func BuildPlan(request PlannerRequest) Plan {
 		mode = protocol.ModeWorkmate
 	}
 	privacy := normalizePrivacy(mode, request.PrivacyState)
+	privateV21Blocked := privacy == PrivacyPrivate && (mode == protocol.ModeProfessional || request.V21Requested)
 	plan := Plan{
 		SchemaVersion:    SchemaVersion,
 		TraceID:          strings.TrimSpace(request.TraceID),
@@ -148,6 +149,16 @@ func BuildPlan(request PlannerRequest) Plan {
 		Expression:       expressionPlan(mode, ExecutionNativeCore),
 		Markers:          []string{"agent.plan.start", "memory.policy.selected", "scenario.selected"},
 	}
+	if privateV21Blocked {
+		plan.Findings = append(plan.Findings, Finding{Code: "v21_blocked_private", Message: "Private privacy state blocks professional/V21 evidence routing"})
+		if mode == protocol.ModeProfessional {
+			plan.Expression = privateExpressionPlan()
+			if request.AgentBinding.Enabled {
+				plan.Findings = append(plan.Findings, Finding{Code: "agent_io_blocked_private", Message: "Agent I/O is blocked by private privacy state"})
+			}
+			return finalizePlan(plan)
+		}
+	}
 	if mode == protocol.ModeProfessional {
 		plan.ExecutionPath = ExecutionV21Professional
 		plan.V21Allowed = true
@@ -156,7 +167,7 @@ func BuildPlan(request PlannerRequest) Plan {
 		plan.Findings = append(plan.Findings, Finding{Code: "agent_io_blocked_professional", Message: "Agent I/O is blocked in professional mode; use the V21 adapter boundary"})
 		return finalizePlan(plan)
 	}
-	if request.V21Requested {
+	if request.V21Requested && !privateV21Blocked {
 		plan.Findings = append(plan.Findings, Finding{Code: "v21_requires_professional", Message: "V21 access requires explicit professional mode"})
 	}
 	if canUseAgentIO(mode, privacy) {
@@ -183,7 +194,7 @@ func finalizePlan(plan Plan) Plan {
 }
 
 func normalizePrivacy(mode protocol.Mode, explicit PrivacyState) PrivacyState {
-	if explicit != "" {
+	if explicit != "" && explicit != PrivacyDefault {
 		return explicit
 	}
 	switch mode {
@@ -271,10 +282,10 @@ func allowedPreferences(items []MemoryItem) []MemorySnippet {
 
 func memoryPolicy(mode protocol.Mode, privacy PrivacyState, request PlannerRequest) MemoryPolicy {
 	switch {
-	case mode == protocol.ModeProfessional:
-		return MemoryPolicyProfessionalPointerOnly
 	case privacy == PrivacyPrivate:
 		return MemoryPolicyEphemeral
+	case mode == protocol.ModeProfessional:
+		return MemoryPolicyProfessionalPointerOnly
 	case len(allowedPreferences(request.NonSensitivePreferences)) > 0:
 		return MemoryPolicyCandidate
 	case isAgentIOMode(mode):
@@ -325,10 +336,14 @@ func expressionPlan(mode protocol.Mode, path ExecutionPath) ExpressionPlan {
 		return ExpressionPlan{State: protocol.ExpressionProfessional, Screen: "PRO / V21", OutputHint: "evidence_pending"}
 	default:
 		if mode == protocol.ModePrivate {
-			return ExpressionPlan{State: protocol.ExpressionListening, Screen: "PRIVATE", OutputHint: "local_only"}
+			return privateExpressionPlan()
 		}
 		return ExpressionPlan{State: protocol.ExpressionListening, Screen: strings.ToUpper(string(mode)), OutputHint: "a21_native"}
 	}
+}
+
+func privateExpressionPlan() ExpressionPlan {
+	return ExpressionPlan{State: protocol.ExpressionListening, Screen: "PRIVATE", OutputHint: "local_only"}
 }
 
 func defaultExpectedOutput(mode protocol.Mode) string {

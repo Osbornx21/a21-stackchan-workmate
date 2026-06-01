@@ -1454,7 +1454,7 @@ func TestWorkmateModeDoesNotCallV21Adapter(t *testing.T) {
 }
 
 func TestOfficePrivacyModesDoNotCallV21Adapter(t *testing.T) {
-	for _, mode := range []protocol.Mode{protocol.ModePublic, protocol.ModePrivate, protocol.ModeMuted} {
+	for _, mode := range []protocol.Mode{protocol.ModeWorkmate, protocol.ModePublic, protocol.ModePrivate, protocol.ModeFocus, protocol.ModeMuted} {
 		t.Run(string(mode), func(t *testing.T) {
 			v21 := &countingV21Client{}
 			server := NewServerWithOptions(ServerOptions{V21Client: v21})
@@ -1469,6 +1469,55 @@ func TestOfficePrivacyModesDoNotCallV21Adapter(t *testing.T) {
 			}
 			if v21.calls != 0 {
 				t.Fatalf("v21 calls = %d, want 0", v21.calls)
+			}
+		})
+	}
+}
+
+func TestOrdinaryOfficeModesDoNotExposeProfessionalEvidenceOrV21Trace(t *testing.T) {
+	for _, mode := range []protocol.Mode{protocol.ModePublic, protocol.ModePrivate, protocol.ModeFocus} {
+		t.Run(string(mode), func(t *testing.T) {
+			v21 := &countingV21Client{}
+			server := NewServerWithOptions(ServerOptions{V21Client: v21})
+			body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"private raw evidence body must stay out","mode":"` + string(mode) + `","trace_id":"a21-trace-ordinary-` + string(mode) + `","session_id":"a21-session-ordinary-` + string(mode) + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+			rec := httptest.NewRecorder()
+
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var response MockTurnResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range response.Events {
+				var payload protocol.ControlEventPayload
+				if err := json.Unmarshal(event.Payload, &payload); err != nil {
+					t.Fatal(err)
+				}
+				if payload.Mode == protocol.ModeProfessional || len(payload.Evidence) > 0 || len(payload.ScreenCards) > 0 || len(payload.SpeechBlocks) > 0 {
+					t.Fatalf("ordinary %s mode exposed professional payload: %+v", mode, payload)
+				}
+				if strings.Contains(payload.Text, "raw evidence body") {
+					t.Fatalf("ordinary %s mode echoed sensitive text: %+v", mode, payload)
+				}
+			}
+			if v21.calls != 0 {
+				t.Fatalf("v21 calls = %d, want 0", v21.calls)
+			}
+
+			traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-ordinary-"+string(mode), nil)
+			traceRec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(traceRec, traceReq)
+			if traceRec.Code != http.StatusOK {
+				t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+			}
+			for _, forbidden := range []string{"v21.query", "professional.", "raw evidence body"} {
+				if strings.Contains(traceRec.Body.String(), forbidden) {
+					t.Fatalf("ordinary %s trace leaked %q: %s", mode, forbidden, traceRec.Body.String())
+				}
 			}
 		})
 	}
@@ -5286,6 +5335,58 @@ func TestControlWebSocketRegistryExposesCurrentModeAndExpressionWithoutText(t *t
 	}
 	if strings.Contains(string(body), "私人吐槽") {
 		t.Fatalf("registry leaked utterance text: %s", string(body))
+	}
+}
+
+func TestGatewayDeviceRegistryExposesExplicitModeStatesWithoutProfessionalBodies(t *testing.T) {
+	tests := []struct {
+		mode protocol.Mode
+		expr protocol.ExpressionState
+	}{
+		{mode: protocol.ModePublic, expr: protocol.ExpressionListening},
+		{mode: protocol.ModePrivate, expr: protocol.ExpressionListening},
+		{mode: protocol.ModeFocus, expr: protocol.ExpressionIdle},
+		{mode: protocol.ModeProfessional, expr: protocol.ExpressionProfessional},
+		{mode: protocol.ModeMuted, expr: protocol.ExpressionIdle},
+		{mode: protocol.ModeWorkmate, expr: protocol.ExpressionListening},
+	}
+	for _, tc := range tests {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			server := NewServer()
+			traceID := "a21-trace-registry-" + string(tc.mode)
+			sessionID := "a21-session-registry-" + string(tc.mode)
+			server.controlSequence("stackchan-sim-001", traceID, sessionID, []protocol.ControlEventPayload{{
+				State:        tc.expr,
+				Mode:         tc.mode,
+				Text:         "professional answer body must not persist",
+				Evidence:     []protocol.EvidenceItem{{Title: "private evidence title", Summary: "private evidence summary"}},
+				ScreenCards:  []protocol.ScreenCard{{Label: "card", Text: "private card body"}},
+				SpeechBlocks: []string{"private speech block"},
+			}})
+
+			req := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var registry DeviceRegistryResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &registry); err != nil {
+				t.Fatal(err)
+			}
+			if len(registry.Devices) != 1 {
+				t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), rec.Body.String())
+			}
+			device := registry.Devices[0]
+			if device.CurrentMode != tc.mode || device.CurrentExpr != tc.expr {
+				t.Fatalf("device state = %+v, want mode=%s expr=%s", device, tc.mode, tc.expr)
+			}
+			for _, forbidden := range []string{"professional answer body", "private evidence title", "private evidence summary", "private card body", "private speech block"} {
+				if strings.Contains(rec.Body.String(), forbidden) {
+					t.Fatalf("registry leaked %q: %s", forbidden, rec.Body.String())
+				}
+			}
+		})
 	}
 }
 
