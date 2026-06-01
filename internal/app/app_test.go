@@ -132,6 +132,25 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	}
 }
 
+func TestProductReadinessTreatsStalePhysicalDeviceAsOffline(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","device_age_ms":180001,"capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{})
+
+	if report.StackChan.PhysicalDeviceOnline || !report.StackChan.PhysicalDeviceStale {
+		t.Fatalf("stackchan readiness = %+v, want stale physical device not online", report.StackChan)
+	}
+	if report.StackChan.Status != "physical_stale" || report.StackChan.PhysicalDeviceAgeMS != 180001 {
+		t.Fatalf("stackchan status/age = %q/%d, want physical_stale/180001", report.StackChan.Status, report.StackChan.PhysicalDeviceAgeMS)
+	}
+	if !containsProductAction(report.NextActions, "physical StackChan online") {
+		t.Fatalf("next actions = %#v, want physical online action", report.NextActions)
+	}
+}
+
 func TestProductReadinessBlocksLaunchWithoutExecutedV21AdapterSmoke(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	ttsModelDir := createProductReadinessTTSModelDir(t)

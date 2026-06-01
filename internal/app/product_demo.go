@@ -101,6 +101,9 @@ type productV21ProfessionalReadiness struct {
 type productStackChanReadiness struct {
 	DeviceID                string                            `json:"device_id"`
 	PhysicalDeviceOnline    bool                              `json:"physical_device_online"`
+	PhysicalDeviceStale     bool                              `json:"physical_device_stale,omitempty"`
+	PhysicalDeviceAgeMS     int64                             `json:"physical_device_age_ms,omitempty"`
+	MaxPhysicalDeviceAgeMS  int64                             `json:"max_physical_device_age_ms,omitempty"`
 	PhysicalMicrophoneReady bool                              `json:"physical_microphone_ready"`
 	MicrophoneStatus        string                            `json:"microphone_status,omitempty"`
 	SimulatorDeviceOnline   bool                              `json:"simulator_device_online"`
@@ -128,6 +131,8 @@ type productPhysicalStackChanReadiness struct {
 	CanonicalMetricAvailability            map[string]bool `json:"canonical_metric_availability,omitempty"`
 	FindingCodes                           []string        `json:"finding_codes,omitempty"`
 }
+
+const productPhysicalDeviceFreshMaxAgeMS int64 = 30000
 
 type productVoiceReadiness struct {
 	LocalTTSReady        bool                          `json:"local_tts_ready"`
@@ -407,10 +412,23 @@ func buildProductV21Readiness(env []string) productV21Readiness {
 }
 
 func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID string) productStackChanReadiness {
-	readiness := productStackChanReadiness{DeviceID: deviceID}
+	readiness := productStackChanReadiness{
+		DeviceID:               deviceID,
+		MaxPhysicalDeviceAgeMS: productPhysicalDeviceFreshMaxAgeMS,
+	}
 	for _, device := range deviceReport.Devices {
 		online := device.ConnectionStatus == "" || device.ConnectionStatus == "online"
-		if device.DeviceID == deviceID && online && !strings.Contains(strings.ToLower(device.DeviceID), "sim") {
+		isPhysicalTarget := device.DeviceID == deviceID && !strings.Contains(strings.ToLower(device.DeviceID), "sim")
+		if isPhysicalTarget && device.DeviceAgeMS > 0 {
+			readiness.PhysicalDeviceAgeMS = device.DeviceAgeMS
+		}
+		fresh := device.DeviceAgeMS <= 0 || device.DeviceAgeMS <= productPhysicalDeviceFreshMaxAgeMS
+		if isPhysicalTarget && online && !fresh {
+			readiness.PhysicalDeviceStale = true
+			readiness.MicrophoneStatus = strings.TrimSpace(device.Capabilities["microphone"])
+			continue
+		}
+		if isPhysicalTarget && online && fresh {
 			readiness.PhysicalDeviceOnline = true
 			readiness.MicrophoneStatus = strings.TrimSpace(device.Capabilities["microphone"])
 			readiness.PhysicalMicrophoneReady = productMicrophoneReady(readiness.MicrophoneStatus)
@@ -425,6 +443,8 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 	switch {
 	case readiness.PhysicalDeviceOnline:
 		readiness.Status = "physical_online"
+	case readiness.PhysicalDeviceStale:
+		readiness.Status = "physical_stale"
 	case readiness.SimulatorDeviceOnline:
 		readiness.Status = "simulator_only"
 	default:
