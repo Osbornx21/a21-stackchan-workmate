@@ -1383,6 +1383,8 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	dir := t.TempDir()
 	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260601-191000.json", productReadinessProviderSmokeReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260601-191935.json", productReadinessXiaozhiHostReportFixtureJSON())
+	newerFailedXiaozhi := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"failure_count": 0`, `"failure_count": 3`, 1)
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260601-192500.json", newerFailedXiaozhi)
 	professionalFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
 	physicalFixture := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
 		"promotion_gate":    "candidate",
@@ -1425,6 +1427,8 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 		`"smoke_evidence_valid": true`,
 		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
 		`"source_report": "a21-xiaozhi-voice-bench-20260601-191935.json"`,
+		`"latest_report_candidate_skipped"`,
+		`"detail": "xiaozhi_voice:a21-xiaozhi-voice-bench-20260601-192500.json"`,
 		`"continuous_voice_ready": true`,
 		`"host_product_chain_ready": true`,
 		`"professional_acceptance_status": "external_gateway_ready"`,
@@ -1561,7 +1565,7 @@ func TestRunServerSideReadinessBundleRequireCandidateFailsWithMissingHostVoice(t
 		`"status": "server_side_blocked"`,
 		`"candidate_ready": false`,
 		`"host_voice_loopback"`,
-		`"go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --output-dir reports"`,
+		`"go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports"`,
 		`"report_path": "a21-server-side-readiness-bundle-`,
 	} {
 		if !strings.Contains(rendered, want) {
@@ -1634,7 +1638,7 @@ func TestRunServerSideReadinessBundleDoesNotCollectMockProviderAsServerEvidence(
 	}
 }
 
-func TestRunServerSideReadinessBundleCollectsMissingHostVoiceEvidence(t *testing.T) {
+func TestRunServerSideReadinessBundleCollectsMissingHostVoiceRequiresProductChain(t *testing.T) {
 	gatewayServer := newGatewayServerFromEnv(nil)
 	httpServer := httptest.NewServer(gatewayServer.Handler())
 	t.Cleanup(httpServer.Close)
@@ -1671,9 +1675,13 @@ func TestRunServerSideReadinessBundleCollectsMissingHostVoiceEvidence(t *testing
 		`"collection"`,
 		`"enabled": true`,
 		`"name": "host_voice_loopback"`,
-		`"status": "passed"`,
+		`"status": "failed"`,
+		`"reason": "exit_code_1"`,
+		`"command": "go run ./cmd/a21 xiaozhi-voice-bench --repeat 1 --require-product-chain --output-dir reports"`,
 		`"source_report": "a21-xiaozhi-voice-bench-`,
-		`"host_voice_source_report": "a21-xiaozhi-voice-bench-`,
+		`"absorbed_by_readiness": false`,
+		`"host_voice_loopback_ready": false`,
+		`"go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports"`,
 		`"launch_ready": false`,
 		`"prd_accepted": false`,
 	} {
@@ -1687,9 +1695,6 @@ func TestRunServerSideReadinessBundleCollectsMissingHostVoiceEvidence(t *testing
 	}
 	if len(matches) != 1 {
 		t.Fatalf("voice bench reports = %d, want 1: %v", len(matches), matches)
-	}
-	if strings.Contains(rendered, `"reason": "exit_code_`) {
-		t.Fatalf("host voice collection failed unexpectedly: %s", rendered)
 	}
 	for _, forbidden := range []string{httpServer.URL, dir, "http://", "https://", "/Users/", "secret-value", `"launch_ready": true`, `"prd_accepted": true`} {
 		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {

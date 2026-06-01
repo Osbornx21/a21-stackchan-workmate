@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ type productReadinessOptions struct {
 	RequireReal             bool
 	OpenBrowser             bool
 	StatusOnly              bool
+	LatestReportFindings    []productReadinessFinding
 }
 
 type productReadinessReport struct {
@@ -398,26 +400,34 @@ func runDemo(args []string, stdout io.Writer, stderr io.Writer) int {
 func resolveLatestProductReadinessReports(options productReadinessOptions) productReadinessOptions {
 	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
 	if strings.TrimSpace(options.ProviderSmokeReport) == "" {
-		options.ProviderSmokeReport = latestProductReadinessReportPath(reportDir, []string{
+		var findings []productReadinessFinding
+		options.ProviderSmokeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "provider_smoke", []string{
 			"a21-provider-smoke-*.json",
-		})
+		}, productLatestProviderSmokeReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
 	if strings.TrimSpace(options.XiaozhiReport) == "" {
-		options.XiaozhiReport = latestProductReadinessReportPath(reportDir, []string{
+		var findings []productReadinessFinding
+		options.XiaozhiReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "xiaozhi_voice", []string{
 			"a21-xiaozhi-voice-bench-*.json",
 			"a21-local-voice-loopback-*.json",
-		})
+		}, productLatestXiaozhiReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
 	if strings.TrimSpace(options.V21ProfessionalReport) == "" {
-		options.V21ProfessionalReport = latestProductReadinessReportPath(reportDir, []string{
+		var findings []productReadinessFinding
+		options.V21ProfessionalReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "v21_professional", []string{
 			"a21-xiaozhi-professional-bench-*.json",
 			"a21-v21-professional-readiness-*.json",
-		})
+		}, productLatestV21ProfessionalReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
 	if strings.TrimSpace(options.V21AdapterSmokeReport) == "" && strings.TrimSpace(options.V21ProfessionalReport) == "" {
-		options.V21AdapterSmokeReport = latestProductReadinessReportPath(reportDir, []string{
+		var findings []productReadinessFinding
+		options.V21AdapterSmokeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "v21_adapter_smoke", []string{
 			"a21-v21-adapter-smoke-*.json",
-		})
+		}, productLatestV21AdapterSmokeReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
 	if strings.TrimSpace(options.PhysicalStackChanReport) == "" {
 		options.PhysicalStackChanReport = latestProductReadinessReportPath(reportDir, []string{
@@ -433,9 +443,55 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 	return options
 }
 
+type productLatestReadinessReportCandidate struct {
+	Path    string
+	ModTime time.Time
+}
+
 func latestProductReadinessReportPath(reportDir string, patterns []string) string {
-	var selected string
-	var selectedMod time.Time
+	candidates := latestProductReadinessReportCandidates(reportDir, patterns)
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[0]
+}
+
+func latestAcceptedProductReadinessReportPath(reportDir string, kind string, patterns []string, accept func(string) bool) (string, []productReadinessFinding) {
+	var findings []productReadinessFinding
+	skipped := 0
+	for _, candidate := range latestProductReadinessReportCandidates(reportDir, patterns) {
+		if accept == nil || accept(candidate) {
+			findings = append(findings, latestProductReadinessSkippedSummaryFinding(kind, skipped)...)
+			return candidate, findings
+		}
+		skipped++
+		if skipped <= latestProductReadinessSkippedDetailLimit {
+			findings = append(findings, productReadinessFinding{
+				Code:    "latest_report_candidate_skipped",
+				Message: "Latest product-readiness candidate report did not satisfy the evidence contract",
+				Detail:  strings.TrimSpace(kind) + ":" + filepath.Base(filepath.Clean(candidate)),
+			})
+		}
+	}
+	findings = append(findings, latestProductReadinessSkippedSummaryFinding(kind, skipped)...)
+	return "", findings
+}
+
+const latestProductReadinessSkippedDetailLimit = 3
+
+func latestProductReadinessSkippedSummaryFinding(kind string, skipped int) []productReadinessFinding {
+	if skipped <= latestProductReadinessSkippedDetailLimit {
+		return nil
+	}
+	return []productReadinessFinding{{
+		Code:    "latest_report_candidates_skipped_summary",
+		Message: "Older product-readiness candidate reports were also skipped because they did not satisfy the evidence contract",
+		Detail:  fmt.Sprintf("%s:%d_total", strings.TrimSpace(kind), skipped),
+	}}
+}
+
+func latestProductReadinessReportCandidates(reportDir string, patterns []string) []string {
+	var candidates []productLatestReadinessReportCandidate
 	for _, pattern := range patterns {
 		matches, err := filepath.Glob(filepath.Join(reportDir, pattern))
 		if err != nil {
@@ -446,14 +502,47 @@ func latestProductReadinessReportPath(reportDir string, patterns []string) strin
 			if err != nil || info.IsDir() {
 				continue
 			}
-			modTime := info.ModTime()
-			if selected == "" || modTime.After(selectedMod) || (modTime.Equal(selectedMod) && filepath.Base(match) > filepath.Base(selected)) {
-				selected = match
-				selectedMod = modTime
-			}
+			candidates = append(candidates, productLatestReadinessReportCandidate{Path: match, ModTime: info.ModTime()})
 		}
 	}
-	return selected
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].ModTime.Equal(candidates[j].ModTime) {
+			return filepath.Base(candidates[i].Path) > filepath.Base(candidates[j].Path)
+		}
+		return candidates[i].ModTime.After(candidates[j].ModTime)
+	})
+	paths := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		paths = append(paths, candidate.Path)
+	}
+	return paths
+}
+
+func productLatestProviderSmokeReportAccepted(path string) bool {
+	evidence, _ := loadProductProviderSmokeReportEvidence(path)
+	return evidence.Valid && evidence.Executed && evidence.RouteEligible
+}
+
+func productLatestXiaozhiReportAccepted(path string) bool {
+	evidence, _ := loadProductXiaozhiReportEvidence(path)
+	return evidence.Valid &&
+		evidence.HostProductChainReady &&
+		evidence.FailureCount == 0 &&
+		evidence.AnswerFirstAudioP95MS > 0 &&
+		evidence.AnswerFirstAudioP95MS < 1500 &&
+		evidence.BargeInStopP95MS >= 0 &&
+		evidence.BargeInStopP95MS < 300 &&
+		!evidence.PRDAccepted
+}
+
+func productLatestV21ProfessionalReportAccepted(path string) bool {
+	evidence, _ := loadProductV21ProfessionalReportEvidence(path)
+	return evidence.Valid && evidence.AdapterExecuted
+}
+
+func productLatestV21AdapterSmokeReportAccepted(path string) bool {
+	evidence, _ := loadProductV21AdapterSmokeReportEvidence(path, productV21Readiness{})
+	return evidence.Valid && evidence.AdapterExecuted
 }
 
 func buildProductReadinessReport(ctx context.Context, options productReadinessOptions, env []string) productReadinessReport {
@@ -469,6 +558,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		},
 		StackChan: productStackChanReadiness{DeviceID: deviceID},
 	}
+	report.Findings = append(report.Findings, options.LatestReportFindings...)
 	report.Gateway.Healthy = gatewayHealthOK(ctx, gatewayURL)
 	report.Gateway.SimulatorReady = gatewaySimulatorOK(ctx, gatewayURL)
 	report.Gateway.DeviceRegistry = false
