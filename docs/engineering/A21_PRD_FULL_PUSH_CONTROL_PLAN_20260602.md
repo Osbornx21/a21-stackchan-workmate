@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `a4e0d6f chore(control): record voice mode merge checkpoint`
+Current integration checkpoint: `8e221de merge: personality runtime prompt slice`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `a4e0d6f chore(control): record voice mode merge checkpoint`
+  `8e221de merge: personality runtime prompt slice`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -62,7 +62,8 @@ Current integration branch:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
   readiness, launch false-green guard, wake package help-contract, Gateway
-  half-duplex playback arm hardening, and explicit voice-mode selector merges.
+  half-duplex playback arm hardening, explicit voice-mode selector, and
+  personality runtime prompt merges.
 - Latest targeted verification:
   `go test ./internal/gateway -run 'MockPlayback|AudioProbe|RealtimeOnNext|DeviceControl|HalfDuplex|Playback' -count=1`
   passed, and
@@ -76,6 +77,13 @@ Current integration branch:
   `voiceMode`, `voiceModeReadout`, and `/v1/voice-modes`. Selecting
   `pure_cloud` persisted the visible choice and blocked
   `/v1/fast-companion/turn` instead of silently routing planned mode.
+- Latest personality runtime verification:
+  `go test ./internal/personality ./internal/app -run 'Personality|FastCompanion|LocalVoiceLoopback' -count=1`
+  passed,
+  `go test ./internal/app -run 'LocalVoiceLoopback.*TextStream|FastCompanion' -count=1`
+  passed, `git diff --check` passed, and
+  `product-readiness --use-latest-reports` stayed `launch_ready=false` with the
+  same real-evidence gaps.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
@@ -137,17 +145,21 @@ gaps:
 - Explicit operator voice-mode selector:
   `4f4b767 feat(gateway): add explicit voice mode selector`,
   merged by `de64e50 merge: voice mode selector slice`
+- Personality runtime prompt composer:
+  `5babfdb feat(personality): compose fast companion runtime prompt`,
+  merged by `8e221de merge: personality runtime prompt slice`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Personality runtime prompt loader | `019e8581-3a1d-7d62-960e-66d729b14644` | `/Users/jiyurun/.codex/worktrees/3d2d/New project` | expected `codex/a21-mainline-personality-runtime-20260602` from `a4e0d6f` | Slice I PRD Phase 2/section 8 personality runtime composer for fast-companion prompts | Active write worker; poll before touching `internal/personality`, `internal/app/app_audio_loopback.go`, or personality prompt docs |
+| None | - | - | - | - | No active write worker as of `8e221de`; start a fresh bounded worker before any new implementation slice |
 
 Recently completed workers:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
+| Personality runtime prompt loader | `019e8581-3a1d-7d62-960e-66d729b14644` | `/Users/jiyurun/.codex/worktrees/3d2d/New project` | `codex/a21-mainline-personality-runtime-20260602` | PRD Phase 2/section 8 runtime composer for fast-companion prompts | Merged via `5babfdb`/`8e221de`; no provider execute, no Mac audio, no hardware; do not duplicate |
 | Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Completed read-only; its useful `voice_mode` follow-up is now merged from fresh mainline, not stale branch merge |
 | Explicit voice-mode selector | `019e8573-d562-75d2-b126-7bfb72d6af1f` | `/Users/jiyurun/.codex/worktrees/7142/New project` | `codex/a21-mainline-voice-mode-selector-20260602` | Explicit `voice_mode` catalog/status/selection without hidden routing | Initial worker stopped cleanly with no implementation; control tower reclaimed, implemented, verified, and merged via `4f4b767`/`de64e50`; do not duplicate |
 | Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | `codex/a21-gateway-half-duplex-arm-hardening-20260602` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Worker stopped with partial tests; control tower reclaimed and merged current implementation via `2120ee6`; do not merge worker branch |
@@ -188,11 +200,10 @@ Current next moves:
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. Poll active Slice I personality runtime worker. If it lands cleanly, verify
-   and merge; if it stalls, reclaim the narrow write set rather than spawning a
-   duplicate worker. Do not reopen audio clarity, host voice loopback,
-   voice-mode selector, selected-provider import, or launch false-green guards
-   unless a new regression appears.
+3. Optional no-hardware polish should be dispatched only if it burns a current
+   PRD gap or fixes a regression. Do not reopen audio clarity, host voice
+   loopback, voice-mode selector, personality runtime, selected-provider
+   import, or launch false-green guards unless a new regression appears.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -209,7 +220,7 @@ Current next moves:
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
 | Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
 | Wake word | No-hardware config/plan/build-receipt/diagnostic package path done; current reviewed build package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge | Current matching reviewed build package report, guarded flash, and physical custom wake proof |
-| Personality and playbooks | Asset tree done | `docs/personality` assets merged | Runtime composition and scenario UX wiring only when needed |
+| Personality and playbooks | Runtime workmate composer done, scenario UX later only when needed | `docs/personality` assets merged; `internal/personality` composes core + tone + one mode + optional scenario/failure overlay for fast companion prompt | Scenario selection/product UX polish only when a real flow needs it |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
 
