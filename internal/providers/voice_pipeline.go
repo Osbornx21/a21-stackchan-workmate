@@ -99,6 +99,8 @@ type VoicePipelineOutputReport struct {
 	ChunkDurationMS int    `json:"chunk_duration_ms,omitempty"`
 	ASRTextChars    int    `json:"asr_text_chars,omitempty"`
 	LLMContentChars int    `json:"llm_content_chars,omitempty"`
+	LLMSegmentCount int    `json:"llm_segment_count,omitempty"`
+	StreamingAnswer bool   `json:"streaming_answer,omitempty"`
 }
 
 type VoicePipelineRedactionPolicies struct {
@@ -162,6 +164,22 @@ type VoicePipelineRunner struct {
 	adapters VoicePipelineAdapters
 }
 
+type VoicePipelineStreamEventKind string
+
+const (
+	VoicePipelineStreamAudioChunk VoicePipelineStreamEventKind = "audio_chunk"
+	VoicePipelineStreamDone       VoicePipelineStreamEventKind = "done"
+)
+
+type VoicePipelineStreamEvent struct {
+	Kind       VoicePipelineStreamEventKind
+	AudioChunk VoiceAudioChunk
+	SegmentSeq int
+	Timing     VoicePipelineTiming
+	Result     VoicePipelineResult
+	Err        error
+}
+
 func NewVoicePipelineRunner(adapters VoicePipelineAdapters) *VoicePipelineRunner {
 	if isZeroVoicePipelineSelection(adapters.Selection) {
 		adapters.Selection = VoicePipelineSelectionFromEnv(nil)
@@ -170,6 +188,37 @@ func NewVoicePipelineRunner(adapters VoicePipelineAdapters) *VoicePipelineRunner
 }
 
 func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest) (VoicePipelineResult, error) {
+	return r.run(ctx, req, nil)
+}
+
+func (r *VoicePipelineRunner) RunStream(ctx context.Context, req VoicePipelineRequest) (<-chan VoicePipelineStreamEvent, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	events := make(chan VoicePipelineStreamEvent, 4)
+	go func() {
+		defer close(events)
+		result, err := r.run(ctx, req, func(chunk VoiceAudioChunk, segmentSeq int, timing VoicePipelineTiming) bool {
+			select {
+			case <-ctx.Done():
+				return false
+			case events <- VoicePipelineStreamEvent{Kind: VoicePipelineStreamAudioChunk, AudioChunk: chunk, SegmentSeq: segmentSeq, Timing: timing}:
+				return true
+			}
+		})
+		emitVoicePipelineStreamDone(ctx, events, VoicePipelineStreamEvent{Kind: VoicePipelineStreamDone, Result: result, Err: err})
+	}()
+	return events, nil
+}
+
+func emitVoicePipelineStreamDone(ctx context.Context, out chan<- VoicePipelineStreamEvent, event VoicePipelineStreamEvent) {
+	select {
+	case <-ctx.Done():
+	case out <- event:
+	}
+}
+
+func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest, emit func(VoiceAudioChunk, int, VoicePipelineTiming) bool) (VoicePipelineResult, error) {
 	start := time.Now()
 	result := VoicePipelineResult{
 		Status: VoicePipelineStatusFailed,
@@ -239,7 +288,13 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 		return result, err
 	}
 	var response strings.Builder
+	var segments voicePipelineTextSegmenter
+	segmentSeq := 0
 	for event := range textEvents {
+		if cancelled := r.applyCancel(ctx, start, &result); cancelled {
+			result.Report = finalizeVoicePipelineReport(report, result)
+			return result, nil
+		}
 		if event.Finding != "" {
 			report.Findings = append(report.Findings, event.Finding)
 		}
@@ -251,6 +306,9 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 			result.Report = report
 			return result, event.Err
 		}
+		if event.Kind == TextStreamDeltaDone {
+			break
+		}
 		if event.Kind != TextStreamDeltaContent {
 			continue
 		}
@@ -259,29 +317,30 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 			result.Timing.SpeechEndToFirstTokenMS = result.Timing.LLMFirstContentMS
 		}
 		response.WriteString(event.Text)
+		if emit != nil {
+			for _, segment := range segments.Append(event.Text) {
+				segmentSeq++
+				if err := r.synthesizeVoicePipelineSegment(ctx, start, req, segment, segmentSeq, emit, &result, &report); err != nil {
+					return result, err
+				}
+			}
+		}
 	}
 	if cancelled := r.applyCancel(ctx, start, &result); cancelled {
 		result.Report = finalizeVoicePipelineReport(report, result)
 		return result, nil
 	}
-
-	ttsChunks, err := r.adapters.TTS.Synthesize(ctx, TTSAdapterRequest{Session: req.Session, Mode: req.Mode, Text: response.String()})
-	if err != nil {
-		report.Status = string(VoicePipelineStatusFailed)
-		report.Findings = append(report.Findings, "tts adapter failed")
-		result.Report = report
-		return result, err
-	}
-	for chunk := range ttsChunks {
-		if cancelled := r.applyCancel(ctx, start, &result); cancelled {
-			result.Report = finalizeVoicePipelineReport(report, result)
-			return result, nil
+	if emit == nil {
+		if err := r.synthesizeVoicePipelineSegment(ctx, start, req, response.String(), 1, nil, &result, &report); err != nil {
+			return result, err
 		}
-		if result.Timing.TTSFirstAudioMS < 0 {
-			result.Timing.TTSFirstAudioMS = pipelineElapsedMS(start)
-			result.Timing.AudioDownlinkFirstMS = result.Timing.TTSFirstAudioMS
+	} else {
+		for _, segment := range segments.Flush() {
+			segmentSeq++
+			if err := r.synthesizeVoicePipelineSegment(ctx, start, req, segment, segmentSeq, emit, &result, &report); err != nil {
+				return result, err
+			}
 		}
-		result.AudioChunks = append(result.AudioChunks, chunk)
 	}
 	if cancelled := r.applyCancel(ctx, start, &result); cancelled {
 		result.Report = finalizeVoicePipelineReport(report, result)
@@ -291,8 +350,42 @@ func (r *VoicePipelineRunner) Run(ctx context.Context, req VoicePipelineRequest)
 	result.Status = VoicePipelineStatusCompleted
 	report.Output.ASRTextChars = len([]rune(transcript))
 	report.Output.LLMContentChars = len([]rune(response.String()))
+	report.Output.StreamingAnswer = emit != nil
+	if emit != nil {
+		report.Output.LLMSegmentCount = segmentSeq
+	}
 	result.Report = finalizeVoicePipelineReport(report, result)
 	return result, nil
+}
+
+func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context, start time.Time, req VoicePipelineRequest, segment string, segmentSeq int, emit func(VoiceAudioChunk, int, VoicePipelineTiming) bool, result *VoicePipelineResult, report *VoicePipelineReport) error {
+	if strings.TrimSpace(segment) == "" {
+		return nil
+	}
+	ttsChunks, err := r.adapters.TTS.Synthesize(ctx, TTSAdapterRequest{Session: req.Session, Mode: req.Mode, Text: segment})
+	if err != nil {
+		report.Status = string(VoicePipelineStatusFailed)
+		report.Findings = append(report.Findings, "tts adapter failed")
+		result.Report = *report
+		return err
+	}
+	for chunk := range ttsChunks {
+		if cancelled := r.applyCancel(ctx, start, result); cancelled {
+			result.Report = finalizeVoicePipelineReport(*report, *result)
+			return nil
+		}
+		if result.Timing.TTSFirstAudioMS < 0 {
+			result.Timing.TTSFirstAudioMS = pipelineElapsedMS(start)
+			result.Timing.AudioDownlinkFirstMS = result.Timing.TTSFirstAudioMS
+		}
+		result.AudioChunks = append(result.AudioChunks, chunk)
+		if emit != nil && !emit(chunk, segmentSeq, result.Timing) {
+			r.applyCancel(ctx, start, result)
+			result.Report = finalizeVoicePipelineReport(*report, *result)
+			return nil
+		}
+	}
+	return nil
 }
 
 func (r *VoicePipelineRunner) applyCancel(ctx context.Context, start time.Time, result *VoicePipelineResult) bool {
@@ -426,6 +519,66 @@ func finalizeVoicePipelineReport(report VoicePipelineReport, result VoicePipelin
 		report.Output.ChunkDurationMS = first.DurationMS
 	}
 	return report
+}
+
+const voicePipelineSegmentRuneThreshold = 40
+
+type voicePipelineTextSegmenter struct {
+	pending      strings.Builder
+	pendingRunes int
+	flushed      int
+}
+
+func (s *voicePipelineTextSegmenter) Append(text string) []string {
+	var segments []string
+	for _, r := range text {
+		s.pending.WriteRune(r)
+		s.pendingRunes++
+		if isVoicePipelineSentenceBoundary(r) || s.pendingRunes >= voicePipelineSegmentRuneThreshold {
+			segments = append(segments, s.flushOne())
+		}
+	}
+	return nonEmptyVoicePipelineSegments(segments)
+}
+
+func (s *voicePipelineTextSegmenter) Flush() []string {
+	if s.pendingRunes == 0 {
+		return nil
+	}
+	return nonEmptyVoicePipelineSegments([]string{s.flushOne()})
+}
+
+func (s *voicePipelineTextSegmenter) FlushedCount() int {
+	return s.flushed
+}
+
+func (s *voicePipelineTextSegmenter) flushOne() string {
+	segment := strings.TrimSpace(s.pending.String())
+	s.pending.Reset()
+	s.pendingRunes = 0
+	if segment != "" {
+		s.flushed++
+	}
+	return segment
+}
+
+func nonEmptyVoicePipelineSegments(segments []string) []string {
+	out := segments[:0]
+	for _, segment := range segments {
+		if strings.TrimSpace(segment) != "" {
+			out = append(out, segment)
+		}
+	}
+	return out
+}
+
+func isVoicePipelineSentenceBoundary(r rune) bool {
+	switch r {
+	case '。', '！', '？', '；', '.', '!', '?', ';', '\n':
+		return true
+	default:
+		return false
+	}
 }
 
 func pipelineElapsedMS(start time.Time) int64 {

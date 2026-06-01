@@ -2,9 +2,12 @@ package providers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport(t *testing.T) {
@@ -153,6 +156,91 @@ func TestVoicePipelineRunnerCancelStopsBeforeTTSChunkOutput(t *testing.T) {
 	}
 }
 
+func TestVoicePipelineRunKeepsFullResponseCollector(t *testing.T) {
+	tts := &recordingPipelineTTSAdapter{}
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR:        scriptedPipelineASRAdapter{text: "transcript"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{{Kind: TextStreamDeltaContent, Text: "第一句。"}, {Kind: TextStreamDeltaContent, Text: "第二句。"}, {Kind: TextStreamDeltaDone}}},
+		TTS:        tts,
+		Selection:  VoicePipelineSelectionFromEnv(nil),
+	})
+
+	result, err := runner.Run(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-run-collector", SessionID: "a21-session-run-collector", DeviceID: "stackchan-sim-001"},
+		Mode:    "workmate",
+		Frames:  []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Status != VoicePipelineStatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	if got := tts.texts(); len(got) != 1 || got[0] != "第一句。第二句。" {
+		t.Fatalf("tts texts = %#v, want one full collected response", got)
+	}
+	if result.Report.Output.StreamingAnswer {
+		t.Fatalf("streaming_answer = true, want false for Run collector")
+	}
+	if result.Report.Output.LLMSegmentCount != 0 {
+		t.Fatalf("llm_segment_count = %d, want 0 for Run collector", result.Report.Output.LLMSegmentCount)
+	}
+}
+
+func TestVoicePipelineRunStreamDeliversDoneAfterBufferedChunksDrain(t *testing.T) {
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR: scriptedPipelineASRAdapter{text: "transcript"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{
+			{Kind: TextStreamDeltaContent, Text: "一。"},
+			{Kind: TextStreamDeltaContent, Text: "二。"},
+			{Kind: TextStreamDeltaContent, Text: "三。"},
+			{Kind: TextStreamDeltaContent, Text: "四。"},
+			{Kind: TextStreamDeltaDone},
+		}},
+		TTS:       &recordingPipelineTTSAdapter{},
+		Selection: VoicePipelineSelectionFromEnv(nil),
+	})
+
+	events, err := runner.RunStream(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-run-stream-done", SessionID: "a21-session-run-stream-done", DeviceID: "stackchan-sim-001"},
+		Mode:    "workmate",
+		Frames:  []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	var chunkCount int
+	var doneResult VoicePipelineResult
+	var sawDone bool
+	for event := range events {
+		switch event.Kind {
+		case VoicePipelineStreamAudioChunk:
+			chunkCount++
+		case VoicePipelineStreamDone:
+			sawDone = true
+			doneResult = event.Result
+			if event.Err != nil {
+				t.Fatal(event.Err)
+			}
+		}
+	}
+	if chunkCount != 4 {
+		t.Fatalf("chunk count = %d, want 4", chunkCount)
+	}
+	if !sawDone {
+		t.Fatal("RunStream closed without VoicePipelineStreamDone")
+	}
+	if doneResult.Status != VoicePipelineStatusCompleted {
+		t.Fatalf("done status = %q, want completed", doneResult.Status)
+	}
+	if doneResult.Report.Output.LLMSegmentCount != 4 || !doneResult.Report.Output.StreamingAnswer {
+		t.Fatalf("done output = %+v, want 4 streaming segments", doneResult.Report.Output)
+	}
+}
+
 func TestVoicePipelineSelectionCanChangeWithoutGatewayCore(t *testing.T) {
 	selection := VoicePipelineSelectionFromEnv([]string{
 		"A21_ASR_PROFILE=cloud",
@@ -175,4 +263,67 @@ func TestVoicePipelineSelectionCanChangeWithoutGatewayCore(t *testing.T) {
 	if selection.ASRProfileEnv != "A21_ASR_CLOUD_PROFILE" || selection.LLMProfileEnv != "A21_TEXT_STREAM_PROFILE" || selection.TTSProfileEnv != "A21_TTS_QUALITY_PROFILE" {
 		t.Fatalf("selection env names = %+v, want profile env names only", selection)
 	}
+}
+
+type scriptedPipelineASRAdapter struct {
+	text string
+}
+
+func (a scriptedPipelineASRAdapter) Name() string {
+	return "a21-scripted-asr"
+}
+
+func (a scriptedPipelineASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
+	out := make(chan ASRAdapterEvent, 1)
+	out <- ASRAdapterEvent{Text: a.text, Final: true}
+	close(out)
+	return out, nil
+}
+
+type scriptedPipelineTextStreamAdapter struct {
+	events []TextStreamEvent
+}
+
+func (a scriptedPipelineTextStreamAdapter) Name() string {
+	return "a21-scripted-text-stream"
+}
+
+func (a scriptedPipelineTextStreamAdapter) StreamText(ctx context.Context, req TextStreamAdapterRequest) (<-chan TextStreamEvent, error) {
+	out := make(chan TextStreamEvent, len(a.events))
+	for _, event := range a.events {
+		out <- event
+	}
+	close(out)
+	return out, nil
+}
+
+type recordingPipelineTTSAdapter struct {
+	mu       sync.Mutex
+	requests []string
+}
+
+func (a *recordingPipelineTTSAdapter) Name() string {
+	return "a21-recording-tts"
+}
+
+func (a *recordingPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
+	a.mu.Lock()
+	a.requests = append(a.requests, req.Text)
+	a.mu.Unlock()
+	out := make(chan VoiceAudioChunk, 1)
+	out <- VoiceAudioChunk{
+		Codec:        "pcm_s16le",
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   base64.StdEncoding.EncodeToString(make([]byte, 2880)),
+	}
+	close(out)
+	return out, nil
+}
+
+func (a *recordingPipelineTTSAdapter) texts() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.requests...)
 }

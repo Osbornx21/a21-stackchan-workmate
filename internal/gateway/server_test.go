@@ -2141,6 +2141,202 @@ func TestXiaozhiWebSocketSendsFastAckBeforeVoicePipelineCompletes(t *testing.T) 
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 }
 
+func TestXiaozhiWebSocketStreamsFirstAnswerSegmentBeforeTextStreamDone(t *testing.T) {
+	textStream := newBlockingSegmentTextStreamAdapter()
+	tts := segmentChunkTTSAdapter{}
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        gatewayFinalASRAdapter{},
+			TextStream: textStream,
+			TTS:        tts,
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	t.Cleanup(textStream.releaseFinal)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stream-answer",
+		"session_id": "a21-session-xiaozhi-stream-answer",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	select {
+	case <-textStream.firstSegmentSent:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("text stream did not emit first segment")
+	}
+
+	answerCtx, answerCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer answerCancel()
+	answerSentence := readXiaozhiJSON(t, answerCtx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	answerPipeline, ok := answerSentence["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("answer voice pipeline = %#v", answerSentence["voice_pipeline"])
+	}
+	if answerPipeline["stage"] != "answer" || answerPipeline["streaming"] != true {
+		t.Fatalf("answer voice pipeline = %#v, want streaming answer", answerPipeline)
+	}
+	messageType, data, err = conn.Read(answerCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	select {
+	case <-textStream.finalReleased:
+		t.Fatal("final text segment was released before first answer binary")
+	default:
+	}
+
+	textStream.releaseFinal()
+	_ = readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("final answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+}
+
+func TestXiaozhiWebSocketAbortDuringStreamingAnswerSuppressesStaleSegments(t *testing.T) {
+	textStream := newBlockingSegmentTextStreamAdapter()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        gatewayFinalASRAdapter{},
+			TextStream: textStream,
+			TTS:        segmentChunkTTSAdapter{},
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+	t.Cleanup(textStream.releaseFinal)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stream-abort",
+		"session_id": "a21-session-xiaozhi-stream-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	select {
+	case <-textStream.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("streaming text adapter did not observe cancellation")
+	}
+	textStream.releaseFinal()
+	assertNoXiaozhiWebSocketMessage(t, conn, 150*time.Millisecond)
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-stream-abort")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.tts.opus_frame.downlink",
+		"xiaozhi.turn.cancel",
+		"downlink_queue_cleared",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketAbortAfterFastAckSuppressesAnswerFrames(t *testing.T) {
 	server := NewServer()
 	runner := newSlowAnswerXiaozhiPipelineRunner()
@@ -4642,6 +4838,16 @@ func assertNoXiaozhiMessage(t *testing.T, conn *websocket.Conn, timeout time.Dur
 	}
 }
 
+func assertNoXiaozhiWebSocketMessage(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
+	t.Helper()
+	readCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	messageType, data, err := conn.Read(readCtx)
+	if err == nil {
+		t.Fatalf("unexpected xiaozhi websocket message type=%v bytes=%d", messageType, len(data))
+	}
+}
+
 func writeXiaozhiHello(t *testing.T, ctx context.Context, conn *websocket.Conn, overrides map[string]any) {
 	t.Helper()
 	hello := map[string]any{
@@ -4731,6 +4937,114 @@ func (r *blockingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.V
 			},
 		}, nil
 	}
+}
+
+type gatewayFinalASRAdapter struct{}
+
+func (gatewayFinalASRAdapter) Name() string {
+	return "a21-gateway-final-asr"
+}
+
+func (gatewayFinalASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	out := make(chan providers.ASRAdapterEvent, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+		case out <- providers.ASRAdapterEvent{Text: "gateway streaming test transcript", Final: true}:
+		}
+	}()
+	return out, nil
+}
+
+type blockingSegmentTextStreamAdapter struct {
+	firstSegmentSent chan struct{}
+	release          chan struct{}
+	finalReleased    chan struct{}
+	canceled         chan struct{}
+	firstOnce        sync.Once
+	releaseOnce      sync.Once
+	finalOnce        sync.Once
+	cancelOnce       sync.Once
+}
+
+func newBlockingSegmentTextStreamAdapter() *blockingSegmentTextStreamAdapter {
+	return &blockingSegmentTextStreamAdapter{
+		firstSegmentSent: make(chan struct{}),
+		release:          make(chan struct{}),
+		finalReleased:    make(chan struct{}),
+		canceled:         make(chan struct{}),
+	}
+}
+
+func (a *blockingSegmentTextStreamAdapter) Name() string {
+	return "a21-blocking-segment-text-stream"
+}
+
+func (a *blockingSegmentTextStreamAdapter) releaseFinal() {
+	a.releaseOnce.Do(func() {
+		close(a.release)
+	})
+}
+
+func (a *blockingSegmentTextStreamAdapter) StreamText(ctx context.Context, req providers.TextStreamAdapterRequest) (<-chan providers.TextStreamEvent, error) {
+	out := make(chan providers.TextStreamEvent)
+	go func() {
+		defer close(out)
+		cancel := func() {
+			a.cancelOnce.Do(func() {
+				close(a.canceled)
+			})
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+			return
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaContent, Text: "第一句。"}:
+			a.firstOnce.Do(func() {
+				close(a.firstSegmentSent)
+			})
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+			return
+		case <-a.release:
+			a.finalOnce.Do(func() {
+				close(a.finalReleased)
+			})
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+			return
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaContent, Text: "第二句。"}:
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaDone}:
+		}
+	}()
+	return out, nil
+}
+
+type segmentChunkTTSAdapter struct{}
+
+func (segmentChunkTTSAdapter) Name() string {
+	return "a21-segment-chunk-tts"
+}
+
+func (segmentChunkTTSAdapter) Synthesize(ctx context.Context, req providers.TTSAdapterRequest) (<-chan providers.VoiceAudioChunk, error) {
+	out := make(chan providers.VoiceAudioChunk, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+		case out <- xiaozhiTestVoiceAudioChunk():
+		}
+	}()
+	return out, nil
 }
 
 type recordingXiaozhiPipelineRunner struct {

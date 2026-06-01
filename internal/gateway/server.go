@@ -799,6 +799,10 @@ type xiaozhiVoicePipelineRunner interface {
 	Run(context.Context, providers.VoicePipelineRequest) (providers.VoicePipelineResult, error)
 }
 
+type xiaozhiVoicePipelineStreamer interface {
+	RunStream(context.Context, providers.VoicePipelineRequest) (<-chan providers.VoicePipelineStreamEvent, error)
+}
+
 type xiaozhiTurnTask struct {
 	turn                   *xiaozhiTurn
 	turnID                 string
@@ -885,6 +889,19 @@ func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xi
 	}
 	session.currentTurn = nil
 	return turn
+}
+
+func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reason string) {
+	if turn == nil {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	turn.cancelReason = strings.TrimSpace(reason)
+	turn.cancel(xiaozhiTurnCancelCause(reason))
+	if turn.pacer != nil {
+		turn.pacer.Reset()
+	}
 }
 
 func (session *xiaozhiSession) shouldAbortXiaozhiTurn(turn *xiaozhiTurn) bool {
@@ -1436,7 +1453,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_unavailable")
 		return true
 	}
-	result, err := runner.Run(turn.ctx, providers.VoicePipelineRequest{
+	request := providers.VoicePipelineRequest{
 		Session: providers.VoiceSession{
 			TraceID:   task.traceID,
 			SessionID: task.sessionID,
@@ -1444,7 +1461,11 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		},
 		Mode:   string(protocol.ModeWorkmate),
 		Frames: append([]providers.VoicePipelinePCMFrame(nil), task.voicePipelineFrames...),
-	})
+	}
+	if streamer, ok := runner.(xiaozhiVoicePipelineStreamer); ok {
+		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS)
+	}
+	result, err := runner.Run(turn.ctx, request)
 	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
 		if session.shouldAbortXiaozhiTurn(turn) || result.Status == providers.VoicePipelineStatusCancelled {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
@@ -1456,16 +1477,15 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	}
 	s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, result.Timing)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
-		"type":                   "tts",
-		"state":                  "sentence_start",
-		"phase":                  "answer",
-		"turn_id":                task.turnID,
-		"trace_id":               task.traceID,
-		"session_id":             task.sessionID,
-		"device_id":              task.deviceID,
-		"voice_pipeline_fixture": true,
-		"voice_pipeline":         xiaozhiVoicePipelineSummary(result.Report),
-		"text":                   "",
+		"type":           "tts",
+		"state":          "sentence_start",
+		"phase":          "answer",
+		"turn_id":        task.turnID,
+		"trace_id":       task.traceID,
+		"session_id":     task.sessionID,
+		"device_id":      task.deviceID,
+		"voice_pipeline": xiaozhiVoicePipelineSummary(result.Report),
+		"text":           "",
 	}); err != nil {
 		return true
 	}
@@ -1485,6 +1505,85 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			firstDownlink = false
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
 		}
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
+	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
+	return true
+}
+
+func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, runner xiaozhiVoicePipelineStreamer, req providers.VoicePipelineRequest, startAtMS int64) bool {
+	events, err := runner.RunStream(turn.ctx, req)
+	if err != nil {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
+		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		return true
+	}
+	answerStarted := false
+	lastSegmentSeq := 0
+	firstDownlink := true
+	stageMarkersRecorded := false
+	var finalResult providers.VoicePipelineResult
+	for event := range events {
+		if session.shouldAbortXiaozhiTurn(turn) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
+			return true
+		}
+		switch event.Kind {
+		case providers.VoicePipelineStreamAudioChunk:
+			if !answerStarted || event.SegmentSeq != lastSegmentSeq {
+				answerStarted = true
+				lastSegmentSeq = event.SegmentSeq
+				if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+					"type":           "tts",
+					"state":          "sentence_start",
+					"phase":          "answer",
+					"turn_id":        task.turnID,
+					"trace_id":       task.traceID,
+					"session_id":     task.sessionID,
+					"device_id":      task.deviceID,
+					"voice_pipeline": s.xiaozhiVoicePipelineStreamingSummary(),
+					"text":           "",
+				}); err != nil {
+					session.cancelXiaozhiTurnContext(turn, "voice_pipeline_answer_write_error")
+					return true
+				}
+			}
+			if !stageMarkersRecorded {
+				stageMarkersRecorded = true
+				s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, event.Timing)
+			}
+			ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, event.AudioChunk)
+			if err != nil {
+				s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.downlink_error", s.now().UnixMilli())
+				s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_downlink_error")
+				session.cancelXiaozhiTurnContext(turn, "voice_pipeline_downlink_error")
+				return true
+			}
+			if !ok {
+				s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_aborted")
+				session.cancelXiaozhiTurnContext(turn, "voice_pipeline_aborted")
+				return true
+			}
+			if firstDownlink {
+				firstDownlink = false
+				s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
+			}
+		case providers.VoicePipelineStreamDone:
+			finalResult = event.Result
+			err = event.Err
+		}
+	}
+	if err != nil || finalResult.Status != providers.VoicePipelineStatusCompleted || len(finalResult.AudioChunks) == 0 {
+		if session.shouldAbortXiaozhiTurn(turn) || finalResult.Status == providers.VoicePipelineStatusCancelled {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
+			return true
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
+		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		return true
+	}
+	if !stageMarkersRecorded {
+		s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, finalResult.Timing)
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
@@ -1569,6 +1668,14 @@ func (s *Server) xiaozhiVoicePipelineFastAckSummary() map[string]any {
 	}
 }
 
+func (s *Server) xiaozhiVoicePipelineStreamingSummary() map[string]any {
+	summary := s.xiaozhiVoicePipelineFastAckSummary()
+	summary["schema_version"] = "a21.voice_pipeline.streaming_answer.v1"
+	summary["stage"] = "answer"
+	summary["streaming"] = true
+	return summary
+}
+
 func (s *Server) recordXiaozhiVoicePipelineStageMarkers(traceID string, sessionID string, deviceID string, startAtMS int64, timing providers.VoicePipelineTiming) {
 	if timing.ASRFirstPartialMS >= 0 {
 		s.recordTrace(traceID, sessionID, deviceID, "asr.first_partial", startAtMS+timing.ASRFirstPartialMS)
@@ -1612,6 +1719,8 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 		"stage":             "answer",
 		"execution_mode":    report.ExecutionMode,
 		"audio_chunk_count": report.Output.AudioChunkCount,
+		"llm_segment_count": report.Output.LLMSegmentCount,
+		"streaming":         report.Output.StreamingAnswer,
 		"selection": map[string]any{
 			"asr_mode":        report.Selection.ASRMode,
 			"asr_profile":     report.Selection.ASRProfile,
