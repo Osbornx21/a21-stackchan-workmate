@@ -6973,6 +6973,32 @@ func TestFastCompanionVoicePreviewKeepsFirstSpeechShort(t *testing.T) {
 	}
 }
 
+func TestFastCompanionTextStreamPromptUsesPersonalityRuntimeAssets(t *testing.T) {
+	prompt := fastCompanionTextStreamPrompt("a21 mock transcript")
+
+	for _, want := range []string{
+		"Core Identity",
+		"Tone Rules",
+		"Workmate Mode",
+		"不超过12个字",
+		"a21 mock transcript",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"Professional Mode",
+		"Companion Mode",
+		"Post-Meeting Playbook",
+		"Failure Overlay",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("prompt included unselected asset %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })
