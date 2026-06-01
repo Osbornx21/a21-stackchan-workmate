@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `f57cbda feat(provider): enforce selected smoke evidence`
+Current baseline evidence: `f288741 feat(wake-word): add build receipt command`
 
 ## 0. Control Rule
 
@@ -34,13 +34,25 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD: `f57cbda feat(provider): enforce selected smoke evidence`
+- HEAD: `f288741 feat(wake-word): add build receipt command`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
-  `launch_ready=false`, `demo_ready=true`
+  `launch_ready=false`, `demo_ready=true`,
+  canonical missing real evidence is `real_provider_smoke`,
+  `physical_stackchan_online`, `physical_stackchan_prd_acceptance`,
+  `wake_word_product_ready`
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
-  passed after the wake diagnostic and provider selected-evidence merges.
+  passed after the wake build receipt merge.
+- Latest targeted verification:
+  `go test ./internal/app -run 'WakeWord|FirmwareBuildReceipt|FirmwarePackage|ProductReadiness' -count=1`
+  passed.
+- Latest no-hardware CLI smoke:
+  `wake-word-firmware-build-receipt` produced
+  `a21.wake_word_firmware_build.v1` with `status=built`, and
+  `wake-word-firmware-package --build-receipt` consumed it and returned
+  `status=packaged`, `product_ready=false`, with the expected
+  `wake_word_firmware_package_below_activation` finding.
 
 Already merged into the current baseline and must not be rediscovered as active
 gaps:
@@ -67,6 +79,8 @@ gaps:
   `2f01049 feat(wake-word): report package input diagnostics`
 - Provider selected-evidence closure:
   `f57cbda feat(provider): enforce selected smoke evidence`
+- Wake-word build receipt closure:
+  `f288741 feat(wake-word): add build receipt command`
 
 Active workers that the control tower must poll before duplicating work:
 
@@ -82,6 +96,8 @@ Recently completed workers:
 | Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | `codex/a21-mode-privacy-closure-20260602` | Public/private/focus/professional mode red lines and visible state | Merged via `2d102c4` and `61d121d`; do not duplicate |
 | Wake-word no-hardware diagnostic closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | `codex/a21-wake-word-package-readiness-20260602` | Missing build-dir/receipt diagnostic package reports and product-readiness next-action guard | Merged via `2f01049`; do not duplicate |
 | Provider selected-evidence closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | `codex/a21-provider-5080lab-evidence-closure-20260602` | Selected-provider matching for latest smoke evidence, package/import, and 5080lab repeat-3 runbook | Merged via `f57cbda`; do not duplicate |
+| Wake build receipt closure | `019e8537-d0bf-71b1-b72a-b5e3cf90c793` | `/Users/jiyurun/.codex/worktrees/c7e2/New project` | `codex/a21-wake-build-receipt-20260602` | Build receipt command and explicit receipt-to-package bridge for reviewed xiaozhi/ESP-SR MultiNet output | Merged via `f288741`; do not duplicate |
+| No-hardware PRD gap audit | `019e8537-d17e-7320-a13d-6a122cab9dd0` | `/Users/jiyurun/.codex/worktrees/efbe/New project` | detached at `9939bda` | Read-only audit of current no-hardware gaps | Completed read-only; no merge needed |
 
 Current canonical PRD gaps from the latest product-readiness run:
 
@@ -100,10 +116,11 @@ Current next moves:
 1. Provider execute closure for 5080lab: prepare/run/import a selected real
    route-eligible text provider smoke bundle from 5080lab, then rerun
    product-readiness to reduce `real_provider_smoke`.
-2. Wake-word build/package closure: produce a matching reviewed
-   xiaozhi/ESP-SR MultiNet build receipt and package report for the stored custom
-   phrase, still without marking `product_ready` until guarded flash and physical
-   wake proof.
+2. Wake-word package closure: run `wake-word-firmware-build-receipt` against a
+   reviewed xiaozhi/ESP-SR MultiNet build directory, then
+   `wake-word-firmware-package --build-receipt` to produce the current matching
+   package report. This may close `firmware_package_available`, but
+   `product_ready` must remain false until guarded flash and physical wake proof.
 3. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -119,7 +136,7 @@ Current next moves:
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
 | Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
-| Wake word | No-hardware config/plan/diagnostic package path done; current build package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports | Current matching build package report, guarded flash, and physical custom wake proof |
+| Wake word | No-hardware config/plan/build-receipt/diagnostic package path done; current reviewed build package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge | Current matching reviewed build package report, guarded flash, and physical custom wake proof |
 | Personality and playbooks | Asset tree done | `docs/personality` assets merged | Runtime composition and scenario UX wiring only when needed |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
