@@ -23,14 +23,15 @@ import (
 )
 
 type xiaozhiVoiceBenchOptions struct {
-	GatewayURL      string
-	Profile         string
-	DeviceID        string
-	ProtocolVersion int
-	InputWAV        string
-	Repeat          int
-	TimeoutMS       int
-	OutputDir       string
+	GatewayURL          string
+	Profile             string
+	DeviceID            string
+	ProtocolVersion     int
+	InputWAV            string
+	Repeat              int
+	TimeoutMS           int
+	OutputDir           string
+	RequireProductChain bool
 }
 
 type xiaozhiVoiceBenchInput struct {
@@ -157,7 +158,7 @@ func runXiaozhiVoiceBench(args []string, stdout io.Writer, stderr io.Writer) int
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 xiaozhi-voice-bench [--gateway-url http://127.0.0.1:21080] [--profile xiaozhi|a21-debug] [--device-id stackchan-virtual-a21-bench-001] [--protocol-version 1|2|3] [--input-wav fixture.wav] [--repeat 3] [--timeout-ms 5000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 xiaozhi-voice-bench [--gateway-url http://127.0.0.1:21080] [--profile xiaozhi|a21-debug] [--device-id stackchan-virtual-a21-bench-001] [--protocol-version 1|2|3] [--input-wav fixture.wav] [--repeat 3] [--timeout-ms 5000] [--require-product-chain] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -197,6 +198,8 @@ func runXiaozhiVoiceBench(args []string, stdout io.Writer, stderr io.Writer) int
 			if !readStringOption(args, &i, stderr, "--output-dir", &options.OutputDir) {
 				return 2
 			}
+		case "--require-product-chain":
+			options.RequireProductChain = true
 		default:
 			fmt.Fprintf(stderr, "unknown xiaozhi-voice-bench option %q\n", args[i])
 			return 2
@@ -323,6 +326,12 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 	report.Counts.BargeInTurnCount = len(report.BargeInTurns)
 	report.Summary = summarizeXiaozhiVoiceBench(report.AnswerTurns, report.BargeInTurns)
 	report.Execution = summarizeXiaozhiVoiceBenchExecution(report.AnswerTurns, report.BargeInTurns)
+	if options.RequireProductChain && !xiaozhiVoiceBenchProductChainReady(report.Execution) {
+		report.Findings = append(report.Findings, xiaozhiVoiceBenchFinding{
+			Code:    "product_chain_not_executed",
+			Message: "xiaozhi voice bench did not observe non-fixture ASR, text stream, and TTS stages in one host-local product chain",
+		})
+	}
 	report.Counts.FailureCount = xiaozhiVoiceBenchFailureCount(report.AnswerTurns) + xiaozhiVoiceBenchFailureCount(report.BargeInTurns) + len(report.Findings)
 	if report.Counts.FailureCount == 0 &&
 		xiaozhiVoiceBenchHasAnswerSamples(report.AnswerTurns) &&
@@ -430,6 +439,7 @@ func summarizeXiaozhiVoiceBenchExecution(answerTurns []xiaozhiVoiceBenchTurn, ba
 		summary.HostLocalASRExecuted = summary.HostLocalASRExecuted || execution.HostLocalASRExecuted
 		summary.HostLocalTextExecuted = summary.HostLocalTextExecuted || execution.HostLocalTextExecuted
 		summary.HostLocalTTSExecuted = summary.HostLocalTTSExecuted || execution.HostLocalTTSExecuted
+		summary.ProviderExecuted = summary.ProviderExecuted || execution.ProviderExecuted || execution.HostLocalTextExecuted
 		if summary.VoicePipelineExecutionMode != execution.VoicePipelineExecutionMode {
 			summary.VoicePipelineExecutionMode = "mixed"
 		}
@@ -452,7 +462,6 @@ func summarizeXiaozhiVoiceBenchExecution(answerTurns []xiaozhiVoiceBenchTurn, ba
 			summary.TTSProfileEnv = execution.TTSProfileEnv
 		}
 	}
-	summary.ProviderExecuted = false
 	summary.V21Executed = false
 	summary.HardwareExecuted = false
 	return summary
@@ -472,11 +481,28 @@ func xiaozhiVoiceBenchExecutionFromPipeline(pipeline map[string]any) xiaozhiVoic
 		execution.TTSProfileEnv = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "tts_profile_env"), true)
 	}
 	if execution.VoicePipelineExecutionMode == "host_local" {
-		execution.HostLocalASRExecuted = execution.ASRProfile != ""
-		execution.HostLocalTextExecuted = execution.LLMProfile != ""
-		execution.HostLocalTTSExecuted = execution.TTSProfile != ""
+		execution.HostLocalASRExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.ASRProfile)
+		execution.HostLocalTextExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.LLMProfile)
+		execution.HostLocalTTSExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.TTSProfile)
+		execution.ProviderExecuted = execution.HostLocalTextExecuted
 	}
 	return execution
+}
+
+func xiaozhiVoiceBenchProductChainReady(execution xiaozhiVoiceBenchExecution) bool {
+	return execution.VoicePipelineObserved &&
+		execution.VoicePipelineExecutionMode == "host_local" &&
+		execution.HostLocalASRExecuted &&
+		execution.HostLocalTextExecuted &&
+		execution.HostLocalTTSExecuted
+}
+
+func xiaozhiVoiceBenchNonMockStageProfile(profile string) bool {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	return profile != "" &&
+		profile != "mock" &&
+		!strings.HasPrefix(profile, "mock-") &&
+		!strings.HasPrefix(profile, "mock_")
 }
 
 func xiaozhiVoiceBenchStringField(values map[string]any, key string) string {

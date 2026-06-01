@@ -57,23 +57,28 @@ Version 3 unwraps the compact 4-byte header. The current server seam records
 Opus frame count and byte count, propagates or derives `device_id`, `trace_id`,
 and `session_id`, and rejects legacy-looking X21/V21 identities.
 
-This is not yet the complete product voice chain. The current WS-1 seam decodes
-valid uplink Opus frames to PCM16 to produce aggregate telemetry
+By default the WS-1 seam remains a deterministic fixture path so stock protocol
+tests stay cheap and offline. With
+`A21_XIAOZHI_PRODUCT_CHAIN=host_local` (or `A21_PRODUCT_CHAIN=host_local`) the
+Gateway fills missing xiaozhi pipeline defaults with
+`A21_ASR_LOCAL_PROFILE=sherpa_onnx`, `A21_TTS_FAST_PROFILE=sherpa_onnx_tts`,
+and, when local Ollama URL/model env is present and no text profile is selected,
+`A21_TEXT_STREAM_PROFILE=local_ollama`. Explicit ASR/text/TTS env values always
+win over these defaults. The seam decodes valid uplink Opus frames to PCM16 to
+produce aggregate telemetry
 (`decoded_frame_count`, `decoded_sample_count`, `decoded_duration_ms`) and an
 honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`.
 Decoded PCM also enters the existing `audio.Ingress` buffer and VAD markers so
-the next ASR slice has the same observable ingress surface as `/ws/audio`.
-When decoded frames include VAD speech, `/v1/xiaozhi` can run the
-`internal/providers` fixture pipeline and send the resulting mock TTS PCM chunk
+ASR receives the same observable ingress surface as `/ws/audio`. When decoded
+frames include VAD speech, `/v1/xiaozhi` runs the configured
+`internal/providers` ASR -> text stream -> TTS pipeline and sends resulting PCM
 through the paced Opus downlink. When no speech or no usable decoded frame is
-available, it still emits the honest xiaozhi TTS lifecycle placeholder. This
-is fixture plumbing only: it does not execute real ASR/LLM/TTS providers and
-must not be cited as audible product acceptance.
+available, it still emits the honest xiaozhi TTS lifecycle placeholder.
 
-Future xiaozhi TTS binary downlink must use the Go `AudioRateController`
-primitive before writing frames: default 60 ms frame slots, five-frame
-prebuffer, per-frame abort checks, and reset on turn cancellation. Raw unpaced
-binary writes are not accepted as an A21 product path.
+Xiaozhi TTS binary downlink uses the Go `AudioRateController` primitive before
+writing frames: default 60 ms frame slots, five-frame prebuffer, per-frame
+abort checks, and reset on turn cancellation. Raw unpaced binary writes are
+not accepted as an A21 product path.
 The current downlink primitive accepts only validated 24 kHz or 48 kHz mono
 60 ms `pcm_s16le` provider audio, applies a conservative PCM peak headroom
 limit before Opus encode, and writes one xiaozhi binary frame through the
@@ -92,19 +97,30 @@ WS-2 adds a host-side product voice pipeline contract under
 streaming text, and TTS adapters, then returns downlink-ready
 `VoiceAudioChunk` values: `pcm_s16le`, mono, 60 ms, with 48 kHz preferred for
 local TTS so Gateway can avoid A21-owned upsampling before Opus encode. The
-current implementation is fixture/mock only. It records stage markers such as
-`asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`, and
+implementation supports both fixture/mock adapters and host-local adapters
+(Sherpa ASR, route-eligible OpenAI-compatible or Ollama text stream, and Sherpa
+TTS). It records stage markers such as `asr_first_partial_ms`,
+`llm_first_content_ms`, `tts_first_audio_ms`, and
 `audio_downlink_first_frame_ms`, preserves provider selection by A21 env/profile
 names, and emits a redacted report that stores counts, format metadata, timing,
-aggregate audio-quality metrics, and policy fields only. It must not be cited
-as real provider execution, physical StackChan first-audio acceptance,
-transcript quality evidence, or PRD latency acceptance.
+aggregate audio-quality metrics, and policy fields only. Host-local loopback
+evidence proves the server-side product chain, but it is still not physical
+StackChan first-audio acceptance, transcript quality acceptance, or final PRD
+launch acceptance.
 
 The Gateway xiaozhi fixture path consumes those report fields without storing
 transcripts, provider output, or audio payloads in JSON. Its TTS start message
 may include `voice_pipeline.schema_version`, `execution_mode`, chunk counts,
 and timing fields. The actual mock audio travels only as paced binary Opus
 frames; `data_base64` is not emitted in xiaozhi JSON.
+
+`a21 xiaozhi-voice-bench --require-product-chain` rejects fixture-only or
+partial host-local runs. It exits non-zero unless the Gateway trace proves one
+non-fixture ASR stage, one non-fixture text-stream stage, and one non-fixture
+TTS stage under `voice_pipeline.execution_mode=host_local`. Reports keep only
+safe profile/env identifiers and must not store prompt text, transcript text,
+provider output, full URLs, proxy values, credentials, raw audio, or local
+paths.
 
 Text-stream fallback is provider-neutral. `A21_TEXT_STREAM_FALLBACK_PROFILE`
 selects a secondary configured route-eligible text provider for the host-local

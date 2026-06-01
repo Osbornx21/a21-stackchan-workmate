@@ -2861,6 +2861,34 @@ func TestGatewayServerOptionsFromEnvWiresXiaozhiVoicePipelineAdapters(t *testing
 	}
 }
 
+func TestGatewayServerOptionsFromEnvProductChainModeDefaultsHostLocalAdapters(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_CHAIN=host_local",
+		"A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434",
+		"A21_LOCAL_OLLAMA_MODEL=qwen2.5",
+	})
+	if options.XiaozhiVoicePipelineAdapters == nil {
+		t.Fatal("xiaozhi voice pipeline adapters not configured")
+	}
+	adapters := *options.XiaozhiVoicePipelineAdapters
+	if adapters.ExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local", adapters.ExecutionMode)
+	}
+	if adapters.ASR.Name() != "sherpa_onnx" || adapters.TextStream.Name() != "local_ollama" || adapters.TTS.Name() != "sherpa_onnx_tts" {
+		t.Fatalf("adapters = %s/%s/%s, want sherpa_onnx/local_ollama/sherpa_onnx_tts", adapters.ASR.Name(), adapters.TextStream.Name(), adapters.TTS.Name())
+	}
+	selectionBytes, err := json.Marshal(adapters.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionPayload := string(selectionBytes)
+	for _, forbidden := range []string{"http://", "127.0.0.1", "qwen2.5"} {
+		if strings.Contains(selectionPayload, forbidden) {
+			t.Fatalf("selection leaked config detail %q: %s", forbidden, selectionPayload)
+		}
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional",
@@ -5002,6 +5030,77 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 	}
 	if strings.Contains(string(data), httpServer.URL) || strings.Contains(string(data), dir) {
 		t.Fatalf("report leaked gateway URL or output dir: %s", string(data))
+	}
+}
+
+func TestRunXiaozhiVoiceBenchRequireProductChainRejectsFixture(t *testing.T) {
+	gatewayServer := newGatewayServerFromEnv(nil)
+	httpServer := httptest.NewServer(gatewayServer.Handler())
+	t.Cleanup(httpServer.Close)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-voice-bench",
+		"--gateway-url", httpServer.URL,
+		"--repeat", "1",
+		"--timeout-ms", "5000",
+		"--require-product-chain",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want non-zero for fixture chain: stdout=%s", stdout.String())
+	}
+	rendered := stdout.String()
+	if !strings.Contains(rendered, `"code": "product_chain_not_executed"`) {
+		t.Fatalf("stdout missing product_chain_not_executed finding: %s", rendered)
+	}
+	if strings.Contains(rendered, `"host_local_text_executed": true`) {
+		t.Fatalf("fixture report must not claim host-local text execution: %s", rendered)
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr = %s, want empty", stderr.String())
+	}
+}
+
+func TestXiaozhiVoiceBenchExecutionFromPipelineRequiresNonMockProductStages(t *testing.T) {
+	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
+		"execution_mode": "host_local",
+		"selection": map[string]any{
+			"asr_profile":     "sherpa_onnx",
+			"asr_profile_env": "A21_ASR_LOCAL_PROFILE",
+			"llm_profile":     "mock",
+			"llm_profile_env": "A21_PROVIDER_PRIMARY",
+			"tts_profile":     "sherpa_onnx_tts",
+			"tts_profile_env": "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	if !execution.HostLocalASRExecuted || execution.HostLocalTextExecuted || !execution.HostLocalTTSExecuted {
+		t.Fatalf("execution = %+v, want host-local ASR/TTS only and mock text rejected", execution)
+	}
+	if xiaozhiVoiceBenchProductChainReady(execution) {
+		t.Fatalf("execution = %+v, want product chain not ready with mock text", execution)
+	}
+}
+
+func TestXiaozhiVoiceBenchExecutionFromPipelineMarksNonMockTextProviderExecuted(t *testing.T) {
+	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
+		"execution_mode": "host_local",
+		"selection": map[string]any{
+			"asr_profile":     "sherpa_onnx",
+			"asr_profile_env": "A21_ASR_LOCAL_PROFILE",
+			"llm_profile":     "local_ollama",
+			"llm_profile_env": "A21_TEXT_STREAM_PROFILE",
+			"tts_profile":     "sherpa_onnx_tts",
+			"tts_profile_env": "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	if !execution.ProviderExecuted || !xiaozhiVoiceBenchProductChainReady(execution) {
+		t.Fatalf("execution = %+v, want non-mock text provider counted as executed product chain", execution)
 	}
 }
 

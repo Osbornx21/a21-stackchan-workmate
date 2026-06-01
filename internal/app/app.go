@@ -919,6 +919,7 @@ func newGatewayServerFromEnv(env []string) *gateway.Server {
 }
 
 func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
+	env = applyXiaozhiProductChainEnvDefaults(env)
 	xiaozhiVoicePipelineAdapters := providers.VoicePipelineAdaptersFromEnv(env)
 	options := gateway.ServerOptions{
 		VoiceProvider:                providers.NewGatewayVoiceProviderFromEnv(env),
@@ -935,6 +936,30 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		}
 	}
 	return options
+}
+
+func applyXiaozhiProductChainEnvDefaults(env []string) []string {
+	switch strings.ToLower(strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_XIAOZHI_PRODUCT_CHAIN"), appEnvValue(env, "A21_PRODUCT_CHAIN")))) {
+	case "host_local", "host-local", "product", "real":
+	default:
+		return env
+	}
+	out := append([]string(nil), env...)
+	if strings.TrimSpace(appEnvValue(out, "A21_ASR_LOCAL_PROFILE")) == "" {
+		out = append(out, "A21_ASR_LOCAL_PROFILE=sherpa_onnx")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_TTS_FAST_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_TTS_BALANCED_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_TTS_QUALITY_PROFILE")) == "" {
+		out = append(out, "A21_TTS_FAST_PROFILE=sherpa_onnx_tts")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_TEXT_STREAM_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_PROVIDER_PRIMARY")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_LOCAL_OLLAMA_BASE_URL")) != "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_LOCAL_OLLAMA_MODEL")) != "" {
+		out = append(out, "A21_TEXT_STREAM_PROFILE=local_ollama")
+	}
+	return out
 }
 
 func newAudioIngressConfigFromEnv(env []string) audio.IngressConfig {

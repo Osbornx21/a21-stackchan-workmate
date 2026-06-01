@@ -748,7 +748,7 @@ func routeEligibleTextStreamProfileFromEnv(env []string, profile string, protoco
 
 func isLocalTTSProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
-	case "sherpa_onnx", "local_sherpa_onnx", "macos_say":
+	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say":
 		return true
 	default:
 		return false
