@@ -363,6 +363,7 @@ Current mock trace events include:
 - `control.thinking.sent`
 - `control.speaking.sent`
 - `control.interrupted.sent`
+- `control.local_fallback.sent`
 
 Current trace summary fields:
 
