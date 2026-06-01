@@ -37,21 +37,22 @@ type productReadinessOptions struct {
 }
 
 type productReadinessReport struct {
-	SchemaVersion string                    `json:"schema_version"`
-	GeneratedAtMS int64                     `json:"generated_at_ms"`
-	Status        string                    `json:"status"`
-	LaunchReady   bool                      `json:"launch_ready"`
-	DemoReady     bool                      `json:"demo_ready"`
-	SimulatorURL  string                    `json:"simulator_url"`
-	Gateway       productGatewayReadiness   `json:"gateway"`
-	Provider      productProviderReadiness  `json:"provider"`
-	V21           productV21Readiness       `json:"v21"`
-	StackChan     productStackChanReadiness `json:"stackchan"`
-	Voice         productVoiceReadiness     `json:"voice"`
-	WakeWord      productWakeWordReadiness  `json:"wake_word"`
-	NextActions   []string                  `json:"next_actions,omitempty"`
-	Findings      []productReadinessFinding `json:"findings,omitempty"`
-	ReportPath    string                    `json:"report_path,omitempty"`
+	SchemaVersion string                     `json:"schema_version"`
+	GeneratedAtMS int64                      `json:"generated_at_ms"`
+	Status        string                     `json:"status"`
+	LaunchReady   bool                       `json:"launch_ready"`
+	DemoReady     bool                       `json:"demo_ready"`
+	SimulatorURL  string                     `json:"simulator_url"`
+	Gateway       productGatewayReadiness    `json:"gateway"`
+	Provider      productProviderReadiness   `json:"provider"`
+	V21           productV21Readiness        `json:"v21"`
+	StackChan     productStackChanReadiness  `json:"stackchan"`
+	Voice         productVoiceReadiness      `json:"voice"`
+	WakeWord      productWakeWordReadiness   `json:"wake_word"`
+	ServerSide    productServerSideReadiness `json:"server_side"`
+	NextActions   []string                   `json:"next_actions,omitempty"`
+	Findings      []productReadinessFinding  `json:"findings,omitempty"`
+	ReportPath    string                     `json:"report_path,omitempty"`
 }
 
 type productGatewayReadiness struct {
@@ -174,6 +175,23 @@ type productWakeWordReadiness struct {
 	FirmwarePlanDryRun    bool   `json:"firmware_plan_dry_run"`
 	FirmwarePlanBuild     bool   `json:"firmware_plan_build_allowed"`
 	FirmwarePlanFlash     bool   `json:"firmware_plan_flash_allowed"`
+}
+
+type productServerSideReadiness struct {
+	Status                       string   `json:"status"`
+	CandidateReady               bool     `json:"candidate_ready"`
+	AcceptanceStatus             string   `json:"acceptance_status"`
+	PRDAccepted                  bool     `json:"prd_accepted"`
+	GatewayReady                 bool     `json:"gateway_ready"`
+	ProviderEvidenceReady        bool     `json:"provider_evidence_ready"`
+	V21ProfessionalEvidenceReady bool     `json:"v21_professional_evidence_ready"`
+	HostVoiceLoopbackReady       bool     `json:"host_voice_loopback_ready"`
+	WakeWordReady                bool     `json:"wake_word_ready"`
+	RequiresPhysicalAcceptance   bool     `json:"requires_physical_acceptance"`
+	ProviderSmokeSourceReport    string   `json:"provider_smoke_source_report,omitempty"`
+	V21ProfessionalSourceReport  string   `json:"v21_professional_source_report,omitempty"`
+	HostVoiceSourceReport        string   `json:"host_voice_source_report,omitempty"`
+	MissingEvidence              []string `json:"missing_evidence,omitempty"`
 }
 
 type productVoicePipelineReadiness struct {
@@ -470,6 +488,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.StackChan.PhysicalEvidence = physicalEvidence
 	report.Findings = append(report.Findings, physicalFindings...)
 	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan, xiaozhiEvidence)
+	report.ServerSide = buildProductServerSideReadiness(report)
 	report.LaunchReady = report.Gateway.Healthy &&
 		report.Provider.RealProviderReady &&
 		report.V21.Healthy &&
@@ -485,6 +504,8 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	}
 	if report.LaunchReady {
 		report.Status = "real_launch_ready"
+	} else if report.ServerSide.CandidateReady {
+		report.Status = "server_side_candidate_ready"
 	} else if report.DemoReady {
 		report.Status = "mock_demo_ready"
 	} else {
@@ -1217,6 +1238,45 @@ func productV21ProfessionalReady(v21 productV21Readiness) bool {
 		v21.Professional.CardsAvailable &&
 		v21.Professional.FollowUpsAvailable &&
 		v21.Professional.AdapterExecuted
+}
+
+func buildProductServerSideReadiness(report productReadinessReport) productServerSideReadiness {
+	readiness := productServerSideReadiness{
+		Status:                      "blocked",
+		AcceptanceStatus:            "server_side_blocked",
+		ProviderSmokeSourceReport:   report.Provider.SmokeSourceReport,
+		V21ProfessionalSourceReport: report.V21.Professional.SourceReport,
+		HostVoiceSourceReport:       report.Voice.VoicePipeline.SourceReport,
+		RequiresPhysicalAcceptance:  !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
+	}
+	readiness.GatewayReady = report.Gateway.Healthy && report.Gateway.SimulatorReady
+	readiness.ProviderEvidenceReady = report.Provider.RealProviderReady &&
+		report.Provider.SmokeEvidenceValid &&
+		report.Provider.SmokeExecuted
+	readiness.V21ProfessionalEvidenceReady = productV21ProfessionalReady(report.V21)
+	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostLoopbackCandidateReady
+	readiness.WakeWordReady = report.WakeWord.ProductReady
+	if !readiness.GatewayReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "gateway")
+	}
+	if !readiness.ProviderEvidenceReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "provider_smoke")
+	}
+	if !readiness.V21ProfessionalEvidenceReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "v21_professional_smoke")
+	}
+	if !readiness.HostVoiceLoopbackReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "host_voice_loopback")
+	}
+	if !readiness.WakeWordReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "wake_word")
+	}
+	readiness.CandidateReady = len(readiness.MissingEvidence) == 0
+	if readiness.CandidateReady {
+		readiness.Status = "candidate_ready"
+		readiness.AcceptanceStatus = "server_side_candidate_ready"
+	}
+	return readiness
 }
 
 func productMicrophoneReady(status string) bool {

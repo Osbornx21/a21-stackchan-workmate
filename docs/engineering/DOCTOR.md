@@ -193,6 +193,18 @@ env is set, product-readiness reports `sherpa_onnx` as the host-local ASR
 candidate so the remaining launch gaps focus on provider/V21/hardware evidence
 instead of re-asking for an already installed local model.
 
+When the Gateway/simulator, executed provider smoke, executed professional V21
+evidence, host Xiaozhi/local voice loopback evidence, and wake-word runtime are
+all ready, `product-readiness` also emits a `server_side` block with
+`candidate_ready=true` and top-level `status=server_side_candidate_ready`.
+This is the no-hardware server candidate gate: source report fields are
+basenames only, `requires_physical_acceptance=true` preserves the hardware
+gate, and `launch_ready` remains false until physical StackChan playback,
+microphone, wake-word, and PRD acceptance evidence are present. Missing pieces
+are reported as fixed `server_side.missing_evidence` labels such as
+`provider_smoke`, `v21_professional_smoke`, `host_voice_loopback`, or
+`wake_word`.
+
 `audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 
 `provider-latency-bench` now exists as a mock/fixture scaffold for the shared

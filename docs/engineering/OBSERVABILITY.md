@@ -79,6 +79,15 @@ matches the current Gateway wake-word intent. The rollup then exposes
 `wake_word`; it still keeps launch blocked until a later guarded build/flash
 and physical acceptance prove the custom model on the device.
 
+`product-readiness` also emits a `server_side` observability block for the
+no-hardware candidate chain. It summarizes the already-redacted Gateway,
+provider-smoke, professional V21, host voice loopback, and wake-word readiness
+signals into `candidate_ready`, fixed `missing_evidence` labels, and
+basename-only source report fields. This block is intentionally below launch
+acceptance: a server candidate can be green while `launch_ready=false` and
+`requires_physical_acceptance=true`, so dashboards must not treat it as
+physical StackChan PRD acceptance.
+
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
 The WS-2 product voice pipeline contract emits schema

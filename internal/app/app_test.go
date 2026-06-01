@@ -546,6 +546,100 @@ func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.
 	}
 }
 
+func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
+		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Status != "server_side_candidate_ready" || !report.ServerSide.CandidateReady {
+		t.Fatalf("status/server-side = %q/%+v, want server_side_candidate_ready", report.Status, report.ServerSide)
+	}
+	if report.LaunchReady || report.ServerSide.PRDAccepted {
+		t.Fatalf("launch/server-prd = %v/%v, want no-hardware candidate below PRD acceptance", report.LaunchReady, report.ServerSide.PRDAccepted)
+	}
+	if report.ServerSide.AcceptanceStatus != "server_side_candidate_ready" ||
+		!report.ServerSide.GatewayReady ||
+		!report.ServerSide.ProviderEvidenceReady ||
+		!report.ServerSide.V21ProfessionalEvidenceReady ||
+		!report.ServerSide.HostVoiceLoopbackReady ||
+		!report.ServerSide.WakeWordReady ||
+		!report.ServerSide.RequiresPhysicalAcceptance {
+		t.Fatalf("server-side readiness = %+v, want full no-hardware candidate and physical gate preserved", report.ServerSide)
+	}
+	if report.ServerSide.ProviderSmokeSourceReport != "a21-provider-smoke-real.json" ||
+		report.ServerSide.V21ProfessionalSourceReport != "a21-v21-adapter-smoke-real.json" ||
+		report.ServerSide.HostVoiceSourceReport != "a21-xiaozhi-host-local-report.json" {
+		t.Fatalf("server-side source reports = %+v, want basename-only sources", report.ServerSide)
+	}
+	if len(report.ServerSide.MissingEvidence) != 0 {
+		t.Fatalf("missing server-side evidence = %#v, want none", report.ServerSide.MissingEvidence)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("server-side candidate leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessServerSideCandidateRequiresHostVoiceLoopback(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+	})
+
+	if report.ServerSide.CandidateReady {
+		t.Fatalf("server-side readiness = %+v, want blocked without host voice loopback", report.ServerSide)
+	}
+	if report.ServerSide.AcceptanceStatus != "server_side_blocked" ||
+		!report.ServerSide.ProviderEvidenceReady ||
+		!report.ServerSide.V21ProfessionalEvidenceReady ||
+		report.ServerSide.HostVoiceLoopbackReady {
+		t.Fatalf("server-side readiness = %+v, want provider/v21 ready but host voice missing", report.ServerSide)
+	}
+	if !containsExactProductString(report.ServerSide.MissingEvidence, "host_voice_loopback") {
+		t.Fatalf("missing server-side evidence = %#v, want host_voice_loopback", report.ServerSide.MissingEvidence)
+	}
+}
+
 func TestProductReadinessIngestsPhysicalStackChanCandidateEvidence(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessPhysicalStackChanReportFixture(t, nil)
@@ -1160,6 +1254,7 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 	rendered := stdout.String()
 	for _, want := range []string{
+		`"status": "server_side_candidate_ready"`,
 		`"real_provider_ready": true`,
 		`"smoke_evidence_valid": true`,
 		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
@@ -1170,6 +1265,8 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 		`"adapter_executed": true`,
 		`"candidate_physical_evidence": true`,
 		`"host_loopback_candidate_ready": true`,
+		`"candidate_ready": true`,
+		`"requires_physical_acceptance": true`,
 		`"launch_ready": false`,
 	} {
 		if !strings.Contains(rendered, want) {
@@ -1637,6 +1734,15 @@ func createProductReadinessModelFiles(t *testing.T, dir string, names []string) 
 func containsProductAction(actions []string, want string) bool {
 	for _, action := range actions {
 		if strings.Contains(action, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsExactProductString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}
