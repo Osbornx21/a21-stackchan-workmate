@@ -37,22 +37,23 @@ type productReadinessOptions struct {
 }
 
 type productReadinessReport struct {
-	SchemaVersion string                     `json:"schema_version"`
-	GeneratedAtMS int64                      `json:"generated_at_ms"`
-	Status        string                     `json:"status"`
-	LaunchReady   bool                       `json:"launch_ready"`
-	DemoReady     bool                       `json:"demo_ready"`
-	SimulatorURL  string                     `json:"simulator_url"`
-	Gateway       productGatewayReadiness    `json:"gateway"`
-	Provider      productProviderReadiness   `json:"provider"`
-	V21           productV21Readiness        `json:"v21"`
-	StackChan     productStackChanReadiness  `json:"stackchan"`
-	Voice         productVoiceReadiness      `json:"voice"`
-	WakeWord      productWakeWordReadiness   `json:"wake_word"`
-	ServerSide    productServerSideReadiness `json:"server_side"`
-	NextActions   []string                   `json:"next_actions,omitempty"`
-	Findings      []productReadinessFinding  `json:"findings,omitempty"`
-	ReportPath    string                     `json:"report_path,omitempty"`
+	SchemaVersion     string                            `json:"schema_version"`
+	GeneratedAtMS     int64                             `json:"generated_at_ms"`
+	Status            string                            `json:"status"`
+	LaunchReady       bool                              `json:"launch_ready"`
+	DemoReady         bool                              `json:"demo_ready"`
+	SimulatorURL      string                            `json:"simulator_url"`
+	Gateway           productGatewayReadiness           `json:"gateway"`
+	Provider          productProviderReadiness          `json:"provider"`
+	V21               productV21Readiness               `json:"v21"`
+	StackChan         productStackChanReadiness         `json:"stackchan"`
+	Voice             productVoiceReadiness             `json:"voice"`
+	WakeWord          productWakeWordReadiness          `json:"wake_word"`
+	ServerSide        productServerSideReadiness        `json:"server_side"`
+	CanonicalDecision productCanonicalReadinessDecision `json:"canonical_decision"`
+	NextActions       []string                          `json:"next_actions,omitempty"`
+	Findings          []productReadinessFinding         `json:"findings,omitempty"`
+	ReportPath        string                            `json:"report_path,omitempty"`
 }
 
 type productGatewayReadiness struct {
@@ -192,6 +193,18 @@ type productServerSideReadiness struct {
 	V21ProfessionalSourceReport  string   `json:"v21_professional_source_report,omitempty"`
 	HostVoiceSourceReport        string   `json:"host_voice_source_report,omitempty"`
 	MissingEvidence              []string `json:"missing_evidence,omitempty"`
+}
+
+type productCanonicalReadinessDecision struct {
+	Authority                  string   `json:"authority"`
+	FullPRDStatus              string   `json:"full_prd_status"`
+	LaunchReady                bool     `json:"launch_ready"`
+	PRDAccepted                bool     `json:"prd_accepted"`
+	ServerSideCandidateReady   bool     `json:"server_side_candidate_ready"`
+	HostOnlyEvidenceUse        string   `json:"host_only_evidence_use"`
+	RequiresPhysicalAcceptance bool     `json:"requires_physical_acceptance"`
+	MissingRealEvidence        []string `json:"missing_real_evidence,omitempty"`
+	MissingReportFields        []string `json:"missing_report_fields,omitempty"`
 }
 
 type productVoicePipelineReadiness struct {
@@ -511,6 +524,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	} else {
 		report.Status = "blocked"
 	}
+	report.CanonicalDecision = buildProductCanonicalReadinessDecision(report)
 	return report
 }
 
@@ -722,8 +736,11 @@ func validProductProviderSmokeStreamingEvidence(fixture productProviderSmokeRepo
 	}
 	if fixture.TimingSummary.Repeat != fixture.Repeat ||
 		fixture.TimingSummary.FirstByteP95MS <= 0 ||
+		fixture.TimingSummary.FirstByteP99MS <= 0 ||
 		fixture.TimingSummary.FirstContentP95MS <= 0 ||
-		fixture.TimingSummary.TotalDurationP95MS <= 0 {
+		fixture.TimingSummary.FirstContentP99MS <= 0 ||
+		fixture.TimingSummary.TotalDurationP95MS <= 0 ||
+		fixture.TimingSummary.TotalDurationP99MS <= 0 {
 		return false
 	}
 	for _, attempt := range fixture.Attempts {
@@ -1277,6 +1294,82 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		readiness.AcceptanceStatus = "server_side_candidate_ready"
 	}
 	return readiness
+}
+
+func buildProductCanonicalReadinessDecision(report productReadinessReport) productCanonicalReadinessDecision {
+	status := "blocked"
+	switch {
+	case report.LaunchReady:
+		status = "prd_accepted"
+	case report.ServerSide.CandidateReady:
+		status = "server_side_candidate_only"
+	}
+	return productCanonicalReadinessDecision{
+		Authority:                  "a21.product_readiness.v1",
+		FullPRDStatus:              status,
+		LaunchReady:                report.LaunchReady,
+		PRDAccepted:                report.LaunchReady,
+		ServerSideCandidateReady:   report.ServerSide.CandidateReady,
+		HostOnlyEvidenceUse:        "gap_reduction_only",
+		RequiresPhysicalAcceptance: !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
+		MissingRealEvidence:        productMissingRealEvidence(report),
+		MissingReportFields:        productMissingReportFields(report.Findings),
+	}
+}
+
+func productMissingRealEvidence(report productReadinessReport) []string {
+	var missing []string
+	if !report.Gateway.Healthy || !report.Gateway.SimulatorReady {
+		missing = append(missing, "gateway")
+	}
+	if !report.Provider.RealProviderReady || !report.Provider.SmokeEvidenceValid || !report.Provider.SmokeExecuted {
+		missing = append(missing, "real_provider_smoke")
+	}
+	if !productV21ProfessionalReady(report.V21) {
+		missing = append(missing, "v21_professional_execution")
+	}
+	if !report.StackChan.PhysicalDeviceOnline {
+		missing = append(missing, "physical_stackchan_online")
+	}
+	if !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
+		missing = append(missing, "physical_stackchan_prd_acceptance")
+	}
+	if !report.Voice.ContinuousVoiceReady {
+		missing = append(missing, "continuous_voice_pipeline")
+	}
+	if !report.WakeWord.ProductReady {
+		missing = append(missing, "wake_word_product_ready")
+	}
+	return missing
+}
+
+func productMissingReportFields(findings []productReadinessFinding) []string {
+	var fields []string
+	for _, finding := range findings {
+		prefix := productMissingReportFieldPrefix(finding.Code)
+		if prefix == "" || strings.TrimSpace(finding.Detail) == "" {
+			continue
+		}
+		fields = append(fields, prefix+":"+strings.TrimSpace(finding.Detail))
+	}
+	return fields
+}
+
+func productMissingReportFieldPrefix(code string) string {
+	switch code {
+	case "provider_smoke_report_missing_field":
+		return "provider_smoke"
+	case "xiaozhi_report_missing_field":
+		return "xiaozhi_report"
+	case "wake_word_firmware_plan_missing_field":
+		return "wake_word_firmware_plan"
+	case "v21_professional_report_missing_field":
+		return "v21_professional_report"
+	case "v21_adapter_smoke_report_missing_field":
+		return "v21_adapter_smoke"
+	default:
+		return ""
+	}
 }
 
 func productMicrophoneReady(status string) bool {

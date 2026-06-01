@@ -2598,22 +2598,91 @@ func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	}
 }
 
-func TestXiaozhiDownlinkPCM16AppliesHeadroomToHotTTSFrames(t *testing.T) {
-	const wantMaxPeak = 29490
+func TestWriteXiaozhiOpusDownlinkAccepts48KMono60MS(t *testing.T) {
+	server := NewServer()
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-downlink-48k",
+		sessionID: "a21-session-xiaozhi-downlink-48k",
+	}
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		ok, err := server.writeXiaozhiOpusDownlink(context.Background(), conn, session, turn, providers.VoiceAudioChunk{
+			Codec:        string(protocol.AudioCodecPCMS16LE),
+			SampleRateHz: 48000,
+			Channels:     1,
+			DurationMS:   60,
+			DataBase64:   xiaozhiTestPCM16Base64(48000, 60, 6000),
+		})
+		if err != nil || !ok {
+			t.Errorf("downlink 48k = ok:%v err:%v", ok, err)
+		}
+	}))
+	t.Cleanup(httpServer.Close)
 
-	pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
-		Codec:        string(protocol.AudioCodecPCMS16LE),
-		SampleRateHz: 24000,
-		Channels:     1,
-		DurationMS:   60,
-		DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 32767),
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, ""), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	messageType, packet, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary {
+		t.Fatalf("message type = %v, want binary", messageType)
+	}
+	codec, err := opuscodec.New(48000, 1, 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pcm, err := codec.DecodePCM16(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pcm) != 2880 {
+		t.Fatalf("decoded samples = %d, want 2880", len(pcm))
+	}
+	if turn.pacer.SentFrames() != 1 {
+		t.Fatalf("pacer sent frames = %d, want 1", turn.pacer.SentFrames())
+	}
+}
 
-	if got := maxAbsPCM16(pcm); got > wantMaxPeak {
-		t.Fatalf("pcm peak = %d, want <= %d", got, wantMaxPeak)
+func TestXiaozhiDownlinkPCM16AppliesHeadroomToHotTTSFrames(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		sample int16
+	}{
+		{name: "positive full scale", sample: 32767},
+		{name: "negative full scale", sample: -32768},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
+				Codec:        string(protocol.AudioCodecPCMS16LE),
+				SampleRateHz: 24000,
+				Channels:     1,
+				DurationMS:   60,
+				DataBase64:   xiaozhiTestPCM16Base64(24000, 60, tt.sample),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := maxAbsPCM16(pcm); got > xiaozhiDownlinkPCM16HeadroomPeak {
+				t.Fatalf("pcm peak = %d, want <= %d", got, xiaozhiDownlinkPCM16HeadroomPeak)
+			}
+			for _, sample := range pcm {
+				if sample == 32767 || sample == -32768 {
+					t.Fatalf("pcm retained clipped full-scale sample %d", sample)
+				}
+			}
+		})
 	}
 }
 

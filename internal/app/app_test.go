@@ -1255,6 +1255,15 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	rendered := stdout.String()
 	for _, want := range []string{
 		`"status": "server_side_candidate_ready"`,
+		`"canonical_decision"`,
+		`"authority": "a21.product_readiness.v1"`,
+		`"full_prd_status": "server_side_candidate_only"`,
+		`"host_only_evidence_use": "gap_reduction_only"`,
+		`"server_side_candidate_ready": true`,
+		`"missing_real_evidence"`,
+		`"physical_stackchan_online"`,
+		`"physical_stackchan_prd_acceptance"`,
+		`"continuous_voice_pipeline"`,
 		`"real_provider_ready": true`,
 		`"smoke_evidence_valid": true`,
 		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
@@ -1314,6 +1323,11 @@ func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing
 	for _, want := range []string{
 		`"schema_version": "a21.server_side_readiness_bundle.v1"`,
 		`"status": "server_side_candidate_ready"`,
+		`"canonical_decision"`,
+		`"authority": "a21.product_readiness.v1"`,
+		`"full_prd_status": "server_side_candidate_only"`,
+		`"host_only_evidence_use": "gap_reduction_only"`,
+		`"server_side_candidate_ready": true`,
 		`"candidate_ready": true`,
 		`"launch_ready": false`,
 		`"prd_accepted": false`,
@@ -1899,6 +1913,9 @@ func TestProductReadinessRejectsXiaozhiReportMissingCandidateFields(t *testing.T
 			}
 			if !containsProductFinding(report.Findings, "xiaozhi_report_missing_field", tt.wantField) {
 				t.Fatalf("findings = %#v, want missing-field finding for %s", report.Findings, tt.wantField)
+			}
+			if !containsExactProductString(report.CanonicalDecision.MissingReportFields, "xiaozhi_report:"+tt.wantField) {
+				t.Fatalf("canonical missing fields = %#v, want xiaozhi_report:%s", report.CanonicalDecision.MissingReportFields, tt.wantField)
 			}
 			var encoded bytes.Buffer
 			if err := writeJSONProductReadiness(&encoded, report); err != nil {
@@ -2609,10 +2626,13 @@ func productReadinessProviderSmokeReportFixtureJSON() string {
     "repeat": 3,
     "first_byte_p50_ms": 118.5,
     "first_byte_p95_ms": 140.1,
+    "first_byte_p99_ms": 142.1,
     "first_content_p50_ms": 198.75,
     "first_content_p95_ms": 220.2,
+    "first_content_p99_ms": 222.2,
     "total_duration_p50_ms": 492.25,
-    "total_duration_p95_ms": 510.3
+    "total_duration_p95_ms": 510.3,
+    "total_duration_p99_ms": 512.3
   },
   "trace_id": "a21-trace-provider-smoke-001",
   "trace_markers": [

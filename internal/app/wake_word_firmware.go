@@ -49,6 +49,11 @@ type wakeWordFirmwarePlanReport struct {
 	Threshold                int                           `json:"threshold"`
 	RuntimeStatus            string                        `json:"runtime_status"`
 	RuntimeConfigurable      bool                          `json:"runtime_configurable"`
+	FirmwareStatus           string                        `json:"firmware_status"`
+	ActiveRuntimeProfile     string                        `json:"active_runtime_profile"`
+	DesiredFirmwareProfile   string                        `json:"desired_firmware_profile,omitempty"`
+	RuntimeHotSwapSupported  bool                          `json:"runtime_hot_swap_supported"`
+	CustomRuntimeActive      bool                          `json:"custom_runtime_active"`
 	NextRequiredConfirmation string                        `json:"next_required_confirmation,omitempty"`
 	NextRequiredActions      []string                      `json:"next_required_actions,omitempty"`
 	Findings                 []wakeWordFirmwarePlanFinding `json:"findings,omitempty"`
@@ -120,22 +125,27 @@ func runWakeWordFirmwarePlan(args []string, stdout io.Writer, stderr io.Writer) 
 
 func buildWakeWordFirmwarePlanReport(status gateway.WakeWordConfigResponse) wakeWordFirmwarePlanReport {
 	report := wakeWordFirmwarePlanReport{
-		SchemaVersion:       wakeWordFirmwarePlanSchema,
-		GeneratedAtMS:       time.Now().UnixMilli(),
-		Status:              "builtin_noop",
-		DryRun:              true,
-		FirmwareID:          wakeWordFirmwareID,
-		TargetBoard:         wakeWordFirmwareTargetBoard,
-		TargetProfile:       wakeWordFirmwareTargetProfile,
-		GuardTier:           wakeWordFirmwareGuardTier,
-		Mode:                status.Mode,
-		ActivePhrase:        status.ActivePhrase,
-		ActivePinyin:        status.ActivePinyin,
-		DesiredPhrase:       status.DesiredPhrase,
-		DesiredPinyin:       status.DesiredPinyin,
-		Threshold:           status.Threshold,
-		RuntimeStatus:       status.RuntimeStatus,
-		RuntimeConfigurable: status.RuntimeConfigurable,
+		SchemaVersion:           wakeWordFirmwarePlanSchema,
+		GeneratedAtMS:           time.Now().UnixMilli(),
+		Status:                  "builtin_noop",
+		DryRun:                  true,
+		FirmwareID:              wakeWordFirmwareID,
+		TargetBoard:             wakeWordFirmwareTargetBoard,
+		TargetProfile:           wakeWordFirmwareTargetProfile,
+		GuardTier:               wakeWordFirmwareGuardTier,
+		Mode:                    status.Mode,
+		ActivePhrase:            status.ActivePhrase,
+		ActivePinyin:            status.ActivePinyin,
+		DesiredPhrase:           status.DesiredPhrase,
+		DesiredPinyin:           status.DesiredPinyin,
+		Threshold:               status.Threshold,
+		RuntimeStatus:           status.RuntimeStatus,
+		RuntimeConfigurable:     status.RuntimeConfigurable,
+		FirmwareStatus:          status.FirmwareStatus,
+		ActiveRuntimeProfile:    status.ActiveRuntimeProfile,
+		DesiredFirmwareProfile:  status.DesiredFirmwareProfile,
+		RuntimeHotSwapSupported: status.RuntimeHotSwapSupported,
+		CustomRuntimeActive:     status.CustomRuntimeActive,
 		NextRequiredActions: []string{
 			"Keep stock xiaozhi WakeNet active; no A21 firmware build is required for the builtin profile.",
 		},
@@ -143,9 +153,19 @@ func buildWakeWordFirmwarePlanReport(status gateway.WakeWordConfigResponse) wake
 	if report.Mode == "" {
 		report.Mode = wakeWordFirmwareBuiltinMode
 	}
+	if report.FirmwareStatus == "" {
+		report.FirmwareStatus = "builtin_active"
+	}
+	if report.ActiveRuntimeProfile == "" {
+		report.ActiveRuntimeProfile = "builtin_xiaozhi_wakenet"
+	}
 	if status.FirmwareBuildRequired || status.Mode == wakeWordFirmwareCustomMode {
 		report.Status = "pending_firmware_build"
 		report.FirmwareBuildRequired = true
+		report.FirmwareStatus = "custom_pending_firmware"
+		if report.DesiredFirmwareProfile == "" {
+			report.DesiredFirmwareProfile = wakeWordFirmwareCustomMode
+		}
 		report.NextRequiredConfirmation = wakeWordFirmwareBuildConfirm
 		report.NextRequiredActions = []string{
 			"Prepare a reviewed A21 xiaozhi/ESP-SR MultiNet firmware build package for the requested wake word.",
