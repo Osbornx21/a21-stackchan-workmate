@@ -86,7 +86,8 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active implementation worker at this checkpoint |
+| Wake build authenticity guard | `019e8544-42e4-7b82-816c-ecea282af127` | `/Users/jiyurun/.codex/worktrees/8e44/New project` | worker-managed from integration baseline | Require explicit matching reviewed-build evidence before producing `a21-wake-word-build.json` | Active; poll before editing wake receipt/package code |
+| Provider 5080lab operator packet | `019e8544-788b-7e21-924c-0af318e6d8fa` | `/Users/jiyurun/.codex/worktrees/fe41/New project` | worker-managed from integration baseline | Make real selected-provider 5080lab execute/package/import closure hard to mis-run without local provider execute | Active; poll before editing provider evidence code/docs |
 
 Recently completed workers:
 
