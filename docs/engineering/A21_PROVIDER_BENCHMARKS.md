@@ -159,6 +159,18 @@ Return these files to A21:
 - `reports/5080lab-provider/a21-server-side-readiness-bundle-*.json`
 - `reports/a21-5080lab-provider-evidence-*.tgz`
 
+After the package is returned to the control machine, import it through the A21
+toolchain rather than manually unpacking it:
+
+```bash
+go run ./cmd/a21 provider-evidence-import --bundle reports/a21-5080lab-provider-evidence-YYYYMMDD-HHMMSS.tgz --output-dir reports
+go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports
+```
+
+The import command only accepts basename-only A21 report JSON entries from the
+5080lab archive, rejects path traversal and redaction failures, and copies the
+reports only after it finds an accepted executed streaming provider-smoke report.
+
 Reject the package if any report stores API key values, model values, prompt
 text, transcript text, provider output, provider reasoning, proxy values, full
 provider URLs, URL credentials, local paths, or non-A21 provider profile names.

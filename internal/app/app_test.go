@@ -1,7 +1,9 @@
 package app
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -695,6 +697,88 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 		if strings.Contains(encoded.String(), forbidden) {
 			t.Fatalf("server-side candidate leaked or overclaimed %q: %s", forbidden, encoded.String())
 		}
+	}
+}
+
+func TestRunProviderEvidenceImportMakes5080labProviderSmokeUsable(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	bundle := writeProviderEvidenceImportBundle(t, map[string]string{
+		"a21-provider-smoke-20260602-120000.json": productReadinessProviderSmokeReportFixtureJSON(),
+	})
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-evidence-import", "--bundle", bundle, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.provider_evidence_import.v1"`,
+		`"status": "accepted"`,
+		`"provider_smoke_ready": true`,
+		`"source_report": "a21-provider-smoke-20260602-120000.json"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{bundle, dir, "http://", "https://", "/Users/", "secret-value"} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("provider evidence import leaked %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("product-readiness code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report productReadinessReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode product readiness report: %v\n%s", err, stdout.String())
+	}
+	if !report.Provider.RealProviderReady || !report.Provider.SmokeEvidenceValid || !report.Provider.SmokeExecuted {
+		t.Fatalf("provider readiness = %+v, want imported 5080lab provider smoke evidence", report.Provider)
+	}
+}
+
+func TestRunProviderEvidenceImportRejectsUnsafeBundleWithoutLeak(t *testing.T) {
+	dir := t.TempDir()
+	bundle := writeProviderEvidenceImportBundle(t, map[string]string{
+		"../a21-provider-smoke-20260602-120000.json": productReadinessProviderSmokeReportFixtureJSON(),
+		"a21-provider-smoke-20260602-120001.json":    strings.Replace(productReadinessProviderSmokeReportFixtureJSON(), `"provider": "deepseek"`, `"provider": "secret-value"`, 1),
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-evidence-import", "--bundle", bundle, "--output-dir", dir}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want unsafe bundle rejected: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	rendered := stdout.String() + stderr.String()
+	for _, want := range []string{`"status": "rejected"`, `"provider_smoke_ready": false`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+	for _, forbidden := range []string{bundle, dir, "http://", "https://", "/Users/", "secret-value", "../"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("unsafe provider bundle leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("provider smoke files = %#v, want no import from unsafe bundle", matches)
 	}
 }
 
@@ -2739,6 +2823,36 @@ func copyProductReadinessReportFixture(t *testing.T, source string, target strin
 		t.Fatal(err)
 	}
 	return target
+}
+
+func writeProviderEvidenceImportBundle(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-5080lab-provider-evidence-20260602-120000.tgz")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	gzipWriter := gzip.NewWriter(file)
+	defer gzipWriter.Close()
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+	for name, content := range entries {
+		data := []byte(content)
+		header := &tar.Header{
+			Name: name,
+			Mode: 0o644,
+			Size: int64(len(data)),
+		}
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tarWriter.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
 }
 
 func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {
