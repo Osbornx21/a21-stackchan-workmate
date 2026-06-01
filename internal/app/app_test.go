@@ -1521,6 +1521,156 @@ func TestRunServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthoriza
 	}
 }
 
+func TestRunServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence(t *testing.T) {
+	var providerCalls int
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("provider path = %q, want /chat/completions", r.URL.Path)
+		}
+		providerCalls++
+		if r.Header.Get("Authorization") != "Bearer sk-a21-bundle-secret" {
+			t.Fatalf("provider auth header missing")
+		}
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "a21-bundle-hidden-model" || !body.Stream {
+			t.Fatalf("provider body = %+v, want hidden model and stream=true", body)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"bundle ok"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(provider.Close)
+	var v21Calls int
+	v21 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","service":"a21-v21-adapter"}`))
+			return
+		}
+		if r.URL.Path != "/a21/v21/query" {
+			t.Fatalf("v21 path = %q, want /a21/v21/query", r.URL.Path)
+		}
+		v21Calls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-bundle-v21",
+			"fast_answer":"可执行证据正常。",
+			"confidence":0.91,
+			"evidence":[{"title":"Bundle Evidence","type":"doc","source_id":"a21-doc-001","summary":"已验证。"}],
+			"speech_blocks":["我在查，先给你结论。"],
+			"screen_cards":[{"label":"结论","text":"bundle evidence ok"}],
+			"follow_ups":["继续看延迟吗？"]
+		}`))
+	}))
+	t.Cleanup(v21.Close)
+	dir := t.TempDir()
+	profilePath := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(profilePath, []byte(`{
+		"name": "a21_bundle_vendor",
+		"label": "A21 bundle vendor",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "streaming_text", "text_stream"],
+		"api_key_env": "A21_BUNDLE_VENDOR_API_KEY",
+		"model_env": "A21_BUNDLE_VENDOR_MODEL",
+		"base_url_env": "A21_BUNDLE_VENDOR_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PROFILES_PATH", profilePath)
+	t.Setenv("A21_PROVIDER_PRIMARY", "a21_bundle_vendor")
+	t.Setenv("A21_BUNDLE_VENDOR_API_KEY", "sk-a21-bundle-secret")
+	t.Setenv("A21_BUNDLE_VENDOR_MODEL", "a21-bundle-hidden-model")
+	t.Setenv("A21_BUNDLE_VENDOR_BASE_URL", provider.URL)
+	t.Setenv("A21_V21_ADAPTER_URL", v21.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"server-side-readiness-bundle",
+		"--gateway-url", newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`).URL,
+		"--use-latest-reports",
+		"--collect-missing",
+		"--execute-provider-smoke",
+		"--execute-v21-smoke",
+		"--require-candidate",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if providerCalls != 3 || v21Calls != 1 {
+		t.Fatalf("provider/v21 calls = %d/%d, want 3/1", providerCalls, v21Calls)
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"status": "server_side_candidate_ready"`,
+		`"candidate_ready": true`,
+		`"name": "provider_smoke"`,
+		`"name": "v21_professional_smoke"`,
+		`"execution_authorized": true`,
+		`"external_execution": true`,
+		`"absorbed_by_readiness": true`,
+		`"source_report": "a21-provider-smoke-`,
+		`"source_report": "a21-v21-adapter-smoke-`,
+		`"provider_smoke_source_report": "a21-provider-smoke-`,
+		`"v21_professional_source_report": "a21-v21-adapter-smoke-`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	providerReports, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil || len(providerReports) != 1 {
+		t.Fatalf("provider reports = %d, %v: %v", len(providerReports), err, providerReports)
+	}
+	v21Reports, err := filepath.Glob(filepath.Join(dir, "a21-v21-adapter-smoke-*.json"))
+	if err != nil || len(v21Reports) != 1 {
+		t.Fatalf("v21 reports = %d, %v: %v", len(v21Reports), err, v21Reports)
+	}
+	for _, forbidden := range []string{
+		provider.URL,
+		v21.URL,
+		dir,
+		profilePath,
+		"http://",
+		"https://",
+		"/Users/",
+		"sk-a21-bundle-secret",
+		"a21-bundle-hidden-model",
+		"bundle ok",
+		"可执行证据正常",
+		`"launch_ready": true`,
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side authorized collect leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandUsesLatestWakeWordFirmwarePlanWithoutPathLeak(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -59,11 +59,14 @@ type serverSideReadinessCollection struct {
 }
 
 type serverSideReadinessCollectionStep struct {
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	Reason       string `json:"reason,omitempty"`
-	Command      string `json:"command,omitempty"`
-	SourceReport string `json:"source_report,omitempty"`
+	Name                string `json:"name"`
+	Status              string `json:"status"`
+	Reason              string `json:"reason,omitempty"`
+	Command             string `json:"command,omitempty"`
+	SourceReport        string `json:"source_report,omitempty"`
+	ExecutionAuthorized bool   `json:"execution_authorized"`
+	ExternalExecution   bool   `json:"external_execution"`
+	AbsorbedByReadiness bool   `json:"absorbed_by_readiness"`
 }
 
 type serverSideReadinessBundleEvidence struct {
@@ -196,6 +199,7 @@ func serverSideProductReadinessOptions(options serverSideReadinessBundleOptions)
 
 func buildServerSideReadinessBundleReport(ctx context.Context, options productReadinessOptions, env []string, collection serverSideReadinessCollection) serverSideReadinessBundleReport {
 	productReport := buildProductReadinessReport(ctx, options, env)
+	collection = markServerSideCollectionAbsorbed(collection, productReport)
 	status := "server_side_blocked"
 	if productReport.ServerSide.CandidateReady {
 		status = "server_side_candidate_ready"
@@ -281,10 +285,12 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 func collectServerSideProviderSmoke(options serverSideReadinessBundleOptions, report productReadinessReport) serverSideReadinessCollectionStep {
 	provider := safeServerSideProviderName(report.Provider.Selected)
 	step := serverSideReadinessCollectionStep{
-		Name:    "provider_smoke",
-		Status:  "skipped",
-		Reason:  "requires --execute-provider-smoke",
-		Command: fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider),
+		Name:                "provider_smoke",
+		Status:              "skipped",
+		Reason:              "requires --execute-provider-smoke",
+		Command:             fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider),
+		ExecutionAuthorized: options.ExecuteProviderSmoke,
+		ExternalExecution:   true,
 	}
 	if !options.ExecuteProviderSmoke {
 		return step
@@ -297,10 +303,12 @@ func collectServerSideProviderSmoke(options serverSideReadinessBundleOptions, re
 
 func collectServerSideV21Smoke(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
 	step := serverSideReadinessCollectionStep{
-		Name:    "v21_professional_smoke",
-		Status:  "skipped",
-		Reason:  "requires --execute-v21-smoke",
-		Command: "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports",
+		Name:                "v21_professional_smoke",
+		Status:              "skipped",
+		Reason:              "requires --execute-v21-smoke",
+		Command:             "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports",
+		ExecutionAuthorized: options.ExecuteV21Smoke,
+		ExternalExecution:   true,
 	}
 	if !options.ExecuteV21Smoke {
 		return step
@@ -317,14 +325,36 @@ func collectServerSideHostVoice(options serverSideReadinessBundleOptions) server
 		repeat = 3
 	}
 	step := serverSideReadinessCollectionStep{
-		Name:    "host_voice_loopback",
-		Status:  "failed",
-		Command: fmt.Sprintf("go run ./cmd/a21 xiaozhi-voice-bench --repeat %d --output-dir reports", repeat),
+		Name:                "host_voice_loopback",
+		Status:              "failed",
+		Command:             fmt.Sprintf("go run ./cmd/a21 xiaozhi-voice-bench --repeat %d --output-dir reports", repeat),
+		ExecutionAuthorized: true,
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run([]string{"xiaozhi-voice-bench", "--gateway-url", options.GatewayURL, "--repeat", fmt.Sprintf("%d", repeat), "--output-dir", options.OutputDir}, &stdout, &stderr)
 	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-voice-bench-*.json"})
+}
+
+func markServerSideCollectionAbsorbed(collection serverSideReadinessCollection, report productReadinessReport) serverSideReadinessCollection {
+	for index := range collection.Steps {
+		step := &collection.Steps[index]
+		switch step.Name {
+		case "provider_smoke":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.Provider.SmokeSourceReport &&
+				report.ServerSide.ProviderEvidenceReady
+		case "v21_professional_smoke":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.V21.Professional.SourceReport &&
+				report.ServerSide.V21ProfessionalEvidenceReady
+		case "host_voice_loopback":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.Voice.VoicePipeline.SourceReport &&
+				report.ServerSide.HostVoiceLoopbackReady
+		}
+	}
+	return collection
 }
 
 func serverSideExecutedCollectionStep(step serverSideReadinessCollectionStep, code int, outputDir string, patterns []string) serverSideReadinessCollectionStep {
