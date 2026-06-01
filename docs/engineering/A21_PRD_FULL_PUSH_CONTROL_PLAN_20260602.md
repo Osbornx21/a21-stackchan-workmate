@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `bcaa61c chore(control): close personality runtime slice`
+Current integration checkpoint: `3f0162d chore(control): record v21 adapter evidence refresh`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `bcaa61c chore(control): close personality runtime slice`
+  `3f0162d chore(control): record v21 adapter evidence refresh`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -55,9 +55,12 @@ Current integration branch:
 - Current provider state: `provider.real_provider_ready=false`; the 5080lab
   operator packet exists, but no real returned bundle has been imported yet.
 - Current wake-word state: `wake_word.product_ready=false` and
-  `wake_word.firmware_package_available=false`; the build receipt now requires
-  matching reviewed-build evidence, but no current reviewed package report has
-  been imported yet.
+  `wake_word.firmware_package_available=true`; a current reviewed custom
+  MultiNet package exists at
+  `a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`
+  for desired phrase `小阿二一` / `xiao a er yi`. It is below activation:
+  `flash_allowed=false`, `flash_executed=false`, and physical wake proof is
+  still required before `wake_word_product_ready` may close.
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
@@ -69,6 +72,9 @@ Current integration branch:
   passed, and
   `go test ./internal/app -run 'StackChanSpeaker|StackChanTouch|ProductReadiness' -count=1`
   passed.
+- Latest wake/readiness targeted verification:
+  `go test ./internal/app -run 'WakeWordFirmware|ProductReadiness' -count=1`
+  passed on current mainline after ingesting the custom wake package evidence.
 - Latest voice-mode verification:
   `go test ./internal/gateway -run 'VoiceMode|FastCompanion|DeviceControl|Simulator' -count=1`
   passed,
@@ -86,8 +92,9 @@ Current integration branch:
   same real-evidence gaps.
 - Latest control-tower refresh:
   `go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports`
-  wrote `a21-product-readiness-20260602-073617.json` with
+  wrote `a21-product-readiness-20260602-075224.json` with
   `status=mock_demo_ready`, `launch_ready=false`, `demo_ready=true`,
+  `wake_word.firmware_package_available=true`,
   server-side `missing_evidence=["provider_smoke","wake_word"]`, and canonical
   `missing_real_evidence=["real_provider_smoke","physical_stackchan_online","physical_stackchan_prd_acceptance","wake_word_product_ready"]`.
 - Latest V21 adapter refresh:
@@ -103,7 +110,7 @@ Current integration branch:
   next-action is gone when the explicit adapter URL is supplied.
 - Latest server-side bundle refresh:
   `A21_V21_ADAPTER_URL=http://127.0.0.1:21121 server-side-readiness-bundle --use-latest-reports`
-  wrote `a21-server-side-readiness-bundle-20260602-074129.json`, with
+  wrote `a21-server-side-readiness-bundle-20260602-075224.json`, with
   `v21.ready=true`, `host_voice.ready=true`, `provider.ready=false`,
   `wake_word.ready=false`, next actions only for provider and wake-word, and no
   PRD fake-green.
@@ -138,6 +145,22 @@ Current integration branch:
   correctly rejected the input and wrote
   `a21-wake-word-firmware-package-20260602-073950-1780357190953924000.json`.
   Do not use this stock build to close `wake_word_product_ready`.
+- Latest current custom wake package:
+  a fresh bounded worker built an external xiaozhi/ESP-SR MultiNet CoreS3
+  artifact in scratch space, with `CONFIG_USE_CUSTOM_WAKE_WORD=y`,
+  `CONFIG_CUSTOM_WAKE_WORD="xiao a er yi"`,
+  `CONFIG_CUSTOM_WAKE_WORD_DISPLAY="小阿二一"`, and threshold `35`. The control
+  tower then regenerated mainline evidence from the reviewed receipt:
+  `a21-wake-word-firmware-plan-20260602-075100-1780357860846684000.json`,
+  `.a21-run/wake-word/reviewed-receipt-20260602-075100/a21-wake-word-build.json`,
+  and
+  `a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`.
+  The packaged artifact is
+  `a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`
+  with sha256
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`.
+  This closes the no-hardware package gap, not the guarded flash or physical
+  custom wake acceptance gap.
 
 Already merged into the current baseline and must not be rediscovered as active
 gaps:
@@ -211,6 +234,7 @@ Recently completed workers:
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
 | Personality runtime prompt loader | `019e8581-3a1d-7d62-960e-66d729b14644` | `/Users/jiyurun/.codex/worktrees/3d2d/New project` | `codex/a21-mainline-personality-runtime-20260602` | PRD Phase 2/section 8 runtime composer for fast-companion prompts | Merged via `5babfdb`/`8e221de`; no provider execute, no Mac audio, no hardware; do not duplicate |
+| Wake custom build/package closure | `019e858f-b619-7f52-991d-39827af8301b` | `/Users/jiyurun/.codex/worktrees/259a/New project` | worker scratch from current mainline | No-hardware xiaozhi/ESP-SR custom MultiNet build and reviewed A21 package evidence | Completed clean; evidence regenerated in mainline reports; no product-code merge needed; do not duplicate |
 | Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Completed read-only; its useful `voice_mode` follow-up is now merged from fresh mainline, not stale branch merge |
 | Explicit voice-mode selector | `019e8573-d562-75d2-b126-7bfb72d6af1f` | `/Users/jiyurun/.codex/worktrees/7142/New project` | `codex/a21-mainline-voice-mode-selector-20260602` | Explicit `voice_mode` catalog/status/selection without hidden routing | Initial worker stopped cleanly with no implementation; control tower reclaimed, implemented, verified, and merged via `4f4b767`/`de64e50`; do not duplicate |
 | Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | `codex/a21-gateway-half-duplex-arm-hardening-20260602` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Worker stopped with partial tests; control tower reclaimed and merged current implementation via `2120ee6`; do not merge worker branch |
@@ -250,14 +274,12 @@ Current next moves:
    open more V21 implementation work unless the adapter contract regresses or a
    newer backend change requires a refresh. Do not call V21 internals from A21
    code.
-3. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
-   build review JSON for the current custom phrase, run
-   `wake-word-firmware-build-receipt --review-report`, then
-   `wake-word-firmware-package --build-receipt` to produce the current matching
-   package report. This may close `firmware_package_available`, but
-   `product_ready` must remain false until guarded flash and physical wake proof.
-   The currently found X21 stock build directory is explicitly not matching
-   custom `小阿二一`; treat it as rejected diagnostic evidence only.
+3. Wake-word package closure: no-hardware custom package evidence now exists for
+   the current `小阿二一` / `xiao a er yi` MultiNet build. Do not rebuild this
+   unless the desired phrase/threshold or upstream xiaozhi commit changes.
+   `product_ready` must remain false until a guarded flash and physical wake
+   proof are collected. The previously found X21 stock build directory remains
+   rejected diagnostic evidence only.
 4. Optional no-hardware polish should be dispatched only if it burns a current
    PRD gap or fixes a regression. Do not reopen audio clarity, host voice
    loopback, voice-mode selector, personality runtime, selected-provider
@@ -277,7 +299,7 @@ Current next moves:
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
 | Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
-| Wake word | No-hardware config/plan/build-receipt/diagnostic package path done; current reviewed build package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge | Current matching reviewed build package report, guarded flash, and physical custom wake proof |
+| Wake word | No-hardware config/plan/build-receipt/custom package path done; product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge, current reviewed `小阿二一` MultiNet package artifact and sha | Guarded flash and physical custom wake proof |
 | Personality and playbooks | Runtime workmate composer done, scenario UX later only when needed | `docs/personality` assets merged; `internal/personality` composes core + tone + one mode + optional scenario/failure overlay for fast companion prompt | Scenario selection/product UX polish only when a real flow needs it |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
@@ -521,9 +543,9 @@ Run in this order:
 2. External/provider lane: produce or import a real 5080lab provider evidence
    bundle using the generated runbook. The Mac control tower can package/import
    returned redacted reports, but executed provider smoke belongs on 5080lab.
-3. Wake/package lane: obtain real reviewed-build evidence for the current custom
-   MultiNet build, then run receipt/package on the control machine. Keep this
-   below activation and explicitly not product-ready.
+3. Wake/package lane: no-hardware package evidence is current. Keep it below
+   activation and explicitly not product-ready until the hardware window can
+   flash and prove physical custom wake.
 4. Dispatch a fresh no-hardware worker only for a concrete new failing command
    or report/import gap after Slice H starts. Do not widen Slice H if provider
    or wake evidence returns unrelated failures.
@@ -552,10 +574,11 @@ next move is to burn down server-side evidence:
 
 1. Wait for or trigger the approved 5080lab selected-provider execution bundle,
    then import it with `provider-evidence-import`.
-2. Continue wake-word build/package preparation only from a real reviewed
-   xiaozhi/ESP-SR MultiNet build receipt.
-   The found X21 stock `build-m5stack-core-s3` path is not acceptable for this
-   closure because it lacks the matching custom wake receipt.
+2. Hold the current custom wake package as the accepted no-hardware artifact:
+   `a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`.
+   The next wake action is guarded flash plus physical custom wake proof when
+   CoreS3 returns. The found X21 stock `build-m5stack-core-s3` path remains
+   rejected because it lacks the matching custom wake receipt.
 3. If neither external evidence lane is immediately available, open one fresh
    no-hardware worker only for a concrete report-ingestion bug or operator
    helper that reduces `provider_smoke` or `wake_word`.
