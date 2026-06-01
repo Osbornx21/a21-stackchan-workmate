@@ -23,6 +23,11 @@ The overlay emits:
 - `playback=stop_done` after a server TTS stop has moved the device out of
   speaking state and any auto-stop playback queue wait has completed.
 
+For CoreS3 debug builds, the overlay also treats screen touch-down during
+speaking as an immediate local abort, clears the decoder before the upstream
+abort round trip, and consumes the matching release so the touch does not close
+the audio channel after the interruption.
+
 Stock xiaozhi profile builds must leave the option disabled. No flash command
 is introduced here. Build and flash planning must continue through the existing
 guarded `xiaozhi-firmware-flash-plan` and `xiaozhi-firmware-flash-execute`

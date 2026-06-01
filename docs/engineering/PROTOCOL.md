@@ -174,7 +174,10 @@ the overlay also clears the firmware decoder/playback queue before reporting
 `stop_done`; normal completion stops still preserve the stock late-stop
 playback-drain behavior. A local touch/wake abort also clears the device
 decoder queue immediately before sending the abort upstream, so physical audio
-does not wait for the server round trip before stopping.
+does not wait for the server round trip before stopping. On CoreS3 debug
+firmware, screen touch-down while already speaking triggers that abort path
+immediately and consumes the later touch release, avoiding a fragile
+release-only interruption window.
 
 Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
 such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping

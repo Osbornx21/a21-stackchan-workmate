@@ -67,6 +67,26 @@ index 7ca7af4..76c0b82 100644
 +    std::atomic_bool a21_playback_ack_sent_{false};
 +    std::atomic_bool a21_playback_stop_ack_sent_{false};
 +    std::atomic_bool a21_force_clear_playback_{false};
+diff --git a/main/boards/m5stack-core-s3/m5stack_core_s3.cc b/main/boards/m5stack-core-s3/m5stack_core_s3.cc
+index 7ca34b4..76e0b67 100644
+--- a/main/boards/m5stack-core-s3/m5stack_core_s3.cc
++++ b/main/boards/m5stack-core-s3/m5stack_core_s3.cc
+@@ -196,0 +197 @@ private:
++        static bool touch_abort_consumed = false;
+@@ -205,0 +207 @@ private:
++            touch_abort_consumed = false;
+@@ -206,0 +209,6 @@ private:
++            auto& app = Application::GetInstance();
++            if (app.GetDeviceState() == kDeviceStateSpeaking) {
++                touch_abort_consumed = true;
++                ESP_LOGI(TAG, "A21 touch barge-in: screen touch-down while speaking");
++                app.AbortSpeaking(kAbortReasonNone);
++            }
+@@ -210,0 +219,4 @@ private:
++            if (touch_abort_consumed) {
++                touch_abort_consumed = false;
++                return;
++            }
 diff --git a/main/audio/audio_service.cc b/main/audio/audio_service.cc
 index 350ac58..d0baf42 100644
 --- a/main/audio/audio_service.cc
