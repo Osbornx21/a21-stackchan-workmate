@@ -424,8 +424,8 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 			!xiaozhiEvidence.PRDAccepted
 	} else {
 		voicePipeline.HostLocalASRReady = selection.ASRProfile == "sherpa_onnx" && productSherpaASRReady(env)
-		voicePipeline.HostLocalTextReady = selection.LLMProfile != "" && selection.LLMProfile != "mock"
-		voicePipeline.HostLocalTTSReady = selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx"
+		voicePipeline.HostLocalTextReady = provider.TextStreamReady
+		voicePipeline.HostLocalTTSReady = (selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx") && productSherpaTTSReady(env)
 	}
 	readiness := productVoiceReadiness{
 		LocalTTSEngine: engine,
@@ -482,19 +482,19 @@ type productXiaozhiReportFixture struct {
 }
 
 type productXiaozhiReportSummary struct {
-	AnswerFirstAudioP95MS float64 `json:"answer_first_audio_total_p95_ms"`
-	BargeInStopP95MS      float64 `json:"barge_in_stop_p95_ms"`
+	AnswerFirstAudioP95MS *float64 `json:"answer_first_audio_total_p95_ms"`
+	BargeInStopP95MS      *float64 `json:"barge_in_stop_p95_ms"`
 }
 
 type productXiaozhiReportCounts struct {
-	FailureCount int `json:"failure_count"`
+	FailureCount *int `json:"failure_count"`
 }
 
 type productXiaozhiReportRedaction struct {
-	PayloadsStored         bool `json:"payloads_stored"`
-	CredentialValuesStored bool `json:"credential_values_stored"`
-	FullURLsStored         bool `json:"full_urls_stored"`
-	LocalPathsStored       bool `json:"local_paths_stored"`
+	PayloadsStored         *bool `json:"payloads_stored"`
+	CredentialValuesStored *bool `json:"credential_values_stored"`
+	FullURLsStored         *bool `json:"full_urls_stored"`
+	LocalPathsStored       *bool `json:"local_paths_stored"`
 }
 
 func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence, []productReadinessFinding) {
@@ -525,16 +525,19 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
 	}
+	if missingField := missingProductXiaozhiReportField(fixture); missingField != "" {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{missingProductXiaozhiReportFieldFinding(missingField)}
+	}
 	if fixture.SchemaVersion != "a21.xiaozhi_voice_bench.v1" ||
 		fixture.ExecutionMode != "host_loopback" ||
 		fixture.BaselineScope != "host_only" ||
 		fixture.Execution.ProviderExecuted ||
 		fixture.Execution.V21Executed ||
 		fixture.Execution.HardwareExecuted ||
-		fixture.Redaction.PayloadsStored ||
-		fixture.Redaction.CredentialValuesStored ||
-		fixture.Redaction.FullURLsStored ||
-		fixture.Redaction.LocalPathsStored {
+		*fixture.Redaction.PayloadsStored ||
+		*fixture.Redaction.CredentialValuesStored ||
+		*fixture.Redaction.FullURLsStored ||
+		*fixture.Redaction.LocalPathsStored {
 		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
 	}
 	execution := providerLatencyHostLoopbackExecution(fixture.Execution)
@@ -543,11 +546,40 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 		SourceReport:          filepath.Base(filepath.Clean(path)),
 		AcceptanceStatus:      firstNonEmpty(strings.TrimSpace(fixture.AcceptanceStatus), "not_accepted"),
 		PRDAccepted:           fixture.PRDAccepted,
-		AnswerFirstAudioP95MS: fixture.Summary.AnswerFirstAudioP95MS,
-		BargeInStopP95MS:      fixture.Summary.BargeInStopP95MS,
-		FailureCount:          fixture.Counts.FailureCount,
+		AnswerFirstAudioP95MS: *fixture.Summary.AnswerFirstAudioP95MS,
+		BargeInStopP95MS:      *fixture.Summary.BargeInStopP95MS,
+		FailureCount:          *fixture.Counts.FailureCount,
 		Execution:             execution,
 	}, nil
+}
+
+func missingProductXiaozhiReportField(fixture productXiaozhiReportFixture) string {
+	switch {
+	case fixture.Summary.AnswerFirstAudioP95MS == nil:
+		return "summary.answer_first_audio_total_p95_ms"
+	case fixture.Summary.BargeInStopP95MS == nil:
+		return "summary.barge_in_stop_p95_ms"
+	case fixture.Counts.FailureCount == nil:
+		return "counts.failure_count"
+	case fixture.Redaction.PayloadsStored == nil:
+		return "redaction.payloads_stored"
+	case fixture.Redaction.CredentialValuesStored == nil:
+		return "redaction.credential_values_stored"
+	case fixture.Redaction.FullURLsStored == nil:
+		return "redaction.full_urls_stored"
+	case fixture.Redaction.LocalPathsStored == nil:
+		return "redaction.local_paths_stored"
+	default:
+		return ""
+	}
+}
+
+func missingProductXiaozhiReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "xiaozhi_report_missing_field",
+		Message: "Xiaozhi host-loopback report is missing a required field",
+		Detail:  field,
+	}
 }
 
 func invalidProductXiaozhiReportFinding() productReadinessFinding {

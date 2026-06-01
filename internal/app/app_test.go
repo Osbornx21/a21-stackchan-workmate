@@ -297,6 +297,88 @@ func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.
 	}
 }
 
+func TestProductReadinessRejectsXiaozhiReportMissingCandidateFields(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	tests := []struct {
+		name      string
+		mutate    func(string) string
+		wantField string
+	}{
+		{
+			name: "missing barge p95",
+			mutate: func(data string) string {
+				return strings.Replace(data, `    "barge_in_stop_p50_ms": 0,
+    "barge_in_stop_p95_ms": 0`, `    "barge_in_stop_p50_ms": 0`, 1)
+			},
+			wantField: "summary.barge_in_stop_p95_ms",
+		},
+		{
+			name: "missing answer p95",
+			mutate: func(data string) string {
+				return strings.Replace(data, `    "answer_first_audio_total_p50_ms": 360,
+    "answer_first_audio_total_p95_ms": 386,`, `    "answer_first_audio_total_p50_ms": 360,`, 1)
+			},
+			wantField: "summary.answer_first_audio_total_p95_ms",
+		},
+		{
+			name: "missing failure count",
+			mutate: func(data string) string {
+				return strings.Replace(data, `    "barge_in_turn_count": 3,
+    "failure_count": 0`, `    "barge_in_turn_count": 3`, 1)
+			},
+			wantField: "counts.failure_count",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, tt.mutate(productReadinessXiaozhiHostReportFixtureJSON()))
+
+			report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+				GatewayURL:    server.URL,
+				DeviceID:      "stackchan-001",
+				XiaozhiReport: fixture,
+			}, []string{
+				"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+				"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+				"A21_TEXT_STREAM_PROFILE=ollama_local",
+				"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+			})
+
+			if report.Voice.VoicePipeline.HostLoopbackCandidateReady {
+				t.Fatalf("voice pipeline = %+v, want missing field to block candidate readiness", report.Voice.VoicePipeline)
+			}
+			if !containsProductFinding(report.Findings, "xiaozhi_report_missing_field", tt.wantField) {
+				t.Fatalf("findings = %#v, want missing-field finding for %s", report.Findings, tt.wantField)
+			}
+			var encoded bytes.Buffer
+			if err := writeJSONProductReadiness(&encoded, report); err != nil {
+				t.Fatal(err)
+			}
+			for _, forbidden := range []string{fixture, filepath.Dir(fixture), "http://", "https://"} {
+				if strings.Contains(encoded.String(), forbidden) {
+					t.Fatalf("product readiness leaked forbidden fragment %q: %s", forbidden, encoded.String())
+				}
+			}
+		})
+	}
+}
+
+func TestProductVoiceReadinessDoesNotOverclaimEnvOnlyPipeline(t *testing.T) {
+	voice := buildProductVoiceReadiness([]string{
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=ollama_local",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	}, productProviderReadiness{}, productStackChanReadiness{
+		PhysicalDeviceOnline:    true,
+		PhysicalMicrophoneReady: true,
+	})
+
+	if voice.VoicePipeline.HostLocalTextReady || voice.VoicePipeline.HostLocalTTSReady || voice.LocalTTSReady || voice.ContinuousVoiceReady {
+		t.Fatalf("voice readiness = %+v, want env-only profile labels not to claim text/TTS/runtime readiness", voice)
+	}
+}
+
 func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -479,11 +561,32 @@ func containsProductAction(actions []string, want string) bool {
 	return false
 }
 
+func containsProductFinding(findings []productReadinessFinding, code string, detail string) bool {
+	for _, finding := range findings {
+		if finding.Code == code && strings.Contains(finding.Detail, detail) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeProductReadinessXiaozhiHostReportFixture(t *testing.T) string {
+	t.Helper()
+	return writeProductReadinessXiaozhiHostReportFixtureFromData(t, productReadinessXiaozhiHostReportFixtureJSON())
+}
+
+func writeProductReadinessXiaozhiHostReportFixtureFromData(t *testing.T, data string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-xiaozhi-host-local-report.json")
-	data := `{
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func productReadinessXiaozhiHostReportFixtureJSON() string {
+	return `{
   "schema_version": "a21.xiaozhi_voice_bench.v1",
   "execution_mode": "host_loopback",
   "baseline_scope": "host_only",
@@ -524,10 +627,6 @@ func writeProductReadinessXiaozhiHostReportFixture(t *testing.T) string {
     "local_paths_stored": false
   }
 }`
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func TestRunPromotionReadinessBlocksExternalPromotionWithoutTarget(t *testing.T) {
