@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `680bbd8 chore(control): checkpoint launch rollup closure`
+Current integration checkpoint: `1878fc8 fix(wake-word): document build receipt package option`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `680bbd8 chore(control): checkpoint launch rollup closure`
+  `1878fc8 fix(wake-word): document build receipt package option`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -61,7 +61,7 @@ Current integration branch:
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
-  readiness, and launch false-green guard merges.
+  readiness, launch false-green guard, and wake package help-contract merges.
 - Latest targeted verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' go test ./internal/app -run 'ProductReadinessRejectsLocalVoiceLoopbackMissingRepeat|ProductReadiness|ServerSideReadinessBundle|ProviderEvidence|WakeWord|Xiaozhi|V21|Physical' -count=1`
   passed.
@@ -119,12 +119,15 @@ gaps:
   `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
 - Local voice loopback evidence guard:
   `35e62aa fix(readiness): require repeated local voice loopback evidence`
+- Wake package operator help contract:
+  `1878fc8 fix(wake-word): document build receipt package option`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
+| Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Active read-only; do not merge from this branch |
+| Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | detached at `1878fc8` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Active write worker; wait for focused commit/handoff before touching Gateway arm code |
 
 Recently completed workers:
 
@@ -156,7 +159,7 @@ Current server-side gaps from the latest product-readiness run:
 Current next moves:
 
 1. Provider execute closure for 5080lab: run
-   `make provider-5080lab-runbook A21_PROVIDER=<selected-non-mock-route-eligible-provider>`
+   `make provider-5080lab-runbook A21_PROVIDER=deepseek`
    to print the lab packet, execute the printed provider commands on 5080lab,
    import the returned bundle on the control machine, then rerun
    product-readiness to reduce `real_provider_smoke`. Do not run provider
