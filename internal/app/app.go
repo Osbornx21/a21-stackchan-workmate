@@ -201,7 +201,7 @@ func runLANProbe(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "write lan probe report: %v\n", err)
 			return 1
 		}
-		report.ReportPath = reportPath
+		report.ReportPath = filepath.Base(reportPath)
 	}
 	if err := writeJSONLANProbe(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode lan probe report: %v\n", err)
@@ -494,7 +494,7 @@ func writeLANProbeReport(outputDir string, report lanProbeReport) (string, error
 		return "", err
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	report.ReportPath = filepath.Base(reportPath)
 	if err := writeJSONLANProbe(file, report); err != nil {
 		return "", err
 	}

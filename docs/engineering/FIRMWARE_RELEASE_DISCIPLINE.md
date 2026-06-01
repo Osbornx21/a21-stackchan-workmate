@@ -106,6 +106,15 @@ make office-handoff
 
 `firmware-test` runs the PlatformIO `native` environment and Unity tests. It must stay hardware-free.
 
+`wake-word-firmware-plan` is the first no-execute control-tower receipt for
+custom wake words configured through Gateway. It reads the sanitized A21
+wake-word intent, emits `a21.wake_word_firmware_plan.v1`, and keeps both
+`build_allowed=false` and `flash_allowed=false`. A custom MultiNet profile
+remains a planned firmware-build task until a later reviewed build/package lane
+and a guarded foreground T7 flash plan prove the requested model on hardware.
+This command must not run PlatformIO, invoke esptool, contact providers, or
+store local paths in its JSON output.
+
 Firmware expression changes must keep the avatar contract testable without hardware. `a21_firmware_display.h` maps render states into an `A21FaceFrame` with avatar-engine concepts such as expression, gaze, eye-open ratio, breath, and mouth-open ratio. This contract is intentionally compatible with a future pinned `m5stack-avatar` adapter and prevents the product expression layer from being buried as one-off drawing logic.
 
 `firmware-avatar-spike-build` compiles the isolated `a21_stackchan_cores3_avatar_spike` environment with `meganetaaan/M5Stack-Avatar @ 0.10.0`. It is a compatibility spike for a mature avatar engine only. It is not a production firmware lane, not a package source, and not a flashing command.

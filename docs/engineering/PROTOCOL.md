@@ -153,6 +153,16 @@ writes the local runtime file `.a21-run/gateway/a21-wake-word.json`. Reports and
 must not store Wi-Fi credentials, provider keys, raw audio, transcripts,
 prompts, full URLs, proxy values, or absolute local paths for this feature.
 
+`a21 wake-word-firmware-plan [--config ...] [--output-dir reports]` turns the
+stored intent into a machine-readable firmware plan. Built-in Xiaozhi remains a
+`builtin_noop`. Custom MultiNet requests produce
+`schema_version=a21.wake_word_firmware_plan.v1`,
+`status=pending_firmware_build`, `firmware_build_required=true`,
+`build_allowed=false`, and `flash_allowed=false`; the report names only the A21
+firmware identity, CoreS3 board, target MultiNet profile, confirmation value,
+next actions, and basename report path. It does not build, flash, execute a
+provider, contact hardware, or log local config/report paths.
+
 ### Fast Companion Runtime
 
 `POST /v1/fast-companion/turn` remains a Gateway-owned fast companion seam.

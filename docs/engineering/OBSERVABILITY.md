@@ -62,6 +62,16 @@ when Gateway reports it active. A stored custom MultiNet profile with
 launch-ready until the guarded firmware build/flash lane proves the custom wake
 model is active.
 
+`wake-word-firmware-plan --output-dir reports` writes
+`reports/a21-wake-word-firmware-plan-YYYYMMDD-HHMMSS-*.json` with
+`schema_version=a21.wake_word_firmware_plan.v1`. The report is deliberately
+no-execute: `dry_run=true`, `build_allowed=false`, `flash_allowed=false`.
+Built-in wake-word state is `builtin_noop`; custom MultiNet state is
+`pending_firmware_build` with `wake_word_firmware_build_required`,
+`a21-stackchan`, `m5stack-cores3`, and `xiaozhi_esp_sr_multinet`. It stores
+only sanitized wake-word intent fields and a basename `report_path`, not config
+paths, report directories, URLs, keys, proxy values, audio, or transcripts.
+
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
 The WS-2 product voice pipeline contract emits schema
