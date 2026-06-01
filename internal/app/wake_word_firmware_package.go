@@ -20,11 +20,18 @@ const (
 )
 
 type wakeWordFirmwarePackageOptions struct {
+	PlanPath         string
+	BuildDir         string
+	BuildReceiptPath string
+	OutputDir        string
+	Commit           string
+	Timestamp        string
+}
+
+type wakeWordFirmwareBuildReceiptOptions struct {
 	PlanPath  string
 	BuildDir  string
 	OutputDir string
-	Commit    string
-	Timestamp string
 }
 
 type wakeWordFirmwareBuildReceipt struct {
@@ -38,6 +45,9 @@ type wakeWordFirmwareBuildReceipt struct {
 	DesiredPinyin string `json:"desired_pinyin"`
 	Threshold     int    `json:"threshold"`
 	AppBinary     string `json:"app_binary"`
+	BuildDirName  string `json:"build_dir_name,omitempty"`
+	SDKConfig     string `json:"sdkconfig,omitempty"`
+	FlasherArgs   string `json:"flasher_args,omitempty"`
 }
 
 type wakeWordFirmwarePackageReport struct {
@@ -110,6 +120,13 @@ func runWakeWordFirmwarePackage(args []string, stdout io.Writer, stderr io.Write
 			}
 			i++
 			options.BuildDir = args[i]
+		case "--build-receipt":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-receipt requires a value")
+				return 2
+			}
+			i++
+			options.BuildReceiptPath = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -166,7 +183,8 @@ func packageWakeWordFirmware(options wakeWordFirmwarePackageOptions) (wakeWordFi
 		return wakeWordFirmwarePackageReport{}, fmt.Errorf("wake word firmware plan is invalid")
 	}
 	buildDir := filepath.Clean(options.BuildDir)
-	receipt, err := loadWakeWordFirmwareBuildReceipt(filepath.Join(buildDir, "a21-wake-word-build.json"))
+	receiptPath := wakeWordFirmwareBuildReceiptPath(options, buildDir)
+	receipt, err := loadWakeWordFirmwareBuildReceipt(receiptPath)
 	if err != nil {
 		return wakeWordFirmwarePackageReport{}, err
 	}
@@ -216,7 +234,7 @@ func packageWakeWordFirmware(options wakeWordFirmwarePackageOptions) (wakeWordFi
 		Commit:           strings.ToLower(options.Commit),
 		Timestamp:        options.Timestamp,
 		SourcePlanReport: filepath.Base(filepath.Clean(options.PlanPath)),
-		BuildReceipt:     "a21-wake-word-build.json",
+		BuildReceipt:     filepath.Base(filepath.Clean(receiptPath)),
 		BuildDirName:     filepath.Base(buildDir),
 		ArtifactName:     artifactName,
 		SHA256Name:       shaName,
@@ -277,7 +295,7 @@ func rejectedWakeWordFirmwarePackageReport(options wakeWordFirmwarePackageOption
 		DesiredPinyin:    plan.DesiredPinyin,
 		Threshold:        plan.Threshold,
 		SourcePlanReport: safeWakeWordFirmwarePackageBase(options.PlanPath),
-		BuildReceipt:     "a21-wake-word-build.json",
+		BuildReceipt:     wakeWordFirmwareBuildReceiptName(options),
 		BuildDirName:     safeWakeWordFirmwarePackageBase(options.BuildDir),
 		Commit:           safeWakeWordFirmwarePackageCommit(options.Commit),
 		Timestamp:        safeWakeWordFirmwarePackageTimestamp(options.Timestamp),
@@ -363,7 +381,10 @@ func validateWakeWordFirmwarePackageOptions(options wakeWordFirmwarePackageOptio
 			Message: "Wake word firmware package requires an A21 output directory.",
 		}
 	}
-	for _, path := range []string{options.PlanPath, options.BuildDir, options.OutputDir} {
+	for _, path := range []string{options.PlanPath, options.BuildDir, options.BuildReceiptPath, options.OutputDir} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
 		if err := validateA21InputPath(path); err != nil {
 			return err
 		}
@@ -375,6 +396,158 @@ func validateWakeWordFirmwarePackageOptions(options wakeWordFirmwarePackageOptio
 		return fmt.Errorf("timestamp must be YYYYMMDD-HHMMSS")
 	}
 	return nil
+}
+
+func wakeWordFirmwareBuildReceiptPath(options wakeWordFirmwarePackageOptions, buildDir string) string {
+	if strings.TrimSpace(options.BuildReceiptPath) != "" {
+		return filepath.Clean(options.BuildReceiptPath)
+	}
+	return filepath.Join(buildDir, "a21-wake-word-build.json")
+}
+
+func wakeWordFirmwareBuildReceiptName(options wakeWordFirmwarePackageOptions) string {
+	if strings.TrimSpace(options.BuildReceiptPath) != "" {
+		return safeWakeWordFirmwarePackageBase(options.BuildReceiptPath)
+	}
+	return "a21-wake-word-build.json"
+}
+
+func runWakeWordFirmwareBuildReceipt(args []string, stdout io.Writer, stderr io.Writer) int {
+	var options wakeWordFirmwareBuildReceiptOptions
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 wake-word-firmware-build-receipt --plan reports/a21-wake-word-firmware-plan-*.json --build-dir /path/to/xiaozhi/build-m5stack-core-s3 [--output-dir receipts]")
+			return 0
+		case "--plan":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--plan requires a value")
+				return 2
+			}
+			i++
+			options.PlanPath = args[i]
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown wake-word-firmware-build-receipt option %q\n", args[i])
+			return 2
+		}
+	}
+	receipt, err := buildWakeWordFirmwareBuildReceipt(options)
+	if err != nil {
+		fmt.Fprintln(stderr, "wake word firmware build receipt failed")
+		return 1
+	}
+	if strings.TrimSpace(options.OutputDir) != "" {
+		if err := writeWakeWordFirmwareBuildReceipt(options.OutputDir, receipt); err != nil {
+			fmt.Fprintln(stderr, "write wake word firmware build receipt failed")
+			return 1
+		}
+	}
+	if err := writeJSONWakeWordFirmwareBuildReceipt(stdout, receipt); err != nil {
+		fmt.Fprintf(stderr, "encode wake word firmware build receipt: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func buildWakeWordFirmwareBuildReceipt(options wakeWordFirmwareBuildReceiptOptions) (wakeWordFirmwareBuildReceipt, error) {
+	if err := validateWakeWordFirmwareBuildReceiptOptions(options); err != nil {
+		return wakeWordFirmwareBuildReceipt{}, err
+	}
+	plan, findings := loadProductWakeWordFirmwarePlanEvidence(options.PlanPath)
+	if len(findings) != 0 || !plan.Valid || plan.Mode != wakeWordFirmwareCustomMode || !plan.FirmwareBuildRequired {
+		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("wake word firmware plan is invalid")
+	}
+	buildDir := filepath.Clean(options.BuildDir)
+	sdkconfig, err := wakeWordFirmwareBuildSDKConfigName(buildDir)
+	if err != nil {
+		return wakeWordFirmwareBuildReceipt{}, err
+	}
+	if _, err := os.Stat(filepath.Join(buildDir, "flasher_args.json")); err != nil {
+		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("flasher_args.json is required")
+	}
+	if _, err := os.Stat(filepath.Join(buildDir, "xiaozhi.bin")); err != nil {
+		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("xiaozhi.bin is required")
+	}
+	return wakeWordFirmwareBuildReceipt{
+		SchemaVersion: wakeWordFirmwareBuildReceiptSchema,
+		Status:        "built",
+		FirmwareID:    wakeWordFirmwareID,
+		TargetBoard:   wakeWordFirmwareTargetBoard,
+		TargetProfile: wakeWordFirmwareTargetProfile,
+		Mode:          wakeWordFirmwareCustomMode,
+		DesiredPhrase: plan.DesiredPhrase,
+		DesiredPinyin: plan.DesiredPinyin,
+		Threshold:     plan.Threshold,
+		AppBinary:     "xiaozhi.bin",
+		BuildDirName:  filepath.Base(buildDir),
+		SDKConfig:     filepath.Base(sdkconfig),
+		FlasherArgs:   "flasher_args.json",
+	}, nil
+}
+
+func validateWakeWordFirmwareBuildReceiptOptions(options wakeWordFirmwareBuildReceiptOptions) error {
+	if strings.TrimSpace(options.PlanPath) == "" {
+		return fmt.Errorf("--plan is required")
+	}
+	if strings.TrimSpace(options.BuildDir) == "" {
+		return fmt.Errorf("--build-dir is required")
+	}
+	for _, path := range []string{options.PlanPath, options.BuildDir, options.OutputDir} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		if err := validateA21InputPath(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func wakeWordFirmwareBuildSDKConfigName(buildDir string) (string, error) {
+	for _, candidate := range []string{
+		filepath.Join(buildDir, "config", "sdkconfig.json"),
+		filepath.Join(buildDir, "sdkconfig.json"),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("sdkconfig.json is required")
+}
+
+func writeWakeWordFirmwareBuildReceipt(outputDir string, receipt wakeWordFirmwareBuildReceipt) error {
+	if err := validateA21InputPath(outputDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(filepath.Join(outputDir, "a21-wake-word-build.json"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return writeJSONWakeWordFirmwareBuildReceipt(file, receipt)
+}
+
+func writeJSONWakeWordFirmwareBuildReceipt(writer io.Writer, receipt wakeWordFirmwareBuildReceipt) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(receipt)
 }
 
 func loadWakeWordFirmwareBuildReceipt(path string) (wakeWordFirmwareBuildReceipt, error) {

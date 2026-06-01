@@ -188,15 +188,22 @@ provider, contact hardware, or log local config/report paths.
 of a controlled plan only. It is not evidence that the custom wake model is
 compiled into firmware or active on StackChan hardware.
 
+`a21 wake-word-firmware-build-receipt --plan <plan.json>
+--build-dir <xiaozhi-build> [--output-dir <receipt-dir>]` is the bridge from a
+reviewed external xiaozhi/ESP-SR build to A21 packaging. It validates the
+custom plan, `sdkconfig.json`, `flasher_args.json`, and `xiaozhi.bin`, prints a
+redacted `a21.wake_word_firmware_build.v1` receipt, and writes
+`a21-wake-word-build.json` only when `--output-dir` is supplied.
+
 `a21 wake-word-firmware-package --plan <plan.json> --build-dir <xiaozhi-build>
---commit <sha> [--output-dir firmware/artifacts/wake-word]` is the next
-no-hardware boundary. It requires the matching custom MultiNet plan, a
-`a21-wake-word-build.json` build receipt from the reviewed xiaozhi/ESP-SR
-build lane, CoreS3 `sdkconfig.json`, `flash_args`, and the required flash
-parts. It writes an A21-named app `.bin`, `.sha256`, `.manifest.json`, and
-package report with basenames and hashes only. It does not flash, touch a
-serial port, start Gateway, execute providers, or make the wake word
-product-ready. The `product-readiness` command accepts
+[--build-receipt <receipt.json>] --commit <sha>
+[--output-dir firmware/artifacts/wake-word]` is the next no-hardware boundary.
+It requires the matching custom MultiNet plan, an explicit or build-dir-local
+`a21-wake-word-build.json` receipt, CoreS3 `sdkconfig.json`, `flash_args`, and
+the required flash parts. It writes an A21-named app `.bin`, `.sha256`,
+`.manifest.json`, and package report with basenames and hashes only. It does
+not flash, touch a serial port, start Gateway, execute providers, or make the
+wake word product-ready. The `product-readiness` command accepts
 `--wake-word-firmware-package-report <report.json>` as below-activation evidence
 under `wake_word`, but only basename package source, artifact, and manifest names
 may be surfaced. The rollup must remain `launch_ready=false` until guarded flash

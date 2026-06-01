@@ -179,6 +179,11 @@ provider are skipped with basename-only findings so an older matching 5080lab
 report can still close the provider gap. `provider-evidence-package` and
 `provider-evidence-import` enforce the same selected-provider match when the
 operator environment contains a configured selected route-eligible text provider.
+For custom wake words, run `wake-word-firmware-build-receipt` after a reviewed
+xiaozhi/ESP-SR build and pass the resulting `a21-wake-word-build.json` to
+`wake-word-firmware-package --build-receipt`; both remain no-flash, below
+activation evidence until a guarded hardware-window flash and physical wake
+proof pass.
 For V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with

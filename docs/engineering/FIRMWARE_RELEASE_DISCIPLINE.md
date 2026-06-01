@@ -116,13 +116,16 @@ This command must not run PlatformIO, invoke esptool, contact providers, or
 store local paths in its JSON output.
 
 `wake-word-firmware-package` is the no-hardware package boundary for that later
-reviewed xiaozhi/ESP-SR build lane. It consumes the matching plan plus a
-build-dir-local `a21-wake-word-build.json`, verifies CoreS3 `sdkconfig.json`,
-`flash_args`, the required xiaozhi flash parts, and the exact requested phrase,
-pinyin, and threshold, then writes only an A21-named app binary, checksum,
-manifest, and package report. It still sets `flash_allowed=false`,
-`flash_executed=false`, and `product_ready=false`; custom wake-word launch
-readiness requires a later guarded flash plan plus physical StackChan proof.
+reviewed xiaozhi/ESP-SR build lane. `wake-word-firmware-build-receipt` first
+turns a matching plan plus build directory into a redacted
+`a21-wake-word-build.json` receipt without touching hardware. The package step
+then consumes either `--build-receipt <receipt.json>` or the build-dir-local
+receipt, verifies CoreS3 `sdkconfig.json`, `flash_args`, the required xiaozhi
+flash parts, and the exact requested phrase, pinyin, and threshold, then writes
+only an A21-named app binary, checksum, manifest, and package report. It still
+sets `flash_allowed=false`, `flash_executed=false`, and `product_ready=false`;
+custom wake-word launch readiness requires a later guarded flash plan plus
+physical StackChan proof.
 If the build directory or receipt is missing, the command writes only a
 redacted diagnostic report and remains below package availability.
 
