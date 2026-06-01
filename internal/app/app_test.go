@@ -1461,6 +1461,57 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 }
 
+func TestRunProductReadinessLatestV21SelectionPrefersNewestUsableAdapterSmoke(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
+	professionalFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	professionalPath := copyProductReadinessReportFixture(t, professionalFixture, filepath.Join(dir, "a21-xiaozhi-professional-bench-20260602-100200.json"))
+	adapterPath := writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100300.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	older := time.Date(2026, 6, 2, 10, 2, 0, 0, time.UTC)
+	newer := older.Add(time.Minute)
+	if err := os.Chtimes(professionalPath, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(adapterPath, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report productReadinessReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode product readiness report: %v\n%s", err, stdout.String())
+	}
+	if report.V21.Professional.SourceReport != "a21-v21-adapter-smoke-20260602-100300.json" ||
+		report.V21.Professional.ProfessionalAcceptanceStatus != "adapter_smoke_passed" ||
+		report.V21.ProfessionalExecution.SourceKind != "v21_adapter_smoke_report" ||
+		!report.V21.Professional.AdapterExecuted {
+		t.Fatalf("v21 professional selection = %+v execution = %+v, want newest usable adapter smoke", report.V21.Professional, report.V21.ProfessionalExecution)
+	}
+	for _, forbidden := range []string{server.URL, dir, professionalFixture, professionalPath, adapterPath, "http://", "https://", "/Users/", "secret-value"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest v21 selection leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -1988,6 +2039,192 @@ func TestRunProductReadinessCommandUsesLatestWakeWordFirmwarePlanWithoutPathLeak
 	}
 }
 
+func TestRunProductReadinessCommandUsesLatestMatchingWakeWordFirmwarePlan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-gateway","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
+		case "/v1/wake-word":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"custom_multinet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":35,"runtime_status":"pending_firmware_build","runtime_configurable":false,"firmware_build_required":true,"code":"a21_wake_word_firmware_build_required","message":"Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway only persists the requested profile."}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", `{
+  "schema_version": "a21.wake_word_firmware_plan.v1",
+  "generated_at_ms": 1780333200000,
+  "status": "pending_firmware_build",
+  "dry_run": true,
+  "firmware_build_required": true,
+  "build_allowed": false,
+  "flash_allowed": false,
+  "firmware_id": "a21-stackchan",
+  "target_board": "m5stack-cores3",
+  "target_profile": "xiaozhi_esp_sr_multinet",
+  "guard_tier": "T7",
+  "mode": "custom_multinet",
+  "active_phrase": "你好小智",
+  "active_pinyin": "ni hao xiao zhi",
+  "desired_phrase": "小阿二一",
+  "desired_pinyin": "xiao a er yi",
+  "threshold": 35,
+  "runtime_status": "pending_firmware_build",
+  "runtime_configurable": false,
+  "next_required_confirmation": "BUILD_A21_WAKE_WORD_FIRMWARE",
+  "report_path": "a21-wake-word-firmware-plan-20260602-010000.json"
+}`)
+	writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-plan-20260602-020000.json", `{
+  "schema_version": "a21.wake_word_firmware_plan.v1",
+  "generated_at_ms": 1780336800000,
+  "status": "pending_firmware_build",
+  "dry_run": true,
+  "firmware_build_required": true,
+  "build_allowed": false,
+  "flash_allowed": false,
+  "firmware_id": "a21-stackchan",
+  "target_board": "m5stack-cores3",
+  "target_profile": "xiaozhi_esp_sr_multinet",
+  "guard_tier": "T7",
+  "mode": "custom_multinet",
+  "active_phrase": "你好小智",
+  "active_pinyin": "ni hao xiao zhi",
+  "desired_phrase": "小阿二二",
+  "desired_pinyin": "xiao a er er",
+  "threshold": 35,
+  "runtime_status": "pending_firmware_build",
+  "runtime_configurable": false,
+  "next_required_confirmation": "BUILD_A21_WAKE_WORD_FIRMWARE",
+  "report_path": "a21-wake-word-firmware-plan-20260602-020000.json"
+}`)
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"mode": "custom_multinet"`,
+		`"firmware_build_required": true`,
+		`"firmware_plan_available": true`,
+		`"firmware_plan_source_report": "a21-wake-word-firmware-plan-20260602-010000.json"`,
+		`"wake_word_firmware_plan_available"`,
+		`"detail": "wake_word_firmware_plan:a21-wake-word-firmware-plan-20260602-020000.json"`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		`"firmware_plan_source_report": "a21-wake-word-firmware-plan-20260602-020000.json"`,
+		`"wake_word_firmware_plan_mismatch"`,
+		server.URL,
+		dir,
+		"http://",
+		"https://",
+		"/Users/",
+		`"launch_ready": true`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest matching wake word plan leaked or misselected %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
+func TestRunProductReadinessCommandSkipsCustomWakeWordPlanForBuiltinRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-gateway","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
+		case "/v1/wake-word":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"builtin_xiaozhi_wakenet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"你好小智","desired_pinyin":"ni hao xiao zhi","threshold":30,"runtime_status":"active_builtin_model","runtime_configurable":false,"firmware_build_required":false,"code":"","message":""}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-plan-20260602-020000.json", `{
+  "schema_version": "a21.wake_word_firmware_plan.v1",
+  "generated_at_ms": 1780336800000,
+  "status": "pending_firmware_build",
+  "dry_run": true,
+  "firmware_build_required": true,
+  "build_allowed": false,
+  "flash_allowed": false,
+  "firmware_id": "a21-stackchan",
+  "target_board": "m5stack-cores3",
+  "target_profile": "xiaozhi_esp_sr_multinet",
+  "guard_tier": "T7",
+  "mode": "custom_multinet",
+  "active_phrase": "你好小智",
+  "active_pinyin": "ni hao xiao zhi",
+  "desired_phrase": "小阿二一",
+  "desired_pinyin": "xiao a er yi",
+  "threshold": 35,
+  "runtime_status": "pending_firmware_build",
+  "runtime_configurable": false,
+  "next_required_confirmation": "BUILD_A21_WAKE_WORD_FIRMWARE",
+  "report_path": "a21-wake-word-firmware-plan-20260602-020000.json"
+}`)
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"mode": "builtin_xiaozhi_wakenet"`,
+		`"product_ready": true`,
+		`"detail": "wake_word_firmware_plan:a21-wake-word-firmware-plan-20260602-020000.json"`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		`"firmware_plan_available": true`,
+		`"wake_word_firmware_plan_mismatch"`,
+		server.URL,
+		dir,
+		"http://",
+		"https://",
+		"/Users/",
+		`"launch_ready": true`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("builtin wake word latest plan leaked or misselected %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandRejectsUnsafeV21ProfessionalReportWithoutLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, strings.Replace(productReadinessV21ProfessionalReportFixtureJSON(), `  "report_path": "a21-v21-professional-readiness-host.json"`, `  "prompt": "professional readiness fixture query",
@@ -2460,7 +2697,7 @@ func writeProductReadinessReportFixtureFile(t *testing.T, dir string, name strin
 	return path
 }
 
-func copyProductReadinessReportFixture(t *testing.T, source string, target string) {
+func copyProductReadinessReportFixture(t *testing.T, source string, target string) string {
 	t.Helper()
 	data, err := os.ReadFile(source)
 	if err != nil {
@@ -2469,6 +2706,7 @@ func copyProductReadinessReportFixture(t *testing.T, source string, target strin
 	if err := os.WriteFile(target, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return target
 }
 
 func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {

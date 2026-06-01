@@ -190,6 +190,7 @@ func serverSideProductReadinessOptions(options serverSideReadinessBundleOptions)
 		V21ProfessionalReport: options.V21ProfessionalReport,
 		V21AdapterSmokeReport: options.V21AdapterSmokeReport,
 		WakeWordFirmwarePlan:  options.WakeWordFirmwarePlan,
+		UseLatestReports:      options.UseLatestReports,
 	}
 	if options.UseLatestReports {
 		productOptions = resolveLatestProductReadinessReports(productOptions)

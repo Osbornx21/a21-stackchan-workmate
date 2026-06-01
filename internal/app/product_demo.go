@@ -414,30 +414,10 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 		}, productLatestXiaozhiReportAccepted)
 		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
-	if strings.TrimSpace(options.V21ProfessionalReport) == "" {
-		var findings []productReadinessFinding
-		options.V21ProfessionalReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "v21_professional", []string{
-			"a21-xiaozhi-professional-bench-*.json",
-			"a21-v21-professional-readiness-*.json",
-		}, productLatestV21ProfessionalReportAccepted)
-		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
-	}
-	if strings.TrimSpace(options.V21AdapterSmokeReport) == "" && strings.TrimSpace(options.V21ProfessionalReport) == "" {
-		var findings []productReadinessFinding
-		options.V21AdapterSmokeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "v21_adapter_smoke", []string{
-			"a21-v21-adapter-smoke-*.json",
-		}, productLatestV21AdapterSmokeReportAccepted)
-		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
-	}
 	if strings.TrimSpace(options.PhysicalStackChanReport) == "" {
 		options.PhysicalStackChanReport = latestProductReadinessReportPath(reportDir, []string{
 			"a21-physical-stackchan-evidence-*.json",
 			"a21-xiaozhi-physical-evidence-*.json",
-		})
-	}
-	if strings.TrimSpace(options.WakeWordFirmwarePlan) == "" {
-		options.WakeWordFirmwarePlan = latestProductReadinessReportPath(reportDir, []string{
-			"a21-wake-word-firmware-plan-*.json",
 		})
 	}
 	return options
@@ -545,6 +525,110 @@ func productLatestV21AdapterSmokeReportAccepted(path string) bool {
 	return evidence.Valid && evidence.AdapterExecuted
 }
 
+func resolveLatestProductV21Reports(options *productReadinessOptions, v21 productV21Readiness) []productReadinessFinding {
+	if options == nil || !options.UseLatestReports ||
+		strings.TrimSpace(options.V21ProfessionalReport) != "" ||
+		strings.TrimSpace(options.V21AdapterSmokeReport) != "" {
+		return nil
+	}
+	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	selected, kind, findings := latestAcceptedProductReadinessReportAcrossKinds(reportDir, []productLatestReadinessReportKind{
+		{
+			Kind:     "v21_professional",
+			Patterns: []string{"a21-xiaozhi-professional-bench-*.json", "a21-v21-professional-readiness-*.json"},
+			Accept: func(path string) bool {
+				evidence, _ := loadProductV21ProfessionalReportEvidence(path)
+				return evidence.Valid && evidence.AdapterExecuted
+			},
+		},
+		{
+			Kind:     "v21_adapter_smoke",
+			Patterns: []string{"a21-v21-adapter-smoke-*.json"},
+			Accept: func(path string) bool {
+				evidence, _ := loadProductV21AdapterSmokeReportEvidence(path, v21)
+				return evidence.Valid && evidence.AdapterExecuted
+			},
+		},
+	})
+	switch kind {
+	case "v21_professional":
+		options.V21ProfessionalReport = selected
+	case "v21_adapter_smoke":
+		options.V21AdapterSmokeReport = selected
+	}
+	return findings
+}
+
+func resolveLatestProductWakeWordFirmwarePlan(options *productReadinessOptions, wakeWord productWakeWordReadiness) []productReadinessFinding {
+	if options == nil || !options.UseLatestReports || strings.TrimSpace(options.WakeWordFirmwarePlan) != "" {
+		return nil
+	}
+	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	selected, findings := latestAcceptedProductReadinessReportPath(reportDir, "wake_word_firmware_plan", []string{
+		"a21-wake-word-firmware-plan-*.json",
+	}, func(path string) bool {
+		evidence, _ := loadProductWakeWordFirmwarePlanEvidence(path)
+		return evidence.Valid && matchingProductWakeWordFirmwarePlan(wakeWord, evidence)
+	})
+	options.WakeWordFirmwarePlan = selected
+	return findings
+}
+
+type productLatestReadinessReportKind struct {
+	Kind     string
+	Patterns []string
+	Accept   func(string) bool
+}
+
+type productLatestReadinessReportKindCandidate struct {
+	Path    string
+	Kind    string
+	Accept  func(string) bool
+	ModTime time.Time
+}
+
+func latestAcceptedProductReadinessReportAcrossKinds(reportDir string, kinds []productLatestReadinessReportKind) (string, string, []productReadinessFinding) {
+	var candidates []productLatestReadinessReportKindCandidate
+	for _, kind := range kinds {
+		for _, path := range latestProductReadinessReportCandidates(reportDir, kind.Patterns) {
+			info, err := os.Stat(path)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			candidates = append(candidates, productLatestReadinessReportKindCandidate{
+				Path:    path,
+				Kind:    strings.TrimSpace(kind.Kind),
+				Accept:  kind.Accept,
+				ModTime: info.ModTime(),
+			})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].ModTime.Equal(candidates[j].ModTime) {
+			return filepath.Base(candidates[i].Path) > filepath.Base(candidates[j].Path)
+		}
+		return candidates[i].ModTime.After(candidates[j].ModTime)
+	})
+	var findings []productReadinessFinding
+	skipped := 0
+	for _, candidate := range candidates {
+		if candidate.Accept == nil || candidate.Accept(candidate.Path) {
+			findings = append(findings, latestProductReadinessSkippedSummaryFinding("v21_evidence", skipped)...)
+			return candidate.Path, candidate.Kind, findings
+		}
+		skipped++
+		if skipped <= latestProductReadinessSkippedDetailLimit {
+			findings = append(findings, productReadinessFinding{
+				Code:    "latest_report_candidate_skipped",
+				Message: "Latest product-readiness candidate report did not satisfy the evidence contract",
+				Detail:  candidate.Kind + ":" + filepath.Base(filepath.Clean(candidate.Path)),
+			})
+		}
+	}
+	findings = append(findings, latestProductReadinessSkippedSummaryFinding("v21_evidence", skipped)...)
+	return "", "", findings
+}
+
 func buildProductReadinessReport(ctx context.Context, options productReadinessOptions, env []string) productReadinessReport {
 	gatewayURL := firstNonEmpty(strings.TrimSpace(options.GatewayURL), "http://127.0.0.1:21080")
 	deviceID := firstNonEmpty(strings.TrimSpace(options.DeviceID), "stackchan-001")
@@ -586,11 +670,13 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
+	report.Findings = append(report.Findings, resolveLatestProductWakeWordFirmwarePlan(&options, report.WakeWord)...)
 	wakeWordPlan, wakeWordPlanFindings := loadProductWakeWordFirmwarePlanEvidence(options.WakeWordFirmwarePlan)
 	report.Findings = append(report.Findings, wakeWordPlanFindings...)
 	if wakeWordPlan.Valid {
 		report.Findings = append(report.Findings, attachProductWakeWordFirmwarePlan(&report.WakeWord, wakeWordPlan)...)
 	}
+	report.Findings = append(report.Findings, resolveLatestProductV21Reports(&options, report.V21)...)
 	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
 	report.Findings = append(report.Findings, professionalFindings...)
 	if professionalEvidence.Valid {
