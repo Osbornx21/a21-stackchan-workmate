@@ -37,6 +37,23 @@ func TestRunPreflightPassesCleanConfigWithNoPortChecks(t *testing.T) {
 	}
 }
 
+func TestRunPreflightAllowsRunningA21GatewayOnActiveLaunchPort(t *testing.T) {
+	port := startPortHealthServer(t, `{"service":"a21-gateway","status":"ok"}`)
+	cfg := DefaultConfig()
+	cfg.ReservedPorts = []int{port}
+	cfg.ActiveServicePorts = []int{port}
+	input := PreflightInput{
+		Config: cfg,
+		Env:    []string{"A21_MODE=dev"},
+		CWD:    "/Users/jiyurun/Documents/New project",
+	}
+
+	result := RunPreflight(context.Background(), input)
+	if !result.OK {
+		t.Fatalf("expected active A21 Gateway to pass preflight, got %#v", result.Findings)
+	}
+}
+
 func TestRunPreflightReportBlocksMissingFingerprint(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.ReservedPorts = nil

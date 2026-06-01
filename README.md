@@ -65,17 +65,29 @@ http://127.0.0.1:21080/simulator
 
 The simulator is the current no-hardware development surface for mock turns, professional evidence rendering, audio downlink buffering, and interruption behavior.
 
-For product demos and internal testing, use:
+For launch-grade product-chain validation, run the Gateway once and let each
+evidence command compose into the final readiness report:
+
+```bash
+make product-readiness
+make server-side-readiness-bundle
+```
+
+`make product-readiness` writes an A21 readiness report that separates the mock
+demo surface from true launch requirements: executed provider smoke, V21
+professional evidence, physical StackChan evidence, wake-word state, and real
+local ASR configuration. `make server-side-readiness-bundle` composes the
+server-side subset without replacing physical acceptance. Host gates allow an
+already-running Gateway on `21080` only when `/healthz` proves it is
+`a21-gateway`; unknown processes on reserved ports still block.
+
+For a simulator-only surface, use:
 
 ```bash
 make demo
-make product-readiness
 ```
 
-`make demo` starts the A21 Gateway and opens the Simulator. `make
-product-readiness` writes an A21 readiness report that separates the mock demo
-surface from true launch requirements: real provider env, V21 adapter health,
-physical StackChan online state, and real local ASR configuration.
+`make demo` starts the A21 Gateway and opens the Simulator.
 
 ## Firmware Safety
 

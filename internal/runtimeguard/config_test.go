@@ -24,4 +24,12 @@ func TestDefaultConfigKeepsA21Isolated(t *testing.T) {
 			t.Fatalf("A21 port %d should be reserved", port)
 		}
 	}
+	if !cfg.IsActiveServicePort(21080) {
+		t.Fatal("A21 Gateway port 21080 should be the active launch service port")
+	}
+	for _, port := range []int{21081, 21073, 21086, 21095, 21114, 21434} {
+		if cfg.IsActiveServicePort(port) {
+			t.Fatalf("A21 reserved port %d should not accept a running service during launch validation", port)
+		}
+	}
 }

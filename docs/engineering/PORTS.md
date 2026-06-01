@@ -22,7 +22,9 @@ policy lives in `docs/engineering/NETWORK.md`; this file is the compact index.
 | `21434` | A21 local-model bridge | reserved |
 
 Adding a new service port requires updating this file, `NETWORK.md`, and the
-runtime guard that checks reserved ports.
+runtime guard that checks reserved ports. During launch validation, a running
+service on `21080` is accepted only when the direct health probe identifies it
+as A21 Gateway; unknown occupants and all non-active reserved ports still block.
 
 ## Forbidden Defaults
 

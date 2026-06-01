@@ -6,6 +6,7 @@ type Config struct {
 	LegacyEnvPrefixes   []string
 	LegacyEndpointPorts []int
 	ReservedPorts       []int
+	ActiveServicePorts  []int
 	LegacyPathParts     []string
 }
 
@@ -21,6 +22,7 @@ func DefaultConfig() Config {
 		},
 		LegacyEndpointPorts: []int{8000, 8080, 10095, 18080, 4173, 42173, 16686, 16687},
 		ReservedPorts:       []int{21080, 21081, 21073, 21086, 21095, 21114, 21434},
+		ActiveServicePorts:  []int{21080},
 		LegacyPathParts: []string{
 			"/Users/jiyurun/Documents/小马暴力",
 			"/Users/jiyurun/Documents/v21-knowledge-platform",
@@ -31,6 +33,15 @@ func DefaultConfig() Config {
 func (c Config) IsReservedPort(port int) bool {
 	for _, reserved := range c.ReservedPorts {
 		if reserved == port {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) IsActiveServicePort(port int) bool {
+	for _, active := range c.ActiveServicePorts {
+		if active == port {
 			return true
 		}
 	}

@@ -25,7 +25,7 @@ func RunPreflight(ctx context.Context, input PreflightInput) Result {
 	findings = append(findings, CheckEnv(cfg, input.Env)...)
 	findings = append(findings, CheckProxyPolicy(EvaluateProxyPolicy(input.Env))...)
 	findings = append(findings, CheckWorkingDirectory(cfg, input.CWD)...)
-	findings = append(findings, CheckPorts(cfg.ReservedPorts)...)
+	findings = append(findings, CheckReservedPorts(cfg.ReservedPorts, cfg.ActiveServicePorts)...)
 
 	return NewResult(findings)
 }
