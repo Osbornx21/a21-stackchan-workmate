@@ -79,6 +79,14 @@ matches the current Gateway wake-word intent. The rollup then exposes
 `wake_word`; it still keeps launch blocked until a later guarded build/flash
 and physical acceptance prove the custom model on the device.
 
+`wake-word-firmware-package` writes `a21.wake_word_firmware_package.v1` after a
+reviewed xiaozhi/ESP-SR build lane emits `a21-wake-word-build.json`. The package
+report records only sanitized intent fields, basenames, SHA-256 hashes, CoreS3
+target metadata, and flash-part inventory. It must not store build paths, config
+paths, full URLs, proxy values, credentials, audio, transcripts, prompts, or
+provider output. Package evidence is below activation: `product_ready=false`,
+`flash_allowed=false`, and `flash_executed=false`.
+
 `product-readiness` also emits a `server_side` observability block for the
 no-hardware candidate chain. It summarizes the already-redacted Gateway,
 provider-smoke, professional V21, host voice loopback, and wake-word readiness

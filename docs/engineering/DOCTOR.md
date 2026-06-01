@@ -184,7 +184,10 @@ requires an executed `v21-adapter-smoke --execute` report passed with
 known A21 provider-smoke, voice, professional, adapter-smoke, physical evidence,
 and wake-word firmware-plan reports, then ingests them through the same explicit
 report contracts. `--wake-word-firmware-plan <report.json>` is the explicit equivalent
-for custom wake-word firmware planning evidence. The rollup
+for custom wake-word firmware planning evidence. `wake-word-firmware-package`
+output is lower than activation: it proves only that a reviewed xiaozhi/ESP-SR
+build was wrapped into A21-named artifact files, below the guarded flash and
+physical custom-wake proof gates. The rollup
 ingests only fixed status/count/timing fields, keeps `prd_accepted=false`, and
 never stores query text, answer text, evidence bodies, full URLs, credentials,
 proxy values, or local paths. If physical StackChan is currently offline but a

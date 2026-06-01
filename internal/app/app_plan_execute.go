@@ -142,6 +142,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runFirmwareDeviceReport(args[1:], stdout, stderr), true
 	case "wake-word-firmware-plan":
 		return runWakeWordFirmwarePlan(args[1:], stdout, stderr), true
+	case "wake-word-firmware-package":
+		return runWakeWordFirmwarePackage(args[1:], stdout, stderr), true
 	case "stackchan-official-baseline":
 		return runStackChanOfficialBaseline(args[1:], stdout, stderr), true
 	case "stackchan-official-audio-smoke-flash":

@@ -188,6 +188,16 @@ provider, contact hardware, or log local config/report paths.
 of a controlled plan only. It is not evidence that the custom wake model is
 compiled into firmware or active on StackChan hardware.
 
+`a21 wake-word-firmware-package --plan <plan.json> --build-dir <xiaozhi-build>
+--commit <sha> [--output-dir firmware/artifacts/wake-word]` is the next
+no-hardware boundary. It requires the matching custom MultiNet plan, a
+`a21-wake-word-build.json` build receipt from the reviewed xiaozhi/ESP-SR
+build lane, CoreS3 `sdkconfig.json`, `flash_args`, and the required flash
+parts. It writes an A21-named app `.bin`, `.sha256`, `.manifest.json`, and
+package report with basenames and hashes only. It does not flash, touch a
+serial port, start Gateway, execute providers, or make the wake word
+product-ready.
+
 ### Fast Companion Runtime
 
 `POST /v1/fast-companion/turn` remains a Gateway-owned fast companion seam.

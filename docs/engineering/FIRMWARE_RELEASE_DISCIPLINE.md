@@ -115,6 +115,15 @@ and a guarded foreground T7 flash plan prove the requested model on hardware.
 This command must not run PlatformIO, invoke esptool, contact providers, or
 store local paths in its JSON output.
 
+`wake-word-firmware-package` is the no-hardware package boundary for that later
+reviewed xiaozhi/ESP-SR build lane. It consumes the matching plan plus a
+build-dir-local `a21-wake-word-build.json`, verifies CoreS3 `sdkconfig.json`,
+`flash_args`, the required xiaozhi flash parts, and the exact requested phrase,
+pinyin, and threshold, then writes only an A21-named app binary, checksum,
+manifest, and package report. It still sets `flash_allowed=false`,
+`flash_executed=false`, and `product_ready=false`; custom wake-word launch
+readiness requires a later guarded flash plan plus physical StackChan proof.
+
 Firmware expression changes must keep the avatar contract testable without hardware. `a21_firmware_display.h` maps render states into an `A21FaceFrame` with avatar-engine concepts such as expression, gaze, eye-open ratio, breath, and mouth-open ratio. This contract is intentionally compatible with a future pinned `m5stack-avatar` adapter and prevents the product expression layer from being buried as one-off drawing logic.
 
 `firmware-avatar-spike-build` compiles the isolated `a21_stackchan_cores3_avatar_spike` environment with `meganetaaan/M5Stack-Avatar @ 0.10.0`. It is a compatibility spike for a mature avatar engine only. It is not a production firmware lane, not a package source, and not a flashing command.
