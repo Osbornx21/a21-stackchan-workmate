@@ -58,6 +58,7 @@ type Server struct {
 	xiaozhiFastAckTTS          providers.TTSAdapter
 	xiaozhiStockProfessional   bool
 	wakeWordConfigPath         string
+	voiceModeConfig            string
 }
 
 type ServerOptions struct {
@@ -214,6 +215,7 @@ type DeviceRecord struct {
 	ConnectionStatus string                   `json:"connection_status,omitempty"`
 	DeviceAgeMS      int64                    `json:"device_age_ms,omitempty"`
 	CurrentMode      protocol.Mode            `json:"current_mode,omitempty"`
+	CurrentVoiceMode string                   `json:"current_voice_mode,omitempty"`
 	CurrentExpr      protocol.ExpressionState `json:"current_expression,omitempty"`
 	PlaybackStream   string                   `json:"playback_stream_id,omitempty"`
 	LastEvent        protocol.DeviceEventKind `json:"last_event,omitempty"`
@@ -229,6 +231,25 @@ type DeviceRegistryResponse struct {
 	SchemaVersion string         `json:"schema_version"`
 	Service       string         `json:"service"`
 	Devices       []DeviceRecord `json:"devices"`
+}
+
+type VoiceModeOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Default     bool   `json:"default,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type VoiceModeCatalogResponse struct {
+	SchemaVersion     string            `json:"schema_version"`
+	Service           string            `json:"service"`
+	SelectedVoiceMode string            `json:"selected_voice_mode"`
+	Modes             []VoiceModeOption `json:"modes"`
+}
+
+type VoiceModeSelectionRequest struct {
+	VoiceMode string `json:"voice_mode"`
 }
 
 type XiaozhiOTAResponse struct {
@@ -252,6 +273,9 @@ type XiaozhiOTAWebSocketConfig struct {
 const (
 	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName   = "a21-gateway"
+	VoiceModeSchemaVersion      = "a21.gateway.voice_modes.v1"
+	VoiceModeEdgeCloud          = "edge_cloud"
+	VoiceModePureCloud          = "pure_cloud"
 	AudioRecentSchemaVersion    = "a21.gateway.audio_recent.v1"
 	maxAudioCaptureFrames       = 512
 	xiaozhiOTAWebSocketVersion  = 1
@@ -422,6 +446,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
+	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/audio/recent", s.handleAudioRecent)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
@@ -449,6 +474,89 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		Service:       DeviceRegistryServiceName,
 		Devices:       s.deviceRecords(),
 	})
+}
+
+func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.voiceModeCatalog())
+	case http.MethodPost, http.MethodPut:
+		var req VoiceModeSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if !validVoiceMode(req.VoiceMode) {
+			http.Error(w, "voice_mode must be edge_cloud or pure_cloud", http.StatusBadRequest)
+			return
+		}
+		s.setVoiceMode(req.VoiceMode)
+		writeJSON(w, http.StatusOK, s.voiceModeCatalog())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
+	return VoiceModeCatalogResponse{
+		SchemaVersion:     VoiceModeSchemaVersion,
+		Service:           DeviceRegistryServiceName,
+		SelectedVoiceMode: s.selectedVoiceMode(),
+		Modes: []VoiceModeOption{
+			{
+				ID:          VoiceModeEdgeCloud,
+				Label:       "Edge + Cloud",
+				Status:      "available",
+				Default:     true,
+				Description: "local audio front end with explicit A21 provider seams",
+			},
+			{
+				ID:          VoiceModePureCloud,
+				Label:       "Pure Cloud",
+				Status:      "planned",
+				Description: "visible spike option; selection is persisted but not routed into provider execution",
+			},
+		},
+	}
+}
+
+func validVoiceMode(mode string) bool {
+	switch mode {
+	case VoiceModeEdgeCloud, VoiceModePureCloud:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) selectedVoiceMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return defaultVoiceMode(s.voiceModeConfig)
+}
+
+func (s *Server) setVoiceMode(mode string) {
+	if !validVoiceMode(mode) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.voiceModeConfig = mode
+}
+
+func defaultVoiceMode(mode string) string {
+	if validVoiceMode(mode) {
+		return mode
+	}
+	return VoiceModeEdgeCloud
+}
+
+func voiceModeAvailableForFastCompanion(mode string) bool {
+	return defaultVoiceMode(mode) == VoiceModeEdgeCloud
+}
+
+func plannedVoiceModeError(mode string) string {
+	return "voice_mode " + defaultVoiceMode(mode) + " is planned and cannot execute fast companion turns"
 }
 
 func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
@@ -3444,6 +3552,7 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 	if payload.Mode != "" {
 		record.CurrentMode = payload.Mode
 	}
+	record.CurrentVoiceMode = defaultVoiceMode(s.voiceModeConfig)
 	if payload.State != "" {
 		record.CurrentExpr = payload.State
 	}
@@ -3497,8 +3606,10 @@ func (s *Server) deviceRecords() []DeviceRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	nowMS := s.now().UnixMilli()
+	voiceMode := defaultVoiceMode(s.voiceModeConfig)
 	records := make([]DeviceRecord, 0, len(s.devices))
 	for _, record := range s.devices {
+		record.CurrentVoiceMode = voiceMode
 		records = append(records, withDeviceFreshness(record, nowMS))
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -3650,6 +3761,11 @@ func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request)
 	}
 	if req.Mode != protocol.ModeWorkmate && req.Mode != protocol.ModeCompanion {
 		http.Error(w, "fast companion mode must be companion or workmate", http.StatusBadRequest)
+		return
+	}
+	selectedVoiceMode := s.selectedVoiceMode()
+	if !voiceModeAvailableForFastCompanion(selectedVoiceMode) {
+		http.Error(w, plannedVoiceModeError(selectedVoiceMode), http.StatusConflict)
 		return
 	}
 	if strings.TrimSpace(req.LocalAudio.ASRProvider) == "" {
