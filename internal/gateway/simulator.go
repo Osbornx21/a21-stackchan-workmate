@@ -132,6 +132,7 @@ const simulatorHTML = `<!doctype html>
     body[data-state="speaking"] .mouth { height: 56px; width: 72px; border-width: 22px; }
     body[data-state="interrupted"] .face { background: #f0dfc4; transform: rotate(0deg) scale(0.98); }
     body[data-state="interrupted"] .mouth { height: 8px; width: 70px; border-width: 5px; }
+    body[data-state="local_fallback"] .face { background: #d7e7d2; outline: 5px solid rgba(130,198,143,0.42); }
     body[data-state="error"] .face { background: #edc8c8; }
     body[data-mode="professional"] .face { outline: 5px solid rgba(120,183,206,0.36); }
     body[data-mode="public"] .face { outline: 5px solid rgba(214,177,95,0.34); }

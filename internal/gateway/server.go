@@ -29,6 +29,7 @@ import (
 
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
+const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
 type Server struct {
 	mu                         sync.Mutex
@@ -2070,7 +2071,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			return true
 		}
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
-		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
 	}
 	s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, result.Timing)
@@ -2113,7 +2114,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 	events, err := runner.RunStream(turn.ctx, req)
 	if err != nil {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
-		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
 	}
 	answerStarted := false
@@ -2178,7 +2179,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			return true
 		}
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
-		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
+		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
 	}
 	if !stageMarkersRecorded {
@@ -2384,6 +2385,45 @@ func (s *Server) recordVoicePipelineFallback(traceID string, sessionID string, d
 	atMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, deviceID, "fallback.used", atMS)
 	s.recordTrace(traceID, sessionID, deviceID, "provider.failover", atMS)
+}
+
+func (s *Server) localFallbackPayload() protocol.ControlEventPayload {
+	return protocol.ControlEventPayload{
+		State: protocol.ExpressionLocalFallback,
+		Mode:  protocol.ModeLocalFallback,
+		Text:  localFallbackText,
+		Final: true,
+	}
+}
+
+func (s *Server) recordLocalFallback(traceID string, sessionID string, deviceID string, reason string) {
+	s.metrics.fallbackTotal.Inc()
+	atMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "fallback.used", atMS)
+	s.recordTrace(traceID, sessionID, deviceID, "local_fallback.entered", atMS)
+	if reason != "" {
+		s.recordTrace(traceID, sessionID, deviceID, "local_fallback."+safeGatewayFallbackToken(reason, "unavailable"), atMS)
+	}
+	s.recordDeviceControl(deviceID, traceID, sessionID, s.localFallbackPayload(), atMS)
+}
+
+func (s *Server) writeXiaozhiLocalFallback(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string) bool {
+	s.recordLocalFallback(task.traceID, task.sessionID, task.deviceID, reason)
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.local_fallback.sent", s.now().UnixMilli())
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":       "tts",
+		"state":      "sentence_start",
+		"phase":      "local_fallback",
+		"mode":       string(protocol.ModeLocalFallback),
+		"turn_id":    task.turnID,
+		"trace_id":   task.traceID,
+		"session_id": task.sessionID,
+		"device_id":  task.deviceID,
+		"text":       localFallbackText,
+	}); err != nil {
+		return false
+	}
+	return s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "local_fallback")
 }
 
 func voicePipelineTextStreamProvider(report providers.VoicePipelineReport) string {
@@ -3666,17 +3706,18 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 	fallbackUsed, fallbackProvider, fallbackReason := voicePipelineFallbackResponse(result.Report)
 	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
 		s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.unavailable", s.now().UnixMilli())
+		s.recordLocalFallback(traceID, sessionID, req.DeviceID, "voice_pipeline_unavailable")
 		events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
 			{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
 			{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "本地语音链路暂时没有给出可播放答案。"},
-			{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: "本地语音链路暂时不可用。", Final: true},
+			s.localFallbackPayload(),
 		})
 		return FastCompanionTurnResponse{
 			TraceID:                    traceID,
 			SessionID:                  sessionID,
 			DeviceID:                   req.DeviceID,
-			Mode:                       req.Mode,
-			Status:                     "pipeline_unavailable",
+			Mode:                       protocol.ModeLocalFallback,
+			Status:                     "local_fallback",
 			Route:                      "fast_companion_hybrid",
 			AudioFrontend:              "local_audio",
 			TextStreamProvider:         voicePipelineTextStreamProvider(result.Report),

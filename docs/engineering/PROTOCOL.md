@@ -260,6 +260,12 @@ A21 mode values are semantic product and office-state signals, not provider name
 
 Only `professional` is allowed to trigger the V21 adapter path. `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context.
 
+`local_fallback` is both a mode and an expression state. Gateway enters it when
+the local voice/provider pipeline cannot produce a playable answer after local
+listening has started. The user-facing fallback sentence is fixed and local; the
+response, trace, and device registry must not store or leak prompt text, raw
+audio, provider output, provider keys, full URLs, proxy URLs, or local paths.
+
 ## Audio Chunks
 
 Current mock audio payload:

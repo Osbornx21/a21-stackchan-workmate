@@ -174,6 +174,11 @@ Provider text fallback records `fallback.used` and `provider.failover` in the
 same Gateway trace when the voice pipeline reports an activated fallback. These
 markers are provider-neutral and do not carry prompt, transcript, provider
 output, endpoint, model, key, or proxy values.
+Local fallback records `fallback.used` and `local_fallback.entered` when the
+voice/provider pipeline cannot produce a playable answer after local listening.
+Xiaozhi fallback also records `xiaozhi.local_fallback.sent` after the fallback
+sentence is emitted. Local fallback increments the generic fallback counter, but
+does not increment provider failover because no alternate provider succeeded.
 `/v1/traces` now summarizes split latency deltas for
 `xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,
@@ -335,6 +340,8 @@ Current mock trace events include:
 - `xiaozhi.voice_pipeline.start`
 - `xiaozhi.voice_pipeline.completed`
 - `xiaozhi.voice_pipeline.unavailable`
+- `local_fallback.entered`
+- `xiaozhi.local_fallback.sent`
 - `asr.first_partial`
 - `asr.final`
 - `provider.first_byte`
@@ -397,6 +404,7 @@ Every voice turn should eventually expose:
 - `provider.cancel`
 - `playback.stop`
 - `fallback.used`
+- `local_fallback.entered`
 
 ## Metrics
 

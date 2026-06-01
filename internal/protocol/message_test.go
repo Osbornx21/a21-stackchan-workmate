@@ -81,6 +81,24 @@ func TestControlEventPayloadStates(t *testing.T) {
 	}
 }
 
+func TestExpressionStatesCoverLocalFallback(t *testing.T) {
+	tests := map[string]ExpressionState{
+		"idle":           ExpressionIdle,
+		"listening":      ExpressionListening,
+		"thinking":       ExpressionThinking,
+		"speaking":       ExpressionSpeaking,
+		"interrupted":    ExpressionInterrupted,
+		"professional":   ExpressionProfessional,
+		"local_fallback": ExpressionLocalFallback,
+		"error":          ExpressionError,
+	}
+	for want, got := range tests {
+		if string(got) != want {
+			t.Fatalf("expression = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
 	tests := map[string]Mode{
 		"workmate":       ModeWorkmate,

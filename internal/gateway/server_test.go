@@ -175,6 +175,8 @@ func TestSimulatorPageServed(t *testing.T) {
 		"PRIVATE",
 		"PRO",
 		"MUTED",
+		"LOCAL",
+		`data-state="local_fallback"`,
 		"updateVisibilityBadges",
 		`id="startMic"`,
 		`id="stopMic"`,
@@ -792,6 +794,98 @@ func TestFastCompanionVoicePipelineRecordsProviderFallbackObservability(t *testi
 	for _, want := range []string{"a21_provider_failover_total 1", "a21_fallback_total 1"} {
 		if !strings.Contains(metricsRec.Body.String(), want) {
 			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+}
+
+func TestFastCompanionVoicePipelineUnavailableEntersLocalFallbackState(t *testing.T) {
+	server := NewServer()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return unavailableXiaozhiPipelineRunner{}
+	}
+	handler := server.Handler()
+	frameBase64 := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1, 0}, 960))
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(fmt.Sprintf(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"workmate",
+		"trace_id":"a21-trace-fast-local-fallback",
+		"session_id":"a21-session-fast-local-fallback",
+		"local_audio":{
+			"asr_provider":"mock_asr",
+			"first_partial_ms":42,
+			"final_transcript_chars":11,
+			"frames":[{"seq":1,"codec":"pcm_s16le","sample_rate_hz":16000,"channels":1,"duration_ms":60,"byte_count":1920,"rms":0.04,"data_base64":%q}]
+		}
+	}`, frameBase64)))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Status string              `json:"status"`
+		Mode   protocol.Mode       `json:"mode"`
+		Events []protocol.Envelope `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "local_fallback" || response.Mode != protocol.ModeLocalFallback {
+		t.Fatalf("response status/mode = %s/%s, want local_fallback", response.Status, response.Mode)
+	}
+	var fallback protocol.ControlEventPayload
+	for _, event := range response.Events {
+		if event.Kind != protocol.KindControlEvent {
+			continue
+		}
+		var payload protocol.ControlEventPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.State == protocol.ExpressionLocalFallback {
+			fallback = payload
+		}
+	}
+	if fallback.State != protocol.ExpressionLocalFallback ||
+		fallback.Mode != protocol.ModeLocalFallback ||
+		!fallback.Final ||
+		!strings.Contains(fallback.Text, "外部大脑连不上") ||
+		!strings.Contains(fallback.Text, "我还在") {
+		t.Fatalf("fallback payload = %+v", fallback)
+	}
+	for _, forbidden := range []string{frameBase64, "fixture transcript", "provider output", "http://", "https://", "/Users/", "sk-"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("local fallback response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-fast-local-fallback", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"fast_companion.voice_pipeline.unavailable", "local_fallback.entered", "control.local_fallback.sent"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+	if !strings.Contains(metricsRec.Body.String(), "a21_fallback_total 1") {
+		t.Fatalf("metrics missing local fallback count:\n%s", metricsRec.Body.String())
+	}
+	if strings.Contains(metricsRec.Body.String(), "a21_provider_failover_total 1") {
+		t.Fatalf("local fallback incremented provider failover count:\n%s", metricsRec.Body.String())
+	}
+
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	handler.ServeHTTP(devicesRec, devicesReq)
+	for _, want := range []string{`"current_mode":"local_fallback"`, `"current_expression":"local_fallback"`} {
+		if !strings.Contains(devicesRec.Body.String(), want) {
+			t.Fatalf("devices missing %q: %s", want, devicesRec.Body.String())
 		}
 	}
 }
@@ -2962,6 +3056,86 @@ func TestXiaozhiVoicePipelineRecordsProviderFallbackObservability(t *testing.T) 
 	for _, want := range []string{"a21_provider_failover_total 1", "a21_fallback_total 1"} {
 		if !strings.Contains(metricsRec.Body.String(), want) {
 			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+}
+
+func TestXiaozhiVoicePipelineUnavailableEmitsLocalFallbackState(t *testing.T) {
+	server := NewServer()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return unavailableXiaozhiPipelineRunner{}
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-local-fallback",
+		"session_id": "a21-session-xiaozhi-local-fallback",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiBinary(t, ctx, conn)
+	fallback := readXiaozhiJSON(t, ctx, conn)
+	if fallback["type"] != "tts" ||
+		fallback["state"] != "sentence_start" ||
+		fallback["phase"] != "local_fallback" ||
+		fallback["mode"] != "local_fallback" ||
+		!strings.Contains(asString(fallback["text"]), "外部大脑连不上") ||
+		!strings.Contains(asString(fallback["text"]), "我还在") {
+		t.Fatalf("fallback sentence = %#v", fallback)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "local_fallback" {
+		t.Fatalf("fallback stop = %#v", stop)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-local-fallback", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"xiaozhi.voice_pipeline.unavailable", "local_fallback.entered", "xiaozhi.local_fallback.sent"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	if !strings.Contains(metricsRec.Body.String(), "a21_fallback_total 1") {
+		t.Fatalf("metrics missing local fallback count:\n%s", metricsRec.Body.String())
+	}
+	if strings.Contains(metricsRec.Body.String(), "a21_provider_failover_total 1") {
+		t.Fatalf("local fallback incremented provider failover count:\n%s", metricsRec.Body.String())
+	}
+
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(devicesRec, devicesReq)
+	for _, want := range []string{`"current_mode":"local_fallback"`, `"current_expression":"local_fallback"`} {
+		if !strings.Contains(devicesRec.Body.String(), want) {
+			t.Fatalf("devices missing %q: %s", want, devicesRec.Body.String())
 		}
 	}
 }
@@ -7117,6 +7291,28 @@ func (fallbackReportingXiaozhiPipelineRunner) Run(ctx context.Context, req provi
 			Findings: []string{"provider_fallback_used"},
 		},
 	}, nil
+}
+
+type unavailableXiaozhiPipelineRunner struct{}
+
+func (unavailableXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	return providers.VoicePipelineResult{
+		Status: providers.VoicePipelineStatusFailed,
+		Report: providers.VoicePipelineReport{
+			SchemaVersion: "a21.voice_pipeline.fixture.v1",
+			Status:        string(providers.VoicePipelineStatusFailed),
+			TraceID:       req.Session.TraceID,
+			SessionID:     req.Session.SessionID,
+			DeviceID:      req.Session.DeviceID,
+			Mode:          req.Mode,
+			ExecutionMode: "fixture",
+			Selection: providers.VoicePipelineSelection{
+				LLMProfile:    "deepseek",
+				LLMProfileEnv: "A21_PROVIDER_PRIMARY",
+			},
+			Findings: []string{"text stream adapter failed"},
+		},
+	}, errors.New("a21 provider unavailable")
 }
 
 type failingXiaozhiTTSAdapter struct{}

@@ -50,13 +50,14 @@ const (
 type ExpressionState string
 
 const (
-	ExpressionIdle         ExpressionState = "idle"
-	ExpressionListening    ExpressionState = "listening"
-	ExpressionThinking     ExpressionState = "thinking"
-	ExpressionSpeaking     ExpressionState = "speaking"
-	ExpressionInterrupted  ExpressionState = "interrupted"
-	ExpressionProfessional ExpressionState = "professional"
-	ExpressionError        ExpressionState = "error"
+	ExpressionIdle          ExpressionState = "idle"
+	ExpressionListening     ExpressionState = "listening"
+	ExpressionThinking      ExpressionState = "thinking"
+	ExpressionSpeaking      ExpressionState = "speaking"
+	ExpressionInterrupted   ExpressionState = "interrupted"
+	ExpressionProfessional  ExpressionState = "professional"
+	ExpressionLocalFallback ExpressionState = "local_fallback"
+	ExpressionError         ExpressionState = "error"
 )
 
 type ControlEventPayload struct {
