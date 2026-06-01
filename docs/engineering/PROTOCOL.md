@@ -172,7 +172,7 @@ device-control integration:
 - Server-to-device expression uses stock xiaozhi `type=llm` messages with an
   `emotion` field. A21 expression states currently map to
   `idle`, `listening`, `thinking`, `speaking`, `interrupted`, `professional`,
-  and `error`.
+  `local_fallback`, and `error`.
 - Optional motion parameters clamp `y_angle` to the stock-safe 5-85 degree
   range before any later adapter may send them.
 
