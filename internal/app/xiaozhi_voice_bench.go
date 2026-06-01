@@ -525,11 +525,23 @@ func xiaozhiVoiceBenchContainsUnsafeIdentifier(value string) bool {
 }
 
 func readXiaozhiVoiceBenchJSON(ctx context.Context, conn *websocket.Conn) (map[string]any, bool) {
-	var message map[string]any
-	if err := wsjson.Read(ctx, conn, &message); err != nil {
-		return nil, false
+	for {
+		messageType, data, err := conn.Read(ctx)
+		if err != nil {
+			return nil, false
+		}
+		if messageType == websocket.MessageBinary {
+			continue
+		}
+		if messageType != websocket.MessageText {
+			return nil, false
+		}
+		var message map[string]any
+		if err := json.Unmarshal(data, &message); err != nil {
+			return nil, false
+		}
+		return message, true
 	}
-	return message, true
 }
 
 func markXiaozhiVoiceBenchJSON(receipt *xiaozhiVoiceBenchTurn, message map[string]any) {

@@ -2371,6 +2371,88 @@ func TestXiaozhiWebSocketStockProfessionalRouteUsesRealtimeListenMode(t *testing
 	}
 }
 
+func TestXiaozhiWebSocketStockProfessionalRouteSendsProfessionalOpusDownlink(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	server := NewServerWithOptions(ServerOptions{
+		V21Client:                v21,
+		XiaozhiStockProfessional: true,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "认真查一下热管理证据"},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stock-pro-downlink",
+		"session_id": "a21-session-xiaozhi-stock-pro-downlink",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" || ttsStart["mode"] != "professional" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	checking := readXiaozhiJSON(t, ctx, conn)
+	if checking["phase"] != "professional_checking" || checking["mode"] != "professional" || !strings.Contains(asString(checking["text"]), "我在查") {
+		t.Fatalf("checking feedback = %#v", checking)
+	}
+	readXiaozhiBinary(t, ctx, conn)
+
+	result := readXiaozhiJSON(t, ctx, conn)
+	if result["phase"] != "professional_result" || result["mode"] != "professional" {
+		t.Fatalf("professional result = %#v", result)
+	}
+	readXiaozhiBinary(t, ctx, conn)
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["reason"] != "professional_result_completed" {
+		t.Fatalf("professional stop = %#v", stop)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	if capabilities["speaker"] != "available_xiaozhi_opus_downlink" {
+		t.Fatalf("capabilities = %#v, want xiaozhi speaker downlink", capabilities)
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-stock-pro-downlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"tts.first_audio", "audio.downlink.first_frame", "xiaozhi.tts.opus_frame.downlink"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketStockProfessionalRouteFallbackDoesNotQueryV21OnEmptyASR(t *testing.T) {
 	v21 := newDelayedXiaozhiProfessionalV21Client(0)
 	server := NewServerWithOptions(ServerOptions{
@@ -6098,11 +6180,35 @@ func xiaozhiTestPCM16Base64(sampleRate int, durationMS int, sample int16) string
 
 func readXiaozhiJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]any {
 	t.Helper()
-	var message map[string]any
-	if err := wsjson.Read(ctx, conn, &message); err != nil {
+	for {
+		messageType, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if messageType == websocket.MessageBinary {
+			continue
+		}
+		if messageType != websocket.MessageText {
+			t.Fatalf("xiaozhi message type=%v, want text JSON", messageType)
+		}
+		var message map[string]any
+		if err := json.Unmarshal(data, &message); err != nil {
+			t.Fatalf("failed to read JSON message: %v", err)
+		}
+		return message
+	}
+}
+
+func readXiaozhiBinary(t *testing.T, ctx context.Context, conn *websocket.Conn) []byte {
+	t.Helper()
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return message
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("xiaozhi binary message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	return data
 }
 
 func mustJSON(t *testing.T, value any) string {

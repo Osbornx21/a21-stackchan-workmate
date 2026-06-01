@@ -109,7 +109,10 @@ Stock xiaozhi listen modes such as `realtime`, `auto`, and `manual` are
 transport hints, not A21 product modes. During bounded physical acceptance,
 `A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional` can explicitly map stock
 listen turns to A21 `professional` inside Gateway without adding debug fields
-to the stock protocol.
+to the stock protocol. Professional checking, fallback, and result speech use
+the same Gateway-owned TTS adapter and paced OPUS binary downlink as normal
+voice answers; the structured evidence/card JSON remains metadata and must not
+replace audible device-facing frames.
 
 ### Xiaozhi MCP And Expression Contract
 

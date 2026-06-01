@@ -157,6 +157,10 @@ turn-control markers only, not physical device playback stop proof yet.
 When the explicit stock professional route override is enabled, Gateway records
 `xiaozhi.professional_route.stock_override` without storing the utterance or
 stock listen-mode value.
+Professional checking/fallback/result speech records `tts.first_audio`,
+`audio.downlink.first_frame`, and `xiaozhi.tts.opus_frame.downlink` when the
+Gateway TTS adapter successfully produces and writes OPUS frames; structured
+professional JSON alone is not physical audible proof.
 `/v1/traces` now summarizes split latency deltas for
 `xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,

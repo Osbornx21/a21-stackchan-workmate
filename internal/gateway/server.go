@@ -1610,6 +1610,11 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		return
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	s.writeXiaozhiProfessionalAudioDownlink(ctx, conn, session, task, receipt.Text, "xiaozhi.professional_checking")
+	if session.shouldAbortXiaozhiTurn(turn) {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+		return
+	}
 	utterance, err := s.xiaozhiProfessionalASRFinal(turn.ctx, task)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || session.shouldAbortXiaozhiTurn(turn) {
@@ -1685,6 +1690,11 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		session.cancelXiaozhiTurnContext(turn, "professional_result_write_error")
 		return
 	}
+	s.writeXiaozhiProfessionalAudioDownlink(ctx, conn, session, task, response.FastAnswer, "xiaozhi.professional_result")
+	if session.shouldAbortXiaozhiTurn(turn) {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+		return
+	}
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "professional_result_completed")
 }
 
@@ -1740,6 +1750,7 @@ func (s *Server) writeXiaozhiProfessionalFallback(ctx context.Context, conn *web
 	if session.shouldAbortXiaozhiTurn(turn) {
 		return
 	}
+	text := "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。"
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":       "tts",
 		"state":      "sentence_start",
@@ -1749,12 +1760,75 @@ func (s *Server) writeXiaozhiProfessionalFallback(ctx context.Context, conn *web
 		"trace_id":   task.traceID,
 		"session_id": task.sessionID,
 		"device_id":  task.deviceID,
-		"text":       "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
+		"text":       text,
 	}); err != nil {
 		session.cancelXiaozhiTurnContext(turn, "professional_fallback_write_error")
 		return
 	}
+	s.writeXiaozhiProfessionalAudioDownlink(ctx, conn, session, task, text, "xiaozhi.professional_fallback")
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return
+	}
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, reason)
+}
+
+func (s *Server) writeXiaozhiProfessionalAudioDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, text string, marker string) bool {
+	turn := task.turn
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return false
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
+		return false
+	}
+	tts := s.xiaozhiFastAckTTS
+	if tts == nil {
+		tts = providers.NewMockTTSAdapter("mock-fast-tts")
+	}
+	chunks, err := tts.Synthesize(turn.ctx, providers.TTSAdapterRequest{
+		Session: providers.VoiceSession{
+			TraceID:   task.traceID,
+			SessionID: task.sessionID,
+			DeviceID:  task.deviceID,
+		},
+		Mode: string(protocol.ModeProfessional),
+		Text: text,
+	})
+	if err != nil {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
+		return false
+	}
+	firstAudio := true
+	wrote := false
+	for chunk := range chunks {
+		if session.shouldAbortXiaozhiTurn(turn) {
+			return false
+		}
+		if firstAudio {
+			firstAudio = false
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "tts.first_audio", s.now().UnixMilli())
+		}
+		ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, chunk)
+		if err != nil {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_error", s.now().UnixMilli())
+			session.cancelXiaozhiTurnContext(turn, marker+"_downlink_error")
+			return false
+		}
+		if !ok {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_aborted", s.now().UnixMilli())
+			return false
+		}
+		if !wrote {
+			wrote = true
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink", s.now().UnixMilli())
+		}
+	}
+	if !wrote {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
+	}
+	return wrote
 }
 
 func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) bool {

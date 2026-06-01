@@ -134,6 +134,10 @@ Safety rules:
   not change stock firmware protocol, does not require `device_events` or
   `debug_metrics`, and should be replaced by a user-confirmed professional
   intent/tool contract before broad product use.
+- The Gateway professional path must synthesize the checking cue, unavailable
+  fallback, and evidence result through the configured A21 TTS adapter and
+  paced xiaozhi OPUS downlink. Text/evidence JSON is metadata for the stock
+  session and does not count as physical audible evidence by itself.
 - `doctor` skips V21 health when `A21_V21_ADAPTER_URL` is unset.
 - `doctor` checks `/healthz` when `A21_V21_ADAPTER_URL` is set, uses a direct no-ambient-proxy HTTP client, and redacts URL credentials from error details.
 - `v21-adapter-smoke` does not execute a professional query unless `--execute` is present.
