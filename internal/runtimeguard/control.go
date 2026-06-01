@@ -80,6 +80,7 @@ func LookupControlCommandSpec(command string) (ControlCommandSpec, bool) {
 		"firmware-mic-probe-flash",
 		"firmware-imu-probe-flash",
 		"firmware-sensor-probe-flash",
+		"xiaozhi-firmware-flash",
 	} {
 		if commandHasFlag(normalized, command, "--execute") {
 			return controlCommandSpecs()[command+" --execute"], true
@@ -209,6 +210,8 @@ func controlCommandSpecs() map[string]ControlCommandSpec {
 		"firmware-sensor-probe-flash-execute":            t7HardwareWrite("firmware-sensor-probe-flash-execute", "sensor probe firmware flash execute"),
 		"stackchan-official-pcm-bridge-flash --execute":  t7HardwareWrite("stackchan-official-pcm-bridge-flash --execute", "official StackChan PCM bridge app flash execute"),
 		"stackchan-official-pcm-bridge-flash-execute":    t7HardwareWrite("stackchan-official-pcm-bridge-flash-execute", "official StackChan PCM bridge app flash execute"),
+		"xiaozhi-firmware-flash --execute":               t7HardwareWrite("xiaozhi-firmware-flash --execute", "xiaozhi firmware flash execute"),
+		"xiaozhi-firmware-flash-execute":                 t7HardwareWrite("xiaozhi-firmware-flash-execute", "xiaozhi firmware flash execute"),
 		"raw-firmware-write": {
 			Command:         "raw-firmware-write",
 			Tier:            "T8",

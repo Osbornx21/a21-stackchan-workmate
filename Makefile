@@ -35,13 +35,15 @@ A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL ?=
 A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM ?=
+A21_XIAOZHI_FIRMWARE_BUILD_DIR ?=
+A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM ?=
 A21_CONTROL_COMMAND ?=
 A21_CONTROL_TIER ?=
 A21_IDF_EXPORT ?= /Users/jiyurun/esp/esp-idf-v5.5.2/export.sh
 A21_V21_ADAPTER_ADDR ?= 127.0.0.1:21121
 A21_V21_BACKEND_URL ?= http://127.0.0.1:18080
 
-.PHONY: test verify gate preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-bridge v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
+.PHONY: test verify gate preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-bridge v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute xiaozhi-firmware-flash-plan xiaozhi-firmware-flash-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-imu-probe-flash-execute firmware-sensor-probe-flash-plan firmware-sensor-probe-flash-execute
 
 test:
 	go test ./...
@@ -188,6 +190,17 @@ stackchan-official-pcm-bridge-nvs-execute:
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM is required"; exit 2)
 	go run ./cmd/a21 stackchan-official-pcm-bridge-nvs --execute --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --device-id "$${A21_DEVICE_ID:-stackchan-001}" --audio-ws-url "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_AUDIO_WS_URL)" --confirm "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM)" --output-dir reports
+
+xiaozhi-firmware-flash-plan:
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test -n "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" || (echo "A21_XIAOZHI_FIRMWARE_BUILD_DIR is required"; exit 2)
+	go run ./cmd/a21 xiaozhi-firmware-flash --build-dir "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --output-dir reports
+
+xiaozhi-firmware-flash-execute:
+	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
+	@test -n "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" || (echo "A21_XIAOZHI_FIRMWARE_BUILD_DIR is required"; exit 2)
+	@test "$(A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM)" = "WRITE_A21_XIAOZHI_FIRMWARE" || (echo "A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM=WRITE_A21_XIAOZHI_FIRMWARE is required"; exit 2)
+	go run ./cmd/a21 xiaozhi-firmware-flash --execute --build-dir "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --confirm "$(A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM)" --output-dir reports
 
 latency-bench:
 	go run ./cmd/a21 latency-bench --mock --iterations 5 --output-dir reports

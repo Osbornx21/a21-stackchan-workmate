@@ -208,11 +208,30 @@ type DeviceRegistryResponse struct {
 	Devices       []DeviceRecord `json:"devices"`
 }
 
+type XiaozhiOTAResponse struct {
+	ServerTime XiaozhiOTAServerTime      `json:"server_time"`
+	WebSocket  XiaozhiOTAWebSocketConfig `json:"websocket"`
+	Firmware   map[string]string         `json:"firmware,omitempty"`
+	Activation map[string]string         `json:"activation,omitempty"`
+}
+
+type XiaozhiOTAServerTime struct {
+	Timestamp      int64 `json:"timestamp"`
+	TimezoneOffset int   `json:"timezone_offset"`
+}
+
+type XiaozhiOTAWebSocketConfig struct {
+	URL     string `json:"url"`
+	Token   string `json:"token"`
+	Version int    `json:"version"`
+}
+
 const (
 	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName   = "a21-gateway"
 	AudioRecentSchemaVersion    = "a21.gateway.audio_recent.v1"
 	maxAudioCaptureFrames       = 512
+	xiaozhiOTAWebSocketVersion  = 1
 )
 
 const (
@@ -387,6 +406,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
+	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
+	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
 	mux.HandleFunc("/ws/audio", s.handleAudioWS)
 	return mux
@@ -402,6 +423,41 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		Service:       DeviceRegistryServiceName,
 		Devices:       s.deviceRecords(),
 	})
+}
+
+func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	host := sanitizedXiaozhiOTAHost(r.Host)
+	if host == "" {
+		http.Error(w, "invalid host", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, XiaozhiOTAResponse{
+		ServerTime: XiaozhiOTAServerTime{
+			Timestamp:      s.now().UnixMilli(),
+			TimezoneOffset: 8 * 60,
+		},
+		WebSocket: XiaozhiOTAWebSocketConfig{
+			URL:     "ws://" + host + "/v1/xiaozhi",
+			Token:   "",
+			Version: xiaozhiOTAWebSocketVersion,
+		},
+	})
+}
+
+func sanitizedXiaozhiOTAHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" ||
+		strings.ContainsAny(host, "/\\?#% \t\r\n") ||
+		strings.Contains(host, "@") ||
+		strings.Contains(strings.ToLower(host), "token") ||
+		strings.Contains(strings.ToLower(host), "secret") {
+		return ""
+	}
+	return host
 }
 
 func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {

@@ -102,6 +102,10 @@ func runDeprecatedPlanExecuteAlias(args []string, stdout io.Writer, stderr io.Wr
 		return runFirmwareSensorProbeFlash(args[1:], stdout, stderr), true
 	case "firmware-sensor-probe-flash-execute":
 		return runFirmwareSensorProbeFlash(withExecuteFlag(args[1:]), stdout, stderr), true
+	case "xiaozhi-firmware-flash-plan":
+		return runXiaozhiFirmwareFlash(args[1:], stdout, stderr), true
+	case "xiaozhi-firmware-flash-execute":
+		return runXiaozhiFirmwareFlash(withExecuteFlag(args[1:]), stdout, stderr), true
 	default:
 		return 0, false
 	}
@@ -160,6 +164,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runFirmwareIMUProbeFlash(args[1:], stdout, stderr), true
 	case "firmware-sensor-probe-flash":
 		return runFirmwareSensorProbeFlash(args[1:], stdout, stderr), true
+	case "xiaozhi-firmware-flash":
+		return runXiaozhiFirmwareFlash(args[1:], stdout, stderr), true
 	default:
 		return 0, false
 	}

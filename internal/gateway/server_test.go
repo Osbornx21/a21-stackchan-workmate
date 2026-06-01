@@ -39,6 +39,58 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestXiaozhiOTAEndpointReturnsStockWebSocketConfig(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/xiaozhi/ota/", strings.NewReader(`{"application":{"version":"0.0.1"}}`))
+	req.Host = "192.0.2.10:21080"
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		WebSocket struct {
+			URL     string `json:"url"`
+			Token   string `json:"token"`
+			Version int    `json:"version"`
+		} `json:"websocket"`
+		ServerTime struct {
+			Timestamp      int64 `json:"timestamp"`
+			TimezoneOffset int   `json:"timezone_offset"`
+		} `json:"server_time"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.WebSocket.URL != "ws://192.0.2.10:21080/v1/xiaozhi" {
+		t.Fatalf("websocket url = %q", body.WebSocket.URL)
+	}
+	if body.WebSocket.Version != 1 {
+		t.Fatalf("websocket version = %d, want stock v1", body.WebSocket.Version)
+	}
+	if body.WebSocket.Token != "" {
+		t.Fatalf("websocket token should be empty in local stock profile")
+	}
+	if body.ServerTime.Timestamp == 0 || body.ServerTime.TimezoneOffset != 480 {
+		t.Fatalf("server_time = %+v", body.ServerTime)
+	}
+}
+
+func TestXiaozhiOTAEndpointRejectsUnsafeHost(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/xiaozhi/ota/", strings.NewReader(`{}`))
+	req.Host = "127.0.0.1:21080@evil.example"
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestVoiceProviderHealthEndpoint(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		VoiceProvider: scriptedVoiceProvider{events: []providers.VoiceEvent{
