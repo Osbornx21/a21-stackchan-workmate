@@ -131,6 +131,7 @@ type xiaozhiVoiceBenchExecution struct {
 	HostLocalASRExecuted       bool   `json:"host_local_asr_executed"`
 	HostLocalTextExecuted      bool   `json:"host_local_text_executed"`
 	HostLocalTTSExecuted       bool   `json:"host_local_tts_executed"`
+	HostProductChainReady      bool   `json:"host_product_chain_ready"`
 }
 
 type xiaozhiVoiceBenchRedaction struct {
@@ -436,6 +437,7 @@ func summarizeXiaozhiVoiceBenchExecution(answerTurns []xiaozhiVoiceBenchTurn, ba
 			summary = execution
 			continue
 		}
+		summary.HostProductChainReady = summary.HostProductChainReady || execution.HostProductChainReady
 		summary.HostLocalASRExecuted = summary.HostLocalASRExecuted || execution.HostLocalASRExecuted
 		summary.HostLocalTextExecuted = summary.HostLocalTextExecuted || execution.HostLocalTextExecuted
 		summary.HostLocalTTSExecuted = summary.HostLocalTTSExecuted || execution.HostLocalTTSExecuted
@@ -485,11 +487,15 @@ func xiaozhiVoiceBenchExecutionFromPipeline(pipeline map[string]any) xiaozhiVoic
 		execution.HostLocalTextExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.LLMProfile)
 		execution.HostLocalTTSExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.TTSProfile)
 		execution.ProviderExecuted = execution.HostLocalTextExecuted
+		execution.HostProductChainReady = xiaozhiVoiceBenchProductChainReady(execution)
 	}
 	return execution
 }
 
 func xiaozhiVoiceBenchProductChainReady(execution xiaozhiVoiceBenchExecution) bool {
+	if execution.HostProductChainReady {
+		return true
+	}
 	return execution.VoicePipelineObserved &&
 		execution.VoicePipelineExecutionMode == "host_local" &&
 		execution.HostLocalASRExecuted &&

@@ -83,17 +83,18 @@ type productProviderReadiness struct {
 }
 
 type productV21Readiness struct {
-	Configured                bool                            `json:"configured"`
-	Healthy                   bool                            `json:"healthy"`
-	Status                    string                          `json:"status"`
-	ProfessionalBridgeReady   bool                            `json:"professional_bridge_ready"`
-	CheckingFeedbackSupported bool                            `json:"checking_feedback_supported"`
-	MaxFirstResponseMS        int                             `json:"max_first_response_ms"`
-	EvidenceContractReady     bool                            `json:"evidence_contract_ready"`
-	QueryExecuted             bool                            `json:"query_executed"`
-	QueryPath                 string                          `json:"query_path"`
-	HealthPath                string                          `json:"health_path"`
-	Professional              productV21ProfessionalReadiness `json:"professional"`
+	Configured                bool                                     `json:"configured"`
+	Healthy                   bool                                     `json:"healthy"`
+	Status                    string                                   `json:"status"`
+	ProfessionalBridgeReady   bool                                     `json:"professional_bridge_ready"`
+	CheckingFeedbackSupported bool                                     `json:"checking_feedback_supported"`
+	MaxFirstResponseMS        int                                      `json:"max_first_response_ms"`
+	EvidenceContractReady     bool                                     `json:"evidence_contract_ready"`
+	QueryExecuted             bool                                     `json:"query_executed"`
+	QueryPath                 string                                   `json:"query_path"`
+	HealthPath                string                                   `json:"health_path"`
+	Professional              productV21ProfessionalReadiness          `json:"professional"`
+	ProfessionalExecution     productV21ProfessionalExecutionReadiness `json:"v21_professional_execution"`
 }
 
 type productV21ProfessionalReadiness struct {
@@ -108,6 +109,24 @@ type productV21ProfessionalReadiness struct {
 	ProfessionalAcceptanceStatus string `json:"professional_acceptance_status,omitempty"`
 	SourceReport                 string `json:"source_report,omitempty"`
 	AdapterExecuted              bool   `json:"adapter_executed"`
+	PRDAccepted                  bool   `json:"prd_accepted"`
+}
+
+type productV21ProfessionalExecutionReadiness struct {
+	Valid                        bool   `json:"valid"`
+	SourceKind                   string `json:"source_kind,omitempty"`
+	SourceReport                 string `json:"source_report,omitempty"`
+	QueryExecuted                bool   `json:"query_executed"`
+	AdapterExecuted              bool   `json:"adapter_executed"`
+	CheckingAckWithin1200        bool   `json:"checking_ack_within_1200"`
+	EvidenceAvailable            bool   `json:"evidence_available"`
+	CardsAvailable               bool   `json:"cards_available"`
+	FollowUpsAvailable           bool   `json:"follow_ups_available"`
+	EvidenceCount                int    `json:"evidence_count"`
+	CardCount                    int    `json:"card_count"`
+	FollowUpCount                int    `json:"follow_up_count"`
+	ProfessionalAcceptanceStatus string `json:"professional_acceptance_status,omitempty"`
+	RedactionOK                  bool   `json:"redaction_ok"`
 	PRDAccepted                  bool   `json:"prd_accepted"`
 }
 
@@ -222,6 +241,7 @@ type productVoicePipelineReadiness struct {
 	HostLocalTextReady           bool    `json:"host_local_text_ready"`
 	HostLocalTTSReady            bool    `json:"host_local_tts_ready"`
 	HostLoopbackCandidateReady   bool    `json:"host_loopback_candidate_ready"`
+	HostProductChainReady        bool    `json:"host_product_chain_ready"`
 	AcceptanceStatus             string  `json:"acceptance_status,omitempty"`
 	AnswerFirstAudioP95MS        float64 `json:"answer_first_audio_p95_ms"`
 	BargeInStopP95MS             float64 `json:"barge_in_stop_p95_ms"`
@@ -488,12 +508,14 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		if professionalEvidence.AdapterExecuted {
 			report.V21.QueryExecuted = true
 		}
+		report.V21.ProfessionalExecution = buildProductV21ProfessionalExecutionReadiness(professionalEvidence)
 	}
 	adapterSmokeEvidence, adapterSmokeFindings := loadProductV21AdapterSmokeReportEvidence(options.V21AdapterSmokeReport, report.V21)
 	report.Findings = append(report.Findings, adapterSmokeFindings...)
 	if adapterSmokeEvidence.Valid {
 		report.V21.QueryExecuted = true
 		report.V21.Professional = adapterSmokeEvidence
+		report.V21.ProfessionalExecution = buildProductV21ProfessionalExecutionReadiness(adapterSmokeEvidence)
 	}
 	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
 	report.Findings = append(report.Findings, xiaozhiFindings...)
@@ -1257,6 +1279,40 @@ func productV21ProfessionalReady(v21 productV21Readiness) bool {
 		v21.Professional.AdapterExecuted
 }
 
+func buildProductV21ProfessionalExecutionReadiness(professional productV21ProfessionalReadiness) productV21ProfessionalExecutionReadiness {
+	if !professional.Valid || !professional.AdapterExecuted {
+		return productV21ProfessionalExecutionReadiness{}
+	}
+	return productV21ProfessionalExecutionReadiness{
+		Valid:                        true,
+		SourceKind:                   productV21ProfessionalExecutionSourceKind(professional.ProfessionalAcceptanceStatus),
+		SourceReport:                 professional.SourceReport,
+		QueryExecuted:                true,
+		AdapterExecuted:              true,
+		CheckingAckWithin1200:        professional.CheckingAckWithin1200,
+		EvidenceAvailable:            professional.EvidenceAvailable,
+		CardsAvailable:               professional.CardsAvailable,
+		FollowUpsAvailable:           professional.FollowUpsAvailable,
+		EvidenceCount:                professional.EvidenceCount,
+		CardCount:                    professional.CardCount,
+		FollowUpCount:                professional.FollowUpCount,
+		ProfessionalAcceptanceStatus: professional.ProfessionalAcceptanceStatus,
+		RedactionOK:                  true,
+		PRDAccepted:                  false,
+	}
+}
+
+func productV21ProfessionalExecutionSourceKind(status string) string {
+	switch strings.TrimSpace(status) {
+	case "adapter_smoke_passed":
+		return "v21_adapter_smoke_report"
+	case "external_gateway_ready":
+		return "xiaozhi_professional_bench_report"
+	default:
+		return "v21_professional_report"
+	}
+}
+
 func buildProductServerSideReadiness(report productReadinessReport) productServerSideReadiness {
 	readiness := productServerSideReadiness{
 		Status:                      "blocked",
@@ -1271,7 +1327,7 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		report.Provider.SmokeEvidenceValid &&
 		report.Provider.SmokeExecuted
 	readiness.V21ProfessionalEvidenceReady = productV21ProfessionalReady(report.V21)
-	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostLoopbackCandidateReady
+	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostProductChainReady
 	readiness.WakeWordReady = report.WakeWord.ProductReady
 	if !readiness.GatewayReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "gateway")
@@ -1434,6 +1490,8 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 			xiaozhiEvidence.BargeInStopP95MS < 300 &&
 			xiaozhiEvidence.FailureCount == 0 &&
 			!xiaozhiEvidence.PRDAccepted
+		voicePipeline.HostProductChainReady = voicePipeline.HostLoopbackCandidateReady &&
+			xiaozhiEvidence.HostProductChainReady
 	} else {
 		if selection.ASRProfile == "sherpa_onnx" || (selection.ASRProfile == "mock-local-asr" && asrProvider == "sherpa_onnx") {
 			voicePipeline.ASRProfile = "sherpa_onnx"
@@ -1471,6 +1529,9 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		provider.RealProviderReady &&
 		stackchan.PhysicalDeviceOnline &&
 		stackchan.PhysicalMicrophoneReady
+	if voicePipeline.HostProductChainReady {
+		readiness.ContinuousVoiceReady = true
+	}
 	return readiness
 }
 
@@ -1489,6 +1550,7 @@ type productXiaozhiReportEvidence struct {
 	AnswerFirstAudioP95MS float64
 	BargeInStopP95MS      float64
 	FailureCount          int
+	HostProductChainReady bool
 	Execution             providerLatencyBenchExecution
 }
 
@@ -1500,8 +1562,45 @@ type productXiaozhiReportFixture struct {
 	PRDAccepted      bool                          `json:"prd_accepted"`
 	Summary          productXiaozhiReportSummary   `json:"summary"`
 	Counts           productXiaozhiReportCounts    `json:"counts"`
-	Execution        providerLatencyBenchExecution `json:"execution"`
+	Execution        productXiaozhiReportExecution `json:"execution"`
 	Redaction        productXiaozhiReportRedaction `json:"redaction"`
+}
+
+type productXiaozhiReportExecution struct {
+	ProviderExecuted           bool   `json:"provider_executed"`
+	V21Executed                bool   `json:"v21_executed"`
+	HardwareExecuted           bool   `json:"hardware_executed"`
+	VoicePipelineObserved      bool   `json:"voice_pipeline_observed"`
+	VoicePipelineExecutionMode string `json:"voice_pipeline_execution_mode"`
+	ASRProfile                 string `json:"asr_profile,omitempty"`
+	ASRProfileEnv              string `json:"asr_profile_env,omitempty"`
+	LLMProfile                 string `json:"llm_profile,omitempty"`
+	LLMProfileEnv              string `json:"llm_profile_env,omitempty"`
+	TTSProfile                 string `json:"tts_profile,omitempty"`
+	TTSProfileEnv              string `json:"tts_profile_env,omitempty"`
+	HostLocalASRExecuted       bool   `json:"host_local_asr_executed"`
+	HostLocalTextExecuted      bool   `json:"host_local_text_executed"`
+	HostLocalTTSExecuted       bool   `json:"host_local_tts_executed"`
+	HostProductChainReady      *bool  `json:"host_product_chain_ready,omitempty"`
+}
+
+func (execution productXiaozhiReportExecution) providerLatencyBenchExecution() providerLatencyBenchExecution {
+	return providerLatencyBenchExecution{
+		ProviderExecuted:           execution.ProviderExecuted,
+		V21Executed:                execution.V21Executed,
+		HardwareExecuted:           execution.HardwareExecuted,
+		VoicePipelineObserved:      execution.VoicePipelineObserved,
+		VoicePipelineExecutionMode: execution.VoicePipelineExecutionMode,
+		ASRProfile:                 execution.ASRProfile,
+		ASRProfileEnv:              execution.ASRProfileEnv,
+		LLMProfile:                 execution.LLMProfile,
+		LLMProfileEnv:              execution.LLMProfileEnv,
+		TTSProfile:                 execution.TTSProfile,
+		TTSProfileEnv:              execution.TTSProfileEnv,
+		HostLocalASRExecuted:       execution.HostLocalASRExecuted,
+		HostLocalTextExecuted:      execution.HostLocalTextExecuted,
+		HostLocalTTSExecuted:       execution.HostLocalTTSExecuted,
+	}
 }
 
 type productXiaozhiReportSummary struct {
@@ -1573,6 +1672,7 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 	if missingField := missingProductXiaozhiReportField(fixture); missingField != "" {
 		return productXiaozhiReportEvidence{}, []productReadinessFinding{missingProductXiaozhiReportFieldFinding(missingField)}
 	}
+	rawExecution := fixture.Execution.providerLatencyBenchExecution()
 	if fixture.SchemaVersion != "a21.xiaozhi_voice_bench.v1" ||
 		fixture.ExecutionMode != "host_loopback" ||
 		fixture.BaselineScope != "host_only" ||
@@ -1585,7 +1685,7 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 		*fixture.Redaction.LocalPathsStored {
 		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
 	}
-	execution := providerLatencyHostLoopbackExecution(fixture.Execution)
+	execution := providerLatencyHostLoopbackExecution(rawExecution)
 	return productXiaozhiReportEvidence{
 		Valid:                 true,
 		SourceReport:          filepath.Base(filepath.Clean(path)),
@@ -1594,15 +1694,23 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 		AnswerFirstAudioP95MS: *fixture.Summary.AnswerFirstAudioP95MS,
 		BargeInStopP95MS:      *fixture.Summary.BargeInStopP95MS,
 		FailureCount:          *fixture.Counts.FailureCount,
+		HostProductChainReady: productXiaozhiHostProductChainReady(execution, fixture.Execution.HostProductChainReady),
 		Execution:             execution,
 	}, nil
 }
 
-func productXiaozhiProviderExecutionAllowed(execution providerLatencyBenchExecution) bool {
+func productXiaozhiProviderExecutionAllowed(execution productXiaozhiReportExecution) bool {
 	if !execution.ProviderExecuted {
 		return true
 	}
-	return providerLatencySafeExecutionMode(execution.VoicePipelineExecutionMode) == "host_local" &&
+	return productXiaozhiHostProductChainReady(
+		providerLatencyHostLoopbackExecution(execution.providerLatencyBenchExecution()),
+		execution.HostProductChainReady,
+	)
+}
+
+func productXiaozhiHostProductChainReady(execution providerLatencyBenchExecution, explicit *bool) bool {
+	derived := providerLatencySafeExecutionMode(execution.VoicePipelineExecutionMode) == "host_local" &&
 		execution.VoicePipelineObserved &&
 		execution.HostLocalASRExecuted &&
 		execution.HostLocalTextExecuted &&
@@ -1610,6 +1718,10 @@ func productXiaozhiProviderExecutionAllowed(execution providerLatencyBenchExecut
 		providerLatencySafeIdentifier(execution.ASRProfile, false) != "" &&
 		providerLatencySafeIdentifier(execution.LLMProfile, false) != "" &&
 		providerLatencySafeIdentifier(execution.TTSProfile, false) != ""
+	if explicit != nil {
+		return *explicit && derived
+	}
+	return derived
 }
 
 func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productXiaozhiReportEvidence, []productReadinessFinding) {
@@ -1661,6 +1773,7 @@ func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productX
 		AnswerFirstAudioP95MS: *fixture.AnswerFirstAudioP95MS,
 		BargeInStopP95MS:      *fixture.BargeInStopP95MS,
 		FailureCount:          0,
+		HostProductChainReady: productXiaozhiHostProductChainReady(execution, nil),
 		Execution:             execution,
 	}, nil
 }

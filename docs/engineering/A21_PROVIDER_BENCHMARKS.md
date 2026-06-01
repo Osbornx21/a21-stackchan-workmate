@@ -235,6 +235,16 @@ ASR/LLM/TTS profile names and `A21_` env names, plus host-local ASR/text/TTS
 stage booleans. These fields are host-only evidence and do not flip
 `provider_executed`, `v21_executed`, `hardware_executed`, `promotion_gate`, or
 `prd_accepted`.
+
+`xiaozhi-voice-bench` reports now also expose
+`execution.host_product_chain_ready`. The flag is host-only: it means one
+redacted Gateway `voice_pipeline` chain observed host-local ASR, text stream,
+and TTS stages with non-mock profiles while staying below physical PRD
+acceptance. `product-readiness` derives the same value from older reports that
+only contain the stage booleans, but honors the explicit flag when it is
+present. Only this stricter host product-chain evidence may clear canonical
+`missing_real_evidence=continuous_voice_pipeline`; fixture/demo loopbacks can
+remain `candidate_host_only` while still leaving that canonical gap open.
 When an ingested host-loopback report contains `audio_quality`,
 `local_ack_audio_quality`, or `tts_audio_quality`, warning/failed quality states
 and fixed PCM guard findings such as clipping, low headroom, near-silence, DC

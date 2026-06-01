@@ -546,6 +546,99 @@ func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.
 	}
 }
 
+func TestProductReadinessClosesContinuousVoiceGapForHostProductChain(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiHostReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if !report.Voice.ContinuousVoiceReady || !report.Voice.VoicePipeline.HostProductChainReady {
+		t.Fatalf("voice readiness = %+v, want host product-chain ready without physical promotion", report.Voice)
+	}
+	if report.LaunchReady || report.CanonicalDecision.LaunchReady || report.CanonicalDecision.PRDAccepted {
+		t.Fatalf("canonical decision = %+v, launch = %v; host-only voice must stay below PRD acceptance", report.CanonicalDecision, report.LaunchReady)
+	}
+	if containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "continuous_voice_pipeline") {
+		t.Fatalf("missing real evidence = %#v, want continuous voice gap closed by host product-chain evidence", report.CanonicalDecision.MissingRealEvidence)
+	}
+	for _, want := range []string{"real_provider_smoke", "v21_professional_execution", "physical_stackchan_online", "physical_stackchan_prd_acceptance"} {
+		if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, want) {
+			t.Fatalf("missing real evidence = %#v, want remaining launch gate %q preserved", report.CanonicalDecision.MissingRealEvidence, want)
+		}
+	}
+}
+
+func TestProductReadinessKeepsContinuousVoiceGapForFixtureOnlyXiaozhi(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"voice_pipeline_execution_mode": "host_local"`, `"voice_pipeline_execution_mode": "fixture"`, 1)
+	data = strings.Replace(data, `"asr_profile": "sherpa_onnx"`, `"asr_profile": "mock-local-asr"`, 1)
+	data = strings.Replace(data, `"llm_profile": "ollama_local"`, `"llm_profile": "mock"`, 1)
+	data = strings.Replace(data, `"tts_profile": "sherpa_onnx_tts"`, `"tts_profile": "mock-fast-tts"`, 1)
+	data = strings.Replace(data, `"host_local_asr_executed": true`, `"host_local_asr_executed": false`, 1)
+	data = strings.Replace(data, `"host_local_text_executed": true`, `"host_local_text_executed": false`, 1)
+	data = strings.Replace(data, `"host_local_tts_executed": true`, `"host_local_tts_executed": false`, 1)
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if report.Voice.ContinuousVoiceReady || report.Voice.VoicePipeline.HostProductChainReady {
+		t.Fatalf("voice readiness = %+v, want fixture-only report below continuous voice readiness", report.Voice)
+	}
+	if report.ServerSide.HostVoiceLoopbackReady {
+		t.Fatalf("server-side readiness = %+v, want fixture-only report below host voice product-chain readiness", report.ServerSide)
+	}
+	if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "continuous_voice_pipeline") {
+		t.Fatalf("missing real evidence = %#v, want continuous voice gap preserved for fixture-only report", report.CanonicalDecision.MissingRealEvidence)
+	}
+}
+
+func TestProductReadinessHonorsExplicitXiaozhiHostProductChainFalse(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"host_local_tts_executed": true`, `"host_local_tts_executed": true,
+    "host_product_chain_ready": false`, 1)
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Voice.ContinuousVoiceReady || report.Voice.VoicePipeline.HostProductChainReady {
+		t.Fatalf("voice readiness = %+v, want explicit false host_product_chain_ready to block continuous voice readiness", report.Voice)
+	}
+	if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "continuous_voice_pipeline") {
+		t.Fatalf("missing real evidence = %#v, want continuous voice gap preserved when explicit product-chain flag is false", report.CanonicalDecision.MissingRealEvidence)
+	}
+}
+
 func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	originalLister := listFirmwareSerialDevices
@@ -1141,6 +1234,71 @@ func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(
 	}
 }
 
+func TestProductReadinessExposesV21ProfessionalExecutionForRealAdapterReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21AdapterSmokeReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		V21AdapterSmokeReport:   fixture,
+		V21ProfessionalReport:   "",
+		PhysicalStackChanReport: "",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+	})
+
+	execution := report.V21.ProfessionalExecution
+	if !execution.Valid ||
+		execution.SourceKind != "v21_adapter_smoke_report" ||
+		execution.SourceReport != "a21-v21-adapter-smoke-real.json" ||
+		!execution.QueryExecuted ||
+		!execution.AdapterExecuted ||
+		!execution.CheckingAckWithin1200 ||
+		!execution.EvidenceAvailable ||
+		!execution.CardsAvailable ||
+		!execution.FollowUpsAvailable ||
+		execution.EvidenceCount != 5 ||
+		execution.CardCount != 1 ||
+		execution.FollowUpCount != 1 ||
+		execution.ProfessionalAcceptanceStatus != "adapter_smoke_passed" ||
+		!execution.RedactionOK ||
+		execution.PRDAccepted {
+		t.Fatalf("v21 professional execution = %+v, want explicit redacted executed adapter evidence", execution)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	rendered := encoded.String()
+	for _, want := range []string{
+		`"v21_professional_execution"`,
+		`"source_kind": "v21_adapter_smoke_report"`,
+		`"source_report": "a21-v21-adapter-smoke-real.json"`,
+		`"query_executed": true`,
+		`"adapter_executed": true`,
+		`"redaction_ok": true`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("product readiness missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "查一下语音唤醒误触发", "raw retrieved evidence", "provider output", "secret-token", "http://", "https://", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestProductReadinessRejectsWeakV21AdapterSmokeReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	tests := []struct {
@@ -1263,11 +1421,12 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 		`"missing_real_evidence"`,
 		`"physical_stackchan_online"`,
 		`"physical_stackchan_prd_acceptance"`,
-		`"continuous_voice_pipeline"`,
 		`"real_provider_ready": true`,
 		`"smoke_evidence_valid": true`,
 		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
 		`"source_report": "a21-xiaozhi-voice-bench-20260601-191935.json"`,
+		`"continuous_voice_ready": true`,
+		`"host_product_chain_ready": true`,
 		`"professional_acceptance_status": "external_gateway_ready"`,
 		`"source_report": "a21-xiaozhi-professional-bench-20260601-160123.json"`,
 		`"source_report": "a21-physical-stackchan-evidence-20260601-150001.json"`,
@@ -1289,6 +1448,9 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 	if strings.Contains(rendered, "configure a real A21 provider") {
 		t.Fatalf("latest readiness should not keep provider gap after provider smoke evidence: %s", rendered)
+	}
+	if strings.Contains(rendered, "continuous_voice_pipeline") {
+		t.Fatalf("latest readiness should not keep continuous voice gap after host product-chain evidence: %s", rendered)
 	}
 	if strings.Contains(rendered, "v21_adapter_smoke_report_missing_field") {
 		t.Fatalf("latest readiness should not ingest adapter-smoke noise when professional proof exists: %s", rendered)
@@ -5103,6 +5265,7 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 		`"host_local_asr_executed": false`,
 		`"host_local_text_executed": false`,
 		`"host_local_tts_executed": false`,
+		`"host_product_chain_ready": false`,
 		`"payloads_stored": false`,
 		`"report_path"`,
 	} {
@@ -5208,6 +5371,9 @@ func TestXiaozhiVoiceBenchExecutionFromPipelineMarksNonMockTextProviderExecuted(
 
 	if !execution.ProviderExecuted || !xiaozhiVoiceBenchProductChainReady(execution) {
 		t.Fatalf("execution = %+v, want non-mock text provider counted as executed product chain", execution)
+	}
+	if !execution.HostProductChainReady {
+		t.Fatalf("execution = %+v, want explicit host product-chain flag", execution)
 	}
 }
 
