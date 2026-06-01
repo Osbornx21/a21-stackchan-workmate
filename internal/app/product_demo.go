@@ -331,6 +331,9 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.Findings = append(report.Findings, professionalFindings...)
 	if professionalEvidence.Valid {
 		report.V21.Professional = professionalEvidence
+		if professionalEvidence.AdapterExecuted {
+			report.V21.QueryExecuted = true
+		}
 	}
 	adapterSmokeEvidence, adapterSmokeFindings := loadProductV21AdapterSmokeReportEvidence(options.V21AdapterSmokeReport, report.V21)
 	report.Findings = append(report.Findings, adapterSmokeFindings...)
@@ -1104,6 +1107,15 @@ func loadProductV21ProfessionalReportEvidence(path string) (productV21Profession
 	if providerLatencyFixtureContainsForbiddenKey(raw) || productV21ProfessionalReportContainsForbiddenValue(raw) {
 		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
 	}
+	var header struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	if strings.TrimSpace(header.SchemaVersion) == "a21.xiaozhi_professional_bench.v1" {
+		return productXiaozhiProfessionalBenchReportEvidence(path, data)
+	}
 	var fixture productV21ProfessionalReportFixture
 	if err := json.Unmarshal(data, &fixture); err != nil {
 		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
@@ -1139,6 +1151,140 @@ func loadProductV21ProfessionalReportEvidence(path string) (productV21Profession
 		AdapterExecuted:              *fixture.AdapterExecuted,
 		PRDAccepted:                  false,
 	}, nil
+}
+
+type productXiaozhiProfessionalBenchReportFixture struct {
+	SchemaVersion                   string                                          `json:"schema_version"`
+	SourceProfile                   string                                          `json:"source_profile"`
+	AcceptanceStatus                string                                          `json:"acceptance_status"`
+	PRDAccepted                     bool                                            `json:"prd_accepted"`
+	CheckingFeedbackWithin1200      *bool                                           `json:"checking_feedback_within_1200"`
+	ProfessionalResultObserved      *bool                                           `json:"professional_result_observed"`
+	ProfessionalResultAfterChecking *bool                                           `json:"professional_result_after_checking"`
+	EvidenceCount                   *int                                            `json:"evidence_count"`
+	ScreenCardCount                 *int                                            `json:"screen_card_count"`
+	FollowUpCount                   *int                                            `json:"follow_up_count"`
+	ConfidencePresent               *bool                                           `json:"confidence_present"`
+	NoPlaceholderUtterance          *bool                                           `json:"no_placeholder_utterance"`
+	NoASRTextLeak                   *bool                                           `json:"no_asr_text_leak"`
+	FailureCount                    *int                                            `json:"failure_count"`
+	Execution                       productXiaozhiProfessionalBenchExecutionFixture `json:"execution"`
+	Redaction                       productXiaozhiProfessionalBenchRedactionFixture `json:"redaction"`
+}
+
+type productXiaozhiProfessionalBenchExecutionFixture struct {
+	ProviderExecuted *bool  `json:"provider_executed"`
+	V21Executed      *bool  `json:"v21_executed"`
+	HardwareExecuted *bool  `json:"hardware_executed"`
+	GatewayRuntime   string `json:"gateway_runtime"`
+}
+
+type productXiaozhiProfessionalBenchRedactionFixture struct {
+	PayloadsStored       *bool `json:"payloads_stored"`
+	ASRTextStored        *bool `json:"asr_text_stored"`
+	EvidenceBodyStored   *bool `json:"evidence_body_stored"`
+	FullURLStored        *bool `json:"full_url_stored"`
+	LocalPathStored      *bool `json:"local_path_stored"`
+	PromptStored         *bool `json:"prompt_stored"`
+	ProviderOutputStored *bool `json:"provider_output_stored"`
+}
+
+func productXiaozhiProfessionalBenchReportEvidence(path string, data []byte) (productV21ProfessionalReadiness, []productReadinessFinding) {
+	var fixture productXiaozhiProfessionalBenchReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	if missingField := missingProductXiaozhiProfessionalBenchReportField(fixture); missingField != "" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{missingProductV21ProfessionalReportFieldFinding(missingField)}
+	}
+	if fixture.SchemaVersion != "a21.xiaozhi_professional_bench.v1" ||
+		strings.TrimSpace(fixture.SourceProfile) != "external_gateway" ||
+		strings.TrimSpace(fixture.AcceptanceStatus) != "external_gateway_ready" ||
+		fixture.PRDAccepted ||
+		!*fixture.CheckingFeedbackWithin1200 ||
+		!*fixture.ProfessionalResultObserved ||
+		!*fixture.ProfessionalResultAfterChecking ||
+		*fixture.EvidenceCount <= 0 ||
+		*fixture.ScreenCardCount <= 0 ||
+		*fixture.FollowUpCount <= 0 ||
+		!*fixture.ConfidencePresent ||
+		!*fixture.NoPlaceholderUtterance ||
+		!*fixture.NoASRTextLeak ||
+		*fixture.FailureCount != 0 ||
+		*fixture.Execution.ProviderExecuted ||
+		!*fixture.Execution.V21Executed ||
+		*fixture.Execution.HardwareExecuted ||
+		strings.TrimSpace(fixture.Execution.GatewayRuntime) != "external_gateway" ||
+		*fixture.Redaction.PayloadsStored ||
+		*fixture.Redaction.ASRTextStored ||
+		*fixture.Redaction.EvidenceBodyStored ||
+		*fixture.Redaction.FullURLStored ||
+		*fixture.Redaction.LocalPathStored ||
+		*fixture.Redaction.PromptStored ||
+		*fixture.Redaction.ProviderOutputStored {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21ProfessionalReportFinding()}
+	}
+	return productV21ProfessionalReadiness{
+		Valid:                        true,
+		CheckingAckWithin1200:        *fixture.CheckingFeedbackWithin1200,
+		EvidenceAvailable:            *fixture.EvidenceCount > 0,
+		CardsAvailable:               *fixture.ScreenCardCount > 0,
+		FollowUpsAvailable:           *fixture.FollowUpCount > 0,
+		EvidenceCount:                *fixture.EvidenceCount,
+		CardCount:                    *fixture.ScreenCardCount,
+		FollowUpCount:                *fixture.FollowUpCount,
+		ProfessionalAcceptanceStatus: strings.TrimSpace(fixture.AcceptanceStatus),
+		SourceReport:                 filepath.Base(filepath.Clean(path)),
+		AdapterExecuted:              *fixture.Execution.V21Executed,
+		PRDAccepted:                  false,
+	}, nil
+}
+
+func missingProductXiaozhiProfessionalBenchReportField(fixture productXiaozhiProfessionalBenchReportFixture) string {
+	switch {
+	case fixture.CheckingFeedbackWithin1200 == nil:
+		return "checking_feedback_within_1200"
+	case fixture.ProfessionalResultObserved == nil:
+		return "professional_result_observed"
+	case fixture.ProfessionalResultAfterChecking == nil:
+		return "professional_result_after_checking"
+	case fixture.EvidenceCount == nil:
+		return "evidence_count"
+	case fixture.ScreenCardCount == nil:
+		return "screen_card_count"
+	case fixture.FollowUpCount == nil:
+		return "follow_up_count"
+	case fixture.ConfidencePresent == nil:
+		return "confidence_present"
+	case fixture.NoPlaceholderUtterance == nil:
+		return "no_placeholder_utterance"
+	case fixture.NoASRTextLeak == nil:
+		return "no_asr_text_leak"
+	case fixture.FailureCount == nil:
+		return "failure_count"
+	case fixture.Execution.ProviderExecuted == nil:
+		return "execution.provider_executed"
+	case fixture.Execution.V21Executed == nil:
+		return "execution.v21_executed"
+	case fixture.Execution.HardwareExecuted == nil:
+		return "execution.hardware_executed"
+	case fixture.Redaction.PayloadsStored == nil:
+		return "redaction.payloads_stored"
+	case fixture.Redaction.ASRTextStored == nil:
+		return "redaction.asr_text_stored"
+	case fixture.Redaction.EvidenceBodyStored == nil:
+		return "redaction.evidence_body_stored"
+	case fixture.Redaction.FullURLStored == nil:
+		return "redaction.full_url_stored"
+	case fixture.Redaction.LocalPathStored == nil:
+		return "redaction.local_path_stored"
+	case fixture.Redaction.PromptStored == nil:
+		return "redaction.prompt_stored"
+	case fixture.Redaction.ProviderOutputStored == nil:
+		return "redaction.provider_output_stored"
+	default:
+		return ""
+	}
 }
 
 func missingProductV21ProfessionalReportField(fixture productV21ProfessionalReportFixture) string {

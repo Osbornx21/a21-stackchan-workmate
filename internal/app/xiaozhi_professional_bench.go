@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -31,6 +32,8 @@ type xiaozhiProfessionalBenchOptions struct {
 	OutputDir       string
 	DeviceID        string
 	ProtocolVersion int
+	GatewayURL      string
+	InputWAV        string
 }
 
 func parseXiaozhiProfessionalBenchPositiveInt(raw string, option string) (int, error) {
@@ -48,6 +51,8 @@ type xiaozhiProfessionalBenchReport struct {
 	Scenario                        string                            `json:"scenario"`
 	AcceptanceStatus                string                            `json:"acceptance_status"`
 	PRDAccepted                     bool                              `json:"prd_accepted"`
+	Gateway                         string                            `json:"gateway,omitempty"`
+	Input                           *xiaozhiVoiceBenchInput           `json:"input_audio,omitempty"`
 	TraceID                         string                            `json:"trace_id"`
 	SessionID                       string                            `json:"session_id"`
 	DeviceID                        string                            `json:"device_id"`
@@ -64,6 +69,7 @@ type xiaozhiProfessionalBenchReport struct {
 	ConfidencePresent               bool                              `json:"confidence_present"`
 	NoPlaceholderUtterance          bool                              `json:"no_placeholder_utterance"`
 	NoASRTextLeak                   bool                              `json:"no_asr_text_leak"`
+	V21QueryFirstResultMS           *int64                            `json:"v21_query_first_result_ms,omitempty"`
 	TTSStopObserved                 bool                              `json:"tts_stop_observed"`
 	FailureCount                    int                               `json:"failure_count"`
 	Execution                       xiaozhiProfessionalBenchExecution `json:"execution"`
@@ -105,8 +111,26 @@ func runXiaozhiProfessionalBench(args []string, stdout io.Writer, stderr io.Writ
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 xiaozhi-professional-bench [--scenario success|v21_failure] [--fake-v21-delay-ms 100] [--timeout-ms 3000] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 xiaozhi-professional-bench [--gateway-url http://127.0.0.1:21080] [--scenario success|v21_failure] [--fake-v21-delay-ms 100] [--device-id stackchan-virtual-a21-professional-bench-001] [--protocol-version 1|2|3] [--input-wav fixture.wav] [--timeout-ms 3000] [--output-dir reports]")
 			return 0
+		case "--gateway-url":
+			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
+				return 2
+			}
+		case "--device-id":
+			if !readStringOption(args, &i, stderr, "--device-id", &options.DeviceID) {
+				return 2
+			}
+		case "--input-wav":
+			if !readStringOption(args, &i, stderr, "--input-wav", &options.InputWAV) {
+				return 2
+			}
+		case "--protocol-version":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--protocol-version")
+			if !ok {
+				return 2
+			}
+			options.ProtocolVersion = value
 		case "--scenario":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--scenario requires a value")
@@ -171,7 +195,7 @@ func runXiaozhiProfessionalBench(args []string, stdout io.Writer, stderr io.Writ
 		fmt.Fprintf(stderr, "encode xiaozhi professional bench report: %v\n", err)
 		return 1
 	}
-	if report.FailureCount > 0 || report.AcceptanceStatus != "host_mock_ready" {
+	if report.FailureCount > 0 || (report.AcceptanceStatus != "host_mock_ready" && report.AcceptanceStatus != "external_gateway_ready") {
 		return 1
 	}
 	return 0
@@ -189,8 +213,29 @@ func validateXiaozhiProfessionalBenchOptions(options xiaozhiProfessionalBenchOpt
 	if options.Timeout <= 0 {
 		return fmt.Errorf("--timeout-ms must be positive")
 	}
+	switch options.ProtocolVersion {
+	case 1, 2, 3:
+	default:
+		return fmt.Errorf("--protocol-version must be 1, 2, or 3")
+	}
 	if xiaozhiVoiceBenchContainsLegacy(options.DeviceID) {
 		return fmt.Errorf("--device-id must use A21/StackChan identity")
+	}
+	if strings.TrimSpace(options.GatewayURL) != "" {
+		if xiaozhiVoiceBenchContainsLegacy(options.GatewayURL) {
+			return fmt.Errorf("--gateway-url contains legacy identity")
+		}
+		if _, err := xiaozhiVoiceBenchWebSocketURL(options.GatewayURL); err != nil {
+			return fmt.Errorf("--gateway-url is invalid")
+		}
+	}
+	if strings.TrimSpace(options.InputWAV) != "" {
+		if xiaozhiVoiceBenchContainsLegacy(options.InputWAV) {
+			return fmt.Errorf("--input-wav contains legacy identity")
+		}
+		if strings.ToLower(filepath.Ext(options.InputWAV)) != ".wav" {
+			return fmt.Errorf("--input-wav must point to a wav file")
+		}
 	}
 	return nil
 }
@@ -225,6 +270,40 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 			ProviderOutputStored: false,
 		},
 	}
+	packets, input, err := xiaozhiProfessionalBenchOpusPackets(options)
+	if err != nil {
+		report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "opus_fixture_unavailable", Message: "professional Opus uplink fixture could not be generated"})
+		return finalizeXiaozhiProfessionalBenchReport(report)
+	}
+	report.Input = &input
+	if strings.TrimSpace(options.GatewayURL) != "" {
+		report.SourceProfile = "external_gateway"
+		report.AcceptanceStatus = "external_gateway_blocked"
+		report.Gateway = xiaozhiVoiceBenchGatewayLabel(options.GatewayURL)
+		report.Execution.GatewayRuntime = "external_gateway"
+		turn := runXiaozhiProfessionalBenchTurn(ctx, options, options.GatewayURL, traceID, sessionID, packets)
+		report.CheckingFeedbackObserved = turn.checkingObserved
+		report.CheckingFeedbackMS = turn.checkingMS
+		report.CheckingFeedbackWithin1200 = turn.checkingObserved && turn.checkingMS <= int64(v21adapter.ProfessionalMaxFirstResponseMS)
+		report.ProfessionalResultObserved = turn.resultObserved
+		report.ProfessionalResultAfterChecking = turn.resultObserved && turn.resultIndex > turn.checkingIndex && turn.checkingIndex >= 0
+		report.EvidenceCount = turn.evidenceCount
+		report.ScreenCardCount = turn.screenCardCount
+		report.FollowUpCount = turn.followUpCount
+		report.ConfidencePresent = turn.confidencePresent
+		report.TTSStopObserved = turn.ttsStopObserved
+		trace, traceErr := fetchXiaozhiProfessionalBenchTraceEvidence(ctx, options.GatewayURL, traceID)
+		if traceErr != nil {
+			report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "external_gateway_trace_unavailable", Message: "external Gateway professional trace was unavailable"})
+		}
+		report.Execution.V21Executed = trace.V21QueryStarted && trace.V21QueryFirstResult
+		report.NoPlaceholderUtterance = trace.UtteranceLengthObserved
+		report.V21QueryFirstResultMS = trace.V21QueryFirstResultMS
+		abortTurn := runXiaozhiProfessionalBenchAbortTurn(ctx, options, options.GatewayURL, packets)
+		report.AbortStopObserved = abortTurn.abortStopObserved
+		report.StaleResultSuppressed = abortTurn.staleResultSuppressed
+		return finalizeXiaozhiProfessionalBenchReport(report)
+	}
 	v21 := &xiaozhiProfessionalBenchV21Client{delay: options.FakeV21Delay, fail: options.Scenario == "v21_failure"}
 	adapters := providers.VoicePipelineAdapters{
 		ASR:        xiaozhiProfessionalBenchASRAdapter{text: xiaozhiProfessionalBenchASRSentinel},
@@ -238,13 +317,13 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 
-	turn := runXiaozhiProfessionalBenchTurn(ctx, options, httpServer.URL, traceID, sessionID)
+	turn := runXiaozhiProfessionalBenchTurn(ctx, options, httpServer.URL, traceID, sessionID, packets)
 	report.CheckingFeedbackObserved = turn.checkingObserved
 	report.CheckingFeedbackMS = turn.checkingMS
 	report.CheckingFeedbackWithin1200 = turn.checkingObserved && turn.checkingMS <= int64(v21adapter.ProfessionalMaxFirstResponseMS)
 	report.ProfessionalResultObserved = turn.resultObserved
 	report.ProfessionalResultAfterChecking = turn.resultObserved && turn.resultIndex > turn.checkingIndex && turn.checkingIndex >= 0
-	abortTurn := runXiaozhiProfessionalBenchAbortTurn(ctx, options)
+	abortTurn := runXiaozhiProfessionalBenchAbortTurn(ctx, options, "", packets)
 	report.AbortStopObserved = abortTurn.abortStopObserved
 	report.StaleResultSuppressed = abortTurn.staleResultSuppressed
 	report.EvidenceCount = turn.evidenceCount
@@ -253,6 +332,10 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 	report.ConfidencePresent = turn.confidencePresent
 	report.TTSStopObserved = turn.ttsStopObserved
 	report.NoPlaceholderUtterance = v21.lastUtterance() != "" && v21.lastUtterance() != xiaozhiProfessionalBenchPlaceholderUtterance
+	return finalizeXiaozhiProfessionalBenchReport(report)
+}
+
+func finalizeXiaozhiProfessionalBenchReport(report xiaozhiProfessionalBenchReport) xiaozhiProfessionalBenchReport {
 	if !report.CheckingFeedbackObserved {
 		report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "checking_feedback_missing", Message: "professional checking feedback was not observed"})
 	} else if !report.CheckingFeedbackWithin1200 {
@@ -278,7 +361,11 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 	}
 	report.FailureCount = len(report.Findings)
 	if report.FailureCount == 0 {
-		report.AcceptanceStatus = "host_mock_ready"
+		if report.SourceProfile == "external_gateway" {
+			report.AcceptanceStatus = "external_gateway_ready"
+		} else {
+			report.AcceptanceStatus = "host_mock_ready"
+		}
 	}
 	report.NoASRTextLeak = xiaozhiProfessionalBenchReportOmitsSensitiveText(report)
 	if !report.NoASRTextLeak {
@@ -302,7 +389,7 @@ type xiaozhiProfessionalBenchTurn struct {
 	ttsStopObserved   bool
 }
 
-func runXiaozhiProfessionalBenchTurn(ctx context.Context, options xiaozhiProfessionalBenchOptions, gatewayURL string, traceID string, sessionID string) xiaozhiProfessionalBenchTurn {
+func runXiaozhiProfessionalBenchTurn(ctx context.Context, options xiaozhiProfessionalBenchOptions, gatewayURL string, traceID string, sessionID string, packets [][]byte) xiaozhiProfessionalBenchTurn {
 	turn := xiaozhiProfessionalBenchTurn{checkingIndex: -1, resultIndex: -1}
 	turnCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
@@ -335,12 +422,10 @@ func runXiaozhiProfessionalBenchTurn(ctx context.Context, options xiaozhiProfess
 	if _, ok := readXiaozhiVoiceBenchJSON(turnCtx, conn); !ok {
 		return turn
 	}
-	packet, err := xiaozhiVoiceBenchSyntheticOpusPacket()
-	if err != nil {
-		return turn
-	}
-	if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
-		return turn
+	for _, packet := range packets {
+		if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
+			return turn
+		}
 	}
 	stopListen := xiaozhiVoiceBenchListen(voiceOptions, traceID, sessionID, "stop")
 	stopListen["mode"] = "professional"
@@ -384,25 +469,28 @@ type xiaozhiProfessionalBenchAbortTurn struct {
 	staleResultSuppressed bool
 }
 
-func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiProfessionalBenchOptions) xiaozhiProfessionalBenchAbortTurn {
+func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiProfessionalBenchOptions, gatewayURL string, packets [][]byte) xiaozhiProfessionalBenchAbortTurn {
 	result := xiaozhiProfessionalBenchAbortTurn{staleResultSuppressed: true}
 	traceID := fmt.Sprintf("a21-trace-xiaozhi-professional-bench-abort-%d", time.Now().UnixMilli())
 	sessionID := fmt.Sprintf("a21-session-xiaozhi-professional-bench-abort-%d", time.Now().UnixMilli())
-	v21 := &xiaozhiProfessionalBenchV21Client{delay: 500 * time.Millisecond}
-	adapters := providers.VoicePipelineAdapters{
-		ASR:        xiaozhiProfessionalBenchASRAdapter{text: xiaozhiProfessionalBenchASRSentinel},
-		TextStream: xiaozhiProfessionalBenchTextStreamAdapter{},
-		TTS:        providers.NewMockTTSAdapter("a21-host-mock-tts"),
+	if strings.TrimSpace(gatewayURL) == "" {
+		v21 := &xiaozhiProfessionalBenchV21Client{delay: 500 * time.Millisecond}
+		adapters := providers.VoicePipelineAdapters{
+			ASR:        xiaozhiProfessionalBenchASRAdapter{text: xiaozhiProfessionalBenchASRSentinel},
+			TextStream: xiaozhiProfessionalBenchTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-host-mock-tts"),
+		}
+		server := gateway.NewServerWithOptions(gateway.ServerOptions{
+			V21Client:                    v21,
+			XiaozhiVoicePipelineAdapters: &adapters,
+		})
+		httpServer := httptest.NewServer(server.Handler())
+		defer httpServer.Close()
+		gatewayURL = httpServer.URL
 	}
-	server := gateway.NewServerWithOptions(gateway.ServerOptions{
-		V21Client:                    v21,
-		XiaozhiVoicePipelineAdapters: &adapters,
-	})
-	httpServer := httptest.NewServer(server.Handler())
-	defer httpServer.Close()
 	turnCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	defer cancel()
-	wsURL, err := xiaozhiVoiceBenchWebSocketURL(httpServer.URL)
+	wsURL, err := xiaozhiVoiceBenchWebSocketURL(gatewayURL)
 	if err != nil {
 		return result
 	}
@@ -431,12 +519,10 @@ func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiPr
 	if _, ok := readXiaozhiVoiceBenchJSON(turnCtx, conn); !ok {
 		return result
 	}
-	packet, err := xiaozhiVoiceBenchSyntheticOpusPacket()
-	if err != nil {
-		return result
-	}
-	if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
-		return result
+	for _, packet := range packets {
+		if err := conn.Write(turnCtx, websocket.MessageBinary, wrapXiaozhiVoiceBenchOpus(packet, options.ProtocolVersion)); err != nil {
+			return result
+		}
 	}
 	stopListen := xiaozhiVoiceBenchListen(voiceOptions, traceID, sessionID, "stop")
 	stopListen["mode"] = "professional"
@@ -474,6 +560,67 @@ func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiPr
 		result.staleResultSuppressed = false
 	}
 	return result
+}
+
+type xiaozhiProfessionalBenchTraceEvidence struct {
+	V21QueryStarted         bool
+	V21QueryFirstResult     bool
+	UtteranceLengthObserved bool
+	V21QueryFirstResultMS   *int64
+}
+
+func fetchXiaozhiProfessionalBenchTraceEvidence(ctx context.Context, gatewayURL string, traceID string) (xiaozhiProfessionalBenchTraceEvidence, error) {
+	endpoint, err := xiaozhiVoiceBenchTraceURL(gatewayURL, traceID)
+	if err != nil {
+		return xiaozhiProfessionalBenchTraceEvidence{}, err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return xiaozhiProfessionalBenchTraceEvidence{}, err
+	}
+	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return xiaozhiProfessionalBenchTraceEvidence{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return xiaozhiProfessionalBenchTraceEvidence{}, fmt.Errorf("trace unavailable")
+	}
+	var decoded struct {
+		Events  []xiaozhiVoiceBenchTraceEvent `json:"events"`
+		Summary struct {
+			V21QueryFirstResultMS *int64 `json:"v21_query_first_result_ms,omitempty"`
+		} `json:"summary"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&decoded); err != nil {
+		return xiaozhiProfessionalBenchTraceEvidence{}, err
+	}
+	evidence := xiaozhiProfessionalBenchTraceEvidence{V21QueryFirstResultMS: decoded.Summary.V21QueryFirstResultMS}
+	for _, event := range decoded.Events {
+		switch {
+		case event.Name == "v21.query.start":
+			evidence.V21QueryStarted = true
+		case event.Name == "v21.query.first_result":
+			evidence.V21QueryFirstResult = true
+		case strings.HasPrefix(event.Name, "v21.query.utterance.length_"):
+			evidence.UtteranceLengthObserved = true
+		}
+	}
+	return evidence, nil
+}
+
+func xiaozhiProfessionalBenchOpusPackets(options xiaozhiProfessionalBenchOptions) ([][]byte, xiaozhiVoiceBenchInput, error) {
+	packets, input, err := xiaozhiVoiceBenchOpusPackets(xiaozhiVoiceBenchOptions{InputWAV: options.InputWAV})
+	if err != nil {
+		return nil, xiaozhiVoiceBenchInput{}, err
+	}
+	if input.Source == "synthetic_sine" {
+		input.Source = "synthetic_opus"
+	}
+	return packets, input, nil
 }
 
 func xiaozhiProfessionalBenchFloatField(values map[string]any, key string) float64 {

@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ import (
 
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/v21adapter"
 )
@@ -585,6 +587,70 @@ func TestProductReadinessIngestsV21ProfessionalReadinessReport(t *testing.T) {
 		"secret-token",
 		"http://",
 		"https://",
+		`"launch_ready": true`,
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessIngestsXiaozhiProfessionalGatewayReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+	})
+
+	if report.LaunchReady || report.V21.Professional.PRDAccepted {
+		t.Fatalf("launch/prd = %v/%v, want professional gateway evidence below launch gates", report.LaunchReady, report.V21.Professional.PRDAccepted)
+	}
+	if !report.V21.QueryExecuted {
+		t.Fatalf("v21 readiness = %+v, want query executed from xiaozhi professional report", report.V21)
+	}
+	professional := report.V21.Professional
+	if !professional.Valid ||
+		!professional.CheckingAckWithin1200 ||
+		!professional.EvidenceAvailable ||
+		!professional.CardsAvailable ||
+		!professional.FollowUpsAvailable ||
+		professional.EvidenceCount != 5 ||
+		professional.CardCount != 1 ||
+		professional.FollowUpCount != 1 ||
+		professional.ProfessionalAcceptanceStatus != "external_gateway_ready" ||
+		professional.SourceReport != "a21-xiaozhi-professional-gateway.json" ||
+		!professional.AdapterExecuted {
+		t.Fatalf("professional readiness = %+v, want valid external Gateway professional contract", professional)
+	}
+	if containsProductAction(report.NextActions, "v21-adapter-smoke") {
+		t.Fatalf("next actions = %#v, should not ask for adapter smoke after gateway professional proof", report.NextActions)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		fixture,
+		filepath.Dir(fixture),
+		"http://",
+		"https://",
+		"/Users/",
+		"raw transcript text",
+		"provider output",
 		`"launch_ready": true`,
 		`"prd_accepted": true`,
 	} {
@@ -1207,6 +1273,65 @@ func writeProductReadinessV21ProfessionalReportFixtureFromData(t *testing.T, dat
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-v21-professional-readiness-host.json")
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-professional-gateway.json")
+	data := `{
+  "schema_version": "a21.xiaozhi_professional_bench.v1",
+  "generated_at_unix_ms": 1780300883954,
+  "source_profile": "external_gateway",
+  "scenario": "success",
+  "acceptance_status": "external_gateway_ready",
+  "prd_accepted": false,
+  "gateway": "loopback:21080",
+  "input_audio": {
+    "source": "wav",
+    "file": "a21-sherpa-onnx-tts.wav",
+    "opus_frame_count": 18
+  },
+  "trace_id": "a21-trace-xiaozhi-professional-bench-001",
+  "session_id": "a21-session-xiaozhi-professional-bench-001",
+  "device_id": "stackchan-virtual-a21-professional-bench-001",
+  "checking_feedback_observed": true,
+  "checking_feedback_ms": 1,
+  "checking_feedback_within_1200": true,
+  "professional_result_observed": true,
+  "professional_result_after_checking": true,
+  "abort_stop_observed": true,
+  "stale_result_suppressed": true,
+  "evidence_count": 5,
+  "screen_card_count": 1,
+  "follow_up_count": 1,
+  "confidence_present": true,
+  "no_placeholder_utterance": true,
+  "no_asr_text_leak": true,
+  "v21_query_first_result_ms": 178,
+  "tts_stop_observed": true,
+  "failure_count": 0,
+  "execution": {
+    "provider_executed": false,
+    "v21_executed": true,
+    "hardware_executed": false,
+    "gateway_runtime": "external_gateway"
+  },
+  "redaction": {
+    "payloads_stored": false,
+    "asr_text_stored": false,
+    "evidence_body_stored": false,
+    "full_url_stored": false,
+    "local_path_stored": false,
+    "prompt_stored": false,
+    "provider_output_stored": false
+  },
+  "report_path": "a21-xiaozhi-professional-gateway.json"
+}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -3796,6 +3921,104 @@ func TestRunXiaozhiProfessionalBenchReportsHostMockRuntimeContract(t *testing.T)
 	}
 }
 
+func TestRunXiaozhiProfessionalBenchReportsExternalGatewayRuntimeContract(t *testing.T) {
+	dir := t.TempDir()
+	v21 := &xiaozhiProfessionalBenchV21Client{delay: 25 * time.Millisecond}
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        xiaozhiProfessionalBenchASRAdapter{text: xiaozhiProfessionalBenchASRSentinel},
+		TextStream: xiaozhiProfessionalBenchTextStreamAdapter{},
+		TTS:        providers.NewMockTTSAdapter("a21-host-mock-tts"),
+	}
+	server := gateway.NewServerWithOptions(gateway.ServerOptions{
+		V21Client:                    v21,
+		XiaozhiVoicePipelineAdapters: &adapters,
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	defer httpServer.Close()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-professional-bench",
+		"--gateway-url", httpServer.URL,
+		"--device-id", "stackchan-virtual-a21-professional-external-001",
+		"--protocol-version", "3",
+		"--timeout-ms", "3000",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	if got := v21.lastUtterance(); got != xiaozhiProfessionalBenchASRSentinel {
+		t.Fatalf("v21 utterance = %q, want ASR-derived sentinel", got)
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_professional_bench.v1"`,
+		`"source_profile": "external_gateway"`,
+		`"gateway": "loopback:`,
+		`"input_audio": {`,
+		`"source": "synthetic_opus"`,
+		`"acceptance_status": "external_gateway_ready"`,
+		`"prd_accepted": false`,
+		`"checking_feedback_observed": true`,
+		`"checking_feedback_within_1200": true`,
+		`"professional_result_observed": true`,
+		`"professional_result_after_checking": true`,
+		`"abort_stop_observed": true`,
+		`"stale_result_suppressed": true`,
+		`"evidence_count": 1`,
+		`"screen_card_count": 1`,
+		`"follow_up_count": 1`,
+		`"confidence_present": true`,
+		`"no_placeholder_utterance": true`,
+		`"failure_count": 0`,
+		`"provider_executed": false`,
+		`"v21_executed": true`,
+		`"hardware_executed": false`,
+		`"gateway_runtime": "external_gateway"`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		dir,
+		httpServer.URL,
+		xiaozhiProfessionalBenchASRSentinel,
+		"RAW_SECRET_EVIDENCE_BODY",
+		"RAW_SECRET_CARD_TEXT",
+		"RAW_SECRET_FOLLOW_UP",
+		"data_base64",
+		"transcript",
+		"prompt text",
+		"provider output",
+		"http://",
+		"https://",
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked forbidden fragment %q: %s", forbidden, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-professional-bench-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("xiaozhi professional external reports = %v, %v", matches, err)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := string(data)
+	for _, forbidden := range []string{dir, httpServer.URL, xiaozhiProfessionalBenchASRSentinel, "RAW_SECRET", "http://", "https://"} {
+		if strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report leaked forbidden fragment %q: %s", forbidden, reportJSON)
+		}
+	}
+}
+
 func TestRunXiaozhiProfessionalBenchReportsFailingFakePathWithoutLeak(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -5446,6 +5669,78 @@ func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"follow_up_count": 1`, `"confidence": 0.91`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestV21AdapterBridgeRetriesChildLockASRFragmentWithoutLeakingQuery(t *testing.T) {
+	activeReleaseID := "rel_active"
+	var queries []string
+	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/v1/collections":
+			writeV21BridgeJSON(w, http.StatusOK, []v21CollectionView{{
+				ID:              "col_vehicle",
+				Name:            "Vehicle Knowledge",
+				ActiveReleaseID: &activeReleaseID,
+			}})
+		case "/api/v1/collections/col_vehicle/retrieval/query":
+			var request struct {
+				Query string `json:"query"`
+				Limit int    `json:"limit"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			queries = append(queries, request.Query)
+			if request.Query != "儿童锁 车型 车门" {
+				writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
+					CollectionID: "col_vehicle",
+					Results:      []v21RetrievalResult{},
+				})
+				return
+			}
+			writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
+				CollectionID: "col_vehicle",
+				Results: []v21RetrievalResult{{
+					AnchorID:    "ca_child_lock",
+					SourceLabel: "儿童锁证据",
+					Excerpt:     "G02ES、G02ESVR 支持座椅儿童锁。",
+					Score:       0.91,
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer v21Backend.Close()
+	handler, err := newV21AdapterBridgeHandler(context.Background(), v21AdapterBridgeOptions{V21URL: v21Backend.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := httptest.NewServer(handler)
+	defer adapter.Close()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"v21-adapter-smoke", "--adapter-url", adapter.URL, "--query", "儿童是", "--execute"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !reflect.DeepEqual(queries, []string{"儿童是", "儿童锁 车型 车门"}) {
+		t.Fatalf("queries = %#v, want original then child-lock expansion", queries)
+	}
+	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"speech_block_count": 1`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"儿童是", "儿童锁 车型 车门", v21Backend.URL} {
+		if strings.Contains(stdout.String()+stderr.String(), forbidden) {
+			t.Fatalf("adapter smoke leaked forbidden query fragment %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
 		}
 	}
 }

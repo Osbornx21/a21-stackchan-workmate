@@ -159,10 +159,12 @@ Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineerin
 `product-readiness` is the launch/demo status rollup. For V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with
-`--v21-adapter-smoke-report`. The rollup ingests only the smoke status,
-execution flag, fixed paths, and response counts, keeps `prd_accepted=false`,
-and never stores query text, answer text, evidence bodies, full URLs,
-credentials, proxy values, or local paths. For local speech, it now
+`--v21-adapter-smoke-report`, or an external-Gateway
+`a21.xiaozhi_professional_bench.v1` report passed through
+`--v21-professional-report` after Gateway traces prove the V21 query markers.
+The rollup ingests only fixed status/count/timing fields, keeps
+`prd_accepted=false`, and never stores query text, answer text, evidence
+bodies, full URLs, credentials, proxy values, or local paths. For local speech, it now
 recognizes either explicit `A21_SHERPA_ONNX_MODEL_DIR` /
 `A21_SHERPA_ONNX_ASR_MODEL_DIR` values or the repository-local `.a21-tools`
 sherpa-onnx model caches when their required model files are present. This is a

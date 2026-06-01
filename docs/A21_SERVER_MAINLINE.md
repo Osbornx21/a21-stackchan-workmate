@@ -3,6 +3,9 @@
 Status: active control source.
 Date: 2026-06-01.
 Branch: `codex/a21-server-mainline`.
+Current control checkout observed 2026-06-01: branch
+`codex/a21-hardware-window-20260601-xiaozhi-physical`, HEAD
+`645d6989273f`, with an uncommitted verified host-control increment.
 
 This file is the narrow control source for the xiaozhi protocol pivot. It is
 not a ledger. Do not add commit-by-commit history here. Record only the current
@@ -73,26 +76,48 @@ thin sensing and expression device.
   done/playback stop done. Each stage carries availability, placeholder state,
   source trace marker, and p50/p95/p99 stats while keeping
   `acceptance_status=not_accepted` and `prd_accepted=false`.
-- Host-only `make verify`: passing after the WS-1 protocol fixture and Gateway
-  seam.
-- Host-only `gate --scope host`: passing with only
-  `firmware_current_artifact_missing` warning.
+- External Gateway professional bench support: `xiaozhi-professional-bench`
+  can drive an already-running `/v1/xiaozhi` Gateway and mark
+  `source_profile=external_gateway` only when the same trace proves V21 query
+  start and first-result markers. It stores only timing/status/count fields.
+- Product readiness can ingest `a21.xiaozhi_professional_bench.v1` through
+  `--v21-professional-report` as V21 professional evidence while keeping
+  `prd_accepted=false` and physical/product launch gates closed.
+- Current host-only voice evidence:
+  `reports/a21-xiaozhi-voice-bench-20260601-191935.646589000.json` reports
+  `acceptance_status=candidate_host_only`, repeat 3,
+  answer-first-audio p50/p95 369/372 ms, barge-in stop p50/p95 0/0 ms, and
+  `prd_accepted=false`.
+- Current professional evidence:
+  `reports/a21-xiaozhi-professional-bench-20260601-160123.954052000.json`
+  reports `acceptance_status=external_gateway_ready`, V21 executed through an
+  external Gateway trace, checking feedback within 1200 ms, V21 first result
+  178 ms, evidence/card/follow-up counts 5/1/1, and `prd_accepted=false`.
+- Current readiness evidence:
+  `reports/a21-product-readiness-20260601-191947.json` reports Gateway,
+  local Ollama, local sherpa ASR/TTS, and V21 adapter health as ready but
+  `launch_ready=false`; the open launch gaps are executed V21 proof in the
+  readiness rollup and physical StackChan evidence.
+- Host-only `make verify`: passing on 2026-06-01 after the current
+  professional/readiness/doctor/Silero increment.
+- Host-only `gate --scope host` and `preflight`: passing after port recheck.
+- `doctor`: passing with only `firmware_current_artifact_missing` warning.
 - Current known warning: no release-ledger-validated A21 firmware artifact
   matches the current server-mainline commits; this is not a server-mainline
   blocker unless a future slice claims firmware release acceptance.
-- Current xiaozhi seam limitation: Gateway can count raw Opus frames, decode
-  valid uplink frames to PCM telemetry, and buffer those frames in audio ingress,
-  but ASR, provider streaming, TTS encode, binary downlink, and real device
-  proof remain not accepted.
+- Current xiaozhi seam limitation: the host path can prove fast local
+  ASR/LLM/TTS and professional Gateway/V21 contracts, but the physical
+  StackChan chain, audible quality, xiaozhi device-control/StackChan avatar MCP
+  integration, and product launch acceptance remain not accepted.
 
 ## Acceptance Board
 
 | PRD criterion | Required evidence | Current status |
 | --- | --- | --- |
 | Presence and workmate experience | user-visible StackChan expression, voice, and office-mode behavior | not accepted |
-| First audible companion response | P50 < 900 ms, P95 < 1500 ms on accepted chain | not accepted |
-| Barge-in | playback/speaking stop P95 < 300 ms plus provider cancel/playback stop trace | not accepted |
-| Professional mode | within 1200 ms "checking" feedback, final answer has conclusion, evidence, confidence, follow-up | host contract has pre-V21 checking feedback marker; product acceptance still not accepted |
+| First audible companion response | P50 < 900 ms, P95 < 1500 ms on accepted chain | host candidate p50/p95 369/372 ms; physical audible acceptance not accepted |
+| Barge-in | playback/speaking stop P95 < 300 ms plus provider cancel/playback stop trace | host candidate p95 0 ms; physical playback stop not accepted |
+| Professional mode | within 1200 ms "checking" feedback, final answer has conclusion, evidence, confidence, follow-up | external Gateway/V21 candidate ready; product acceptance still not accepted |
 | Provider hot plug | new OpenAI-compatible text provider through profile/env/smoke without Gateway business edits | partially scaffolded, not accepted |
 | Safety | provider keys only in env/secret manager; no secrets in Git, reports, logs, firmware, traces | host gate passing, ongoing |
 
@@ -144,7 +169,14 @@ as physical/product acceptance.
 
 ## Next Action
 
-Continue WS-1 from the current fixture package and Gateway seam into Opus
-decode/encode and real xiaozhi-device handshake proof only under an explicit
-hardware/provider execution window. Until that window exists, keep work in
-host-only tests and report-contract slices.
+1. Keep the current verified increment intact; do not split it across another
+   parallel write lane until it is intentionally checkpointed.
+2. Run the next no-hardware control slice by feeding the external professional
+   report and current xiaozhi voice bench report into `product-readiness`, with
+   Gateway/V21 runtime startup only inside an explicit local execution window.
+3. In parallel only as read-only or host-only work, run the audio-quality A/B
+   plan from the xiaozhi comparison thread: clipping/level scan, sample-rate
+   normalization, Opus frame/bitrate comparison, and pacer/prebuffer review.
+4. Keep physical StackChan proof closed until the device is intentionally
+   brought back from official xiaozhi firmware and the user opens a hardware
+   window. Mac must not play trigger audio; the user speaks to StackChan.

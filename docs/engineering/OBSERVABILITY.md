@@ -202,6 +202,16 @@ satisfy the PRD numbers, the report remains candidate evidence and keeps
 `provider_executed=false`, `v21_executed=false`, `hardware_executed=false`, and
 `prd_accepted=false` until physical StackChan markers are present.
 
+`xiaozhi-professional-bench` packages professional-mode Gateway evidence into
+schema `a21.xiaozhi_professional_bench.v1`. In external Gateway mode the report
+may carry `source_profile=external_gateway`,
+`acceptance_status=external_gateway_ready`, `v21_executed=true`, and a redacted
+`v21_query_first_result_ms` only after `/v1/traces` contains V21 query start and
+first-result markers for the same trace. It still records no ASR text, prompt,
+retrieved evidence body, provider output, full URL, or full local path, and it
+still keeps `provider_executed=false`, `hardware_executed=false`, and
+`prd_accepted=false`.
+
 AgentTask bridge reports include package-level T1/T2 semantic reports in
 `internal/providers` and the host-only `agent-plan` / `agent-io-smoke` CLI
 reports. Provider semantic reports use schema

@@ -45,6 +45,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProductReadiness(args[1:], stdout, stderr)
 	case "gate":
 		return runGate(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
 	case "provider-latency-bench":

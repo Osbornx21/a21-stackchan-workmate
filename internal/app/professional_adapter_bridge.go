@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -296,8 +297,25 @@ func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base 
 		return v21adapter.QueryResponse{}, err
 	}
 	utterance := strings.TrimSpace(request.Utterance)
+	response, err := executeV21RetrievalQueryText(ctx, client, v21Base, collectionID, request, utterance)
+	if err == nil || !isV21BridgeNoEvidence(err) {
+		return response, err
+	}
+	for _, expanded := range v21BridgeASRQueryExpansions(utterance) {
+		response, retryErr := executeV21RetrievalQueryText(ctx, client, v21Base, collectionID, request, expanded)
+		if retryErr == nil {
+			return response, nil
+		}
+		if !isV21BridgeNoEvidence(retryErr) {
+			return v21adapter.QueryResponse{}, retryErr
+		}
+	}
+	return response, err
+}
+
+func executeV21RetrievalQueryText(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest, query string) (v21adapter.QueryResponse, error) {
 	body := map[string]interface{}{
-		"query": utterance,
+		"query": strings.TrimSpace(query),
 		"limit": 5,
 	}
 	encoded, err := json.Marshal(body)
@@ -360,6 +378,36 @@ func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base 
 	}
 	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
 	return response, nil
+}
+
+func isV21BridgeNoEvidence(err error) bool {
+	var queryErr v21BridgeQueryError
+	return errors.As(err, &queryErr) && queryErr.Code == "no_evidence"
+}
+
+func v21BridgeASRQueryExpansions(utterance string) []string {
+	cleaned := strings.TrimSpace(utterance)
+	if cleaned == "" {
+		return nil
+	}
+	candidates := make([]string, 0, 2)
+	if strings.Contains(cleaned, "儿童") || strings.Contains(cleaned, "童") {
+		candidates = append(candidates, "儿童锁 车型 车门")
+	}
+	if strings.Contains(cleaned, "唤醒") || strings.Contains(cleaned, "语音") {
+		candidates = append(candidates, "语音唤醒 误触发")
+	}
+	result := make([]string, 0, len(candidates))
+	seen := map[string]bool{cleaned: true}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		result = append(result, candidate)
+	}
+	return result
 }
 
 func buildV21RetrievalFastAnswer(results []v21RetrievalResult) string {

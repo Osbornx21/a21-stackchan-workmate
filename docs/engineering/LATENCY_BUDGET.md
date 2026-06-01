@@ -47,10 +47,14 @@ playback start, visible/speaking state, multi-frame TTS cancellation, or
 real-device barge-in stop.
 
 `go run ./cmd/a21 xiaozhi-professional-bench` is the host-only Xiaozhi
-professional-mode runtime report. It starts an in-process Gateway with mock ASR,
-mock TTS, and a fake V21 client, drives `/v1/xiaozhi` with
-`listen/start mode=professional`, one synthetic Opus frame, and `listen/stop`,
-then records only redacted timing/status/count fields. A passing run uses
-`acceptance_status=host_mock_ready` and always keeps `prd_accepted=false`
-because it does not execute real V21, real providers, or physical StackChan
-hardware.
+professional-mode runtime report. Its default mode starts an in-process Gateway
+with mock ASR, mock TTS, and a fake V21 client, drives `/v1/xiaozhi` with
+`listen/start mode=professional`, Opus uplink, and `listen/stop`, then records
+only redacted timing/status/count fields. With `--gateway-url`, the same bench
+drives an already-running A21 Gateway and can promote the professional report
+to `acceptance_status=external_gateway_ready` when Gateway traces prove
+`v21.query.start`, `v21.query.first_result`, checking feedback within 1200 ms,
+evidence/cards/follow-ups, abort stop, stale result suppression, and redaction.
+Both modes always keep `prd_accepted=false` because they still do not prove
+physical StackChan microphone capture, audible playback start, visible state, or
+real-device barge-in stop.

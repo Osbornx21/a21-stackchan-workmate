@@ -473,10 +473,11 @@ func TestCommandSileroVADRunnerReturnsContextCancellation(t *testing.T) {
 
 func TestCheckedInSileroVADRunnerHelpIsExecutable(t *testing.T) {
 	scriptPath := filepath.Join("..", "..", "scripts", "a21_silero_vad.py")
+	python := testPython(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out, err := runPython(ctx, scriptPath, "--help")
+	out, err := exec.CommandContext(ctx, python, scriptPath, "--help").CombinedOutput()
 	if err != nil {
 		t.Fatalf("script help failed: %v", err)
 	}
@@ -495,10 +496,11 @@ func TestCheckedInSileroVADRunnerHelpIsExecutable(t *testing.T) {
 
 func TestCheckedInSileroVADRunnerReportsUnavailableWithFinitePCM(t *testing.T) {
 	scriptPath := filepath.Join("..", "..", "scripts", "a21_silero_vad.py")
+	python := testPython(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", scriptPath, "--sample-rate", "16000", "--channels", "1", "--duration-ms", "20", "--model", "/private/a21/model.onnx")
+	cmd := exec.CommandContext(ctx, python, scriptPath, "--sample-rate", "16000", "--channels", "1", "--duration-ms", "20", "--model", "/private/a21/model.onnx")
 	cmd.Stdin = strings.NewReader(strings.Repeat("\x00", 640))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -552,9 +554,22 @@ func pcm16Base64WithSample(sample int16) string {
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-func runPython(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "python3", args...)
-	return cmd.CombinedOutput()
+func testPython(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"python3", "/usr/bin/python3"} {
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		err = exec.CommandContext(ctx, path, "-c", "pass").Run()
+		cancel()
+		if err == nil {
+			return path
+		}
+	}
+	t.Skip("python3 is unavailable or not responsive")
+	return ""
 }
 
 type scriptedVADDetector struct {
