@@ -829,31 +829,32 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 type xiaozhiSession struct {
-	mu                     sync.Mutex
-	writeMu                sync.Mutex
-	traceID                string
-	sessionID              string
-	deviceID               string
-	features               xiaozhitransport.HelloFeatures
-	currentTurn            *xiaozhiTurn
-	nextTurnID             uint64
-	helloReceived          bool
-	listening              bool
-	binaryProtocolVersion  int
-	opusCodec              *opuscodec.Codec
-	opusSampleRateHz       int
-	opusChannels           int
-	opusFrameDurationMS    int
-	opusFrameCount         int
-	opusByteCount          int
-	opusDecodedFrameCount  int
-	opusDecodedSampleCount int
-	opusDecodeErrorCount   int
-	voicePipelineFrames    []providers.VoicePipelinePCMFrame
-	voicePipelineHasSpeech bool
-	ttsStopSent            bool
-	lastDownlinkAtMS       int64
-	lastDownlinkTurnID     string
+	mu                       sync.Mutex
+	writeMu                  sync.Mutex
+	traceID                  string
+	sessionID                string
+	deviceID                 string
+	features                 xiaozhitransport.HelloFeatures
+	currentTurn              *xiaozhiTurn
+	nextTurnID               uint64
+	helloReceived            bool
+	listening                bool
+	binaryProtocolVersion    int
+	opusCodec                *opuscodec.Codec
+	opusSampleRateHz         int
+	opusChannels             int
+	opusFrameDurationMS      int
+	opusFrameCount           int
+	opusByteCount            int
+	opusDecodedFrameCount    int
+	opusDecodedSampleCount   int
+	opusDecodeErrorCount     int
+	voicePipelineFrames      []providers.VoicePipelinePCMFrame
+	voicePipelineHasSpeech   bool
+	ttsStopSent              bool
+	lastDownlinkAtMS         int64
+	lastDownlinkTurnID       string
+	lastPlaybackStopDoneAtMS int64
 }
 
 type xiaozhiTurn struct {
@@ -983,6 +984,9 @@ func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, n
 	turn := session.cancelCurrentXiaozhiTurnLocked(reason)
 	turnID := xiaozhiTurnID(turn)
 	if turnID == "" && session.lastDownlinkTurnID != "" && nowMS-session.lastDownlinkAtMS >= 0 && nowMS-session.lastDownlinkAtMS <= recentWindowMS {
+		if session.lastPlaybackStopDoneAtMS >= session.lastDownlinkAtMS && session.lastPlaybackStopDoneAtMS <= nowMS {
+			return xiaozhiTurnTask{}, false
+		}
 		turnID = session.lastDownlinkTurnID
 	}
 	if turnID == "" {
@@ -1515,6 +1519,11 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 		return
 	}
 	nowMS := s.now().UnixMilli()
+	if event == "device.playback.stop_done" {
+		session.mu.Lock()
+		session.lastPlaybackStopDoneAtMS = nowMS
+		session.mu.Unlock()
+	}
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, event, nowMS)
 	s.mu.Lock()
 	defer s.mu.Unlock()

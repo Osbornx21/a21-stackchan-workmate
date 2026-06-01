@@ -1914,6 +1914,21 @@ func TestXiaozhiSessionRecentDownlinkCanBeInterruptedAfterTurnCompletion(t *test
 	}
 }
 
+func TestXiaozhiSessionRecentDownlinkAfterPlaybackStopDoneIsNotBargeIn(t *testing.T) {
+	session := &xiaozhiSession{
+		traceID:                  "a21-trace-xiaozhi-playback-drained",
+		sessionID:                "a21-session-xiaozhi-playback-drained",
+		deviceID:                 "stackchan-001",
+		lastDownlinkAtMS:         1000,
+		lastDownlinkTurnID:       "a21-xiaozhi-turn-000007",
+		lastPlaybackStopDoneAtMS: 1400,
+	}
+
+	if _, ok := session.prepareXiaozhiListenStartBargeIn("barge_in", 1500, xiaozhiPlaybackInterruptWindowMS); ok {
+		t.Fatal("recent downlink with later playback stop_done should not be mislabeled as barge-in")
+	}
+}
+
 func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())
