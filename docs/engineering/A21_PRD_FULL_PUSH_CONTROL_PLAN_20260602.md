@@ -4,8 +4,8 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
-Current post-worker checkpoint: this document revision
+Current integration checkpoint: `24b4f6a chore(control): checkpoint voice readiness closure`
+Current active-worker checkpoint: this document revision
 
 ## 0. Control Rule
 
@@ -35,8 +35,8 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD before this post-worker checkpoint:
-  `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
+- HEAD before this active-worker checkpoint:
+  `24b4f6a chore(control): checkpoint voice readiness closure`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -118,7 +118,7 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
+| Launch-rollup false-green review | `019e8559-7305-75c3-a3b6-e929e0a3bb57` | `/Users/jiyurun/.codex/worktrees/06f6/New project` | must switch/create `codex/a21-launch-rollup-falsegreen-review-20260602` | Review product-readiness/server-side/provider/wake/voice/V21/physical evidence loaders for stale, missing, or mismatched report false-greens; commit only a real rejection gap | Active; poll before editing launch rollup/readiness code |
 
 Recently completed workers:
 
