@@ -96,6 +96,12 @@ professional smoke, host voice loopback, and wake-word readiness. It must not
 store prompts, transcripts, provider output, evidence bodies, full URLs,
 credential values, proxy values, or local paths, and its `candidate_ready` field
 must never be interpreted as physical StackChan PRD acceptance.
+When `--collect-missing` is used, the bundle also includes a `collection` block
+with fixed per-step status and reason labels. Host voice loopback can be
+collected locally through the Gateway; provider and V21 smoke execution remain
+separately authorized by `--execute-provider-smoke` and `--execute-v21-smoke`.
+Collection reports must never embed child command stdout/stderr or raw network,
+provider, prompt, transcript, evidence, key, proxy, or local path values.
 
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 

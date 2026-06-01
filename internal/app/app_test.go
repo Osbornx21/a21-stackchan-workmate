@@ -1399,6 +1399,128 @@ func TestRunServerSideReadinessBundleRequireCandidateFailsWithMissingHostVoice(t
 	}
 }
 
+func TestRunServerSideReadinessBundleCollectsMissingHostVoiceEvidence(t *testing.T) {
+	gatewayServer := newGatewayServerFromEnv(nil)
+	httpServer := httptest.NewServer(gatewayServer.Handler())
+	t.Cleanup(httpServer.Close)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	t.Setenv("A21_V21_ADAPTER_URL", httpServer.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"server-side-readiness-bundle",
+		"--gateway-url", httpServer.URL,
+		"--use-latest-reports",
+		"--collect-missing",
+		"--collect-repeat", "1",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"collection"`,
+		`"enabled": true`,
+		`"name": "host_voice_loopback"`,
+		`"status": "passed"`,
+		`"source_report": "a21-xiaozhi-voice-bench-`,
+		`"host_voice_source_report": "a21-xiaozhi-voice-bench-`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-voice-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("voice bench reports = %d, want 1: %v", len(matches), matches)
+	}
+	if strings.Contains(rendered, `"reason": "exit_code_`) {
+		t.Fatalf("host voice collection failed unexpectedly: %s", rendered)
+	}
+	for _, forbidden := range []string{httpServer.URL, dir, "http://", "https://", "/Users/", "secret-value", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side collect leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
+func TestRunServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthorization(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"server-side-readiness-bundle", "--gateway-url", server.URL, "--use-latest-reports", "--collect-missing", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 without --require-candidate: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"status": "server_side_blocked"`,
+		`"candidate_ready": false`,
+		`"name": "provider_smoke"`,
+		`"reason": "requires --execute-provider-smoke"`,
+		`"name": "v21_professional_smoke"`,
+		`"reason": "requires --execute-v21-smoke"`,
+		`"provider_smoke"`,
+		`"v21_professional_smoke"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	providerReports, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providerReports) != 0 {
+		t.Fatalf("provider reports = %v, want no implicit provider execution", providerReports)
+	}
+	v21Reports, err := filepath.Glob(filepath.Join(dir, "a21-v21-adapter-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v21Reports) != 0 {
+		t.Fatalf("v21 reports = %v, want no implicit v21 execution", v21Reports)
+	}
+	for _, forbidden := range []string{server.URL, dir, "http://", "https://", "/Users/", "secret-value", `"candidate_ready": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side collect leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandUsesLatestWakeWordFirmwarePlanWithoutPathLeak(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -211,6 +211,7 @@ gate:
 ```bash
 go run ./cmd/a21 server-side-readiness-bundle --use-latest-reports --output-dir reports
 make server-side-readiness-bundle
+make server-side-readiness-collect
 ```
 
 It writes `reports/a21-server-side-readiness-bundle-YYYYMMDD-HHMMSS.json` with
@@ -221,6 +222,15 @@ commands. `--require-candidate` returns nonzero when the server-side candidate
 chain is incomplete. It is still a no-hardware artifact: it stores only
 basename source reports and redaction booleans, keeps `prd_accepted=false`, and
 does not replace physical StackChan launch acceptance.
+With `--collect-missing`, the command may collect missing host-side Xiaozhi
+voice-loopback evidence through the Gateway and then rebuild the bundle from
+the refreshed latest reports. It does not execute provider or V21 network
+smokes unless the operator also passes `--execute-provider-smoke` and/or
+`--execute-v21-smoke`; otherwise those collection steps are recorded as
+`skipped` with fixed reasons. Collection output stores only step names, fixed
+status/reason codes, safe command labels, and basename source reports; it never
+stores subcommand stdout, stderr, full URLs, credentials, transcripts, prompts,
+provider output, or evidence bodies.
 
 `audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 
