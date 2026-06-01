@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,12 +12,13 @@ import (
 )
 
 const (
-	wakeWordConfigSchemaVersion = "a21.gateway.wake_word.v1"
-	wakeWordModeBuiltin         = "builtin_xiaozhi"
-	wakeWordModeCustomMultinet  = "custom_multinet"
-	wakeWordActivePhrase        = "你好小智"
-	wakeWordActivePinyin        = "ni hao xiao zhi"
-	defaultWakeWordThreshold    = 30
+	wakeWordConfigSchemaVersion   = "a21.gateway.wake_word.v1"
+	wakeWordModeBuiltin           = "builtin_xiaozhi"
+	wakeWordModeCustomMultinet    = "custom_multinet"
+	wakeWordActivePhrase          = "你好小智"
+	wakeWordActivePinyin          = "ni hao xiao zhi"
+	defaultWakeWordThreshold      = 30
+	wakeWordConfigRequestMaxBytes = 4096
 )
 
 var wakeWordPinyinPattern = regexp.MustCompile(`^[a-z ]{3,80}$`)
@@ -64,7 +66,12 @@ func (s *Server) handleWakeWordConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, wakeWordResponse(config))
 	case http.MethodPut:
 		var req WakeWordConfigRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, wakeWordConfigRequestMaxBytes))
+		if err := decoder.Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}

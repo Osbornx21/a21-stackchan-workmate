@@ -146,9 +146,10 @@ can dynamically replace the device-side wake model.
 
 The request accepts `mode=custom_multinet`, `desired_phrase`, `desired_pinyin`,
 and a numeric `threshold` in the safe range 1-100. Gateway rejects secret-like,
-URL-like, legacy-looking, or malformed values before persistence. The config
-path is `A21_WAKE_WORD_CONFIG_PATH` when set; otherwise Gateway writes the
-local runtime file `.a21-run/gateway/a21-wake-word.json`. Reports and traces
+URL-like, legacy-looking, malformed, oversized, or trailing-payload values
+before persistence. The PUT body must be one JSON object no larger than 4 KiB.
+The config path is `A21_WAKE_WORD_CONFIG_PATH` when set; otherwise Gateway
+writes the local runtime file `.a21-run/gateway/a21-wake-word.json`. Reports and traces
 must not store Wi-Fi credentials, provider keys, raw audio, transcripts,
 prompts, full URLs, proxy values, or absolute local paths for this feature.
 

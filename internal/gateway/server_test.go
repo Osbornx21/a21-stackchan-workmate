@@ -302,6 +302,70 @@ func TestWakeWordConfigEndpointRejectsUnsafeRequests(t *testing.T) {
 	}
 }
 
+func TestWakeWordConfigEndpointRejectsTrailingPayloadWithoutPersisting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a21-wake-word.json")
+	server := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	handler := server.Handler()
+	body := `{
+		"mode":"custom_multinet",
+		"desired_phrase":"小阿二一",
+		"desired_pinyin":"xiao a er yi",
+		"threshold":35
+	}
+	{"prompt":"secret trailing wake payload"}`
+	req := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"secret trailing wake payload", "prompt", "小阿二一"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("error response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+	reloaded := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/wake-word", nil)
+	getRec := httptest.NewRecorder()
+	reloaded.Handler().ServeHTTP(getRec, getReq)
+	if !bytes.Contains(getRec.Body.Bytes(), []byte(`"runtime_status":"active_builtin_model"`)) ||
+		bytes.Contains(getRec.Body.Bytes(), []byte(`"desired_phrase":"小阿二一"`)) {
+		t.Fatalf("trailing payload should not persist custom wake word: %s", getRec.Body.String())
+	}
+}
+
+func TestWakeWordConfigEndpointRejectsOversizedPayloadWithoutPersisting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a21-wake-word.json")
+	server := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	handler := server.Handler()
+	body := `{
+		"mode":"custom_multinet",
+		"desired_phrase":"小阿二一",
+		"desired_pinyin":"xiao a er yi",
+		"threshold":35
+	}` + strings.Repeat(" ", 5000)
+	req := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	reloaded := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/wake-word", nil)
+	getRec := httptest.NewRecorder()
+	reloaded.Handler().ServeHTTP(getRec, getReq)
+	if !bytes.Contains(getRec.Body.Bytes(), []byte(`"runtime_status":"active_builtin_model"`)) ||
+		bytes.Contains(getRec.Body.Bytes(), []byte(`"desired_phrase":"小阿二一"`)) {
+		t.Fatalf("oversized payload should not persist custom wake word: %s", getRec.Body.String())
+	}
+}
+
 func TestMockTurnReturnsDeterministicStateSequence(t *testing.T) {
 	server := NewServer()
 	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"先说，我在","mode":"workmate"}`)
