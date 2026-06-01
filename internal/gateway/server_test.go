@@ -2134,6 +2134,17 @@ func TestXiaozhiWebSocketVADSpeechEndAutoStopsRealtimeTurn(t *testing.T) {
 	if messageType != websocket.MessageBinary || len(data) == 0 {
 		t.Fatalf("downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
 	}
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("registry capabilities = %#v", registry["capabilities"])
+	}
+	if capabilities["microphone"] != "available_xiaozhi_opus_ingress" || capabilities["speaker"] != "available_xiaozhi_opus_downlink" {
+		t.Fatalf("registry capabilities = %#v", capabilities)
+	}
+	if registry["last_event"] != "xiaozhi.tts.opus_frame.downlink" || registry["connection_status"] != "online" {
+		t.Fatalf("registry activity = %#v", registry)
+	}
 
 	var captured providers.VoicePipelineRequest
 	select {

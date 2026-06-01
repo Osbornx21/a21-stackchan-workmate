@@ -1278,6 +1278,9 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	session.opusDecodedFrameCount++
 	session.opusDecodedSampleCount += len(pcm)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
+	s.recordXiaozhiDeviceActivity(session, "xiaozhi.opus_frame.decoded", map[string]string{
+		"microphone": "available_xiaozhi_opus_ingress",
+	})
 	s.observeXiaozhiDecodedIngress(ctx, conn, session, pcm)
 	return true
 }
@@ -1367,16 +1370,28 @@ func pcm16Bytes(pcm []int16) []byte {
 }
 
 func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
-	nowMS := s.now().UnixMilli()
 	capabilities := map[string]string(nil)
 	if frame.Control != nil && frame.Control.Hello != nil {
 		capabilities = xiaozhiFeatureCapabilities(frame.Control.Hello.Features)
 	}
+	session := &xiaozhiSession{
+		deviceID:  frame.DeviceID,
+		traceID:   frame.TraceID,
+		sessionID: frame.SessionID,
+	}
+	s.recordXiaozhiDeviceActivity(session, "xiaozhi.hello", capabilities)
+}
+
+func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event string, capabilities map[string]string) {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return
+	}
+	nowMS := s.now().UnixMilli()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record := s.devices[frame.DeviceID]
+	record := s.devices[session.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = frame.DeviceID
+		record.DeviceID = session.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -1385,10 +1400,13 @@ func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
 	if len(capabilities) > 0 {
 		record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
 	}
-	record.LastTraceID = frame.TraceID
-	record.LastSessionID = frame.SessionID
+	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
+		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
+	}
+	record.LastTraceID = session.traceID
+	record.LastSessionID = session.sessionID
 	record.LastSeenMS = nowMS
-	s.devices[frame.DeviceID] = record
+	s.devices[session.deviceID] = record
 }
 
 func xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures) map[string]string {
@@ -2130,6 +2148,9 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 			return err
 		}
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.opus_frame.downlink", s.now().UnixMilli())
+		s.recordXiaozhiDeviceActivity(session, "xiaozhi.tts.opus_frame.downlink", map[string]string{
+			"speaker": "available_xiaozhi_opus_downlink",
+		})
 		return nil
 	}, func() bool {
 		return session.shouldAbortXiaozhiTurn(turn)
