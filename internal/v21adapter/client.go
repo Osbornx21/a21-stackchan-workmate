@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -236,7 +237,7 @@ func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResp
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return QueryResponse{}, queryFailureForStatus(resp.StatusCode)
+		return QueryResponse{}, queryFailureForResponse(resp)
 	}
 	var response QueryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
@@ -366,6 +367,18 @@ func directHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
+func queryFailureForResponse(resp *http.Response) *QueryFailure {
+	failure := queryFailureForStatus(resp.StatusCode)
+	if bodyFailure := queryFailureFromBody(resp.Body); bodyFailure != nil {
+		bodyFailure.StatusCode = resp.StatusCode
+		if bodyFailure.StatusClass == "" {
+			bodyFailure.StatusClass = failure.StatusClass
+		}
+		return bodyFailure
+	}
+	return failure
+}
+
 func queryFailureForStatus(status int) *QueryFailure {
 	statusClass := statusClass(status)
 	class := QueryFailureAdapterStatus
@@ -378,6 +391,47 @@ func queryFailureForStatus(status int) *QueryFailure {
 		class = QueryFailureUpstreamStatus
 	}
 	return &QueryFailure{Class: class, StatusCode: status, StatusClass: statusClass}
+}
+
+func queryFailureFromBody(body io.Reader) *QueryFailure {
+	var payload struct {
+		Code        string `json:"code"`
+		StatusClass string `json:"status_class"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(body, 4096))
+	if err := decoder.Decode(&payload); err != nil {
+		return nil
+	}
+	class, ok := queryFailureClassForBodyCode(payload.Code)
+	if !ok {
+		return nil
+	}
+	return &QueryFailure{
+		Class:       class,
+		StatusClass: knownStatusClass(payload.StatusClass),
+	}
+}
+
+func queryFailureClassForBodyCode(code string) (QueryFailureClass, bool) {
+	switch strings.TrimSpace(code) {
+	case "no_evidence":
+		return QueryFailureNoEvidence, true
+	case "upstream_contract_invalid":
+		return QueryFailureContractInvalid, true
+	case "upstream_status", "upstream_unavailable", "query_unavailable":
+		return QueryFailureUpstreamStatus, true
+	default:
+		return QueryFailureUnknown, false
+	}
+}
+
+func knownStatusClass(value string) string {
+	switch strings.TrimSpace(value) {
+	case "status_1xx", "status_2xx", "status_3xx", "status_4xx", "status_5xx":
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
 }
 
 func statusClass(status int) string {

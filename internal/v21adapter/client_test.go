@@ -136,6 +136,80 @@ func TestHTTPClientClassifiesAdapterStatusWithoutLeakingBody(t *testing.T) {
 	}
 }
 
+func TestHTTPClientUsesKnownJSONErrorCodeForFailureClass(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{
+			"code":"no_evidence",
+			"status_class":"status_4xx",
+			"detail":"raw query 查一下语音唤醒误触发 http://127.0.0.1:18080/internal"
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:   "a21-trace-v21-body-code",
+		SessionID: "a21-session-v21-body-code",
+		Utterance: "查一下语音唤醒误触发",
+	})
+	if err == nil {
+		t.Fatal("expected adapter body-coded failure")
+	}
+	if got := QueryFailureClassOf(err); got != QueryFailureNoEvidence {
+		t.Fatalf("failure class = %q, want %q", got, QueryFailureNoEvidence)
+	}
+	if got := QueryFailureStatusClassOf(err); got != "status_4xx" {
+		t.Fatalf("status class = %q, want status_4xx", got)
+	}
+	for _, forbidden := range []string{"查一下语音唤醒误触发", "127.0.0.1:18080", "/internal"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("body-coded error leaked %q: %q", forbidden, err.Error())
+		}
+	}
+}
+
+func TestHTTPClientIgnoresUnknownJSONErrorCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{
+			"code":"raw_sensitive_backend_reason",
+			"status_class":"status_4xx",
+			"detail":"raw query 查一下语音唤醒误触发"
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:   "a21-trace-v21-unknown-code",
+		SessionID: "a21-session-v21-unknown-code",
+		Utterance: "查一下语音唤醒误触发",
+	})
+	if err == nil {
+		t.Fatal("expected adapter failure")
+	}
+	if got := QueryFailureClassOf(err); got != QueryFailureUpstreamStatus {
+		t.Fatalf("failure class = %q, want fallback %q", got, QueryFailureUpstreamStatus)
+	}
+	if got := QueryFailureStatusClassOf(err); got != "status_5xx" {
+		t.Fatalf("status class = %q, want fallback status_5xx", got)
+	}
+	for _, forbidden := range []string{"raw_sensitive_backend_reason", "查一下语音唤醒误触发"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("unknown-code error leaked %q: %q", forbidden, err.Error())
+		}
+	}
+}
+
 func TestProfessionalBridgeReceiptIsSeparateFromEvidenceCompletion(t *testing.T) {
 	receipt, err := NewProfessionalBridgeReceipt(QueryRequest{
 		TraceID:   "a21-trace-v21-receipt",

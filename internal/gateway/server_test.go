@@ -1099,6 +1099,50 @@ func TestProfessionalModeV21StatusFailureRecordsRedactedReasonMarkers(t *testing
 	}
 }
 
+func TestProfessionalModeV21JSONErrorBodyOverridesStatusMarker(t *testing.T) {
+	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{
+			"code":"no_evidence",
+			"status_class":"status_4xx",
+			"detail":"raw query 查一下语音唤醒误触发 http://127.0.0.1:18080/internal"
+		}`))
+	}))
+	defer adapter.Close()
+	client, err := v21adapter.NewHTTPClient(adapter.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(ServerOptions{V21Client: client})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下语音唤醒误触发","mode":"professional","trace_id":"a21-trace-pro-json-error","session_id":"a21-session-pro-json-error"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-json-error", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	traceBody := traceRec.Body.String()
+	for _, want := range []string{"v21.query.error", "v21.query.error.no_evidence", "v21.query.error.status_4xx"} {
+		if !strings.Contains(traceBody, want) {
+			t.Fatalf("trace missing %q: %s", want, traceBody)
+		}
+	}
+	if strings.Contains(traceBody, "v21.query.error.upstream_status") {
+		t.Fatalf("trace kept generic upstream_status instead of body code: %s", traceBody)
+	}
+	for _, forbidden := range []string{"查一下语音唤醒误触发", adapter.URL, "127.0.0.1:18080", "/internal"} {
+		if strings.Contains(traceBody, forbidden) {
+			t.Fatalf("trace leaked %q: %s", forbidden, traceBody)
+		}
+	}
+}
+
 func TestProfessionalModeV21ContractFailureRecordsReasonMarker(t *testing.T) {
 	adapter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
