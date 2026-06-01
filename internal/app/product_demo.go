@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/v21adapter"
 )
@@ -45,6 +46,7 @@ type productReadinessReport struct {
 	V21           productV21Readiness       `json:"v21"`
 	StackChan     productStackChanReadiness `json:"stackchan"`
 	Voice         productVoiceReadiness     `json:"voice"`
+	WakeWord      productWakeWordReadiness  `json:"wake_word"`
 	NextActions   []string                  `json:"next_actions,omitempty"`
 	Findings      []productReadinessFinding `json:"findings,omitempty"`
 	ReportPath    string                    `json:"report_path,omitempty"`
@@ -142,6 +144,22 @@ type productVoiceReadiness struct {
 	ASRProvider          string                        `json:"asr_provider"`
 	ContinuousVoiceReady bool                          `json:"continuous_voice_ready"`
 	VoicePipeline        productVoicePipelineReadiness `json:"voice_pipeline"`
+}
+
+type productWakeWordReadiness struct {
+	Available             bool   `json:"available"`
+	ProductReady          bool   `json:"product_ready"`
+	SchemaVersion         string `json:"schema_version,omitempty"`
+	Mode                  string `json:"mode"`
+	ActivePhrase          string `json:"active_phrase,omitempty"`
+	ActivePinyin          string `json:"active_pinyin,omitempty"`
+	DesiredPhrase         string `json:"desired_phrase,omitempty"`
+	DesiredPinyin         string `json:"desired_pinyin,omitempty"`
+	Threshold             int    `json:"threshold,omitempty"`
+	RuntimeStatus         string `json:"runtime_status"`
+	RuntimeConfigurable   bool   `json:"runtime_configurable"`
+	FirmwareBuildRequired bool   `json:"firmware_build_required"`
+	Code                  string `json:"code,omitempty"`
 }
 
 type productVoicePipelineReadiness struct {
@@ -387,6 +405,9 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	}
 	report.Provider = buildProductProviderReadiness(env)
 	report.V21 = buildProductV21Readiness(env)
+	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
+	report.WakeWord = wakeWord
+	report.Findings = append(report.Findings, wakeWordFindings...)
 	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
 	report.Findings = append(report.Findings, professionalFindings...)
 	if professionalEvidence.Valid {
@@ -413,7 +434,8 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		productV21ProfessionalReady(report.V21) &&
 		report.StackChan.PhysicalDeviceOnline &&
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
-		report.Voice.ContinuousVoiceReady
+		report.Voice.ContinuousVoiceReady &&
+		report.WakeWord.ProductReady
 	report.DemoReady = report.Gateway.Healthy && report.Gateway.SimulatorReady && report.Voice.LocalTTSReady
 	report.NextActions = buildProductNextActions(report)
 	for _, action := range report.NextActions {
@@ -488,6 +510,119 @@ func buildProductV21Readiness(env []string) productV21Readiness {
 		QueryPath:                 bridge.QueryPath,
 		HealthPath:                bridge.HealthPath,
 	}
+}
+
+func fetchProductWakeWordReadiness(ctx context.Context, gatewayURL string) (productWakeWordReadiness, []productReadinessFinding) {
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/wake-word", nil)
+	if err != nil {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_unavailable",
+			Message: "A21 Gateway wake-word status is unavailable",
+			Detail:  "invalid_gateway_url",
+		}}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_unavailable",
+			Message: "A21 Gateway wake-word status is unavailable",
+			Detail:  "invalid_request",
+		}}
+	}
+	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_unavailable",
+			Message: "A21 Gateway wake-word status is unavailable",
+			Detail:  "request_failed",
+		}}
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_unavailable",
+			Message: "A21 Gateway wake-word status is unavailable",
+			Detail:  "status_not_ok",
+		}}
+	}
+	var status gateway.WakeWordConfigResponse
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 4096))
+	if err := decoder.Decode(&status); err != nil {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_invalid",
+			Message: "A21 Gateway wake-word status is invalid",
+			Detail:  "decode_failed",
+		}}
+	}
+	if !validProductWakeWordStatus(status) {
+		return productWakeWordUnavailable(), []productReadinessFinding{{
+			Code:    "wake_word_status_invalid",
+			Message: "A21 Gateway wake-word status is invalid",
+			Detail:  "invalid_fields",
+		}}
+	}
+	readiness := productWakeWordReadiness{
+		Available:             true,
+		ProductReady:          productWakeWordStatusReady(status),
+		SchemaVersion:         status.SchemaVersion,
+		Mode:                  status.Mode,
+		ActivePhrase:          status.ActivePhrase,
+		ActivePinyin:          status.ActivePinyin,
+		DesiredPhrase:         status.DesiredPhrase,
+		DesiredPinyin:         status.DesiredPinyin,
+		Threshold:             status.Threshold,
+		RuntimeStatus:         status.RuntimeStatus,
+		RuntimeConfigurable:   status.RuntimeConfigurable,
+		FirmwareBuildRequired: status.FirmwareBuildRequired,
+		Code:                  status.Code,
+	}
+	if status.FirmwareBuildRequired {
+		return readiness, []productReadinessFinding{{
+			Code:    "wake_word_firmware_build_required",
+			Message: "Custom wake word config is pending a guarded firmware build and flash",
+			Detail:  status.Mode,
+		}}
+	}
+	return readiness, nil
+}
+
+func productWakeWordUnavailable() productWakeWordReadiness {
+	return productWakeWordReadiness{
+		Available:     false,
+		ProductReady:  false,
+		Mode:          "unknown",
+		RuntimeStatus: "unavailable",
+	}
+}
+
+func validProductWakeWordStatus(status gateway.WakeWordConfigResponse) bool {
+	if strings.TrimSpace(status.SchemaVersion) != "a21.gateway.wake_word.v1" {
+		return false
+	}
+	for _, value := range []string{
+		status.SchemaVersion,
+		status.Mode,
+		status.ActivePhrase,
+		status.ActivePinyin,
+		status.DesiredPhrase,
+		status.DesiredPinyin,
+		status.RuntimeStatus,
+		status.Code,
+	} {
+		lower := strings.ToLower(value)
+		if containsLegacyIdentity(value) || strings.Contains(lower, "http://") || strings.Contains(lower, "https://") {
+			return false
+		}
+	}
+	return strings.TrimSpace(status.Mode) != "" && strings.TrimSpace(status.RuntimeStatus) != ""
+}
+
+func productWakeWordStatusReady(status gateway.WakeWordConfigResponse) bool {
+	if status.FirmwareBuildRequired {
+		return false
+	}
+	return strings.TrimSpace(status.RuntimeStatus) != "" && strings.TrimSpace(status.RuntimeStatus) != "unavailable"
 }
 
 func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID string) productStackChanReadiness {
@@ -1599,6 +1734,13 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if !report.Voice.RealASRReady {
 		actions = append(actions, "install or configure real local ASR with A21_LOCAL_ASR_PROVIDER=sherpa_onnx and A21_SHERPA_ONNX_ASR_MODEL_DIR")
+	}
+	if !report.WakeWord.ProductReady {
+		if report.WakeWord.FirmwareBuildRequired {
+			actions = append(actions, "build and flash guarded wake word firmware for the stored custom MultiNet profile")
+		} else {
+			actions = append(actions, "restore A21 Gateway wake word readiness before launch")
+		}
 	}
 	return actions
 }

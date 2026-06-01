@@ -54,6 +54,14 @@ Gateway also exposes `GET /v1/audio/recent` as a loopback-only development captu
 
 `latency-bench --mock --output-dir reports` emits `reports/a21-latency-bench-YYYYMMDD-HHMMSS.json` with the current commit, generated timestamp, network/DNS fingerprint, and redacted proxy-policy metadata. This makes latency runs comparable across home, Shanghai office, LAN, and proxy configurations without logging proxy URLs or credentials.
 
+`product-readiness` also reads Gateway `GET /v1/wake-word` and includes a
+redacted `wake_word` block. Built-in Xiaozhi WakeNet status is product-ready
+when Gateway reports it active. A stored custom MultiNet profile with
+`firmware_build_required=true` is reported as a launch blocker with
+`wake_word_firmware_build_required`; product readiness must not mark it as
+launch-ready until the guarded firmware build/flash lane proves the custom wake
+model is active.
+
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
 The WS-2 product voice pipeline contract emits schema

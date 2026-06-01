@@ -134,6 +134,82 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	}
 }
 
+func TestProductReadinessBlocksLaunchWhenCustomWakeWordNeedsFirmwareBuild(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-gateway","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`))
+		case "/v1/wake-word":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"custom_multinet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":35,"runtime_status":"pending_firmware_build","runtime_configurable":false,"firmware_build_required":true,"code":"a21_wake_word_firmware_build_required","message":"Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway only persists the requested profile."}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	ttsModelDir := createProductReadinessTTSModelDir(t)
+	asrModelDir := createProductReadinessASRModelDir(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		V21AdapterSmokeReport:   writeProductReadinessV21AdapterSmokeReportFixture(t),
+		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_SHERPA_ONNX_MODEL_DIR=" + ttsModelDir,
+		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=" + asrModelDir,
+	})
+
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"wake_word"`,
+		`"mode": "custom_multinet"`,
+		`"active_phrase": "你好小智"`,
+		`"desired_phrase": "小阿二一"`,
+		`"runtime_status": "pending_firmware_build"`,
+		`"firmware_build_required": true`,
+		`"code": "a21_wake_word_firmware_build_required"`,
+		`"wake_word_firmware_build_required"`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness missing %q: %s", want, encoded.String())
+		}
+	}
+	if report.LaunchReady || report.Status == "real_launch_ready" {
+		t.Fatalf("status/launch = %q/%v, want custom wake word pending firmware to block launch", report.Status, report.LaunchReady)
+	}
+	if !containsProductAction(report.NextActions, "wake word firmware") {
+		t.Fatalf("next actions = %#v, want wake word firmware action", report.NextActions)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "secret-value", ttsModelDir, asrModelDir} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessTreatsStalePhysicalDeviceAsOffline(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","device_age_ms":360001,"capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 
@@ -1222,6 +1298,9 @@ func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.S
 		case "/v1/devices":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(devicesJSON))
+		case "/v1/wake-word":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"builtin_xiaozhi","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","threshold":30,"runtime_status":"active_builtin_model","runtime_configurable":false,"firmware_build_required":false}`))
 		default:
 			http.NotFound(w, r)
 		}
