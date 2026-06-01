@@ -887,11 +887,11 @@ func writeJSONLANProbe(writer io.Writer, report lanProbeReport) error {
 }
 
 func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
-	addr := "127.0.0.1:21080"
+	options := gatewayCLIOptions{Addr: "127.0.0.1:21080"}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080")
+			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32]")
 			return 0
 		case "--addr":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -899,19 +899,79 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 				return 2
 			}
 			i++
-			addr = args[i]
+			options.Addr = args[i]
+		case "--product-chain", "--xiaozhi-product-chain":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintf(stderr, "%s requires a value\n", args[i])
+				return 2
+			}
+			i++
+			options.ProductChain = args[i]
+		case "--local-ollama-base-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--local-ollama-base-url requires a value")
+				return 2
+			}
+			i++
+			options.LocalOllamaBaseURL = args[i]
+		case "--local-ollama-model":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--local-ollama-model requires a value")
+				return 2
+			}
+			i++
+			options.LocalOllamaModel = args[i]
+		case "--voice-text-max-tokens":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-text-max-tokens requires a value")
+				return 2
+			}
+			i++
+			options.VoiceTextMaxTokens = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown gateway option %q\n", args[i])
 			return 2
 		}
 	}
 
-	fmt.Fprintf(stdout, "a21 gateway listening on %s\n", addr)
-	if err := http.ListenAndServe(addr, newGatewayServerFromEnv(os.Environ()).Handler()); err != nil {
+	fmt.Fprintf(stdout, "a21 gateway listening on %s\n", options.Addr)
+	if err := http.ListenAndServe(options.Addr, newGatewayServerFromEnv(gatewayEnvWithCLIOptions(os.Environ(), options)).Handler()); err != nil {
 		fmt.Fprintf(stderr, "gateway: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+type gatewayCLIOptions struct {
+	Addr               string
+	ProductChain       string
+	LocalOllamaBaseURL string
+	LocalOllamaModel   string
+	VoiceTextMaxTokens string
+}
+
+func gatewayEnvWithCLIOptions(env []string, options gatewayCLIOptions) []string {
+	out := append([]string(nil), env...)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_XIAOZHI_PRODUCT_CHAIN", options.ProductChain)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_LOCAL_OLLAMA_BASE_URL", options.LocalOllamaBaseURL)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_LOCAL_OLLAMA_MODEL", options.LocalOllamaModel)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_VOICE_TEXT_MAX_TOKENS", options.VoiceTextMaxTokens)
+	return out
+}
+
+func gatewayEnvSetIfNotEmpty(env []string, key string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return env
+	}
+	prefix := key + "="
+	out := env[:0]
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			out = append(out, entry)
+		}
+	}
+	return append(out, prefix+value)
 }
 
 func newGatewayServerFromEnv(env []string) *gateway.Server {

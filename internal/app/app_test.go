@@ -2889,6 +2889,29 @@ func TestGatewayServerOptionsFromEnvProductChainModeDefaultsHostLocalAdapters(t 
 	}
 }
 
+func TestGatewayCLIOptionsApplyProductChainEnvOverrides(t *testing.T) {
+	env := gatewayEnvWithCLIOptions([]string{
+		"A21_LOCAL_OLLAMA_MODEL=old-model",
+	}, gatewayCLIOptions{
+		ProductChain:       "host_local",
+		LocalOllamaBaseURL: "http://127.0.0.1:11434",
+		LocalOllamaModel:   "qwen2.5:0.5b",
+		VoiceTextMaxTokens: "32",
+	})
+	if got := appEnvValue(env, "A21_XIAOZHI_PRODUCT_CHAIN"); got != "host_local" {
+		t.Fatalf("A21_XIAOZHI_PRODUCT_CHAIN = %q, want host_local", got)
+	}
+	if got := appEnvValue(env, "A21_LOCAL_OLLAMA_BASE_URL"); got != "http://127.0.0.1:11434" {
+		t.Fatalf("A21_LOCAL_OLLAMA_BASE_URL = %q, want loopback ollama", got)
+	}
+	if got := appEnvValue(env, "A21_LOCAL_OLLAMA_MODEL"); got != "qwen2.5:0.5b" {
+		t.Fatalf("A21_LOCAL_OLLAMA_MODEL = %q, want override", got)
+	}
+	if got := appEnvValue(env, "A21_VOICE_TEXT_MAX_TOKENS"); got != "32" {
+		t.Fatalf("A21_VOICE_TEXT_MAX_TOKENS = %q, want 32", got)
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional",
