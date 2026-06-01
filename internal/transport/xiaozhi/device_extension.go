@@ -159,7 +159,7 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 			return DeviceExtensionEvent{}, fmt.Errorf("%w: heartbeat", ErrUnsupportedDeviceEventValue)
 		}
 	case DeviceEventKindPlayback:
-		if !allowedDeviceEventValue(value, "start") {
+		if !allowedDeviceEventValue(value, "start", "stop_done") {
 			return DeviceExtensionEvent{}, fmt.Errorf("%w: playback", ErrUnsupportedDeviceEventValue)
 		}
 		if !safePlaybackStreamID(normalized.StreamID) {

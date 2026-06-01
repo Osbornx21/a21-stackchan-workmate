@@ -149,9 +149,15 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 Client `hello.features` are represented only as sanitized `/v1/devices`
 capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 `device_events` and `debug_metrics` are marked as an isolated debug profile.
-When a debug Xiaozhi client negotiates `features.device_events=true`, a
-`type=device`, `kind=playback`, `playback=start` extension is recorded as
-`device.playback.start`; the same message is rejected for stock profiles.
+When a debug Xiaozhi client negotiates `features.device_events=true`, Gateway
+returns the debug-only A21 server-hello allowance `a21.profile=debug` and
+`a21.device_events=true`. A `type=device`, `kind=playback`, `playback=start`
+extension is recorded as `device.playback.start`; `playback=stop_done` is
+recorded as `device.playback.stop_done` and can close the physical barge-in
+stop-done metric when it follows `barge_in.detected`. The same messages are
+rejected for stock profiles. The repo-owned firmware overlay emits these acks
+only after that A21 allowance is present; stock firmware builds keep the option
+disabled by default.
 The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
 `xiaozhi.turn.cancel`, `turn_cancelled`, and `downlink_queue_cleared` on
 `abort`; barge-in-style abort reasons also add `barge_in_detected` alongside

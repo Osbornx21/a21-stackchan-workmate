@@ -263,6 +263,36 @@ func TestRunXiaozhiPhysicalEvidenceMapsGatewayBargeInMarkers(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiPhysicalEvidenceMapsDebugPlaybackStopDone(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true)
+	dir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"barge_in_playback_stop_done_ms": {`,
+		`"value_ms": 120`,
+		`"source": "device_runtime_echo"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceIgnoresInvalidInstrumentPlaybackRuntimeEcho(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, false)
 	dir := t.TempDir()
@@ -581,6 +611,9 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 				map[string]any{"name": "barge_in.detected", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1700, "offset_ms": 700},
 				map[string]any{"name": "playback.stop", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1765, "offset_ms": 765},
 			)
+		}
+		if len(playback) > 2 && playback[2] {
+			events = append(events, map[string]any{"name": "device.playback.stop_done", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1820, "offset_ms": 820})
 		}
 		if unsafe {
 			events = append(events, map[string]any{"name": "operator transcript should not leak", "trace_id": "http://example.com/unsafe/full/url", "session_id": "/Users/secret-token/session", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1601, "offset_ms": 601})

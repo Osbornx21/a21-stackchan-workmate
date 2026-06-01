@@ -227,7 +227,10 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 			xiaozhiPhysicalTraceDeltaMS(trace, "barge_in.detected", "playback.stop"),
 			"gateway_trace",
 		),
-		BargeInPlaybackStopDoneMS: physicalStackChanMetric{},
+		BargeInPlaybackStopDoneMS: physicalStackChanMetricFromNonNegativeInt64(
+			xiaozhiPhysicalTraceDeltaMS(trace, "barge_in.detected", "device.playback.stop_done"),
+			"device_runtime_echo",
+		),
 	}
 	report.Mic = xiaozhiPhysicalMicEvidence(audioRecent.Frames)
 	report.Observation = physicalStackChanObservationEvidence{}
@@ -364,6 +367,7 @@ func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trac
 		"xiaozhi.tts.downlink":         xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.tts.opus_frame.downlink"), "gateway_trace"),
 		"answer.first_downlink":        report.GatewayMetrics.GatewayAnswerFirstDownlinkMS,
 		"device.playback.ack":          xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "device.playback.start") || report.CanonicalMetrics.DevicePlaybackStartMS.Available, "device_runtime_echo"),
+		"device.playback.stop_done":    report.CanonicalMetrics.BargeInPlaybackStopDoneMS,
 		"operator.audible_observation": xiaozhiPhysicalBoolMetric(xiaozhiPhysicalObservationAvailable(report.Observation), "instrument_observation"),
 	}
 }

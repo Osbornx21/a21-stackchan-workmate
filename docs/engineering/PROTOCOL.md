@@ -140,10 +140,13 @@ WS-5 also defines an A21-only StackChan semantic device extension in
 `internal/transport/xiaozhi`. It is host-only schema, builder, and parser
 proof for future Gateway-to-device integration; it does not make `type=device`
 part of the stock xiaozhi profile. Stock hello and server hello remain free of
-debug or device-extension requirements. A host may build `type=device`
-extension events only when the connected profile explicitly advertises
-`features.device_events=true` or the host has selected an A21 debug/StackChan
-extension profile.
+debug or device-extension requirements. A debug client that explicitly
+advertises `features.device_events=true` receives only an A21-namespaced server
+allowance: `a21.profile=debug` and `a21.device_events=true`. Stock server
+hellos remain free of `a21`, `device_events`, and `debug_metrics`. A host may
+build `type=device` extension events only when the connected profile explicitly
+advertises `features.device_events=true` or the host has selected an A21
+debug/StackChan extension profile.
 
 Current extension event kinds are `state`, `face`, `display`, `motion`,
 `heartbeat`, and debug-profile-only `playback`. Values are provider-neutral A21
@@ -153,8 +156,20 @@ semantics:
 - `face`: `idle`, `attentive`, `thinking`, `speaking`, `happy`, `error`
 - `display`: `status`, `asr`, `tts`
 - `motion`: `look_up`, `nod`, `shake`, `stop`, `dance`
-- `playback`: `start`, with optional `stream_id`; accepted only after
-  `features.device_events=true` and recorded as `device.playback.start`
+- `playback`: `start` or `stop_done`, with optional `stream_id`; accepted only
+  after `features.device_events=true`. `start` is recorded as
+  `device.playback.start`; `stop_done` is recorded as
+  `device.playback.stop_done` and may prove barge-in stop completion when it
+  follows `barge_in.detected`.
+
+The repo-owned firmware overlay
+`firmware/xiaozhi/overlays/a21-debug-playback-ack.patch` keeps this out of the
+stock profile by default. It adds `CONFIG_A21_DEBUG_DEVICE_EVENTS=n`,
+advertises client `features.device_events=true` only in that debug build,
+requires the server `a21.profile=debug` / `a21.device_events=true` allowance,
+and emits redacted playback runtime echoes after decoded PCM reaches the
+firmware audio output task and after server TTS stop has moved the device out
+of speaking state.
 
 Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
 such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping

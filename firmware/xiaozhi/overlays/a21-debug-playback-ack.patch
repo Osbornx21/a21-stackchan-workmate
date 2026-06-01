@@ -1,0 +1,145 @@
+diff --git a/main/Kconfig.projbuild b/main/Kconfig.projbuild
+index b4daf42..1135003 100644
+--- a/main/Kconfig.projbuild
++++ b/main/Kconfig.projbuild
+@@ -8,0 +9,8 @@ config OTA_URL
++config A21_DEBUG_DEVICE_EVENTS
++    bool "A21 debug device events"
++    default n
++    help
++        Enable A21-namespaced debug WebSocket device events for physical
++        instrumentation. This must stay disabled for stock xiaozhi profile
++        builds.
++
+diff --git a/main/application.cc b/main/application.cc
+index 0a809fa..6c7aacc 100644
+--- a/main/application.cc
++++ b/main/application.cc
+@@ -85,0 +86,9 @@ void Application::Initialize() {
++    callbacks.on_playback_started = [this]() {
++        if (GetDeviceState() == kDeviceStateSpeaking && !a21_playback_ack_sent_.exchange(true)) {
++            Schedule([this]() {
++                if (protocol_) {
++                    protocol_->SendA21PlaybackStart();
++                }
++            });
++        }
++    };
+@@ -528,0 +538,2 @@ void Application::InitializeProtocol() {
++                    a21_playback_ack_sent_ = false;
++                    a21_playback_stop_ack_sent_ = false;
+@@ -533 +544,3 @@ void Application::InitializeProtocol() {
+-                    if (GetDeviceState() == kDeviceStateSpeaking) {
++                    bool was_speaking = GetDeviceState() == kDeviceStateSpeaking;
++                    bool had_playback = a21_playback_ack_sent_.load();
++                    if (was_speaking) {
+@@ -539,0 +553,6 @@ void Application::InitializeProtocol() {
++                    if ((was_speaking || had_playback) && !a21_playback_stop_ack_sent_.exchange(true)) {
++                        if (protocol_) {
++                            protocol_->SendA21PlaybackStopDone();
++                        }
++                    }
++                    a21_playback_ack_sent_ = false;
+diff --git a/main/application.h b/main/application.h
+index 7ca7af4..76c0b82 100644
+--- a/main/application.h
++++ b/main/application.h
+@@ -12,0 +13 @@
++#include <atomic>
+@@ -142,0 +144,2 @@ private:
++    std::atomic_bool a21_playback_ack_sent_{false};
++    std::atomic_bool a21_playback_stop_ack_sent_{false};
+diff --git a/main/audio/audio_service.cc b/main/audio/audio_service.cc
+index 350ac58..d0baf42 100644
+--- a/main/audio/audio_service.cc
++++ b/main/audio/audio_service.cc
+@@ -309,0 +310,3 @@ void AudioService::AudioOutputTask() {
++        if (callbacks_.on_playback_started) {
++            callbacks_.on_playback_started();
++        }
+diff --git a/main/audio/audio_service.h b/main/audio/audio_service.h
+index 99db546..65c5450 100644
+--- a/main/audio/audio_service.h
++++ b/main/audio/audio_service.h
+@@ -82,0 +83 @@ struct AudioServiceCallbacks {
++    std::function<void(void)> on_playback_started;
+diff --git a/main/protocols/protocol.cc b/main/protocols/protocol.cc
+index 470cc91..41cbece 100644
+--- a/main/protocols/protocol.cc
++++ b/main/protocols/protocol.cc
+@@ -80,0 +81,33 @@ void Protocol::SendMcpMessage(const std::string& payload) {
++void Protocol::SendA21PlaybackStart() {
++    SendA21PlaybackEvent("start");
++}
++
++void Protocol::SendA21PlaybackStopDone() {
++    SendA21PlaybackEvent("stop_done");
++}
++
++void Protocol::SendA21PlaybackEvent(const char* playback) {
++    if (!a21_debug_device_events_allowed_) {
++        return;
++    }
++    cJSON* root = cJSON_CreateObject();
++    cJSON_AddStringToObject(root, "type", "device");
++    cJSON_AddStringToObject(root, "kind", "playback");
++    cJSON_AddStringToObject(root, "playback", playback);
++    if (!trace_id_.empty()) {
++        cJSON_AddStringToObject(root, "trace_id", trace_id_.c_str());
++    }
++    if (!session_id_.empty()) {
++        cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
++    }
++    if (!device_id_.empty()) {
++        cJSON_AddStringToObject(root, "device_id", device_id_.c_str());
++    }
++    auto json_str = cJSON_PrintUnformatted(root);
++    if (json_str != nullptr) {
++        SendText(json_str);
++        cJSON_free(json_str);
++    }
++    cJSON_Delete(root);
++}
++
+diff --git a/main/protocols/protocol.h b/main/protocols/protocol.h
+index 28ef604..a768312 100644
+--- a/main/protocols/protocol.h
++++ b/main/protocols/protocol.h
+@@ -75,0 +76,2 @@ public:
++    virtual void SendA21PlaybackStart();
++    virtual void SendA21PlaybackStopDone();
+@@ -89,0 +92,4 @@ protected:
++    std::string trace_id_;
++    std::string device_id_;
++    bool a21_debug_device_events_allowed_ = false;
++    void SendA21PlaybackEvent(const char* playback);
+diff --git a/main/protocols/websocket_protocol.cc b/main/protocols/websocket_protocol.cc
+index 4b74a5e..37bb70e 100644
+--- a/main/protocols/websocket_protocol.cc
++++ b/main/protocols/websocket_protocol.cc
+@@ -212,0 +213,3 @@ std::string WebsocketProtocol::GetHelloMessage() {
++#if CONFIG_A21_DEBUG_DEVICE_EVENTS
++    cJSON_AddBoolToObject(features, "device_events", true);
++#endif
+@@ -239,0 +243,21 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
++    auto trace_id = cJSON_GetObjectItem(root, "trace_id");
++    if (cJSON_IsString(trace_id)) {
++        trace_id_ = trace_id->valuestring;
++    }
++    auto device_id = cJSON_GetObjectItem(root, "device_id");
++    if (cJSON_IsString(device_id)) {
++        device_id_ = device_id->valuestring;
++    }
++
++    a21_debug_device_events_allowed_ = false;
++#if CONFIG_A21_DEBUG_DEVICE_EVENTS
++    auto a21 = cJSON_GetObjectItem(root, "a21");
++    if (cJSON_IsObject(a21)) {
++        auto profile = cJSON_GetObjectItem(a21, "profile");
++        auto device_events = cJSON_GetObjectItem(a21, "device_events");
++        a21_debug_device_events_allowed_ =
++            cJSON_IsString(profile) &&
++            strcmp(profile->valuestring, "debug") == 0 &&
++            cJSON_IsTrue(device_events);
++    }
++#endif

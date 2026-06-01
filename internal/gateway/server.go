@@ -1309,12 +1309,17 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 	}
 	switch event.Kind {
 	case xiaozhitransport.DeviceEventKindPlayback:
-		if event.Value != "start" {
+		switch event.Value {
+		case "start":
+			s.recordXiaozhiPlaybackStart(session, event.StreamID)
+			return true
+		case "stop_done":
+			s.recordXiaozhiPlaybackStopDone(session, event.StreamID)
+			return true
+		default:
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
 			return true
 		}
-		s.recordXiaozhiPlaybackStart(session, event.StreamID)
-		return true
 	case xiaozhitransport.DeviceEventKindHeartbeat:
 		s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
 		return true
@@ -1498,11 +1503,19 @@ func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event stri
 }
 
 func (s *Server) recordXiaozhiPlaybackStart(session *xiaozhiSession, streamID string) {
+	s.recordXiaozhiPlaybackEvent(session, "device.playback.start", streamID)
+}
+
+func (s *Server) recordXiaozhiPlaybackStopDone(session *xiaozhiSession, streamID string) {
+	s.recordXiaozhiPlaybackEvent(session, "device.playback.stop_done", streamID)
+}
+
+func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event string, streamID string) {
 	if session == nil || strings.TrimSpace(session.deviceID) == "" {
 		return
 	}
 	nowMS := s.now().UnixMilli()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "device.playback.start", nowMS)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, event, nowMS)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record := s.devices[session.deviceID]
@@ -1513,7 +1526,7 @@ func (s *Server) recordXiaozhiPlaybackStart(session *xiaozhiSession, streamID st
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
-	record.LastEvent = protocol.DeviceEventKind("device.playback.start")
+	record.LastEvent = protocol.DeviceEventKind(event)
 	record.LastTraceID = session.traceID
 	record.LastSessionID = session.sessionID
 	record.LastSeenMS = nowMS
@@ -2415,7 +2428,7 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 		"channels":       1,
 		"frame_duration": 60,
 	}
-	return map[string]any{
+	reply := map[string]any{
 		"type":         "hello",
 		"version":      session.binaryProtocolVersion,
 		"transport":    "websocket",
@@ -2425,6 +2438,13 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 		"audio":        audioParams,
 		"audio_params": audioParams,
 	}
+	if session.features.DeviceEvents {
+		reply["a21"] = map[string]any{
+			"profile":       "debug",
+			"device_events": true,
+		}
+	}
+	return reply
 }
 
 func xiaozhiBinaryProfile(version int) string {

@@ -1503,6 +1503,9 @@ func TestXiaozhiWebSocketHelloAcceptsStockProtocol(t *testing.T) {
 			t.Fatalf("hello reply leaked forbidden/debug field %q: %s", forbidden, replyJSON)
 		}
 	}
+	if _, ok := reply["a21"]; ok {
+		t.Fatalf("stock hello reply leaked a21 debug allowance: %#v", reply)
+	}
 
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
 	if registry["device_id"] != "stackchan-001" || registry["identity_status"] != "unknown" {
@@ -1528,7 +1531,7 @@ func TestXiaozhiWebSocketHelloAcceptsStockProtocol(t *testing.T) {
 	}
 }
 
-func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.T) {
+func TestXiaozhiWebSocketDebugProfileHelloReplyIncludesA21DeviceEventsAllowance(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -1555,10 +1558,21 @@ func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"debug_metrics", "device_events"} {
+	for _, forbidden := range []string{"debug_metrics", `"features"`} {
 		if strings.Contains(strings.ToLower(string(replyJSON)), forbidden) {
 			t.Fatalf("hello reply leaked debug field %q: %s", forbidden, replyJSON)
 		}
+	}
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok {
+		t.Fatalf("hello reply missing a21 debug allowance: %#v", reply)
+	}
+	if a21["profile"] != "debug" {
+		t.Fatalf("a21 profile = %#v, want debug in %#v", a21["profile"], a21)
+	}
+	deviceEvents, ok := a21["device_events"].(bool)
+	if !ok || !deviceEvents {
+		t.Fatalf("a21 device_events = %#v, want true in %#v", a21["device_events"], a21)
 	}
 
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
@@ -1634,6 +1648,63 @@ func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
 	if registry["last_event"] != "device.playback.start" {
 		t.Fatalf("last event = %#v, want device.playback.start", registry["last_event"])
+	}
+}
+
+func TestXiaozhiDebugProfileRecordsPlaybackStopDoneDeviceEvent(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-playback-stop-done",
+		"session_id": "a21-session-xiaozhi-playback-stop-done",
+		"device_id":  "stackchan-debug-001",
+		"features": map[string]any{
+			"mcp":           true,
+			"aec":           true,
+			"device_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "playback",
+		"playback":   "stop_done",
+		"stream_id":  "a21-xiaozhi-stream-001",
+		"trace_id":   "a21-trace-xiaozhi-playback-stop-done",
+		"session_id": "a21-session-xiaozhi-playback-stop-done",
+		"device_id":  "stackchan-debug-001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-playback-stop-done")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "device.playback.stop_done") {
+		t.Fatalf("trace missing device playback stop_done: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "device.playback.stop_done" {
+		t.Fatalf("last event = %#v, want device.playback.stop_done", registry["last_event"])
 	}
 }
 
