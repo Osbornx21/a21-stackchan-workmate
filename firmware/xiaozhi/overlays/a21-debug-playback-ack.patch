@@ -53,6 +53,10 @@ index 0a809fa..6c7aacc 100644
 +                    a21_playback_ack_sent_ = false;
 +                    a21_force_clear_playback_ = false;
 +
+@@ -936,0 +961,3 @@ void Application::AbortSpeaking(AbortReason reason) {
++    if (GetDeviceState() == kDeviceStateSpeaking) {
++        audio_service_.ResetDecoder();
++    }
 diff --git a/main/application.h b/main/application.h
 index 7ca7af4..76c0b82 100644
 --- a/main/application.h

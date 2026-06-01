@@ -172,7 +172,9 @@ firmware audio output task and after server TTS stop has moved the device out
 of speaking state. For interrupt reasons such as `abort`, `barge`, or `wake`,
 the overlay also clears the firmware decoder/playback queue before reporting
 `stop_done`; normal completion stops still preserve the stock late-stop
-playback-drain behavior.
+playback-drain behavior. A local touch/wake abort also clears the device
+decoder queue immediately before sending the abort upstream, so physical audio
+does not wait for the server round trip before stopping.
 
 Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
 such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping
