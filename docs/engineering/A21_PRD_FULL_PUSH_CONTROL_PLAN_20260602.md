@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `3eab4c1 chore(control): dispatch voice mode selector`
+Current integration checkpoint: `de64e50 merge: voice mode selector slice`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `3eab4c1 chore(control): dispatch voice mode selector`
+  `de64e50 merge: voice mode selector slice`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -61,13 +61,21 @@ Current integration branch:
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
-  readiness, launch false-green guard, wake package help-contract, and
-  Gateway half-duplex playback arm hardening merges.
+  readiness, launch false-green guard, wake package help-contract, Gateway
+  half-duplex playback arm hardening, and explicit voice-mode selector merges.
 - Latest targeted verification:
   `go test ./internal/gateway -run 'MockPlayback|AudioProbe|RealtimeOnNext|DeviceControl|HalfDuplex|Playback' -count=1`
   passed, and
   `go test ./internal/app -run 'StackChanSpeaker|StackChanTouch|ProductReadiness' -count=1`
   passed.
+- Latest voice-mode verification:
+  `go test ./internal/gateway -run 'VoiceMode|FastCompanion|DeviceControl|Simulator' -count=1`
+  passed,
+  `go test ./internal/app -run 'VoiceMode|ProductReadiness' -count=1`
+  passed, and a current-HEAD temporary Gateway on `127.0.0.1:21081` exposed
+  `voiceMode`, `voiceModeReadout`, and `/v1/voice-modes`. Selecting
+  `pure_cloud` persisted the visible choice and blocked
+  `/v1/fast-companion/turn` instead of silently routing planned mode.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
@@ -126,18 +134,22 @@ gaps:
   `1878fc8 fix(wake-word): document build receipt package option`
 - Gateway half-duplex playback arm hardening:
   `2120ee6 fix(gateway): harden half duplex playback arm`
+- Explicit operator voice-mode selector:
+  `4f4b767 feat(gateway): add explicit voice mode selector`,
+  merged by `de64e50 merge: voice mode selector slice`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Explicit voice-mode selector | `019e8573-d562-75d2-b126-7bfb72d6af1f` | `/Users/jiyurun/.codex/worktrees/7142/New project` | expected `codex/a21-mainline-voice-mode-selector-20260602` from `1a7bed9` | Slice H explicit `voice_mode` catalog/status/selection without hidden routing | Active write worker; poll before touching Gateway/simulator/app voice-mode code |
+| None | - | - | - | - | No active write worker as of `de64e50`; start a fresh bounded worker before any new implementation slice |
 
 Recently completed workers:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Completed read-only; useful follow-up is fresh `voice_mode` selector, not stale branch merge |
+| Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Completed read-only; its useful `voice_mode` follow-up is now merged from fresh mainline, not stale branch merge |
+| Explicit voice-mode selector | `019e8573-d562-75d2-b126-7bfb72d6af1f` | `/Users/jiyurun/.codex/worktrees/7142/New project` | `codex/a21-mainline-voice-mode-selector-20260602` | Explicit `voice_mode` catalog/status/selection without hidden routing | Initial worker stopped cleanly with no implementation; control tower reclaimed, implemented, verified, and merged via `4f4b767`/`de64e50`; do not duplicate |
 | Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | `codex/a21-gateway-half-duplex-arm-hardening-20260602` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Worker stopped with partial tests; control tower reclaimed and merged current implementation via `2120ee6`; do not merge worker branch |
 | Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | `codex/a21-realtime-evidence-closure-20260602` | Provider realtime fixture report/output-dir and product-readiness visibility | Merged via `66798f8` and `9526976`; do not duplicate |
 | Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | `codex/a21-mode-privacy-closure-20260602` | Public/private/focus/professional mode red lines and visible state | Merged via `2d102c4` and `61d121d`; do not duplicate |
@@ -164,21 +176,23 @@ Current server-side gaps from the latest product-readiness run:
 
 Current next moves:
 
-1. No-hardware local code closure: dispatch a fresh Slice H worker for explicit
-   `voice_mode` selection from current `2120ee6`. This is the next PRD-useful
-   stale-audit finding that is not already merged and does not need CoreS3.
-2. Provider execute closure for 5080lab: run
+1. Provider execute closure for 5080lab: run
    `make provider-5080lab-runbook A21_PROVIDER=deepseek`
    to print the lab packet, execute the printed provider commands on 5080lab,
    import the returned bundle on the control machine, then rerun
    product-readiness to reduce `real_provider_smoke`. Do not run provider
    `--execute` on this Mac.
-3. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
+2. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
    build review JSON for the current custom phrase, run
    `wake-word-firmware-build-receipt --review-report`, then
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
+3. Optional no-hardware polish slice only if it burns a real PRD gap: runtime
+   personality composition validation or operator-facing hardware readiness
+   summary. Do not reopen audio clarity, host voice loopback, voice-mode
+   selector, selected-provider import, or launch false-green guards unless a new
+   regression appears.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
