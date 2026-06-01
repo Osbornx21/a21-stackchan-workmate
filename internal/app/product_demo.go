@@ -24,6 +24,7 @@ type productReadinessOptions struct {
 	Addr                    string
 	DeviceID                string
 	OutputDir               string
+	ProviderSmokeReport     string
 	XiaozhiReport           string
 	V21ProfessionalReport   string
 	V21AdapterSmokeReport   string
@@ -69,6 +70,12 @@ type productProviderReadiness struct {
 	RealProviderReady  bool     `json:"real_provider_ready"`
 	TextStreamReady    bool     `json:"text_stream_ready"`
 	VoiceRealtimeReady bool     `json:"voice_realtime_ready"`
+	SmokeEvidenceValid bool     `json:"smoke_evidence_valid"`
+	SmokeProvider      string   `json:"smoke_provider,omitempty"`
+	SmokeFamily        string   `json:"smoke_family,omitempty"`
+	SmokeStatus        string   `json:"smoke_status,omitempty"`
+	SmokeExecuted      bool     `json:"smoke_executed,omitempty"`
+	SmokeSourceReport  string   `json:"smoke_source_report,omitempty"`
 	MissingEnv         []string `json:"missing_env,omitempty"`
 	PresentEnv         []string `json:"present_env,omitempty"`
 }
@@ -207,7 +214,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -219,6 +226,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--output-dir":
 			if !readStringOption(args, &i, stderr, "--output-dir", &options.OutputDir) {
+				return 2
+			}
+		case "--provider-smoke-report":
+			if !readStringOption(args, &i, stderr, "--provider-smoke-report", &options.ProviderSmokeReport) {
 				return 2
 			}
 		case "--xiaozhi-report":
@@ -335,6 +346,11 @@ func runDemo(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func resolveLatestProductReadinessReports(options productReadinessOptions) productReadinessOptions {
 	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	if strings.TrimSpace(options.ProviderSmokeReport) == "" {
+		options.ProviderSmokeReport = latestProductReadinessReportPath(reportDir, []string{
+			"a21-provider-smoke-*.json",
+		})
+	}
 	if strings.TrimSpace(options.XiaozhiReport) == "" {
 		options.XiaozhiReport = latestProductReadinessReportPath(reportDir, []string{
 			"a21-xiaozhi-voice-bench-*.json",
@@ -420,6 +436,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.Findings = append(report.Findings, productReadinessFinding{Code: "device_registry_unavailable", Message: "A21 device registry is not reachable"})
 	}
 	report.Provider = buildProductProviderReadiness(env)
+	providerSmokeEvidence, providerSmokeFindings := loadProductProviderSmokeReportEvidence(options.ProviderSmokeReport)
+	report.Findings = append(report.Findings, providerSmokeFindings...)
+	if providerSmokeEvidence.Valid {
+		report.Findings = append(report.Findings, attachProductProviderSmokeEvidence(&report.Provider, providerSmokeEvidence)...)
+	}
 	report.V21 = buildProductV21Readiness(env)
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
@@ -483,20 +504,311 @@ func buildProductProviderReadiness(env []string) productProviderReadiness {
 			readiness.MissingEnv = append([]string(nil), provider.MissingEnv...)
 			readiness.PresentEnv = append([]string(nil), provider.PresentEnv...)
 		}
-		if provider.Configured && provider.Name != "mock" && provider.RouteEligible {
-			switch providers.ProviderFamily(provider.Family) {
-			case providers.ProviderFamilyTextStream:
-				readiness.TextStreamReady = true
-			case providers.ProviderFamilyVoiceRealtime, providers.ProviderFamilyVoiceHybrid:
-				readiness.VoiceRealtimeReady = true
+	}
+	return readiness
+}
+
+type productProviderSmokeReportEvidence struct {
+	Valid         bool
+	Provider      string
+	Family        string
+	Protocol      string
+	Status        string
+	Configured    bool
+	Executed      bool
+	RouteEligible bool
+	Stream        bool
+	SourceReport  string
+}
+
+type productProviderSmokeReportFixture struct {
+	SchemaVersion string                           `json:"schema_version"`
+	GeneratedAtMS *int64                           `json:"generated_at_ms"`
+	Provider      string                           `json:"provider"`
+	Family        string                           `json:"family"`
+	Protocol      string                           `json:"protocol"`
+	Status        string                           `json:"status"`
+	Configured    *bool                            `json:"configured"`
+	Executed      *bool                            `json:"executed"`
+	RouteEligible *bool                            `json:"route_eligible"`
+	Stream        *bool                            `json:"stream"`
+	Repeat        int                              `json:"repeat"`
+	HTTPStatus    int                              `json:"http_status"`
+	Attempts      []providers.ProviderSmokeAttempt `json:"attempts"`
+	TimingSummary *providers.ProviderSmokeTiming   `json:"timing_summary"`
+	EndpointHost  string                           `json:"endpoint_host"`
+	BaseURLEnv    string                           `json:"base_url_env"`
+	APIKeyEnv     string                           `json:"api_key_env"`
+	ModelEnv      string                           `json:"model_env"`
+	MissingEnv    []string                         `json:"missing_env"`
+	Fallback      *providers.ProviderSmokeFallback `json:"fallback"`
+	TraceMarkers  []providers.ProviderSmokeMarker  `json:"trace_markers"`
+	Metrics       []providers.ProviderSmokeMetric  `json:"metrics"`
+}
+
+func loadProductProviderSmokeReportEvidence(path string) (productProviderSmokeReportEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productProviderSmokeReportEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productProviderSmokeReportContainsForbiddenValue(raw) {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	var fixture productProviderSmokeReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	if missingField := missingProductProviderSmokeReportField(fixture); missingField != "" {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{missingProductProviderSmokeReportFieldFinding(missingField)}
+	}
+	provider := providerLatencySafeIdentifier(fixture.Provider, false)
+	family := providerLatencySafeIdentifier(fixture.Family, false)
+	protocol := providerLatencySafeIdentifier(fixture.Protocol, false)
+	if fixture.SchemaVersion != providers.ProviderSmokeSchemaVersion ||
+		fixture.GeneratedAtMS == nil ||
+		*fixture.GeneratedAtMS <= 0 ||
+		provider == "" ||
+		provider == "mock" ||
+		family != string(providers.ProviderFamilyTextStream) ||
+		!validProductProviderSmokeProtocol(protocol) ||
+		strings.TrimSpace(fixture.Status) != string(providers.ProviderSmokePassed) ||
+		!*fixture.Configured ||
+		!*fixture.Executed ||
+		!*fixture.RouteEligible ||
+		len(fixture.MissingEnv) != 0 ||
+		(fixture.HTTPStatus != 0 && (fixture.HTTPStatus < 200 || fixture.HTTPStatus >= 300)) ||
+		productProviderSmokeEndpointHostUnsafe(fixture.EndpointHost) ||
+		!productProviderSmokeEnvNamesSafe(fixture.APIKeyEnv, fixture.ModelEnv, fixture.BaseURLEnv) ||
+		(fixture.Fallback != nil && fixture.Fallback.Activated) ||
+		productProviderSmokeFallbackObserved(fixture) ||
+		!validProductProviderSmokeStreamingEvidence(fixture) {
+		return productProviderSmokeReportEvidence{}, []productReadinessFinding{invalidProductProviderSmokeReportFinding()}
+	}
+	stream := false
+	if fixture.Stream != nil {
+		stream = *fixture.Stream
+	}
+	return productProviderSmokeReportEvidence{
+		Valid:         true,
+		Provider:      provider,
+		Family:        family,
+		Protocol:      protocol,
+		Status:        strings.TrimSpace(fixture.Status),
+		Configured:    *fixture.Configured,
+		Executed:      *fixture.Executed,
+		RouteEligible: *fixture.RouteEligible,
+		Stream:        stream,
+		SourceReport:  filepath.Base(filepath.Clean(path)),
+	}, nil
+}
+
+func attachProductProviderSmokeEvidence(readiness *productProviderReadiness, evidence productProviderSmokeReportEvidence) []productReadinessFinding {
+	if readiness.Selected != evidence.Provider || !readiness.SelectedConfigured {
+		return []productReadinessFinding{{
+			Code:    "provider_smoke_report_mismatch",
+			Message: "Provider smoke report does not match the currently selected configured A21 provider",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	readiness.Selected = evidence.Provider
+	readiness.SelectedFamily = evidence.Family
+	readiness.SelectedConfigured = evidence.Configured
+	readiness.RealProviderReady = true
+	readiness.TextStreamReady = evidence.Family == string(providers.ProviderFamilyTextStream)
+	readiness.VoiceRealtimeReady = false
+	readiness.MissingEnv = nil
+	readiness.SmokeEvidenceValid = true
+	readiness.SmokeProvider = evidence.Provider
+	readiness.SmokeFamily = evidence.Family
+	readiness.SmokeStatus = evidence.Status
+	readiness.SmokeExecuted = evidence.Executed
+	readiness.SmokeSourceReport = evidence.SourceReport
+	return nil
+}
+
+func missingProductProviderSmokeReportField(fixture productProviderSmokeReportFixture) string {
+	switch {
+	case strings.TrimSpace(fixture.SchemaVersion) == "":
+		return "schema_version"
+	case fixture.GeneratedAtMS == nil:
+		return "generated_at_ms"
+	case strings.TrimSpace(fixture.Provider) == "":
+		return "provider"
+	case strings.TrimSpace(fixture.Family) == "":
+		return "family"
+	case strings.TrimSpace(fixture.Protocol) == "":
+		return "protocol"
+	case strings.TrimSpace(fixture.Status) == "":
+		return "status"
+	case fixture.Configured == nil:
+		return "configured"
+	case fixture.Executed == nil:
+		return "executed"
+	case fixture.RouteEligible == nil:
+		return "route_eligible"
+	case fixture.Stream == nil:
+		return "stream"
+	case fixture.TimingSummary == nil:
+		return "timing_summary"
+	default:
+		return ""
+	}
+}
+
+func missingProductProviderSmokeReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "provider_smoke_report_missing_field",
+		Message: "Provider smoke report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductProviderSmokeReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "provider_smoke_report_invalid",
+		Message: "Provider smoke report is invalid, unsafe, not executed, or not a real route-eligible text provider",
+	}
+}
+
+func validProductProviderSmokeProtocol(protocol string) bool {
+	switch protocol {
+	case "openai_chat_completions", "ollama_chat":
+		return true
+	default:
+		return false
+	}
+}
+
+func validProductProviderSmokeStreamingEvidence(fixture productProviderSmokeReportFixture) bool {
+	if fixture.Stream == nil || !*fixture.Stream || fixture.Repeat < 3 || len(fixture.Attempts) != fixture.Repeat || fixture.TimingSummary == nil {
+		return false
+	}
+	if fixture.TimingSummary.Repeat != fixture.Repeat ||
+		fixture.TimingSummary.FirstByteP95MS <= 0 ||
+		fixture.TimingSummary.FirstContentP95MS <= 0 ||
+		fixture.TimingSummary.TotalDurationP95MS <= 0 {
+		return false
+	}
+	for _, attempt := range fixture.Attempts {
+		if attempt.Index <= 0 ||
+			attempt.HTTPStatus < 200 ||
+			attempt.HTTPStatus >= 300 ||
+			attempt.FirstByteMS <= 0 ||
+			attempt.FirstContentMS <= 0 ||
+			attempt.TotalDurationMS <= 0 ||
+			attempt.ContentDeltaCount <= 0 ||
+			!attempt.Done {
+			return false
+		}
+	}
+	return true
+}
+
+func productProviderSmokeFallbackObserved(fixture productProviderSmokeReportFixture) bool {
+	for _, marker := range fixture.TraceMarkers {
+		if strings.TrimSpace(marker.Name) == "provider_fallback_used" {
+			return true
+		}
+	}
+	for _, metric := range fixture.Metrics {
+		if strings.TrimSpace(metric.Name) == "a21_provider_fallback_total" && metric.Value > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func productProviderSmokeEnvNamesSafe(values ...string) bool {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if len(value) > 80 || !strings.HasPrefix(value, "A21_") || containsLegacyIdentity(value) {
+			return false
+		}
+		for _, r := range value {
+			if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func productProviderSmokeEndpointHostUnsafe(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	if host == "" {
+		return true
+	}
+	for _, forbidden := range []string{"http://", "https://", "@", "/users/", "key", "token", "secret"} {
+		if strings.Contains(host, forbidden) {
+			return true
+		}
+	}
+	return containsLegacyIdentity(host)
+}
+
+func productProviderSmokeReportContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productProviderSmokeReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productProviderSmokeReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		lower := strings.ToLower(typed)
+		if containsLegacyIdentity(typed) {
+			return true
+		}
+		for _, forbidden := range []string{
+			"http://",
+			"https://",
+			"/users/",
+			"bearer ",
+			"sk-",
+			"raw prompt",
+			"prompt text",
+			"raw transcript",
+			"transcript text",
+			"raw provider output",
+			"provider output",
+			"raw reasoning",
+			"reasoning text",
+			"data_base64",
+			"audio_base64",
+			"secret-value",
+		} {
+			if strings.Contains(lower, forbidden) {
+				return true
 			}
 		}
 	}
-	readiness.RealProviderReady = readiness.Selected != "" &&
-		readiness.Selected != "mock" &&
-		readiness.SelectedConfigured &&
-		(readiness.TextStreamReady || readiness.VoiceRealtimeReady)
-	return readiness
+	return false
 }
 
 func productTextStreamProviderReady(env []string, name string) bool {
@@ -1947,7 +2259,11 @@ func buildProductNextActions(report productReadinessReport) []string {
 		actions = append(actions, "start A21 Gateway with `make demo`")
 	}
 	if !report.Provider.RealProviderReady {
-		actions = append(actions, "configure a real A21 provider with A21_PROVIDER_PRIMARY plus its required env names")
+		if report.Provider.Selected != "" && report.Provider.Selected != "mock" && report.Provider.SelectedConfigured {
+			actions = append(actions, fmt.Sprintf("run `go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports` and pass it to product-readiness with --provider-smoke-report", report.Provider.Selected))
+		} else {
+			actions = append(actions, "configure a real A21 provider with A21_PROVIDER_PRIMARY plus its required env names")
+		}
 	}
 	if !report.V21.Healthy {
 		actions = append(actions, "start/configure the A21 V21 adapter boundary with A21_V21_ADAPTER_URL")

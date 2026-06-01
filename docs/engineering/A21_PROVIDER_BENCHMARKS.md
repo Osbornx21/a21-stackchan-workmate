@@ -85,6 +85,17 @@ Professional mode must not be promoted through an opaque realtime S2S benchmark 
 
 The current `latency-bench --mock`, `audio-front-end-eval`, `provider-smoke --stream`, `local-voice-loopback`, and `stackchan-fast-companion-turn` reports are partial pieces of this contract. Future real-provider work should extend this family instead of creating separate ad hoc gates.
 
+`provider-smoke --execute --stream --repeat 3 --output-dir reports` is the
+current real text-provider evidence source for product readiness. Its
+`a21.provider_smoke.v1` report can reduce only the provider gap, and only when
+`product-readiness --provider-smoke-report <report.json>` sees that the report
+matches the currently selected configured provider, is non-mock and
+route-eligible, contains three or more successful streaming attempts with
+first-byte and first-content timings, has no fallback marker, and passes the
+same no-prompt/no-transcript/no-output/no-reasoning/no-secret/no-full-URL
+redaction checks. It does not prove ASR, TTS, V21, physical playback, barge-in
+stop, or PRD launch acceptance by itself.
+
 `local-tts-smoke`, `local-voice-loopback`, and Gateway voice-pipeline summaries
 also carry an aggregate `audio_quality` block for generated PCM16 TTS audio.
 This is a host-side guardrail for symptoms such as clipping, low headroom,

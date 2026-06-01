@@ -42,6 +42,9 @@ func TestProviderSmokeDryRunReportsReadyWithoutLeakingSecrets(t *testing.T) {
 	if report.Status != ProviderSmokeReady {
 		t.Fatalf("status = %q, want ready", report.Status)
 	}
+	if report.SchemaVersion != ProviderSmokeSchemaVersion || report.GeneratedAtMS <= 0 {
+		t.Fatalf("schema/generated = %q/%d, want provider smoke identity", report.SchemaVersion, report.GeneratedAtMS)
+	}
 	if !report.Configured || report.Executed {
 		t.Fatalf("configured/executed = %v/%v, want true/false", report.Configured, report.Executed)
 	}

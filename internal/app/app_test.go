@@ -105,6 +105,7 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
 		GatewayURL:              server.URL,
 		DeviceID:                "stackchan-001",
+		ProviderSmokeReport:     writeProductReadinessProviderSmokeReportFixture(t),
 		V21AdapterSmokeReport:   writeProductReadinessV21AdapterSmokeReportFixture(t),
 		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
 	}, []string{
@@ -131,6 +132,118 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	}
 	if len(report.NextActions) != 0 {
 		t.Fatalf("next actions = %#v, want none", report.NextActions)
+	}
+}
+
+func TestProductReadinessDoesNotTreatProviderEnvOnlyAsRealReady(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+	})
+
+	if !report.Provider.SelectedConfigured || report.Provider.Selected != "deepseek" {
+		t.Fatalf("provider config = %+v, want selected deepseek configured", report.Provider)
+	}
+	if report.Provider.RealProviderReady || report.Provider.TextStreamReady || report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, want env-only config not to pass real provider gate", report.Provider)
+	}
+	if !containsProductAction(report.NextActions, "provider-smoke --provider") {
+		t.Fatalf("next actions = %#v, want provider-smoke evidence action", report.NextActions)
+	}
+}
+
+func TestProductReadinessAcceptsExecutedProviderSmokeEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessProviderSmokeReportFixture(t)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:          server.URL,
+		DeviceID:            "stackchan-001",
+		ProviderSmokeReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+	})
+
+	if !report.Provider.RealProviderReady || !report.Provider.TextStreamReady || !report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, want executed provider smoke to satisfy real text provider gate", report.Provider)
+	}
+	if report.Provider.Selected != "deepseek" || report.Provider.SmokeProvider != "deepseek" || report.Provider.SmokeStatus != "passed" {
+		t.Fatalf("provider selection/evidence = %+v, want deepseek passed smoke evidence", report.Provider)
+	}
+	if report.Provider.SmokeSourceReport != "a21-provider-smoke-real.json" || !report.Provider.SmokeExecuted {
+		t.Fatalf("provider smoke source = %+v, want basename source and executed=true", report.Provider)
+	}
+	if containsProductAction(report.NextActions, "provider-smoke") || containsProductAction(report.NextActions, "configure a real A21 provider") {
+		t.Fatalf("next actions = %#v, should not keep provider gap after valid smoke evidence", report.NextActions)
+	}
+	if report.LaunchReady {
+		t.Fatalf("launch_ready = true with provider-only evidence; full PRD gates must still block")
+	}
+}
+
+func TestProductReadinessRejectsUnsafeOrNonRealProviderSmokeEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	tests := []struct {
+		name   string
+		mutate func(string) string
+	}{
+		{
+			name: "mock provider",
+			mutate: func(data string) string {
+				data = strings.ReplaceAll(data, `"provider": "deepseek"`, `"provider": "mock"`)
+				data = strings.ReplaceAll(data, `"family": "text_stream"`, `"family": "mock"`)
+				data = strings.ReplaceAll(data, `"protocol": "openai_chat_completions"`, `"protocol": "mock"`)
+				return data
+			},
+		},
+		{
+			name: "not executed",
+			mutate: func(data string) string {
+				data = strings.ReplaceAll(data, `"status": "passed"`, `"status": "ready"`)
+				data = strings.ReplaceAll(data, `"executed": true`, `"executed": false`)
+				return data
+			},
+		},
+		{
+			name: "unsafe prompt leak",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "detail": "provider smoke request succeeded"`, `  "prompt": "raw prompt text",
+  "detail": "provider smoke request succeeded"`, 1)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := writeProductReadinessProviderSmokeReportFixtureFromData(t, tt.mutate(productReadinessProviderSmokeReportFixtureJSON()))
+
+			report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+				GatewayURL:          server.URL,
+				DeviceID:            "stackchan-001",
+				ProviderSmokeReport: fixture,
+			}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+			if report.Provider.RealProviderReady || report.Provider.SmokeEvidenceValid {
+				t.Fatalf("provider readiness = %+v, want invalid provider smoke not accepted", report.Provider)
+			}
+			if !containsProductFinding(report.Findings, "provider_smoke_report_invalid", "") {
+				t.Fatalf("findings = %#v, want provider_smoke_report_invalid", report.Findings)
+			}
+			var encoded bytes.Buffer
+			if err := writeJSONProductReadiness(&encoded, report); err != nil {
+				t.Fatal(err)
+			}
+			for _, forbidden := range []string{fixture, filepath.Dir(fixture), "raw prompt text", "http://", "https://", `"launch_ready": true`} {
+				if strings.Contains(encoded.String(), forbidden) {
+					t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+				}
+			}
+		})
 	}
 }
 
@@ -937,6 +1050,7 @@ func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(
 func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260601-191000.json", productReadinessProviderSmokeReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260601-191935.json", productReadinessXiaozhiHostReportFixtureJSON())
 	professionalFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
 	physicalFixture := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
@@ -947,7 +1061,8 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260601-161500.json", `{"schema_version":"a21.v21_adapter_smoke.v1","status":"passed"}`)
 	copyProductReadinessReportFixture(t, professionalFixture, filepath.Join(dir, "a21-xiaozhi-professional-bench-20260601-160123.json"))
 	copyProductReadinessReportFixture(t, physicalFixture, filepath.Join(dir, "a21-physical-stackchan-evidence-20260601-150001.json"))
-	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
 	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
 	originalLister := listFirmwareSerialDevices
 	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
@@ -966,6 +1081,9 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 	rendered := stdout.String()
 	for _, want := range []string{
+		`"real_provider_ready": true`,
+		`"smoke_evidence_valid": true`,
+		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
 		`"source_report": "a21-xiaozhi-voice-bench-20260601-191935.json"`,
 		`"professional_acceptance_status": "external_gateway_ready"`,
 		`"source_report": "a21-xiaozhi-professional-bench-20260601-160123.json"`,
@@ -983,6 +1101,9 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
 			t.Fatalf("latest readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
 		}
+	}
+	if strings.Contains(rendered, "configure a real A21 provider") {
+		t.Fatalf("latest readiness should not keep provider gap after provider smoke evidence: %s", rendered)
 	}
 	if strings.Contains(rendered, "v21_adapter_smoke_report_missing_field") {
 		t.Fatalf("latest readiness should not ingest adapter-smoke noise when professional proof exists: %s", rendered)
@@ -1527,6 +1648,21 @@ func writeProductReadinessV21ProfessionalReportFixtureFromData(t *testing.T, dat
 	return path
 }
 
+func writeProductReadinessProviderSmokeReportFixture(t *testing.T) string {
+	t.Helper()
+	return writeProductReadinessProviderSmokeReportFixtureFromData(t, productReadinessProviderSmokeReportFixtureJSON())
+}
+
+func writeProductReadinessProviderSmokeReportFixtureFromData(t *testing.T, data string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-provider-smoke-real.json")
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -1728,6 +1864,78 @@ func productReadinessV21ProfessionalReportFixtureJSON() string {
   "redaction_ok": true,
   "professional_acceptance_status": "host_mock_ready",
   "report_path": "a21-v21-professional-readiness-host.json"
+}`
+}
+
+func productReadinessProviderSmokeReportFixtureJSON() string {
+	return `{
+  "schema_version": "a21.provider_smoke.v1",
+  "generated_at_ms": 1780335600000,
+  "provider": "deepseek",
+  "family": "text_stream",
+  "protocol": "openai_chat_completions",
+  "status": "passed",
+  "configured": true,
+  "executed": true,
+  "route_eligible": true,
+  "stream": true,
+  "repeat": 3,
+  "http_status": 200,
+  "duration_ms": 488.25,
+  "attempts": [
+    {
+      "index": 1,
+      "http_status": 200,
+      "first_byte_ms": 112.5,
+      "first_content_ms": 188.75,
+      "total_duration_ms": 488.25,
+      "content_delta_count": 2,
+      "done": true
+    },
+    {
+      "index": 2,
+      "http_status": 200,
+      "first_byte_ms": 118.5,
+      "first_content_ms": 198.75,
+      "total_duration_ms": 492.25,
+      "content_delta_count": 2,
+      "done": true
+    },
+    {
+      "index": 3,
+      "http_status": 200,
+      "first_byte_ms": 120.5,
+      "first_content_ms": 208.75,
+      "total_duration_ms": 500.25,
+      "content_delta_count": 2,
+      "done": true
+    }
+  ],
+  "timing_summary": {
+    "repeat": 3,
+    "first_byte_p50_ms": 118.5,
+    "first_byte_p95_ms": 140.1,
+    "first_content_p50_ms": 198.75,
+    "first_content_p95_ms": 220.2,
+    "total_duration_p50_ms": 492.25,
+    "total_duration_p95_ms": 510.3
+  },
+  "trace_id": "a21-trace-provider-smoke-001",
+  "trace_markers": [
+    {"name": "provider_first_byte", "value_ms": 112.5},
+    {"name": "provider_first_content", "value_ms": 188.75}
+  ],
+  "metrics": [
+    {"name": "a21_provider_first_byte_ms", "value": 112.5},
+    {"name": "a21_provider_first_content_ms", "value": 188.75}
+  ],
+  "network_mode": "direct",
+  "endpoint_host": "api.deepseek.com",
+  "api_key_env": "A21_LAB_DEEPSEEK_API_KEY",
+  "model_env": "A21_DEEPSEEK_MODEL",
+  "base_url_env": "A21_DEEPSEEK_BASE_URL",
+  "detail": "provider smoke request succeeded",
+  "report_path": "a21-provider-smoke-real.json"
 }`
 }
 
@@ -2712,16 +2920,18 @@ func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T)
 	}
 	reportJSON := string(data)
 	for _, want := range []string{
+		`"schema_version": "a21.provider_smoke.v1"`,
+		`"generated_at_ms"`,
 		`"provider": "deepseek"`,
 		`"status": "ready"`,
 		`"executed": false`,
-		`"report_path"`,
+		`"report_path": "a21-provider-smoke-`,
 	} {
 		if !strings.Contains(reportJSON, want) {
 			t.Fatalf("provider smoke report missing %q: %s", want, reportJSON)
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
+	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", dir, filepath.ToSlash(dir)} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("provider smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
 		}

@@ -76,7 +76,7 @@ func runProviderSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "write provider smoke report: %v\n", err)
 			return 1
 		}
-		report.ReportPath = reportPath
+		report.ReportPath = filepath.Base(filepath.Clean(reportPath))
 	}
 	if err := writeJSONProviderSmoke(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode provider smoke report: %v\n", err)
@@ -280,6 +280,7 @@ func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeRe
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
 	}
+	ensureProviderSmokeReportIdentity(&report)
 	var reportPath string
 	var file *os.File
 	var err error
@@ -303,11 +304,20 @@ func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeRe
 		return "", fmt.Errorf("could not allocate unique provider smoke report path")
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	report.ReportPath = filepath.Base(filepath.Clean(reportPath))
 	if err := writeJSONProviderSmoke(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
+}
+
+func ensureProviderSmokeReportIdentity(report *providers.ProviderSmokeReport) {
+	if report.SchemaVersion == "" {
+		report.SchemaVersion = providers.ProviderSmokeSchemaVersion
+	}
+	if report.GeneratedAtMS <= 0 {
+		report.GeneratedAtMS = time.Now().UnixMilli()
+	}
 }
 func writeV21AdapterSmokeReport(outputDir string, report v21adapter.SmokeReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {

@@ -139,7 +139,7 @@ A21_HERMES_AGENT_URL=http://127.0.0.1:8642/v1 A21_HERMES_AGENT_KEY=<redacted> ma
 client and writes only redacted status, duration, safe content type, text
 length, event count, planner markers, and redaction booleans.
 
-When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
+When `--output-dir reports` is supplied, `provider-smoke` writes `reports/a21-provider-smoke-YYYYMMDD-HHMMSS-nnnnnnnnn.json`. The nanosecond suffix prevents concurrent smoke runs from overwriting each other. This report is redacted evidence for provider readiness or explicit smoke execution and now carries `schema_version=a21.provider_smoke.v1` plus `generated_at_ms`; the stored `report_path` is a basename only. It never stores API keys, model values, proxy URLs, full provider URLs, prompt text, generated content, or reasoning content. Streaming smoke records repeat count, first-byte, first-content, total-duration, fallback marker, and trace/metric names only.
 
 `provider-realtime-plan` intentionally rejects `--execute`. It is not a smoke test and not connectivity proof; it is a redacted readiness plan.
 
@@ -156,16 +156,25 @@ It validates provider wrapper event flow without dialing a provider. It is still
 
 Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until `provider-latency-bench` is promoted beyond mock/fixture scaffolding, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, `latency-bench --mock`, or the scaffolded `provider-latency-bench` shape, and must list unmeasured stages explicitly.
 
-`product-readiness` is the launch/demo status rollup. For V21, it treats
+`product-readiness` is the launch/demo status rollup. Provider env presence is
+configuration only, not real-provider readiness. Launch readiness requires the
+currently selected configured provider to be backed by an executed
+`provider-smoke --execute --stream --repeat 3` report passed with
+`--provider-smoke-report`, or found by `--use-latest-reports`. The rollup
+accepts only non-mock route-eligible text-stream reports with passed status,
+matching current provider selection, three or more successful streaming
+attempts, first-byte/first-content timing, no fallback marker, and no forbidden
+prompt/transcript/output/reasoning/full URL/proxy/key/local-path fields. For
+V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with
 `--v21-adapter-smoke-report`, or an external-Gateway
 `a21.xiaozhi_professional_bench.v1` report passed through
 `--v21-professional-report` after Gateway traces prove the V21 query markers.
 `--use-latest-reports` scans the selected output directory for the latest
-known A21 voice, professional, adapter-smoke, physical evidence, and wake-word
-firmware-plan reports, then ingests them through the same explicit report
-contracts. `--wake-word-firmware-plan <report.json>` is the explicit equivalent
+known A21 provider-smoke, voice, professional, adapter-smoke, physical evidence,
+and wake-word firmware-plan reports, then ingests them through the same explicit
+report contracts. `--wake-word-firmware-plan <report.json>` is the explicit equivalent
 for custom wake-word firmware planning evidence. The rollup
 ingests only fixed status/count/timing fields, keeps `prd_accepted=false`, and
 never stores query text, answer text, evidence bodies, full URLs, credentials,

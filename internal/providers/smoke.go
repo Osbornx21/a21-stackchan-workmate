@@ -17,6 +17,8 @@ import (
 type ProviderSmokeStatus string
 
 const (
+	ProviderSmokeSchemaVersion = "a21.provider_smoke.v1"
+
 	ProviderSmokeSkipped     ProviderSmokeStatus = "skipped"
 	ProviderSmokeReady       ProviderSmokeStatus = "ready"
 	ProviderSmokePassed      ProviderSmokeStatus = "passed"
@@ -25,6 +27,8 @@ const (
 )
 
 type ProviderSmokeReport struct {
+	SchemaVersion string                   `json:"schema_version"`
+	GeneratedAtMS int64                    `json:"generated_at_ms"`
 	Provider      string                   `json:"provider"`
 	Family        string                   `json:"family,omitempty"`
 	Protocol      string                   `json:"protocol"`
@@ -98,6 +102,10 @@ type ProviderSmokeOptions struct {
 	Client       *http.Client
 }
 
+func timeNowUnixMilli() int64 {
+	return time.Now().UnixMilli()
+}
+
 type providerSmokeSpec struct {
 	Name           string
 	Family         ProviderFamily
@@ -132,10 +140,12 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 	}
 	provider := strings.ToLower(rawProvider)
 	report := ProviderSmokeReport{
-		Provider:    safeProviderName(provider),
-		Status:      ProviderSmokeFailed,
-		Stream:      options.Stream,
-		NetworkMode: network.Mode,
+		SchemaVersion: ProviderSmokeSchemaVersion,
+		GeneratedAtMS: timeNowUnixMilli(),
+		Provider:      safeProviderName(provider),
+		Status:        ProviderSmokeFailed,
+		Stream:        options.Stream,
+		NetworkMode:   network.Mode,
 	}
 	if options.Stream {
 		report.Repeat = normalizedProviderSmokeRepeat(options.Repeat)

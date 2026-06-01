@@ -52,10 +52,12 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 	}
 	provider := strings.ToLower(rawProvider)
 	report := ProviderSmokeReport{
-		Provider:    safeProviderName(provider),
-		Protocol:    "websocket_realtime",
-		Status:      ProviderSmokeFailed,
-		NetworkMode: network.Mode,
+		SchemaVersion: ProviderSmokeSchemaVersion,
+		GeneratedAtMS: timeNowUnixMilli(),
+		Provider:      safeProviderName(provider),
+		Protocol:      "websocket_realtime",
+		Status:        ProviderSmokeFailed,
+		NetworkMode:   network.Mode,
 	}
 	if containsLegacyProviderIdentity(provider) {
 		report.Findings = append(report.Findings, ProviderCatalogFinding{
@@ -191,12 +193,14 @@ func (a *RealtimeWebSocketAdapter) Connect(ctx context.Context, session map[stri
 
 func (a *RealtimeWebSocketAdapter) Report() ProviderSmokeReport {
 	report := ProviderSmokeReport{
-		Provider:    safeProviderName(strings.ToLower(strings.TrimSpace(a.config.Provider))),
-		Protocol:    "websocket_realtime",
-		Status:      ProviderSmokeReady,
-		Configured:  true,
-		NetworkMode: a.config.NetworkPolicy.Mode,
-		Detail:      "realtime websocket adapter is configured",
+		SchemaVersion: ProviderSmokeSchemaVersion,
+		GeneratedAtMS: timeNowUnixMilli(),
+		Provider:      safeProviderName(strings.ToLower(strings.TrimSpace(a.config.Provider))),
+		Protocol:      "websocket_realtime",
+		Status:        ProviderSmokeReady,
+		Configured:    true,
+		NetworkMode:   a.config.NetworkPolicy.Mode,
+		Detail:        "realtime websocket adapter is configured",
 	}
 	if report.NetworkMode == "" {
 		report.NetworkMode = NetworkModeDirect
