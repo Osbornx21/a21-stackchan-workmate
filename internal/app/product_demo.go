@@ -1483,7 +1483,7 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 	if fixture.SchemaVersion != "a21.xiaozhi_voice_bench.v1" ||
 		fixture.ExecutionMode != "host_loopback" ||
 		fixture.BaselineScope != "host_only" ||
-		fixture.Execution.ProviderExecuted ||
+		!productXiaozhiProviderExecutionAllowed(fixture.Execution) ||
 		fixture.Execution.V21Executed ||
 		fixture.Execution.HardwareExecuted ||
 		*fixture.Redaction.PayloadsStored ||
@@ -1503,6 +1503,20 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 		FailureCount:          *fixture.Counts.FailureCount,
 		Execution:             execution,
 	}, nil
+}
+
+func productXiaozhiProviderExecutionAllowed(execution providerLatencyBenchExecution) bool {
+	if !execution.ProviderExecuted {
+		return true
+	}
+	return providerLatencySafeExecutionMode(execution.VoicePipelineExecutionMode) == "host_local" &&
+		execution.VoicePipelineObserved &&
+		execution.HostLocalASRExecuted &&
+		execution.HostLocalTextExecuted &&
+		execution.HostLocalTTSExecuted &&
+		providerLatencySafeIdentifier(execution.ASRProfile, false) != "" &&
+		providerLatencySafeIdentifier(execution.LLMProfile, false) != "" &&
+		providerLatencySafeIdentifier(execution.TTSProfile, false) != ""
 }
 
 func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productXiaozhiReportEvidence, []productReadinessFinding) {

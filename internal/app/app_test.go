@@ -2022,6 +2022,56 @@ func TestRunProductReadinessCommandAcceptsXiaozhiReportAndRedactsOutput(t *testi
 	}
 }
 
+func TestProductReadinessAcceptsProductChainXiaozhiReportWithoutPromotingProvider(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"provider_executed": false`, `"provider_executed": true`, 1))
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if !report.Voice.VoicePipeline.HostLoopbackCandidateReady {
+		t.Fatalf("voice pipeline = %+v, want host-loopback candidate ready", report.Voice.VoicePipeline)
+	}
+	if report.Provider.RealProviderReady || report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, xiaozhi host-loopback must not promote real provider smoke", report.Provider)
+	}
+	if containsProductFinding(report.Findings, "xiaozhi_report_invalid", "") {
+		t.Fatalf("findings = %#v, want product-chain xiaozhi report accepted", report.Findings)
+	}
+	if report.LaunchReady || report.Voice.VoicePipeline.PRDAccepted {
+		t.Fatalf("launch/voice PRD = %v/%v, host-loopback remains candidate only", report.LaunchReady, report.Voice.VoicePipeline.PRDAccepted)
+	}
+}
+
+func TestProductReadinessRejectsFixtureXiaozhiReportClaimingProviderExecution(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"provider_executed": false`, `"provider_executed": true`, 1)
+	data = strings.Replace(data, `"voice_pipeline_execution_mode": "host_local"`, `"voice_pipeline_execution_mode": "fixture"`, 1)
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, nil)
+
+	if report.Voice.VoicePipeline.HostLoopbackCandidateReady {
+		t.Fatalf("voice pipeline = %+v, want fixture provider-execution claim rejected", report.Voice.VoicePipeline)
+	}
+	if !containsProductFinding(report.Findings, "xiaozhi_report_invalid", "") {
+		t.Fatalf("findings = %#v, want invalid xiaozhi report finding", report.Findings)
+	}
+}
+
 func TestRunProductReadinessCommandAcceptsLocalVoiceLoopbackReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessLocalVoiceLoopbackReportFixture(t)
