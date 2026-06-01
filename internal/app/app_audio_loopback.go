@@ -2,6 +2,7 @@ package app
 
 import (
 	"a21.local/a21/internal/audio"
+	"a21.local/a21/internal/personality"
 	"a21.local/a21/internal/providers"
 	"context"
 	"encoding/json"
@@ -537,6 +538,14 @@ func applyLocalVoiceLoopbackTextStreamResult(report *localVoiceLoopbackReport, r
 	report.TextStreamDone = result.Done
 }
 func fastCompanionTextStreamPrompt(transcript string) string {
+	prompt, err := personality.Compose(personality.Options{
+		Mode:             personality.ModeWorkmate,
+		UserText:         transcript,
+		MaxResponseRunes: fastCompanionTextStreamMaxTokens,
+	})
+	if err == nil {
+		return prompt
+	}
 	cleaned := strings.TrimSpace(transcript)
 	if cleaned == "" {
 		cleaned = "我在。"
