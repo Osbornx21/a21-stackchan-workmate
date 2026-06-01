@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `ef8bc2b fix(readiness): accept host local xiaozhi product chain`
+Current baseline evidence: `9a9a68c feat(app): ingest wake word firmware package readiness`
 
 ## 0. Control Rule
 
@@ -21,19 +21,59 @@ Control-tower rules:
 - The Mac must not play audio; audio output evidence should use simulator files, redacted reports, or user/StackChan observation.
 - Lack of CoreS3 only blocks physical acceptance, not server/provider/protocol/simulator implementation.
 - No fake green: candidate/host-only evidence must never be promoted to PRD accepted by missing fields or zero defaults.
+- Local verification that touches doctor/network checks must preserve A21 direct
+  routing for localhost/LAN/private ranges. If `make verify` fails on
+  `proxy_direct_bypass_missing`, rerun with the documented A21 `NO_PROXY`
+  ranges; do not weaken doctor or tests to hide a proxy misconfiguration.
+
+## 0.1 Current Control Checkpoint
+
+This section is the compression-safe handoff point. Update it before launching new
+implementation waves.
+
+Current integration branch:
+
+- Branch: `codex/a21-integration-runtime-readiness-20260601`
+- HEAD: `9a9a68c feat(app): ingest wake word firmware package readiness`
+- Main worktree dirty state: only untracked `tools/__pycache__/`
+- Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
+  `launch_ready=false`, `demo_ready=true`
+
+Already merged into the current baseline and must not be rediscovered as active
+gaps:
+
+- Audio clarity: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` and
+  `960db85 test(audio): guard xiaozhi downlink clarity`
+- Canonical launch rollup: `9431423 feat(readiness): add canonical launch rollup`
+- Personality assets: `425c009 docs(personality): add A21 personality assets`
+- Host voice/V21 evidence surfaces: `3909204 feat(readiness): close host voice and V21 evidence gates`
+- Provider p99/evidence import: `3a8f526 feat(provider): add 5080lab selected provider evidence package`,
+  `bfb56a6 feat(provider): import 5080lab evidence bundles`,
+  `401242b feat(provider): package evidence bundles`
+- Wake-word UI/config/pending status and firmware package command:
+  `f74bd6e feat(wake-word): expose custom pending firmware status`,
+  `c3637ff feat(wake-word): package custom firmware artifact`,
+  `9a9a68c feat(app): ingest wake word firmware package readiness`
+
+Active workers that the control tower must poll before duplicating work:
+
+| Worker | Thread | Worktree | Branch | Owned slice | Current status |
+| --- | --- | --- | --- | --- | --- |
+| None | - | - | - | - | Both June 2 no-hardware workers merged into integration |
 
 ## 1. Current PRD Burn-Down Baseline
 
 | Slice | Current status | Current evidence | Full-launch gap |
 | --- | --- | --- | --- |
 | Phase 0 Go-first foundation | Done | CLI, host gate, doctor, provider default mock, namespace guard | Keep green while integrating |
-| Provider spine and text stream | Partial | Built-in profiles, text stream parser, smoke/repeat/redaction | Real selected provider execute reports and route eligibility closure |
-| Fast companion hybrid lane | Partial | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel | Real provider plus local ASR/TTS chain, three accepted rounds, physical playback evidence |
-| Realtime voice lane | Partial | Provider-neutral realtime fixture, explicit arm concept, professional boundary | Live provider lane remains opt-in and must not enter professional mode |
-| V21 professional mode | Contract done, launch partial | V21 adapter contract, checking feedback, evidence/cards/follow-ups | Executed adapter evidence and professional bench in launch rollup |
+| Provider spine and text stream | Server contract mostly done, real evidence pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import | 5080lab real non-mock executed smoke bundle |
+| Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, host p95 evidence | Real provider evidence plus physical StackChan audible playback and barge-in acceptance |
+| Realtime voice lane | Contract/fixture partial | Provider-neutral fixture and explicit arm concept are present in docs/code surfaces | Live provider lane smoke, one-shot arm proof, professional-mode rejection proof |
+| V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
-| Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards | CoreS3 physical audio/mic/touch/screen/servo/RGB/wake word acceptance |
-| Personality and playbooks | Missing asset tree | PRD section 8 and scattered copy strings | Canonical `docs/personality` tree and eventual runtime composition |
+| Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
+| Wake word | No-hardware command path done through package ingestion | Frontend/Gateway desired phrase persistence, pending firmware status, guarded package command, package report ingestion | Guarded build/flash and physical custom wake proof |
+| Personality and playbooks | Asset tree done | `docs/personality` assets merged | Runtime composition and scenario UX wiring only when needed |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
 
@@ -235,14 +275,22 @@ Done means:
 
 Run in this order:
 
-1. Control tower lands this plan and keeps the integration branch stable.
-2. Worker 1 implements Slice A launch rollup aggregator.
-3. Worker 2 implements Slice E personality assets in parallel because it is docs-only and disjoint.
-4. Worker 3 audits Slice C voice-chain tests specifically to ensure `8bfed60` cannot regress.
-5. After Slice A lands, dispatch Slice B to 5080lab for execute evidence.
-6. After Slice A lands, dispatch Slice D for V21 professional execution evidence.
-7. Keep Slice F ready for no-hardware implementation; do not flash until hardware window.
-8. When CoreS3 returns, open exactly one Slice G foreground hardware window.
+1. Produce or import a real 5080lab provider evidence bundle. The Mac control
+   tower can package/import returned redacted reports, but executed provider
+   smoke belongs on 5080lab.
+2. Dispatch a new no-hardware realtime voice lane worker. Scope: evidence/report
+   closure for the already-present fixture/live boundary, one-shot arm proof,
+   professional-mode rejection, and product-readiness visibility; no provider
+   execute on Mac.
+3. Dispatch a new no-hardware AgentTask bridge worker after realtime evidence
+   scope is stable. Scope: disabled-by-default smoke, progress/result/error
+   semantics, no first-audio-path integration.
+4. Dispatch a public/private/focus and professional-output privacy worker for
+   UX safety once runtime mode surfaces are stable. Scope: copy/state/tests, not
+   provider execution.
+5. When CoreS3 returns, open exactly one Slice G foreground hardware window for
+   physical online, microphone, speaker, barge-in stop, screen/touch/servo/RGB,
+   and custom wake-word acceptance.
 
 ## 5. Reporting Template
 
@@ -257,4 +305,12 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-The next implementation move is Slice A. It is the highest-leverage server-side change because it removes duplicated candidate gates while preserving full PRD acceptance. Slice E can run in parallel as a low-risk docs/product asset lane. Voice quality is not a new implementation gap; it stays as a regression check.
+The current next implementation move is controlled realtime voice evidence
+closure in a fresh worktree. Do not reimplement realtime transport from scratch:
+the repo already has provider-neutral session tests, one-shot physical arming,
+unarmed physical suppression, professional-mode rejection, and provider audio
+uplink/downlink mapping. The next slice should make those surfaces visible in
+the same product-readiness/reporting language used by provider, V21, wake-word,
+and physical evidence.
+
+Voice clarity is not an open implementation gap; it is a regression check.
