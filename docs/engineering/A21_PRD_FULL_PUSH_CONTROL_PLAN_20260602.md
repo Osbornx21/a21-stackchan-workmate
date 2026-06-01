@@ -66,8 +66,10 @@ gaps:
 
 Active workers that the control tower must poll before duplicating work:
 
-- None. The prior realtime and mode/privacy workers are idle; their accepted
-  work has been cherry-picked into the integration branch.
+| Worker | Thread | Worktree | Branch | Owned slice | Current status |
+| --- | --- | --- | --- | --- | --- |
+| Wake-word no-hardware closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | worker-managed from `codex/a21-integration-runtime-readiness-20260601` | Current custom wake-word package/readiness seam, no flash | Active; do not duplicate |
+| Provider 5080lab closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | worker-managed from `codex/a21-integration-runtime-readiness-20260601` | 5080lab provider smoke package/import/readiness seam, no local provider execute | Active; do not duplicate |
 
 Recently completed workers:
 
