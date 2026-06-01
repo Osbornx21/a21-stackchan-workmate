@@ -156,7 +156,13 @@ It validates provider wrapper event flow without dialing a provider. It is still
 
 Real ASR/TTS/LLM/S2S provider latency comparison is governed by `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. Until `provider-latency-bench` is promoted beyond mock/fixture scaffolding, provider comparisons must cite the existing A21 reports they used, such as `provider-smoke --stream`, `local-voice-loopback`, `stackchan-fast-companion-turn`, `audio-front-end-eval`, `latency-bench --mock`, or the scaffolded `provider-latency-bench` shape, and must list unmeasured stages explicitly.
 
-`product-readiness` is the launch/demo status rollup. For local speech, it now
+`product-readiness` is the launch/demo status rollup. For V21, it treats
+`A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
+requires an executed `v21-adapter-smoke --execute` report passed with
+`--v21-adapter-smoke-report`. The rollup ingests only the smoke status,
+execution flag, fixed paths, and response counts, keeps `prd_accepted=false`,
+and never stores query text, answer text, evidence bodies, full URLs,
+credentials, proxy values, or local paths. For local speech, it now
 recognizes either explicit `A21_SHERPA_ONNX_MODEL_DIR` /
 `A21_SHERPA_ONNX_ASR_MODEL_DIR` values or the repository-local `.a21-tools`
 sherpa-onnx model caches when their required model files are present. This is a

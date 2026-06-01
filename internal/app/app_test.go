@@ -103,6 +103,7 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
 		GatewayURL:              server.URL,
 		DeviceID:                "stackchan-001",
+		V21AdapterSmokeReport:   writeProductReadinessV21AdapterSmokeReportFixture(t),
 		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
 	}, []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
@@ -128,6 +129,43 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	}
 	if len(report.NextActions) != 0 {
 		t.Fatalf("next actions = %#v, want none", report.NextActions)
+	}
+}
+
+func TestProductReadinessBlocksLaunchWithoutExecutedV21AdapterSmoke(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	ttsModelDir := createProductReadinessTTSModelDir(t)
+	asrModelDir := createProductReadinessASRModelDir(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return []firmwarecheck.SerialDevice{{Path: "/dev/cu.usbmodem1101", USBModem: true, Usage: firmwarecheck.PortUsage{Exists: true}}}, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_LOCAL_TTS_ENGINE=sherpa_onnx",
+		"A21_SHERPA_ONNX_MODEL_DIR=" + ttsModelDir,
+		"A21_LOCAL_ASR_PROVIDER=sherpa_onnx",
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=" + asrModelDir,
+	})
+
+	if report.LaunchReady || report.Status == "real_launch_ready" {
+		t.Fatalf("status/launch = %q/%v, want launch blocked without executed V21 adapter smoke", report.Status, report.LaunchReady)
+	}
+	if report.V21.QueryExecuted || report.V21.Professional.Valid || report.V21.Professional.AdapterExecuted {
+		t.Fatalf("v21 readiness = %+v, want no executed professional evidence", report.V21)
+	}
+	if !containsProductAction(report.NextActions, "v21-adapter-smoke") {
+		t.Fatalf("next actions = %#v, want executed V21 adapter smoke action", report.NextActions)
 	}
 }
 
@@ -680,6 +718,61 @@ func TestRunProductReadinessCommandAcceptsV21ProfessionalReportAndRedactsOutput(
 	}
 }
 
+func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessV21AdapterSmokeReportFixture(t)
+	dir, err := os.MkdirTemp("", "a21-product-readiness-adapter-smoke-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(dir)
+	})
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--v21-adapter-smoke-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"query_executed": true`,
+		`"valid": true`,
+		`"checking_ack_within_1200": true`,
+		`"evidence_available": true`,
+		`"cards_available": true`,
+		`"follow_ups_available": true`,
+		`"evidence_count": 5`,
+		`"card_count": 1`,
+		`"follow_up_count": 1`,
+		`"professional_acceptance_status": "adapter_smoke_passed"`,
+		`"source_report": "a21-v21-adapter-smoke-real.json"`,
+		`"adapter_executed": true`,
+		`"prd_accepted": false`,
+		`"report_path"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "查一下语音唤醒误触发", "raw retrieved evidence", "provider output", "secret-token", "http://", "https://", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandRejectsUnsafeV21ProfessionalReportWithoutLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, strings.Replace(productReadinessV21ProfessionalReportFixtureJSON(), `  "report_path": "a21-v21-professional-readiness-host.json"`, `  "prompt": "professional readiness fixture query",
@@ -1017,6 +1110,35 @@ func writeProductReadinessV21ProfessionalReportFixtureFromData(t *testing.T, dat
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-v21-professional-readiness-host.json")
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessV21AdapterSmokeReportFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-v21-adapter-smoke-real.json")
+	data := `{
+  "schema_version": "a21.v21_adapter_smoke.v1",
+  "adapter": "a21-v21-adapter",
+  "protocol": "a21_v21_query",
+  "status": "passed",
+  "configured": true,
+  "executed": true,
+  "endpoint_host": "127.0.0.1:21121",
+  "query_path": "/a21/v21/query",
+  "health_path": "/healthz",
+  "duration_ms": 1330.653,
+  "confidence": 0.77,
+  "evidence_count": 5,
+  "speech_block_count": 1,
+  "screen_card_count": 1,
+  "follow_up_count": 1,
+  "report_path": "reports/a21-v21-adapter-smoke-real.json",
+  "detail": "v21 adapter query smoke succeeded"
+}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}

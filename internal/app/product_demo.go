@@ -25,6 +25,7 @@ type productReadinessOptions struct {
 	OutputDir               string
 	XiaozhiReport           string
 	V21ProfessionalReport   string
+	V21AdapterSmokeReport   string
 	PhysicalStackChanReport string
 	RequireReal             bool
 	OpenBrowser             bool
@@ -170,7 +171,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--physical-stackchan-report report.json] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -190,6 +191,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--v21-professional-report":
 			if !readStringOption(args, &i, stderr, "--v21-professional-report", &options.V21ProfessionalReport) {
+				return 2
+			}
+		case "--v21-adapter-smoke-report":
+			if !readStringOption(args, &i, stderr, "--v21-adapter-smoke-report", &options.V21AdapterSmokeReport) {
 				return 2
 			}
 		case "--physical-stackchan-report":
@@ -320,6 +325,12 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	if professionalEvidence.Valid {
 		report.V21.Professional = professionalEvidence
 	}
+	adapterSmokeEvidence, adapterSmokeFindings := loadProductV21AdapterSmokeReportEvidence(options.V21AdapterSmokeReport, report.V21)
+	report.Findings = append(report.Findings, adapterSmokeFindings...)
+	if adapterSmokeEvidence.Valid {
+		report.V21.QueryExecuted = true
+		report.V21.Professional = adapterSmokeEvidence
+	}
 	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
 	report.Findings = append(report.Findings, xiaozhiFindings...)
 	physicalEvidence, physicalFindings := loadProductPhysicalStackChanReportEvidence(options.PhysicalStackChanReport)
@@ -329,6 +340,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.LaunchReady = report.Gateway.Healthy &&
 		report.Provider.RealProviderReady &&
 		report.V21.Healthy &&
+		productV21ProfessionalReady(report.V21) &&
 		report.StackChan.PhysicalDeviceOnline &&
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady
@@ -417,6 +429,16 @@ func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID 
 		readiness.Status = "physical_offline"
 	}
 	return readiness
+}
+
+func productV21ProfessionalReady(v21 productV21Readiness) bool {
+	return v21.Healthy &&
+		v21.Professional.Valid &&
+		v21.Professional.CheckingAckWithin1200 &&
+		v21.Professional.EvidenceAvailable &&
+		v21.Professional.CardsAvailable &&
+		v21.Professional.FollowUpsAvailable &&
+		v21.Professional.AdapterExecuted
 }
 
 func productMicrophoneReady(status string) bool {
@@ -971,6 +993,113 @@ func productV21ProfessionalReportContainsForbiddenValue(value any) bool {
 	return false
 }
 
+type productV21AdapterSmokeReportFixture struct {
+	SchemaVersion   string   `json:"schema_version"`
+	Adapter         string   `json:"adapter"`
+	Protocol        string   `json:"protocol"`
+	Status          string   `json:"status"`
+	Configured      *bool    `json:"configured"`
+	Executed        *bool    `json:"executed"`
+	QueryPath       string   `json:"query_path"`
+	HealthPath      string   `json:"health_path"`
+	EvidenceCount   *int     `json:"evidence_count"`
+	ScreenCardCount *int     `json:"screen_card_count"`
+	FollowUpCount   *int     `json:"follow_up_count"`
+	Confidence      *float64 `json:"confidence"`
+}
+
+func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readiness) (productV21ProfessionalReadiness, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productV21ProfessionalReadiness{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productV21ProfessionalReportContainsForbiddenValue(raw) {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	var fixture productV21AdapterSmokeReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	if missingField := missingProductV21AdapterSmokeReportField(fixture); missingField != "" {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{missingProductV21AdapterSmokeReportFieldFinding(missingField)}
+	}
+	if fixture.SchemaVersion != "a21.v21_adapter_smoke.v1" ||
+		fixture.Adapter != "a21-v21-adapter" ||
+		fixture.Protocol != "a21_v21_query" ||
+		strings.TrimSpace(fixture.Status) != "passed" ||
+		!*fixture.Configured ||
+		!*fixture.Executed ||
+		fixture.QueryPath != v21adapter.QueryPath ||
+		fixture.HealthPath != v21adapter.HealthPath ||
+		*fixture.EvidenceCount <= 0 ||
+		*fixture.ScreenCardCount <= 0 ||
+		*fixture.FollowUpCount <= 0 {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	return productV21ProfessionalReadiness{
+		Valid:                        true,
+		CheckingAckWithin1200:        v21.CheckingFeedbackSupported && v21.MaxFirstResponseMS <= v21adapter.ProfessionalMaxFirstResponseMS,
+		EvidenceAvailable:            *fixture.EvidenceCount > 0,
+		CardsAvailable:               *fixture.ScreenCardCount > 0,
+		FollowUpsAvailable:           *fixture.FollowUpCount > 0,
+		EvidenceCount:                *fixture.EvidenceCount,
+		CardCount:                    *fixture.ScreenCardCount,
+		FollowUpCount:                *fixture.FollowUpCount,
+		ProfessionalAcceptanceStatus: "adapter_smoke_passed",
+		SourceReport:                 filepath.Base(filepath.Clean(path)),
+		AdapterExecuted:              true,
+		PRDAccepted:                  false,
+	}, nil
+}
+
+func missingProductV21AdapterSmokeReportField(fixture productV21AdapterSmokeReportFixture) string {
+	switch {
+	case fixture.Configured == nil:
+		return "configured"
+	case fixture.Executed == nil:
+		return "executed"
+	case fixture.EvidenceCount == nil:
+		return "evidence_count"
+	case fixture.ScreenCardCount == nil:
+		return "screen_card_count"
+	case fixture.FollowUpCount == nil:
+		return "follow_up_count"
+	default:
+		return ""
+	}
+}
+
+func missingProductV21AdapterSmokeReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "v21_adapter_smoke_report_missing_field",
+		Message: "V21 adapter smoke report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductV21AdapterSmokeReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "v21_adapter_smoke_report_invalid",
+		Message: "V21 adapter smoke report is invalid or unsafe",
+	}
+}
+
 func productSherpaTTSReady(env []string) bool {
 	modelDir := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_MODEL_DIR")), audio.DefaultSherpaONNXTTSModelDir())
 	return audio.SherpaONNXTTSModelDirReady(modelDir)
@@ -992,6 +1121,8 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if !report.V21.Healthy {
 		actions = append(actions, "start/configure the A21 V21 adapter boundary with A21_V21_ADAPTER_URL")
+	} else if !productV21ProfessionalReady(report.V21) {
+		actions = append(actions, "run `go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports` and pass it to product-readiness with --v21-adapter-smoke-report")
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		actions = append(actions, "bring a physical StackChan online against the A21 Gateway")
