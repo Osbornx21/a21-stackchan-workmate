@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `35e62aa fix(readiness): require repeated local voice loopback evidence`
+Current integration checkpoint: `680bbd8 chore(control): checkpoint launch rollup closure`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `35e62aa fix(readiness): require repeated local voice loopback evidence`
+  `680bbd8 chore(control): checkpoint launch rollup closure`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -60,9 +60,10 @@ Current integration branch:
   been imported yet.
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
-  passed after the provider runbook and reviewed-build receipt guard merges.
+  passed after the provider runbook, reviewed-build receipt guard, voice
+  readiness, and launch false-green guard merges.
 - Latest targeted verification:
-  `go test ./internal/app -run 'WakeWord|FirmwareBuildReceipt|FirmwarePackage|ProductReadiness' -count=1`
+  `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' go test ./internal/app -run 'ProductReadinessRejectsLocalVoiceLoopbackMissingRepeat|ProductReadiness|ServerSideReadinessBundle|ProviderEvidence|WakeWord|Xiaozhi|V21|Physical' -count=1`
   passed.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
@@ -89,6 +90,8 @@ gaps:
 - Canonical launch rollup: `9431423 feat(readiness): add canonical launch rollup`
 - Personality assets: `425c009 docs(personality): add A21 personality assets`
 - Host voice/V21 evidence surfaces: `3909204 feat(readiness): close host voice and V21 evidence gates`
+- Latest contextual readiness evidence selection:
+  `fd3fd14 fix(readiness): match latest contextual evidence reports`
 - Provider p99/evidence import: `3a8f526 feat(provider): add 5080lab selected provider evidence package`,
   `bfb56a6 feat(provider): import 5080lab evidence bundles`,
   `401242b feat(provider): package evidence bundles`
