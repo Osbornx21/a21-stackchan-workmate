@@ -4,8 +4,8 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current code baseline: `93cba07 fix(wake-word): require reviewed build evidence`
-Current plan checkpoint: this document revision
+Current integration checkpoint: `251682c chore(control): checkpoint provider and wake closures`
+Current active-worker checkpoint: this document revision
 
 ## 0. Control Rule
 
@@ -35,7 +35,8 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- Code HEAD before this plan checkpoint: `93cba07 fix(wake-word): require reviewed build evidence`
+- HEAD before this active-worker checkpoint:
+  `251682c chore(control): checkpoint provider and wake closures`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -110,7 +111,7 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
+| Voice product-chain readiness | `019e8550-ea8d-7bc2-b248-115a4574cacb` | `/Users/jiyurun/.codex/worktrees/95ac/New project` | must switch/create `codex/a21-voice-product-chain-readiness-20260602` | No-hardware continuous voice product-chain evidence/readiness for `/v1/xiaozhi`, voice bench, pacing, turn cancel, and product-readiness visibility | Active; poll before editing Gateway/audio/app voice/readiness code |
 
 Recently completed workers:
 
