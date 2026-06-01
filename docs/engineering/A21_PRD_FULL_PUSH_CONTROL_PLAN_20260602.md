@@ -4,8 +4,8 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `251682c chore(control): checkpoint provider and wake closures`
-Current active-worker checkpoint: this document revision
+Current integration checkpoint: `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
+Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
 
@@ -35,8 +35,8 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD before this active-worker checkpoint:
-  `251682c chore(control): checkpoint provider and wake closures`
+- HEAD before this post-worker checkpoint:
+  `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -46,6 +46,11 @@ Current integration branch:
 - Current server-side missing evidence is `provider_smoke`, `wake_word`.
 - Current positive no-hardware/server evidence: `server_side.v21_professional_evidence_ready=true`
   and `server_side.host_voice_loopback_ready=true`.
+- Current continuous voice state: `voice.continuous_voice_ready=true`; xiaozhi
+  host product-chain evidence now requires `repeat >= 3`, at least three answer
+  turns, at least three barge-in turns, zero failures, answer first-audio p95
+  under 1500 ms, and barge-in stop p95 under 300 ms before readiness can ingest
+  it.
 - Current provider state: `provider.real_provider_ready=false`; the 5080lab
   operator packet exists, but no real returned bundle has been imported yet.
 - Current wake-word state: `wake_word.product_ready=false` and
@@ -106,12 +111,14 @@ gaps:
   `6e83e72 chore(provider): add 5080lab runbook wrapper`
 - Wake-word reviewed-build authenticity guard:
   `93cba07 fix(wake-word): require reviewed build evidence`
+- Xiaozhi host product-chain evidence guard:
+  `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Voice product-chain readiness | `019e8550-ea8d-7bc2-b248-115a4574cacb` | `/Users/jiyurun/.codex/worktrees/95ac/New project` | must switch/create `codex/a21-voice-product-chain-readiness-20260602` | No-hardware continuous voice product-chain evidence/readiness for `/v1/xiaozhi`, voice bench, pacing, turn cancel, and product-readiness visibility | Active; poll before editing Gateway/audio/app voice/readiness code |
+| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
 
 Recently completed workers:
 
@@ -125,6 +132,7 @@ Recently completed workers:
 | No-hardware PRD gap audit | `019e8537-d17e-7320-a13d-6a122cab9dd0` | `/Users/jiyurun/.codex/worktrees/efbe/New project` | detached at `9939bda` | Read-only audit of current no-hardware gaps | Completed read-only; no merge needed |
 | Provider 5080lab operator packet | `019e8544-788b-7e21-924c-0af318e6d8fa` | `/Users/jiyurun/.codex/worktrees/fe41/New project` | `codex/a21-provider-5080lab-closure-20260602` | Print-only selected-provider 5080lab runbook with mock/unsafe path rejection | Merged via `6e83e72`; do not duplicate |
 | Wake build authenticity guard | `019e8544-42e4-7b82-816c-ecea282af127` | `/Users/jiyurun/.codex/worktrees/8e44/New project` | `codex/a21-wake-build-authenticity-guard-20260602` | Require explicit matching reviewed-build evidence before producing `a21-wake-word-build.json` | Merged via `93cba07`; do not duplicate |
+| Voice product-chain readiness | `019e8550-ea8d-7bc2-b248-115a4574cacb` | `/Users/jiyurun/.codex/worktrees/95ac/New project` | `codex/a21-voice-product-chain-readiness-20260602` | Require xiaozhi host product-chain reports to prove at least three answer and barge-in rounds before closing continuous voice readiness | Merged via `f1b1510`; do not duplicate |
 
 Current canonical PRD gaps from the latest product-readiness run:
 
@@ -152,10 +160,10 @@ Current next moves:
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. No-hardware voice/product closure: open a fresh worker worktree from the
-   integration branch to burn down the continuous voice product chain and launch
-   rollup visibility that do not require CoreS3. Do not reimplement audio
-   clarity; keep `8bfed60` as regression evidence.
+3. No-hardware launch-rollup review: open a fresh read/write worker only if it
+   finds a concrete false-green risk after reading the current product-readiness
+   matrix. Scope is stale/missing/mismatched report rejection for provider,
+   wake, voice, V21, and physical evidence; do not reimplement the voice chain.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -380,17 +388,13 @@ Run in this order:
 2. Wake/package lane: obtain real reviewed-build evidence for the current custom
    MultiNet build, then run receipt/package on the control machine. Keep this
    below activation and explicitly not product-ready.
-3. Dispatch one fresh no-hardware voice product-chain worker. Scope:
-   `xiaozhi-voice-bench`/readiness visibility for continuous
-   `OPUS -> PCM -> ASR -> LLM stream -> TTS -> OPUS paced downlink`, current
-   turn cancel, and no Mac audio playback. Write set must avoid provider/wake
-   files unless the worker first reports a real cross-cutting dependency.
-4. Dispatch one fresh no-hardware launch-rollup review worker only after item 3
-   lands. Scope: verify product-readiness cannot false-green when provider,
-   wake, or physical reports are absent/stale/mismatched.
-5. Dispatch AgentTask bridge or mode/privacy UX polish only after the voice and
+3. Dispatch one fresh no-hardware launch-rollup review worker. Scope: verify
+   product-readiness cannot false-green when provider, wake, voice, V21, or
+   physical reports are absent/stale/mismatched. It should commit only a real
+   rejection gap, not cosmetic governance.
+4. Dispatch AgentTask bridge or mode/privacy UX polish only after the voice and
    launch-rollup deltas are stable; these must not enter the first-audio path.
-6. When CoreS3 returns, open exactly one Slice G foreground hardware window for
+5. When CoreS3 returns, open exactly one Slice G foreground hardware window for
    physical online, microphone, speaker, barge-in stop, screen/touch/servo/RGB,
    and custom wake-word acceptance.
 
@@ -407,13 +411,13 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-The current next implementation move is a fresh no-hardware voice product-chain
-worker from `codex/a21-integration-runtime-readiness-20260601`. Do not revive
-old detached workers and do not patch this in the control thread unless the
-change is a merge/conflict fix. The worker should start by reading the current
-`xiaozhi-voice-bench`, Gateway xiaozhi pipeline, audio pacing, turn-cancel, and
-product-readiness evidence surfaces, then propose the smallest implementation
-slice that turns existing host/simulator evidence into PRD burn-down without
-requiring CoreS3.
+The current next implementation move is a fresh no-hardware launch-rollup
+false-green review worker from `codex/a21-integration-runtime-readiness-20260601`.
+Do not revive old detached workers and do not patch this in the control thread
+unless the change is a merge/conflict fix. The worker should start by reading
+the current `product-readiness`, `server-side-readiness-bundle`, provider
+evidence import, wake package ingestion, xiaozhi bench ingestion, V21
+professional reports, and physical evidence loaders. It should implement only a
+specific stale/missing/mismatched evidence rejection gap, if one remains.
 
 Voice clarity is not an open implementation gap; it is a regression check.
