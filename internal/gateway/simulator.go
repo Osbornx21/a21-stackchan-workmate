@@ -175,7 +175,7 @@ const simulatorHTML = `<!doctype html>
     }
     .readout {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
     .visibility {
@@ -402,11 +402,16 @@ const simulatorHTML = `<!doctype html>
             <option value="muted">muted</option>
             <option value="local_fallback">local_fallback</option>
           </select>
+          <select id="voiceMode" aria-label="voice mode">
+            <option value="edge_cloud">edge_cloud</option>
+            <option value="pure_cloud">pure_cloud</option>
+          </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
           <div class="metric"><label>State</label><div id="state">idle</div></div>
           <div class="metric"><label>Mode</label><div id="modeReadout">workmate</div></div>
+          <div class="metric"><label>Voice</label><div id="voiceModeReadout">edge_cloud</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -471,6 +476,7 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Identity</label><div id="registryIdentity">none</div></div>
             <div class="metric"><label>Connection</label><div id="registryConnection">none</div></div>
             <div class="metric"><label>Mode</label><div id="registryMode">none</div></div>
+            <div class="metric"><label>Voice</label><div id="registryVoiceMode">none</div></div>
             <div class="metric"><label>Expression</label><div id="registryExpression">none</div></div>
             <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
             <div class="metric"><label>Commit</label><div id="registryCommit">none</div></div>
@@ -506,6 +512,7 @@ const simulatorHTML = `<!doctype html>
       connection: document.getElementById('connection'),
       state: document.getElementById('state'),
       modeReadout: document.getElementById('modeReadout'),
+      voiceModeReadout: document.getElementById('voiceModeReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -528,6 +535,7 @@ const simulatorHTML = `<!doctype html>
       registryIdentity: document.getElementById('registryIdentity'),
       registryConnection: document.getElementById('registryConnection'),
       registryMode: document.getElementById('registryMode'),
+      registryVoiceMode: document.getElementById('registryVoiceMode'),
       registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
@@ -549,6 +557,7 @@ const simulatorHTML = `<!doctype html>
       professionalEvidence: document.getElementById('professionalEvidence'),
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
+      voiceMode: document.getElementById('voiceMode'),
       utterance: document.getElementById('utterance')
     };
     const sim = {
@@ -620,6 +629,10 @@ const simulatorHTML = `<!doctype html>
       document.body.dataset.mode = sim.mode;
       ui.modeReadout.textContent = sim.mode;
       updateVisibilityBadges();
+    }
+    function setVoiceMode(mode) {
+      ui.voiceMode.value = mode || 'edge_cloud';
+      ui.voiceModeReadout.textContent = ui.voiceMode.value;
     }
     function rememberEnvelope(envelope) {
       if (envelope.trace_id) {
@@ -825,11 +838,43 @@ const simulatorHTML = `<!doctype html>
         const age = typeof device.device_age_ms === 'number' ? ' / ' + Math.round(device.device_age_ms / 1000) + 's' : '';
         ui.registryConnection.textContent = (device.connection_status || 'none') + age;
         ui.registryMode.textContent = device.current_mode || 'none';
+        ui.registryVoiceMode.textContent = device.current_voice_mode || 'none';
         ui.registryExpression.textContent = device.current_expression || 'none';
         ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';
         ui.registryCommit.textContent = firmware.commit || 'none';
       } catch (err) {
         log('device registry unavailable');
+      }
+    }
+    async function refreshVoiceModes() {
+      try {
+        const response = await fetch('/v1/voice-modes', { cache: 'no-store' });
+        if (!response.ok) {
+          log('voice mode catalog error ' + response.status);
+          return;
+        }
+        const catalog = await response.json();
+        setVoiceMode(catalog.selected_voice_mode || 'edge_cloud');
+      } catch (err) {
+        log('voice mode catalog unavailable');
+      }
+    }
+    async function saveVoiceMode() {
+      try {
+        const response = await fetch('/v1/voice-modes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ voice_mode: ui.voiceMode.value })
+        });
+        if (!response.ok) {
+          log('voice mode save failed ' + response.status);
+          return;
+        }
+        const catalog = await response.json();
+        setVoiceMode(catalog.selected_voice_mode || ui.voiceMode.value);
+        refreshRegistry();
+      } catch (err) {
+        log('voice mode save unavailable');
       }
     }
     async function refreshWaterfall() {
@@ -1067,7 +1112,9 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
     document.getElementById('mockAudioBurst').addEventListener('click', sendMockAudioBurst);
     document.getElementById('saveWakeWord').addEventListener('click', saveWakeWordConfig);
+    ui.voiceMode.addEventListener('change', saveVoiceMode);
     refreshRegistry();
+    refreshVoiceModes();
     refreshWakeWordConfig();
     setMode(ui.mode.value);
     updateVisibilityBadges();

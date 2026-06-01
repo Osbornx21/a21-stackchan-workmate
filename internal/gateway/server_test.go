@@ -158,10 +158,13 @@ func TestSimulatorPageServed(t *testing.T) {
 		`data-testid="simulator-root"`,
 		"/ws/control",
 		"/v1/devices",
+		"/v1/voice-modes",
 		"/v1/traces",
 		"Device Registry",
 		`id="registryConnection"`,
 		`id="registryMode"`,
+		`id="voiceMode"`,
+		`id="registryVoiceMode"`,
 		`id="registryExpression"`,
 		"Waterfall",
 		"Latency Summary",
@@ -218,6 +221,115 @@ func TestSimulatorPageServed(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
 		}
+	}
+}
+
+func TestVoiceModesCatalogDefaultsToEdgeCloudAndListsPlannedPureCloud(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/v1/voice-modes", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		SchemaVersion string `json:"schema_version"`
+		Selected      string `json:"selected_voice_mode"`
+		Modes         []struct {
+			ID      string `json:"id"`
+			Status  string `json:"status"`
+			Default bool   `json:"default"`
+		} `json:"modes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "edge_cloud" {
+		t.Fatalf("catalog = %+v", response)
+	}
+	seen := map[string]string{}
+	defaults := 0
+	for _, mode := range response.Modes {
+		seen[mode.ID] = mode.Status
+		if mode.Default {
+			defaults++
+		}
+	}
+	if seen["edge_cloud"] != "available" || seen["pure_cloud"] != "planned" || defaults != 1 {
+		t.Fatalf("voice modes = %+v, statuses=%v defaults=%d", response.Modes, seen, defaults)
+	}
+}
+
+func TestVoiceModeSelectionPersistsInDeviceRegistryWithoutChangingProductMode(t *testing.T) {
+	server := NewServer()
+	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"pure_cloud"}`))
+	selectRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(selectRec, selectReq)
+	if selectRec.Code != http.StatusOK {
+		t.Fatalf("select status = %d, want 200: %s", selectRec.Code, selectRec.Body.String())
+	}
+
+	server.controlSequence("stackchan-sim-001", "a21-trace-voice-mode", "a21-session-voice-mode", []protocol.ControlEventPayload{{
+		State: protocol.ExpressionListening,
+		Mode:  protocol.ModeWorkmate,
+		Text:  "selected voice mode must not rewrite product mode",
+	}})
+
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(devicesRec, devicesReq)
+	if devicesRec.Code != http.StatusOK {
+		t.Fatalf("devices status = %d, want 200: %s", devicesRec.Code, devicesRec.Body.String())
+	}
+	var registry DeviceRegistryResponse
+	if err := json.Unmarshal(devicesRec.Body.Bytes(), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
+	}
+	device := registry.Devices[0]
+	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "pure_cloud" {
+		t.Fatalf("device state = %+v, want product mode workmate and voice_mode pure_cloud", device)
+	}
+	if strings.Contains(devicesRec.Body.String(), "selected voice mode must not rewrite product mode") {
+		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
+	}
+}
+
+func TestFastCompanionRejectsPlannedVoiceModeWithoutProviderOrV21Execution(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true}},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{
+		VoiceProvider: provider,
+		V21Client:     v21,
+	})
+	handler := server.Handler()
+
+	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"pure_cloud"}`))
+	selectRec := httptest.NewRecorder()
+	handler.ServeHTTP(selectRec, selectReq)
+	if selectRec.Code != http.StatusOK {
+		t.Fatalf("select status = %d, want 200: %s", selectRec.Code, selectRec.Body.String())
+	}
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","mode":"workmate","local_audio":{"asr_provider":"mock_asr","first_partial_ms":42,"final_transcript_chars":4}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for planned voice mode: %s", rec.Code, rec.Body.String())
+	}
+	if provider.startCalls != 0 || v21.calls != 0 {
+		t.Fatalf("planned voice mode executed provider/v21: provider=%d v21=%d", provider.startCalls, v21.calls)
+	}
+	if !strings.Contains(rec.Body.String(), "voice_mode") || strings.Contains(rec.Body.String(), "should not run") {
+		t.Fatalf("unexpected error body: %s", rec.Body.String())
 	}
 }
 

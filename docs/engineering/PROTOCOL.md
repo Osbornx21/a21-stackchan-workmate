@@ -239,6 +239,10 @@ by the xiaozhi runtime. Responses may include control events and audio playback
 chunks, but must not echo transcripts, provider text, raw audio, base64 input
 audio, full URLs, credentials, proxy values, or local paths.
 
+Fast companion accepts only executable voice modes. If the selected
+`voice_mode` is planned, such as `pure_cloud`, the endpoint returns `409` before
+provider or V21 execution.
+
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future
@@ -342,6 +346,14 @@ A21 mode values are semantic product and office-state signals, not provider name
 - `error`
 
 Only `professional` with `professional_only` privacy is allowed to trigger the V21 adapter path. `focus`, `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context. Explicit `private` privacy keeps Agent I/O and professional/V21 evidence routing blocked, even if a caller also asks for professional evidence.
+
+`voice_mode` is a separate operator selection signal, not a replacement for
+product `mode` and not a provider router. `GET /v1/voice-modes` returns
+`a21.gateway.voice_modes.v1` with the selected voice mode and the small catalog:
+`edge_cloud` is the available default; `pure_cloud` is visible as planned
+spike-only. Selecting a planned voice mode persists visible state, but Gateway
+must reject relevant turn execution honestly instead of silently switching
+provider, V21, or firmware behavior.
 
 `local_fallback` is both a mode and an expression state. Gateway enters it when
 the local voice/provider pipeline cannot produce a playable answer after local
@@ -451,6 +463,7 @@ Gateway also records the device's current control state for office acceptance:
 - `connection_status`: computed at `/v1/devices` read time as `online`, `stale`, or `unknown`
 - `device_age_ms`: age of the latest observed device/control event at read time
 - `current_mode`: latest semantic mode from A21 `control.event`
+- `current_voice_mode`: current explicit operator voice-mode selection
 - `current_expression`: latest expression/render state from A21 `control.event`
 - `playback_stream_id`: active speaking stream when one is present
 - `capabilities`: latest semantic device capability map reported by firmware or simulator
