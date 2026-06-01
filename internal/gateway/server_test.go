@@ -1580,6 +1580,110 @@ func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.
 	}
 }
 
+func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-playback",
+		"session_id": "a21-session-xiaozhi-playback",
+		"device_id":  "stackchan-debug-001",
+		"features": map[string]any{
+			"mcp":           true,
+			"aec":           true,
+			"device_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "playback",
+		"playback":   "start",
+		"stream_id":  "a21-xiaozhi-stream-001",
+		"trace_id":   "a21-trace-xiaozhi-playback",
+		"session_id": "a21-session-xiaozhi-playback",
+		"device_id":  "stackchan-debug-001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-playback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "device.playback.start") {
+		t.Fatalf("trace missing device playback start: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "device.playback.start" {
+		t.Fatalf("last event = %#v, want device.playback.start", registry["last_event"])
+	}
+}
+
+func TestXiaozhiStockProfileRejectsPlaybackStartDeviceEvent(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stock-playback",
+		"session_id": "a21-session-xiaozhi-stock-playback",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":      "device",
+		"kind":      "playback",
+		"playback":  "start",
+		"stream_id": "a21-xiaozhi-stream-001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reply := readXiaozhiJSON(t, ctx, conn)
+	if reply["type"] != "error" || reply["code"] != "device_events_disabled" {
+		t.Fatalf("reply = %#v, want device_events_disabled error", reply)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-stock-playback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "device.playback.start") {
+		t.Fatalf("stock profile recorded playback start: %s", body)
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)

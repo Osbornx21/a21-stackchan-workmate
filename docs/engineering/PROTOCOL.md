@@ -145,13 +145,16 @@ extension events only when the connected profile explicitly advertises
 `features.device_events=true` or the host has selected an A21 debug/StackChan
 extension profile.
 
-Current extension event kinds are `state`, `face`, `display`, `motion`, and
-`heartbeat`. Values are provider-neutral A21 semantics:
+Current extension event kinds are `state`, `face`, `display`, `motion`,
+`heartbeat`, and debug-profile-only `playback`. Values are provider-neutral A21
+semantics:
 
 - `state`: `idle`, `listening`, `thinking`, `speaking`, `error`
 - `face`: `idle`, `attentive`, `thinking`, `speaking`, `happy`, `error`
 - `display`: `status`, `asr`, `tts`
 - `motion`: `look_up`, `nod`, `shake`, `stop`, `dance`
+- `playback`: `start`, with optional `stream_id`; accepted only after
+  `features.device_events=true` and recorded as `device.playback.start`
 
 Motion `y_angle` is clamped to 5-85 when present. Inline assistant text marks
 such as `[face:happy]` and `[motion:nod]` are parsed on the host by stripping

@@ -149,6 +149,9 @@ Gateway WS-1 now records xiaozhi compatibility markers for the server seam:
 Client `hello.features` are represented only as sanitized `/v1/devices`
 capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 `device_events` and `debug_metrics` are marked as an isolated debug profile.
+When a debug Xiaozhi client negotiates `features.device_events=true`, a
+`type=device`, `kind=playback`, `playback=start` extension is recorded as
+`device.playback.start`; the same message is rejected for stock profiles.
 The xiaozhi turn foundation adds `xiaozhi.turn.start` on `listen/start` and
 `xiaozhi.turn.cancel`, `turn_cancelled`, and `downlink_queue_cleared` on
 `abort`; barge-in-style abort reasons also add `barge_in_detected` alongside

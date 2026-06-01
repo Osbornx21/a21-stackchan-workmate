@@ -1173,6 +1173,9 @@ func parseXiaozhiProtocolVersionHeader(raw string) (int, error) {
 }
 
 func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
+	if xiaozhiTextMessageType(data) == "device" {
+		return s.handleXiaozhiDeviceExtension(ctx, conn, session, data)
+	}
 	frame, err := xiaozhitransport.ParseTextFrame(data, xiaozhitransport.DirectionDeviceToServer, session.identity())
 	if err != nil {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
@@ -1251,6 +1254,47 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		}, "abort")
 	}
 	return true
+}
+
+func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
+	if !session.helloReceived {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before device events"))
+		return true
+	}
+	if !session.features.DeviceEvents {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation"))
+		return true
+	}
+	event, err := xiaozhitransport.ParseDeviceExtensionEvent(data)
+	if err != nil {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		return true
+	}
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindPlayback:
+		if event.Value != "start" {
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
+			return true
+		}
+		s.recordXiaozhiPlaybackStart(session, event.StreamID)
+		return true
+	case xiaozhitransport.DeviceEventKindHeartbeat:
+		s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
+		return true
+	default:
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
+		return true
+	}
+}
+
+func xiaozhiTextMessageType(data []byte) string {
+	var common struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(data, &common); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.ToLower(common.Type))
 }
 
 func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
@@ -1413,6 +1457,32 @@ func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event stri
 	record.LastTraceID = session.traceID
 	record.LastSessionID = session.sessionID
 	record.LastSeenMS = nowMS
+	s.devices[session.deviceID] = record
+}
+
+func (s *Server) recordXiaozhiPlaybackStart(session *xiaozhiSession, streamID string) {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return
+	}
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "device.playback.start", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[session.deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = session.deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.LastEvent = protocol.DeviceEventKind("device.playback.start")
+	record.LastTraceID = session.traceID
+	record.LastSessionID = session.sessionID
+	record.LastSeenMS = nowMS
+	if streamID != "" {
+		record.PlaybackStream = streamID
+	}
 	s.devices[session.deviceID] = record
 }
 

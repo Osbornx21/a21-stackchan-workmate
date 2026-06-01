@@ -75,6 +75,7 @@ func TestDeviceExtensionSchemaValidatesEnumsAndClamp(t *testing.T) {
 		{name: "display", event: DeviceExtensionEvent{Kind: DeviceEventKindDisplay, Value: "asr"}, want: DeviceExtensionEvent{Kind: DeviceEventKindDisplay, Value: "asr"}},
 		{name: "motion low clamp", event: DeviceExtensionEvent{Kind: DeviceEventKindMotion, Value: "look_up", YAngle: -20}, want: DeviceExtensionEvent{Kind: DeviceEventKindMotion, Value: "look_up", YAngle: 5}},
 		{name: "heartbeat", event: DeviceExtensionEvent{Kind: DeviceEventKindHeartbeat}, want: DeviceExtensionEvent{Kind: DeviceEventKindHeartbeat}},
+		{name: "playback start", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-xiaozhi-stream-001"}, want: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-xiaozhi-stream-001"}},
 	}
 
 	for _, tc := range tests {
@@ -87,6 +88,24 @@ func TestDeviceExtensionSchemaValidatesEnumsAndClamp(t *testing.T) {
 				t.Fatalf("normalized = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseDeviceExtensionPlaybackStartRuntimeEcho(t *testing.T) {
+	event, err := ParseDeviceExtensionEvent([]byte(`{
+		"type":"device",
+		"kind":"playback",
+		"playback":"start",
+		"stream_id":"a21-xiaozhi-stream-001",
+		"trace_id":"a21-trace-xiaozhi-playback",
+		"session_id":"a21-session-xiaozhi-playback",
+		"device_id":"stackchan-debug-001"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Kind != DeviceEventKindPlayback || event.Value != "start" || event.StreamID != "a21-xiaozhi-stream-001" {
+		t.Fatalf("event = %+v, want playback start with stream id", event)
 	}
 }
 

@@ -30,12 +30,14 @@ const (
 	DeviceEventKindDisplay   DeviceEventKind = "display"
 	DeviceEventKindMotion    DeviceEventKind = "motion"
 	DeviceEventKindHeartbeat DeviceEventKind = "heartbeat"
+	DeviceEventKindPlayback  DeviceEventKind = "playback"
 )
 
 type DeviceExtensionEvent struct {
-	Kind   DeviceEventKind
-	Value  string
-	YAngle int
+	Kind     DeviceEventKind
+	Value    string
+	YAngle   int
+	StreamID string
 }
 
 type InlineDeviceMarks struct {
@@ -50,7 +52,9 @@ type deviceExtensionWire struct {
 	Face      string `json:"face,omitempty"`
 	Display   string `json:"display,omitempty"`
 	Motion    string `json:"motion,omitempty"`
+	Playback  string `json:"playback,omitempty"`
 	YAngle    *int   `json:"y_angle,omitempty"`
+	StreamID  string `json:"stream_id,omitempty"`
 	TraceID   string `json:"trace_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	DeviceID  string `json:"device_id,omitempty"`
@@ -104,8 +108,11 @@ func ParseDeviceExtensionEvent(data []byte) (DeviceExtensionEvent, error) {
 			event.YAngle = *wire.YAngle
 		}
 	case DeviceEventKindHeartbeat:
+	case DeviceEventKindPlayback:
+		event.Value = wire.Playback
+		event.StreamID = wire.StreamID
 	default:
-		event.Value = firstNonEmpty(wire.State, wire.Face, wire.Display, wire.Motion)
+		event.Value = firstNonEmpty(wire.State, wire.Face, wire.Display, wire.Motion, wire.Playback)
 	}
 	return NormalizeDeviceExtensionEvent(event)
 }
@@ -118,9 +125,13 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 	}
 
 	normalized := DeviceExtensionEvent{
-		Kind:   kind,
-		Value:  value,
-		YAngle: event.YAngle,
+		Kind:     kind,
+		Value:    value,
+		YAngle:   event.YAngle,
+		StreamID: strings.TrimSpace(event.StreamID),
+	}
+	if containsLegacyIdentity(normalized.StreamID) {
+		return DeviceExtensionEvent{}, fmt.Errorf("%w: device extension", ErrLegacyIdentity)
 	}
 	switch kind {
 	case DeviceEventKindState:
@@ -145,6 +156,10 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 	case DeviceEventKindHeartbeat:
 		if value != "" {
 			return DeviceExtensionEvent{}, fmt.Errorf("%w: heartbeat", ErrUnsupportedDeviceEventValue)
+		}
+	case DeviceEventKindPlayback:
+		if !allowedDeviceEventValue(value, "start") {
+			return DeviceExtensionEvent{}, fmt.Errorf("%w: playback", ErrUnsupportedDeviceEventValue)
 		}
 	default:
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: kind", ErrUnsupportedDeviceEventKind)
@@ -209,6 +224,9 @@ func assignDeviceEventValue(wire *deviceExtensionWire, event DeviceExtensionEven
 			yAngle := event.YAngle
 			wire.YAngle = &yAngle
 		}
+	case DeviceEventKindPlayback:
+		wire.Playback = event.Value
+		wire.StreamID = event.StreamID
 	}
 }
 
