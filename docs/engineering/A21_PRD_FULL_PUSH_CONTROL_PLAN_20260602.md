@@ -129,9 +129,9 @@ gaps:
 
 Active workers that the control tower must poll before duplicating work:
 
-No active workers at this checkpoint. Detached or old-base worktrees remain
-reference material only unless the control tower explicitly assigns a fresh
-small worker from current `2120ee6`.
+| Worker | Thread | Worktree | Branch | Owned slice | Current status |
+| --- | --- | --- | --- | --- | --- |
+| Explicit voice-mode selector | `019e8573-d562-75d2-b126-7bfb72d6af1f` | `/Users/jiyurun/.codex/worktrees/7142/New project` | expected `codex/a21-mainline-voice-mode-selector-20260602` from `1a7bed9` | Slice H explicit `voice_mode` catalog/status/selection without hidden routing | Active write worker; poll before touching Gateway/simulator/app voice-mode code |
 
 Recently completed workers:
 
