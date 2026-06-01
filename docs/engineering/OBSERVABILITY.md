@@ -14,6 +14,8 @@ The current CLI preflight/doctor report emits:
 - external DNS probe IP
 - proxy env variable names without values
 - current voice provider health through the provider adapter contract
+- wake-word runtime/config status, including `pending_firmware_build` when a
+  custom MultiNet profile is stored but stock Xiaozhi WakeNet remains active
 - optional V21 adapter health when `A21_V21_ADAPTER_URL` is configured
 
 The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.

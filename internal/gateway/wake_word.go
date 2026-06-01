@@ -91,7 +91,19 @@ func (s *Server) handleWakeWordConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loadWakeWordConfig() (WakeWordConfigRequest, error) {
-	path := strings.TrimSpace(s.wakeWordConfigPath)
+	return loadWakeWordConfigFromPath(s.wakeWordConfigPath)
+}
+
+func LoadWakeWordConfigStatus(configuredPath string) (WakeWordConfigResponse, error) {
+	config, err := loadWakeWordConfigFromPath(wakeWordConfigPath(configuredPath))
+	if err != nil {
+		return WakeWordConfigResponse{}, err
+	}
+	return wakeWordResponse(config), nil
+}
+
+func loadWakeWordConfigFromPath(configuredPath string) (WakeWordConfigRequest, error) {
+	path := strings.TrimSpace(configuredPath)
 	if path == "" {
 		return defaultWakeWordConfig(), nil
 	}

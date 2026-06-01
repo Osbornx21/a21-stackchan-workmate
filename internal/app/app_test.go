@@ -2130,6 +2130,50 @@ func TestRunDoctorIncludesFirmwareSection(t *testing.T) {
 	}
 }
 
+func TestRunDoctorIncludesWakeWordPendingFirmwareBuildWithoutPathLeaks(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "a21-wake-word.json")
+	if err := os.WriteFile(configPath, []byte(`{
+		"mode":"custom_multinet",
+		"desired_phrase":"小阿二一",
+		"desired_pinyin":"xiao a er yi",
+		"threshold":35
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_WAKE_WORD_CONFIG_PATH", configPath)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"wake_word"`,
+		`"schema_version": "a21.gateway.wake_word.v1"`,
+		`"mode": "custom_multinet"`,
+		`"active_phrase": "你好小智"`,
+		`"desired_phrase": "小阿二一"`,
+		`"desired_pinyin": "xiao a er yi"`,
+		`"threshold": 35`,
+		`"runtime_status": "pending_firmware_build"`,
+		`"firmware_build_required": true`,
+		`"code": "a21_wake_word_firmware_build_required"`,
+		`"wake_word_firmware_build_required"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{configPath, dir, "A21_WAKE_WORD_CONFIG_PATH", "secret", "token", "http://", "https://"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor wake-word report leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunDoctorIncludesProxyPolicy(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

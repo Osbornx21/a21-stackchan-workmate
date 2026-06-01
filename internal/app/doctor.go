@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"a21.local/a21/internal/firmwarecheck"
+	"a21.local/a21/internal/gateway"
 	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/runtimeguard"
 	"a21.local/a21/internal/v21adapter"
@@ -47,6 +48,7 @@ type doctorReport struct {
 	Proxy       runtimeguard.ProxyPolicyReport `json:"proxy"`
 	Firmware    firmwareDoctorReport           `json:"firmware"`
 	Voice       voiceDoctorReport              `json:"voice"`
+	WakeWord    wakeWordDoctorReport           `json:"wake_word"`
 	V21         v21DoctorReport                `json:"v21"`
 }
 
@@ -91,13 +93,30 @@ type voiceDoctorReport struct {
 	Findings        []runtimeguard.Finding          `json:"findings"`
 }
 
+type wakeWordDoctorReport struct {
+	SchemaVersion         string                 `json:"schema_version"`
+	Mode                  string                 `json:"mode"`
+	ActivePhrase          string                 `json:"active_phrase"`
+	ActivePinyin          string                 `json:"active_pinyin"`
+	DesiredPhrase         string                 `json:"desired_phrase,omitempty"`
+	DesiredPinyin         string                 `json:"desired_pinyin,omitempty"`
+	Threshold             int                    `json:"threshold"`
+	RuntimeStatus         string                 `json:"runtime_status"`
+	RuntimeConfigurable   bool                   `json:"runtime_configurable"`
+	FirmwareBuildRequired bool                   `json:"firmware_build_required"`
+	Code                  string                 `json:"code,omitempty"`
+	Findings              []runtimeguard.Finding `json:"findings"`
+}
+
 func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot string, currentCommit string) doctorReport {
 	firmware := buildFirmwareDoctorReport(projectRoot, currentCommit)
 	voice := buildVoiceDoctorReport()
+	wakeWord := buildWakeWordDoctorReport()
 	v21 := buildV21DoctorReport(os.Getenv("A21_V21_ADAPTER_URL"))
 	findings := append([]runtimeguard.Finding{}, preflight.Result.Findings...)
 	findings = append(findings, firmware.Findings...)
 	findings = append(findings, voice.Findings...)
+	findings = append(findings, wakeWord.Findings...)
 	findings = append(findings, v21.Findings...)
 	return doctorReport{
 		Result:      runtimeguard.NewResult(findings),
@@ -105,6 +124,7 @@ func buildDoctorReport(preflight runtimeguard.PreflightReport, projectRoot strin
 		Proxy:       preflight.Proxy,
 		Firmware:    firmware,
 		Voice:       voice,
+		WakeWord:    wakeWord,
 		V21:         v21,
 	}
 }
@@ -155,6 +175,47 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 			Severity: severity,
 			Message:  finding.Message,
 			Detail:   finding.Detail,
+		})
+	}
+	return report
+}
+
+func buildWakeWordDoctorReport() wakeWordDoctorReport {
+	status, err := gateway.LoadWakeWordConfigStatus("")
+	if err != nil {
+		return wakeWordDoctorReport{
+			SchemaVersion: "a21.gateway.wake_word.v1",
+			Mode:          "unknown",
+			RuntimeStatus: "unavailable",
+			Findings: []runtimeguard.Finding{
+				{
+					Code:     "wake_word_config_unavailable",
+					Severity: runtimeguard.SeverityWarn,
+					Message:  "A21 wake word config could not be read",
+					Detail:   "invalid_or_unavailable",
+				},
+			},
+		}
+	}
+	report := wakeWordDoctorReport{
+		SchemaVersion:         status.SchemaVersion,
+		Mode:                  status.Mode,
+		ActivePhrase:          status.ActivePhrase,
+		ActivePinyin:          status.ActivePinyin,
+		DesiredPhrase:         status.DesiredPhrase,
+		DesiredPinyin:         status.DesiredPinyin,
+		Threshold:             status.Threshold,
+		RuntimeStatus:         status.RuntimeStatus,
+		RuntimeConfigurable:   status.RuntimeConfigurable,
+		FirmwareBuildRequired: status.FirmwareBuildRequired,
+		Code:                  status.Code,
+	}
+	if status.FirmwareBuildRequired {
+		report.Findings = append(report.Findings, runtimeguard.Finding{
+			Code:     "wake_word_firmware_build_required",
+			Severity: runtimeguard.SeverityWarn,
+			Message:  "Custom wake word config is pending a guarded firmware build and flash",
+			Detail:   status.Mode,
 		})
 	}
 	return report
