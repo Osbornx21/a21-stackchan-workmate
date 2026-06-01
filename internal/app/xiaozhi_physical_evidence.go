@@ -66,6 +66,9 @@ type xiaozhiInstrumentObservationReport struct {
 	Instrument                        string                             `json:"instrument"`
 	PhysicalSoundObserved             bool                               `json:"physical_sound_observed"`
 	ObservedNonzeroAudibleEnergy      bool                               `json:"observed_nonzero_audible_energy"`
+	DevicePlaybackObserved            bool                               `json:"device_playback_observed,omitempty"`
+	DevicePlaybackObservationSource   string                             `json:"device_playback_observation_source,omitempty"`
+	GatewayFirstDownlinkToPlaybackMS  float64                            `json:"gateway_first_downlink_to_device_playback_start_ms,omitempty"`
 	GatewayFirstDownlinkToAudibleMS   float64                            `json:"gateway_first_downlink_to_audible_ms"`
 	SpeechEndToFirstAudibleResponseMS float64                            `json:"speech_end_to_first_audible_response_ms"`
 	AudibleEnergyRMS                  float64                            `json:"audible_energy_rms"`
@@ -232,6 +235,16 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 		if observation != nil {
 			report.CanonicalMetrics.DeviceDownlinkFirstFrameMS = report.GatewayMetrics.GatewayAnswerFirstDownlinkMS
 			report.CanonicalMetrics.DevicePlaybackStartMS = physicalStackChanMetricFromInt64(trace.Summary.DevicePlaybackStartMS, "device_runtime_echo")
+			if !report.CanonicalMetrics.DevicePlaybackStartMS.Available && xiaozhiInstrumentPlaybackObservationValid(*observation) {
+				report.CanonicalMetrics.DevicePlaybackStartMS = physicalStackChanMetric{
+					Available: true,
+					ValueMS:   observation.GatewayFirstDownlinkToPlaybackMS,
+					Source:    "trusted_runtime_observation",
+				}
+			}
+			if observation.DevicePlaybackObserved && !report.CanonicalMetrics.DevicePlaybackStartMS.Available {
+				instrumentFindings = append(instrumentFindings, physicalStackChanFinding("xiaozhi_physical_instrument_playback_timing_invalid", "error", "instrument playback observation timing was invalid"))
+			}
 			report.CanonicalMetrics.SpeechEndToFirstAudibleResponseMS = physicalStackChanMetric{
 				Available: true,
 				ValueMS:   observation.SpeechEndToFirstAudibleResponseMS,
@@ -267,11 +280,40 @@ func xiaozhiPhysicalDeviceOnline(device firmwarecheck.DeviceIdentityRecord) bool
 func xiaozhiPhysicalGatewayMetricsFromTrace(trace gateway.TraceResponse) xiaozhiPhysicalEvidenceGatewayMetrics {
 	return xiaozhiPhysicalEvidenceGatewayMetrics{
 		GatewayAnswerFirstDownlinkMS: physicalStackChanMetricFromInt64(firstNonNilInt64(
-			trace.Summary.AudioDownlinkFirstFrameMS,
+			xiaozhiPhysicalSpeechEndToFirstDownlinkMS(trace),
 			trace.Summary.AnswerFirstAudioTotalMS,
-			trace.Summary.TTSFirstAudioMS,
 		), "gateway_trace"),
 	}
+}
+
+func xiaozhiPhysicalSpeechEndToFirstDownlinkMS(trace gateway.TraceResponse) *int64 {
+	var speechEndAt int64
+	speechEndSeen := false
+	for _, event := range trace.Events {
+		if event.Name != "vad.speech.end" {
+			continue
+		}
+		speechEndAt = event.AtMS
+		speechEndSeen = true
+		break
+	}
+	if !speechEndSeen {
+		return nil
+	}
+	for _, event := range trace.Events {
+		if event.AtMS < speechEndAt {
+			continue
+		}
+		if event.Name != "audio.downlink.first_frame" && event.Name != "xiaozhi.tts.opus_frame.downlink" {
+			continue
+		}
+		delta := event.AtMS - speechEndAt
+		if delta < 0 {
+			return nil
+		}
+		return &delta
+	}
+	return nil
 }
 
 func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trace gateway.TraceResponse) map[string]physicalStackChanMetric {
@@ -388,11 +430,26 @@ func xiaozhiInstrumentObservationSafe(observation xiaozhiInstrumentObservationRe
 			return false
 		}
 	}
+	if strings.TrimSpace(observation.DevicePlaybackObservationSource) != "" && !xiaozhiPhysicalSafeID(observation.DevicePlaybackObservationSource) {
+		return false
+	}
 	return observation.PhysicalSoundObserved &&
 		observation.ObservedNonzeroAudibleEnergy &&
 		observation.AudibleEnergyRMS > 0 &&
 		observation.NoiseFloorRMS > 0 &&
 		observation.AudibleEnergyRMS > observation.NoiseFloorRMS
+}
+
+func xiaozhiInstrumentPlaybackObservationValid(observation xiaozhiInstrumentObservationReport) bool {
+	if !observation.DevicePlaybackObserved ||
+		strings.TrimSpace(observation.DevicePlaybackObservationSource) == "" ||
+		!xiaozhiPlausibleInstrumentTiming(observation.GatewayFirstDownlinkToPlaybackMS) {
+		return false
+	}
+	if observation.GatewayFirstDownlinkToPlaybackMS > observation.GatewayFirstDownlinkToAudibleMS+xiaozhiInstrumentTimingToleranceMS {
+		return false
+	}
+	return true
 }
 
 func xiaozhiInstrumentObservationTimingValid(observation xiaozhiInstrumentObservationReport, trace gateway.TraceResponse, gatewayFirstDownlink physicalStackChanMetric) bool {
