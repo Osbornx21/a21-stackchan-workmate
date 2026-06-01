@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `9526976 docs(provider): document realtime fixture evidence`
+Current baseline evidence: `f57cbda feat(provider): enforce selected smoke evidence`
 
 ## 0. Control Rule
 
@@ -34,13 +34,13 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD: `9526976 docs(provider): document realtime fixture evidence`
+- HEAD: `f57cbda feat(provider): enforce selected smoke evidence`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
-  passed after the mode/privacy and realtime evidence merges.
+  passed after the wake diagnostic and provider selected-evidence merges.
 
 Already merged into the current baseline and must not be rediscovered as active
 gaps:
@@ -63,13 +63,16 @@ gaps:
 - Realtime evidence visibility closure:
   `66798f8 feat(provider): expose realtime fixture evidence`,
   `9526976 docs(provider): document realtime fixture evidence`
+- Wake-word no-hardware diagnostic closure:
+  `2f01049 feat(wake-word): report package input diagnostics`
+- Provider selected-evidence closure:
+  `f57cbda feat(provider): enforce selected smoke evidence`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Wake-word no-hardware closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | worker-managed from `codex/a21-integration-runtime-readiness-20260601` | Current custom wake-word package/readiness seam, no flash | Active; do not duplicate |
-| Provider 5080lab closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | worker-managed from `codex/a21-integration-runtime-readiness-20260601` | 5080lab provider smoke package/import/readiness seam, no local provider execute | Active; do not duplicate |
+| None | - | - | - | - | No active implementation worker at this checkpoint |
 
 Recently completed workers:
 
@@ -77,6 +80,8 @@ Recently completed workers:
 | --- | --- | --- | --- | --- | --- |
 | Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | `codex/a21-realtime-evidence-closure-20260602` | Provider realtime fixture report/output-dir and product-readiness visibility | Merged via `66798f8` and `9526976`; do not duplicate |
 | Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | `codex/a21-mode-privacy-closure-20260602` | Public/private/focus/professional mode red lines and visible state | Merged via `2d102c4` and `61d121d`; do not duplicate |
+| Wake-word no-hardware diagnostic closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | `codex/a21-wake-word-package-readiness-20260602` | Missing build-dir/receipt diagnostic package reports and product-readiness next-action guard | Merged via `2f01049`; do not duplicate |
+| Provider selected-evidence closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | `codex/a21-provider-5080lab-evidence-closure-20260602` | Selected-provider matching for latest smoke evidence, package/import, and 5080lab repeat-3 runbook | Merged via `f57cbda`; do not duplicate |
 
 Current canonical PRD gaps from the latest product-readiness run:
 
@@ -92,12 +97,13 @@ Current server-side gaps from the latest product-readiness run:
 
 Current next moves:
 
-1. Wake-word no-hardware closure: make the stored custom phrase produce a
-   current guarded firmware package/readiness report without flashing hardware,
-   and keep `product_ready=false` until hardware flash and physical wake proof.
-2. Provider execute closure for 5080lab: prepare/run/import a selected real
+1. Provider execute closure for 5080lab: prepare/run/import a selected real
    route-eligible text provider smoke bundle from 5080lab, then rerun
    product-readiness to reduce `real_provider_smoke`.
+2. Wake-word build/package closure: produce a matching reviewed
+   xiaozhi/ESP-SR MultiNet build receipt and package report for the stored custom
+   phrase, still without marking `product_ready` until guarded flash and physical
+   wake proof.
 3. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -107,13 +113,13 @@ Current next moves:
 | Slice | Current status | Current evidence | Full-launch gap |
 | --- | --- | --- | --- |
 | Phase 0 Go-first foundation | Done | CLI, host gate, doctor, provider default mock, namespace guard | Keep green while integrating |
-| Provider spine and text stream | Server contract mostly done, real evidence pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import | 5080lab real non-mock executed smoke bundle |
+| Provider spine and text stream | Server contract done for selected evidence intake, real evidence pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import, selected-provider mismatch rejection | 5080lab real non-mock executed smoke bundle |
 | Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, host p95 evidence | Real provider evidence plus physical StackChan audible playback and barge-in acceptance |
 | Realtime voice lane | Offline evidence/reporting done; live provider still pending | Provider-neutral fixture, explicit arm concept, `provider-realtime-fixture --output-dir`, product-readiness `provider.realtime_*` fields | Live provider lane smoke and physical playback acceptance |
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
 | Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
-| Wake word | No-hardware config/plan path done; current package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion | Current package report, guarded build/flash, and physical custom wake proof |
+| Wake word | No-hardware config/plan/diagnostic package path done; current build package/product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports | Current matching build package report, guarded flash, and physical custom wake proof |
 | Personality and playbooks | Asset tree done | `docs/personality` assets merged | Runtime composition and scenario UX wiring only when needed |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
