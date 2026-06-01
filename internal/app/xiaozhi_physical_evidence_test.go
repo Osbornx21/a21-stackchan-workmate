@@ -607,6 +607,36 @@ func TestProductReadinessIngestsDebugXiaozhiPhysicalEvidenceAsCandidate(t *testi
 	}
 }
 
+func TestProductReadinessKeepsXiaozhiPhysicalEvidenceActionWhenDeviceOffline(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	evidence := writeProductReadinessDebugXiaozhiPhysicalEvidenceReportFixture(t)
+
+	report := buildProductReadinessReport(t.Context(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "44:1b:f6:e2:6a:60",
+		PhysicalStackChanReport: evidence,
+	}, []string{"A21_PROVIDER_PRIMARY=mock"})
+
+	if report.StackChan.PhysicalDeviceOnline {
+		t.Fatalf("physical device online = true, want offline fixture")
+	}
+	if !report.StackChan.PhysicalEvidence.CandidatePhysicalVoiceEvidence {
+		t.Fatalf("physical evidence = %+v, want candidate Xiaozhi voice evidence", report.StackChan.PhysicalEvidence)
+	}
+	for _, want := range []string{
+		"bring a physical StackChan online",
+		"operator audible observation",
+		"barge-in playback stop_done",
+	} {
+		if !containsProductAction(report.NextActions, want) {
+			t.Fatalf("next actions = %#v, want %q", report.NextActions, want)
+		}
+	}
+	if containsProductAction(report.NextActions, "device playback ack") {
+		t.Fatalf("next actions = %#v, want no missing playback ack once device_playback_start_ms is available", report.NextActions)
+	}
+}
+
 func TestProductReadinessIngestsAcceptedXiaozhiPhysicalEvidence(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"unknown","connection_status":"online","capabilities":{"xiaozhi_profile":"debug","xiaozhi_feature_device_events":"true","xiaozhi_debug_extension_isolated":"true","xiaozhi_transport":"websocket","xiaozhi_audio":"opus_16000hz_mono_60ms","microphone":"available_xiaozhi_opus_ingress"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	evidence := writeProductReadinessAcceptedXiaozhiPhysicalEvidenceReportFixture(t)

@@ -1563,7 +1563,7 @@ func buildProductNextActions(report productReadinessReport) []string {
 		status := firstNonEmpty(report.StackChan.MicrophoneStatus, "unknown")
 		actions = append(actions, "promote StackChan microphone to a product-ready firmware capability; current status: "+status)
 	}
-	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
+	if (report.StackChan.PhysicalDeviceOnline || report.StackChan.PhysicalEvidence.Valid) && !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
 		switch {
 		case report.StackChan.PhysicalEvidence.CandidatePhysicalVoiceEvidence:
 			actions = append(actions, productXiaozhiPhysicalEvidenceNextAction(report.StackChan.PhysicalEvidence))
