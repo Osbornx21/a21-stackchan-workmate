@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -380,6 +381,140 @@ func TestCommandSileroVADRunnerUsesLocalCommandDecision(t *testing.T) {
 	}
 }
 
+func TestCommandSileroVADRunnerRejectsMalformedJSON(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-silero-vad-runner")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\ncat >/dev/null\nprintf 'not-json /private/model.onnx'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewCommandSileroVADRunner(CommandSileroVADRunnerConfig{
+		CommandPath: commandPath,
+		ModelPath:   filepath.Join(dir, "model.onnx"),
+	})
+
+	_, err := runner.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-command-silero-malformed",
+		SessionID:    "a21-session-command-silero-malformed",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if !errors.Is(err, ErrSileroVADRunnerUnavailable) {
+		t.Fatalf("Detect() error = %v, want ErrSileroVADRunnerUnavailable", err)
+	}
+	for _, forbidden := range []string{dir, "model.onnx", "not-json"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("error %q leaked %q", err.Error(), forbidden)
+		}
+	}
+}
+
+func TestCommandSileroVADRunnerReportsCommandFailureAsUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-silero-vad-runner")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\ncat >/dev/null\nprintf 'local path should stay private' >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewCommandSileroVADRunner(CommandSileroVADRunnerConfig{
+		CommandPath: commandPath,
+		ModelPath:   filepath.Join(dir, "model.onnx"),
+	})
+
+	_, err := runner.Detect(context.Background(), Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-command-silero-failure",
+		SessionID:    "a21-session-command-silero-failure",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if !errors.Is(err, ErrSileroVADRunnerUnavailable) {
+		t.Fatalf("Detect() error = %v, want ErrSileroVADRunnerUnavailable", err)
+	}
+	for _, forbidden := range []string{dir, "model.onnx", "local path"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("error %q leaked %q", err.Error(), forbidden)
+		}
+	}
+}
+
+func TestCommandSileroVADRunnerReturnsContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-silero-vad-runner")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\ncat >/dev/null\nsleep 5\nprintf '{\"speech_detected\":true,\"score\":0.99}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := NewCommandSileroVADRunner(CommandSileroVADRunnerConfig{
+		CommandPath: commandPath,
+		ModelPath:   filepath.Join(dir, "model.onnx"),
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runner.Detect(ctx, Frame{
+		DeviceID:     "stackchan-sim-001",
+		TraceID:      "a21-trace-command-silero-cancel",
+		SessionID:    "a21-session-command-silero-cancel",
+		Seq:          1,
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   20,
+		DataBase64:   pcm16Base64WithSample(12000),
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Detect() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestCheckedInSileroVADRunnerHelpIsExecutable(t *testing.T) {
+	scriptPath := filepath.Join("..", "..", "scripts", "a21_silero_vad.py")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := runPython(ctx, scriptPath, "--help")
+	if err != nil {
+		t.Fatalf("script help failed: %v", err)
+	}
+	output := string(out)
+	for _, want := range []string{"--sample-rate", "--channels", "--duration-ms", "--model"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("script help missing %q in %q", want, output)
+		}
+	}
+	for _, forbidden := range []string{"pcm_s16le_base64", "/private", "A21_SILERO_VAD_MODEL"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("script help leaked %q in %q", forbidden, output)
+		}
+	}
+}
+
+func TestCheckedInSileroVADRunnerReportsUnavailableWithFinitePCM(t *testing.T) {
+	scriptPath := filepath.Join("..", "..", "scripts", "a21_silero_vad.py")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "python3", scriptPath, "--sample-rate", "16000", "--channels", "1", "--duration-ms", "20", "--model", "/private/a21/model.onnx")
+	cmd.Stdin = strings.NewReader(strings.Repeat("\x00", 640))
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("script succeeded without optional model/runtime, want unavailable exit")
+	}
+	output := string(out)
+	if !strings.Contains(output, "a21 silero vad unavailable") {
+		t.Fatalf("script output = %q, want fixed unavailable message", output)
+	}
+	for _, forbidden := range []string{"/private", "model.onnx", "pcm_s16le_base64"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("script output leaked %q in %q", forbidden, output)
+		}
+	}
+}
+
 func TestSileroVADAdapterLowCardinalityLabels(t *testing.T) {
 	labels := map[string]bool{}
 	for _, runner := range []SileroVADRunner{
@@ -415,6 +550,11 @@ func pcm16Base64WithSample(sample int16) string {
 		data[i*2+1] = byte(uint16(sample) >> 8)
 	}
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+func runPython(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "python3", args...)
+	return cmd.CombinedOutput()
 }
 
 type scriptedVADDetector struct {

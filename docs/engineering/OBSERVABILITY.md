@@ -36,12 +36,15 @@ Silero model runtime is installed.
 
 The Silero boundary is Go-first and provider-neutral. Gateway tests can select it
 through `audio.IngressConfig` without changing the audio WebSocket contract; the
-default path remains `a21-rms-vad`. A host-local command runner exists only as an
-optional adapter hook: PCM is passed to the local process on stdin, the process
-returns JSON fields for `speech_detected` and `score`, and command/model paths or
-runner errors are collapsed to stable A21 status/finding codes before Gateway
-metrics or recent-audio metadata see them. This hook is not wired to provider,
-V21, network, firmware, or hardware execution.
+default path remains `a21-rms-vad`. A host-local command runner exists as an
+optional executable adapter hook via `scripts/a21_silero_vad.py`: PCM is passed
+to the local process on stdin, the process returns JSON fields for
+`speech_detected` and `score`, and command/model paths or runner errors are
+collapsed to stable A21 status/finding codes before Gateway metrics or
+recent-audio metadata see them. If optional Python dependencies or a local model
+are unavailable, the runner reports unavailable and RMS remains the baseline
+fallback. This hook is not wired to provider, V21, network, firmware, or hardware
+execution.
 
 Gateway also exposes `GET /v1/audio/recent` as a loopback-only development capture surface. It is intentionally not a LAN or cloud API. Default responses redact raw PCM and expose only recent frame metadata; `include_audio=1` is for local CLI use when building a temporary ASR WAV for physical StackChan mic-driven evidence. Reports may cite frame count, byte count, RMS, and WAV basename, but must not persist `data_base64` or raw audio.
 
