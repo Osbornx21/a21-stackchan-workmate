@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `db06d47 chore(control): update PRD full-push checkpoint`
+Current baseline evidence: `2645f45 chore(control): record realtime worker dispatch`
 
 ## 0. Control Rule
 
@@ -34,7 +34,7 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD: `db06d47 chore(control): update PRD full-push checkpoint`
+- HEAD: `2645f45 chore(control): record realtime worker dispatch`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`
@@ -60,6 +60,7 @@ Active workers that the control tower must poll before duplicating work:
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
 | Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | worker-managed branch from `codex/a21-integration-runtime-readiness-20260601` | Provider realtime fixture report/output-dir and product-readiness visibility | Active; do not duplicate until polled/merged |
+| Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | worker-managed branch from `codex/a21-integration-runtime-readiness-20260601` | Public/private/focus/professional mode red lines and visible state | Active; avoids `product_demo.go` to prevent realtime readiness conflicts |
 
 ## 1. Current PRD Burn-Down Baseline
 
