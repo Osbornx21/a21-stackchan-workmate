@@ -723,6 +723,79 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	}
 }
 
+func TestFastCompanionVoicePipelineRecordsProviderFallbackObservability(t *testing.T) {
+	server := NewServer()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return fallbackReportingXiaozhiPipelineRunner{}
+	}
+	handler := server.Handler()
+	frameBase64 := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1, 0}, 960))
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(fmt.Sprintf(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"workmate",
+		"trace_id":"a21-trace-fast-fallback",
+		"session_id":"a21-session-fast-fallback",
+		"local_audio":{
+			"asr_provider":"mock_asr",
+			"first_partial_ms":42,
+			"final_transcript_chars":11,
+			"frames":[{"seq":1,"codec":"pcm_s16le","sample_rate_hz":16000,"channels":1,"duration_ms":60,"byte_count":1920,"rms":0.04,"data_base64":%q}]
+		}
+	}`, frameBase64)))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Status                     string `json:"status"`
+		TextStreamProvider         string `json:"text_stream_provider"`
+		TextStreamFallbackUsed     bool   `json:"text_stream_fallback_used"`
+		TextStreamFallbackProvider string `json:"text_stream_fallback_provider"`
+		TextStreamFallbackReason   string `json:"text_stream_fallback_reason"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "pipeline_completed" ||
+		response.TextStreamProvider != "a21_voice_fallback" ||
+		!response.TextStreamFallbackUsed ||
+		response.TextStreamFallbackProvider != "a21_voice_fallback" ||
+		response.TextStreamFallbackReason != "primary_failed" {
+		t.Fatalf("fallback response = %+v", response)
+	}
+	for _, forbidden := range []string{"fallback voice answer", "fallback reasoning", frameBase64, "http://", "https://", "/Users/", "sk-"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("fast companion fallback response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-fast-fallback", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"fallback.used", "provider.failover", "fast_companion.voice_pipeline.completed"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"fallback voice answer", "fallback reasoning", "http://", "https://", "/Users/", "sk-"} {
+		if strings.Contains(traceRec.Body.String(), forbidden) {
+			t.Fatalf("fallback trace leaked %q: %s", forbidden, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	handler.ServeHTTP(metricsRec, metricsReq)
+	for _, want := range []string{"a21_provider_failover_total 1", "a21_fallback_total 1"} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
+		}
+	}
+}
+
 func TestFastCompanionHybridRejectsUnsupportedModesAndMissingLocalAudio(t *testing.T) {
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{
@@ -2787,6 +2860,108 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
+func TestXiaozhiVoicePipelineRecordsProviderFallbackObservability(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        gatewayFinalASRAdapter{},
+			TextStream: gatewayFallbackTextStreamAdapter{},
+			TTS:        segmentChunkTTSAdapter{},
+			Selection: providers.VoicePipelineSelection{
+				ASRMode:               "local",
+				ASRProfile:            "a21-gateway-final-asr",
+				ASRProfileEnv:         "A21_ASR_LOCAL_PROFILE",
+				LLMProfile:            "deepseek",
+				LLMProfileEnv:         "A21_PROVIDER_PRIMARY",
+				LLMFallbackProfile:    "a21_voice_fallback",
+				LLMFallbackProfileEnv: "A21_TEXT_STREAM_FALLBACK_PROFILE",
+				TTSMode:               "fast",
+				TTSProfile:            "a21-segment-chunk-tts",
+				TTSProfileEnv:         "A21_TTS_FAST_PROFILE",
+			},
+			ExecutionMode: "fixture",
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-fallback",
+		"session_id": "a21-session-xiaozhi-fallback",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("fast ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	answerPipeline, ok := answerSentence["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("answer voice pipeline = %#v", answerSentence["voice_pipeline"])
+	}
+	fallback, ok := answerPipeline["fallback"].(map[string]any)
+	if !ok || fallback["activated"] != true || fallback["provider"] != "a21_voice_fallback" || fallback["reason"] != "primary_failed" {
+		t.Fatalf("fallback summary = %#v", answerPipeline["fallback"])
+	}
+	answerPayload := mustJSON(t, answerSentence)
+	for _, forbidden := range []string{"fallback voice answer", "fallback reasoning", "http://", "https://", "/Users/", "sk-"} {
+		if strings.Contains(answerPayload, forbidden) {
+			t.Fatalf("xiaozhi fallback summary leaked %q: %s", forbidden, answerPayload)
+		}
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-fallback", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"fallback.used", "provider.failover", "xiaozhi.voice_pipeline.completed"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	metricsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(metricsRec, metricsReq)
+	for _, want := range []string{"a21_provider_failover_total 1", "a21_fallback_total 1"} {
+		if !strings.Contains(metricsRec.Body.String(), want) {
+			t.Fatalf("metrics missing %q:\n%s", want, metricsRec.Body.String())
 		}
 	}
 }
@@ -6821,6 +6996,41 @@ func (segmentChunkTTSAdapter) Synthesize(ctx context.Context, req providers.TTSA
 	return out, nil
 }
 
+type gatewayFallbackTextStreamAdapter struct{}
+
+func (gatewayFallbackTextStreamAdapter) Name() string {
+	return "a21-gateway-fallback-text-stream"
+}
+
+func (gatewayFallbackTextStreamAdapter) StreamText(ctx context.Context, req providers.TextStreamAdapterRequest) (<-chan providers.TextStreamEvent, error) {
+	out := make(chan providers.TextStreamEvent, 3)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case out <- providers.TextStreamEvent{
+			Finding: "provider_fallback_used",
+			Fallback: &providers.TextStreamFallbackEvent{
+				Activated: true,
+				Provider:  "a21_voice_fallback",
+				Reason:    "primary_failed",
+			},
+		}:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaContent, Text: "fallback voice answer。"}:
+		}
+		select {
+		case <-ctx.Done():
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaDone}:
+		}
+	}()
+	return out, nil
+}
+
 type recordingXiaozhiPipelineRunner struct {
 	requests chan providers.VoicePipelineRequest
 	delegate xiaozhiVoicePipelineRunner
@@ -6849,6 +7059,64 @@ func (r *recordingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.
 	default:
 	}
 	return r.delegate.Run(ctx, req)
+}
+
+type fallbackReportingXiaozhiPipelineRunner struct{}
+
+func (fallbackReportingXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	select {
+	case <-ctx.Done():
+		return providers.VoicePipelineResult{Status: providers.VoicePipelineStatusCancelled}, ctx.Err()
+	default:
+	}
+	return providers.VoicePipelineResult{
+		Status: providers.VoicePipelineStatusCompleted,
+		Timing: providers.VoicePipelineTiming{
+			ASRFirstPartialMS:       10,
+			ASRFinalMS:              20,
+			LLMFirstContentMS:       30,
+			TTSFirstAudioMS:         40,
+			AudioDownlinkFirstMS:    50,
+			SpeechEndToFinalASRMS:   20,
+			SpeechEndToFirstTokenMS: 30,
+		},
+		AudioChunks: []providers.VoiceAudioChunk{{
+			Codec:        string(protocol.AudioCodecPCMS16LE),
+			SampleRateHz: 24000,
+			Channels:     1,
+			DurationMS:   60,
+			DataBase64:   base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x11, 0x00}, 1440)),
+		}},
+		Report: providers.VoicePipelineReport{
+			SchemaVersion: "a21.voice_pipeline.fixture.v1",
+			Status:        string(providers.VoicePipelineStatusCompleted),
+			TraceID:       req.Session.TraceID,
+			SessionID:     req.Session.SessionID,
+			DeviceID:      req.Session.DeviceID,
+			Mode:          req.Mode,
+			ExecutionMode: "fixture",
+			Selection: providers.VoicePipelineSelection{
+				LLMProfile:            "deepseek",
+				LLMProfileEnv:         "A21_PROVIDER_PRIMARY",
+				LLMFallbackProfile:    "a21_voice_fallback",
+				LLMFallbackProfileEnv: "A21_TEXT_STREAM_FALLBACK_PROFILE",
+			},
+			Output: providers.VoicePipelineOutputReport{
+				AudioChunkCount: 1,
+				AudioCodec:      string(protocol.AudioCodecPCMS16LE),
+				SampleRateHz:    24000,
+				Channels:        1,
+				ChunkDurationMS: 60,
+				LLMContentChars: 21,
+			},
+			Fallback: &providers.VoicePipelineFallbackReport{
+				Activated: true,
+				Provider:  "a21_voice_fallback",
+				Reason:    "primary_failed",
+			},
+			Findings: []string{"provider_fallback_used"},
+		},
+	}, nil
 }
 
 type failingXiaozhiTTSAdapter struct{}

@@ -185,6 +185,7 @@ type VoicePipelineStreamEvent struct {
 	AudioChunk VoiceAudioChunk
 	SegmentSeq int
 	Timing     VoicePipelineTiming
+	Report     VoicePipelineReport
 	Result     VoicePipelineResult
 	Err        error
 }
@@ -207,11 +208,11 @@ func (r *VoicePipelineRunner) RunStream(ctx context.Context, req VoicePipelineRe
 	events := make(chan VoicePipelineStreamEvent, 4)
 	go func() {
 		defer close(events)
-		result, err := r.run(ctx, req, func(chunk VoiceAudioChunk, segmentSeq int, timing VoicePipelineTiming) bool {
+		result, err := r.run(ctx, req, func(chunk VoiceAudioChunk, segmentSeq int, timing VoicePipelineTiming, report VoicePipelineReport) bool {
 			select {
 			case <-ctx.Done():
 				return false
-			case events <- VoicePipelineStreamEvent{Kind: VoicePipelineStreamAudioChunk, AudioChunk: chunk, SegmentSeq: segmentSeq, Timing: timing}:
+			case events <- VoicePipelineStreamEvent{Kind: VoicePipelineStreamAudioChunk, AudioChunk: chunk, SegmentSeq: segmentSeq, Timing: timing, Report: report}:
 				return true
 			}
 		})
@@ -227,7 +228,7 @@ func emitVoicePipelineStreamDone(ctx context.Context, out chan<- VoicePipelineSt
 	}
 }
 
-func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest, emit func(VoiceAudioChunk, int, VoicePipelineTiming) bool) (VoicePipelineResult, error) {
+func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest, emit func(VoiceAudioChunk, int, VoicePipelineTiming, VoicePipelineReport) bool) (VoicePipelineResult, error) {
 	start := time.Now()
 	result := VoicePipelineResult{
 		Status: VoicePipelineStatusFailed,
@@ -377,7 +378,7 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 	return result, nil
 }
 
-func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context, start time.Time, req VoicePipelineRequest, segment string, segmentSeq int, emit func(VoiceAudioChunk, int, VoicePipelineTiming) bool, result *VoicePipelineResult, report *VoicePipelineReport) error {
+func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context, start time.Time, req VoicePipelineRequest, segment string, segmentSeq int, emit func(VoiceAudioChunk, int, VoicePipelineTiming, VoicePipelineReport) bool, result *VoicePipelineResult, report *VoicePipelineReport) error {
 	if strings.TrimSpace(segment) == "" {
 		return nil
 	}
@@ -398,7 +399,7 @@ func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context
 			result.Timing.AudioDownlinkFirstMS = result.Timing.TTSFirstAudioMS
 		}
 		result.AudioChunks = append(result.AudioChunks, chunk)
-		if emit != nil && !emit(chunk, segmentSeq, result.Timing) {
+		if emit != nil && !emit(chunk, segmentSeq, result.Timing, *report) {
 			r.applyCancel(ctx, start, result)
 			result.Report = finalizeVoicePipelineReport(*report, *result)
 			return nil

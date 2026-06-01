@@ -105,7 +105,9 @@ voice pipeline, and `local-voice-loopback --fallback-text-provider` exposes the
 same behavior to the host verifier. Gateway and reports may emit a coarse
 `provider_fallback_used` finding plus fallback provider/reason metadata, but
 must not emit primary/fallback prompt text, transcripts, provider output,
-reasoning, API keys, model values, full URLs, or proxy values.
+reasoning, API keys, model values, full URLs, or proxy values. The streaming
+xiaozhi answer path carries the same redacted fallback metadata on answer
+`voice_pipeline` summaries instead of waiting for a final non-streaming report.
 
 Each `listen/start` creates a Gateway-owned xiaozhi turn and returns a stable
 A21 `turn_id` in the accepted reply. Each `abort` cancels the current turn

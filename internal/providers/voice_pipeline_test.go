@@ -241,6 +241,72 @@ func TestVoicePipelineRunStreamDeliversDoneAfterBufferedChunksDrain(t *testing.T
 	}
 }
 
+func TestVoicePipelineRunStreamCarriesFallbackReportOnAudioChunks(t *testing.T) {
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR: scriptedPipelineASRAdapter{text: "transcript"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{
+			{
+				Finding: "provider_fallback_used",
+				Fallback: &TextStreamFallbackEvent{
+					Activated: true,
+					Provider:  "a21_voice_fallback",
+					Reason:    "primary_failed",
+				},
+			},
+			{Kind: TextStreamDeltaContent, Text: "fallback voice answer。"},
+			{Kind: TextStreamDeltaDone},
+		}},
+		TTS: &recordingPipelineTTSAdapter{},
+		Selection: VoicePipelineSelection{
+			ASRMode:               "local",
+			ASRProfile:            "mock-local-asr",
+			ASRProfileEnv:         "A21_ASR_LOCAL_PROFILE",
+			LLMProfile:            "deepseek",
+			LLMProfileEnv:         "A21_PROVIDER_PRIMARY",
+			LLMFallbackProfile:    "a21_voice_fallback",
+			LLMFallbackProfileEnv: "A21_TEXT_STREAM_FALLBACK_PROFILE",
+			TTSMode:               "fast",
+			TTSProfile:            "mock-fast-tts",
+			TTSProfileEnv:         "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	events, err := runner.RunStream(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-run-stream-fallback", SessionID: "a21-session-run-stream-fallback", DeviceID: "stackchan-sim-001"},
+		Mode:    "workmate",
+		Frames:  []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sawAudio bool
+	var sawDone bool
+	for event := range events {
+		switch event.Kind {
+		case VoicePipelineStreamAudioChunk:
+			sawAudio = true
+			if event.Report.Fallback == nil ||
+				!event.Report.Fallback.Activated ||
+				event.Report.Fallback.Provider != "a21_voice_fallback" ||
+				event.Report.Fallback.Reason != "primary_failed" {
+				t.Fatalf("audio event fallback report = %+v", event.Report.Fallback)
+			}
+			if event.Report.Selection.LLMFallbackProfile != "a21_voice_fallback" {
+				t.Fatalf("audio event selection = %+v", event.Report.Selection)
+			}
+		case VoicePipelineStreamDone:
+			sawDone = true
+			if event.Err != nil {
+				t.Fatal(event.Err)
+			}
+		}
+	}
+	if !sawAudio || !sawDone {
+		t.Fatalf("saw audio=%v done=%v, want both", sawAudio, sawDone)
+	}
+}
+
 func TestVoicePipelineSelectionCanChangeWithoutGatewayCore(t *testing.T) {
 	selection := VoicePipelineSelectionFromEnv([]string{
 		"A21_ASR_PROFILE=cloud",

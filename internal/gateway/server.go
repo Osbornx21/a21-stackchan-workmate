@@ -142,17 +142,20 @@ type FastCompanionTurnRequest struct {
 }
 
 type FastCompanionTurnResponse struct {
-	TraceID            string              `json:"trace_id"`
-	SessionID          string              `json:"session_id"`
-	DeviceID           string              `json:"device_id"`
-	Mode               protocol.Mode       `json:"mode"`
-	Status             string              `json:"status"`
-	Route              string              `json:"route"`
-	AudioFrontend      string              `json:"audio_frontend"`
-	TextStreamProvider string              `json:"text_stream_provider"`
-	ProviderFamily     string              `json:"provider_family"`
-	TextStreamExecuted bool                `json:"text_stream_executed"`
-	Events             []protocol.Envelope `json:"events"`
+	TraceID                    string              `json:"trace_id"`
+	SessionID                  string              `json:"session_id"`
+	DeviceID                   string              `json:"device_id"`
+	Mode                       protocol.Mode       `json:"mode"`
+	Status                     string              `json:"status"`
+	Route                      string              `json:"route"`
+	AudioFrontend              string              `json:"audio_frontend"`
+	TextStreamProvider         string              `json:"text_stream_provider"`
+	ProviderFamily             string              `json:"provider_family"`
+	TextStreamExecuted         bool                `json:"text_stream_executed"`
+	TextStreamFallbackUsed     bool                `json:"text_stream_fallback_used,omitempty"`
+	TextStreamFallbackProvider string              `json:"text_stream_fallback_provider,omitempty"`
+	TextStreamFallbackReason   string              `json:"text_stream_fallback_reason,omitempty"`
+	Events                     []protocol.Envelope `json:"events"`
 }
 
 type DeviceControlRequest struct {
@@ -2060,6 +2063,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS)
 	}
 	result, err := runner.Run(turn.ctx, request)
+	s.recordVoicePipelineFallback(task.traceID, task.sessionID, task.deviceID, result.Report)
 	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
 		if session.shouldAbortXiaozhiTurn(turn) || result.Status == providers.VoicePipelineStatusCancelled {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
@@ -2135,7 +2139,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 					"trace_id":       task.traceID,
 					"session_id":     task.sessionID,
 					"device_id":      task.deviceID,
-					"voice_pipeline": s.xiaozhiVoicePipelineStreamingSummary(),
+					"voice_pipeline": s.xiaozhiVoicePipelineStreamingSummary(event.Report),
 					"text":           "",
 				}); err != nil {
 					session.cancelXiaozhiTurnContext(turn, "voice_pipeline_answer_write_error")
@@ -2167,6 +2171,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			err = event.Err
 		}
 	}
+	s.recordVoicePipelineFallback(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
 	if err != nil || finalResult.Status != providers.VoicePipelineStatusCompleted || len(finalResult.AudioChunks) == 0 {
 		if session.shouldAbortXiaozhiTurn(turn) || finalResult.Status == providers.VoicePipelineStatusCancelled {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
@@ -2262,11 +2267,34 @@ func (s *Server) xiaozhiVoicePipelineFastAckSummary() map[string]any {
 	}
 }
 
-func (s *Server) xiaozhiVoicePipelineStreamingSummary() map[string]any {
+func (s *Server) xiaozhiVoicePipelineStreamingSummary(reports ...providers.VoicePipelineReport) map[string]any {
 	summary := s.xiaozhiVoicePipelineFastAckSummary()
 	summary["schema_version"] = "a21.voice_pipeline.streaming_answer.v1"
 	summary["stage"] = "answer"
 	summary["streaming"] = true
+	if len(reports) == 0 {
+		return summary
+	}
+	report := reports[0]
+	if report.Fallback != nil && report.Fallback.Activated {
+		summary["fallback"] = map[string]any{
+			"activated": true,
+			"provider":  safeGatewayFallbackToken(report.Fallback.Provider, "fallback"),
+			"reason":    safeGatewayFallbackToken(report.Fallback.Reason, "fallback_activated"),
+		}
+		summary["selection"] = map[string]any{
+			"asr_mode":                 report.Selection.ASRMode,
+			"asr_profile":              report.Selection.ASRProfile,
+			"asr_profile_env":          report.Selection.ASRProfileEnv,
+			"llm_profile":              report.Selection.LLMProfile,
+			"llm_profile_env":          report.Selection.LLMProfileEnv,
+			"llm_fallback_profile":     report.Selection.LLMFallbackProfile,
+			"llm_fallback_profile_env": report.Selection.LLMFallbackProfileEnv,
+			"tts_mode":                 report.Selection.TTSMode,
+			"tts_profile":              report.Selection.TTSProfile,
+			"tts_profile_env":          report.Selection.TTSProfileEnv,
+		}
+	}
 	return summary
 }
 
@@ -2340,11 +2368,61 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 	if report.Fallback != nil && report.Fallback.Activated {
 		summary["fallback"] = map[string]any{
 			"activated": true,
-			"provider":  report.Fallback.Provider,
-			"reason":    report.Fallback.Reason,
+			"provider":  safeGatewayFallbackToken(report.Fallback.Provider, "fallback"),
+			"reason":    safeGatewayFallbackToken(report.Fallback.Reason, "fallback_activated"),
 		}
 	}
 	return summary
+}
+
+func (s *Server) recordVoicePipelineFallback(traceID string, sessionID string, deviceID string, report providers.VoicePipelineReport) {
+	if report.Fallback == nil || !report.Fallback.Activated {
+		return
+	}
+	s.metrics.providerFailoverTotal.Inc()
+	s.metrics.fallbackTotal.Inc()
+	atMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "fallback.used", atMS)
+	s.recordTrace(traceID, sessionID, deviceID, "provider.failover", atMS)
+}
+
+func voicePipelineTextStreamProvider(report providers.VoicePipelineReport) string {
+	if report.Fallback != nil && report.Fallback.Activated {
+		if provider := safeGatewayFallbackToken(report.Fallback.Provider, "fallback"); provider != "" {
+			return provider
+		}
+	}
+	return firstNonEmpty(safeGatewayFallbackToken(report.Selection.LLMProfile, ""), "unknown")
+}
+
+func voicePipelineFallbackResponse(report providers.VoicePipelineReport) (bool, string, string) {
+	if report.Fallback == nil || !report.Fallback.Activated {
+		return false, "", ""
+	}
+	return true,
+		safeGatewayFallbackToken(report.Fallback.Provider, "fallback"),
+		safeGatewayFallbackToken(report.Fallback.Reason, "fallback_activated")
+}
+
+var gatewayFallbackTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`)
+
+func safeGatewayFallbackToken(value string, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	lower := strings.ToLower(value)
+	if strings.Contains(lower, "http") ||
+		strings.Contains(lower, "bearer") ||
+		strings.Contains(lower, "sk-") ||
+		strings.Contains(lower, "x21") ||
+		strings.Contains(lower, "v21") ||
+		strings.Contains(value, "/") ||
+		strings.Contains(value, "\\") ||
+		!gatewayFallbackTokenPattern.MatchString(value) {
+		return fallback
+	}
+	return value
 }
 
 func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
@@ -3584,6 +3662,8 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 		Frames: append([]providers.VoicePipelinePCMFrame(nil), frames...),
 	}
 	result, err := runner.Run(ctx, request)
+	s.recordVoicePipelineFallback(traceID, sessionID, req.DeviceID, result.Report)
+	fallbackUsed, fallbackProvider, fallbackReason := voicePipelineFallbackResponse(result.Report)
 	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
 		s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.unavailable", s.now().UnixMilli())
 		events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
@@ -3592,17 +3672,20 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 			{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: "本地语音链路暂时不可用。", Final: true},
 		})
 		return FastCompanionTurnResponse{
-			TraceID:            traceID,
-			SessionID:          sessionID,
-			DeviceID:           req.DeviceID,
-			Mode:               req.Mode,
-			Status:             "pipeline_unavailable",
-			Route:              "fast_companion_hybrid",
-			AudioFrontend:      "local_audio",
-			TextStreamProvider: firstNonEmpty(result.Report.Selection.LLMProfile, "unknown"),
-			ProviderFamily:     string(providers.ProviderFamilyTextStream),
-			TextStreamExecuted: result.Report.Output.LLMContentChars > 0,
-			Events:             events,
+			TraceID:                    traceID,
+			SessionID:                  sessionID,
+			DeviceID:                   req.DeviceID,
+			Mode:                       req.Mode,
+			Status:                     "pipeline_unavailable",
+			Route:                      "fast_companion_hybrid",
+			AudioFrontend:              "local_audio",
+			TextStreamProvider:         voicePipelineTextStreamProvider(result.Report),
+			ProviderFamily:             string(providers.ProviderFamilyTextStream),
+			TextStreamExecuted:         result.Report.Output.LLMContentChars > 0,
+			TextStreamFallbackUsed:     fallbackUsed,
+			TextStreamFallbackProvider: fallbackProvider,
+			TextStreamFallbackReason:   fallbackReason,
+			Events:                     events,
 		}
 	}
 	s.recordXiaozhiVoicePipelineStageMarkers(traceID, sessionID, req.DeviceID, startAtMS, result.Timing)
@@ -3622,17 +3705,20 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 		events = append(events, s.voiceAudioPlaybackChunk(req.DeviceID, traceID, sessionID, uint64(len(events)+1), sentAt+int64(len(events)-3), streamID, &chunk))
 	}
 	return FastCompanionTurnResponse{
-		TraceID:            traceID,
-		SessionID:          sessionID,
-		DeviceID:           req.DeviceID,
-		Mode:               req.Mode,
-		Status:             "pipeline_completed",
-		Route:              "fast_companion_hybrid",
-		AudioFrontend:      "local_audio",
-		TextStreamProvider: firstNonEmpty(result.Report.Selection.LLMProfile, "unknown"),
-		ProviderFamily:     string(providers.ProviderFamilyTextStream),
-		TextStreamExecuted: result.Report.Output.LLMContentChars > 0,
-		Events:             events,
+		TraceID:                    traceID,
+		SessionID:                  sessionID,
+		DeviceID:                   req.DeviceID,
+		Mode:                       req.Mode,
+		Status:                     "pipeline_completed",
+		Route:                      "fast_companion_hybrid",
+		AudioFrontend:              "local_audio",
+		TextStreamProvider:         voicePipelineTextStreamProvider(result.Report),
+		ProviderFamily:             string(providers.ProviderFamilyTextStream),
+		TextStreamExecuted:         result.Report.Output.LLMContentChars > 0,
+		TextStreamFallbackUsed:     fallbackUsed,
+		TextStreamFallbackProvider: fallbackProvider,
+		TextStreamFallbackReason:   fallbackReason,
+		Events:                     events,
 	}
 }
 

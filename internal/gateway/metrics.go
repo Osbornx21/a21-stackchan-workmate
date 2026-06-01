@@ -29,6 +29,8 @@ type metrics struct {
 	realtimeFirstAudioMS        prometheus.Histogram
 	voiceProviderStartTurnMS    prometheus.Histogram
 	voiceProviderCancelMS       prometheus.Histogram
+	providerFailoverTotal       prometheus.Counter
+	fallbackTotal               prometheus.Counter
 	v21QueryMS                  prometheus.Histogram
 	wsConnections               *prometheus.GaugeVec
 }
@@ -120,6 +122,14 @@ func newMetrics() *metrics {
 			Help:    "A21 voice provider Cancel latency in milliseconds.",
 			Buckets: []float64{5, 10, 25, 50, 100, 250, 500, 1000},
 		}),
+		providerFailoverTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_provider_failover_total",
+			Help: "Total A21 voice/text provider failovers observed in Gateway runtime paths.",
+		}),
+		fallbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "a21_fallback_total",
+			Help: "Total A21 fallback activations observed in Gateway runtime paths.",
+		}),
 		v21QueryMS: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "a21_v21_query_ms",
 			Help:    "A21 professional-mode V21 adapter query latency in milliseconds.",
@@ -151,6 +161,8 @@ func newMetrics() *metrics {
 		m.realtimeFirstAudioMS,
 		m.voiceProviderStartTurnMS,
 		m.voiceProviderCancelMS,
+		m.providerFailoverTotal,
+		m.fallbackTotal,
 		m.v21QueryMS,
 		m.wsConnections,
 	)

@@ -170,6 +170,10 @@ Professional checking/fallback/result speech records `tts.first_audio`,
 `audio.downlink.first_frame`, and `xiaozhi.tts.opus_frame.downlink` when the
 Gateway TTS adapter successfully produces and writes OPUS frames; structured
 professional JSON alone is not physical audible proof.
+Provider text fallback records `fallback.used` and `provider.failover` in the
+same Gateway trace when the voice pipeline reports an activated fallback. These
+markers are provider-neutral and do not carry prompt, transcript, provider
+output, endpoint, model, key, or proxy values.
 `/v1/traces` now summarizes split latency deltas for
 `xiaozhi_listen_to_audio_ingress_ms`, `xiaozhi_opus_decode_ms`,
 `asr_first_partial_ms`, `llm_first_content_ms`, `tts_first_audio_ms`,
@@ -417,6 +421,8 @@ Current Prometheus metrics:
 - `a21_realtime_first_audio_ms_bucket`
 - `a21_voice_provider_start_turn_ms_bucket`
 - `a21_voice_provider_cancel_ms_bucket`
+- `a21_provider_failover_total`
+- `a21_fallback_total`
 - `a21_v21_query_ms_bucket`
 - `a21_ws_connections_active`
 
