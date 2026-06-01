@@ -126,6 +126,7 @@ func TestRunWakeWordFirmwareBuildReceiptWritesExplicitReceiptWithoutTouchingBuil
 	dir := t.TempDir()
 	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
 	buildDir := writeWakeWordFirmwareBuildFixture(t, dir, "小阿二一", "xiao a er yi", 35)
+	reviewPath := writeWakeWordFirmwareBuildReviewFixture(t, dir, "a21-wake-word-build-review.json", "小阿二一", "xiao a er yi", 35)
 	if err := os.Remove(filepath.Join(buildDir, "a21-wake-word-build.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +137,7 @@ func TestRunWakeWordFirmwareBuildReceiptWritesExplicitReceiptWithoutTouchingBuil
 		"wake-word-firmware-build-receipt",
 		"--plan", planPath,
 		"--build-dir", buildDir,
+		"--review-report", reviewPath,
 		"--output-dir", receiptDir,
 	}, &stdout, &stderr)
 	if code != 0 {
@@ -145,6 +147,10 @@ func TestRunWakeWordFirmwareBuildReceiptWritesExplicitReceiptWithoutTouchingBuil
 	var receipt wakeWordFirmwareBuildReceipt
 	if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
 		t.Fatalf("decode stdout receipt: %v\n%s", err, stdout.String())
+	}
+	var rawReceipt map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &rawReceipt); err != nil {
+		t.Fatalf("decode raw stdout receipt: %v\n%s", err, stdout.String())
 	}
 	if receipt.SchemaVersion != "a21.wake_word_firmware_build.v1" ||
 		receipt.Status != "built" ||
@@ -158,6 +164,9 @@ func TestRunWakeWordFirmwareBuildReceiptWritesExplicitReceiptWithoutTouchingBuil
 		receipt.AppBinary != "xiaozhi.bin" {
 		t.Fatalf("receipt = %+v, want matching A21 custom wake build receipt", receipt)
 	}
+	if rawReceipt["review_report"] != "a21-wake-word-build-review.json" {
+		t.Fatalf("review_report = %#v, want review basename in %s", rawReceipt["review_report"], stdout.String())
+	}
 	writtenPath := filepath.Join(receiptDir, "a21-wake-word-build.json")
 	writtenBytes, err := os.ReadFile(writtenPath)
 	if err != nil {
@@ -167,16 +176,54 @@ func TestRunWakeWordFirmwareBuildReceiptWritesExplicitReceiptWithoutTouchingBuil
 	if err := json.Unmarshal(writtenBytes, &written); err != nil {
 		t.Fatalf("decode written receipt: %v\n%s", err, string(writtenBytes))
 	}
+	var rawWritten map[string]any
+	if err := json.Unmarshal(writtenBytes, &rawWritten); err != nil {
+		t.Fatalf("decode raw written receipt: %v\n%s", err, string(writtenBytes))
+	}
 	if written != receipt {
 		t.Fatalf("written receipt = %+v, want stdout receipt %+v", written, receipt)
+	}
+	if rawWritten["review_report"] != "a21-wake-word-build-review.json" {
+		t.Fatalf("written review_report = %#v, want review basename in %s", rawWritten["review_report"], string(writtenBytes))
 	}
 	if _, err := os.Stat(filepath.Join(buildDir, "a21-wake-word-build.json")); !os.IsNotExist(err) {
 		t.Fatalf("build-dir-local receipt err = %v, want no write into external build dir", err)
 	}
 	for _, output := range []string{stdout.String(), string(writtenBytes)} {
-		for _, forbidden := range []string{dir, planPath, buildDir, receiptDir, "http://", "https://", "secret", "token", "A21_WAKE_WORD"} {
+		for _, forbidden := range []string{dir, planPath, buildDir, reviewPath, receiptDir, "http://", "https://", "secret", "token", "A21_WAKE_WORD"} {
 			if strings.Contains(output, forbidden) {
 				t.Fatalf("wake word firmware build receipt leaked %q: %s", forbidden, output)
+			}
+		}
+	}
+}
+
+func TestRunWakeWordFirmwareBuildReceiptRejectsMissingReviewEvidenceWithoutPathLeaks(t *testing.T) {
+	dir := t.TempDir()
+	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
+	buildDir := writeWakeWordFirmwareBuildFixture(t, dir, "小阿二一", "xiao a er yi", 35)
+	receiptDir := filepath.Join(dir, "receipts")
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"wake-word-firmware-build-receipt",
+		"--plan", planPath,
+		"--build-dir", buildDir,
+		"--output-dir", receiptDir,
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code = 0, want rejection without reviewed build evidence: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "" {
+		t.Fatalf("stdout = %q, want empty on rejection", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(receiptDir, "a21-wake-word-build.json")); !os.IsNotExist(err) {
+		t.Fatalf("receipt write err = %v, want no receipt without review evidence", err)
+	}
+	for _, output := range []string{stdout.String(), stderr.String()} {
+		for _, forbidden := range []string{dir, planPath, buildDir, receiptDir, "http://", "https://", "secret", "token", "A21_WAKE_WORD"} {
+			if strings.Contains(output, forbidden) {
+				t.Fatalf("wake word firmware build receipt rejection leaked %q: %s", forbidden, output)
 			}
 		}
 	}
@@ -186,6 +233,7 @@ func TestRunWakeWordFirmwareBuildReceiptStdoutOnlyByDefault(t *testing.T) {
 	dir := t.TempDir()
 	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
 	buildDir := writeWakeWordFirmwareBuildFixture(t, dir, "小阿二一", "xiao a er yi", 35)
+	reviewPath := writeWakeWordFirmwareBuildReviewFixture(t, dir, "a21-wake-word-build-review.json", "小阿二一", "xiao a er yi", 35)
 	if err := os.Remove(filepath.Join(buildDir, "a21-wake-word-build.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +243,7 @@ func TestRunWakeWordFirmwareBuildReceiptStdoutOnlyByDefault(t *testing.T) {
 		"wake-word-firmware-build-receipt",
 		"--plan", planPath,
 		"--build-dir", buildDir,
+		"--build-review", reviewPath,
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
@@ -203,7 +252,11 @@ func TestRunWakeWordFirmwareBuildReceiptStdoutOnlyByDefault(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
 		t.Fatalf("decode stdout receipt: %v\n%s", err, stdout.String())
 	}
-	if receipt.AppBinary != "xiaozhi.bin" || receipt.DesiredPhrase != "小阿二一" {
+	var rawReceipt map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &rawReceipt); err != nil {
+		t.Fatalf("decode raw stdout receipt: %v\n%s", err, stdout.String())
+	}
+	if receipt.AppBinary != "xiaozhi.bin" || receipt.DesiredPhrase != "小阿二一" || rawReceipt["review_report"] != "a21-wake-word-build-review.json" {
 		t.Fatalf("receipt = %+v, want stdout-only matching receipt", receipt)
 	}
 	if _, err := os.Stat(filepath.Join(buildDir, "a21-wake-word-build.json")); !os.IsNotExist(err) {
@@ -246,8 +299,10 @@ func TestRunWakeWordFirmwarePackageAcceptsExplicitBuildReceipt(t *testing.T) {
 	if report.Status != "packaged" || !report.PackageWritten || report.ProductReady || report.FlashAllowed || report.FlashExecuted {
 		t.Fatalf("report = %+v, want packaged without product-ready/flash", report)
 	}
-	if report.BuildReceipt != "a21-wake-word-build.json" || report.BuildDirName != "xiaozhi-build" {
-		t.Fatalf("receipt/build dir = %q/%q, want basenames", report.BuildReceipt, report.BuildDirName)
+	if report.BuildReceipt != "a21-wake-word-build.json" ||
+		report.BuildReview != "a21-wake-word-build-review.json" ||
+		report.BuildDirName != "xiaozhi-build" {
+		t.Fatalf("receipt/review/build dir = %q/%q/%q, want basenames", report.BuildReceipt, report.BuildReview, report.BuildDirName)
 	}
 	for _, output := range []string{stdout.String(), readTextFile(t, filepath.Join(outputDir, report.ManifestName)), readTextFile(t, filepath.Join(outputDir, report.ReportPath))} {
 		for _, forbidden := range []string{dir, planPath, buildDir, receiptDir, receiptPath, outputDir, "http://", "https://", "secret", "token", "A21_WAKE_WORD"} {
@@ -291,6 +346,7 @@ func TestRunWakeWordFirmwarePackageWritesArtifactWithoutFlashOrPathLeaks(t *test
 	}
 	if report.SourcePlanReport != "a21-wake-word-firmware-plan-20260602-010000.json" ||
 		report.BuildReceipt != "a21-wake-word-build.json" ||
+		report.BuildReview != "a21-wake-word-build-review.json" ||
 		report.Mode != "custom_multinet" ||
 		report.DesiredPhrase != "小阿二一" ||
 		report.DesiredPinyin != "xiao a er yi" ||
@@ -534,11 +590,12 @@ func writeWakeWordFirmwareBuildFixture(t *testing.T, dir, phrase, pinyin string,
 	if err := os.WriteFile(filepath.Join(buildDir, "flasher_args.json"), []byte(flasherArgs), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeWakeWordFirmwareBuildReceiptFixture(t, filepath.Join(buildDir, "a21-wake-word-build.json"), phrase, pinyin, threshold)
+	reviewPath := writeWakeWordFirmwareBuildReviewFixture(t, buildDir, "a21-wake-word-build-review.json", phrase, pinyin, threshold)
+	writeWakeWordFirmwareBuildReceiptFixture(t, filepath.Join(buildDir, "a21-wake-word-build.json"), phrase, pinyin, threshold, filepath.Base(reviewPath))
 	return buildDir
 }
 
-func writeWakeWordFirmwareBuildReceiptFixture(t *testing.T, path, phrase, pinyin string, threshold int) {
+func writeWakeWordFirmwareBuildReceiptFixture(t *testing.T, path, phrase, pinyin string, threshold int, reviewReport string) {
 	t.Helper()
 	receipt := fmt.Sprintf(`{
   "schema_version": "a21.wake_word_firmware_build.v1",
@@ -550,11 +607,37 @@ func writeWakeWordFirmwareBuildReceiptFixture(t *testing.T, path, phrase, pinyin
   "desired_phrase": %q,
   "desired_pinyin": %q,
   "threshold": %d,
-  "app_binary": "xiaozhi.bin"
-}`, phrase, pinyin, threshold)
+  "app_binary": "xiaozhi.bin",
+  "review_report": %q
+}`, phrase, pinyin, threshold, reviewReport)
 	if err := os.WriteFile(path, []byte(receipt), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeWakeWordFirmwareBuildReviewFixture(t *testing.T, dir, name, phrase, pinyin string, threshold int) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	review := fmt.Sprintf(`{
+  "schema_version": "a21.wake_word_firmware_build_review.v1",
+  "status": "reviewed",
+  "firmware_id": "a21-stackchan",
+  "target_board": "m5stack-cores3",
+  "target_profile": "xiaozhi_esp_sr_multinet",
+  "mode": "custom_multinet",
+  "desired_phrase": %q,
+  "desired_pinyin": %q,
+  "threshold": %d,
+  "app_binary": "xiaozhi.bin",
+  "sdkconfig": "sdkconfig.json",
+  "flasher_args": "flasher_args.json",
+  "reviewer": "a21-control-tower-fixture",
+  "build_tool": "safe-temp-fixture"
+}`, phrase, pinyin, threshold)
+	if err := os.WriteFile(path, []byte(review), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func readTextFile(t *testing.T, path string) string {

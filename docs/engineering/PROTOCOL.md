@@ -189,25 +189,35 @@ of a controlled plan only. It is not evidence that the custom wake model is
 compiled into firmware or active on StackChan hardware.
 
 `a21 wake-word-firmware-build-receipt --plan <plan.json>
---build-dir <xiaozhi-build> [--output-dir <receipt-dir>]` is the bridge from a
-reviewed external xiaozhi/ESP-SR build to A21 packaging. It validates the
-custom plan, `sdkconfig.json`, `flasher_args.json`, and `xiaozhi.bin`, prints a
-redacted `a21.wake_word_firmware_build.v1` receipt, and writes
-`a21-wake-word-build.json` only when `--output-dir` is supplied.
+--build-dir <xiaozhi-build> --review-report <review.json>
+[--output-dir <receipt-dir>]` is the bridge from a reviewed external
+xiaozhi/ESP-SR build to A21 packaging. `--build-review` is accepted as an alias
+for `--review-report`. The review file must be
+`schema_version=a21.wake_word_firmware_build_review.v1`, `status=reviewed`,
+match the plan's firmware identity, CoreS3 target, custom MultiNet mode,
+desired phrase, desired pinyin, and threshold, and name only basename build
+artifacts: `app_binary`, `sdkconfig`, and `flasher_args`. Optional
+`reviewer`/`build_tool` fields are allowed only as redacted labels. The command
+validates the custom plan, review, `sdkconfig.json`, `flasher_args.json`, and
+`xiaozhi.bin`, prints a redacted `a21.wake_word_firmware_build.v1` receipt with
+the review basename, and writes `a21-wake-word-build.json` only when
+`--output-dir` is supplied.
 
 `a21 wake-word-firmware-package --plan <plan.json> --build-dir <xiaozhi-build>
 [--build-receipt <receipt.json>] --commit <sha>
 [--output-dir firmware/artifacts/wake-word]` is the next no-hardware boundary.
 It requires the matching custom MultiNet plan, an explicit or build-dir-local
-`a21-wake-word-build.json` receipt, CoreS3 `sdkconfig.json`, `flash_args`, and
-the required flash parts. It writes an A21-named app `.bin`, `.sha256`,
-`.manifest.json`, and package report with basenames and hashes only. It does
+`a21-wake-word-build.json` receipt that names a reviewed-build report by
+basename, CoreS3 `sdkconfig.json`, `flash_args`, and the required flash parts.
+It writes an A21-named app `.bin`, `.sha256`, `.manifest.json`, and package
+report with basenames and hashes only, including `build_review`. It does
 not flash, touch a serial port, start Gateway, execute providers, or make the
 wake word product-ready. The `product-readiness` command accepts
 `--wake-word-firmware-package-report <report.json>` as below-activation evidence
-under `wake_word`, but only basename package source, artifact, and manifest names
-may be surfaced. The rollup must remain `launch_ready=false` until guarded flash
-and physical custom wake proof are present.
+under `wake_word`, but only the existing basename package source, artifact, and
+manifest names may be surfaced there; `build_review` remains package-report
+provenance. The rollup must remain `launch_ready=false` until guarded flash and
+physical custom wake proof are present.
 If `--build-dir` is absent or the build receipt is missing, the command emits
 and writes a structured diagnostic package report with
 `status=missing_build_dir|missing_build_receipt`, finding code

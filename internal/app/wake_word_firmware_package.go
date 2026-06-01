@@ -16,6 +16,7 @@ import (
 const (
 	wakeWordFirmwarePackageSchema      = "a21.wake_word_firmware_package.v1"
 	wakeWordFirmwareBuildReceiptSchema = "a21.wake_word_firmware_build.v1"
+	wakeWordFirmwareBuildReviewSchema  = "a21.wake_word_firmware_build_review.v1"
 	wakeWordFirmwareArtifactPrefix     = "a21-wake-word-xiaozhi-esp-sr-multinet"
 )
 
@@ -29,9 +30,10 @@ type wakeWordFirmwarePackageOptions struct {
 }
 
 type wakeWordFirmwareBuildReceiptOptions struct {
-	PlanPath  string
-	BuildDir  string
-	OutputDir string
+	PlanPath         string
+	BuildDir         string
+	ReviewReportPath string
+	OutputDir        string
 }
 
 type wakeWordFirmwareBuildReceipt struct {
@@ -48,6 +50,24 @@ type wakeWordFirmwareBuildReceipt struct {
 	BuildDirName  string `json:"build_dir_name,omitempty"`
 	SDKConfig     string `json:"sdkconfig,omitempty"`
 	FlasherArgs   string `json:"flasher_args,omitempty"`
+	ReviewReport  string `json:"review_report,omitempty"`
+}
+
+type wakeWordFirmwareBuildReview struct {
+	SchemaVersion string `json:"schema_version"`
+	Status        string `json:"status"`
+	FirmwareID    string `json:"firmware_id"`
+	TargetBoard   string `json:"target_board"`
+	TargetProfile string `json:"target_profile"`
+	Mode          string `json:"mode"`
+	DesiredPhrase string `json:"desired_phrase"`
+	DesiredPinyin string `json:"desired_pinyin"`
+	Threshold     int    `json:"threshold"`
+	AppBinary     string `json:"app_binary"`
+	SDKConfig     string `json:"sdkconfig"`
+	FlasherArgs   string `json:"flasher_args"`
+	Reviewer      string `json:"reviewer,omitempty"`
+	BuildTool     string `json:"build_tool,omitempty"`
 }
 
 type wakeWordFirmwarePackageReport struct {
@@ -69,6 +89,7 @@ type wakeWordFirmwarePackageReport struct {
 	Timestamp           string                           `json:"timestamp"`
 	SourcePlanReport    string                           `json:"source_plan_report"`
 	BuildReceipt        string                           `json:"build_receipt"`
+	BuildReview         string                           `json:"build_review,omitempty"`
 	BuildDirName        string                           `json:"build_dir_name"`
 	ArtifactName        string                           `json:"artifact_name"`
 	SHA256Name          string                           `json:"sha256_name"`
@@ -235,6 +256,7 @@ func packageWakeWordFirmware(options wakeWordFirmwarePackageOptions) (wakeWordFi
 		Timestamp:        options.Timestamp,
 		SourcePlanReport: filepath.Base(filepath.Clean(options.PlanPath)),
 		BuildReceipt:     filepath.Base(filepath.Clean(receiptPath)),
+		BuildReview:      receipt.ReviewReport,
 		BuildDirName:     filepath.Base(buildDir),
 		ArtifactName:     artifactName,
 		SHA256Name:       shaName,
@@ -417,7 +439,7 @@ func runWakeWordFirmwareBuildReceipt(args []string, stdout io.Writer, stderr io.
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 wake-word-firmware-build-receipt --plan reports/a21-wake-word-firmware-plan-*.json --build-dir /path/to/xiaozhi/build-m5stack-core-s3 [--output-dir receipts]")
+			fmt.Fprintln(stdout, "a21 wake-word-firmware-build-receipt --plan reports/a21-wake-word-firmware-plan-*.json --build-dir /path/to/xiaozhi/build-m5stack-core-s3 --review-report <review.json> [--output-dir receipts]")
 			return 0
 		case "--plan":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -433,6 +455,13 @@ func runWakeWordFirmwareBuildReceipt(args []string, stdout io.Writer, stderr io.
 			}
 			i++
 			options.BuildDir = args[i]
+		case "--review-report", "--build-review":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--review-report requires a value")
+				return 2
+			}
+			i++
+			options.ReviewReportPath = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -482,6 +511,16 @@ func buildWakeWordFirmwareBuildReceipt(options wakeWordFirmwareBuildReceiptOptio
 	if _, err := os.Stat(filepath.Join(buildDir, "xiaozhi.bin")); err != nil {
 		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("xiaozhi.bin is required")
 	}
+	review, err := loadWakeWordFirmwareBuildReview(options.ReviewReportPath)
+	if err != nil {
+		return wakeWordFirmwareBuildReceipt{}, err
+	}
+	if !matchingWakeWordFirmwareBuildReview(plan, review) ||
+		review.SDKConfig != filepath.Base(sdkconfig) ||
+		review.FlasherArgs != "flasher_args.json" ||
+		review.AppBinary != "xiaozhi.bin" {
+		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("wake word build review does not match plan and build")
+	}
 	return wakeWordFirmwareBuildReceipt{
 		SchemaVersion: wakeWordFirmwareBuildReceiptSchema,
 		Status:        "built",
@@ -496,6 +535,7 @@ func buildWakeWordFirmwareBuildReceipt(options wakeWordFirmwareBuildReceiptOptio
 		BuildDirName:  filepath.Base(buildDir),
 		SDKConfig:     filepath.Base(sdkconfig),
 		FlasherArgs:   "flasher_args.json",
+		ReviewReport:  filepath.Base(filepath.Clean(options.ReviewReportPath)),
 	}, nil
 }
 
@@ -506,7 +546,10 @@ func validateWakeWordFirmwareBuildReceiptOptions(options wakeWordFirmwareBuildRe
 	if strings.TrimSpace(options.BuildDir) == "" {
 		return fmt.Errorf("--build-dir is required")
 	}
-	for _, path := range []string{options.PlanPath, options.BuildDir, options.OutputDir} {
+	if strings.TrimSpace(options.ReviewReportPath) == "" {
+		return fmt.Errorf("--review-report is required")
+	}
+	for _, path := range []string{options.PlanPath, options.BuildDir, options.ReviewReportPath, options.OutputDir} {
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
@@ -527,6 +570,74 @@ func wakeWordFirmwareBuildSDKConfigName(buildDir string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("sdkconfig.json is required")
+}
+
+func loadWakeWordFirmwareBuildReview(path string) (wakeWordFirmwareBuildReview, error) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > 8192 {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review is required")
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review invalid")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review invalid")
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productWakeWordFirmwarePlanContainsForbiddenValue(raw) {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review unsafe")
+	}
+	var review wakeWordFirmwareBuildReview
+	if err := json.Unmarshal(data, &review); err != nil {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review invalid")
+	}
+	if !validWakeWordFirmwareBuildReview(review) {
+		return wakeWordFirmwareBuildReview{}, fmt.Errorf("wake word build review invalid")
+	}
+	return review, nil
+}
+
+func validWakeWordFirmwareBuildReview(review wakeWordFirmwareBuildReview) bool {
+	return review.SchemaVersion == wakeWordFirmwareBuildReviewSchema &&
+		strings.TrimSpace(review.Status) == "reviewed" &&
+		strings.TrimSpace(review.FirmwareID) == wakeWordFirmwareID &&
+		strings.TrimSpace(review.TargetBoard) == wakeWordFirmwareTargetBoard &&
+		strings.TrimSpace(review.TargetProfile) == wakeWordFirmwareTargetProfile &&
+		strings.TrimSpace(review.Mode) == wakeWordFirmwareCustomMode &&
+		strings.TrimSpace(review.DesiredPhrase) != "" &&
+		strings.TrimSpace(review.DesiredPinyin) != "" &&
+		review.Threshold >= 1 &&
+		review.Threshold <= 100 &&
+		validWakeWordFirmwareBuildBasename(review.AppBinary) &&
+		validWakeWordFirmwareBuildBasename(review.SDKConfig) &&
+		validWakeWordFirmwareBuildBasename(review.FlasherArgs) &&
+		validWakeWordFirmwareReviewLabel(review.Reviewer) &&
+		validWakeWordFirmwareReviewLabel(review.BuildTool)
+}
+
+func matchingWakeWordFirmwareBuildReview(plan productWakeWordFirmwarePlanEvidence, review wakeWordFirmwareBuildReview) bool {
+	return strings.TrimSpace(review.Mode) == plan.Mode &&
+		strings.TrimSpace(review.DesiredPhrase) == plan.DesiredPhrase &&
+		strings.TrimSpace(review.DesiredPinyin) == plan.DesiredPinyin &&
+		review.Threshold == plan.Threshold
+}
+
+func validWakeWordFirmwareBuildBasename(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || trimmed != name || strings.Contains(trimmed, "..") || strings.ContainsAny(trimmed, `/\`) {
+		return false
+	}
+	return filepath.Base(filepath.Clean(trimmed)) == trimmed
+}
+
+func validWakeWordFirmwareReviewLabel(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return true
+	}
+	return trimmed == value && !strings.Contains(trimmed, "..") && !strings.ContainsAny(trimmed, `/\`)
 }
 
 func writeWakeWordFirmwareBuildReceipt(outputDir string, receipt wakeWordFirmwareBuildReceipt) error {
@@ -591,7 +702,8 @@ func validWakeWordFirmwareBuildReceipt(receipt wakeWordFirmwareBuildReceipt) boo
 		strings.TrimSpace(receipt.DesiredPinyin) != "" &&
 		receipt.Threshold >= 1 &&
 		receipt.Threshold <= 100 &&
-		strings.TrimSpace(receipt.AppBinary) == "xiaozhi.bin"
+		strings.TrimSpace(receipt.AppBinary) == "xiaozhi.bin" &&
+		validWakeWordFirmwareBuildBasename(receipt.ReviewReport)
 }
 
 func matchingWakeWordFirmwareBuildReceipt(plan productWakeWordFirmwarePlanEvidence, receipt wakeWordFirmwareBuildReceipt) bool {

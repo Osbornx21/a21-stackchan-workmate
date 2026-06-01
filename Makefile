@@ -38,6 +38,7 @@ A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM ?=
 A21_XIAOZHI_FIRMWARE_BUILD_DIR ?=
 A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM ?=
 A21_WAKE_WORD_FIRMWARE_PLAN ?=
+A21_WAKE_WORD_BUILD_REVIEW_REPORT ?=
 A21_WAKE_WORD_FIRMWARE_OUTPUT_DIR ?= firmware/artifacts/wake-word
 A21_WAKE_WORD_BUILD_RECEIPT_OUTPUT_DIR ?= firmware/artifacts/wake-word
 A21_PROVIDER ?=
@@ -253,7 +254,8 @@ wake-word-firmware-plan:
 wake-word-firmware-build-receipt:
 	@test -n "$(A21_WAKE_WORD_FIRMWARE_PLAN)" || (echo "A21_WAKE_WORD_FIRMWARE_PLAN is required"; exit 2)
 	@test -n "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" || (echo "A21_XIAOZHI_FIRMWARE_BUILD_DIR is required"; exit 2)
-	go run ./cmd/a21 wake-word-firmware-build-receipt --plan "$(A21_WAKE_WORD_FIRMWARE_PLAN)" --build-dir "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" --output-dir "$(A21_WAKE_WORD_BUILD_RECEIPT_OUTPUT_DIR)"
+	@test -n "$(A21_WAKE_WORD_BUILD_REVIEW_REPORT)" || (echo "A21_WAKE_WORD_BUILD_REVIEW_REPORT is required"; exit 2)
+	go run ./cmd/a21 wake-word-firmware-build-receipt --plan "$(A21_WAKE_WORD_FIRMWARE_PLAN)" --build-dir "$(A21_XIAOZHI_FIRMWARE_BUILD_DIR)" --review-report "$(A21_WAKE_WORD_BUILD_REVIEW_REPORT)" --output-dir "$(A21_WAKE_WORD_BUILD_RECEIPT_OUTPUT_DIR)"
 
 wake-word-firmware-package:
 	@test -n "$(A21_WAKE_WORD_FIRMWARE_PLAN)" || (echo "A21_WAKE_WORD_FIRMWARE_PLAN is required"; exit 2)

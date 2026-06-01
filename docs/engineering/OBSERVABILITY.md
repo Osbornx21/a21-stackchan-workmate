@@ -79,22 +79,26 @@ matches the current Gateway wake-word intent. The rollup then exposes
 `wake_word`; it still keeps launch blocked until a later guarded build/flash
 and physical acceptance prove the custom model on the device.
 
-`wake-word-firmware-build-receipt` prints `a21.wake_word_firmware_build.v1` and
-writes `a21-wake-word-build.json` only when `--output-dir` is supplied. The
-receipt records sanitized intent fields plus build-dir basename, sdkconfig
-basename, `flasher_args.json`, and `xiaozhi.bin`; it is build evidence only and
-does not imply activation.
+`wake-word-firmware-build-receipt` requires an explicit `--review-report`
+(`--build-review` alias) with `schema_version=a21.wake_word_firmware_build_review.v1`
+and `status=reviewed`; it prints `a21.wake_word_firmware_build.v1` and writes
+`a21-wake-word-build.json` only when `--output-dir` is supplied. The review and
+receipt record sanitized intent fields plus build-dir basename, review basename,
+sdkconfig basename, `flasher_args.json`, and `xiaozhi.bin`; they are build
+evidence only and do not imply activation.
 
 `wake-word-firmware-package` writes `a21.wake_word_firmware_package.v1` after a
-reviewed xiaozhi/ESP-SR build lane emits or returns a matching receipt. The
-package report records only sanitized intent fields, basenames, SHA-256 hashes,
-CoreS3 target metadata, and flash-part inventory. It must not store build paths,
-config paths, full URLs, proxy values, credentials, audio, transcripts, prompts,
-or provider output. Package evidence is below activation: `product_ready=false`,
+reviewed xiaozhi/ESP-SR build lane emits or returns a matching receipt that
+names the reviewed-build report by basename. The package report records only
+sanitized intent fields, basenames, SHA-256 hashes, CoreS3 target metadata, and
+flash-part inventory. It must not store build paths, config paths, full URLs,
+proxy values, credentials, audio, transcripts, prompts, or provider output.
+Package evidence is below activation: `product_ready=false`,
 `flash_allowed=false`, and `flash_executed=false`. The `product-readiness`
 command accepts `--wake-word-firmware-package-report <report.json>` and exposes
-only basename package source, artifact, and manifest names under `wake_word`; it
-keeps `wake_word.product_ready=false`, `server_side.wake_word_ready=false`, and
+only the existing basename package source, artifact, and manifest names under
+`wake_word`; `build_review` stays package-report provenance. It keeps
+`wake_word.product_ready=false`, `server_side.wake_word_ready=false`, and
 `launch_ready=false` until guarded flash plus physical custom wake proof exists.
 When the package command lacks `--build-dir` or `a21-wake-word-build.json`, it
 still emits a redacted diagnostic report with

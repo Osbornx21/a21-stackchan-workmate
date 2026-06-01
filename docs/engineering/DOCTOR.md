@@ -185,10 +185,12 @@ blank or `mock` providers and prints the lab smoke, package, return, import,
 and product-readiness commands without executing provider traffic on the control
 machine.
 For custom wake words, run `wake-word-firmware-build-receipt` after a reviewed
-xiaozhi/ESP-SR build and pass the resulting `a21-wake-word-build.json` to
-`wake-word-firmware-package --build-receipt`; both remain no-flash, below
-activation evidence until a guarded hardware-window flash and physical wake
-proof pass.
+xiaozhi/ESP-SR build and pass `--review-report <review.json>` (or
+`--build-review`) so the resulting `a21-wake-word-build.json` names the
+reviewed-build report by basename. Then pass the receipt to
+`wake-word-firmware-package --build-receipt`; both remain no-flash,
+below-activation evidence until a guarded hardware-window flash and physical
+wake proof pass.
 For V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with
