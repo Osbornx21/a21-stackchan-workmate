@@ -85,7 +85,11 @@ report records only sanitized intent fields, basenames, SHA-256 hashes, CoreS3
 target metadata, and flash-part inventory. It must not store build paths, config
 paths, full URLs, proxy values, credentials, audio, transcripts, prompts, or
 provider output. Package evidence is below activation: `product_ready=false`,
-`flash_allowed=false`, and `flash_executed=false`.
+`flash_allowed=false`, and `flash_executed=false`. The `product-readiness`
+command accepts `--wake-word-firmware-package-report <report.json>` and exposes
+only basename package source, artifact, and manifest names under `wake_word`; it
+keeps `wake_word.product_ready=false`, `server_side.wake_word_ready=false`, and
+`launch_ready=false` until guarded flash plus physical custom wake proof exists.
 
 `product-readiness` also emits a `server_side` observability block for the
 no-hardware candidate chain. It summarizes the already-redacted Gateway,

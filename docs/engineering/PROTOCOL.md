@@ -196,7 +196,11 @@ build lane, CoreS3 `sdkconfig.json`, `flash_args`, and the required flash
 parts. It writes an A21-named app `.bin`, `.sha256`, `.manifest.json`, and
 package report with basenames and hashes only. It does not flash, touch a
 serial port, start Gateway, execute providers, or make the wake word
-product-ready.
+product-ready. The `product-readiness` command accepts
+`--wake-word-firmware-package-report <report.json>` as below-activation evidence
+under `wake_word`, but only basename package source, artifact, and manifest names
+may be surfaced. The rollup must remain `launch_ready=false` until guarded flash
+and physical custom wake proof are present.
 
 ### Fast Companion Runtime
 
