@@ -92,7 +92,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama|<A21_PROVIDER_PROFILES_PATH route-eligible profile>] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -431,37 +431,47 @@ func runLocalVoiceLoopbackASR(ctx context.Context, options localVoiceLoopbackASR
 }
 func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options localVoiceLoopbackTextStreamOptions, report *localVoiceLoopbackReport) (string, error) {
 	provider := strings.ToLower(strings.TrimSpace(options.Provider))
+	provider = strings.ReplaceAll(provider, "-", "_")
 	switch provider {
 	case "", "mock", "mock_text_stream":
 		return runMockLocalVoiceLoopbackTextStream(report)
-	case "deepseek", "local_ollama":
-		if !options.Execute {
-			report.Findings = append(report.Findings, provider+" text stream not executed; mock text stream used")
-			return runMockLocalVoiceLoopbackTextStream(report)
-		}
-		result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
-			ProviderName: provider,
-			Prompt:       fastCompanionTextStreamPrompt(prompt),
-			MaxTokens:    fastCompanionTextStreamMaxTokens,
-			Client:       options.Client,
-		})
-		if err != nil {
-			report.Findings = append(report.Findings, provider+" text stream failed")
-			return "", err
-		}
-		report.TextStreamProvider = result.Provider
-		report.TextStreamFamily = string(result.Family)
-		report.TextStreamExecuted = true
-		report.TextStreamEndpointHost = result.EndpointHost
-		report.TextStreamFirstContentMS = result.FirstContentMS
-		report.TextStreamContentDeltas = result.ContentDeltaCount
-		report.TextStreamReasoningDeltas = result.ReasoningDeltaCount
-		report.TextStreamDone = result.Done
-		return result.ContentText, nil
-	default:
+	}
+	profile, _, ok := providers.ProviderProfileByNameFromEnv(options.Env, provider)
+	if !ok || profile.Family != providers.ProviderFamilyTextStream {
 		report.Findings = append(report.Findings, "unsupported local text provider")
 		return "", fmt.Errorf("unsupported local text provider")
 	}
+	if !profile.RouteEligible {
+		report.Findings = append(report.Findings, "local text provider is not route eligible")
+		return "", fmt.Errorf("unsupported local text provider")
+	}
+	if profile.Protocol != "openai_chat_completions" && profile.Protocol != "ollama_chat" {
+		report.Findings = append(report.Findings, "unsupported local text provider protocol")
+		return "", fmt.Errorf("unsupported local text provider")
+	}
+	if !options.Execute {
+		report.Findings = append(report.Findings, provider+" text stream not executed; mock text stream used")
+		return runMockLocalVoiceLoopbackTextStream(report)
+	}
+	result, err := providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
+		ProviderName: provider,
+		Prompt:       fastCompanionTextStreamPrompt(prompt),
+		MaxTokens:    fastCompanionTextStreamMaxTokens,
+		Client:       options.Client,
+	})
+	if err != nil {
+		report.Findings = append(report.Findings, provider+" text stream failed")
+		return "", err
+	}
+	report.TextStreamProvider = result.Provider
+	report.TextStreamFamily = string(result.Family)
+	report.TextStreamExecuted = true
+	report.TextStreamEndpointHost = result.EndpointHost
+	report.TextStreamFirstContentMS = result.FirstContentMS
+	report.TextStreamContentDeltas = result.ContentDeltaCount
+	report.TextStreamReasoningDeltas = result.ReasoningDeltaCount
+	report.TextStreamDone = result.Done
+	return result.ContentText, nil
 }
 func fastCompanionTextStreamPrompt(transcript string) string {
 	cleaned := strings.TrimSpace(transcript)

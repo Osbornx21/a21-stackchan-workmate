@@ -56,6 +56,22 @@ The current HTTP provider proxy support accepts `http` and `https` proxy URLs. S
 It uses an HTTP transport with `Proxy: nil`, records only a coarse endpoint
 label, and refuses URL credentials or device-control paths.
 
+## Mainland Lab Execution Boundary
+
+Real mainland provider latency, p95/p99, cold-start, and error-rate evidence
+must be collected on `5080lab` or another explicitly approved clean mainland
+lab host, not on a Mac whose traffic is affected by ambient proxy/VPN routing.
+This development Mac may run contract tests, fixture ingestion, local Ollama,
+mock provider paths, and httptest-backed provider simulations only. Reports
+from a proxy-affected host can prove redaction and protocol shape, but they are
+not PRD launch evidence for mainland cloud-provider performance.
+
+When a provider profile is promoted for product-path experimentation, the code
+path must still be A21-owned and provider-neutral: `A21_PROVIDER_PROFILES_PATH`
+may add an `a21_`-namespaced OpenAI-compatible, `route_eligible=true` text
+profile for loopback or Gateway voice-pipeline tests, but real paid execution
+remains a T4/provider window and should be run from the clean lab host.
+
 ## Required Diagnostics
 
 Phase 1 already records:

@@ -4682,6 +4682,118 @@ func TestRunLocalVoiceLoopbackCanUseLocalOllamaTextStreamWithoutLeakingContent(t
 	}
 }
 
+func TestRunLocalVoiceLoopbackCanUseHotPlugTextStreamProfileWithoutLeakingContent(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-hotplug-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12,
+			TTSFirstAudioMS: 12,
+		}, nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", r.URL.Path)
+		}
+		var body struct {
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
+			Messages  []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "hidden-hotplug-model" || body.MaxTokens != 12 {
+			t.Fatalf("provider request body = %+v", body)
+		}
+		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "12个字") || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
+			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"reasoning":"不要泄露推理"}}]}`,
+			`data: {"choices":[{"delta":{"content":"热插拔已接入"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(server.Close)
+	profilePath := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(profilePath, []byte(`{
+		"name": "a21_loopback_vendor",
+		"label": "A21 loopback vendor",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "streaming_text", "text_stream"],
+		"api_key_env": "A21_LOOPBACK_VENDOR_API_KEY",
+		"model_env": "A21_LOOPBACK_VENDOR_MODEL",
+		"base_url_env": "A21_LOOPBACK_VENDOR_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PROFILES_PATH", profilePath)
+	t.Setenv("A21_PROVIDER_PRIMARY", "a21_loopback_vendor")
+	t.Setenv("A21_LOOPBACK_VENDOR_API_KEY", "sk-a21-hotplug-secret")
+	t.Setenv("A21_LOOPBACK_VENDOR_MODEL", "hidden-hotplug-model")
+	t.Setenv("A21_LOOPBACK_VENDOR_BASE_URL", server.URL+"/v1")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "a21_loopback_vendor", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if ttsInput != "热插拔已接入" {
+		t.Fatalf("tts input = %q, want hotplug provider voice preview", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"text_stream_provider": "a21_loopback_vendor"`,
+		`"text_stream_executed": true`,
+		`"text_stream_content_delta_count": 1`,
+		`"text_stream_reasoning_delta_count": 1`,
+		`"tts_provider": "macos_say"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("reports = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{profilePath, filepath.Dir(profilePath), server.URL, "sk-a21-hotplug-secret", "hidden-hotplug-model", "用户原文不要进报告", "热插拔已接入", "不要泄露推理", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s stderr=%s report=%s", forbidden, stdout.String(), stderr.String(), reportData)
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackRecordsLocalAckSeparatelyFromProviderAnswer(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

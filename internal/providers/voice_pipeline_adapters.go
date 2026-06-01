@@ -513,19 +513,19 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		})
 		adapters.ExecutionMode = "host_local"
 	}
-	if isOpenAITextStreamProfile(selection.LLMProfile) {
+	if profile, ok := openAITextStreamProfileFromEnv(env, selection.LLMProfile); ok {
 		adapters.TextStream = NewOpenAICompatibleTextStreamAdapter(OpenAICompatibleTextStreamAdapterOptions{
-			Name:         selection.LLMProfile,
-			ProviderName: selection.LLMProfile,
+			Name:         profile.Name,
+			ProviderName: profile.Name,
 			Env:          env,
 			Client:       options.TextHTTPClient,
 			MaxTokens:    textMaxTokens,
 		})
 		adapters.ExecutionMode = "host_local"
 	}
-	if isOllamaTextStreamProfile(selection.LLMProfile) {
+	if profile, ok := ollamaTextStreamProfileFromEnv(env, selection.LLMProfile); ok {
 		adapters.TextStream = NewOllamaTextStreamAdapter(OllamaTextStreamAdapterOptions{
-			Name:      selection.LLMProfile,
+			Name:      profile.Name,
 			Env:       env,
 			Client:    options.TextHTTPClient,
 			MaxTokens: textMaxTokens,
@@ -582,22 +582,21 @@ func isLocalSherpaASRProfile(profile string) bool {
 	}
 }
 
-func isOpenAITextStreamProfile(profile string) bool {
-	profile = normalizePipelineProfile(profile)
-	if profile == "" || profile == "mock" || profile == "mock_text_stream" || profile == "mock-text-stream" {
-		return false
-	}
-	builtin, _, ok := ProviderProfileByNameFromEnv(nil, profile)
-	return ok && builtin.Family == ProviderFamilyTextStream && builtin.Protocol == "openai_chat_completions"
+func openAITextStreamProfileFromEnv(env []string, profile string) (ProviderProfile, bool) {
+	return routeEligibleTextStreamProfileFromEnv(env, profile, "openai_chat_completions")
 }
 
-func isOllamaTextStreamProfile(profile string) bool {
+func ollamaTextStreamProfileFromEnv(env []string, profile string) (ProviderProfile, bool) {
+	return routeEligibleTextStreamProfileFromEnv(env, profile, "ollama_chat")
+}
+
+func routeEligibleTextStreamProfileFromEnv(env []string, profile string, protocol string) (ProviderProfile, bool) {
 	profile = normalizePipelineProfile(profile)
-	if profile != "local_ollama" {
-		return false
+	if profile == "" || profile == "mock" || profile == "mock_text_stream" || profile == "mock-text-stream" {
+		return ProviderProfile{}, false
 	}
-	builtin, _, ok := ProviderProfileByNameFromEnv(nil, profile)
-	return ok && builtin.Family == ProviderFamilyTextStream && builtin.Protocol == "ollama_chat"
+	found, _, ok := ProviderProfileByNameFromEnv(env, profile)
+	return found, ok && found.RouteEligible && found.Family == ProviderFamilyTextStream && found.Protocol == protocol
 }
 
 func isLocalTTSProfile(profile string) bool {

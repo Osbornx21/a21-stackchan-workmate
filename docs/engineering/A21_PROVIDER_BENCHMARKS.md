@@ -166,6 +166,16 @@ default is 24 tokens; values are sanitized into the 8..96 range. This knob does
 not change standalone provider smoke defaults, does not relax PRD latency gates,
 and does not authorize transcript or provider-output capture in reports.
 
+The host-local product path now uses the provider catalog as its text-stream
+gate instead of hard-coding one cloud vendor. `A21_PROVIDER_PROFILES_PATH` can
+add `a21_`-namespaced OpenAI-compatible profiles; only profiles that pass the
+catalog validator and explicitly set `route_eligible=true` may be selected by
+`local-voice-loopback`, `stackchan-fast-companion-turn`, or the host-local
+voice pipeline. Running with `--execute-text-provider` is still explicit
+execution authorization, and true mainland latency evidence must be gathered on
+`5080lab` or another approved clean mainland lab host. Httptest-backed provider
+tests on a proxy-affected Mac prove protocol/redaction behavior only.
+
 This v2 hardening is a report-contract and metric-shape change only. It does
 not authorize provider execute, V21 execute, Gateway runtime startup, binary
 Opus transport, AEC adapter implementation, WebRTC/ESP-SR native adapters, or

@@ -287,6 +287,62 @@ func TestVoicePipelineAdaptersFromEnvSelectsLocalOllama(t *testing.T) {
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvSelectsHotPlugOpenAITextStreamProfile(t *testing.T) {
+	profilePath := writeProviderProfileFile(t, `{
+		"name": "a21_voice_lab_text",
+		"label": "A21 voice lab text stream",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "streaming_text", "text_stream"],
+		"api_key_env": "A21_VOICE_LAB_TEXT_API_KEY",
+		"model_env": "A21_VOICE_LAB_TEXT_MODEL",
+		"base_url_env": "A21_VOICE_LAB_TEXT_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`)
+	var body map[string]any
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", req.URL.Path)
+		}
+		body = readJSONRequestBody(t, req)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\ndata: [DONE]\n")),
+			Request:    req,
+		}, nil
+	})}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_voice_lab_text",
+		"A21_TEXT_STREAM_PROFILE=a21_voice_lab_text",
+		"A21_VOICE_LAB_TEXT_API_KEY=configured-token",
+		"A21_VOICE_LAB_TEXT_MODEL=hidden-model",
+		"A21_VOICE_LAB_TEXT_BASE_URL=https://a21-provider.invalid/v1",
+	}, VoicePipelineAdapterOptions{
+		TextHTTPClient: client,
+		TextMaxTokens:  15,
+	})
+
+	if adapters.ExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local", adapters.ExecutionMode)
+	}
+	if adapters.TextStream.Name() != "a21_voice_lab_text" {
+		t.Fatalf("text stream adapter = %s, want a21_voice_lab_text", adapters.TextStream.Name())
+	}
+	events, err := adapters.TextStream.StreamText(context.Background(), TextStreamAdapterRequest{Text: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = collectTextEvents(t, events)
+
+	got, ok := body["max_tokens"].(float64)
+	if !ok || int(got) != 15 {
+		t.Fatalf("max_tokens = %#v, want 15", body["max_tokens"])
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvAppliesVoiceTextMaxTokensToOpenAICompatibleRequests(t *testing.T) {
 	cases := []struct {
 		name string
