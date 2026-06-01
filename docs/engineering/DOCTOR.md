@@ -240,7 +240,17 @@ go run ./cmd/a21 v21-adapter-smoke --output-dir reports
 A21_V21_ADAPTER_URL=http://127.0.0.1:21121 make v21-adapter-smoke-execute
 ```
 
-Without `--execute`, it only reports whether an adapter URL is configured and writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json` when requested. With `--execute`, it posts the professional query contract to `/a21/v21/query` through a direct no-ambient-proxy HTTP client. The report records status, endpoint host, fixed paths, duration, confidence, and response counts. It never stores query text, answer text, evidence summaries, document quotes, full adapter URLs, credentials, proxy URLs, or API keys.
+Without `--execute`, it only reports whether an adapter URL is configured and
+writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json` when requested.
+With `--execute`, it posts the professional query contract to `/a21/v21/query`
+through a direct no-ambient-proxy HTTP client. The report records
+`schema_version=a21.v21_adapter_smoke.v1`, `generated_at_ms`, endpoint host,
+fixed health/query paths, `mode=professional`, `latency_profile=fast_first`,
+`answer_style=voice_first_with_citations`,
+`privacy_scope=professional_only`, `max_first_response_ms=1200`, duration,
+confidence, response counts, and `redaction_ok`; the saved `report_path` is a
+basename only. It never stores query text, answer text, evidence summaries,
+document quotes, full adapter URLs, credentials, proxy URLs, or API keys.
 
 `serial-list` emits just the serial inventory portion for physical-device prep. It does not flash, provision, reset, or open a serial monitor.
 

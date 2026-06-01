@@ -208,7 +208,7 @@ func runV21AdapterSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "write v21 adapter smoke report: %v\n", err)
 			return 1
 		}
-		report.ReportPath = reportPath
+		report.ReportPath = filepath.Base(filepath.Clean(reportPath))
 	}
 	if err := writeJSONV21AdapterSmoke(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode v21 adapter smoke report: %v\n", err)
@@ -329,11 +329,21 @@ func writeV21AdapterSmokeReport(outputDir string, report v21adapter.SmokeReport)
 		return "", err
 	}
 	defer file.Close()
-	report.ReportPath = reportPath
+	ensureV21AdapterSmokeReportIdentity(&report)
+	report.ReportPath = filepath.Base(filepath.Clean(reportPath))
 	if err := writeJSONV21AdapterSmoke(file, report); err != nil {
 		return "", err
 	}
 	return reportPath, nil
+}
+
+func ensureV21AdapterSmokeReportIdentity(report *v21adapter.SmokeReport) {
+	if report.SchemaVersion == "" {
+		report.SchemaVersion = v21adapter.SmokeSchemaVersion
+	}
+	if report.GeneratedAtMS <= 0 {
+		report.GeneratedAtMS = time.Now().UnixMilli()
+	}
 }
 
 func writeV21ProfessionalReadinessReport(outputDir string, report v21adapter.ProfessionalReadinessReport) (string, error) {

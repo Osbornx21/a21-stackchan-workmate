@@ -1047,6 +1047,85 @@ func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(
 	}
 }
 
+func TestProductReadinessRejectsWeakV21AdapterSmokeReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	tests := []struct {
+		name      string
+		mutate    func(string) string
+		wantField string
+	}{
+		{
+			name: "missing generated timestamp",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "generated_at_ms": 1780337400000,`+"\n", "", 1)
+			},
+			wantField: "generated_at_ms",
+		},
+		{
+			name: "missing professional max first response",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "max_first_response_ms": 1200,`+"\n", "", 1)
+			},
+			wantField: "max_first_response_ms",
+		},
+		{
+			name: "missing redaction flag",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "redaction_ok": true,`+"\n", "", 1)
+			},
+			wantField: "redaction_ok",
+		},
+		{
+			name: "zero confidence",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "confidence": 0.77,`, `  "confidence": 0,`, 1)
+			},
+			wantField: "",
+		},
+		{
+			name: "wrong privacy scope",
+			mutate: func(data string) string {
+				return strings.Replace(data, `  "privacy_scope": "professional_only",`, `  "privacy_scope": "private",`, 1)
+			},
+			wantField: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := writeProductReadinessV21AdapterSmokeReportFixtureFromData(t, tt.mutate(productReadinessV21AdapterSmokeReportFixtureJSON()))
+
+			report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+				GatewayURL:            server.URL,
+				DeviceID:              "stackchan-001",
+				V21AdapterSmokeReport: fixture,
+			}, []string{
+				"A21_PROVIDER_PRIMARY=mock",
+				"A21_V21_ADAPTER_URL=" + server.URL,
+			})
+
+			if report.V21.Professional.Valid || report.V21.QueryExecuted {
+				t.Fatalf("v21 readiness = %+v, want weak adapter smoke rejected", report.V21)
+			}
+			code := "v21_adapter_smoke_report_invalid"
+			if tt.wantField != "" {
+				code = "v21_adapter_smoke_report_missing_field"
+			}
+			if !containsProductFinding(report.Findings, code, tt.wantField) {
+				t.Fatalf("findings = %#v, want %s/%s", report.Findings, code, tt.wantField)
+			}
+			var encoded bytes.Buffer
+			if err := writeJSONProductReadiness(&encoded, report); err != nil {
+				t.Fatal(err)
+			}
+			for _, forbidden := range []string{fixture, filepath.Dir(fixture), server.URL, "查一下语音唤醒误触发", "http://", "https://"} {
+				if strings.Contains(encoded.String(), forbidden) {
+					t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
+				}
+			}
+		})
+	}
+}
+
 func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -1724,16 +1803,34 @@ func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) 
 
 func writeProductReadinessV21AdapterSmokeReportFixture(t *testing.T) string {
 	t.Helper()
+	return writeProductReadinessV21AdapterSmokeReportFixtureFromData(t, productReadinessV21AdapterSmokeReportFixtureJSON())
+}
+
+func writeProductReadinessV21AdapterSmokeReportFixtureFromData(t *testing.T, data string) string {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-v21-adapter-smoke-real.json")
-	data := `{
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func productReadinessV21AdapterSmokeReportFixtureJSON() string {
+	return `{
   "schema_version": "a21.v21_adapter_smoke.v1",
+  "generated_at_ms": 1780337400000,
   "adapter": "a21-v21-adapter",
   "protocol": "a21_v21_query",
   "status": "passed",
   "configured": true,
   "executed": true,
   "endpoint_host": "127.0.0.1:21121",
+  "mode": "professional",
+  "latency_profile": "fast_first",
+  "answer_style": "voice_first_with_citations",
+  "privacy_scope": "professional_only",
+  "max_first_response_ms": 1200,
   "query_path": "/a21/v21/query",
   "health_path": "/healthz",
   "duration_ms": 1330.653,
@@ -1742,13 +1839,10 @@ func writeProductReadinessV21AdapterSmokeReportFixture(t *testing.T) string {
   "speech_block_count": 1,
   "screen_card_count": 1,
   "follow_up_count": 1,
-  "report_path": "reports/a21-v21-adapter-smoke-real.json",
+  "redaction_ok": true,
+  "report_path": "a21-v21-adapter-smoke-real.json",
   "detail": "v21 adapter query smoke succeeded"
 }`
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func writeProductReadinessPhysicalStackChanReportFixture(t *testing.T, overrides map[string]any) string {
@@ -6240,6 +6334,8 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 			SessionID          string `json:"session_id"`
 			Mode               string `json:"mode"`
 			Utterance          string `json:"utterance"`
+			LatencyProfile     string `json:"latency_profile"`
+			AnswerStyle        string `json:"answer_style"`
 			PrivacyScope       string `json:"privacy_scope"`
 			MaxFirstResponseMS int    `json:"max_first_response_ms"`
 		}
@@ -6250,6 +6346,8 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 			request.SessionID != "" &&
 			request.Mode == "professional" &&
 			request.Utterance == "查一下语音唤醒误触发" &&
+			request.LatencyProfile == "fast_first" &&
+			request.AnswerStyle == "voice_first_with_citations" &&
 			request.PrivacyScope == "professional_only" &&
 			request.MaxFirstResponseMS == 1200
 		w.Header().Set("Content-Type", "application/json")
@@ -6290,15 +6388,22 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"schema_version": "a21.v21_adapter_smoke.v1"`,
+		`"generated_at_ms"`,
 		`"adapter": "a21-v21-adapter"`,
 		`"status": "passed"`,
 		`"executed": true`,
+		`"mode": "professional"`,
+		`"latency_profile": "fast_first"`,
+		`"answer_style": "voice_first_with_citations"`,
+		`"privacy_scope": "professional_only"`,
+		`"max_first_response_ms": 1200`,
 		`"query_path": "/a21/v21/query"`,
 		`"evidence_count": 1`,
 		`"speech_block_count": 1`,
 		`"screen_card_count": 1`,
 		`"follow_up_count": 1`,
-		`"report_path"`,
+		`"redaction_ok": true`,
+		`"report_path": "a21-v21-adapter-smoke-`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
@@ -6316,7 +6421,7 @@ func TestRunV21AdapterSmokeExecutesQueryAndWritesRedactedReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	reportJSON := string(data)
-	for _, forbidden := range []string{"语音唤醒", "历史讨论", server.URL} {
+	for _, forbidden := range []string{"语音唤醒", "历史讨论", server.URL, dir, filepath.ToSlash(dir)} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
 			t.Fatalf("v21 adapter smoke leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
 		}

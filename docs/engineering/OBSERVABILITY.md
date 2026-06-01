@@ -411,6 +411,16 @@ available before mock evidence completion. The report also carries
 and `professional_acceptance_status`. It is not real V21 execution, physical
 device acceptance, retrieval-quality proof, or PRD completion evidence.
 
+`v21-adapter-smoke --execute` emits schema `a21.v21_adapter_smoke.v1` as real
+adapter-boundary execution evidence. Product readiness accepts it only when the
+report keeps the professional query contract visible through fixed labels
+(`mode=professional`, `latency_profile=fast_first`,
+`answer_style=voice_first_with_citations`, `privacy_scope=professional_only`,
+`max_first_response_ms=1200`), has positive confidence plus evidence, speech,
+card, and follow-up counts, records `redaction_ok=true`, and stores only a
+basename `report_path`. It still does not prove physical StackChan audio,
+provider TTS, or PRD launch acceptance by itself.
+
 ## Voice Waterfall Events
 
 Every voice turn should eventually expose:

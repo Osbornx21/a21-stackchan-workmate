@@ -2136,18 +2136,26 @@ func productV21ProfessionalReportContainsForbiddenValue(value any) bool {
 }
 
 type productV21AdapterSmokeReportFixture struct {
-	SchemaVersion   string   `json:"schema_version"`
-	Adapter         string   `json:"adapter"`
-	Protocol        string   `json:"protocol"`
-	Status          string   `json:"status"`
-	Configured      *bool    `json:"configured"`
-	Executed        *bool    `json:"executed"`
-	QueryPath       string   `json:"query_path"`
-	HealthPath      string   `json:"health_path"`
-	EvidenceCount   *int     `json:"evidence_count"`
-	ScreenCardCount *int     `json:"screen_card_count"`
-	FollowUpCount   *int     `json:"follow_up_count"`
-	Confidence      *float64 `json:"confidence"`
+	SchemaVersion      string   `json:"schema_version"`
+	GeneratedAtMS      *int64   `json:"generated_at_ms"`
+	Adapter            string   `json:"adapter"`
+	Protocol           string   `json:"protocol"`
+	Status             string   `json:"status"`
+	Configured         *bool    `json:"configured"`
+	Executed           *bool    `json:"executed"`
+	Mode               string   `json:"mode"`
+	LatencyProfile     string   `json:"latency_profile"`
+	AnswerStyle        string   `json:"answer_style"`
+	PrivacyScope       string   `json:"privacy_scope"`
+	MaxFirstResponseMS *int     `json:"max_first_response_ms"`
+	QueryPath          string   `json:"query_path"`
+	HealthPath         string   `json:"health_path"`
+	EvidenceCount      *int     `json:"evidence_count"`
+	SpeechBlockCount   *int     `json:"speech_block_count"`
+	ScreenCardCount    *int     `json:"screen_card_count"`
+	FollowUpCount      *int     `json:"follow_up_count"`
+	Confidence         *float64 `json:"confidence"`
+	RedactionOK        *bool    `json:"redaction_ok"`
 }
 
 func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readiness) (productV21ProfessionalReadiness, []productReadinessFinding) {
@@ -2181,17 +2189,28 @@ func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readine
 	if missingField := missingProductV21AdapterSmokeReportField(fixture); missingField != "" {
 		return productV21ProfessionalReadiness{}, []productReadinessFinding{missingProductV21AdapterSmokeReportFieldFinding(missingField)}
 	}
-	if fixture.SchemaVersion != "a21.v21_adapter_smoke.v1" ||
+	if fixture.SchemaVersion != v21adapter.SmokeSchemaVersion ||
+		fixture.GeneratedAtMS == nil ||
+		*fixture.GeneratedAtMS <= 0 ||
 		fixture.Adapter != "a21-v21-adapter" ||
 		fixture.Protocol != "a21_v21_query" ||
 		strings.TrimSpace(fixture.Status) != "passed" ||
 		!*fixture.Configured ||
 		!*fixture.Executed ||
+		strings.TrimSpace(fixture.Mode) != "professional" ||
+		strings.TrimSpace(fixture.LatencyProfile) != "fast_first" ||
+		strings.TrimSpace(fixture.AnswerStyle) != "voice_first_with_citations" ||
+		strings.TrimSpace(fixture.PrivacyScope) != "professional_only" ||
+		*fixture.MaxFirstResponseMS != v21adapter.ProfessionalMaxFirstResponseMS ||
 		fixture.QueryPath != v21adapter.QueryPath ||
 		fixture.HealthPath != v21adapter.HealthPath ||
+		*fixture.Confidence <= 0 ||
+		*fixture.Confidence > 1 ||
 		*fixture.EvidenceCount <= 0 ||
+		*fixture.SpeechBlockCount <= 0 ||
 		*fixture.ScreenCardCount <= 0 ||
-		*fixture.FollowUpCount <= 0 {
+		*fixture.FollowUpCount <= 0 ||
+		!*fixture.RedactionOK {
 		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
 	}
 	return productV21ProfessionalReadiness{
@@ -2212,16 +2231,34 @@ func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readine
 
 func missingProductV21AdapterSmokeReportField(fixture productV21AdapterSmokeReportFixture) string {
 	switch {
+	case fixture.GeneratedAtMS == nil:
+		return "generated_at_ms"
 	case fixture.Configured == nil:
 		return "configured"
 	case fixture.Executed == nil:
 		return "executed"
+	case strings.TrimSpace(fixture.Mode) == "":
+		return "mode"
+	case strings.TrimSpace(fixture.LatencyProfile) == "":
+		return "latency_profile"
+	case strings.TrimSpace(fixture.AnswerStyle) == "":
+		return "answer_style"
+	case strings.TrimSpace(fixture.PrivacyScope) == "":
+		return "privacy_scope"
+	case fixture.MaxFirstResponseMS == nil:
+		return "max_first_response_ms"
+	case fixture.Confidence == nil:
+		return "confidence"
 	case fixture.EvidenceCount == nil:
 		return "evidence_count"
+	case fixture.SpeechBlockCount == nil:
+		return "speech_block_count"
 	case fixture.ScreenCardCount == nil:
 		return "screen_card_count"
 	case fixture.FollowUpCount == nil:
 		return "follow_up_count"
+	case fixture.RedactionOK == nil:
+		return "redaction_ok"
 	default:
 		return ""
 	}
