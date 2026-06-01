@@ -312,6 +312,9 @@ Current mock trace events include:
 - `audio.playback.chunk.sent`
 - `xiaozhi.tts.opus_frame.downlink`
 - `professional.checking_feedback.sent`
+- `xiaozhi.professional_asr_empty`
+- `xiaozhi.professional_asr_unavailable`
+- `xiaozhi.professional_result_suppressed`
 - `v21.query.start`
 - `v21.query.first_result`
 - `v21.query.error`

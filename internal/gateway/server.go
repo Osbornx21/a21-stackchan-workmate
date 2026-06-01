@@ -50,6 +50,7 @@ type Server struct {
 	audioCaptureFrames         []AudioCaptureFrame
 	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
 	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
+	xiaozhiProfessionalASR     providers.ASRAdapter
 	xiaozhiFastAckTTS          providers.TTSAdapter
 }
 
@@ -309,6 +310,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		Selection:     providers.VoicePipelineSelectionFromEnv(nil),
 		ExecutionMode: "fixture",
 	}
+	xiaozhiProfessionalASR := providers.NewMockASRAdapter("mock-local-asr")
 	xiaozhiFastAckTTS := providers.NewMockTTSAdapter("mock-fast-tts")
 	if options.XiaozhiVoicePipelineAdapters != nil {
 		adapters := *options.XiaozhiVoicePipelineAdapters
@@ -327,6 +329,9 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		}
 		if adapters.TTS != nil {
 			xiaozhiFastAckTTS = adapters.TTS
+		}
+		if adapters.ASR != nil {
+			xiaozhiProfessionalASR = adapters.ASR
 		}
 	}
 	return &Server{
@@ -350,6 +355,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
 		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
+		xiaozhiProfessionalASR:     xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
 	}
 }
@@ -1482,21 +1488,7 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	}); err != nil {
 		return
 	}
-	request := v21adapter.QueryRequest{
-		TraceID:            task.traceID,
-		SessionID:          task.sessionID,
-		Mode:               "professional",
-		Utterance:          "xiaozhi professional voice turn",
-		LatencyProfile:     "fast_first",
-		AnswerStyle:        "voice_first_with_citations",
-		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
-		PrivacyScope:       "professional_only",
-	}
-	receipt, err := v21adapter.NewProfessionalBridgeReceipt(request)
-	if err != nil {
-		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_receipt_unavailable")
-		return
-	}
+	receipt := xiaozhiProfessionalCheckingReceipt(task)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":         "tts",
 		"state":        "sentence_start",
@@ -1513,6 +1505,35 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		return
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	utterance, err := s.xiaozhiProfessionalASRFinal(turn.ctx, task)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || session.shouldAbortXiaozhiTurn(turn) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+			return
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_asr_unavailable", s.now().UnixMilli())
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_asr_unavailable")
+		return
+	}
+	if strings.TrimSpace(utterance) == "" {
+		if session.shouldAbortXiaozhiTurn(turn) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+			return
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_asr_empty", s.now().UnixMilli())
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_asr_empty")
+		return
+	}
+	request := v21adapter.QueryRequest{
+		TraceID:            task.traceID,
+		SessionID:          task.sessionID,
+		Mode:               "professional",
+		Utterance:          utterance,
+		LatencyProfile:     "fast_first",
+		AnswerStyle:        "voice_first_with_citations",
+		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
+		PrivacyScope:       "professional_only",
+	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
 	defer cancel()
@@ -1560,6 +1581,53 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		return
 	}
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "professional_result_completed")
+}
+
+func xiaozhiProfessionalCheckingReceipt(task xiaozhiTurnTask) v21adapter.ProfessionalBridgeReceipt {
+	return v21adapter.ProfessionalBridgeReceipt{
+		SchemaVersion:      "a21.v21_professional_bridge_receipt.v1",
+		TraceID:            task.traceID,
+		SessionID:          task.sessionID,
+		Mode:               "professional",
+		Status:             "checking",
+		Text:               v21adapter.ProfessionalCheckingFeedbackText,
+		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
+		EvidenceCompleted:  false,
+	}
+}
+
+func (s *Server) xiaozhiProfessionalASRFinal(ctx context.Context, task xiaozhiTurnTask) (string, error) {
+	if s.xiaozhiProfessionalASR == nil {
+		return "", fmt.Errorf("professional ASR adapter unavailable")
+	}
+	events, err := s.xiaozhiProfessionalASR.Transcribe(ctx, providers.ASRAdapterRequest{
+		Session: providers.VoiceSession{
+			TraceID:   task.traceID,
+			SessionID: task.sessionID,
+			DeviceID:  task.deviceID,
+		},
+		Mode:   string(protocol.ModeProfessional),
+		Frames: task.voicePipelineFrames,
+	})
+	if err != nil {
+		return "", err
+	}
+	finalText := ""
+	for event := range events {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		if event.Err != nil {
+			return "", event.Err
+		}
+		if event.Final {
+			finalText = strings.TrimSpace(event.Text)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return finalText, nil
 }
 
 func (s *Server) writeXiaozhiProfessionalFallback(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, reason string) {

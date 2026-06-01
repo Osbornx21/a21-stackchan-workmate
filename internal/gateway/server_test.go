@@ -2032,7 +2032,14 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 
 func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *testing.T) {
 	v21 := newDelayedXiaozhiProfessionalV21Client(200 * time.Millisecond)
-	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "帮我查 V21 座舱反馈证据"},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -2055,6 +2062,9 @@ func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *tes
 		t.Fatal(err)
 	}
 	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
 		t.Fatal(err)
 	}
@@ -2077,10 +2087,19 @@ func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *tes
 	case <-time.After(150 * time.Millisecond):
 		t.Fatal("professional V21 query did not start after checking feedback")
 	}
+	if got := v21.lastUtterance(); got != "帮我查 V21 座舱反馈证据" {
+		t.Fatalf("v21 utterance = %q, want ASR-derived utterance", got)
+	}
 
 	result := readXiaozhiJSON(t, ctx, conn)
 	if result["type"] != "tts" || result["state"] != "sentence_start" || result["phase"] != "professional_result" || result["mode"] != "professional" {
 		t.Fatalf("professional result = %#v", result)
+	}
+	resultJSON := mustJSON(t, result)
+	for _, forbidden := range []string{"帮我查 V21 座舱反馈证据", "xiaozhi professional voice turn"} {
+		if strings.Contains(resultJSON, forbidden) {
+			t.Fatalf("professional result leaked forbidden utterance %q: %s", forbidden, resultJSON)
+		}
 	}
 	stop := readXiaozhiJSON(t, ctx, conn)
 	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "professional_result_completed" {
@@ -2106,6 +2125,201 @@ func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *tes
 	}
 	if checkingAt > v21StartAt || v21StartAt-checkingAt > 1200 {
 		t.Fatalf("checking/v21 ordering checking=%d v21_start=%d", checkingAt, v21StartAt)
+	}
+}
+
+func TestXiaozhiWebSocketProfessionalModeDoesNotUsePlaceholderUtterance(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "认真查一下电池续航证据"},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-asr-query",
+		"session_id": "a21-session-xiaozhi-pro-asr-query",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	checking := readXiaozhiJSON(t, ctx, conn)
+	if checking["phase"] != "professional_checking" {
+		t.Fatalf("checking feedback = %#v", checking)
+	}
+	result := readXiaozhiJSON(t, ctx, conn)
+	if result["phase"] != "professional_result" {
+		t.Fatalf("professional result = %#v", result)
+	}
+	if got := v21.lastUtterance(); got != "认真查一下电池续航证据" {
+		t.Fatalf("v21 utterance = %q, want ASR-derived utterance", got)
+	}
+	if got := v21.lastUtterance(); got == "xiaozhi professional voice turn" {
+		t.Fatal("v21 query used old placeholder utterance")
+	}
+	readXiaozhiJSON(t, ctx, conn)
+}
+
+func TestXiaozhiWebSocketProfessionalASREmptyFallsBackWithoutV21Query(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        scriptedProfessionalASRAdapter{text: "   "},
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-asr-empty",
+		"session_id": "a21-session-xiaozhi-pro-asr-empty",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	fallback := readXiaozhiJSON(t, ctx, conn)
+	if fallback["type"] != "tts" || fallback["phase"] != "professional_unavailable" {
+		t.Fatalf("professional ASR fallback = %#v", fallback)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "professional_asr_empty" {
+		t.Fatalf("professional ASR fallback stop = %#v", stop)
+	}
+	select {
+	case <-v21.started:
+		t.Fatal("V21 query started after empty ASR final text")
+	default:
+	}
+}
+
+func TestXiaozhiWebSocketProfessionalAbortDuringSlowASRSuppressesStaleResult(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	asr := newBlockingProfessionalASRAdapter()
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        asr,
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-asr-abort",
+		"session_id": "a21-session-xiaozhi-pro-asr-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	select {
+	case <-asr.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional ASR did not start")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	asr.release()
+	select {
+	case <-asr.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("professional ASR did not observe abort cancellation")
+	}
+	select {
+	case <-v21.started:
+		t.Fatal("V21 query started after ASR-stage abort")
+	default:
+	}
+	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-pro-asr-abort")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.turn.cancel", "xiaozhi.professional_result_suppressed"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
 	}
 }
 
@@ -5197,6 +5411,97 @@ func (gatewayFinalASRAdapter) Transcribe(ctx context.Context, req providers.ASRA
 	return out, nil
 }
 
+type scriptedProfessionalASRAdapter struct {
+	text string
+	err  error
+}
+
+func (a scriptedProfessionalASRAdapter) Name() string {
+	return "a21-scripted-professional-asr"
+}
+
+func (a scriptedProfessionalASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	out := make(chan providers.ASRAdapterEvent, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+		case out <- providers.ASRAdapterEvent{Text: a.text, Final: true, Err: a.err}:
+		}
+	}()
+	return out, nil
+}
+
+type blockingProfessionalASRAdapter struct {
+	started     chan struct{}
+	released    chan struct{}
+	canceled    chan struct{}
+	startOnce   sync.Once
+	releaseOnce sync.Once
+	cancelOnce  sync.Once
+}
+
+func newBlockingProfessionalASRAdapter() *blockingProfessionalASRAdapter {
+	return &blockingProfessionalASRAdapter{
+		started:  make(chan struct{}),
+		released: make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+}
+
+func (a *blockingProfessionalASRAdapter) Name() string {
+	return "a21-blocking-professional-asr"
+}
+
+func (a *blockingProfessionalASRAdapter) release() {
+	a.releaseOnce.Do(func() {
+		close(a.released)
+	})
+}
+
+func (a *blockingProfessionalASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	out := make(chan providers.ASRAdapterEvent, 1)
+	a.startOnce.Do(func() {
+		close(a.started)
+	})
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			a.cancelOnce.Do(func() {
+				close(a.canceled)
+			})
+		case <-a.released:
+			select {
+			case <-ctx.Done():
+				a.cancelOnce.Do(func() {
+					close(a.canceled)
+				})
+			case out <- providers.ASRAdapterEvent{Text: "释放后的专业查询", Final: true}:
+			}
+		}
+	}()
+	return out, nil
+}
+
+type passthroughTextStreamAdapter struct{}
+
+func (passthroughTextStreamAdapter) Name() string {
+	return "a21-passthrough-text-stream"
+}
+
+func (passthroughTextStreamAdapter) StreamText(ctx context.Context, req providers.TextStreamAdapterRequest) (<-chan providers.TextStreamEvent, error) {
+	out := make(chan providers.TextStreamEvent, 1)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaDone}:
+		}
+	}()
+	return out, nil
+}
+
 type blockingSegmentTextStreamAdapter struct {
 	firstSegmentSent chan struct{}
 	release          chan struct{}
@@ -5727,6 +6032,8 @@ type delayedXiaozhiProfessionalV21Client struct {
 	released chan struct{}
 	canceled chan struct{}
 	once     sync.Once
+	mu       sync.Mutex
+	requests []v21adapter.QueryRequest
 }
 
 func newDelayedXiaozhiProfessionalV21Client(delay time.Duration) *delayedXiaozhiProfessionalV21Client {
@@ -5744,7 +6051,19 @@ func (c *delayedXiaozhiProfessionalV21Client) release() {
 	})
 }
 
+func (c *delayedXiaozhiProfessionalV21Client) lastUtterance() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.requests) == 0 {
+		return ""
+	}
+	return c.requests[len(c.requests)-1].Utterance
+}
+
 func (c *delayedXiaozhiProfessionalV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	c.mu.Lock()
+	c.requests = append(c.requests, request)
+	c.mu.Unlock()
 	select {
 	case <-c.started:
 	default:
