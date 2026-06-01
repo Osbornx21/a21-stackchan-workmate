@@ -62,6 +62,7 @@ type deviceExtensionWire struct {
 
 var inlineDeviceMarkPattern = regexp.MustCompile(`\[(state|face|display|motion):([^\]\s]+)\]`)
 var repeatedInlineSpacePattern = regexp.MustCompile(`[ \t]{2,}`)
+var safePlaybackStreamIDPattern = regexp.MustCompile(`^a21-[a-z0-9][a-z0-9._-]{0,91}$`)
 
 func BuildDeviceExtensionEvent(identity Identity, features HelloFeatures, profile DeviceExtensionProfile, event DeviceExtensionEvent) ([]byte, error) {
 	if !deviceExtensionAllowed(features, profile) {
@@ -161,6 +162,9 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 		if !allowedDeviceEventValue(value, "start") {
 			return DeviceExtensionEvent{}, fmt.Errorf("%w: playback", ErrUnsupportedDeviceEventValue)
 		}
+		if !safePlaybackStreamID(normalized.StreamID) {
+			return DeviceExtensionEvent{}, fmt.Errorf("%w: playback stream_id", ErrUnsupportedDeviceEventValue)
+		}
 	default:
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: kind", ErrUnsupportedDeviceEventKind)
 	}
@@ -237,4 +241,20 @@ func allowedDeviceEventValue(value string, allowed ...string) bool {
 		}
 	}
 	return false
+}
+
+func safePlaybackStreamID(streamID string) bool {
+	if streamID == "" {
+		return true
+	}
+	if len(streamID) > 96 || !safePlaybackStreamIDPattern.MatchString(streamID) {
+		return false
+	}
+	lower := strings.ToLower(streamID)
+	for _, forbidden := range []string{"secret", "token", "password", "passwd", "credential", "api_key", "apikey", "bearer", "sk-"} {
+		if strings.Contains(lower, forbidden) {
+			return false
+		}
+	}
+	return true
 }

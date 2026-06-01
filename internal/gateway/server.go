@@ -2424,6 +2424,10 @@ func xiaozhiErrorCode(err error) string {
 		return "empty_binary_payload"
 	case errors.Is(err, xiaozhitransport.ErrUnexpectedBinaryDirection):
 		return "unexpected_binary_frame_direction"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedDeviceEventKind):
+		return "unsupported_device_event_kind"
+	case errors.Is(err, xiaozhitransport.ErrUnsupportedDeviceEventValue):
+		return "unsupported_device_event_value"
 	default:
 		return "invalid_xiaozhi_message"
 	}

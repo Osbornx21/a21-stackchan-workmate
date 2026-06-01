@@ -84,7 +84,7 @@ func TestDeviceExtensionSchemaValidatesEnumsAndClamp(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Kind != tc.want.Kind || got.Value != tc.want.Value || got.YAngle != tc.want.YAngle {
+			if got.Kind != tc.want.Kind || got.Value != tc.want.Value || got.YAngle != tc.want.YAngle || got.StreamID != tc.want.StreamID {
 				t.Fatalf("normalized = %+v, want %+v", got, tc.want)
 			}
 		})
@@ -118,6 +118,11 @@ func TestDeviceExtensionBadValuesUseStableErrorsWithoutLegacyLeak(t *testing.T) 
 		{name: "bad kind", event: DeviceExtensionEvent{Kind: DeviceEventKind("avatar"), Value: "happy"}, want: ErrUnsupportedDeviceEventKind},
 		{name: "bad face", event: DeviceExtensionEvent{Kind: DeviceEventKindFace, Value: "grimace"}, want: ErrUnsupportedDeviceEventValue},
 		{name: "legacy value", event: DeviceExtensionEvent{Kind: DeviceEventKindFace, Value: "x21-happy"}, want: ErrLegacyIdentity},
+		{name: "playback stream url", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "http://127.0.0.1/secret"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "playback stream local path", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "/Users/jiyurun/.ssh/id_rsa"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "playback stream secret label", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "secret-token"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "playback stream api key", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "sk-test-secret"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "playback stream a21 token", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-secret-token"}, want: ErrUnsupportedDeviceEventValue},
 	}
 
 	for _, tc := range tests {
@@ -126,7 +131,7 @@ func TestDeviceExtensionBadValuesUseStableErrorsWithoutLegacyLeak(t *testing.T) 
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
-			if err != nil && (strings.Contains(strings.ToLower(err.Error()), "x21") || strings.Contains(strings.ToLower(err.Error()), "v21")) {
+			if err != nil && (strings.Contains(strings.ToLower(err.Error()), "x21") || strings.Contains(strings.ToLower(err.Error()), "v21") || strings.Contains(strings.ToLower(err.Error()), "secret") || strings.Contains(strings.ToLower(err.Error()), "sk-") || strings.Contains(err.Error(), "/Users")) {
 				t.Fatalf("error leaked legacy naming: %v", err)
 			}
 		})

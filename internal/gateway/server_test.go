@@ -1637,6 +1637,72 @@ func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
 	}
 }
 
+func TestXiaozhiDebugProfileRejectsUnsafePlaybackStreamID(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-unsafe-playback",
+		"session_id": "a21-session-xiaozhi-unsafe-playback",
+		"device_id":  "stackchan-debug-001",
+		"features": map[string]any{
+			"mcp":           true,
+			"aec":           true,
+			"device_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "playback",
+		"playback":   "start",
+		"stream_id":  "sk-test-secret",
+		"trace_id":   "a21-trace-xiaozhi-unsafe-playback",
+		"session_id": "a21-session-xiaozhi-unsafe-playback",
+		"device_id":  "stackchan-debug-001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reply := readXiaozhiJSON(t, ctx, conn)
+	replyJSON := mustJSON(t, reply)
+	if reply["type"] != "error" || reply["code"] != "unsupported_device_event_value" {
+		t.Fatalf("reply = %#v, want unsupported_device_event_value error", reply)
+	}
+	for _, forbidden := range []string{"sk-test-secret", "secret", "token", "/Users", "http://"} {
+		if strings.Contains(strings.ToLower(replyJSON), strings.ToLower(forbidden)) {
+			t.Fatalf("unsafe playback error leaked %q: %s", forbidden, replyJSON)
+		}
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-unsafe-playback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "device.playback.start") {
+		t.Fatalf("unsafe stream id recorded playback start: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if _, ok := registry["playback_stream_id"]; ok {
+		t.Fatalf("unsafe stream id stored in registry: %#v", registry)
+	}
+}
+
 func TestXiaozhiStockProfileRejectsPlaybackStartDeviceEvent(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
