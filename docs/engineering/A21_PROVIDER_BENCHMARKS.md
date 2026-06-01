@@ -128,12 +128,15 @@ go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --execute --s
 LATEST_PROVIDER_REPORT="$(ls -t reports/5080lab-provider/a21-provider-smoke-*.json | head -n 1)"
 go run ./cmd/a21 product-readiness --provider-smoke-report "$LATEST_PROVIDER_REPORT" --output-dir reports/5080lab-provider
 go run ./cmd/a21 server-side-readiness-bundle --provider-smoke-report "$LATEST_PROVIDER_REPORT" --output-dir reports/5080lab-provider
-tar -czf "reports/a21-5080lab-provider-evidence-$(date +%Y%m%d-%H%M%S).tgz" -C reports/5080lab-provider .
+go run ./cmd/a21 provider-evidence-package --input-dir reports/5080lab-provider --output-dir reports
 ```
 
 The `make provider-smoke-execute` wrapper uses the same executed streaming
 contract and can be pointed at the lab return directory with
 `A21_PROVIDER="$A21_PROVIDER_PRIMARY" A21_PROVIDER_SMOKE_OUTPUT_DIR=reports/5080lab-provider`.
+The matching package wrapper is `make provider-evidence-package`, using
+`A21_PROVIDER_EVIDENCE_INPUT_DIR=reports/5080lab-provider` and
+`A21_PROVIDER_EVIDENCE_OUTPUT_DIR=reports`.
 
 `.a21-run/5080lab/provider.env` must stay local to the lab host and should
 contain only `A21_` variables such as `A21_PROVIDER_PRIMARY`, the selected
@@ -170,6 +173,9 @@ go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports
 The import command only accepts basename-only A21 report JSON entries from the
 5080lab archive, rejects path traversal and redaction failures, and copies the
 reports only after it finds an accepted executed streaming provider-smoke report.
+The package command applies that same basename-only whitelist and redaction
+validation before writing `reports/a21-5080lab-provider-evidence-*.tgz`; it does
+not execute providers or infer readiness from env-only reports.
 
 Reject the package if any report stores API key values, model values, prompt
 text, transcript text, provider output, provider reasoning, proxy values, full
