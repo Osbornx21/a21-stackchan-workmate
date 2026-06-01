@@ -131,6 +131,10 @@ go run ./cmd/a21 server-side-readiness-bundle --provider-smoke-report "$LATEST_P
 tar -czf "reports/a21-5080lab-provider-evidence-$(date +%Y%m%d-%H%M%S).tgz" -C reports/5080lab-provider .
 ```
 
+The `make provider-smoke-execute` wrapper uses the same executed streaming
+contract and can be pointed at the lab return directory with
+`A21_PROVIDER="$A21_PROVIDER_PRIMARY" A21_PROVIDER_SMOKE_OUTPUT_DIR=reports/5080lab-provider`.
+
 `.a21-run/5080lab/provider.env` must stay local to the lab host and should
 contain only `A21_` variables such as `A21_PROVIDER_PRIMARY`, the selected
 provider key env, model env when required, optional base-url env, and optional
