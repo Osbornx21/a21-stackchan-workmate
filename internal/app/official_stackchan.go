@@ -796,7 +796,7 @@ func buildStackChanOfficialSmokeFlashReport(options stackChanOfficialSmokeFlashO
 	if err := validateA21OfficialScratchDir(buildDir); err != nil {
 		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("build dir invalid: %w", err)
 	}
-	if containsLegacyIdentity(buildDir) {
+	if containsLegacyIdentityPathToken(buildDir) {
 		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
 	}
 	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
@@ -837,7 +837,7 @@ func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCM
 	if err := validateA21OfficialScratchDir(buildDir); err != nil {
 		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("build dir invalid: %w", err)
 	}
-	if containsLegacyIdentity(buildDir) {
+	if containsLegacyIdentityPathToken(buildDir) {
 		return stackChanOfficialPCMBridgeFlashPlanReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
 	}
 	deviceID := strings.TrimSpace(options.DeviceID)
@@ -977,7 +977,7 @@ func collectOfficialFlashPartsForApp(buildDir string, expectedAppName string) ([
 			continue
 		}
 		fullPath := filepath.Join(buildDir, filepath.FromSlash(entry.path))
-		if containsLegacyIdentity(fullPath) {
+		if containsLegacyIdentityPathToken(fullPath) {
 			return nil, fmt.Errorf("flash part path contains forbidden legacy identity")
 		}
 		if name == "app" && filepath.Base(fullPath) != expectedAppName {
@@ -1490,7 +1490,7 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 	}
 	for index, overlay := range options.Overlays {
 		cleanOverlay := filepath.Clean(overlay)
-		if containsLegacyIdentity(cleanOverlay) {
+		if containsLegacyIdentityPathToken(cleanOverlay) {
 			report.fail("overlay_path_legacy_identity", "overlay path contains forbidden legacy identity")
 			return
 		}
@@ -1732,7 +1732,7 @@ func countNonEmptyLines(text string) int {
 func validateA21OfficialScratchDir(path string) error {
 	clean := filepath.Clean(path)
 	lower := strings.ToLower(clean)
-	if strings.Contains(lower, "x21") || strings.Contains(lower, "v21") {
+	if containsLegacyIdentityPathToken(clean) {
 		return fmt.Errorf("scratch dir contains forbidden legacy identity")
 	}
 	if !strings.Contains(filepath.Base(lower), "a21-stackchan-official") {
@@ -1747,7 +1747,7 @@ func validateA21OfficialRunDir(path string) error {
 	if clean == "." || clean == string(filepath.Separator) {
 		return fmt.Errorf("run dir must be an explicit A21 work directory")
 	}
-	if strings.Contains(lower, "x21") || strings.Contains(lower, "v21") {
+	if containsLegacyIdentityPathToken(clean) {
 		return fmt.Errorf("run dir contains forbidden legacy identity")
 	}
 	if !strings.Contains(lower, "a21") {

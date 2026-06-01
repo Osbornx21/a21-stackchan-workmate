@@ -5618,6 +5618,33 @@ func TestRunAudioFrontEndEvalRejectsLegacyReportDirWithoutEchoingPath(t *testing
 	}
 }
 
+func TestValidateA21ReportDirAllowsOpaqueTempPathSubstrings(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("tmp", "a21randomx21suffix", "reports"),
+		filepath.Join("tmp", "a21randomv21suffix", "reports"),
+	} {
+		if err := validateA21ReportDir(path); err != nil {
+			t.Fatalf("validateA21ReportDir(%q) = %v, want nil for opaque temp substring", path, err)
+		}
+		inputPath := filepath.Join(path, "a21-input.wav")
+		if err := validateA21InputPath(inputPath); err != nil {
+			t.Fatalf("validateA21InputPath(%q) = %v, want nil for opaque temp substring", inputPath, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join("reports", "x21-audio"),
+		filepath.Join("reports", "v21-audio"),
+		filepath.Join("reports", "a21-x21-audio"),
+	} {
+		if err := validateA21ReportDir(path); err == nil {
+			t.Fatalf("validateA21ReportDir(%q) = nil, want legacy token rejection", path)
+		}
+		if err := validateA21InputPath(filepath.Join(path, "a21-input.wav")); err == nil {
+			t.Fatalf("validateA21InputPath(%q) = nil, want legacy token rejection", path)
+		}
+	}
+}
+
 func TestRunFirmwareDeviceReportWritesA21Report(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/devices" {

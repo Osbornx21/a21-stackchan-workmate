@@ -429,19 +429,51 @@ func firmwareGatewayEndpoint(gatewayBaseURL string, endpointPath string, query u
 }
 
 func validateA21ReportDir(outputDir string) error {
-	lowerPath := strings.ToLower(filepath.Clean(outputDir))
-	if strings.Contains(lowerPath, "x21") || strings.Contains(lowerPath, "v21") {
+	if containsLegacyIdentityPathToken(outputDir) {
 		return fmt.Errorf("report directory contains forbidden legacy identity")
 	}
 	return nil
 }
 
 func validateA21InputPath(path string) error {
-	lowerPath := strings.ToLower(filepath.Clean(path))
-	if strings.Contains(lowerPath, "x21") || strings.Contains(lowerPath, "v21") {
+	if containsLegacyIdentityPathToken(path) {
 		return fmt.Errorf("path contains forbidden legacy identity")
 	}
 	return nil
+}
+
+func containsLegacyIdentityPathToken(path string) bool {
+	cleaned := strings.ToLower(filepath.ToSlash(filepath.Clean(path)))
+	for _, component := range strings.Split(cleaned, "/") {
+		if containsLegacyIdentityToken(component) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsLegacyIdentityToken(component string) bool {
+	for _, identity := range []string{"x21", "v21"} {
+		for start := 0; start < len(component); {
+			idx := strings.Index(component[start:], identity)
+			if idx < 0 {
+				break
+			}
+			pos := start + idx
+			beforeBoundary := pos == 0 || !isLegacyIdentityTokenChar(component[pos-1])
+			after := pos + len(identity)
+			afterBoundary := after == len(component) || !isLegacyIdentityTokenChar(component[after])
+			if beforeBoundary && afterBoundary {
+				return true
+			}
+			start = pos + 1
+		}
+	}
+	return false
+}
+
+func isLegacyIdentityTokenChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
 }
 
 func writeLANProbeReport(outputDir string, report lanProbeReport) (string, error) {

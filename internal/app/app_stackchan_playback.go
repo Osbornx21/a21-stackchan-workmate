@@ -200,7 +200,7 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 		}
 		playbackWAVPath = ttsReport.OutputPath
 	} else {
-		if containsLegacyIdentity(playbackWAVPath) {
+		if containsLegacyIdentityPathToken(playbackWAVPath) {
 			report.Findings = append(report.Findings, "playback WAV path contains forbidden legacy project identity")
 			return report, fmt.Errorf("playback WAV path contains forbidden legacy project identity")
 		}
