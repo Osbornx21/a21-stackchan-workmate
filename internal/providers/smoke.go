@@ -35,7 +35,7 @@ type ProviderSmokeReport struct {
 	Status        ProviderSmokeStatus      `json:"status"`
 	Configured    bool                     `json:"configured"`
 	Executed      bool                     `json:"executed"`
-	RouteEligible bool                     `json:"route_eligible,omitempty"`
+	RouteEligible bool                     `json:"route_eligible"`
 	Stream        bool                     `json:"stream,omitempty"`
 	Repeat        int                      `json:"repeat,omitempty"`
 	HTTPStatus    int                      `json:"http_status,omitempty"`

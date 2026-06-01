@@ -71,8 +71,11 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 	switch provider {
 	case "openai_realtime":
 		report.Provider = provider
+		report.Family = string(ProviderFamilyVoiceRealtime)
+		report.RouteEligible = false
 		report.APIKeyEnv = "A21_OPENAI_API_KEY"
 		report.ModelEnv = "A21_OPENAI_REALTIME_MODEL"
+		report.BaseURLEnv = "A21_OPENAI_REALTIME_URL"
 		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
 			APIKeyEnv: report.APIKeyEnv,
 			ModelEnv:  report.ModelEnv,
@@ -94,8 +97,11 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		return report
 	case "doubao_realtime":
 		report.Provider = provider
+		report.Family = string(ProviderFamilyVoiceRealtime)
+		report.RouteEligible = false
 		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
 		report.ModelEnv = "A21_DOUBAO_REALTIME_MODEL"
+		report.BaseURLEnv = "A21_DOUBAO_REALTIME_URL"
 		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
 			APIKeyEnv: report.APIKeyEnv,
 			ModelEnv:  report.ModelEnv,
@@ -121,8 +127,11 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		return report
 	case "doubao_tts_realtime":
 		report.Provider = provider
+		report.Family = string(ProviderFamilyVoiceHybrid)
+		report.RouteEligible = false
 		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
 		report.ModelEnv = "A21_DOUBAO_TTS_MODEL"
+		report.BaseURLEnv = "A21_DOUBAO_TTS_REALTIME_URL"
 		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
 			APIKeyEnv:   report.APIKeyEnv,
 			ModelEnv:    report.ModelEnv,

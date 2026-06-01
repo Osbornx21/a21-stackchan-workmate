@@ -189,6 +189,48 @@ func TestProductReadinessAcceptsExecutedProviderSmokeEvidence(t *testing.T) {
 	}
 }
 
+func TestProductReadinessIngestsRealtimeFixtureWithoutPromotingRealLaunch(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessRealtimeFixtureReportFixture(t)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:              server.URL,
+		DeviceID:                "stackchan-001",
+		ProviderRealtimeReport:  fixture,
+		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "candidate", "acceptance_status": "physical_review_required", "prd_accepted": false}),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=secret-value",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	})
+
+	if !report.Provider.RealtimeEvidenceValid || !report.Provider.RealtimeExecuted {
+		t.Fatalf("provider realtime evidence = %+v, want valid executed fixture evidence", report.Provider)
+	}
+	if report.Provider.RealtimeSourceReport != "a21-provider-realtime-fixture-real.json" ||
+		report.Provider.RealtimeProvider != "doubao_tts_realtime" ||
+		report.Provider.RealtimeFamily != "voice_hybrid" ||
+		report.Provider.RealtimeStatus != "passed" {
+		t.Fatalf("provider realtime source/evidence = %+v, want basename doubao_tts_realtime fixture", report.Provider)
+	}
+	if report.Provider.RealtimeRouteEligible || report.Provider.VoiceRealtimeReady {
+		t.Fatalf("provider realtime readiness = %+v, want visible fixture evidence but no route-eligible realtime readiness", report.Provider)
+	}
+	if report.Provider.RealProviderReady || report.LaunchReady || report.CanonicalDecision.PRDAccepted {
+		t.Fatalf("readiness overclaimed from fixture-only realtime evidence: provider=%+v launch=%v canonical=%+v", report.Provider, report.LaunchReady, report.CanonicalDecision)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{fixture, filepath.Dir(fixture), server.URL, "secret-value", "doubao-tts", "zh_female_kailangjiejie", "http://", "https://", `"launch_ready": true`, `"real_provider_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessRejectsUnsafeOrNonRealProviderSmokeEvidence(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	tests := []struct {
@@ -1675,6 +1717,46 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 }
 
+func TestRunProductReadinessUsesLatestRealtimeFixtureWithoutPathLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-realtime-fixture-20260602-101500.json", productReadinessRealtimeFixtureReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "secret-value")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"realtime_evidence_valid": true`,
+		`"realtime_provider": "doubao_tts_realtime"`,
+		`"realtime_family": "voice_hybrid"`,
+		`"realtime_status": "passed"`,
+		`"realtime_executed": true`,
+		`"realtime_route_eligible": false`,
+		`"realtime_source_report": "a21-provider-realtime-fixture-20260602-101500.json"`,
+		`"voice_realtime_ready": false`,
+		`"real_provider_ready": false`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, dir, "secret-value", "doubao-tts", "zh_female_kailangjiejie", "http://", "https://", "/Users/", `"launch_ready": true`, `"real_provider_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest realtime readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessLatestV21SelectionPrefersNewestUsableAdapterSmoke(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -3078,6 +3160,13 @@ func createProductReadinessModelFiles(t *testing.T, dir string, names []string) 
 	return dir
 }
 
+func setA21DirectProxyBypassForTest(t *testing.T) {
+	t.Helper()
+	direct := "localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16"
+	t.Setenv("NO_PROXY", direct)
+	t.Setenv("A21_NO_PROXY", direct)
+}
+
 func containsProductAction(actions []string, want string) bool {
 	for _, action := range actions {
 		if strings.Contains(action, want) {
@@ -3221,6 +3310,16 @@ func writeProductReadinessProviderSmokeReportFixtureFromData(t *testing.T, data 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-provider-smoke-real.json")
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessRealtimeFixtureReportFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-provider-realtime-fixture-real.json")
+	if err := os.WriteFile(path, []byte(productReadinessRealtimeFixtureReportFixtureJSON()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -3517,6 +3616,28 @@ func productReadinessProviderSmokeReportFixtureJSON() string {
   "base_url_env": "A21_DEEPSEEK_BASE_URL",
   "detail": "provider smoke request succeeded",
   "report_path": "a21-provider-smoke-real.json"
+}`
+}
+
+func productReadinessRealtimeFixtureReportFixtureJSON() string {
+	return `{
+  "schema_version": "a21.provider_smoke.v1",
+  "generated_at_ms": 1780335605000,
+  "provider": "doubao_tts_realtime",
+  "family": "voice_hybrid",
+  "protocol": "websocket_realtime_fixture",
+  "status": "passed",
+  "configured": true,
+  "executed": true,
+  "route_eligible": false,
+  "duration_ms": 3.25,
+  "network_mode": "direct",
+  "endpoint_host": "ai-gateway.vei.volces.com",
+  "api_key_env": "A21_DOUBAO_API_KEY",
+  "model_env": "A21_DOUBAO_TTS_MODEL",
+  "base_url_env": "A21_DOUBAO_TTS_REALTIME_URL",
+  "detail": "offline realtime fixture passed; no provider network call performed",
+  "report_path": "a21-provider-realtime-fixture-real.json"
 }`
 }
 
@@ -4323,6 +4444,7 @@ func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T)
 }
 
 func TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets(t *testing.T) {
+	setA21DirectProxyBypassForTest(t)
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
 	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
@@ -4385,6 +4507,7 @@ func TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime(t *testing.T) {
 }
 
 func TestRunDoctorReportsExplicitGatewayDoubaoRealtimeRuntimeAsDegraded(t *testing.T) {
+	setA21DirectProxyBypassForTest(t)
 	t.Setenv("A21_GATEWAY_VOICE_PROVIDER", "selected")
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
@@ -9216,6 +9339,49 @@ func TestRunProviderRealtimeFixtureExecutesDoubaoTTSWithoutSecrets(t *testing.T)
 	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
 			t.Fatalf("fixture output leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestRunProviderRealtimeFixtureWritesRedactedReport(t *testing.T) {
+	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-realtime-fixture", "--provider", "doubao_tts_realtime", "--execute", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-provider-realtime-fixture-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("matches = %#v, want one realtime fixture report", matches)
+	}
+	var report providers.ProviderSmokeReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode stdout: %v\n%s", err, stdout.String())
+	}
+	wantBase := filepath.Base(matches[0])
+	if report.ReportPath != wantBase {
+		t.Fatalf("report_path = %q, want basename %q", report.ReportPath, wantBase)
+	}
+	fileData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(fileData), `"report_path": "`+wantBase+`"`) {
+		t.Fatalf("file report missing basename report_path: %s", string(fileData))
+	}
+	for _, forbidden := range []string{dir, matches[0], "sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer", "http://", "https://", "/Users/"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) || strings.Contains(string(fileData), forbidden) {
+			t.Fatalf("fixture report leaked %q: stdout=%s stderr=%s file=%s", forbidden, stdout.String(), stderr.String(), string(fileData))
 		}
 	}
 }

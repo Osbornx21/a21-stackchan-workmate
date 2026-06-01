@@ -26,6 +26,7 @@ type productReadinessOptions struct {
 	DeviceID                string
 	OutputDir               string
 	ProviderSmokeReport     string
+	ProviderRealtimeReport  string
 	XiaozhiReport           string
 	V21ProfessionalReport   string
 	V21AdapterSmokeReport   string
@@ -68,21 +69,31 @@ type productGatewayReadiness struct {
 }
 
 type productProviderReadiness struct {
-	Primary            string   `json:"primary"`
-	Selected           string   `json:"selected"`
-	SelectedFamily     string   `json:"selected_family,omitempty"`
-	SelectedConfigured bool     `json:"selected_configured"`
-	RealProviderReady  bool     `json:"real_provider_ready"`
-	TextStreamReady    bool     `json:"text_stream_ready"`
-	VoiceRealtimeReady bool     `json:"voice_realtime_ready"`
-	SmokeEvidenceValid bool     `json:"smoke_evidence_valid"`
-	SmokeProvider      string   `json:"smoke_provider,omitempty"`
-	SmokeFamily        string   `json:"smoke_family,omitempty"`
-	SmokeStatus        string   `json:"smoke_status,omitempty"`
-	SmokeExecuted      bool     `json:"smoke_executed,omitempty"`
-	SmokeSourceReport  string   `json:"smoke_source_report,omitempty"`
-	MissingEnv         []string `json:"missing_env,omitempty"`
-	PresentEnv         []string `json:"present_env,omitempty"`
+	Primary               string   `json:"primary"`
+	Selected              string   `json:"selected"`
+	SelectedFamily        string   `json:"selected_family,omitempty"`
+	SelectedConfigured    bool     `json:"selected_configured"`
+	SelectedRouteEligible bool     `json:"selected_route_eligible"`
+	RealProviderReady     bool     `json:"real_provider_ready"`
+	TextStreamReady       bool     `json:"text_stream_ready"`
+	VoiceRealtimeReady    bool     `json:"voice_realtime_ready"`
+	SmokeEvidenceValid    bool     `json:"smoke_evidence_valid"`
+	SmokeProvider         string   `json:"smoke_provider,omitempty"`
+	SmokeFamily           string   `json:"smoke_family,omitempty"`
+	SmokeStatus           string   `json:"smoke_status,omitempty"`
+	SmokeExecuted         bool     `json:"smoke_executed,omitempty"`
+	SmokeSourceReport     string   `json:"smoke_source_report,omitempty"`
+	RealtimeEvidenceValid bool     `json:"realtime_evidence_valid"`
+	RealtimeProvider      string   `json:"realtime_provider,omitempty"`
+	RealtimeFamily        string   `json:"realtime_family,omitempty"`
+	RealtimeProtocol      string   `json:"realtime_protocol,omitempty"`
+	RealtimeStatus        string   `json:"realtime_status,omitempty"`
+	RealtimeExecuted      bool     `json:"realtime_executed,omitempty"`
+	RealtimeRouteEligible bool     `json:"realtime_route_eligible"`
+	RealtimeEvidenceMode  string   `json:"realtime_evidence_mode,omitempty"`
+	RealtimeSourceReport  string   `json:"realtime_source_report,omitempty"`
+	MissingEnv            []string `json:"missing_env,omitempty"`
+	PresentEnv            []string `json:"present_env,omitempty"`
 }
 
 type productV21Readiness struct {
@@ -276,7 +287,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -292,6 +303,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--provider-smoke-report":
 			if !readStringOption(args, &i, stderr, "--provider-smoke-report", &options.ProviderSmokeReport) {
+				return 2
+			}
+		case "--provider-realtime-fixture-report":
+			if !readStringOption(args, &i, stderr, "--provider-realtime-fixture-report", &options.ProviderRealtimeReport) {
 				return 2
 			}
 		case "--xiaozhi-report":
@@ -419,6 +434,13 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 		}, productLatestProviderSmokeReportAccepted)
 		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
+	if strings.TrimSpace(options.ProviderRealtimeReport) == "" {
+		var findings []productReadinessFinding
+		options.ProviderRealtimeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "provider_realtime_fixture", []string{
+			"a21-provider-realtime-fixture-*.json",
+		}, productLatestProviderRealtimeFixtureReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
+	}
 	if strings.TrimSpace(options.XiaozhiReport) == "" {
 		var findings []productReadinessFinding
 		options.XiaozhiReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "xiaozhi_voice", []string{
@@ -514,6 +536,11 @@ func latestProductReadinessReportCandidates(reportDir string, patterns []string)
 func productLatestProviderSmokeReportAccepted(path string) bool {
 	evidence, _ := loadProductProviderSmokeReportEvidence(path)
 	return evidence.Valid && evidence.Executed && evidence.RouteEligible
+}
+
+func productLatestProviderRealtimeFixtureReportAccepted(path string) bool {
+	evidence, _ := loadProductProviderRealtimeReportEvidence(path)
+	return evidence.Valid && evidence.Configured && evidence.Executed && evidence.Status == string(providers.ProviderSmokePassed)
 }
 
 func productLatestXiaozhiReportAccepted(path string) bool {
@@ -694,6 +721,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	if providerSmokeEvidence.Valid {
 		report.Findings = append(report.Findings, attachProductProviderSmokeEvidence(&report.Provider, providerSmokeEvidence)...)
 	}
+	providerRealtimeEvidence, providerRealtimeFindings := loadProductProviderRealtimeReportEvidence(options.ProviderRealtimeReport)
+	report.Findings = append(report.Findings, providerRealtimeFindings...)
+	if providerRealtimeEvidence.Valid {
+		report.Findings = append(report.Findings, attachProductProviderRealtimeEvidence(&report.Provider, providerRealtimeEvidence)...)
+	}
 	report.V21 = buildProductV21Readiness(env)
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
@@ -768,6 +800,7 @@ func buildProductProviderReadiness(env []string) productProviderReadiness {
 			readiness.Selected = provider.Name
 			readiness.SelectedFamily = provider.Family
 			readiness.SelectedConfigured = provider.Configured
+			readiness.SelectedRouteEligible = provider.RouteEligible
 			readiness.MissingEnv = append([]string(nil), provider.MissingEnv...)
 			readiness.PresentEnv = append([]string(nil), provider.PresentEnv...)
 		}
@@ -907,6 +940,161 @@ func attachProductProviderSmokeEvidence(readiness *productProviderReadiness, evi
 	readiness.SmokeExecuted = evidence.Executed
 	readiness.SmokeSourceReport = evidence.SourceReport
 	return nil
+}
+
+type productProviderRealtimeReportEvidence struct {
+	Valid         bool
+	Provider      string
+	Family        string
+	Protocol      string
+	Status        string
+	Configured    bool
+	Executed      bool
+	RouteEligible bool
+	SourceReport  string
+	EvidenceMode  string
+}
+
+func loadProductProviderRealtimeReportEvidence(path string) (productProviderRealtimeReportEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productProviderRealtimeReportEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productProviderSmokeReportContainsForbiddenValue(raw) {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	var fixture productProviderSmokeReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	if missingField := missingProductProviderRealtimeReportField(fixture); missingField != "" {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{missingProductProviderRealtimeReportFieldFinding(missingField)}
+	}
+	provider := providerLatencySafeIdentifier(fixture.Provider, false)
+	family := providerLatencySafeIdentifier(fixture.Family, false)
+	protocol := providerLatencySafeIdentifier(fixture.Protocol, false)
+	if fixture.SchemaVersion != providers.ProviderSmokeSchemaVersion ||
+		fixture.GeneratedAtMS == nil ||
+		*fixture.GeneratedAtMS <= 0 ||
+		provider == "" ||
+		provider == "mock" ||
+		!validProductProviderRealtimeFamily(family) ||
+		!validProductProviderRealtimeProtocol(protocol) ||
+		strings.TrimSpace(fixture.Status) != string(providers.ProviderSmokePassed) ||
+		!*fixture.Configured ||
+		!*fixture.Executed ||
+		len(fixture.MissingEnv) != 0 ||
+		productProviderSmokeEndpointHostUnsafe(fixture.EndpointHost) ||
+		!productProviderSmokeEnvNamesSafe(fixture.APIKeyEnv, fixture.ModelEnv, fixture.BaseURLEnv) ||
+		(fixture.Fallback != nil && fixture.Fallback.Activated) ||
+		productProviderSmokeFallbackObserved(fixture) {
+		return productProviderRealtimeReportEvidence{}, []productReadinessFinding{invalidProductProviderRealtimeReportFinding()}
+	}
+	return productProviderRealtimeReportEvidence{
+		Valid:         true,
+		Provider:      provider,
+		Family:        family,
+		Protocol:      protocol,
+		Status:        strings.TrimSpace(fixture.Status),
+		Configured:    *fixture.Configured,
+		Executed:      *fixture.Executed,
+		RouteEligible: *fixture.RouteEligible,
+		SourceReport:  filepath.Base(filepath.Clean(path)),
+		EvidenceMode:  "offline_fixture",
+	}, nil
+}
+
+func attachProductProviderRealtimeEvidence(readiness *productProviderReadiness, evidence productProviderRealtimeReportEvidence) []productReadinessFinding {
+	if readiness.Selected != evidence.Provider || !readiness.SelectedConfigured {
+		return []productReadinessFinding{{
+			Code:    "provider_realtime_fixture_report_mismatch",
+			Message: "Provider realtime fixture report does not match the currently selected configured A21 provider",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	readiness.RealtimeEvidenceValid = true
+	readiness.RealtimeProvider = evidence.Provider
+	readiness.RealtimeFamily = evidence.Family
+	readiness.RealtimeProtocol = evidence.Protocol
+	readiness.RealtimeStatus = evidence.Status
+	readiness.RealtimeExecuted = evidence.Executed
+	readiness.RealtimeRouteEligible = evidence.RouteEligible && readiness.SelectedRouteEligible
+	readiness.RealtimeEvidenceMode = evidence.EvidenceMode
+	readiness.RealtimeSourceReport = evidence.SourceReport
+	readiness.VoiceRealtimeReady = evidence.Configured &&
+		evidence.Executed &&
+		readiness.RealtimeRouteEligible &&
+		validProductProviderRealtimeFamily(evidence.Family)
+	return nil
+}
+
+func missingProductProviderRealtimeReportField(fixture productProviderSmokeReportFixture) string {
+	switch {
+	case strings.TrimSpace(fixture.SchemaVersion) == "":
+		return "schema_version"
+	case fixture.GeneratedAtMS == nil:
+		return "generated_at_ms"
+	case strings.TrimSpace(fixture.Provider) == "":
+		return "provider"
+	case strings.TrimSpace(fixture.Family) == "":
+		return "family"
+	case strings.TrimSpace(fixture.Protocol) == "":
+		return "protocol"
+	case strings.TrimSpace(fixture.Status) == "":
+		return "status"
+	case fixture.Configured == nil:
+		return "configured"
+	case fixture.Executed == nil:
+		return "executed"
+	case fixture.RouteEligible == nil:
+		return "route_eligible"
+	default:
+		return ""
+	}
+}
+
+func missingProductProviderRealtimeReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "provider_realtime_fixture_report_missing_field",
+		Message: "Provider realtime fixture report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductProviderRealtimeReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "provider_realtime_fixture_report_invalid",
+		Message: "Provider realtime fixture report is invalid or unsafe",
+	}
+}
+
+func validProductProviderRealtimeFamily(family string) bool {
+	switch family {
+	case string(providers.ProviderFamilyVoiceRealtime), string(providers.ProviderFamilyVoiceHybrid):
+		return true
+	default:
+		return false
+	}
+}
+
+func validProductProviderRealtimeProtocol(protocol string) bool {
+	return protocol == "websocket_realtime_fixture"
 }
 
 func missingProductProviderSmokeReportField(fixture productProviderSmokeReportFixture) string {
@@ -1952,6 +2140,8 @@ func productMissingReportFieldPrefix(code string) string {
 	switch code {
 	case "provider_smoke_report_missing_field":
 		return "provider_smoke"
+	case "provider_realtime_fixture_report_missing_field":
+		return "provider_realtime_fixture"
 	case "xiaozhi_report_missing_field":
 		return "xiaozhi_report"
 	case "wake_word_firmware_plan_missing_field":

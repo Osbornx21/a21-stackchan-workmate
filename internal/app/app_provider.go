@@ -125,10 +125,11 @@ func runProviderRealtimePlan(args []string, stdout io.Writer, stderr io.Writer) 
 func runProviderRealtimeFixture(args []string, stdout io.Writer, stderr io.Writer) int {
 	provider := ""
 	execute := false
+	outputDir := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 provider-realtime-fixture [--provider <provider>] [--execute]")
+			fmt.Fprintln(stdout, "a21 provider-realtime-fixture [--provider <provider>] [--execute] [--output-dir reports]")
 			return 0
 		case "--provider":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -139,12 +140,31 @@ func runProviderRealtimeFixture(args []string, stdout io.Writer, stderr io.Write
 			provider = args[i]
 		case "--execute":
 			execute = true
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			outputDir = args[i]
 		default:
 			fmt.Fprintf(stderr, "unknown provider-realtime-fixture option %q\n", args[i])
 			return 2
 		}
 	}
 	report := providers.RealtimeFixtureSmokeFromEnv(context.Background(), os.Environ(), provider, execute)
+	if outputDir != "" {
+		if err := validateA21ReportDir(outputDir); err != nil {
+			fmt.Fprintf(stderr, "provider realtime fixture report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeProviderRealtimeFixtureReport(outputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write provider realtime fixture report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = filepath.Base(filepath.Clean(reportPath))
+	}
 	if err := writeJSONProviderSmoke(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode provider realtime fixture report: %v\n", err)
 		return 1
@@ -277,6 +297,14 @@ func runV21ProfessionalReadiness(args []string, stdout io.Writer, stderr io.Writ
 }
 
 func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeReport) (string, error) {
+	return writeProviderSmokeReportWithPrefix(outputDir, "a21-provider-smoke", report)
+}
+
+func writeProviderRealtimeFixtureReport(outputDir string, report providers.ProviderSmokeReport) (string, error) {
+	return writeProviderSmokeReportWithPrefix(outputDir, "a21-provider-realtime-fixture", report)
+}
+
+func writeProviderSmokeReportWithPrefix(outputDir string, prefix string, report providers.ProviderSmokeReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
 	}
@@ -290,7 +318,7 @@ func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeRe
 		if attempt > 0 {
 			stamp = fmt.Sprintf("%s-%02d", stamp, attempt)
 		}
-		reportPath = filepath.Join(outputDir, "a21-provider-smoke-"+stamp+".json")
+		reportPath = filepath.Join(outputDir, prefix+"-"+stamp+".json")
 		file, err = os.OpenFile(reportPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 		if os.IsExist(err) {
 			continue
@@ -301,7 +329,7 @@ func writeProviderSmokeReport(outputDir string, report providers.ProviderSmokeRe
 		break
 	}
 	if file == nil {
-		return "", fmt.Errorf("could not allocate unique provider smoke report path")
+		return "", fmt.Errorf("could not allocate unique provider report path")
 	}
 	defer file.Close()
 	report.ReportPath = filepath.Base(filepath.Clean(reportPath))
