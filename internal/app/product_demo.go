@@ -19,13 +19,14 @@ import (
 )
 
 type productReadinessOptions struct {
-	GatewayURL  string
-	Addr        string
-	DeviceID    string
-	OutputDir   string
-	RequireReal bool
-	OpenBrowser bool
-	StatusOnly  bool
+	GatewayURL    string
+	Addr          string
+	DeviceID      string
+	OutputDir     string
+	XiaozhiReport string
+	RequireReal   bool
+	OpenBrowser   bool
+	StatusOnly    bool
 }
 
 type productReadinessReport struct {
@@ -89,11 +90,32 @@ type productStackChanReadiness struct {
 }
 
 type productVoiceReadiness struct {
-	LocalTTSReady        bool   `json:"local_tts_ready"`
-	LocalTTSEngine       string `json:"local_tts_engine"`
-	RealASRReady         bool   `json:"real_asr_ready"`
-	ASRProvider          string `json:"asr_provider"`
-	ContinuousVoiceReady bool   `json:"continuous_voice_ready"`
+	LocalTTSReady        bool                          `json:"local_tts_ready"`
+	LocalTTSEngine       string                        `json:"local_tts_engine"`
+	RealASRReady         bool                          `json:"real_asr_ready"`
+	ASRProvider          string                        `json:"asr_provider"`
+	ContinuousVoiceReady bool                          `json:"continuous_voice_ready"`
+	VoicePipeline        productVoicePipelineReadiness `json:"voice_pipeline"`
+}
+
+type productVoicePipelineReadiness struct {
+	ASRProfile                 string  `json:"asr_profile"`
+	ASRProfileEnv              string  `json:"asr_profile_env"`
+	TextStreamProfile          string  `json:"text_stream_profile"`
+	TextStreamProfileEnv       string  `json:"text_stream_profile_env"`
+	TTSProfile                 string  `json:"tts_profile"`
+	TTSProfileEnv              string  `json:"tts_profile_env"`
+	ExecutionMode              string  `json:"execution_mode,omitempty"`
+	HostLocalASRReady          bool    `json:"host_local_asr_ready"`
+	HostLocalTextReady         bool    `json:"host_local_text_ready"`
+	HostLocalTTSReady          bool    `json:"host_local_tts_ready"`
+	HostLoopbackCandidateReady bool    `json:"host_loopback_candidate_ready"`
+	AcceptanceStatus           string  `json:"acceptance_status,omitempty"`
+	AnswerFirstAudioP95MS      float64 `json:"answer_first_audio_p95_ms"`
+	BargeInStopP95MS           float64 `json:"barge_in_stop_p95_ms"`
+	FailureCount               int     `json:"failure_count"`
+	SourceReport               string  `json:"source_report,omitempty"`
+	PRDAccepted                bool    `json:"prd_accepted"`
 }
 
 type productReadinessFinding struct {
@@ -111,7 +133,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -123,6 +145,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--output-dir":
 			if !readStringOption(args, &i, stderr, "--output-dir", &options.OutputDir) {
+				return 2
+			}
+		case "--xiaozhi-report":
+			if !readStringOption(args, &i, stderr, "--xiaozhi-report", &options.XiaozhiReport) {
 				return 2
 			}
 		case "--require-real":
@@ -244,7 +270,9 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	}
 	report.Provider = buildProductProviderReadiness(env)
 	report.V21 = buildProductV21Readiness(env)
-	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan)
+	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
+	report.Findings = append(report.Findings, xiaozhiFindings...)
+	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan, xiaozhiEvidence)
 	report.LaunchReady = report.Gateway.Healthy &&
 		report.Provider.RealProviderReady &&
 		report.V21.Healthy &&
@@ -342,12 +370,67 @@ func productMicrophoneReady(status string) bool {
 	return status == "available" || strings.HasPrefix(status, "available_")
 }
 
-func buildProductVoiceReadiness(env []string, provider productProviderReadiness, stackchan productStackChanReadiness) productVoiceReadiness {
+func buildProductVoiceReadiness(env []string, provider productProviderReadiness, stackchan productStackChanReadiness, evidenceList ...productXiaozhiReportEvidence) productVoiceReadiness {
 	engine := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_TTS_ENGINE")), "macos_say")
 	asrProvider := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_ASR_PROVIDER")), "mock_asr")
+	selection := providers.VoicePipelineSelectionFromEnv(env)
+	voicePipeline := productVoicePipelineReadiness{
+		ASRProfile:           selection.ASRProfile,
+		ASRProfileEnv:        selection.ASRProfileEnv,
+		TextStreamProfile:    selection.LLMProfile,
+		TextStreamProfileEnv: selection.LLMProfileEnv,
+		TTSProfile:           selection.TTSProfile,
+		TTSProfileEnv:        selection.TTSProfileEnv,
+		ExecutionMode:        "env_configured",
+	}
+	var xiaozhiEvidence productXiaozhiReportEvidence
+	if len(evidenceList) > 0 {
+		xiaozhiEvidence = evidenceList[0]
+	}
+	if xiaozhiEvidence.Valid {
+		voicePipeline.ExecutionMode = firstNonEmpty(xiaozhiEvidence.Execution.VoicePipelineExecutionMode, voicePipeline.ExecutionMode)
+		voicePipeline.AcceptanceStatus = xiaozhiEvidence.AcceptanceStatus
+		voicePipeline.AnswerFirstAudioP95MS = xiaozhiEvidence.AnswerFirstAudioP95MS
+		voicePipeline.BargeInStopP95MS = xiaozhiEvidence.BargeInStopP95MS
+		voicePipeline.FailureCount = xiaozhiEvidence.FailureCount
+		voicePipeline.SourceReport = xiaozhiEvidence.SourceReport
+		voicePipeline.PRDAccepted = xiaozhiEvidence.PRDAccepted
+		if xiaozhiEvidence.Execution.ASRProfile != "" {
+			voicePipeline.ASRProfile = xiaozhiEvidence.Execution.ASRProfile
+		}
+		if xiaozhiEvidence.Execution.ASRProfileEnv != "" {
+			voicePipeline.ASRProfileEnv = xiaozhiEvidence.Execution.ASRProfileEnv
+		}
+		if xiaozhiEvidence.Execution.LLMProfile != "" {
+			voicePipeline.TextStreamProfile = xiaozhiEvidence.Execution.LLMProfile
+		}
+		if xiaozhiEvidence.Execution.LLMProfileEnv != "" {
+			voicePipeline.TextStreamProfileEnv = xiaozhiEvidence.Execution.LLMProfileEnv
+		}
+		if xiaozhiEvidence.Execution.TTSProfile != "" {
+			voicePipeline.TTSProfile = xiaozhiEvidence.Execution.TTSProfile
+		}
+		if xiaozhiEvidence.Execution.TTSProfileEnv != "" {
+			voicePipeline.TTSProfileEnv = xiaozhiEvidence.Execution.TTSProfileEnv
+		}
+		voicePipeline.HostLocalASRReady = xiaozhiEvidence.Execution.HostLocalASRExecuted
+		voicePipeline.HostLocalTextReady = xiaozhiEvidence.Execution.HostLocalTextExecuted
+		voicePipeline.HostLocalTTSReady = xiaozhiEvidence.Execution.HostLocalTTSExecuted
+		voicePipeline.HostLoopbackCandidateReady = xiaozhiEvidence.AcceptanceStatus == "candidate_host_only" &&
+			xiaozhiEvidence.AnswerFirstAudioP95MS > 0 &&
+			xiaozhiEvidence.AnswerFirstAudioP95MS < 1500 &&
+			xiaozhiEvidence.BargeInStopP95MS < 300 &&
+			xiaozhiEvidence.FailureCount == 0 &&
+			!xiaozhiEvidence.PRDAccepted
+	} else {
+		voicePipeline.HostLocalASRReady = selection.ASRProfile == "sherpa_onnx" && productSherpaASRReady(env)
+		voicePipeline.HostLocalTextReady = selection.LLMProfile != "" && selection.LLMProfile != "mock"
+		voicePipeline.HostLocalTTSReady = selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx"
+	}
 	readiness := productVoiceReadiness{
 		LocalTTSEngine: engine,
 		ASRProvider:    asrProvider,
+		VoicePipeline:  voicePipeline,
 	}
 	switch engine {
 	case "macos_say":
@@ -359,12 +442,119 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		readiness.LocalTTSReady = false
 	}
 	readiness.RealASRReady = asrProvider == "sherpa_onnx" && productSherpaASRReady(env)
+	if voicePipeline.HostLocalASRReady && voicePipeline.ASRProfile != "" && voicePipeline.ASRProfile != "mock-local-asr" {
+		readiness.RealASRReady = true
+		readiness.ASRProvider = voicePipeline.ASRProfile
+	}
+	if voicePipeline.HostLocalTTSReady && !readiness.LocalTTSReady {
+		readiness.LocalTTSReady = true
+		readiness.LocalTTSEngine = voicePipeline.TTSProfile
+	}
 	readiness.ContinuousVoiceReady = readiness.LocalTTSReady &&
 		readiness.RealASRReady &&
 		provider.RealProviderReady &&
 		stackchan.PhysicalDeviceOnline &&
 		stackchan.PhysicalMicrophoneReady
 	return readiness
+}
+
+type productXiaozhiReportEvidence struct {
+	Valid                 bool
+	SourceReport          string
+	AcceptanceStatus      string
+	PRDAccepted           bool
+	AnswerFirstAudioP95MS float64
+	BargeInStopP95MS      float64
+	FailureCount          int
+	Execution             providerLatencyBenchExecution
+}
+
+type productXiaozhiReportFixture struct {
+	SchemaVersion    string                        `json:"schema_version"`
+	ExecutionMode    string                        `json:"execution_mode"`
+	BaselineScope    string                        `json:"baseline_scope"`
+	AcceptanceStatus string                        `json:"acceptance_status"`
+	PRDAccepted      bool                          `json:"prd_accepted"`
+	Summary          productXiaozhiReportSummary   `json:"summary"`
+	Counts           productXiaozhiReportCounts    `json:"counts"`
+	Execution        providerLatencyBenchExecution `json:"execution"`
+	Redaction        productXiaozhiReportRedaction `json:"redaction"`
+}
+
+type productXiaozhiReportSummary struct {
+	AnswerFirstAudioP95MS float64 `json:"answer_first_audio_total_p95_ms"`
+	BargeInStopP95MS      float64 `json:"barge_in_stop_p95_ms"`
+}
+
+type productXiaozhiReportCounts struct {
+	FailureCount int `json:"failure_count"`
+}
+
+type productXiaozhiReportRedaction struct {
+	PayloadsStored         bool `json:"payloads_stored"`
+	CredentialValuesStored bool `json:"credential_values_stored"`
+	FullURLsStored         bool `json:"full_urls_stored"`
+	LocalPathsStored       bool `json:"local_paths_stored"`
+}
+
+func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productXiaozhiReportEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	var fixture productXiaozhiReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	if fixture.SchemaVersion != "a21.xiaozhi_voice_bench.v1" ||
+		fixture.ExecutionMode != "host_loopback" ||
+		fixture.BaselineScope != "host_only" ||
+		fixture.Execution.ProviderExecuted ||
+		fixture.Execution.V21Executed ||
+		fixture.Execution.HardwareExecuted ||
+		fixture.Redaction.PayloadsStored ||
+		fixture.Redaction.CredentialValuesStored ||
+		fixture.Redaction.FullURLsStored ||
+		fixture.Redaction.LocalPathsStored {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	execution := providerLatencyHostLoopbackExecution(fixture.Execution)
+	return productXiaozhiReportEvidence{
+		Valid:                 true,
+		SourceReport:          filepath.Base(filepath.Clean(path)),
+		AcceptanceStatus:      firstNonEmpty(strings.TrimSpace(fixture.AcceptanceStatus), "not_accepted"),
+		PRDAccepted:           fixture.PRDAccepted,
+		AnswerFirstAudioP95MS: fixture.Summary.AnswerFirstAudioP95MS,
+		BargeInStopP95MS:      fixture.Summary.BargeInStopP95MS,
+		FailureCount:          fixture.Counts.FailureCount,
+		Execution:             execution,
+	}, nil
+}
+
+func invalidProductXiaozhiReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "xiaozhi_report_invalid",
+		Message: "Xiaozhi host-loopback report is invalid or unsafe",
+	}
 }
 
 func productSherpaTTSReady(env []string) bool {

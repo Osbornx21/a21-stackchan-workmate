@@ -225,6 +225,78 @@ func TestProductReadinessBlocksLaunchForDiagnosticMicrophone(t *testing.T) {
 	}
 }
 
+func TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiHostReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=ollama_local",
+		"A21_TEXT_STREAM_PROFILE=ollama_local",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.LaunchReady || report.Voice.VoicePipeline.PRDAccepted {
+		t.Fatalf("launch/prd = %v/%v, want host-only evidence not accepted", report.LaunchReady, report.Voice.VoicePipeline.PRDAccepted)
+	}
+	if !report.Voice.RealASRReady || report.Voice.ASRProvider != "sherpa_onnx" {
+		t.Fatalf("voice readiness = %+v, want current voice pipeline ASR labels ready", report.Voice)
+	}
+	pipeline := report.Voice.VoicePipeline
+	if !pipeline.HostLoopbackCandidateReady || pipeline.AcceptanceStatus != "candidate_host_only" || pipeline.SourceReport != "a21-xiaozhi-host-local-report.json" {
+		t.Fatalf("voice pipeline = %+v, want host-loopback candidate from basename source", pipeline)
+	}
+	if pipeline.AnswerFirstAudioP95MS != 386 || pipeline.BargeInStopP95MS != 0 || pipeline.FailureCount != 0 {
+		t.Fatalf("voice pipeline timings = %+v, want p95 answer 386, barge 0, no failures", pipeline)
+	}
+	if pipeline.ExecutionMode != "host_local" ||
+		pipeline.ASRProfile != "sherpa_onnx" ||
+		pipeline.ASRProfileEnv != "A21_ASR_LOCAL_PROFILE" ||
+		pipeline.TextStreamProfile != "ollama_local" ||
+		pipeline.TextStreamProfileEnv != "A21_TEXT_STREAM_PROFILE" ||
+		pipeline.TTSProfile != "sherpa_onnx_tts" ||
+		pipeline.TTSProfileEnv != "A21_TTS_FAST_PROFILE" ||
+		!pipeline.HostLocalASRReady ||
+		!pipeline.HostLocalTextReady ||
+		!pipeline.HostLocalTTSReady {
+		t.Fatalf("voice pipeline selection = %+v, want host-local A21 env/profile evidence", pipeline)
+	}
+	if containsProductAction(report.NextActions, "A21_LOCAL_ASR_PROVIDER") {
+		t.Fatalf("next actions = %#v, should not ask for stale ASR env when voice pipeline ASR is ready", report.NextActions)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		fixture,
+		filepath.Dir(fixture),
+		"http://",
+		"https://",
+		"data_base64",
+		"transcript",
+		"provider output",
+		"secret",
+		`"prd_accepted": true`,
+		`"launch_ready": true`,
+	} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -267,6 +339,54 @@ func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	}
 	if strings.Contains(string(reportData), ttsModelDir) {
 		t.Fatalf("report leaked local model path: %s", reportData)
+	}
+}
+
+func TestRunProductReadinessCommandAcceptsXiaozhiReportAndRedactsOutput(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiHostReportFixture(t)
+	dir := t.TempDir()
+	t.Setenv("A21_PROVIDER_PRIMARY", "ollama_local")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "ollama_local")
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx")
+	t.Setenv("A21_TTS_FAST_PROFILE", "sherpa_onnx_tts")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--xiaozhi-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"host_loopback_candidate_ready": true`,
+		`"answer_first_audio_p95_ms": 386`,
+		`"barge_in_stop_p95_ms": 0`,
+		`"acceptance_status": "candidate_host_only"`,
+		`"execution_mode": "host_local"`,
+		`"asr_profile_env": "A21_ASR_LOCAL_PROFILE"`,
+		`"text_stream_profile_env": "A21_TEXT_STREAM_PROFILE"`,
+		`"tts_profile_env": "A21_TTS_FAST_PROFILE"`,
+		`"source_report": "a21-xiaozhi-host-local-report.json"`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "http://", "https://", "data_base64", "transcript", "provider output", "secret", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked or overclaimed %q: %s", forbidden, rendered)
+		}
 	}
 }
 
@@ -357,6 +477,57 @@ func containsProductAction(actions []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func writeProductReadinessXiaozhiHostReportFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-host-local-report.json")
+	data := `{
+  "schema_version": "a21.xiaozhi_voice_bench.v1",
+  "execution_mode": "host_loopback",
+  "baseline_scope": "host_only",
+  "device_id": "stackchan-virtual-a21-bench-001",
+  "acceptance_status": "candidate_host_only",
+  "prd_accepted": false,
+  "summary": {
+    "answer_first_audio_total_p50_ms": 360,
+    "answer_first_audio_total_p95_ms": 386,
+    "barge_in_stop_p50_ms": 0,
+    "barge_in_stop_p95_ms": 0
+  },
+  "counts": {
+    "answer_turn_count": 3,
+    "barge_in_turn_count": 3,
+    "failure_count": 0
+  },
+  "execution": {
+    "provider_executed": false,
+    "v21_executed": false,
+    "hardware_executed": false,
+    "voice_pipeline_observed": true,
+    "voice_pipeline_execution_mode": "host_local",
+    "asr_profile": "sherpa_onnx",
+    "asr_profile_env": "A21_ASR_LOCAL_PROFILE",
+    "llm_profile": "ollama_local",
+    "llm_profile_env": "A21_TEXT_STREAM_PROFILE",
+    "tts_profile": "sherpa_onnx_tts",
+    "tts_profile_env": "A21_TTS_FAST_PROFILE",
+    "host_local_asr_executed": true,
+    "host_local_text_executed": true,
+    "host_local_tts_executed": true
+  },
+  "redaction": {
+    "payloads_stored": false,
+    "credential_values_stored": false,
+    "full_urls_stored": false,
+    "local_paths_stored": false
+  }
+}`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestRunPromotionReadinessBlocksExternalPromotionWithoutTarget(t *testing.T) {
