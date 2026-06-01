@@ -77,6 +77,87 @@ func TestRunXiaozhiPhysicalEvidenceAcceptsGatewayTraceMarkers(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiInstrumentObservationWritesRedactedReportForPhysicalEvidence(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false)
+	dir := t.TempDir()
+	var observationStdout bytes.Buffer
+	var observationStderr bytes.Buffer
+
+	code := Run([]string{
+		"xiaozhi-instrument-observation",
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--gateway-answer-first-downlink-ms", "110",
+		"--gateway-first-downlink-to-audible-ms", "650",
+		"--audible-energy-rms", "0.09",
+		"--noise-floor-rms", "0.01",
+		"--device-playback-observed",
+		"--gateway-first-downlink-to-device-playback-start-ms", "30",
+		"--device-playback-observation-source", "device_runtime_echo",
+		"--output-dir", dir,
+	}, &observationStdout, &observationStderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, observationStdout.String(), observationStderr.String())
+	}
+	observationReport := newestXiaozhiInstrumentObservationReport(t, dir, observationStdout.String())
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_instrument_observation.v1"`,
+		`"method": "instrument_nonzero_audible_energy"`,
+		`"instrument": "calibrated_audio_recorder"`,
+		`"gateway_first_downlink_to_audible_ms": 650`,
+		`"speech_end_to_first_audible_response_ms": 760`,
+		`"device_playback_observed": true`,
+		`"gateway_first_downlink_to_device_playback_start_ms": 30`,
+		`"audio_payload_stored": false`,
+		`"encoded_audio_payload_stored": false`,
+		`"report_path": "a21-xiaozhi-instrument-observation-`,
+	} {
+		if !strings.Contains(observationStdout.String(), want) || !strings.Contains(observationReport, want) {
+			t.Fatalf("observation report missing %q: stdout=%s report=%s", want, observationStdout.String(), observationReport)
+		}
+	}
+	for _, forbidden := range []string{dir, server.URL, "transcript", "prompt", "provider output", "raw_audio", "data_base64", "secret-token", "/Users/"} {
+		if strings.Contains(observationStdout.String(), forbidden) || strings.Contains(observationReport, forbidden) {
+			t.Fatalf("observation report leaked %q: stdout=%s report=%s", forbidden, observationStdout.String(), observationReport)
+		}
+	}
+
+	var physicalStdout bytes.Buffer
+	var physicalStderr bytes.Buffer
+	code = Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", filepath.Join(dir, newestXiaozhiInstrumentObservationBasename(t, observationStdout.String())),
+		"--output-dir", dir,
+	}, &physicalStdout, &physicalStderr)
+
+	if code != 0 {
+		t.Fatalf("physical evidence code = %d, want 0: stdout=%s stderr=%s", code, physicalStdout.String(), physicalStderr.String())
+	}
+	for _, want := range []string{
+		`"operator.audible_observation": {`,
+		`"available": true`,
+		`"source": "instrument_observation"`,
+		`"speech_end_to_first_audible_response_ms": {`,
+		`"device_playback_start_ms": {`,
+		`"source": "trusted_runtime_observation"`,
+		`"acceptance_status": "physical_review_required"`,
+		`"code": "xiaozhi_physical_instrument_observation_present"`,
+	} {
+		if !strings.Contains(physicalStdout.String(), want) {
+			t.Fatalf("physical report missing %q: %s", want, physicalStdout.String())
+		}
+	}
+	if strings.Contains(physicalStdout.String(), `"code": "xiaozhi_physical_operator_observation_missing"`) {
+		t.Fatalf("physical report still missing operator observation: %s", physicalStdout.String())
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceRejectsUnsafeGatewayValuesWithoutLeak(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, true)
 	dir := t.TempDir()
@@ -940,6 +1021,42 @@ func newestXiaozhiPhysicalEvidenceReport(t *testing.T, outputDir string, stdout 
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func newestXiaozhiInstrumentObservationReport(t *testing.T, outputDir string, stdout string) string {
+	t.Helper()
+	basename := newestXiaozhiInstrumentObservationBasename(t, stdout)
+	path := filepath.Join(outputDir, basename)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), outputDir) {
+		t.Fatalf("observation report leaked output dir: %s", string(data))
+	}
+	return string(data)
+}
+
+func newestXiaozhiInstrumentObservationBasename(t *testing.T, stdout string) string {
+	t.Helper()
+	const marker = `"report_path": "`
+	idx := strings.Index(stdout, marker)
+	if idx < 0 {
+		t.Fatalf("stdout missing observation report_path: %s", stdout)
+	}
+	rest := stdout[idx+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("stdout has invalid report_path: %s", stdout)
+	}
+	basename := rest[:end]
+	if !strings.HasPrefix(basename, "a21-xiaozhi-instrument-observation-") || !strings.HasSuffix(basename, ".json") {
+		t.Fatalf("observation report_path = %q, want basename", basename)
+	}
+	if strings.Contains(basename, "/") || strings.Contains(basename, "\\") {
+		t.Fatalf("observation report_path leaked path: %q", basename)
+	}
+	return basename
 }
 
 func writeProductReadinessXiaozhiPhysicalEvidenceReportFixture(t *testing.T) string {

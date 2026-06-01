@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,22 @@ type xiaozhiPhysicalEvidenceOptions struct {
 	SessionID                   string
 	InstrumentObservationReport string
 	OutputDir                   string
+}
+
+type xiaozhiInstrumentObservationOptions struct {
+	DeviceID                         string
+	TraceID                          string
+	SessionID                        string
+	Method                           string
+	Instrument                       string
+	GatewayAnswerFirstDownlinkMS     float64
+	GatewayFirstDownlinkToAudibleMS  float64
+	AudibleEnergyRMS                 float64
+	NoiseFloorRMS                    float64
+	DevicePlaybackObserved           bool
+	GatewayFirstDownlinkToPlaybackMS float64
+	DevicePlaybackObservationSource  string
+	OutputDir                        string
 }
 
 type xiaozhiPhysicalEvidenceReport struct {
@@ -75,6 +92,211 @@ type xiaozhiInstrumentObservationReport struct {
 	AudibleEnergyRMS                  float64                            `json:"audible_energy_rms"`
 	NoiseFloorRMS                     float64                            `json:"noise_floor_rms"`
 	Redaction                         physicalStackChanEvidenceRedaction `json:"redaction"`
+	ReportPath                        string                             `json:"report_path,omitempty"`
+}
+
+func runXiaozhiInstrumentObservation(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := xiaozhiInstrumentObservationOptions{
+		Method:                          "instrument_nonzero_audible_energy",
+		Instrument:                      "calibrated_audio_recorder",
+		DevicePlaybackObservationSource: "device_runtime_echo",
+		OutputDir:                       "reports",
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 xiaozhi-instrument-observation --device-id <device-id> --trace-id <trace-id> --session-id <session-id> --gateway-answer-first-downlink-ms <ms> --gateway-first-downlink-to-audible-ms <ms> --audible-energy-rms <rms> --noise-floor-rms <rms> [--device-playback-observed --gateway-first-downlink-to-device-playback-start-ms <ms> --device-playback-observation-source device_runtime_echo] [--output-dir reports]")
+			return 0
+		case "--device-id":
+			if !readStringOption(args, &i, stderr, "--device-id", &options.DeviceID) {
+				return 2
+			}
+		case "--trace-id":
+			if !readStringOption(args, &i, stderr, "--trace-id", &options.TraceID) {
+				return 2
+			}
+		case "--session-id":
+			if !readStringOption(args, &i, stderr, "--session-id", &options.SessionID) {
+				return 2
+			}
+		case "--method":
+			if !readStringOption(args, &i, stderr, "--method", &options.Method) {
+				return 2
+			}
+		case "--instrument":
+			if !readStringOption(args, &i, stderr, "--instrument", &options.Instrument) {
+				return 2
+			}
+		case "--gateway-answer-first-downlink-ms":
+			value, ok := parsePositiveFloatCLIOption(args, &i, stderr, "--gateway-answer-first-downlink-ms")
+			if !ok {
+				return 2
+			}
+			options.GatewayAnswerFirstDownlinkMS = value
+		case "--gateway-first-downlink-to-audible-ms":
+			value, ok := parsePositiveFloatCLIOption(args, &i, stderr, "--gateway-first-downlink-to-audible-ms")
+			if !ok {
+				return 2
+			}
+			options.GatewayFirstDownlinkToAudibleMS = value
+		case "--audible-energy-rms":
+			value, ok := parsePositiveFloatCLIOption(args, &i, stderr, "--audible-energy-rms")
+			if !ok {
+				return 2
+			}
+			options.AudibleEnergyRMS = value
+		case "--noise-floor-rms":
+			value, ok := parsePositiveFloatCLIOption(args, &i, stderr, "--noise-floor-rms")
+			if !ok {
+				return 2
+			}
+			options.NoiseFloorRMS = value
+		case "--device-playback-observed":
+			options.DevicePlaybackObserved = true
+		case "--gateway-first-downlink-to-device-playback-start-ms":
+			value, ok := parsePositiveFloatCLIOption(args, &i, stderr, "--gateway-first-downlink-to-device-playback-start-ms")
+			if !ok {
+				return 2
+			}
+			options.GatewayFirstDownlinkToPlaybackMS = value
+		case "--device-playback-observation-source":
+			if !readStringOption(args, &i, stderr, "--device-playback-observation-source", &options.DevicePlaybackObservationSource) {
+				return 2
+			}
+		case "--output-dir":
+			if !readStringOption(args, &i, stderr, "--output-dir", &options.OutputDir) {
+				return 2
+			}
+		default:
+			fmt.Fprintf(stderr, "unknown xiaozhi-instrument-observation option %q\n", args[i])
+			return 2
+		}
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		fmt.Fprintf(stderr, "xiaozhi instrument observation report dir invalid: %v\n", err)
+		return 1
+	}
+	report, err := buildXiaozhiInstrumentObservationReport(options)
+	if err != nil {
+		fmt.Fprintln(stderr, "xiaozhi instrument observation option invalid")
+		return 2
+	}
+	if options.OutputDir != "" {
+		reportPath, err := writeXiaozhiInstrumentObservationReportFile(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintln(stderr, "xiaozhi instrument observation report write failed")
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONXiaozhiInstrumentObservation(stdout, report); err != nil {
+		fmt.Fprintln(stderr, "xiaozhi instrument observation report encode failed")
+		return 1
+	}
+	return 0
+}
+
+func buildXiaozhiInstrumentObservationReport(options xiaozhiInstrumentObservationOptions) (xiaozhiInstrumentObservationReport, error) {
+	if err := validateXiaozhiInstrumentObservationOptions(options); err != nil {
+		return xiaozhiInstrumentObservationReport{}, err
+	}
+	report := xiaozhiInstrumentObservationReport{
+		SchemaVersion:                     xiaozhiInstrumentObservationSchemaVersion,
+		TraceID:                           strings.TrimSpace(options.TraceID),
+		SessionID:                         strings.TrimSpace(options.SessionID),
+		DeviceID:                          strings.TrimSpace(options.DeviceID),
+		Method:                            strings.TrimSpace(options.Method),
+		Instrument:                        strings.TrimSpace(options.Instrument),
+		PhysicalSoundObserved:             true,
+		ObservedNonzeroAudibleEnergy:      true,
+		DevicePlaybackObserved:            options.DevicePlaybackObserved,
+		GatewayFirstDownlinkToPlaybackMS:  options.GatewayFirstDownlinkToPlaybackMS,
+		GatewayFirstDownlinkToAudibleMS:   options.GatewayFirstDownlinkToAudibleMS,
+		SpeechEndToFirstAudibleResponseMS: options.GatewayAnswerFirstDownlinkMS + options.GatewayFirstDownlinkToAudibleMS,
+		AudibleEnergyRMS:                  options.AudibleEnergyRMS,
+		NoiseFloorRMS:                     options.NoiseFloorRMS,
+		Redaction:                         physicalStackChanEvidenceRedaction{},
+	}
+	if options.DevicePlaybackObserved {
+		report.DevicePlaybackObservationSource = strings.TrimSpace(options.DevicePlaybackObservationSource)
+	}
+	if !xiaozhiInstrumentObservationSafe(report) {
+		return xiaozhiInstrumentObservationReport{}, fmt.Errorf("instrument observation unsafe")
+	}
+	if options.DevicePlaybackObserved && !xiaozhiInstrumentPlaybackObservationValid(report) {
+		return xiaozhiInstrumentObservationReport{}, fmt.Errorf("instrument playback observation invalid")
+	}
+	return report, nil
+}
+
+func validateXiaozhiInstrumentObservationOptions(options xiaozhiInstrumentObservationOptions) error {
+	for name, value := range map[string]string{
+		"device_id":  options.DeviceID,
+		"trace_id":   options.TraceID,
+		"session_id": options.SessionID,
+		"method":     options.Method,
+		"instrument": options.Instrument,
+	} {
+		if !xiaozhiPhysicalSafeID(value) {
+			return fmt.Errorf("%s is invalid or unsafe", name)
+		}
+	}
+	if strings.TrimSpace(options.DevicePlaybackObservationSource) != "" && !xiaozhiPhysicalSafeID(options.DevicePlaybackObservationSource) {
+		return fmt.Errorf("device playback observation source is invalid or unsafe")
+	}
+	if !xiaozhiPlausibleInstrumentTiming(options.GatewayAnswerFirstDownlinkMS) ||
+		!xiaozhiPlausibleInstrumentTiming(options.GatewayFirstDownlinkToAudibleMS) ||
+		!xiaozhiPlausibleInstrumentTiming(options.GatewayAnswerFirstDownlinkMS+options.GatewayFirstDownlinkToAudibleMS) {
+		return fmt.Errorf("instrument timing invalid")
+	}
+	if options.AudibleEnergyRMS <= 0 || options.NoiseFloorRMS <= 0 || options.AudibleEnergyRMS <= options.NoiseFloorRMS {
+		return fmt.Errorf("instrument energy invalid")
+	}
+	if options.DevicePlaybackObserved {
+		if strings.TrimSpace(options.DevicePlaybackObservationSource) == "" ||
+			!xiaozhiPlausibleInstrumentTiming(options.GatewayFirstDownlinkToPlaybackMS) ||
+			options.GatewayFirstDownlinkToPlaybackMS > options.GatewayFirstDownlinkToAudibleMS+xiaozhiInstrumentTimingToleranceMS {
+			return fmt.Errorf("instrument playback observation invalid")
+		}
+	}
+	return nil
+}
+
+func parsePositiveFloatCLIOption(args []string, index *int, stderr io.Writer, option string) (float64, bool) {
+	if *index+1 >= len(args) || strings.HasPrefix(args[*index+1], "-") {
+		fmt.Fprintf(stderr, "%s requires a value\n", option)
+		return 0, false
+	}
+	*index = *index + 1
+	value, err := strconv.ParseFloat(args[*index], 64)
+	if err != nil || value <= 0 || value > xiaozhiInstrumentMaxTimingMS {
+		fmt.Fprintf(stderr, "%s must be a positive number no greater than %d\n", option, xiaozhiInstrumentMaxTimingMS)
+		return 0, false
+	}
+	return value, true
+}
+
+func writeXiaozhiInstrumentObservationReportFile(outputDir string, report xiaozhiInstrumentObservationReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-xiaozhi-instrument-observation-"+time.Now().Format("20060102-150405.000000000")+".json")
+	report.ReportPath = filepath.Base(reportPath)
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := writeJSONXiaozhiInstrumentObservation(file, report); err != nil {
+		return "", err
+	}
+	return report.ReportPath, nil
+}
+
+func writeJSONXiaozhiInstrumentObservation(writer io.Writer, report xiaozhiInstrumentObservationReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
 }
 
 func runXiaozhiPhysicalEvidence(args []string, stdout io.Writer, stderr io.Writer) int {
