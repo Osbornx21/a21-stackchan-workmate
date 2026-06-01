@@ -988,6 +988,59 @@ func TestRunProductReadinessCommandAcceptsXiaozhiReportAndRedactsOutput(t *testi
 	}
 }
 
+func TestRunProductReadinessCommandAcceptsLocalVoiceLoopbackReport(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessLocalVoiceLoopbackReportFixture(t)
+	dir := t.TempDir()
+	t.Setenv("A21_PROVIDER_PRIMARY", "local_ollama")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "local_ollama")
+	t.Setenv("A21_LOCAL_OLLAMA_MODEL", "qwen2.5:0.5b")
+	t.Setenv("A21_LOCAL_OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx")
+	t.Setenv("A21_TTS_FAST_PROFILE", "sherpa_onnx_tts")
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--xiaozhi-report", fixture, "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"host_loopback_candidate_ready": true`,
+		`"host_local_asr_ready": true`,
+		`"host_local_text_ready": true`,
+		`"host_local_tts_ready": true`,
+		`"answer_first_audio_p95_ms": 1408.818`,
+		`"barge_in_stop_p95_ms": 0.111`,
+		`"acceptance_status": "host_local_loopback_passed"`,
+		`"execution_mode": "host_local"`,
+		`"asr_profile": "sherpa_onnx"`,
+		`"text_stream_profile": "local_ollama"`,
+		`"tts_profile": "sherpa_onnx_tts"`,
+		`"source_report": "a21-local-voice-loopback-report.json"`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, fixture, filepath.Dir(fixture), "http://", "https://", "data_base64", "用户原文", "provider output", "secret", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked or overclaimed %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestProductVoiceReadinessDetectsDefaultLocalModelCache(t *testing.T) {
 	t.Chdir(t.TempDir())
 	createProductReadinessModelFiles(t, filepath.Join(".a21-tools", "sherpa-onnx-models", "vits-icefall-zh-aishell3"), []string{
@@ -1095,6 +1148,31 @@ func writeProductReadinessXiaozhiHostReportFixtureFromData(t *testing.T, data st
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-xiaozhi-host-local-report.json")
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-local-voice-loopback-report.json")
+	data := `{
+  "schema_version": "a21.audio.local_voice_loopback.v1",
+  "status": "passed",
+  "repeat": 3,
+  "asr_provider": "sherpa_onnx",
+  "text_stream_provider": "local_ollama",
+  "text_stream_executed": true,
+  "tts_provider": "sherpa_onnx",
+  "answer_first_audio_total_p95_ms": 1408.818,
+  "barge_in_stop_p95_ms": 0.111,
+  "local_ack_first_audio_total_ms": 961.904,
+  "asr_transcript_policy": "transcript_not_recorded",
+  "text_stream_endpoint_host": "127.0.0.1:11434",
+  "report_path": "reports/a21-local-voice-loopback-report.json"
+}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}

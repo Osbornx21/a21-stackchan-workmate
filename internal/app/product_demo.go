@@ -492,7 +492,9 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		voicePipeline.HostLocalASRReady = xiaozhiEvidence.Execution.HostLocalASRExecuted
 		voicePipeline.HostLocalTextReady = xiaozhiEvidence.Execution.HostLocalTextExecuted
 		voicePipeline.HostLocalTTSReady = xiaozhiEvidence.Execution.HostLocalTTSExecuted
-		voicePipeline.HostLoopbackCandidateReady = xiaozhiEvidence.AcceptanceStatus == "candidate_host_only" &&
+		hostLoopbackEvidenceAccepted := xiaozhiEvidence.AcceptanceStatus == "candidate_host_only" ||
+			xiaozhiEvidence.AcceptanceStatus == "host_local_loopback_passed"
+		voicePipeline.HostLoopbackCandidateReady = hostLoopbackEvidenceAccepted &&
 			xiaozhiEvidence.AnswerFirstAudioP95MS > 0 &&
 			xiaozhiEvidence.AnswerFirstAudioP95MS < 1500 &&
 			xiaozhiEvidence.BargeInStopP95MS < 300 &&
@@ -573,6 +575,19 @@ type productXiaozhiReportRedaction struct {
 	LocalPathsStored       *bool `json:"local_paths_stored"`
 }
 
+type productLocalVoiceLoopbackReportFixture struct {
+	SchemaVersion          string   `json:"schema_version"`
+	Status                 string   `json:"status"`
+	AnswerFirstAudioP95MS  *float64 `json:"answer_first_audio_total_p95_ms"`
+	BargeInStopP95MS       *float64 `json:"barge_in_stop_p95_ms"`
+	TextStreamExecuted     *bool    `json:"text_stream_executed"`
+	ASRProvider            string   `json:"asr_provider"`
+	TextStreamProvider     string   `json:"text_stream_provider"`
+	TTSProvider            string   `json:"tts_provider"`
+	ASRTranscriptPolicy    string   `json:"asr_transcript_policy"`
+	TextStreamEndpointHost string   `json:"text_stream_endpoint_host"`
+}
+
 func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence, []productReadinessFinding) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -596,6 +611,15 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 	}
 	if providerLatencyFixtureContainsForbiddenKey(raw) {
 		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	var header struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	if strings.TrimSpace(header.SchemaVersion) == "a21.audio.local_voice_loopback.v1" {
+		return productLocalVoiceLoopbackReportEvidence(path, data)
 	}
 	var fixture productXiaozhiReportFixture
 	if err := json.Unmarshal(data, &fixture); err != nil {
@@ -627,6 +651,83 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 		FailureCount:          *fixture.Counts.FailureCount,
 		Execution:             execution,
 	}, nil
+}
+
+func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productXiaozhiReportEvidence, []productReadinessFinding) {
+	var fixture productLocalVoiceLoopbackReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	if missingField := missingProductLocalVoiceLoopbackReportField(fixture); missingField != "" {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{missingProductXiaozhiReportFieldFinding(missingField)}
+	}
+	asrProfile := providerLatencySafeIdentifier(fixture.ASRProvider, false)
+	textProfile := providerLatencySafeIdentifier(fixture.TextStreamProvider, false)
+	ttsProfile := providerLatencySafeIdentifier(fixture.TTSProvider, false)
+	if ttsProfile == "sherpa_onnx" {
+		ttsProfile = "sherpa_onnx_tts"
+	}
+	if fixture.SchemaVersion != "a21.audio.local_voice_loopback.v1" ||
+		strings.TrimSpace(fixture.Status) != "passed" ||
+		asrProfile == "" ||
+		textProfile == "" ||
+		ttsProfile == "" ||
+		*fixture.AnswerFirstAudioP95MS <= 0 ||
+		*fixture.BargeInStopP95MS < 0 ||
+		strings.TrimSpace(fixture.ASRTranscriptPolicy) != "transcript_not_recorded" ||
+		productLocalVoiceLoopbackUnsafeEndpointHost(fixture.TextStreamEndpointHost) {
+		return productXiaozhiReportEvidence{}, []productReadinessFinding{invalidProductXiaozhiReportFinding()}
+	}
+	execution := providerLatencyBenchExecution{
+		ProviderExecuted:           false,
+		V21Executed:                false,
+		HardwareExecuted:           false,
+		VoicePipelineObserved:      true,
+		VoicePipelineExecutionMode: "host_local",
+		ASRProfile:                 asrProfile,
+		ASRProfileEnv:              "A21_ASR_LOCAL_PROFILE",
+		LLMProfile:                 textProfile,
+		LLMProfileEnv:              "A21_TEXT_STREAM_PROFILE",
+		TTSProfile:                 ttsProfile,
+		TTSProfileEnv:              "A21_TTS_FAST_PROFILE",
+		HostLocalASRExecuted:       asrProfile != "" && asrProfile != "mock_asr",
+		HostLocalTextExecuted:      *fixture.TextStreamExecuted && textProfile != "" && textProfile != "mock_text_stream",
+		HostLocalTTSExecuted:       ttsProfile != "" && ttsProfile != "mock-fast-tts",
+	}
+	return productXiaozhiReportEvidence{
+		Valid:                 true,
+		SourceReport:          filepath.Base(filepath.Clean(path)),
+		AcceptanceStatus:      "host_local_loopback_passed",
+		PRDAccepted:           false,
+		AnswerFirstAudioP95MS: *fixture.AnswerFirstAudioP95MS,
+		BargeInStopP95MS:      *fixture.BargeInStopP95MS,
+		FailureCount:          0,
+		Execution:             execution,
+	}, nil
+}
+
+func missingProductLocalVoiceLoopbackReportField(fixture productLocalVoiceLoopbackReportFixture) string {
+	switch {
+	case fixture.AnswerFirstAudioP95MS == nil:
+		return "answer_first_audio_total_p95_ms"
+	case fixture.BargeInStopP95MS == nil:
+		return "barge_in_stop_p95_ms"
+	case fixture.TextStreamExecuted == nil:
+		return "text_stream_executed"
+	default:
+		return ""
+	}
+}
+
+func productLocalVoiceLoopbackUnsafeEndpointHost(host string) bool {
+	host = strings.TrimSpace(strings.ToLower(host))
+	return strings.Contains(host, "http://") ||
+		strings.Contains(host, "https://") ||
+		strings.Contains(host, "@") ||
+		strings.Contains(host, "key") ||
+		strings.Contains(host, "token") ||
+		strings.Contains(host, "secret") ||
+		strings.Contains(host, "proxy")
 }
 
 func missingProductXiaozhiReportField(fixture productXiaozhiReportFixture) string {
