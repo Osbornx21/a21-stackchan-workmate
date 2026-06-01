@@ -31,6 +31,7 @@ type ProviderSmokeReport struct {
 	Status        ProviderSmokeStatus      `json:"status"`
 	Configured    bool                     `json:"configured"`
 	Executed      bool                     `json:"executed"`
+	RouteEligible bool                     `json:"route_eligible,omitempty"`
 	Stream        bool                     `json:"stream,omitempty"`
 	Repeat        int                      `json:"repeat,omitempty"`
 	HTTPStatus    int                      `json:"http_status,omitempty"`
@@ -175,6 +176,7 @@ func ProviderSmokeFromEnvWithOptions(ctx context.Context, env []string, options 
 	report.APIKeyEnv = spec.APIKeyEnv
 	report.ModelEnv = spec.ModelEnv
 	report.BaseURLEnv = spec.BaseURLEnv
+	report.RouteEligible = spec.RouteEligible
 	report.Configured, report.MissingEnv = providerSmokeConfigured(env, spec)
 	if host := providerSmokeEndpointHost(env, spec); host != "" {
 		report.EndpointHost = host

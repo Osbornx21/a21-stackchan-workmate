@@ -1726,6 +1726,64 @@ func TestRunProviderSmokeDryRunDoesNotLeakSecrets(t *testing.T) {
 	}
 }
 
+func TestRunProviderSmokeReportsHotPlugProfileRouteEligibility(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(profilePath, []byte(`{
+		"name": "a21_ws7a_cli_vendor",
+		"label": "A21 WS7A CLI Vendor",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "text_stream"],
+		"api_key_env": "A21_WS7A_CLI_VENDOR_API_KEY",
+		"model_env": "A21_WS7A_CLI_VENDOR_MODEL",
+		"base_url_env": "A21_WS7A_CLI_VENDOR_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PROFILES_PATH", profilePath)
+	t.Setenv("A21_PROVIDER_PRIMARY", "a21_ws7a_cli_vendor")
+	t.Setenv("A21_WS7A_CLI_VENDOR_API_KEY", "sk-a21-cli-secret")
+	t.Setenv("A21_WS7A_CLI_VENDOR_MODEL", "cli-hidden-model")
+	t.Setenv("A21_WS7A_CLI_VENDOR_BASE_URL", "http://127.0.0.1:9/v1")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-smoke", "--provider", "a21_ws7a_cli_vendor", "--stream", "--repeat", "2"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "a21_ws7a_cli_vendor"`,
+		`"status": "ready"`,
+		`"configured": true`,
+		`"executed": false`,
+		`"stream": true`,
+		`"repeat": 2`,
+		`"route_eligible": true`,
+		`"api_key_env": "A21_WS7A_CLI_VENDOR_API_KEY"`,
+		`"model_env": "A21_WS7A_CLI_VENDOR_MODEL"`,
+		`"base_url_env": "A21_WS7A_CLI_VENDOR_BASE_URL"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		profilePath,
+		filepath.Dir(profilePath),
+		"sk-a21-cli-secret",
+		"cli-hidden-model",
+		"http://127.0.0.1:9/v1",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("provider smoke CLI leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunProviderSmokeWritesRedactedReportWhenOutputDirProvided(t *testing.T) {
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
 	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-secret")

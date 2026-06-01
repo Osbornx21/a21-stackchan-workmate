@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -172,6 +174,210 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 	}
 }
 
+func TestProviderSmokeExecutesHotPlugOpenAICompatibleStreamingProfile(t *testing.T) {
+	profilePath := writeProviderSmokeProfileFile(t, `{
+		"name": "a21_ws7a_vendor",
+		"label": "A21 WS7A Vendor",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "text_stream", "mainland_latency_candidate"],
+		"api_key_env": "A21_WS7A_VENDOR_API_KEY",
+		"model_env": "A21_WS7A_VENDOR_MODEL",
+		"base_url_env": "A21_WS7A_VENDOR_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`)
+	var sawAuth bool
+	var sawModel bool
+	var sawStream bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q, want /chat/completions", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("Authorization") == "Bearer sk-a21-hotplug-secret"
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+			Stream bool `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		sawModel = body.Model == "a21-hidden-model"
+		sawStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"HOTPLUG_OK"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=a21_ws7a_vendor",
+		"A21_WS7A_VENDOR_API_KEY=sk-a21-hotplug-secret",
+		"A21_WS7A_VENDOR_MODEL=a21-hidden-model",
+		"A21_WS7A_VENDOR_BASE_URL=" + server.URL,
+	}, ProviderSmokeOptions{
+		ProviderName: "a21_ws7a_vendor",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       1,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if !sawAuth || !sawModel || !sawStream {
+		t.Fatalf("server saw auth/model/stream = %v/%v/%v, want true/true/true", sawAuth, sawModel, sawStream)
+	}
+	if report.Provider != "a21_ws7a_vendor" || report.Family != string(ProviderFamilyTextStream) || report.Protocol != "openai_chat_completions" {
+		t.Fatalf("provider/family/protocol = %q/%q/%q", report.Provider, report.Family, report.Protocol)
+	}
+	if !report.Configured || !report.Executed || !report.Stream || !report.RouteEligible {
+		t.Fatalf("configured/executed/stream/route = %v/%v/%v/%v", report.Configured, report.Executed, report.Stream, report.RouteEligible)
+	}
+	if len(report.Attempts) != 1 || report.Attempts[0].ContentDeltaCount != 1 || !report.Attempts[0].Done {
+		t.Fatalf("attempts = %+v, want one completed content delta", report.Attempts)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, want := range []string{
+		`"provider":"a21_ws7a_vendor"`,
+		`"route_eligible":true`,
+		`"api_key_env":"A21_WS7A_VENDOR_API_KEY"`,
+		`"model_env":"A21_WS7A_VENDOR_MODEL"`,
+		`"base_url_env":"A21_WS7A_VENDOR_BASE_URL"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("smoke report missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		profilePath,
+		filepath.Dir(profilePath),
+		server.URL,
+		"sk-a21-hotplug-secret",
+		"a21-hidden-model",
+		"HOTPLUG_OK",
+		"A21 provider smoke check",
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("hot-plug smoke report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestProviderSmokeHotPlugMissingEnvAndUnsafeProfilesAreRedacted(t *testing.T) {
+	t.Run("missing env", func(t *testing.T) {
+		profilePath := writeProviderSmokeProfileFile(t, `{
+			"name": "a21_ws7a_missing",
+			"label": "A21 WS7A Missing",
+			"family": "text_stream",
+			"protocol": "openai_chat_completions",
+			"api_key_env": "A21_WS7A_MISSING_API_KEY",
+			"model_env": "A21_WS7A_MISSING_MODEL",
+			"base_url_env": "A21_WS7A_MISSING_BASE_URL",
+			"endpoint_path": "/chat/completions",
+			"route_eligible": true
+		}`)
+
+		report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+			"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+			"A21_PROVIDER_PRIMARY=a21_ws7a_missing",
+			"A21_WS7A_MISSING_BASE_URL=http://127.0.0.1:9/v1",
+		}, ProviderSmokeOptions{
+			ProviderName: "a21_ws7a_missing",
+			Execute:      true,
+			Stream:       true,
+			Client:       http.DefaultClient,
+		})
+
+		if report.Status != ProviderSmokeSkipped || report.Configured || report.Executed {
+			t.Fatalf("status/configured/executed = %q/%v/%v", report.Status, report.Configured, report.Executed)
+		}
+		if !report.RouteEligible {
+			t.Fatalf("route eligible = false, want true for loaded text-stream profile")
+		}
+		for _, want := range []string{"A21_WS7A_MISSING_API_KEY", "A21_WS7A_MISSING_MODEL"} {
+			if !stringSliceContains(report.MissingEnv, want) {
+				t.Fatalf("missing env lacks %q: %#v", want, report.MissingEnv)
+			}
+		}
+		data, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered := string(data)
+		for _, forbidden := range []string{profilePath, filepath.Dir(profilePath), "http://127.0.0.1:9/v1"} {
+			if strings.Contains(rendered, forbidden) {
+				t.Fatalf("missing-env smoke report leaked %q: %s", forbidden, rendered)
+			}
+		}
+	})
+
+	t.Run("unsafe profile", func(t *testing.T) {
+		profilePath := writeProviderSmokeProfileFile(t, `{
+			"name": "a21_ws7a_unsafe",
+			"label": "A21 WS7A Unsafe",
+			"family": "text_stream",
+			"protocol": "openai_chat_completions",
+			"api_key_env": "A21_WS7A_UNSAFE_API_KEY",
+			"model_env": "A21_WS7A_UNSAFE_MODEL",
+			"default_base_url": "https://user:secret@example.invalid/v1",
+			"endpoint_path": "/chat/completions",
+			"route_eligible": true
+		}`)
+
+		report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+			"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+			"A21_PROVIDER_PRIMARY=a21_ws7a_unsafe",
+			"A21_WS7A_UNSAFE_API_KEY=sk-a21-unsafe-secret",
+			"A21_WS7A_UNSAFE_MODEL=unsafe-model",
+		}, ProviderSmokeOptions{
+			ProviderName: "a21_ws7a_unsafe",
+			Execute:      true,
+			Stream:       true,
+			Client:       http.DefaultClient,
+		})
+
+		if report.Status != ProviderSmokeFailed || report.Provider != "unknown_provider" || report.Executed {
+			t.Fatalf("status/provider/executed = %q/%q/%v", report.Status, report.Provider, report.Executed)
+		}
+		if len(report.Findings) == 0 || report.Findings[0].Code != "provider_profile_endpoint_credentials" {
+			t.Fatalf("findings = %#v, want provider_profile_endpoint_credentials", report.Findings)
+		}
+		data, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered := string(data)
+		for _, forbidden := range []string{
+			profilePath,
+			filepath.Dir(profilePath),
+			"a21_ws7a_unsafe",
+			"sk-a21-unsafe-secret",
+			"unsafe-model",
+			"https://user:secret@example.invalid/v1",
+			"user:secret",
+			"example.invalid",
+		} {
+			if strings.Contains(rendered, forbidden) {
+				t.Fatalf("unsafe-profile smoke report leaked %q: %s", forbidden, rendered)
+			}
+		}
+	})
+}
+
 func TestProviderSmokeExecutesLocalOllamaStreamingRequest(t *testing.T) {
 	var sawStream bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +437,15 @@ func TestProviderSmokeExecutesLocalOllamaStreamingRequest(t *testing.T) {
 			t.Fatalf("stream report leaked %q: %s", forbidden, rendered)
 		}
 	}
+}
+
+func writeProviderSmokeProfileFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestProviderSmokeStreamingHTTPFailureReportsFallbackTraceMetrics(t *testing.T) {
