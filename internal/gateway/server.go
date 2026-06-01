@@ -47,7 +47,7 @@ type Server struct {
 	realtimeAudioCommitAt      map[string]time.Time
 	realtimeAudioFirstDownlink map[string]bool
 	audioProbeSessions         map[string]bool
-	mockPlaybackArmedSessions  map[string]bool
+	mockPlaybackArmedSessions  map[string]int
 	realtimeArmedSessions      map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
@@ -170,7 +170,7 @@ type DeviceControlRequest struct {
 	DiagnosticToneHz             int                           `json:"diagnostic_tone_hz,omitempty"`
 	DiagnosticToneDurationMS     int                           `json:"diagnostic_tone_duration_ms,omitempty"`
 	DiagnosticToneVolume         int                           `json:"diagnostic_tone_volume,omitempty"`
-	MockAudioChunks              int                           `json:"mock_audio_chunks,omitempty"`
+	MockAudioChunks              *int                          `json:"mock_audio_chunks,omitempty"`
 	AudioChunks                  []protocol.AudioPlaybackChunk `json:"audio_chunks,omitempty"`
 	AudioProbeOnly               bool                          `json:"audio_probe_only,omitempty"`
 	MockPlaybackOnNextAudioFrame bool                          `json:"mock_playback_on_next_audio_frame,omitempty"`
@@ -390,7 +390,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeAudioCommitAt:      make(map[string]time.Time),
 		realtimeAudioFirstDownlink: make(map[string]bool),
 		audioProbeSessions:         make(map[string]bool),
-		mockPlaybackArmedSessions:  make(map[string]bool),
+		mockPlaybackArmedSessions:  make(map[string]int),
 		realtimeArmedSessions:      make(map[string]bool),
 		audioIngress:               audio.NewIngress(options.AudioIngressConfig),
 		audioSockets:               make(map[string]*deviceSocket),
@@ -509,7 +509,7 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	if req.StreamID == "" && req.State == protocol.ExpressionSpeaking {
 		req.StreamID = "a21-device-command-stream-000001"
 	}
-	if req.MockAudioChunks < 0 || req.MockAudioChunks > 8 {
+	if req.MockAudioChunks != nil && (*req.MockAudioChunks < 0 || *req.MockAudioChunks > 8) {
 		http.Error(w, "mock_audio_chunks must be between 0 and 8", http.StatusBadRequest)
 		return
 	}
@@ -540,9 +540,6 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
 	req.SessionID = sessionID
-	s.setAudioProbeOnly(req.DeviceID, traceID, sessionID, req.AudioProbeOnly)
-	s.setMockPlaybackOnNextAudioFrame(req.DeviceID, traceID, sessionID, req.MockPlaybackOnNextAudioFrame)
-	s.setRealtimeOnNextSpeech(req.DeviceID, traceID, sessionID, req.RealtimeOnNextSpeech)
 	socket, ok := s.audioSocket(req.DeviceID)
 	if !ok {
 		http.Error(w, "device audio websocket is not connected", http.StatusConflict)
@@ -550,8 +547,15 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	events := s.deviceControlEvents(req)
+	s.applyDeviceControlStreamState(req)
 	for _, event := range events {
+		if err := r.Context().Err(); err != nil {
+			s.clearDeviceControlStreamState(req)
+			http.Error(w, "device command delivery failed", http.StatusBadGateway)
+			return
+		}
 		if err := writeAudioEnvelope(r.Context(), socket.conn, socket.writeMu, event); err != nil {
+			s.clearDeviceControlStreamState(req)
 			http.Error(w, "device command delivery failed", http.StatusBadGateway)
 			return
 		}
@@ -565,6 +569,18 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 		DeliveredTransport: "audio_ws",
 		Events:             events,
 	})
+}
+
+func (s *Server) applyDeviceControlStreamState(req DeviceControlRequest) {
+	s.setAudioProbeOnly(req.DeviceID, req.TraceID, req.SessionID, req.AudioProbeOnly)
+	s.setMockPlaybackOnNextAudioFrame(req.DeviceID, req.TraceID, req.SessionID, req.MockPlaybackOnNextAudioFrame, req.MockAudioChunks)
+	s.setRealtimeOnNextSpeech(req.DeviceID, req.TraceID, req.SessionID, req.RealtimeOnNextSpeech)
+}
+
+func (s *Server) clearDeviceControlStreamState(req DeviceControlRequest) {
+	s.setAudioProbeOnly(req.DeviceID, req.TraceID, req.SessionID, false)
+	s.setMockPlaybackOnNextAudioFrame(req.DeviceID, req.TraceID, req.SessionID, false, nil)
+	s.setRealtimeOnNextSpeech(req.DeviceID, req.TraceID, req.SessionID, false)
 }
 
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
@@ -2835,7 +2851,11 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if !s.shouldEmitMockAudioPlayback(frame, traceID, sessionID, ingress) {
+		mockPlaybackChunks, shouldEmitMockAudioPlayback := s.mockAudioPlaybackChunkCount(frame, traceID, sessionID, ingress)
+		if !shouldEmitMockAudioPlayback {
+			continue
+		}
+		if mockPlaybackChunks <= 0 {
 			continue
 		}
 		streamID := s.mockAudioStreamID(frame, traceID, sessionID)
@@ -2848,30 +2868,32 @@ func (s *Server) handleAudioWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID, streamID)
-		if err := writeAudioEnvelope(ctx, conn, writeMu, playback); err != nil {
-			return
+		for i := 0; i < mockPlaybackChunks; i++ {
+			playback := s.mockAudioPlaybackChunk(frame, traceID, sessionID, streamID, uint64(len(events)+i+1))
+			if err := writeAudioEnvelope(ctx, conn, writeMu, playback); err != nil {
+				return
+			}
 		}
 		s.setActiveStream(traceID, sessionID, frame.DeviceID, streamID)
 	}
 }
 
-func (s *Server) shouldEmitMockAudioPlayback(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) bool {
+func (s *Server) mockAudioPlaybackChunkCount(frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult) (int, bool) {
 	if frame.Kind != protocol.KindAudioFrame {
-		return true
+		return 1, true
 	}
 	if !physicalStackChanDeviceID(frame.DeviceID) {
-		return true
+		return 1, true
 	}
-	if s.consumeMockPlaybackOnNextAudioFrame(frame.DeviceID, traceID, sessionID) {
+	if chunks, armed := s.consumeMockPlaybackOnNextAudioFrame(frame.DeviceID, traceID, sessionID); armed {
 		s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.mock_physical.armed", s.now().UnixMilli())
-		return true
+		return chunks, true
 	}
 	if containsAudioIngressEvent(ingress.Events, audio.EventVADSpeechStart) {
-		return true
+		return 1, true
 	}
 	s.recordTrace(traceID, sessionID, frame.DeviceID, "audio.mock_physical.suppressed", s.now().UnixMilli())
-	return false
+	return 0, false
 }
 
 func (s *Server) observeAudioIngress(frame protocol.Envelope, traceID string, sessionID string) (audio.IngressResult, bool) {
@@ -3576,12 +3598,16 @@ func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelo
 		}
 		return events
 	}
-	if req.MockAudioChunks <= 0 || req.StreamID == "" {
+	mockAudioChunks := 0
+	if req.MockAudioChunks != nil {
+		mockAudioChunks = *req.MockAudioChunks
+	}
+	if mockAudioChunks <= 0 || req.StreamID == "" {
 		return events
 	}
 	s.setActiveStream(req.TraceID, req.SessionID, req.DeviceID, req.StreamID)
 	sentAt := s.now().UnixMilli()
-	for i := 0; i < req.MockAudioChunks; i++ {
+	for i := 0; i < mockAudioChunks; i++ {
 		events = append(events, s.voiceAudioPlaybackChunk(
 			req.DeviceID,
 			req.TraceID,
@@ -4107,7 +4133,7 @@ func (s *Server) voiceAudioPlaybackChunk(deviceID string, traceID string, sessio
 	}
 }
 
-func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string, streamID string) protocol.Envelope {
+func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string, sessionID string, streamID string, seq uint64) protocol.Envelope {
 	payload := protocol.AudioPlaybackChunk{
 		StreamID:     streamID,
 		Codec:        protocol.AudioCodecPCMS16LE,
@@ -4124,7 +4150,7 @@ func (s *Server) mockAudioPlaybackChunk(frame protocol.Envelope, traceID string,
 		Protocol:  protocol.ProtocolVersion,
 		DeviceID:  frame.DeviceID,
 		Kind:      protocol.KindAudioPlaybackChunk,
-		Seq:       frame.Seq + 1,
+		Seq:       seq,
 		TraceID:   traceID,
 		SessionID: sessionID,
 		SentAtMS:  sentAt,
@@ -4214,26 +4240,31 @@ func (s *Server) audioProbeOnly(deviceID string, traceID string, sessionID strin
 	return s.audioProbeSessions[key]
 }
 
-func (s *Server) setMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string, enabled bool) {
+func (s *Server) setMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string, enabled bool, mockAudioChunks *int) {
 	key := streamStateKey(traceID, sessionID, deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if enabled {
-		s.mockPlaybackArmedSessions[key] = true
+		chunks := 1
+		if mockAudioChunks != nil {
+			chunks = *mockAudioChunks
+		}
+		s.mockPlaybackArmedSessions[key] = chunks
 		return
 	}
 	delete(s.mockPlaybackArmedSessions, key)
 }
 
-func (s *Server) consumeMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string) bool {
+func (s *Server) consumeMockPlaybackOnNextAudioFrame(deviceID string, traceID string, sessionID string) (int, bool) {
 	key := streamStateKey(traceID, sessionID, deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.mockPlaybackArmedSessions[key] {
-		return false
+	chunks, armed := s.mockPlaybackArmedSessions[key]
+	if !armed {
+		return 0, false
 	}
 	delete(s.mockPlaybackArmedSessions, key)
-	return true
+	return chunks, true
 }
 
 func (s *Server) setRealtimeOnNextSpeech(deviceID string, traceID string, sessionID string, enabled bool) {

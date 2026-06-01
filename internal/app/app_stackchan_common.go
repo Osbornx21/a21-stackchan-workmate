@@ -231,6 +231,7 @@ func postStackChanSpeakerControl(gatewayBaseURL string, deviceID string, state p
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
+	mockAudioChunksPtr := mockAudioChunks
 	request := gateway.DeviceControlRequest{
 		DeviceID:        deviceID,
 		State:           state,
@@ -239,7 +240,7 @@ func postStackChanSpeakerControl(gatewayBaseURL string, deviceID string, state p
 		TraceID:         traceID,
 		SessionID:       sessionID,
 		StreamID:        streamID,
-		MockAudioChunks: mockAudioChunks,
+		MockAudioChunks: &mockAudioChunksPtr,
 	}
 	data, err := json.Marshal(request)
 	if err != nil {
@@ -335,6 +336,7 @@ func postStackChanTouchControl(gatewayBaseURL string, deviceID string, spec stac
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
+	mockAudioChunksPtr := spec.MockAudioChunks
 	request := gateway.DeviceControlRequest{
 		DeviceID:        deviceID,
 		State:           spec.ControlState,
@@ -343,7 +345,7 @@ func postStackChanTouchControl(gatewayBaseURL string, deviceID string, spec stac
 		TraceID:         "a21-trace-touch-acceptance-" + spec.Name,
 		SessionID:       "a21-session-touch-acceptance",
 		StreamID:        spec.StreamID,
-		MockAudioChunks: spec.MockAudioChunks,
+		MockAudioChunks: &mockAudioChunksPtr,
 	}
 	data, err := json.Marshal(request)
 	if err != nil {

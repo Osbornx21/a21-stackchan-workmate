@@ -6036,6 +6036,120 @@ func TestDeviceControlArmsSinglePhysicalMockPlaybackForNextAudioFrame(t *testing
 	assertNoEnvelope(t, conn, 100*time.Millisecond)
 }
 
+func TestDeviceControlArmsMultiplePhysicalMockPlaybackChunksForNextAudioFrame(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-armed-multi","session_id":"a21-session-armed-multi","mock_playback_on_next_audio_frame":true,"mock_audio_chunks":4}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-armed-multi", "a21-session-armed-multi", pcm16Base64WithSample(0))
+	readControlEvents(t, ctx, conn, 2)
+	for i := 0; i < 4; i++ {
+		var playback protocol.Envelope
+		if err := wsjson.Read(ctx, conn, &playback); err != nil {
+			t.Fatal(err)
+		}
+		if playback.Kind != protocol.KindAudioPlaybackChunk {
+			t.Fatalf("envelope %d kind = %q, want playback chunk", i, playback.Kind)
+		}
+	}
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 2, "a21-trace-armed-multi", "a21-session-armed-multi", pcm16Base64WithSample(0))
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+}
+
+func TestDeviceControlExplicitZeroMockAudioChunksConsumesArmWithoutPlayback(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-zero-chunks","session_id":"a21-session-zero-chunks","mock_playback_on_next_audio_frame":true,"mock_audio_chunks":0}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d: %s", resp.StatusCode, data)
+	}
+	readControlEvents(t, ctx, conn, 1)
+
+	writeAudioFrameEnvelopeForDevice(t, ctx, conn, "stackchan-001", 1, "a21-trace-zero-chunks", "a21-session-zero-chunks", pcm16Base64WithSample(0))
+	assertNoEnvelope(t, conn, 100*time.Millisecond)
+	assertNoValidationArmState(t, server, "stackchan-001", "a21-trace-zero-chunks", "a21-session-zero-chunks")
+}
+
+func TestDeviceControlArmWithoutSocketDoesNotLeaveValidationState(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-no-socket","session_id":"a21-session-no-socket","audio_probe_only":true,"mock_playback_on_next_audio_frame":true,"mock_audio_chunks":4,"realtime_on_next_speech":true}`)
+	resp, err := http.Post(httpServer.URL+"/v1/devices/control", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+	assertNoValidationArmState(t, server, "stackchan-001", "a21-trace-no-socket", "a21-session-no-socket")
+}
+
+func TestDeviceControlWriteFailureRollsBackValidationState(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/ws/audio?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	requestCtx, requestCancel := context.WithCancel(context.Background())
+	requestCancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/devices/control", bytes.NewBufferString(`{"device_id":"stackchan-001","state":"listening","mode":"workmate","trace_id":"a21-trace-write-fail","session_id":"a21-session-write-fail","audio_probe_only":true,"mock_playback_on_next_audio_frame":true,"mock_audio_chunks":4,"realtime_on_next_speech":true}`)).WithContext(requestCtx)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+	assertNoValidationArmState(t, server, "stackchan-001", "a21-trace-write-fail", "a21-session-write-fail")
+}
+
 func TestPhysicalStackChanDeviceIDExcludesSimulatorAndBenchDevices(t *testing.T) {
 	tests := []struct {
 		deviceID string
@@ -7091,6 +7205,22 @@ func assertNoEnvelope(t *testing.T, conn *websocket.Conn, timeout time.Duration)
 	var unexpected protocol.Envelope
 	if err := wsjson.Read(readCtx, conn, &unexpected); err == nil {
 		t.Fatalf("unexpected envelope: %+v", unexpected)
+	}
+}
+
+func assertNoValidationArmState(t *testing.T, server *Server, deviceID string, traceID string, sessionID string) {
+	t.Helper()
+	key := streamStateKey(traceID, sessionID, deviceID)
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	if server.audioProbeSessions[key] {
+		t.Fatalf("audio probe state still armed for %s", key)
+	}
+	if chunks, ok := server.mockPlaybackArmedSessions[key]; ok {
+		t.Fatalf("mock playback state still armed for %s with %d chunk(s)", key, chunks)
+	}
+	if server.realtimeArmedSessions[key] {
+		t.Fatalf("realtime state still armed for %s", key)
 	}
 }
 
