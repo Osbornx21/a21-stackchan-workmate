@@ -83,6 +83,9 @@ thin sensing and expression device.
 - Product readiness can ingest `a21.xiaozhi_professional_bench.v1` through
   `--v21-professional-report` as V21 professional evidence while keeping
   `prd_accepted=false` and physical/product launch gates closed.
+- `product-readiness --use-latest-reports` can assemble the latest known
+  redacted voice, V21 professional, adapter-smoke, and physical evidence
+  reports from `reports/` without hand-copying report paths.
 - Current host-only voice evidence:
   `reports/a21-xiaozhi-voice-bench-20260601-191935.646589000.json` reports
   `acceptance_status=candidate_host_only`, repeat 3,

@@ -27,6 +27,7 @@ type productReadinessOptions struct {
 	V21ProfessionalReport   string
 	V21AdapterSmokeReport   string
 	PhysicalStackChanReport string
+	UseLatestReports        bool
 	RequireReal             bool
 	OpenBrowser             bool
 	StatusOnly              bool
@@ -178,7 +179,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -208,6 +209,8 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			if !readStringOption(args, &i, stderr, "--physical-stackchan-report", &options.PhysicalStackChanReport) {
 				return 2
 			}
+		case "--use-latest-reports":
+			options.UseLatestReports = true
 		case "--require-real":
 			options.RequireReal = true
 		default:
@@ -218,6 +221,9 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	if err := validateA21ReportDir(options.OutputDir); err != nil {
 		fmt.Fprintf(stderr, "product-readiness report dir invalid: %v\n", err)
 		return 1
+	}
+	if options.UseLatestReports {
+		options = resolveLatestProductReadinessReports(options)
 	}
 	report := buildProductReadinessReport(context.Background(), options, os.Environ())
 	if options.OutputDir != "" {
@@ -293,6 +299,57 @@ func runDemo(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 0
 	}
 	return runGateway([]string{"--addr", options.Addr}, stdout, stderr)
+}
+
+func resolveLatestProductReadinessReports(options productReadinessOptions) productReadinessOptions {
+	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	if strings.TrimSpace(options.XiaozhiReport) == "" {
+		options.XiaozhiReport = latestProductReadinessReportPath(reportDir, []string{
+			"a21-xiaozhi-voice-bench-*.json",
+			"a21-local-voice-loopback-*.json",
+		})
+	}
+	if strings.TrimSpace(options.V21ProfessionalReport) == "" {
+		options.V21ProfessionalReport = latestProductReadinessReportPath(reportDir, []string{
+			"a21-xiaozhi-professional-bench-*.json",
+			"a21-v21-professional-readiness-*.json",
+		})
+	}
+	if strings.TrimSpace(options.V21AdapterSmokeReport) == "" && strings.TrimSpace(options.V21ProfessionalReport) == "" {
+		options.V21AdapterSmokeReport = latestProductReadinessReportPath(reportDir, []string{
+			"a21-v21-adapter-smoke-*.json",
+		})
+	}
+	if strings.TrimSpace(options.PhysicalStackChanReport) == "" {
+		options.PhysicalStackChanReport = latestProductReadinessReportPath(reportDir, []string{
+			"a21-physical-stackchan-evidence-*.json",
+			"a21-xiaozhi-physical-evidence-*.json",
+		})
+	}
+	return options
+}
+
+func latestProductReadinessReportPath(reportDir string, patterns []string) string {
+	var selected string
+	var selectedMod time.Time
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(reportDir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			modTime := info.ModTime()
+			if selected == "" || modTime.After(selectedMod) || (modTime.Equal(selectedMod) && filepath.Base(match) > filepath.Base(selected)) {
+				selected = match
+				selectedMod = modTime
+			}
+		}
+	}
+	return selected
 }
 
 func buildProductReadinessReport(ctx context.Context, options productReadinessOptions, env []string) productReadinessReport {

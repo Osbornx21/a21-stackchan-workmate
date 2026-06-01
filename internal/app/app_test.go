@@ -858,6 +858,61 @@ func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(
 	}
 }
 
+func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260601-191935.json", productReadinessXiaozhiHostReportFixtureJSON())
+	professionalFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	physicalFixture := writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{
+		"promotion_gate":    "candidate",
+		"acceptance_status": "physical_review_required",
+		"prd_accepted":      false,
+	})
+	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260601-161500.json", `{"schema_version":"a21.v21_adapter_smoke.v1","status":"passed"}`)
+	copyProductReadinessReportFixture(t, professionalFixture, filepath.Join(dir, "a21-xiaozhi-professional-bench-20260601-160123.json"))
+	copyProductReadinessReportFixture(t, physicalFixture, filepath.Join(dir, "a21-physical-stackchan-evidence-20260601-150001.json"))
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"source_report": "a21-xiaozhi-voice-bench-20260601-191935.json"`,
+		`"professional_acceptance_status": "external_gateway_ready"`,
+		`"source_report": "a21-xiaozhi-professional-bench-20260601-160123.json"`,
+		`"source_report": "a21-physical-stackchan-evidence-20260601-150001.json"`,
+		`"adapter_executed": true`,
+		`"candidate_physical_evidence": true`,
+		`"host_loopback_candidate_ready": true`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, dir, professionalFixture, physicalFixture, "http://", "https://", "/Users/", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+	if strings.Contains(rendered, "v21_adapter_smoke_report_missing_field") {
+		t.Fatalf("latest readiness should not ingest adapter-smoke noise when professional proof exists: %s", rendered)
+	}
+}
+
 func TestRunProductReadinessCommandRejectsUnsafeV21ProfessionalReportWithoutLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, strings.Replace(productReadinessV21ProfessionalReportFixtureJSON(), `  "report_path": "a21-v21-professional-readiness-host.json"`, `  "prompt": "professional readiness fixture query",
@@ -1237,6 +1292,26 @@ func writeProductReadinessXiaozhiHostReportFixtureFromData(t *testing.T, data st
 		t.Fatal(err)
 	}
 	return path
+}
+
+func writeProductReadinessReportFixtureFile(t *testing.T, dir string, name string, data string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func copyProductReadinessReportFixture(t *testing.T, source string, target string) {
+	t.Helper()
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {

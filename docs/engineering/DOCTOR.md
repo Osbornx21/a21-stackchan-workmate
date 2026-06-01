@@ -162,9 +162,12 @@ requires an executed `v21-adapter-smoke --execute` report passed with
 `--v21-adapter-smoke-report`, or an external-Gateway
 `a21.xiaozhi_professional_bench.v1` report passed through
 `--v21-professional-report` after Gateway traces prove the V21 query markers.
-The rollup ingests only fixed status/count/timing fields, keeps
-`prd_accepted=false`, and never stores query text, answer text, evidence
-bodies, full URLs, credentials, proxy values, or local paths. For local speech, it now
+`--use-latest-reports` scans the selected output directory for the latest
+known A21 voice, professional, adapter-smoke, and physical evidence reports,
+then ingests them through the same explicit report contracts. The rollup
+ingests only fixed status/count/timing fields, keeps `prd_accepted=false`, and
+never stores query text, answer text, evidence bodies, full URLs, credentials,
+proxy values, or local paths. For local speech, it now
 recognizes either explicit `A21_SHERPA_ONNX_MODEL_DIR` /
 `A21_SHERPA_ONNX_ASR_MODEL_DIR` values or the repository-local `.a21-tools`
 sherpa-onnx model caches when their required model files are present. This is a
