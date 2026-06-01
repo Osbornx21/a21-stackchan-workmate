@@ -125,7 +125,7 @@ func runWakeWordFirmwarePackage(args []string, stdout io.Writer, stderr io.Write
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 wake-word-firmware-package --plan reports/a21-wake-word-firmware-plan-*.json --build-dir /path/to/xiaozhi/build-m5stack-core-s3 --commit <git-sha> [--output-dir firmware/artifacts/wake-word] [--timestamp YYYYMMDD-HHMMSS]")
+			fmt.Fprintln(stdout, "a21 wake-word-firmware-package --plan reports/a21-wake-word-firmware-plan-*.json --build-dir /path/to/xiaozhi/build-m5stack-core-s3 [--build-receipt <receipt.json>] --commit <git-sha> [--output-dir firmware/artifacts/wake-word] [--timestamp YYYYMMDD-HHMMSS]")
 			return 0
 		case "--plan":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

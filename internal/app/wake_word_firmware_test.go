@@ -313,6 +313,17 @@ func TestRunWakeWordFirmwarePackageAcceptsExplicitBuildReceipt(t *testing.T) {
 	}
 }
 
+func TestRunWakeWordFirmwarePackageHelpMentionsBuildReceipt(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"wake-word-firmware-package", "--help"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "--build-receipt") {
+		t.Fatalf("help output = %q, want --build-receipt", stdout.String())
+	}
+}
+
 func TestRunWakeWordFirmwarePackageWritesArtifactWithoutFlashOrPathLeaks(t *testing.T) {
 	dir := t.TempDir()
 	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
