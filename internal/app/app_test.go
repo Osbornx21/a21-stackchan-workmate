@@ -683,6 +683,35 @@ func TestProductReadinessHonorsExplicitXiaozhiHostProductChainFalse(t *testing.T
 	}
 }
 
+func TestProductReadinessKeepsContinuousVoiceGapForInsufficientXiaozhiRounds(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"repeat": 3`, `"repeat": 1`, 1)
+	data = strings.Replace(data, `"answer_turn_count": 3`, `"answer_turn_count": 1`, 1)
+	data = strings.Replace(data, `"barge_in_turn_count": 3`, `"barge_in_turn_count": 1`, 1)
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Voice.ContinuousVoiceReady || report.Voice.VoicePipeline.HostProductChainReady {
+		t.Fatalf("voice readiness = %+v, want one-round xiaozhi report below continuous voice readiness", report.Voice)
+	}
+	if report.ServerSide.HostVoiceLoopbackReady {
+		t.Fatalf("server-side readiness = %+v, want one-round xiaozhi report below host voice readiness", report.ServerSide)
+	}
+	if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "continuous_voice_pipeline") {
+		t.Fatalf("missing real evidence = %#v, want continuous voice gap preserved for insufficient host rounds", report.CanonicalDecision.MissingRealEvidence)
+	}
+}
+
 func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	originalLister := listFirmwareSerialDevices
@@ -3780,6 +3809,7 @@ func productReadinessXiaozhiHostReportFixtureJSON() string {
   "execution_mode": "host_loopback",
   "baseline_scope": "host_only",
   "device_id": "stackchan-virtual-a21-bench-001",
+  "repeat": 3,
   "acceptance_status": "candidate_host_only",
   "prd_accepted": false,
   "summary": {

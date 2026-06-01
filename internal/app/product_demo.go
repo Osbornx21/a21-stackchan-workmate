@@ -2312,6 +2312,7 @@ type productXiaozhiReportFixture struct {
 	SchemaVersion    string                        `json:"schema_version"`
 	ExecutionMode    string                        `json:"execution_mode"`
 	BaselineScope    string                        `json:"baseline_scope"`
+	Repeat           *int                          `json:"repeat"`
 	AcceptanceStatus string                        `json:"acceptance_status"`
 	PRDAccepted      bool                          `json:"prd_accepted"`
 	Summary          productXiaozhiReportSummary   `json:"summary"`
@@ -2363,7 +2364,9 @@ type productXiaozhiReportSummary struct {
 }
 
 type productXiaozhiReportCounts struct {
-	FailureCount *int `json:"failure_count"`
+	AnswerTurnCount  *int `json:"answer_turn_count"`
+	BargeInTurnCount *int `json:"barge_in_turn_count"`
+	FailureCount     *int `json:"failure_count"`
 }
 
 type productXiaozhiReportRedaction struct {
@@ -2430,6 +2433,7 @@ func loadProductXiaozhiReportEvidence(path string) (productXiaozhiReportEvidence
 	if fixture.SchemaVersion != "a21.xiaozhi_voice_bench.v1" ||
 		fixture.ExecutionMode != "host_loopback" ||
 		fixture.BaselineScope != "host_only" ||
+		!productXiaozhiReportHasSufficientRounds(fixture) ||
 		!productXiaozhiProviderExecutionAllowed(fixture.Execution) ||
 		fixture.Execution.V21Executed ||
 		fixture.Execution.HardwareExecuted ||
@@ -2476,6 +2480,15 @@ func productXiaozhiHostProductChainReady(execution providerLatencyBenchExecution
 		return *explicit && derived
 	}
 	return derived
+}
+
+func productXiaozhiReportHasSufficientRounds(fixture productXiaozhiReportFixture) bool {
+	return fixture.Repeat != nil &&
+		fixture.Counts.AnswerTurnCount != nil &&
+		fixture.Counts.BargeInTurnCount != nil &&
+		*fixture.Repeat >= 3 &&
+		*fixture.Counts.AnswerTurnCount >= *fixture.Repeat &&
+		*fixture.Counts.BargeInTurnCount >= *fixture.Repeat
 }
 
 func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productXiaozhiReportEvidence, []productReadinessFinding) {
@@ -2558,10 +2571,16 @@ func productLocalVoiceLoopbackUnsafeEndpointHost(host string) bool {
 
 func missingProductXiaozhiReportField(fixture productXiaozhiReportFixture) string {
 	switch {
+	case fixture.Repeat == nil:
+		return "repeat"
 	case fixture.Summary.AnswerFirstAudioP95MS == nil:
 		return "summary.answer_first_audio_total_p95_ms"
 	case fixture.Summary.BargeInStopP95MS == nil:
 		return "summary.barge_in_stop_p95_ms"
+	case fixture.Counts.AnswerTurnCount == nil:
+		return "counts.answer_turn_count"
+	case fixture.Counts.BargeInTurnCount == nil:
+		return "counts.barge_in_turn_count"
 	case fixture.Counts.FailureCount == nil:
 		return "counts.failure_count"
 	case fixture.Redaction.PayloadsStored == nil:

@@ -121,6 +121,10 @@ TTS stage under `voice_pipeline.execution_mode=host_local`. Reports keep only
 safe profile/env identifiers and must not store prompt text, transcript text,
 provider output, full URLs, proxy values, credentials, raw audio, or local
 paths.
+`product-readiness` treats xiaozhi host product-chain evidence as usable only
+when the report includes `repeat >= 3`, at least three answer turns, at least
+three barge-in turns, zero failures, answer first-audio p95 under 1500 ms, and
+barge-in stop p95 under 300 ms.
 
 Text-stream fallback is provider-neutral. `A21_TEXT_STREAM_FALLBACK_PROFILE`
 selects a secondary configured route-eligible text provider for the host-local
