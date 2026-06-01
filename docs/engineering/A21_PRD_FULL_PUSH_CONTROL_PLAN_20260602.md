@@ -4,7 +4,8 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `f288741 feat(wake-word): add build receipt command`
+Current code baseline: `93cba07 fix(wake-word): require reviewed build evidence`
+Current plan checkpoint: this document revision
 
 ## 0. Control Rule
 
@@ -34,24 +35,43 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD: `f288741 feat(wake-word): add build receipt command`
+- Code HEAD before this plan checkpoint: `93cba07 fix(wake-word): require reviewed build evidence`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
   canonical missing real evidence is `real_provider_smoke`,
   `physical_stackchan_online`, `physical_stackchan_prd_acceptance`,
   `wake_word_product_ready`
+- Current server-side missing evidence is `provider_smoke`, `wake_word`.
+- Current positive no-hardware/server evidence: `server_side.v21_professional_evidence_ready=true`
+  and `server_side.host_voice_loopback_ready=true`.
+- Current provider state: `provider.real_provider_ready=false`; the 5080lab
+  operator packet exists, but no real returned bundle has been imported yet.
+- Current wake-word state: `wake_word.product_ready=false` and
+  `wake_word.firmware_package_available=false`; the build receipt now requires
+  matching reviewed-build evidence, but no current reviewed package report has
+  been imported yet.
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
-  passed after the wake build receipt merge.
+  passed after the provider runbook and reviewed-build receipt guard merges.
 - Latest targeted verification:
   `go test ./internal/app -run 'WakeWord|FirmwareBuildReceipt|FirmwarePackage|ProductReadiness' -count=1`
   passed.
+- Latest provider operator safety smoke:
+  `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
+  `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
+  command bundle only, and
+  `make provider-5080lab-runbook A21_PROVIDER=selected_provider A21_PROVIDER_5080LAB_OUTPUT_DIR=/tmp/a21`
+  failed with exit 2.
 - Latest no-hardware CLI smoke:
-  `wake-word-firmware-build-receipt` produced
-  `a21.wake_word_firmware_build.v1` with `status=built`, and
+  `wake-word-firmware-build-receipt` without `--review-report` failed without
+  writing a receipt; the same command with matching
+  `a21.wake_word_firmware_build_review.v1` evidence produced
+  `a21.wake_word_firmware_build.v1` with `status=built` and
+  `review_report=a21-wake-word-build-review.json`; then
   `wake-word-firmware-package --build-receipt` consumed it and returned
-  `status=packaged`, `product_ready=false`, with the expected
+  `status=packaged`, `product_ready=false`,
+  `build_review=a21-wake-word-build-review.json`, and the expected
   `wake_word_firmware_package_below_activation` finding.
 
 Already merged into the current baseline and must not be rediscovered as active
@@ -81,13 +101,16 @@ gaps:
   `f57cbda feat(provider): enforce selected smoke evidence`
 - Wake-word build receipt closure:
   `f288741 feat(wake-word): add build receipt command`
+- Provider 5080lab operator packet:
+  `6e83e72 chore(provider): add 5080lab runbook wrapper`
+- Wake-word reviewed-build authenticity guard:
+  `93cba07 fix(wake-word): require reviewed build evidence`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Wake build authenticity guard | `019e8544-42e4-7b82-816c-ecea282af127` | `/Users/jiyurun/.codex/worktrees/8e44/New project` | worker-managed from integration baseline | Require explicit matching reviewed-build evidence before producing `a21-wake-word-build.json` | Active; poll before editing wake receipt/package code |
-| Provider 5080lab operator packet | `019e8544-788b-7e21-924c-0af318e6d8fa` | `/Users/jiyurun/.codex/worktrees/fe41/New project` | worker-managed from integration baseline | Make real selected-provider 5080lab execute/package/import closure hard to mis-run without local provider execute | Active; poll before editing provider evidence code/docs |
+| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
 
 Recently completed workers:
 
@@ -99,6 +122,8 @@ Recently completed workers:
 | Provider selected-evidence closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | `codex/a21-provider-5080lab-evidence-closure-20260602` | Selected-provider matching for latest smoke evidence, package/import, and 5080lab repeat-3 runbook | Merged via `f57cbda`; do not duplicate |
 | Wake build receipt closure | `019e8537-d0bf-71b1-b72a-b5e3cf90c793` | `/Users/jiyurun/.codex/worktrees/c7e2/New project` | `codex/a21-wake-build-receipt-20260602` | Build receipt command and explicit receipt-to-package bridge for reviewed xiaozhi/ESP-SR MultiNet output | Merged via `f288741`; do not duplicate |
 | No-hardware PRD gap audit | `019e8537-d17e-7320-a13d-6a122cab9dd0` | `/Users/jiyurun/.codex/worktrees/efbe/New project` | detached at `9939bda` | Read-only audit of current no-hardware gaps | Completed read-only; no merge needed |
+| Provider 5080lab operator packet | `019e8544-788b-7e21-924c-0af318e6d8fa` | `/Users/jiyurun/.codex/worktrees/fe41/New project` | `codex/a21-provider-5080lab-closure-20260602` | Print-only selected-provider 5080lab runbook with mock/unsafe path rejection | Merged via `6e83e72`; do not duplicate |
+| Wake build authenticity guard | `019e8544-42e4-7b82-816c-ecea282af127` | `/Users/jiyurun/.codex/worktrees/8e44/New project` | `codex/a21-wake-build-authenticity-guard-20260602` | Require explicit matching reviewed-build evidence before producing `a21-wake-word-build.json` | Merged via `93cba07`; do not duplicate |
 
 Current canonical PRD gaps from the latest product-readiness run:
 
@@ -114,15 +139,23 @@ Current server-side gaps from the latest product-readiness run:
 
 Current next moves:
 
-1. Provider execute closure for 5080lab: prepare/run/import a selected real
-   route-eligible text provider smoke bundle from 5080lab, then rerun
-   product-readiness to reduce `real_provider_smoke`.
-2. Wake-word package closure: run `wake-word-firmware-build-receipt` against a
-   reviewed xiaozhi/ESP-SR MultiNet build directory, then
+1. Provider execute closure for 5080lab: run
+   `make provider-5080lab-runbook A21_PROVIDER=<selected-non-mock-route-eligible-provider>`
+   to print the lab packet, execute the printed provider commands on 5080lab,
+   import the returned bundle on the control machine, then rerun
+   product-readiness to reduce `real_provider_smoke`. Do not run provider
+   `--execute` on this Mac.
+2. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
+   build review JSON for the current custom phrase, run
+   `wake-word-firmware-build-receipt --review-report`, then
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. Hardware window when CoreS3 returns: collect physical online/audio/playback
+3. No-hardware voice/product closure: open a fresh worker worktree from the
+   integration branch to burn down the continuous voice product chain and launch
+   rollup visibility that do not require CoreS3. Do not reimplement audio
+   clarity; keep `8bfed60` as regression evidence.
+4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
 
@@ -340,20 +373,23 @@ Done means:
 
 Run in this order:
 
-1. Produce or import a real 5080lab provider evidence bundle. The Mac control
-   tower can package/import returned redacted reports, but executed provider
-   smoke belongs on 5080lab.
-2. Dispatch a new no-hardware realtime voice lane worker. Scope: evidence/report
-   closure for the already-present fixture/live boundary, one-shot arm proof,
-   professional-mode rejection, and product-readiness visibility; no provider
-   execute on Mac.
-3. Dispatch a new no-hardware AgentTask bridge worker after realtime evidence
-   scope is stable. Scope: disabled-by-default smoke, progress/result/error
-   semantics, no first-audio-path integration.
-4. Dispatch a public/private/focus and professional-output privacy worker for
-   UX safety once runtime mode surfaces are stable. Scope: copy/state/tests, not
-   provider execution.
-5. When CoreS3 returns, open exactly one Slice G foreground hardware window for
+1. External/provider lane: produce or import a real 5080lab provider evidence
+   bundle using the generated runbook. The Mac control tower can package/import
+   returned redacted reports, but executed provider smoke belongs on 5080lab.
+2. Wake/package lane: obtain real reviewed-build evidence for the current custom
+   MultiNet build, then run receipt/package on the control machine. Keep this
+   below activation and explicitly not product-ready.
+3. Dispatch one fresh no-hardware voice product-chain worker. Scope:
+   `xiaozhi-voice-bench`/readiness visibility for continuous
+   `OPUS -> PCM -> ASR -> LLM stream -> TTS -> OPUS paced downlink`, current
+   turn cancel, and no Mac audio playback. Write set must avoid provider/wake
+   files unless the worker first reports a real cross-cutting dependency.
+4. Dispatch one fresh no-hardware launch-rollup review worker only after item 3
+   lands. Scope: verify product-readiness cannot false-green when provider,
+   wake, or physical reports are absent/stale/mismatched.
+5. Dispatch AgentTask bridge or mode/privacy UX polish only after the voice and
+   launch-rollup deltas are stable; these must not enter the first-audio path.
+6. When CoreS3 returns, open exactly one Slice G foreground hardware window for
    physical online, microphone, speaker, barge-in stop, screen/touch/servo/RGB,
    and custom wake-word acceptance.
 
@@ -370,12 +406,13 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-The current next implementation move is controlled realtime voice evidence
-closure in a fresh worktree. Do not reimplement realtime transport from scratch:
-the repo already has provider-neutral session tests, one-shot physical arming,
-unarmed physical suppression, professional-mode rejection, and provider audio
-uplink/downlink mapping. The next slice should make those surfaces visible in
-the same product-readiness/reporting language used by provider, V21, wake-word,
-and physical evidence.
+The current next implementation move is a fresh no-hardware voice product-chain
+worker from `codex/a21-integration-runtime-readiness-20260601`. Do not revive
+old detached workers and do not patch this in the control thread unless the
+change is a merge/conflict fix. The worker should start by reading the current
+`xiaozhi-voice-bench`, Gateway xiaozhi pipeline, audio pacing, turn-cancel, and
+product-readiness evidence surfaces, then propose the smallest implementation
+slice that turns existing host/simulator evidence into PRD burn-down without
+requiring CoreS3.
 
 Voice clarity is not an open implementation gap; it is a regression check.
