@@ -27,6 +27,8 @@ import (
 	"github.com/coder/websocket/wsjson"
 )
 
+const xiaozhiPlaybackInterruptWindowMS int64 = 3000
+
 type Server struct {
 	mu                         sync.Mutex
 	next                       uint64
@@ -850,6 +852,8 @@ type xiaozhiSession struct {
 	voicePipelineFrames    []providers.VoicePipelinePCMFrame
 	voicePipelineHasSpeech bool
 	ttsStopSent            bool
+	lastDownlinkAtMS       int64
+	lastDownlinkTurnID     string
 }
 
 type xiaozhiTurn struct {
@@ -973,6 +977,27 @@ func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xi
 	return turn
 }
 
+func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, nowMS int64, recentWindowMS int64) (xiaozhiTurnTask, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	turn := session.cancelCurrentXiaozhiTurnLocked(reason)
+	turnID := xiaozhiTurnID(turn)
+	if turnID == "" && session.lastDownlinkTurnID != "" && nowMS-session.lastDownlinkAtMS >= 0 && nowMS-session.lastDownlinkAtMS <= recentWindowMS {
+		turnID = session.lastDownlinkTurnID
+	}
+	if turnID == "" {
+		return xiaozhiTurnTask{}, false
+	}
+	return xiaozhiTurnTask{
+		turn:      turn,
+		turnID:    turnID,
+		traceID:   session.traceID,
+		sessionID: session.sessionID,
+		deviceID:  session.deviceID,
+		mode:      xiaozhiTurnMode(turn),
+	}, true
+}
+
 func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reason string) {
 	if turn == nil {
 		return
@@ -1035,6 +1060,13 @@ func (session *xiaozhiSession) claimXiaozhiTTSStop() bool {
 	}
 	session.ttsStopSent = true
 	return true
+}
+
+func (session *xiaozhiSession) markXiaozhiDownlink(turn *xiaozhiTurn, atMS int64) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.lastDownlinkAtMS = atMS
+	session.lastDownlinkTurnID = xiaozhiTurnID(turn)
 }
 
 func xiaozhiTurnCancelCause(reason string) error {
@@ -1209,6 +1241,11 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		mode := s.xiaozhiListenMode(rawListenMode, session.features)
 		switch frame.Control.Listen.State {
 		case "start":
+			bargeTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn("barge_in", s.now().UnixMilli(), xiaozhiPlaybackInterruptWindowMS)
+			if shouldStopPlayback {
+				s.recordXiaozhiListenBargeInMarkers(session, bargeTask.turn != nil)
+				s.writeXiaozhiTTSStopForce(ctx, conn, session, bargeTask.turn, bargeTask, "barge_in")
+			}
 			turn := session.startXiaozhiTurn(ctx, mode)
 			session.listening = true
 			session.resetXiaozhiOpusIngress()
@@ -1629,6 +1666,24 @@ func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason strin
 	s.metrics.bargeInTotal.Inc()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in_detected", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+}
+
+func (s *Server) recordXiaozhiListenBargeInMarkers(session *xiaozhiSession, hadActiveTurn bool) {
+	now := s.now().UnixMilli()
+	s.metrics.bargeInTotal.Inc()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.barge_in", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	if hadActiveTurn {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
+	} else {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop.recent_downlink", now)
+	}
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
 }
 
@@ -2245,15 +2300,23 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 }
 
 func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string) bool {
+	return s.writeXiaozhiTTSStopWithOptions(ctx, conn, session, turn, task, reason, false)
+}
+
+func (s *Server) writeXiaozhiTTSStopForce(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string) bool {
+	return s.writeXiaozhiTTSStopWithOptions(ctx, conn, session, turn, task, reason, true)
+}
+
+func (s *Server) writeXiaozhiTTSStopWithOptions(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string, force bool) bool {
 	if conn == nil {
 		return false
 	}
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()
-	if turn != nil && session.shouldAbortXiaozhiTurn(turn) {
+	if !force && turn != nil && session.shouldAbortXiaozhiTurn(turn) {
 		return false
 	}
-	if !session.claimXiaozhiTTSStop() {
+	if !force && !session.claimXiaozhiTTSStop() {
 		return false
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.tts.stop", s.now().UnixMilli())
@@ -2305,7 +2368,9 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 		if err := session.writeXiaozhiBinary(ctx, conn, turn, frame); err != nil {
 			return err
 		}
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.opus_frame.downlink", s.now().UnixMilli())
+		nowMS := s.now().UnixMilli()
+		session.markXiaozhiDownlink(turn, nowMS)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.opus_frame.downlink", nowMS)
 		s.recordXiaozhiDeviceActivity(session, "xiaozhi.tts.opus_frame.downlink", map[string]string{
 			"speaker": "available_xiaozhi_opus_downlink",
 		})

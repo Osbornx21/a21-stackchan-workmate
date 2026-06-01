@@ -1793,6 +1793,31 @@ func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing
 	}
 }
 
+func TestXiaozhiSessionRecentDownlinkCanBeInterruptedAfterTurnCompletion(t *testing.T) {
+	session := &xiaozhiSession{
+		traceID:            "a21-trace-xiaozhi-recent-downlink",
+		sessionID:          "a21-session-xiaozhi-recent-downlink",
+		deviceID:           "stackchan-001",
+		lastDownlinkAtMS:   1000,
+		lastDownlinkTurnID: "a21-xiaozhi-turn-000007",
+	}
+
+	task, ok := session.prepareXiaozhiListenStartBargeIn("barge_in", 2500, xiaozhiPlaybackInterruptWindowMS)
+	if !ok {
+		t.Fatal("recent downlink should allow a listen/start playback stop")
+	}
+	if task.turn != nil {
+		t.Fatalf("recent playback task turn = %+v, want no active turn", task.turn)
+	}
+	if task.turnID != "a21-xiaozhi-turn-000007" || task.traceID != session.traceID || task.sessionID != session.sessionID || task.deviceID != session.deviceID {
+		t.Fatalf("recent playback task = %+v", task)
+	}
+
+	if _, ok := session.prepareXiaozhiListenStartBargeIn("barge_in", 5000, xiaozhiPlaybackInterruptWindowMS); ok {
+		t.Fatal("stale downlink should not be interrupted as playback")
+	}
+}
+
 func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())
@@ -3154,6 +3179,10 @@ func TestXiaozhiWebSocketProfessionalNewTurnSuppressesStaleResult(t *testing.T) 
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
 		t.Fatal(err)
 	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "barge_in" {
+		t.Fatalf("new turn stop = %#v", stop)
+	}
 	newTurnAck := readXiaozhiJSON(t, ctx, conn)
 	if newTurnAck["type"] != "listen" || newTurnAck["state"] != "start" || newTurnAck["status"] != "accepted" {
 		t.Fatalf("new turn ack = %#v", newTurnAck)
@@ -3764,6 +3793,118 @@ func TestXiaozhiWebSocketAbortCancelsBlockedTurnTaskWithinBargeInBudget(t *testi
 		t.Fatalf("barge-in summary = %v, want <300ms", traces.Summary.BargeInStopMS)
 	}
 	t.Logf("xiaozhi abort stop latency=%s trace_barge_in_stop_ms=%d", stopAfter, *traces.Summary.BargeInStopMS)
+}
+
+func TestXiaozhiWebSocketListenStartBargeInStopsActiveTTS(t *testing.T) {
+	server := NewServer()
+	runner := newBlockingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.unblock)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-listen-barge",
+		"session_id": "a21-session-xiaozhi-listen-barge",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	firstStart := readXiaozhiJSON(t, ctx, conn)
+	firstTurnID, ok := firstStart["turn_id"].(string)
+	if !ok || firstTurnID == "" {
+		t.Fatalf("first listen ack turn_id = %#v", firstStart["turn_id"])
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	if messageType, data, err := conn.Read(ctx); err != nil {
+		t.Fatal(err)
+	} else if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("xiaozhi turn task did not enter blocking pipeline")
+	}
+
+	bargeAt := time.Now()
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	stopAfter := time.Since(bargeAt)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "barge_in" {
+		t.Fatalf("listen/start barge stop = %#v", stop)
+	}
+	if stop["turn_id"] != firstTurnID {
+		t.Fatalf("listen/start barge stop turn_id = %#v, want %q", stop["turn_id"], firstTurnID)
+	}
+	if stopAfter >= 300*time.Millisecond {
+		t.Fatalf("listen/start barge stop latency = %s, want <300ms", stopAfter)
+	}
+	nextStart := readXiaozhiJSON(t, ctx, conn)
+	if nextStart["type"] != "listen" || nextStart["state"] != "start" || nextStart["status"] != "accepted" {
+		t.Fatalf("next listen ack = %#v", nextStart)
+	}
+	nextTurnID, ok := nextStart["turn_id"].(string)
+	if !ok || nextTurnID == "" || nextTurnID == firstTurnID {
+		t.Fatalf("next turn_id = %#v, first=%q", nextStart["turn_id"], firstTurnID)
+	}
+	select {
+	case <-runner.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("blocked xiaozhi pipeline did not observe listen/start barge-in cancellation")
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-listen-barge", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.listen.barge_in",
+		"barge_in.detected",
+		"provider.cancel.end",
+		"playback.stop",
+		"xiaozhi.turn.cancel",
+		"downlink_queue_cleared",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	if traceContains(traces.Events, "xiaozhi.abort.received") {
+		t.Fatalf("listen/start barge-in must not be mislabeled as abort: %+v", traces.Events)
+	}
+	if traces.Summary.BargeInStopMS == nil || *traces.Summary.BargeInStopMS >= 300 {
+		t.Fatalf("barge-in summary = %v, want <300ms", traces.Summary.BargeInStopMS)
+	}
 }
 
 func TestXiaozhiWebSocketAcceptsProtocolVersion3BinaryFrames(t *testing.T) {
