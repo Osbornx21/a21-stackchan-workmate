@@ -2379,6 +2379,7 @@ type productXiaozhiReportRedaction struct {
 type productLocalVoiceLoopbackReportFixture struct {
 	SchemaVersion          string   `json:"schema_version"`
 	Status                 string   `json:"status"`
+	Repeat                 *int     `json:"repeat"`
 	AnswerFirstAudioP95MS  *float64 `json:"answer_first_audio_total_p95_ms"`
 	BargeInStopP95MS       *float64 `json:"barge_in_stop_p95_ms"`
 	TextStreamExecuted     *bool    `json:"text_stream_executed"`
@@ -2507,6 +2508,7 @@ func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productX
 	}
 	if fixture.SchemaVersion != "a21.audio.local_voice_loopback.v1" ||
 		strings.TrimSpace(fixture.Status) != "passed" ||
+		*fixture.Repeat < 3 ||
 		asrProfile == "" ||
 		textProfile == "" ||
 		ttsProfile == "" ||
@@ -2547,6 +2549,8 @@ func productLocalVoiceLoopbackReportEvidence(path string, data []byte) (productX
 
 func missingProductLocalVoiceLoopbackReportField(fixture productLocalVoiceLoopbackReportFixture) string {
 	switch {
+	case fixture.Repeat == nil:
+		return "repeat"
 	case fixture.AnswerFirstAudioP95MS == nil:
 		return "answer_first_audio_total_p95_ms"
 	case fixture.BargeInStopP95MS == nil:

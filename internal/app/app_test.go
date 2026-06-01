@@ -3202,6 +3202,33 @@ func TestRunProductReadinessCommandAcceptsLocalVoiceLoopbackReport(t *testing.T)
 	}
 }
 
+func TestProductReadinessRejectsLocalVoiceLoopbackMissingRepeat(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := strings.Replace(productReadinessLocalVoiceLoopbackReportFixtureJSON(), `  "repeat": 3,`+"\n", "", 1)
+	fixture := writeProductReadinessLocalVoiceLoopbackReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Voice.ContinuousVoiceReady || report.ServerSide.HostVoiceLoopbackReady {
+		t.Fatalf("voice/server readiness = %+v/%+v, want missing-repeat local loopback blocked", report.Voice, report.ServerSide)
+	}
+	if !containsProductFinding(report.Findings, "xiaozhi_report_missing_field", "repeat") {
+		t.Fatalf("findings = %#v, want missing repeat finding", report.Findings)
+	}
+	if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "continuous_voice_pipeline") {
+		t.Fatalf("missing real evidence = %#v, want continuous voice gap preserved", report.CanonicalDecision.MissingRealEvidence)
+	}
+}
+
 func TestProductVoiceReadinessDetectsDefaultLocalModelCache(t *testing.T) {
 	t.Chdir(t.TempDir())
 	createProductReadinessModelFiles(t, filepath.Join(".a21-tools", "sherpa-onnx-models", "vits-icefall-zh-aishell3"), []string{
@@ -3404,9 +3431,21 @@ func writeProviderEvidenceImportBundle(t *testing.T, entries map[string]string) 
 
 func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {
 	t.Helper()
+	return writeProductReadinessLocalVoiceLoopbackReportFixtureFromData(t, productReadinessLocalVoiceLoopbackReportFixtureJSON())
+}
+
+func writeProductReadinessLocalVoiceLoopbackReportFixtureFromData(t *testing.T, data string) string {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a21-local-voice-loopback-report.json")
-	data := `{
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func productReadinessLocalVoiceLoopbackReportFixtureJSON() string {
+	return `{
   "schema_version": "a21.audio.local_voice_loopback.v1",
   "status": "passed",
   "repeat": 3,
@@ -3421,10 +3460,6 @@ func writeProductReadinessLocalVoiceLoopbackReportFixture(t *testing.T) string {
   "text_stream_endpoint_host": "127.0.0.1:11434",
   "report_path": "reports/a21-local-voice-loopback-report.json"
 }`
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }
 
 func writeProductReadinessV21ProfessionalReportFixture(t *testing.T) string {
