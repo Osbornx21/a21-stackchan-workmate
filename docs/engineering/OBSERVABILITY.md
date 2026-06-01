@@ -99,6 +99,18 @@ samples exist. For virtual Xiaozhi harness aggregate reports,
 explicit findings. Physical-only acceptance remains blocked unless the source
 report contains physical StackChan evidence for device playback.
 
+`physical-stackchan-evidence --fixture <report.json> --output-dir reports`
+packages an already-collected physical StackChan fixture into schema
+`a21.physical_stackchan_evidence.v1`. It is fixture-only: it does not start
+Gateway, providers, V21, firmware tools, serial monitors, or hardware actions.
+The report keeps only A21 trace/session/device IDs, execution booleans,
+canonical physical metrics, microphone counters, operator/instrument
+observation flags, structured findings, and a basename `report_path`. Complete
+fixture evidence may reach `promotion_gate=candidate`, but still keeps
+`prd_accepted=false` and `acceptance_status=physical_review_required` until an
+explicit human review promotes it. Host-loopback fixtures remain
+`candidate_host_only`; missing or unsafe physical evidence remains blocked.
+
 The live protocol contract reserves future observability fields for binary Opus
 media. It is planning-only: reserved trace markers such as
 `media.opus.profile.negotiated`, `media.opus.uplink.frame.received`,

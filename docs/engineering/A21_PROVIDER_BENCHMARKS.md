@@ -72,6 +72,13 @@ A provider or provider combination can move toward the fast companion lane only 
 
 Physical StackChan promotion additionally requires device-side evidence for downlink receipt, playback start, and barge-in stop. Host fixtures and browser simulators can be `candidate` evidence, but they must not be marked as physical first-audio acceptance.
 
+`physical-stackchan-evidence` is the current fixture-only report contract for
+that physical promotion layer. It can package already-collected device
+downlink, playback-start, first-audible-response, barge-in-stop, microphone,
+and operator/instrument observations into a redacted
+`a21.physical_stackchan_evidence.v1` report, but it does not execute hardware
+or accept the PRD by itself.
+
 Professional mode must not be promoted through an opaque realtime S2S benchmark alone. It needs the V21 adapter evidence path with visible query, evidence, confidence, and fallback state.
 
 ## Mainline CLI Direction
