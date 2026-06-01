@@ -195,18 +195,18 @@ func TestOpenAICompatibleTextStreamAdapterEmitsContentDeltasWithFakeTransport(t 
 	}
 }
 
-func TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks(t *testing.T) {
+func TestLocalTTSAdapterConvertsWAVToDownlinkReady48KChunks(t *testing.T) {
 	adapter := NewLocalTTSAdapter(LocalTTSAdapterOptions{
 		Name: "local_sherpa_onnx",
 		Synthesizer: func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
-			if options.OutputSampleRateHz != 24000 {
-				t.Fatalf("output sample rate = %d, want 24000", options.OutputSampleRateHz)
+			if options.OutputSampleRateHz != 48000 {
+				t.Fatalf("output sample rate = %d, want 48000", options.OutputSampleRateHz)
 			}
 			if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(options.OutputDir, "a21-tts.wav")
-			if err := audio.WritePCM16MonoWAV(path, 24000, make([]byte, 3000)); err != nil {
+			if err := audio.WritePCM16MonoWAV(path, 48000, make([]byte, 6000)); err != nil {
 				t.Fatal(err)
 			}
 			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
@@ -222,15 +222,15 @@ func TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks(t *testing.T) {
 		t.Fatalf("chunks = %d, want 2", len(collected))
 	}
 	for _, chunk := range collected {
-		if chunk.Codec != "pcm_s16le" || chunk.SampleRateHz != 24000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
-			t.Fatalf("chunk = %+v, want pcm_s16le 24k mono 60ms", chunk)
+		if chunk.Codec != "pcm_s16le" || chunk.SampleRateHz != 48000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
+			t.Fatalf("chunk = %+v, want pcm_s16le 48k mono 60ms", chunk)
 		}
 		pcm, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(pcm) != 2880 {
-			t.Fatalf("chunk bytes = %d, want 2880", len(pcm))
+		if len(pcm) != 5760 {
+			t.Fatalf("chunk bytes = %d, want 5760", len(pcm))
 		}
 	}
 }

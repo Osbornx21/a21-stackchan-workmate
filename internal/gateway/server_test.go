@@ -2367,6 +2367,41 @@ func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestXiaozhiDownlinkPCM16AppliesHeadroomToHotTTSFrames(t *testing.T) {
+	const wantMaxPeak = 29490
+
+	pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 32767),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := maxAbsPCM16(pcm); got > wantMaxPeak {
+		t.Fatalf("pcm peak = %d, want <= %d", got, wantMaxPeak)
+	}
+}
+
+func TestXiaozhiDownlinkPCM16Accepts48KProviderFrames(t *testing.T) {
+	pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 48000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(48000, 60, 6000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pcm) != 2880 {
+		t.Fatalf("pcm samples = %d, want 2880", len(pcm))
+	}
+}
+
 func TestWriteXiaozhiOpusDownlinkSkipsStaleTurn(t *testing.T) {
 	server := NewServer()
 	session := &xiaozhiSession{
@@ -6975,6 +7010,20 @@ func xiaozhiTestPCM16Base64(sampleRate int, durationMS int, sample int16) string
 		binary.LittleEndian.PutUint16(data[i*2:i*2+2], uint16(sample))
 	}
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+func maxAbsPCM16(pcm []int16) int {
+	maxAbs := 0
+	for _, sample := range pcm {
+		abs := int(sample)
+		if abs < 0 {
+			abs = -abs
+		}
+		if abs > maxAbs {
+			maxAbs = abs
+		}
+	}
+	return maxAbs
 }
 
 func readXiaozhiJSON(t *testing.T, ctx context.Context, conn *websocket.Conn) map[string]any {

@@ -59,7 +59,9 @@ Any future real speech downlink work must migrate toward this official codec lan
   `github.com/thesyncim/gopus` library behind `internal/audio/opuscodec`. A21
   keeps third-party types out of Gateway/protocol surfaces; the local 16 kHz and
   24 kHz PCM inputs are normalized to 48 kHz only at this boundary so Opus TOC
-  duration stays correct. This is host codec evidence, not a product voice-chain
+  duration stays correct. The product local TTS adapter should prefer producing
+  48 kHz PCM directly so this boundary does not need A21-owned upsampling for
+  downlink speech. This is host codec evidence, not a product voice-chain
   acceptance result.
 - PCM16 JSON/base64 remains acceptable for fixtures, loopback, and diagnostic visibility, not for the final low-latency physical media path.
 

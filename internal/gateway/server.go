@@ -2452,12 +2452,14 @@ func (s *Server) recordXiaozhiStaleDownlinkSuppressed(session *xiaozhiSession) {
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.stale_frame_suppressed", s.now().UnixMilli())
 }
 
+const xiaozhiDownlinkPCM16HeadroomPeak = 29490
+
 func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
 	if chunk.Codec != string(protocol.AudioCodecPCMS16LE) {
 		return nil, fmt.Errorf("xiaozhi downlink requires pcm_s16le provider audio")
 	}
-	if chunk.SampleRateHz != 24000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
-		return nil, fmt.Errorf("xiaozhi downlink requires 24kHz mono 60ms audio")
+	if (chunk.SampleRateHz != 24000 && chunk.SampleRateHz != 48000) || chunk.Channels != 1 || chunk.DurationMS != 60 {
+		return nil, fmt.Errorf("xiaozhi downlink requires 24kHz or 48kHz mono 60ms audio")
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(chunk.DataBase64))
 	if err != nil {
@@ -2470,7 +2472,27 @@ func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
 	for i := range pcm {
 		pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2 : i*2+2]))
 	}
+	applyXiaozhiDownlinkHeadroom(pcm)
 	return pcm, nil
+}
+
+func applyXiaozhiDownlinkHeadroom(pcm []int16) {
+	maxAbs := 0
+	for _, sample := range pcm {
+		abs := int(sample)
+		if abs < 0 {
+			abs = -abs
+		}
+		if abs > maxAbs {
+			maxAbs = abs
+		}
+	}
+	if maxAbs <= xiaozhiDownlinkPCM16HeadroomPeak {
+		return
+	}
+	for i, sample := range pcm {
+		pcm[i] = int16(int(sample) * xiaozhiDownlinkPCM16HeadroomPeak / maxAbs)
+	}
 }
 
 func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
