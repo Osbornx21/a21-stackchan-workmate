@@ -315,7 +315,7 @@ A21 mode values are semantic product and office-state signals, not provider name
 - `local_fallback`
 - `error`
 
-Only `professional` is allowed to trigger the V21 adapter path. `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context.
+Only `professional` with `professional_only` privacy is allowed to trigger the V21 adapter path. `focus`, `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context. Explicit `private` privacy keeps Agent I/O and professional/V21 evidence routing blocked, even if a caller also asks for professional evidence.
 
 `local_fallback` is both a mode and an expression state. Gateway enters it when
 the local voice/provider pipeline cannot produce a playable answer after local
