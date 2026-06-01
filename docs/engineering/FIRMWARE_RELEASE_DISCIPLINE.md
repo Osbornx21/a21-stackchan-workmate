@@ -123,6 +123,8 @@ pinyin, and threshold, then writes only an A21-named app binary, checksum,
 manifest, and package report. It still sets `flash_allowed=false`,
 `flash_executed=false`, and `product_ready=false`; custom wake-word launch
 readiness requires a later guarded flash plan plus physical StackChan proof.
+If the build directory or receipt is missing, the command writes only a
+redacted diagnostic report and remains below package availability.
 
 Firmware expression changes must keep the avatar contract testable without hardware. `a21_firmware_display.h` maps render states into an `A21FaceFrame` with avatar-engine concepts such as expression, gaze, eye-open ratio, breath, and mouth-open ratio. This contract is intentionally compatible with a future pinned `m5stack-avatar` adapter and prevents the product expression layer from being buried as one-off drawing logic.
 

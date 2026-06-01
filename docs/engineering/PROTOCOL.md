@@ -201,6 +201,11 @@ product-ready. The `product-readiness` command accepts
 under `wake_word`, but only basename package source, artifact, and manifest names
 may be surfaced. The rollup must remain `launch_ready=false` until guarded flash
 and physical custom wake proof are present.
+If `--build-dir` is absent or the build receipt is missing, the command emits
+and writes a structured diagnostic package report with
+`status=missing_build_dir|missing_build_receipt`, finding code
+`wake_word_firmware_build_dir_missing|wake_word_firmware_build_receipt_missing`,
+`package_written=false`, `flash_allowed=false`, and `product_ready=false`.
 
 ### Fast Companion Runtime
 

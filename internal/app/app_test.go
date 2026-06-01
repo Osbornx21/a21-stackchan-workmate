@@ -2566,9 +2566,19 @@ func TestRunProductReadinessCommandIngestsWakeWordFirmwarePackageWithoutGreenOrL
 		`"wake_word_firmware_package_available"`,
 		`"wake_word_ready": false`,
 		`"launch_ready": false`,
+		`use the wake word firmware package in a guarded hardware-window flash plan and collect physical custom wake proof`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbiddenAction := range []string{
+		`use the wake word firmware plan to prepare the guarded build/package and hardware-window flash`,
+		`"wake_word_ready": true`,
+		`"launch_ready": true`,
+	} {
+		if strings.Contains(rendered, forbiddenAction) {
+			t.Fatalf("wake word package readiness has wrong action/overclaim %q: %s", forbiddenAction, rendered)
 		}
 	}
 	for _, forbidden := range []string{
@@ -2580,8 +2590,6 @@ func TestRunProductReadinessCommandIngestsWakeWordFirmwarePackageWithoutGreenOrL
 		"/Users/",
 		"secret",
 		"token",
-		`"wake_word_ready": true`,
-		`"launch_ready": true`,
 	} {
 		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
 			t.Fatalf("wake word package readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())

@@ -186,6 +186,97 @@ func TestRunWakeWordFirmwarePackageWritesArtifactWithoutFlashOrPathLeaks(t *test
 	}
 }
 
+func TestRunWakeWordFirmwarePackageReportsMissingBuildInputsWithoutPathLeaks(t *testing.T) {
+	dir := t.TempDir()
+	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
+
+	tests := []struct {
+		name         string
+		buildDir     string
+		wantStatus   string
+		wantFinding  string
+		wantBuildDir string
+	}{
+		{
+			name:         "missing build dir option",
+			wantStatus:   "missing_build_dir",
+			wantFinding:  "wake_word_firmware_build_dir_missing",
+			wantBuildDir: "",
+		},
+		{
+			name:         "missing build receipt",
+			buildDir:     filepath.Join(dir, "xiaozhi-build-without-receipt"),
+			wantStatus:   "missing_build_receipt",
+			wantFinding:  "wake_word_firmware_build_receipt_missing",
+			wantBuildDir: "xiaozhi-build-without-receipt",
+		},
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "xiaozhi-build-without-receipt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputDir := filepath.Join(dir, "diagnostic-"+strings.ReplaceAll(tt.name, " ", "-"))
+			args := []string{
+				"wake-word-firmware-package",
+				"--plan", planPath,
+				"--output-dir", outputDir,
+				"--commit", "abcdef123456",
+				"--timestamp", "20260602-060000",
+			}
+			if tt.buildDir != "" {
+				args = append(args, "--build-dir", tt.buildDir)
+			}
+
+			var stdout, stderr bytes.Buffer
+			code := Run(args, &stdout, &stderr)
+			if code == 0 {
+				t.Fatalf("code = 0, want missing build input diagnostic: stdout=%s stderr=%s", stdout.String(), stderr.String())
+			}
+
+			var report wakeWordFirmwarePackageReport
+			if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+				t.Fatalf("decode stdout diagnostic: %v\nstdout=%s stderr=%s", err, stdout.String(), stderr.String())
+			}
+			if report.SchemaVersion != "a21.wake_word_firmware_package.v1" ||
+				report.Status != tt.wantStatus ||
+				report.PackageWritten ||
+				report.FlashAllowed ||
+				report.FlashExecuted ||
+				report.ProductReady {
+				t.Fatalf("diagnostic report = %+v, want blocked no-write/no-flash/not-product-ready", report)
+			}
+			if report.SourcePlanReport != "a21-wake-word-firmware-plan-20260602-010000.json" ||
+				report.BuildReceipt != "a21-wake-word-build.json" ||
+				report.BuildDirName != tt.wantBuildDir ||
+				report.DesiredPhrase != "小阿二一" ||
+				report.DesiredPinyin != "xiao a er yi" ||
+				report.Threshold != 35 {
+				t.Fatalf("diagnostic intent = %+v", report)
+			}
+			if !hasWakeWordFirmwarePackageFinding(report.Findings, tt.wantFinding) || len(report.NextRequiredActions) == 0 {
+				t.Fatalf("diagnostic findings/actions = %#v / %#v, want %s and next action", report.Findings, report.NextRequiredActions, tt.wantFinding)
+			}
+			if report.ReportPath == "" || strings.Contains(report.ReportPath, string(os.PathSeparator)) {
+				t.Fatalf("report path = %q, want basename only", report.ReportPath)
+			}
+			reportBytes, err := os.ReadFile(filepath.Join(outputDir, report.ReportPath))
+			if err != nil {
+				t.Fatalf("read diagnostic report: %v", err)
+			}
+			for _, output := range []string{stdout.String(), stderr.String(), string(reportBytes)} {
+				for _, forbidden := range []string{dir, planPath, outputDir, tt.buildDir, "http://", "https://", "secret", "token", "A21_WAKE_WORD"} {
+					if forbidden != "" && strings.Contains(output, forbidden) {
+						t.Fatalf("wake word firmware package diagnostic leaked %q: %s", forbidden, output)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestRunWakeWordFirmwarePackageRejectsBuildReceiptMismatch(t *testing.T) {
 	dir := t.TempDir()
 	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
@@ -209,6 +300,15 @@ func TestRunWakeWordFirmwarePackageRejectsBuildReceiptMismatch(t *testing.T) {
 }
 
 func hasWakeWordFirmwareFinding(findings []wakeWordFirmwarePlanFinding, code string) bool {
+	for _, finding := range findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWakeWordFirmwarePackageFinding(findings []wakeWordFirmwarePackageFinding, code string) bool {
 	for _, finding := range findings {
 		if finding.Code == code {
 			return true

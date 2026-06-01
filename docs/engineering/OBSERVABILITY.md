@@ -90,6 +90,10 @@ command accepts `--wake-word-firmware-package-report <report.json>` and exposes
 only basename package source, artifact, and manifest names under `wake_word`; it
 keeps `wake_word.product_ready=false`, `server_side.wake_word_ready=false`, and
 `launch_ready=false` until guarded flash plus physical custom wake proof exists.
+When the package command lacks `--build-dir` or `a21-wake-word-build.json`, it
+still emits a redacted diagnostic report with
+`status=missing_build_dir|missing_build_receipt`; these reports are actionable
+operator evidence only and are not accepted as package availability.
 
 `product-readiness` also emits a `server_side` observability block for the
 no-hardware candidate chain. It summarizes the already-redacted Gateway,

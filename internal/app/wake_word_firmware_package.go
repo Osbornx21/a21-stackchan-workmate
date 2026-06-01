@@ -77,6 +77,15 @@ type wakeWordFirmwarePackageFinding struct {
 	Message  string `json:"message"`
 }
 
+type wakeWordFirmwarePackageInputError struct {
+	Code    string
+	Message string
+}
+
+func (err wakeWordFirmwarePackageInputError) Error() string {
+	return err.Message
+}
+
 func runWakeWordFirmwarePackage(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := wakeWordFirmwarePackageOptions{
 		OutputDir: filepath.Join("firmware", "artifacts", "wake-word"),
@@ -129,7 +138,16 @@ func runWakeWordFirmwarePackage(args []string, stdout io.Writer, stderr io.Write
 	}
 	report, err := packageWakeWordFirmware(options)
 	if err != nil {
-		fmt.Fprintln(stderr, "wake word firmware package failed: invalid package inputs")
+		report = rejectedWakeWordFirmwarePackageReport(options, err)
+		if writeErr := writeWakeWordFirmwarePackageRejectionReport(options.OutputDir, &report); writeErr != nil {
+			fmt.Fprintln(stderr, "wake word firmware package rejected: diagnostic report unavailable")
+			return 1
+		}
+		if encodeErr := writeJSONWakeWordFirmwarePackage(stdout, report); encodeErr != nil {
+			fmt.Fprintf(stderr, "encode wake word firmware package rejection: %v\n", encodeErr)
+			return 1
+		}
+		fmt.Fprintln(stderr, "wake word firmware package rejected: see structured report")
 		return 1
 	}
 	if err := writeJSONWakeWordFirmwarePackage(stdout, report); err != nil {
@@ -227,15 +245,123 @@ func packageWakeWordFirmware(options wakeWordFirmwarePackageOptions) (wakeWordFi
 	return report, nil
 }
 
+func rejectedWakeWordFirmwarePackageReport(options wakeWordFirmwarePackageOptions, err error) wakeWordFirmwarePackageReport {
+	code := "wake_word_firmware_package_invalid"
+	message := "Wake word firmware package inputs are invalid."
+	status := "rejected"
+	var inputErr wakeWordFirmwarePackageInputError
+	if ok := errorAsWakeWordFirmwarePackageInput(err, &inputErr); ok {
+		code = inputErr.Code
+		message = inputErr.Message
+	}
+	switch code {
+	case "wake_word_firmware_build_dir_missing":
+		status = "missing_build_dir"
+	case "wake_word_firmware_build_receipt_missing":
+		status = "missing_build_receipt"
+	}
+	plan, _ := loadProductWakeWordFirmwarePlanEvidence(options.PlanPath)
+	report := wakeWordFirmwarePackageReport{
+		SchemaVersion:    wakeWordFirmwarePackageSchema,
+		GeneratedAtMS:    time.Now().UnixMilli(),
+		Status:           status,
+		PackageWritten:   false,
+		FlashAllowed:     false,
+		FlashExecuted:    false,
+		ProductReady:     false,
+		FirmwareID:       wakeWordFirmwareID,
+		TargetBoard:      wakeWordFirmwareTargetBoard,
+		TargetProfile:    wakeWordFirmwareTargetProfile,
+		Mode:             wakeWordFirmwareCustomMode,
+		DesiredPhrase:    plan.DesiredPhrase,
+		DesiredPinyin:    plan.DesiredPinyin,
+		Threshold:        plan.Threshold,
+		SourcePlanReport: safeWakeWordFirmwarePackageBase(options.PlanPath),
+		BuildReceipt:     "a21-wake-word-build.json",
+		BuildDirName:     safeWakeWordFirmwarePackageBase(options.BuildDir),
+		Commit:           safeWakeWordFirmwarePackageCommit(options.Commit),
+		Timestamp:        safeWakeWordFirmwarePackageTimestamp(options.Timestamp),
+		NextRequiredActions: []string{
+			"Prepare a reviewed A21 xiaozhi/ESP-SR MultiNet build directory containing a matching a21-wake-word-build.json receipt.",
+			"Re-run wake-word-firmware-package before any guarded flash plan or physical custom wake acceptance.",
+		},
+		Findings: []wakeWordFirmwarePackageFinding{{
+			Code:     code,
+			Severity: "error",
+			Message:  message,
+		}},
+	}
+	return report
+}
+
+func writeWakeWordFirmwarePackageRejectionReport(outputDir string, report *wakeWordFirmwarePackageReport) error {
+	if strings.TrimSpace(outputDir) == "" {
+		return fmt.Errorf("output dir is required")
+	}
+	if err := validateA21InputPath(outputDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-wake-word-firmware-package-%s-%d.json", time.Now().Format("20060102-150405"), time.Now().UnixNano()))
+	report.ReportPath = filepath.Base(reportPath)
+	return writeWakeWordFirmwarePackageReport(reportPath, *report)
+}
+
+func errorAsWakeWordFirmwarePackageInput(err error, target *wakeWordFirmwarePackageInputError) bool {
+	if err == nil {
+		return false
+	}
+	if typed, ok := err.(wakeWordFirmwarePackageInputError); ok {
+		*target = typed
+		return true
+	}
+	return false
+}
+
+func safeWakeWordFirmwarePackageBase(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(filepath.Clean(path))
+}
+
+func safeWakeWordFirmwarePackageCommit(commit string) string {
+	commit = strings.ToLower(strings.TrimSpace(commit))
+	if ok, _ := regexp.MatchString(`^[0-9a-f]{7,40}$`, commit); ok {
+		return commit
+	}
+	return ""
+}
+
+func safeWakeWordFirmwarePackageTimestamp(timestamp string) string {
+	timestamp = strings.TrimSpace(timestamp)
+	if ok, _ := regexp.MatchString(`^\d{8}-\d{6}$`, timestamp); ok {
+		return timestamp
+	}
+	return ""
+}
+
 func validateWakeWordFirmwarePackageOptions(options wakeWordFirmwarePackageOptions) error {
 	if strings.TrimSpace(options.PlanPath) == "" {
-		return fmt.Errorf("plan is required")
+		return wakeWordFirmwarePackageInputError{
+			Code:    "wake_word_firmware_plan_required",
+			Message: "Wake word firmware package requires a matching firmware plan report.",
+		}
 	}
 	if strings.TrimSpace(options.BuildDir) == "" {
-		return fmt.Errorf("build dir is required")
+		return wakeWordFirmwarePackageInputError{
+			Code:    "wake_word_firmware_build_dir_missing",
+			Message: "Wake word firmware package requires the reviewed xiaozhi/ESP-SR build directory.",
+		}
 	}
 	if strings.TrimSpace(options.OutputDir) == "" {
-		return fmt.Errorf("output dir is required")
+		return wakeWordFirmwarePackageInputError{
+			Code:    "wake_word_firmware_output_dir_required",
+			Message: "Wake word firmware package requires an A21 output directory.",
+		}
 	}
 	for _, path := range []string{options.PlanPath, options.BuildDir, options.OutputDir} {
 		if err := validateA21InputPath(path); err != nil {
@@ -254,7 +380,10 @@ func validateWakeWordFirmwarePackageOptions(options wakeWordFirmwarePackageOptio
 func loadWakeWordFirmwareBuildReceipt(path string) (wakeWordFirmwareBuildReceipt, error) {
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) > 8192 {
-		return wakeWordFirmwareBuildReceipt{}, fmt.Errorf("wake word build receipt is required")
+		return wakeWordFirmwareBuildReceipt{}, wakeWordFirmwarePackageInputError{
+			Code:    "wake_word_firmware_build_receipt_missing",
+			Message: "Wake word firmware package requires a matching a21-wake-word-build.json build receipt.",
+		}
 	}
 	var raw any
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
