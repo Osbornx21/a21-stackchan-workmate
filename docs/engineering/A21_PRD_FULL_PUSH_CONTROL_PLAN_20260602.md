@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `1878fc8 fix(wake-word): document build receipt package option`
+Current integration checkpoint: `2120ee6 fix(gateway): harden half duplex playback arm`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `1878fc8 fix(wake-word): document build receipt package option`
+  `2120ee6 fix(gateway): harden half duplex playback arm`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -61,9 +61,12 @@ Current integration branch:
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
-  readiness, launch false-green guard, and wake package help-contract merges.
+  readiness, launch false-green guard, wake package help-contract, and
+  Gateway half-duplex playback arm hardening merges.
 - Latest targeted verification:
-  `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' go test ./internal/app -run 'ProductReadinessRejectsLocalVoiceLoopbackMissingRepeat|ProductReadiness|ServerSideReadinessBundle|ProviderEvidence|WakeWord|Xiaozhi|V21|Physical' -count=1`
+  `go test ./internal/gateway -run 'MockPlayback|AudioProbe|RealtimeOnNext|DeviceControl|HalfDuplex|Playback' -count=1`
+  passed, and
+  `go test ./internal/app -run 'StackChanSpeaker|StackChanTouch|ProductReadiness' -count=1`
   passed.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
@@ -121,18 +124,21 @@ gaps:
   `35e62aa fix(readiness): require repeated local voice loopback evidence`
 - Wake package operator help contract:
   `1878fc8 fix(wake-word): document build receipt package option`
+- Gateway half-duplex playback arm hardening:
+  `2120ee6 fix(gateway): harden half duplex playback arm`
 
 Active workers that the control tower must poll before duplicating work:
 
-| Worker | Thread | Worktree | Branch | Owned slice | Current status |
-| --- | --- | --- | --- | --- | --- |
-| Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Active read-only; do not merge from this branch |
-| Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | detached at `1878fc8` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Active write worker; wait for focused commit/handoff before touching Gateway arm code |
+No active workers at this checkpoint. Detached or old-base worktrees remain
+reference material only unless the control tower explicitly assigns a fresh
+small worker from current `2120ee6`.
 
 Recently completed workers:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
+| Stale rescue branch audit | `019e8566-5485-76f0-ae0d-9df00f88671c` | `/Users/jiyurun/.codex/worktrees/1900/New project` | detached at `8165328` | Read-only audit of old rescue/pivot branches for PRD-useful patches | Completed read-only; useful follow-up is fresh `voice_mode` selector, not stale branch merge |
+| Gateway half-duplex arm hardening | `019e8569-b007-75a1-ae6a-34b3d2b7fd4b` | `/Users/jiyurun/.codex/worktrees/de71/New project` | `codex/a21-gateway-half-duplex-arm-hardening-20260602` | `mock_playback_on_next_audio_frame` multi-chunk arm and failed-delivery rollback | Worker stopped with partial tests; control tower reclaimed and merged current implementation via `2120ee6`; do not merge worker branch |
 | Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | `codex/a21-realtime-evidence-closure-20260602` | Provider realtime fixture report/output-dir and product-readiness visibility | Merged via `66798f8` and `9526976`; do not duplicate |
 | Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | `codex/a21-mode-privacy-closure-20260602` | Public/private/focus/professional mode red lines and visible state | Merged via `2d102c4` and `61d121d`; do not duplicate |
 | Wake-word no-hardware diagnostic closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | `codex/a21-wake-word-package-readiness-20260602` | Missing build-dir/receipt diagnostic package reports and product-readiness next-action guard | Merged via `2f01049`; do not duplicate |
@@ -158,23 +164,21 @@ Current server-side gaps from the latest product-readiness run:
 
 Current next moves:
 
-1. Provider execute closure for 5080lab: run
+1. No-hardware local code closure: dispatch a fresh Slice H worker for explicit
+   `voice_mode` selection from current `2120ee6`. This is the next PRD-useful
+   stale-audit finding that is not already merged and does not need CoreS3.
+2. Provider execute closure for 5080lab: run
    `make provider-5080lab-runbook A21_PROVIDER=deepseek`
    to print the lab packet, execute the printed provider commands on 5080lab,
    import the returned bundle on the control machine, then rerun
    product-readiness to reduce `real_provider_smoke`. Do not run provider
    `--execute` on this Mac.
-2. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
+3. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
    build review JSON for the current custom phrase, run
    `wake-word-firmware-build-receipt --review-report`, then
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. No-hardware provider/wake operator closure: no more local code is known to
-   be required for provider and wake package evidence. Produce/import the real
-   5080lab provider bundle and obtain the real reviewed wake build/package
-   input; only spawn another worker if those commands reveal a concrete report
-   or import bug.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -185,7 +189,7 @@ Current next moves:
 | --- | --- | --- | --- |
 | Phase 0 Go-first foundation | Done | CLI, host gate, doctor, provider default mock, namespace guard | Keep green while integrating |
 | Provider spine and text stream | Server contract done for selected evidence intake, real evidence pending | Built-in profiles, text stream parser, smoke/repeat/redaction, p99, 5080lab runbook, evidence package/import, selected-provider mismatch rejection | 5080lab real non-mock executed smoke bundle |
-| Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, host p95 evidence | Real provider evidence plus physical StackChan audible playback and barge-in acceptance |
+| Fast companion hybrid lane | Host/simulator chain done, physical pending | Xiaozhi product chain, ASR/Text/TTS adapters, Opus downlink, pacing, turn cancel, audio-clarity regression, half-duplex arm hardening, host p95 evidence | Real provider evidence plus physical StackChan audible playback and barge-in acceptance |
 | Realtime voice lane | Offline evidence/reporting done; live provider still pending | Provider-neutral fixture, explicit arm concept, `provider-realtime-fixture --output-dir`, product-readiness `provider.realtime_*` fields | Live provider lane smoke and physical playback acceptance |
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
@@ -202,6 +206,7 @@ Use the current integration branch only for reviewed merges and acceptance repor
 - `codex/a21-integration-runtime-readiness-20260601`: integration candidate and launch rollup.
 - `codex/a21-control-prd-full-push-plan-20260602`: this control plan only.
 - `codex/a21-mainline-voice-product-chain-*`: server-side voice chain implementation.
+- `codex/a21-mainline-voice-mode-selector-*`: explicit front-end/operator voice-mode selection without hidden routing.
 - `codex/a21-provider-selected-*`: provider execute/report/hot-plug closure.
 - `codex/a21-mainline-professional-v21-*`: V21 professional closure.
 - `codex/a21-mainline-personality-*`: docs/personality assets and prompt-composition boundary.
@@ -366,6 +371,40 @@ Done means:
 - Gateway reports built-in active vs custom pending firmware honestly.
 - Build/flash remains guarded and separate.
 
+### Slice H: Explicit Voice Mode Selector
+
+Goal: make the operator/front-end voice-mode choice explicit and visible without
+turning A21 into a hidden router or weakening the existing
+public/private/professional red lines.
+
+Owner branch: `codex/a21-mainline-voice-mode-selector-20260602`
+Write set:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/engineering/PROTOCOL.md`
+- new `docs/engineering/VOICE_MODE_SELECTION.md` if the operator contract needs
+  its own page
+
+Acceptance:
+
+- `go test ./internal/gateway -run 'VoiceMode|FastCompanion|DeviceControl|Simulator' -count=1`
+- `go test ./internal/app -run 'VoiceMode|ProductReadiness' -count=1`
+- `git diff --check`
+- `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
+
+Done means:
+
+- A front-end/operator can list and select a `voice_mode` explicitly.
+- `voice_mode` is separate from product `mode`; professional/private routing
+  rules stay governed by existing mode/privacy guards.
+- The selected state is visible in Gateway/simulator status and reports.
+- No provider execute, V21 execute, Mac audio, firmware, or hardware path is
+  opened by this slice.
+
 ### Slice G: Physical StackChan Acceptance
 
 Goal: when CoreS3 returns, collect real evidence in one foreground hardware window.
@@ -393,19 +432,23 @@ Done means:
 
 Run in this order:
 
-1. External/provider lane: produce or import a real 5080lab provider evidence
+1. Local no-hardware implementation lane: dispatch Slice H explicit
+   `voice_mode` selector in a fresh worktree from current `2120ee6`. This is a
+   bounded Gateway/simulator/app/doc slice and should not touch provider,
+   readiness, wake firmware, V21, or hardware.
+2. External/provider lane: produce or import a real 5080lab provider evidence
    bundle using the generated runbook. The Mac control tower can package/import
    returned redacted reports, but executed provider smoke belongs on 5080lab.
-2. Wake/package lane: obtain real reviewed-build evidence for the current custom
+3. Wake/package lane: obtain real reviewed-build evidence for the current custom
    MultiNet build, then run receipt/package on the control machine. Keep this
    below activation and explicitly not product-ready.
-3. Dispatch a fresh no-hardware worker only for a concrete new failing command
-   or report/import gap. The next likely code-free moves are external 5080lab
-   provider execution and reviewed wake package input collection.
-4. Dispatch AgentTask bridge or mode/privacy UX polish only after provider/wake
+4. Dispatch a fresh no-hardware worker only for a concrete new failing command
+   or report/import gap after Slice H starts. Do not widen Slice H if provider
+   or wake evidence returns unrelated failures.
+5. Dispatch AgentTask bridge or mode/privacy UX polish only after provider/wake
    evidence import is not blocking server-side readiness; these must not enter
    the first-audio path.
-5. When CoreS3 returns, open exactly one Slice G foreground hardware window for
+6. When CoreS3 returns, open exactly one Slice G foreground hardware window for
    physical online, microphone, speaker, barge-in stop, screen/touch/servo/RGB,
    and custom wake-word acceptance.
 
@@ -422,11 +465,12 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-The current next move is code-light unless new evidence reveals a bug: generate
-the 5080lab provider runbook, run the printed provider execute/package commands
-on 5080lab, import the returned bundle on the control machine, and produce the
-reviewed wake build/package input. If either external lane returns a concrete
-report/import failure, spawn a fresh worker scoped to that failure. Do not
-revive old detached workers.
+Start Slice H in a fresh worker/worktree from `2120ee6`, then keep the control
+tower on merge/verification and burn-down reporting. In parallel, prepare the
+5080lab provider runbook and wake reviewed-build/package input, but do not run
+provider `--execute` on this Mac and do not treat firmware package evidence as
+physical wake acceptance.
 
 Voice clarity is not an open implementation gap; it is a regression check.
+Old detached rescue branches are source material only; no stale branch should
+be merged into current mainline.
