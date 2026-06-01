@@ -287,6 +287,122 @@ func TestVoicePipelineAdaptersFromEnvSelectsLocalOllama(t *testing.T) {
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvAppliesVoiceTextMaxTokensToOpenAICompatibleRequests(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want int
+	}{
+		{name: "default", want: 24},
+		{name: "env override", env: "A21_VOICE_TEXT_MAX_TOKENS=40", want: 40},
+		{name: "invalid defaults", env: "A21_VOICE_TEXT_MAX_TOKENS=not-a-number", want: 24},
+		{name: "too low clamps", env: "A21_VOICE_TEXT_MAX_TOKENS=2", want: 8},
+		{name: "too high clamps", env: "A21_VOICE_TEXT_MAX_TOKENS=120", want: 96},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]any
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body = readJSONRequestBody(t, req)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+					Body:       io.NopCloser(strings.NewReader("data: [DONE]\n")),
+					Request:    req,
+				}, nil
+			})}
+			env := []string{
+				"A21_PROVIDER_PRIMARY=deepseek",
+				"A21_TEXT_STREAM_PROFILE=deepseek",
+				"A21_LAB_DEEPSEEK_API_KEY=configured-token",
+			}
+			if tt.env != "" {
+				env = append(env, tt.env)
+			}
+			adapters := VoicePipelineAdaptersFromEnv(env, VoicePipelineAdapterOptions{TextHTTPClient: client})
+
+			events, err := adapters.TextStream.StreamText(context.Background(), TextStreamAdapterRequest{Text: "p"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = collectTextEvents(t, events)
+
+			got, ok := body["max_tokens"].(float64)
+			if !ok || int(got) != tt.want {
+				t.Fatalf("max_tokens = %#v, want %d", body["max_tokens"], tt.want)
+			}
+		})
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvAppliesVoiceTextMaxTokensToOllamaRequests(t *testing.T) {
+	var body map[string]any
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body = readJSONRequestBody(t, req)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/x-ndjson"}},
+			Body:       io.NopCloser(strings.NewReader("{\"done\":true}\n")),
+			Request:    req,
+		}, nil
+	})}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=local_ollama",
+		"A21_TEXT_STREAM_PROFILE=local_ollama",
+		"A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434",
+		"A21_LOCAL_OLLAMA_MODEL=qwen2.5:0.5b",
+		"A21_VOICE_TEXT_MAX_TOKENS=36",
+	}, VoicePipelineAdapterOptions{TextHTTPClient: client})
+
+	events, err := adapters.TextStream.StreamText(context.Background(), TextStreamAdapterRequest{Text: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = collectTextEvents(t, events)
+
+	options, ok := body["options"].(map[string]any)
+	if !ok {
+		t.Fatalf("options = %#v, want object", body["options"])
+	}
+	got, ok := options["num_predict"].(float64)
+	if !ok || int(got) != 36 {
+		t.Fatalf("num_predict = %#v, want 36", options["num_predict"])
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvTextMaxTokenOptionOverridesEnv(t *testing.T) {
+	var body map[string]any
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body = readJSONRequestBody(t, req)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: [DONE]\n")),
+			Request:    req,
+		}, nil
+	})}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=configured-token",
+		"A21_VOICE_TEXT_MAX_TOKENS=96",
+	}, VoicePipelineAdapterOptions{
+		TextHTTPClient: client,
+		TextMaxTokens:  18,
+	})
+
+	events, err := adapters.TextStream.StreamText(context.Background(), TextStreamAdapterRequest{Text: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = collectTextEvents(t, events)
+
+	got, ok := body["max_tokens"].(float64)
+	if !ok || int(got) != 18 {
+		t.Fatalf("max_tokens = %#v, want 18", body["max_tokens"])
+	}
+}
+
 func collectASREvents(t *testing.T, events <-chan ASRAdapterEvent) []ASRAdapterEvent {
 	t.Helper()
 	var collected []ASRAdapterEvent
@@ -312,6 +428,19 @@ func collectVoiceChunks(t *testing.T, chunks <-chan VoiceAudioChunk) []VoiceAudi
 		collected = append(collected, chunk)
 	}
 	return collected
+}
+
+func readJSONRequestBody(t *testing.T, req *http.Request) map[string]any {
+	t.Helper()
+	data, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

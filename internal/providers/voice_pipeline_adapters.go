@@ -10,9 +10,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"a21.local/a21/internal/audio"
+)
+
+const (
+	defaultVoiceTextMaxTokens = 24
+	minVoiceTextMaxTokens     = 8
+	maxVoiceTextMaxTokens     = 96
 )
 
 type LocalASRRunner func(context.Context, audio.LocalASROptions) (audio.LocalASRResult, error)
@@ -478,6 +485,7 @@ type VoicePipelineAdapterOptions struct {
 	ASRModelDir    string
 	ASRFamily      string
 	TextHTTPClient *http.Client
+	TextMaxTokens  int
 	TTSSynthesizer LocalTTSSynthesizer
 	TTSOptions     audio.LocalTTSOptions
 }
@@ -488,6 +496,7 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		options = optionList[0]
 	}
 	selection := VoicePipelineSelectionFromEnv(env)
+	textMaxTokens := voiceTextMaxTokensFromEnv(env, options.TextMaxTokens)
 	adapters := VoicePipelineAdapters{
 		ASR:           NewMockASRAdapter("mock-local-asr"),
 		TextStream:    NewMockTextStreamAdapter("mock-text-stream"),
@@ -510,14 +519,16 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 			ProviderName: selection.LLMProfile,
 			Env:          env,
 			Client:       options.TextHTTPClient,
+			MaxTokens:    textMaxTokens,
 		})
 		adapters.ExecutionMode = "host_local"
 	}
 	if isOllamaTextStreamProfile(selection.LLMProfile) {
 		adapters.TextStream = NewOllamaTextStreamAdapter(OllamaTextStreamAdapterOptions{
-			Name:   selection.LLMProfile,
-			Env:    env,
-			Client: options.TextHTTPClient,
+			Name:      selection.LLMProfile,
+			Env:       env,
+			Client:    options.TextHTTPClient,
+			MaxTokens: textMaxTokens,
 		})
 		adapters.ExecutionMode = "host_local"
 	}
@@ -534,6 +545,32 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		adapters.ExecutionMode = "host_local"
 	}
 	return adapters
+}
+
+func voiceTextMaxTokensFromEnv(env []string, override int) int {
+	if override > 0 {
+		return clampVoiceTextMaxTokens(override)
+	}
+	raw := strings.TrimSpace(envValue(env, "A21_VOICE_TEXT_MAX_TOKENS"))
+	if raw == "" {
+		return defaultVoiceTextMaxTokens
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return defaultVoiceTextMaxTokens
+	}
+	return clampVoiceTextMaxTokens(value)
+}
+
+func clampVoiceTextMaxTokens(value int) int {
+	switch {
+	case value < minVoiceTextMaxTokens:
+		return minVoiceTextMaxTokens
+	case value > maxVoiceTextMaxTokens:
+		return maxVoiceTextMaxTokens
+	default:
+		return value
+	}
 }
 
 func isLocalSherpaASRProfile(profile string) bool {

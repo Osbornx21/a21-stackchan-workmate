@@ -159,6 +159,13 @@ Reports must not store prompt text, transcript text, provider output, provider
 reasoning, raw PCM, base64 audio, key values, full provider URLs, proxy URLs, or
 full local fixture paths.
 
+The host-local Xiaozhi voice pipeline text lane keeps spoken answers concise by
+default. `A21_VOICE_TEXT_MAX_TOKENS` controls the provider-neutral text budget
+used by voice pipeline OpenAI-compatible and Ollama text-stream adapters. The
+default is 24 tokens; values are sanitized into the 8..96 range. This knob does
+not change standalone provider smoke defaults, does not relax PRD latency gates,
+and does not authorize transcript or provider-output capture in reports.
+
 This v2 hardening is a report-contract and metric-shape change only. It does
 not authorize provider execute, V21 execute, Gateway runtime startup, binary
 Opus transport, AEC adapter implementation, WebRTC/ESP-SR native adapters, or
