@@ -121,6 +121,8 @@ type productPhysicalStackChanReadiness struct {
 	MicEvidenceAvailable                   bool            `json:"mic_evidence_available"`
 	OperatorInstrumentObservationAvailable bool            `json:"operator_instrument_observation_available"`
 	CandidatePhysicalEvidence              bool            `json:"candidate_physical_evidence"`
+	CandidatePhysicalVoiceEvidence         bool            `json:"candidate_physical_voice_evidence"`
+	GatewayDownlinkPhysicalDeviceEvidence  bool            `json:"gateway_downlink_physical_device_evidence"`
 	HostLoopbackOnly                       bool            `json:"host_loopback_only"`
 	PRDPhysicalAccepted                    bool            `json:"prd_physical_accepted"`
 	CanonicalMetricAvailability            map[string]bool `json:"canonical_metric_availability,omitempty"`
@@ -790,6 +792,32 @@ func loadProductPhysicalStackChanReportEvidence(path string) (productPhysicalSta
 	if providerLatencyFixtureContainsForbiddenKey(raw) || physicalStackChanValueUnsafe(raw) {
 		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
 	}
+	var header struct {
+		SchemaVersion string `json:"schema_version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+	}
+	if strings.TrimSpace(header.SchemaVersion) == xiaozhiPhysicalEvidenceSchemaVersion {
+		var report xiaozhiPhysicalEvidenceReport
+		if err := json.Unmarshal(data, &report); err != nil {
+			return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+		}
+		if report.SchemaVersion != xiaozhiPhysicalEvidenceSchemaVersion || !productPhysicalStackChanRedactionOK(report.Redaction) {
+			return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
+		}
+		readiness := buildProductXiaozhiPhysicalReadiness(filepath.Base(filepath.Clean(path)), report)
+		findings := []productReadinessFinding{
+			{Code: "xiaozhi_physical_gateway_downlink_candidate", Message: "Stock Xiaozhi physical evidence reached Gateway downlink but is not PRD audible playback acceptance"},
+		}
+		if !readiness.PRDPhysicalAccepted {
+			findings = append(findings,
+				productReadinessFinding{Code: "xiaozhi_physical_device_playback_ack_missing", Message: "Missing device playback ack such as device.playback.start or trusted runtime echo"},
+				productReadinessFinding{Code: "xiaozhi_physical_operator_observation_missing", Message: "Missing operator audible observation or instrumented first audible playback evidence"},
+			)
+		}
+		return readiness, findings
+	}
 	var report physicalStackChanEvidenceReport
 	if err := json.Unmarshal(data, &report); err != nil {
 		return productPhysicalStackChanReadiness{}, []productReadinessFinding{invalidProductPhysicalStackChanReportFinding()}
@@ -811,6 +839,60 @@ func loadProductPhysicalStackChanReportEvidence(path string) (productPhysicalSta
 		findings = append(findings, productReadinessFinding{Code: "physical_stackchan_report_blocked", Message: "Physical StackChan evidence report does not satisfy physical acceptance"})
 	}
 	return readiness, findings
+}
+
+func buildProductXiaozhiPhysicalReadiness(sourceReport string, report xiaozhiPhysicalEvidenceReport) productPhysicalStackChanReadiness {
+	availability := productPhysicalStackChanMetricAvailability(report.CanonicalMetrics)
+	micAvailable := report.Mic.Available && physicalStackChanMicAvailable(report.Mic)
+	observationAvailable := report.Observation.Available && physicalStackChanObservationAvailable(report.Observation)
+	mode := strings.TrimSpace(report.ExecutionMode)
+	gate := strings.TrimSpace(report.PromotionGate)
+	status := strings.TrimSpace(report.AcceptanceStatus)
+	gatewayDownlink := mode == "physical_xiaozhi_gateway" &&
+		report.PhysicalDeviceOnline &&
+		report.Profile == "stock" &&
+		report.GatewayMetrics.GatewayAnswerFirstDownlinkMS.Available &&
+		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.opus.decode") &&
+		xiaozhiPhysicalStageAvailable(report.StageAvailability, "audio.ingress.pcm") &&
+		xiaozhiPhysicalStageAvailable(report.StageAvailability, "vad.speech.end") &&
+		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.listen.auto_stop") &&
+		xiaozhiPhysicalStageAvailable(report.StageAvailability, "xiaozhi.tts.downlink")
+	candidateVoice := gatewayDownlink &&
+		gate == "not_production" &&
+		status == "candidate_gateway_downlink" &&
+		!report.PRDAccepted
+	findingCodes := productPhysicalStackChanFindingCodes(report.Findings)
+	if candidateVoice {
+		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_gateway_downlink_candidate")
+		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_device_playback_ack_missing")
+		findingCodes = appendProductFindingCode(findingCodes, "xiaozhi_physical_operator_observation_missing")
+	} else {
+		findingCodes = appendProductFindingCode(findingCodes, "physical_stackchan_report_blocked")
+	}
+	return productPhysicalStackChanReadiness{
+		Valid:                                  true,
+		Status:                                 firstNonEmpty(status, "blocked"),
+		SourceReport:                           sourceReport,
+		ExecutionMode:                          mode,
+		PromotionGate:                          gate,
+		AcceptanceStatus:                       status,
+		PRDAccepted:                            report.PRDAccepted,
+		RequiredPhysicalMetricsAvailable:       productRequiredPhysicalStackChanMetricsAvailable(availability),
+		MicEvidenceAvailable:                   micAvailable,
+		OperatorInstrumentObservationAvailable: observationAvailable,
+		CandidatePhysicalEvidence:              false,
+		CandidatePhysicalVoiceEvidence:         candidateVoice,
+		GatewayDownlinkPhysicalDeviceEvidence:  gatewayDownlink,
+		HostLoopbackOnly:                       false,
+		PRDPhysicalAccepted:                    false,
+		CanonicalMetricAvailability:            availability,
+		FindingCodes:                           findingCodes,
+	}
+}
+
+func xiaozhiPhysicalStageAvailable(stages map[string]physicalStackChanMetric, key string) bool {
+	stage, ok := stages[key]
+	return ok && stage.Available
 }
 
 func buildProductPhysicalStackChanReadiness(sourceReport string, report physicalStackChanEvidenceReport) productPhysicalStackChanReadiness {
@@ -1234,6 +1316,8 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if report.StackChan.PhysicalDeviceOnline && !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted {
 		switch {
+		case report.StackChan.PhysicalEvidence.CandidatePhysicalVoiceEvidence:
+			actions = append(actions, "collect missing device playback ack and operator audible observation for the stock Xiaozhi physical evidence report")
 		case report.StackChan.PhysicalEvidence.CandidatePhysicalEvidence:
 			actions = append(actions, "complete human physical StackChan review for the candidate evidence report")
 		case report.StackChan.PhysicalEvidence.HostLoopbackOnly:
