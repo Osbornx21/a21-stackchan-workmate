@@ -179,6 +179,10 @@ sherpa-onnx model caches when their required model files are present. This is a
 static readiness check only: it never stores full local paths and does not
 execute ASR/TTS. Execution evidence still comes from `local-tts-smoke`,
 `local-asr-smoke`, `local-voice-loopback`, and physical StackChan receipts.
+When the default repo-local ASR cache is present and no explicit ASR provider
+env is set, product-readiness reports `sherpa_onnx` as the host-local ASR
+candidate so the remaining launch gaps focus on provider/V21/hardware evidence
+instead of re-asking for an already installed local model.
 
 `audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 

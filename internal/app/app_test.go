@@ -1362,6 +1362,23 @@ func TestProductVoiceReadinessDetectsDefaultLocalModelCache(t *testing.T) {
 	}
 }
 
+func TestProductVoiceReadinessSurfacesDefaultASRCacheWithoutExplicitEnv(t *testing.T) {
+	t.Chdir(t.TempDir())
+	createProductReadinessModelFiles(t, filepath.Join(".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-paraformer-zh-small-2024-03-09"), []string{
+		"model.int8.onnx",
+		"tokens.txt",
+	})
+
+	voice := buildProductVoiceReadiness(nil, productProviderReadiness{}, productStackChanReadiness{})
+
+	if !voice.RealASRReady || voice.ASRProvider != "sherpa_onnx" {
+		t.Fatalf("ASR readiness = provider:%q ready:%v, want repo-local sherpa cache ready", voice.ASRProvider, voice.RealASRReady)
+	}
+	if !voice.VoicePipeline.HostLocalASRReady || voice.VoicePipeline.ASRProfile != "sherpa_onnx" {
+		t.Fatalf("pipeline ASR = %+v, want sherpa_onnx host-local candidate", voice.VoicePipeline)
+	}
+}
+
 func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

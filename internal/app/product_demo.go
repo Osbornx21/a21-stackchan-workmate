@@ -914,7 +914,7 @@ func productMicrophoneReady(status string) bool {
 
 func buildProductVoiceReadiness(env []string, provider productProviderReadiness, stackchan productStackChanReadiness, evidenceList ...productXiaozhiReportEvidence) productVoiceReadiness {
 	engine := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_TTS_ENGINE")), "macos_say")
-	asrProvider := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_ASR_PROVIDER")), "mock_asr")
+	asrProvider := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_ASR_PROVIDER")), defaultProductASRProvider(env))
 	selection := providers.VoicePipelineSelectionFromEnv(env)
 	voicePipeline := productVoicePipelineReadiness{
 		ASRProfile:                   selection.ASRProfile,
@@ -970,7 +970,11 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 			xiaozhiEvidence.FailureCount == 0 &&
 			!xiaozhiEvidence.PRDAccepted
 	} else {
-		voicePipeline.HostLocalASRReady = selection.ASRProfile == "sherpa_onnx" && productSherpaASRReady(env)
+		if selection.ASRProfile == "sherpa_onnx" || (selection.ASRProfile == "mock-local-asr" && asrProvider == "sherpa_onnx") {
+			voicePipeline.ASRProfile = "sherpa_onnx"
+			voicePipeline.ASRProfileEnv = "A21_SHERPA_ONNX_ASR_MODEL_DIR"
+			voicePipeline.HostLocalASRReady = productSherpaASRReady(env)
+		}
 		voicePipeline.HostLocalTextReady = provider.TextStreamReady
 		voicePipeline.HostLocalTTSReady = (selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx") && productSherpaTTSReady(env)
 	}
@@ -1003,6 +1007,13 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		stackchan.PhysicalDeviceOnline &&
 		stackchan.PhysicalMicrophoneReady
 	return readiness
+}
+
+func defaultProductASRProvider(env []string) string {
+	if productSherpaASRReady(env) {
+		return "sherpa_onnx"
+	}
+	return "mock_asr"
 }
 
 type productXiaozhiReportEvidence struct {
