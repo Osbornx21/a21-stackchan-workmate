@@ -100,7 +100,7 @@ func packageProviderEvidenceReports(options providerEvidencePackageOptions) prov
 		})
 		return report
 	}
-	selectedProviderSmoke, providerFindings := selectedProviderEvidenceImportSmoke(entries)
+	selectedProviderSmoke, providerFindings := selectedProviderEvidenceImportSmoke(entries, buildProductProviderReadiness(os.Environ()))
 	report.Findings = append(report.Findings, providerFindings...)
 	if selectedProviderSmoke == "" {
 		return report

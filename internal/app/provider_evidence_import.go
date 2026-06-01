@@ -124,7 +124,7 @@ func importProviderEvidenceBundle(options providerEvidenceImportOptions) provide
 		})
 		return report
 	}
-	selectedProviderSmoke, providerFindings := selectedProviderEvidenceImportSmoke(entries)
+	selectedProviderSmoke, providerFindings := selectedProviderEvidenceImportSmoke(entries, buildProductProviderReadiness(os.Environ()))
 	report.Findings = append(report.Findings, providerFindings...)
 	if selectedProviderSmoke == "" {
 		return report
@@ -297,7 +297,7 @@ func providerEvidenceImportJSONUnsafe(data []byte) bool {
 	return providerLatencyFixtureContainsForbiddenKey(raw) || productProviderSmokeReportContainsForbiddenValue(raw)
 }
 
-func selectedProviderEvidenceImportSmoke(entries []providerEvidenceImportEntry) (string, []providerEvidenceImportFinding) {
+func selectedProviderEvidenceImportSmoke(entries []providerEvidenceImportEntry, readiness productProviderReadiness) (string, []providerEvidenceImportFinding) {
 	tempDir, err := os.MkdirTemp("", "a21-provider-evidence-import-*")
 	if err != nil {
 		return "", []providerEvidenceImportFinding{{
@@ -319,11 +319,26 @@ func selectedProviderEvidenceImportSmoke(entries []providerEvidenceImportEntry) 
 		}
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(providerNames)))
+	var mismatchedSource string
+	requireSelectedMatch := productProviderReadinessRequiresSmokeMatch(readiness)
 	for _, name := range providerNames {
 		evidence, _ := loadProductProviderSmokeReportEvidence(filepath.Join(tempDir, name))
 		if evidence.Valid && evidence.Executed && evidence.Stream {
+			if requireSelectedMatch && !productProviderSmokeEvidenceMatchesSelected(readiness, evidence) {
+				if mismatchedSource == "" {
+					mismatchedSource = name
+				}
+				continue
+			}
 			return name, nil
 		}
+	}
+	if mismatchedSource != "" {
+		return "", []providerEvidenceImportFinding{{
+			Code:    "provider_smoke_report_mismatch",
+			Message: "Provider evidence bundle smoke report does not match the currently selected configured A21 provider",
+			Detail:  mismatchedSource,
+		}}
 	}
 	return "", []providerEvidenceImportFinding{{
 		Code:    "provider_smoke_executed_missing",

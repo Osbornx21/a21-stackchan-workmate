@@ -427,13 +427,6 @@ func runDemo(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func resolveLatestProductReadinessReports(options productReadinessOptions) productReadinessOptions {
 	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
-	if strings.TrimSpace(options.ProviderSmokeReport) == "" {
-		var findings []productReadinessFinding
-		options.ProviderSmokeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "provider_smoke", []string{
-			"a21-provider-smoke-*.json",
-		}, productLatestProviderSmokeReportAccepted)
-		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
-	}
 	if strings.TrimSpace(options.ProviderRealtimeReport) == "" {
 		var findings []productReadinessFinding
 		options.ProviderRealtimeReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "provider_realtime_fixture", []string{
@@ -533,9 +526,22 @@ func latestProductReadinessReportCandidates(reportDir string, patterns []string)
 	return paths
 }
 
-func productLatestProviderSmokeReportAccepted(path string) bool {
-	evidence, _ := loadProductProviderSmokeReportEvidence(path)
-	return evidence.Valid && evidence.Executed && evidence.RouteEligible
+func resolveLatestProductProviderSmokeReport(options *productReadinessOptions, readiness productProviderReadiness) []productReadinessFinding {
+	if options == nil || !options.UseLatestReports || strings.TrimSpace(options.ProviderSmokeReport) != "" {
+		return nil
+	}
+	if !productProviderReadinessRequiresSmokeMatch(readiness) {
+		return nil
+	}
+	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	selected, findings := latestAcceptedProductReadinessReportPath(reportDir, "provider_smoke", []string{
+		"a21-provider-smoke-*.json",
+	}, func(path string) bool {
+		evidence, _ := loadProductProviderSmokeReportEvidence(path)
+		return productProviderSmokeEvidenceMatchesSelected(readiness, evidence)
+	})
+	options.ProviderSmokeReport = selected
+	return findings
 }
 
 func productLatestProviderRealtimeFixtureReportAccepted(path string) bool {
@@ -716,6 +722,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.Findings = append(report.Findings, productReadinessFinding{Code: "device_registry_unavailable", Message: "A21 device registry is not reachable"})
 	}
 	report.Provider = buildProductProviderReadiness(env)
+	report.Findings = append(report.Findings, resolveLatestProductProviderSmokeReport(&options, report.Provider)...)
 	providerSmokeEvidence, providerSmokeFindings := loadProductProviderSmokeReportEvidence(options.ProviderSmokeReport)
 	report.Findings = append(report.Findings, providerSmokeFindings...)
 	if providerSmokeEvidence.Valid {
@@ -919,7 +926,7 @@ func loadProductProviderSmokeReportEvidence(path string) (productProviderSmokeRe
 }
 
 func attachProductProviderSmokeEvidence(readiness *productProviderReadiness, evidence productProviderSmokeReportEvidence) []productReadinessFinding {
-	if readiness.Selected != evidence.Provider || !readiness.SelectedConfigured {
+	if !productProviderSmokeEvidenceMatchesSelected(*readiness, evidence) {
 		return []productReadinessFinding{{
 			Code:    "provider_smoke_report_mismatch",
 			Message: "Provider smoke report does not match the currently selected configured A21 provider",
@@ -940,6 +947,24 @@ func attachProductProviderSmokeEvidence(readiness *productProviderReadiness, evi
 	readiness.SmokeExecuted = evidence.Executed
 	readiness.SmokeSourceReport = evidence.SourceReport
 	return nil
+}
+
+func productProviderReadinessRequiresSmokeMatch(readiness productProviderReadiness) bool {
+	return readiness.Selected != "" &&
+		readiness.Selected != "mock" &&
+		readiness.SelectedConfigured &&
+		readiness.SelectedRouteEligible &&
+		readiness.SelectedFamily == string(providers.ProviderFamilyTextStream)
+}
+
+func productProviderSmokeEvidenceMatchesSelected(readiness productProviderReadiness, evidence productProviderSmokeReportEvidence) bool {
+	return productProviderReadinessRequiresSmokeMatch(readiness) &&
+		evidence.Valid &&
+		evidence.Executed &&
+		evidence.RouteEligible &&
+		evidence.Stream &&
+		evidence.Provider == readiness.Selected &&
+		evidence.Family == readiness.SelectedFamily
 }
 
 type productProviderRealtimeReportEvidence struct {

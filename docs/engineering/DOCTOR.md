@@ -174,7 +174,12 @@ accepts only non-mock route-eligible text-stream reports with passed status,
 matching current provider selection, three or more successful streaming
 attempts, first-byte/first-content timing, no fallback marker, and no forbidden
 prompt/transcript/output/reasoning/full URL/proxy/key/local-path fields. For
-V21, it treats
+`--use-latest-reports`, newer provider-smoke reports for a different selected
+provider are skipped with basename-only findings so an older matching 5080lab
+report can still close the provider gap. `provider-evidence-package` and
+`provider-evidence-import` enforce the same selected-provider match when the
+operator environment contains a configured selected route-eligible text provider.
+For V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with
 `--v21-adapter-smoke-report`, or an external-Gateway

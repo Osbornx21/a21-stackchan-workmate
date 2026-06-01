@@ -790,6 +790,34 @@ func TestRunProviderEvidenceImportMakes5080labProviderSmokeUsable(t *testing.T) 
 	}
 }
 
+func TestRunProviderEvidenceImportRejectsSelectedProviderMismatchWithoutLeak(t *testing.T) {
+	dir := t.TempDir()
+	bundle := writeProviderEvidenceImportBundle(t, map[string]string{
+		"a21-provider-smoke-20260602-120000.json": productReadinessProviderSmokeReportFixtureForProvider("local_ollama"),
+	})
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-evidence-import", "--bundle", bundle, "--output-dir", dir}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want selected-provider mismatch rejected: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	rendered := stdout.String() + stderr.String()
+	for _, want := range []string{`"status": "rejected"`, `"provider_smoke_ready": false`, `"code": "provider_smoke_report_mismatch"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+	for _, forbidden := range []string{bundle, dir, "secret-value", "http://", "https://", "/Users/"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("mismatched provider import leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+}
+
 func TestRunProviderEvidencePackageCreatesImportable5080labBundle(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	inputDir := t.TempDir()
@@ -850,6 +878,40 @@ func TestRunProviderEvidencePackageCreatesImportable5080labBundle(t *testing.T) 
 	}
 	if !report.Provider.RealProviderReady || !report.Provider.SmokeEvidenceValid || !report.Provider.SmokeExecuted {
 		t.Fatalf("provider readiness = %+v, want packaged imported provider smoke evidence", report.Provider)
+	}
+}
+
+func TestRunProviderEvidencePackageRejectsSelectedProviderMismatchWithoutLeak(t *testing.T) {
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, inputDir, "a21-provider-smoke-20260602-120000.json", productReadinessProviderSmokeReportFixtureForProvider("local_ollama"))
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-evidence-package", "--input-dir", inputDir, "--output-dir", outputDir}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want selected-provider mismatch rejected: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	rendered := stdout.String() + stderr.String()
+	for _, want := range []string{`"status": "rejected"`, `"provider_smoke_ready": false`, `"code": "provider_smoke_report_mismatch"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("output missing %q: stdout=%s stderr=%s", want, stdout.String(), stderr.String())
+		}
+	}
+	for _, forbidden := range []string{inputDir, outputDir, "secret-value", "http://", "https://", "/Users/"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("mismatched provider package leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
+	}
+	bundles, err := filepath.Glob(filepath.Join(outputDir, "a21-5080lab-provider-evidence-*.tgz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundles) != 0 {
+		t.Fatalf("bundles = %#v, want no bundle for selected-provider mismatch", bundles)
 	}
 }
 
@@ -1714,6 +1776,49 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 	if strings.Contains(rendered, "v21_adapter_smoke_report_missing_field") {
 		t.Fatalf("latest readiness should not ingest adapter-smoke noise when professional proof exists: %s", rendered)
+	}
+}
+
+func TestRunProductReadinessLatestProviderSmokeSkipsMismatchedSelectedProvider(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	deepseekPath := writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
+	localOllamaPath := writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100100.json", productReadinessProviderSmokeReportFixtureForProvider("local_ollama"))
+	older := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Minute)
+	if err := os.Chtimes(deepseekPath, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(localOllamaPath, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report productReadinessReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode product readiness report: %v\n%s", err, stdout.String())
+	}
+	if !report.Provider.RealProviderReady || !report.Provider.SmokeEvidenceValid || report.Provider.SmokeSourceReport != "a21-provider-smoke-20260602-100000.json" {
+		t.Fatalf("provider readiness = %+v, want older selected deepseek evidence", report.Provider)
+	}
+	if containsProductFinding(report.Findings, "provider_smoke_report_mismatch", "") {
+		t.Fatalf("findings = %#v, want mismatched latest skipped during selection, not attached", report.Findings)
+	}
+	if !containsProductFinding(report.Findings, "latest_report_candidate_skipped", "provider_smoke:a21-provider-smoke-20260602-100100.json") {
+		t.Fatalf("findings = %#v, want skipped latest mismatched provider report", report.Findings)
+	}
+	for _, forbidden := range []string{server.URL, dir, deepseekPath, localOllamaPath, "secret-value", "http://", "https://", "/Users/"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest provider selection leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
 	}
 }
 
@@ -3625,6 +3730,26 @@ func productReadinessProviderSmokeReportFixtureJSON() string {
   "detail": "provider smoke request succeeded",
   "report_path": "a21-provider-smoke-real.json"
 }`
+}
+
+func productReadinessProviderSmokeReportFixtureForProvider(provider string) string {
+	data := productReadinessProviderSmokeReportFixtureJSON()
+	switch provider {
+	case "local_ollama":
+		replacements := map[string]string{
+			`"provider": "deepseek"`:                        `"provider": "local_ollama"`,
+			`"protocol": "openai_chat_completions"`:         `"protocol": "ollama_chat"`,
+			`"endpoint_host": "api.deepseek.com"`:           `"endpoint_host": "127.0.0.1:11434"`,
+			`"api_key_env": "A21_LAB_DEEPSEEK_API_KEY"`:     `"api_key_env": ""`,
+			`"model_env": "A21_DEEPSEEK_MODEL"`:             `"model_env": "A21_LOCAL_OLLAMA_MODEL"`,
+			`"base_url_env": "A21_DEEPSEEK_BASE_URL"`:       `"base_url_env": "A21_LOCAL_OLLAMA_BASE_URL"`,
+			`"report_path": "a21-provider-smoke-real.json"`: `"report_path": "a21-provider-smoke-local-ollama.json"`,
+		}
+		for old, newValue := range replacements {
+			data = strings.ReplaceAll(data, old, newValue)
+		}
+	}
+	return data
 }
 
 func productReadinessRealtimeFixtureReportFixtureJSON() string {

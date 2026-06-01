@@ -123,7 +123,7 @@ export NO_PROXY="localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0
 
 go run ./cmd/a21 doctor --output-dir reports/5080lab-provider
 go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --stream --repeat 3 --output-dir reports/5080lab-provider
-go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --execute --stream --repeat 10 --output-dir reports/5080lab-provider
+go run ./cmd/a21 provider-smoke --provider "$A21_PROVIDER_PRIMARY" --execute --stream --repeat 3 --output-dir reports/5080lab-provider
 
 LATEST_PROVIDER_REPORT="$(ls -t reports/5080lab-provider/a21-provider-smoke-*.json | head -n 1)"
 go run ./cmd/a21 product-readiness --provider-smoke-report "$LATEST_PROVIDER_REPORT" --output-dir reports/5080lab-provider
@@ -173,9 +173,12 @@ go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports
 The import command only accepts basename-only A21 report JSON entries from the
 5080lab archive, rejects path traversal and redaction failures, and copies the
 reports only after it finds an accepted executed streaming provider-smoke report.
-The package command applies that same basename-only whitelist and redaction
-validation before writing `reports/a21-5080lab-provider-evidence-*.tgz`; it does
-not execute providers or infer readiness from env-only reports.
+When the local environment has a configured selected route-eligible text provider,
+package and import also require the smoke report provider to match that selected
+provider. The package command applies that same basename-only whitelist and
+redaction validation before writing
+`reports/a21-5080lab-provider-evidence-*.tgz`; it does not execute providers or
+infer readiness from env-only reports.
 
 Reject the package if any report stores API key values, model values, prompt
 text, transcript text, provider output, provider reasoning, proxy values, full

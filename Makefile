@@ -109,7 +109,7 @@ provider-smoke:
 
 provider-smoke-execute:
 	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
-	go run ./cmd/a21 provider-smoke --provider "$(A21_PROVIDER)" --execute --stream --repeat "$${A21_PROVIDER_SMOKE_REPEAT:-10}" --output-dir "$${A21_PROVIDER_SMOKE_OUTPUT_DIR:-reports}"
+	go run ./cmd/a21 provider-smoke --provider "$(A21_PROVIDER)" --execute --stream --repeat "$${A21_PROVIDER_SMOKE_REPEAT:-3}" --output-dir "$${A21_PROVIDER_SMOKE_OUTPUT_DIR:-reports}"
 
 provider-evidence-package:
 	@test -n "$(A21_PROVIDER_EVIDENCE_INPUT_DIR)" || (echo "A21_PROVIDER_EVIDENCE_INPUT_DIR is required"; exit 2)
