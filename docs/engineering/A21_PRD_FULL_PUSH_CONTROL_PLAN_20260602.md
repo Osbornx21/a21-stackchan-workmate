@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current baseline evidence: `9a9a68c feat(app): ingest wake word firmware package readiness`
+Current baseline evidence: `db06d47 chore(control): update PRD full-push checkpoint`
 
 ## 0. Control Rule
 
@@ -34,7 +34,7 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD: `9a9a68c feat(app): ingest wake word firmware package readiness`
+- HEAD: `db06d47 chore(control): update PRD full-push checkpoint`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`
@@ -59,7 +59,7 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | Both June 2 no-hardware workers merged into integration |
+| Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | worker-managed branch from `codex/a21-integration-runtime-readiness-20260601` | Provider realtime fixture report/output-dir and product-readiness visibility | Active; do not duplicate until polled/merged |
 
 ## 1. Current PRD Burn-Down Baseline
 
