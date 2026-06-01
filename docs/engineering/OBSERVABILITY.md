@@ -88,6 +88,15 @@ acceptance: a server candidate can be green while `launch_ready=false` and
 `requires_physical_acceptance=true`, so dashboards must not treat it as
 physical StackChan PRD acceptance.
 
+`product-readiness` is the canonical full-PRD decision report. Its
+`canonical_decision` block sets `authority=a21.product_readiness.v1`,
+`full_prd_status`, `launch_ready`, `prd_accepted`,
+`server_side_candidate_ready`, `host_only_evidence_use=gap_reduction_only`,
+`missing_real_evidence`, and `missing_report_fields`. Host-only reports can
+remove server-side gaps but cannot make `prd_accepted=true`; missing required
+fields from child reports remain explicit `missing_report_fields` entries
+instead of being encoded as false readiness.
+
 `server-side-readiness-bundle` packages that same no-hardware chain into a
 single redacted report artifact, `a21.server_side_readiness_bundle.v1`. It
 keeps per-slice readiness, source report basenames, fixed missing-evidence
@@ -96,6 +105,9 @@ professional smoke, host voice loopback, and wake-word readiness. It must not
 store prompts, transcripts, provider output, evidence bodies, full URLs,
 credential values, proxy values, or local paths, and its `candidate_ready` field
 must never be interpreted as physical StackChan PRD acceptance.
+The bundle includes the same `canonical_decision` block from product readiness
+so report consumers have one launch/PRD authority even when collecting
+server-side candidate evidence.
 When `--collect-missing` is used, the bundle also includes a `collection` block
 with fixed per-step status and reason labels. Host voice loopback can be
 collected locally through the Gateway; provider and V21 smoke execution remain

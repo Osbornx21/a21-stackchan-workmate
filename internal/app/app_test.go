@@ -1255,6 +1255,15 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	rendered := stdout.String()
 	for _, want := range []string{
 		`"status": "server_side_candidate_ready"`,
+		`"canonical_decision"`,
+		`"authority": "a21.product_readiness.v1"`,
+		`"full_prd_status": "server_side_candidate_only"`,
+		`"host_only_evidence_use": "gap_reduction_only"`,
+		`"server_side_candidate_ready": true`,
+		`"missing_real_evidence"`,
+		`"physical_stackchan_online"`,
+		`"physical_stackchan_prd_acceptance"`,
+		`"continuous_voice_pipeline"`,
 		`"real_provider_ready": true`,
 		`"smoke_evidence_valid": true`,
 		`"smoke_source_report": "a21-provider-smoke-20260601-191000.json"`,
@@ -1314,6 +1323,11 @@ func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing
 	for _, want := range []string{
 		`"schema_version": "a21.server_side_readiness_bundle.v1"`,
 		`"status": "server_side_candidate_ready"`,
+		`"canonical_decision"`,
+		`"authority": "a21.product_readiness.v1"`,
+		`"full_prd_status": "server_side_candidate_only"`,
+		`"host_only_evidence_use": "gap_reduction_only"`,
+		`"server_side_candidate_ready": true`,
 		`"candidate_ready": true`,
 		`"launch_ready": false`,
 		`"prd_accepted": false`,
@@ -1899,6 +1913,9 @@ func TestProductReadinessRejectsXiaozhiReportMissingCandidateFields(t *testing.T
 			}
 			if !containsProductFinding(report.Findings, "xiaozhi_report_missing_field", tt.wantField) {
 				t.Fatalf("findings = %#v, want missing-field finding for %s", report.Findings, tt.wantField)
+			}
+			if !containsExactProductString(report.CanonicalDecision.MissingReportFields, "xiaozhi_report:"+tt.wantField) {
+				t.Fatalf("canonical missing fields = %#v, want xiaozhi_report:%s", report.CanonicalDecision.MissingReportFields, tt.wantField)
 			}
 			var encoded bytes.Buffer
 			if err := writeJSONProductReadiness(&encoded, report); err != nil {

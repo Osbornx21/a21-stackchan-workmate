@@ -44,6 +44,7 @@ type serverSideReadinessBundleReport struct {
 	HostVoice                  serverSideReadinessBundleEvidence  `json:"host_voice"`
 	WakeWord                   serverSideReadinessBundleEvidence  `json:"wake_word"`
 	ServerSide                 productServerSideReadiness         `json:"server_side"`
+	CanonicalDecision          productCanonicalReadinessDecision  `json:"canonical_decision"`
 	Collection                 serverSideReadinessCollection      `json:"collection"`
 	MissingEvidence            []string                           `json:"missing_evidence,omitempty"`
 	CollectionCommands         []string                           `json:"collection_commands,omitempty"`
@@ -237,6 +238,7 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			Status: productReport.WakeWord.RuntimeStatus,
 		},
 		ServerSide:         productReport.ServerSide,
+		CanonicalDecision:  productReport.CanonicalDecision,
 		Collection:         collection,
 		MissingEvidence:    append([]string(nil), productReport.ServerSide.MissingEvidence...),
 		CollectionCommands: buildServerSideReadinessCollectionCommands(productReport),
