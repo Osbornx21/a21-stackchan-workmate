@@ -459,6 +459,8 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Active</label><div id="wakeWordActive">你好小智</div></div>
             <div class="metric"><label>Runtime</label><div id="wakeWordStatus">loading</div></div>
             <div class="metric"><label>Build</label><div id="wakeWordBuild">unknown</div></div>
+            <div class="metric"><label>Firmware</label><div id="wakeWordFirmwareStatus">builtin_active</div></div>
+            <div class="metric"><label>Hot Swap</label><div id="wakeWordHotSwap">disabled</div></div>
             <div class="metric"><label>Code</label><div id="wakeWordCode">none</div></div>
           </div>
         </section>
@@ -536,6 +538,8 @@ const simulatorHTML = `<!doctype html>
       wakeWordActive: document.getElementById('wakeWordActive'),
       wakeWordStatus: document.getElementById('wakeWordStatus'),
       wakeWordBuild: document.getElementById('wakeWordBuild'),
+      wakeWordFirmwareStatus: document.getElementById('wakeWordFirmwareStatus'),
+      wakeWordHotSwap: document.getElementById('wakeWordHotSwap'),
       wakeWordCode: document.getElementById('wakeWordCode'),
       waterfall: document.getElementById('waterfall'),
       latencyAudioPlayback: document.getElementById('latencyAudioPlayback'),
@@ -858,6 +862,8 @@ const simulatorHTML = `<!doctype html>
       ui.wakeWordActive.textContent = config.active_phrase || 'none';
       ui.wakeWordStatus.textContent = config.runtime_status || 'unknown';
       ui.wakeWordBuild.textContent = config.firmware_build_required ? 'required' : 'not required';
+      ui.wakeWordFirmwareStatus.textContent = config.firmware_status || (config.firmware_build_required ? 'custom_pending_firmware' : 'builtin_active');
+      ui.wakeWordHotSwap.textContent = config.runtime_hot_swap_supported ? (config.custom_runtime_active ? 'custom active' : 'supported') : 'disabled';
       ui.wakeWordCode.textContent = config.code || 'none';
       if (config.mode) ui.wakeWordMode.value = config.mode;
       if (config.desired_phrase) ui.wakeWordPhrase.value = config.desired_phrase;

@@ -27,6 +27,10 @@ func TestRunWakeWordFirmwarePlanBuildsCustomNoFlashReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode stdout: %v\n%s", err, stdout.String())
 	}
+	var raw map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw stdout: %v\n%s", err, stdout.String())
+	}
 	if report.SchemaVersion != "a21.wake_word_firmware_plan.v1" {
 		t.Fatalf("schema = %q", report.SchemaVersion)
 	}
@@ -41,6 +45,17 @@ func TestRunWakeWordFirmwarePlanBuildsCustomNoFlashReport(t *testing.T) {
 	}
 	if report.NextRequiredConfirmation == "" || len(report.NextRequiredActions) == 0 {
 		t.Fatalf("confirmation/actions missing: %+v", report)
+	}
+	for key, want := range map[string]any{
+		"firmware_status":            "custom_pending_firmware",
+		"active_runtime_profile":     "builtin_xiaozhi_wakenet",
+		"desired_firmware_profile":   "custom_multinet",
+		"runtime_hot_swap_supported": false,
+		"custom_runtime_active":      false,
+	} {
+		if got := raw[key]; got != want {
+			t.Fatalf("%s = %#v, want %#v in %s", key, got, want, stdout.String())
+		}
 	}
 	if !hasWakeWordFirmwareFinding(report.Findings, "wake_word_firmware_build_required") {
 		t.Fatalf("findings = %#v, want wake_word_firmware_build_required", report.Findings)
@@ -78,11 +93,28 @@ func TestRunWakeWordFirmwarePlanNoopsForBuiltinProfile(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode stdout: %v\n%s", err, stdout.String())
 	}
+	var raw map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw stdout: %v\n%s", err, stdout.String())
+	}
 	if report.Status != "builtin_noop" || report.Mode != "builtin_xiaozhi" {
 		t.Fatalf("status/mode = %q/%q, want builtin_noop/builtin_xiaozhi", report.Status, report.Mode)
 	}
 	if report.FirmwareBuildRequired || report.BuildAllowed || report.FlashAllowed {
 		t.Fatalf("build/flash = %v/%v/%v, want all false", report.FirmwareBuildRequired, report.BuildAllowed, report.FlashAllowed)
+	}
+	for key, want := range map[string]any{
+		"firmware_status":            "builtin_active",
+		"active_runtime_profile":     "builtin_xiaozhi_wakenet",
+		"runtime_hot_swap_supported": false,
+		"custom_runtime_active":      false,
+	} {
+		if got := raw[key]; got != want {
+			t.Fatalf("%s = %#v, want %#v in %s", key, got, want, stdout.String())
+		}
+	}
+	if _, ok := raw["desired_firmware_profile"]; ok {
+		t.Fatalf("builtin noop should not declare desired firmware profile: %s", stdout.String())
 	}
 	if len(report.Findings) != 0 {
 		t.Fatalf("findings = %#v, want none for builtin noop", report.Findings)
