@@ -28,6 +28,7 @@ import (
 )
 
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
+const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 
 type Server struct {
 	mu                         sync.Mutex
@@ -855,6 +856,7 @@ type xiaozhiSession struct {
 	lastDownlinkAtMS         int64
 	lastDownlinkTurnID       string
 	lastPlaybackStopDoneAtMS int64
+	inputCooldownUntilMS     int64
 }
 
 type xiaozhiTurn struct {
@@ -1000,6 +1002,20 @@ func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, n
 		deviceID:  session.deviceID,
 		mode:      xiaozhiTurnMode(turn),
 	}, true
+}
+
+func (session *xiaozhiSession) suppressXiaozhiInputUntil(untilMS int64) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if untilMS > session.inputCooldownUntilMS {
+		session.inputCooldownUntilMS = untilMS
+	}
+}
+
+func (session *xiaozhiSession) xiaozhiInputSuppressed(nowMS int64) bool {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.inputCooldownUntilMS > 0 && nowMS >= 0 && nowMS < session.inputCooldownUntilMS
 }
 
 func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reason string) {
@@ -1245,7 +1261,15 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		mode := s.xiaozhiListenMode(rawListenMode, session.features)
 		switch frame.Control.Listen.State {
 		case "start":
-			bargeTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn("barge_in", s.now().UnixMilli(), xiaozhiPlaybackInterruptWindowMS)
+			nowMS := s.now().UnixMilli()
+			if session.xiaozhiInputSuppressed(nowMS) {
+				session.listening = false
+				session.resetXiaozhiOpusIngress()
+				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_after_barge", nowMS)
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "ignored", ""))
+				return true
+			}
+			bargeTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn("barge_in", nowMS, xiaozhiPlaybackInterruptWindowMS)
 			if shouldStopPlayback {
 				s.recordXiaozhiListenBargeInMarkers(session, bargeTask.turn != nil)
 				s.writeXiaozhiTTSStopForce(ctx, conn, session, bargeTask.turn, bargeTask, "barge_in")
@@ -1286,6 +1310,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		abortReason := frame.Control.Abort.Reason
 		turn := session.cancelCurrentXiaozhiTurn(abortReason)
 		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
+		if strings.TrimSpace(abortReason) == "" {
+			session.suppressXiaozhiInputUntil(s.now().UnixMilli() + xiaozhiTouchBargeInInputCooldownMS)
+		}
 		s.writeXiaozhiTTSStop(ctx, conn, session, nil, xiaozhiTurnTask{
 			turn:      turn,
 			turnID:    xiaozhiTurnID(turn),

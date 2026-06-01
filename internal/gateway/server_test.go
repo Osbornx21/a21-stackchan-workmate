@@ -2058,6 +2058,67 @@ func TestXiaozhiWebSocketManualAbortCancelsTurnWithoutBargeInMarkers(t *testing.
 	}
 }
 
+func TestXiaozhiWebSocketTouchAbortSuppressesImmediateListenRestart(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "stackchan-001",
+		"trace_id":   "a21-trace-xiaozhi-touch-abort-cooldown",
+		"session_id": "a21-session-xiaozhi-touch-abort-cooldown",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("touch abort stop = %#v", stop)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	suppressed := readXiaozhiJSON(t, ctx, conn)
+	if suppressed["type"] != "listen" || suppressed["state"] != "start" || suppressed["status"] != "ignored" {
+		t.Fatalf("immediate listen restart = %#v, want ignored", suppressed)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-touch-abort-cooldown", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.listen.start.suppressed_after_barge") {
+		t.Fatalf("trace missing listen cooldown suppression: %+v", traces.Events)
+	}
+	if countTraceEvents(traces.Events, "xiaozhi.turn.start") != 1 {
+		t.Fatalf("turn starts = %+v, want only the pre-abort turn", traces.Events)
+	}
+}
+
 func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	server := NewServer()
 	session := &xiaozhiSession{
@@ -6198,6 +6259,16 @@ func traceContains(events []TraceEvent, name string) bool {
 		}
 	}
 	return false
+}
+
+func countTraceEvents(events []TraceEvent, name string) int {
+	count := 0
+	for _, event := range events {
+		if event.Name == name {
+			count++
+		}
+	}
+	return count
 }
 
 func assertSummaryDelta(t *testing.T, name string, got *int64, want int64) {
