@@ -99,6 +99,14 @@ may include `voice_pipeline.schema_version`, `execution_mode`, chunk counts,
 and timing fields. The actual mock audio travels only as paced binary Opus
 frames; `data_base64` is not emitted in xiaozhi JSON.
 
+Text-stream fallback is provider-neutral. `A21_TEXT_STREAM_FALLBACK_PROFILE`
+selects a secondary configured route-eligible text provider for the host-local
+voice pipeline, and `local-voice-loopback --fallback-text-provider` exposes the
+same behavior to the host verifier. Gateway and reports may emit a coarse
+`provider_fallback_used` finding plus fallback provider/reason metadata, but
+must not emit primary/fallback prompt text, transcripts, provider output,
+reasoning, API keys, model values, full URLs, or proxy values.
+
 Each `listen/start` creates a Gateway-owned xiaozhi turn and returns a stable
 A21 `turn_id` in the accepted reply. Each `abort` cancels the current turn
 context, clears current-turn ownership, resets the downlink pacer, and returns

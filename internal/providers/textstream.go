@@ -19,10 +19,17 @@ const (
 )
 
 type TextStreamEvent struct {
-	Kind    TextStreamDeltaKind
-	Text    string
-	Finding string
-	Err     error
+	Kind     TextStreamDeltaKind
+	Text     string
+	Finding  string
+	Fallback *TextStreamFallbackEvent
+	Err      error
+}
+
+type TextStreamFallbackEvent struct {
+	Activated bool
+	Provider  string
+	Reason    string
 }
 
 type TextStreamParseResult struct {

@@ -4794,6 +4794,115 @@ func TestRunLocalVoiceLoopbackCanUseHotPlugTextStreamProfileWithoutLeakingConten
 	}
 }
 
+func TestRunLocalVoiceLoopbackFallsBackToConfiguredTextProviderWithoutLeakingContent(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-fallback-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12,
+			TTSFirstAudioMS: 12,
+		}, nil
+	}
+	var sawPrimary bool
+	var sawFallback bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/primary/"):
+			sawPrimary = true
+			http.Error(w, `primary failed sk-a21-primary-secret`, http.StatusServiceUnavailable)
+		case strings.HasPrefix(r.URL.Path, "/fallback/"):
+			sawFallback = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(strings.Join([]string{
+				`data: {"choices":[{"delta":{"reasoning":"fallback reasoning must not leak"}}]}`,
+				`data: {"choices":[{"delta":{"content":"兜底已接管"}}]}`,
+				`data: [DONE]`,
+				``,
+			}, "\n")))
+		default:
+			t.Fatalf("unexpected path = %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+	profilePath := filepath.Join(t.TempDir(), "a21-provider-profiles.json")
+	if err := os.WriteFile(profilePath, []byte(`{
+		"name": "a21_loopback_fallback",
+		"label": "A21 loopback fallback",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "streaming_text", "text_stream"],
+		"api_key_env": "A21_LOOPBACK_FALLBACK_API_KEY",
+		"model_env": "A21_LOOPBACK_FALLBACK_MODEL",
+		"base_url_env": "A21_LOOPBACK_FALLBACK_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PROFILES_PATH", profilePath)
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-primary-secret")
+	t.Setenv("A21_DEEPSEEK_BASE_URL", server.URL+"/primary")
+	t.Setenv("A21_LOOPBACK_FALLBACK_API_KEY", "sk-a21-fallback-secret")
+	t.Setenv("A21_LOOPBACK_FALLBACK_MODEL", "hidden-fallback-model")
+	t.Setenv("A21_LOOPBACK_FALLBACK_BASE_URL", server.URL+"/fallback")
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "deepseek", "--fallback-text-provider", "a21_loopback_fallback", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !sawPrimary || !sawFallback {
+		t.Fatalf("saw primary/fallback = %v/%v, want both", sawPrimary, sawFallback)
+	}
+	if ttsInput != "兜底已接管" {
+		t.Fatalf("tts input = %q, want fallback provider voice preview", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"text_stream_provider": "a21_loopback_fallback"`,
+		`"text_stream_fallback_used": true`,
+		`"text_stream_fallback_provider": "a21_loopback_fallback"`,
+		`"text_stream_fallback_reason": "primary_failed"`,
+		`"text_stream_executed": true`,
+		`"tts_provider": "macos_say"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("reports = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{profilePath, filepath.Dir(profilePath), server.URL, "sk-a21-primary-secret", "sk-a21-fallback-secret", "hidden-fallback-model", "用户原文不要进报告", "兜底已接管", "fallback reasoning", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("loopback fallback leaked %q: stdout=%s stderr=%s report=%s", forbidden, stdout.String(), stderr.String(), reportData)
+		}
+	}
+}
+
 func TestRunLocalVoiceLoopbackRecordsLocalAckSeparatelyFromProviderAnswer(t *testing.T) {
 	original := synthesizeMacOSSay
 	t.Cleanup(func() { synthesizeMacOSSay = original })

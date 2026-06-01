@@ -2307,7 +2307,7 @@ func (s *Server) xiaozhiAudioIngressSummary(session *xiaozhiSession, asrStatus s
 }
 
 func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[string]any {
-	return map[string]any{
+	summary := map[string]any{
 		"schema_version":    report.SchemaVersion,
 		"status":            report.Status,
 		"stage":             "answer",
@@ -2316,14 +2316,16 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 		"llm_segment_count": report.Output.LLMSegmentCount,
 		"streaming":         report.Output.StreamingAnswer,
 		"selection": map[string]any{
-			"asr_mode":        report.Selection.ASRMode,
-			"asr_profile":     report.Selection.ASRProfile,
-			"asr_profile_env": report.Selection.ASRProfileEnv,
-			"llm_profile":     report.Selection.LLMProfile,
-			"llm_profile_env": report.Selection.LLMProfileEnv,
-			"tts_mode":        report.Selection.TTSMode,
-			"tts_profile":     report.Selection.TTSProfile,
-			"tts_profile_env": report.Selection.TTSProfileEnv,
+			"asr_mode":                 report.Selection.ASRMode,
+			"asr_profile":              report.Selection.ASRProfile,
+			"asr_profile_env":          report.Selection.ASRProfileEnv,
+			"llm_profile":              report.Selection.LLMProfile,
+			"llm_profile_env":          report.Selection.LLMProfileEnv,
+			"llm_fallback_profile":     report.Selection.LLMFallbackProfile,
+			"llm_fallback_profile_env": report.Selection.LLMFallbackProfileEnv,
+			"tts_mode":                 report.Selection.TTSMode,
+			"tts_profile":              report.Selection.TTSProfile,
+			"tts_profile_env":          report.Selection.TTSProfileEnv,
 		},
 		"timing": map[string]any{
 			"asr_first_partial_ms":             report.Timing.ASRFirstPartialMS,
@@ -2335,6 +2337,14 @@ func xiaozhiVoicePipelineSummary(report providers.VoicePipelineReport) map[strin
 			"speech_end_to_first_llm_token_ms": report.Timing.SpeechEndToFirstTokenMS,
 		},
 	}
+	if report.Fallback != nil && report.Fallback.Activated {
+		summary["fallback"] = map[string]any{
+			"activated": true,
+			"provider":  report.Fallback.Provider,
+			"reason":    report.Fallback.Reason,
+		}
+	}
+	return summary
 }
 
 func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {

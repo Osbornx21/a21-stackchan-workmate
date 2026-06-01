@@ -36,14 +36,16 @@ type VoicePipelineRequest struct {
 }
 
 type VoicePipelineSelection struct {
-	ASRMode       string `json:"asr_mode"`
-	ASRProfile    string `json:"asr_profile"`
-	ASRProfileEnv string `json:"asr_profile_env"`
-	LLMProfile    string `json:"llm_profile"`
-	LLMProfileEnv string `json:"llm_profile_env"`
-	TTSMode       string `json:"tts_mode"`
-	TTSProfile    string `json:"tts_profile"`
-	TTSProfileEnv string `json:"tts_profile_env"`
+	ASRMode               string `json:"asr_mode"`
+	ASRProfile            string `json:"asr_profile"`
+	ASRProfileEnv         string `json:"asr_profile_env"`
+	LLMProfile            string `json:"llm_profile"`
+	LLMProfileEnv         string `json:"llm_profile_env"`
+	LLMFallbackProfile    string `json:"llm_fallback_profile,omitempty"`
+	LLMFallbackProfileEnv string `json:"llm_fallback_profile_env,omitempty"`
+	TTSMode               string `json:"tts_mode"`
+	TTSProfile            string `json:"tts_profile"`
+	TTSProfileEnv         string `json:"tts_profile_env"`
 }
 
 type VoicePipelineTiming struct {
@@ -77,9 +79,16 @@ type VoicePipelineReport struct {
 	Selection     VoicePipelineSelection         `json:"selection"`
 	Input         VoicePipelineInputReport       `json:"input"`
 	Output        VoicePipelineOutputReport      `json:"output"`
+	Fallback      *VoicePipelineFallbackReport   `json:"fallback,omitempty"`
 	Timing        VoicePipelineTiming            `json:"timing"`
 	Redaction     VoicePipelineRedactionPolicies `json:"redaction"`
 	Findings      []string                       `json:"findings,omitempty"`
+}
+
+type VoicePipelineFallbackReport struct {
+	Activated bool   `json:"activated"`
+	Provider  string `json:"provider"`
+	Reason    string `json:"reason"`
 }
 
 type VoicePipelineInputReport struct {
@@ -298,6 +307,16 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 		if event.Finding != "" {
 			report.Findings = append(report.Findings, event.Finding)
 		}
+		if event.Fallback != nil && event.Fallback.Activated {
+			report.Fallback = &VoicePipelineFallbackReport{
+				Activated: true,
+				Provider:  safeVoicePipelineProfileName(event.Fallback.Provider),
+				Reason:    sanitizeVoicePipelineValue(event.Fallback.Reason, "primary_failed"),
+			}
+			if !voicePipelineStringSliceHas(report.Findings, "provider_fallback_used") {
+				report.Findings = append(report.Findings, "provider_fallback_used")
+			}
+		}
 		if event.Err != nil {
 			report.Status = string(VoicePipelineStatusFailed)
 			if event.Finding == "" {
@@ -431,6 +450,11 @@ func VoicePipelineSelectionFromEnv(env []string) VoicePipelineSelection {
 		llmEnv = "A21_PROVIDER_PRIMARY"
 		llmProfile = sanitizeVoicePipelineValue(envValue(env, llmEnv), "mock")
 	}
+	llmFallbackEnv := ""
+	llmFallbackProfile := sanitizeVoicePipelineValue(envValue(env, "A21_TEXT_STREAM_FALLBACK_PROFILE"), "")
+	if llmFallbackProfile != "" {
+		llmFallbackEnv = "A21_TEXT_STREAM_FALLBACK_PROFILE"
+	}
 
 	ttsMode := sanitizeVoicePipelineValue(envValue(env, "A21_TTS_MODE"), "fast")
 	ttsEnv := "A21_TTS_FAST_PROFILE"
@@ -443,14 +467,16 @@ func VoicePipelineSelectionFromEnv(env []string) VoicePipelineSelection {
 	ttsProfile := sanitizeVoicePipelineValue(envValue(env, ttsEnv), "mock-fast-tts")
 
 	return VoicePipelineSelection{
-		ASRMode:       asrMode,
-		ASRProfile:    asrProfile,
-		ASRProfileEnv: asrEnv,
-		LLMProfile:    llmProfile,
-		LLMProfileEnv: llmEnv,
-		TTSMode:       ttsMode,
-		TTSProfile:    ttsProfile,
-		TTSProfileEnv: ttsEnv,
+		ASRMode:               asrMode,
+		ASRProfile:            asrProfile,
+		ASRProfileEnv:         asrEnv,
+		LLMProfile:            llmProfile,
+		LLMProfileEnv:         llmEnv,
+		LLMFallbackProfile:    llmFallbackProfile,
+		LLMFallbackProfileEnv: llmFallbackEnv,
+		TTSMode:               ttsMode,
+		TTSProfile:            ttsProfile,
+		TTSProfileEnv:         ttsEnv,
 	}
 }
 
@@ -463,6 +489,29 @@ func sanitizeVoicePipelineValue(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func voicePipelineStringSliceHas(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func safeVoicePipelineProfileName(value string) string {
+	name := strings.ToLower(strings.TrimSpace(value))
+	if containsLegacyProviderIdentity(name) {
+		return "invalid_legacy_provider"
+	}
+	if containsBlockedProviderIdentity(name) {
+		return "blocked_provider"
+	}
+	if knownProvider(name) || loadedProviderNamePattern.MatchString(name) {
+		return name
+	}
+	return "unknown_provider"
 }
 
 func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSelection, executionMode string) VoicePipelineReport {
@@ -595,6 +644,8 @@ func isZeroVoicePipelineSelection(selection VoicePipelineSelection) bool {
 		selection.ASRProfileEnv == "" &&
 		selection.LLMProfile == "" &&
 		selection.LLMProfileEnv == "" &&
+		selection.LLMFallbackProfile == "" &&
+		selection.LLMFallbackProfileEnv == "" &&
 		selection.TTSMode == "" &&
 		selection.TTSProfile == "" &&
 		selection.TTSProfileEnv == ""

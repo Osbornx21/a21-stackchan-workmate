@@ -186,6 +186,14 @@ type OllamaTextStreamAdapterOptions struct {
 	MaxTokens int
 }
 
+type FallbackTextStreamAdapterOptions struct {
+	Name             string
+	Primary          TextStreamAdapter
+	Fallback         TextStreamAdapter
+	FallbackProvider string
+	Reason           string
+}
+
 type ollamaTextStreamAdapter struct {
 	name      string
 	env       []string
@@ -391,6 +399,131 @@ func (a *openAICompatibleTextStreamAdapter) streamEvents(ctx context.Context, cl
 	}
 }
 
+type fallbackTextStreamAdapter struct {
+	name             string
+	primary          TextStreamAdapter
+	fallback         TextStreamAdapter
+	fallbackProvider string
+	reason           string
+}
+
+func NewFallbackTextStreamAdapter(options FallbackTextStreamAdapterOptions) TextStreamAdapter {
+	name := strings.TrimSpace(options.Name)
+	primaryName := ""
+	if options.Primary != nil {
+		primaryName = options.Primary.Name()
+	}
+	fallbackProvider := strings.TrimSpace(options.FallbackProvider)
+	if fallbackProvider == "" && options.Fallback != nil {
+		fallbackProvider = options.Fallback.Name()
+	}
+	if name == "" {
+		name = primaryName
+		if fallbackProvider != "" {
+			name = strings.TrimSpace(primaryName + "->" + fallbackProvider)
+		}
+	}
+	reason := strings.TrimSpace(options.Reason)
+	if reason == "" {
+		reason = "primary_failed"
+	}
+	return &fallbackTextStreamAdapter{
+		name:             name,
+		primary:          options.Primary,
+		fallback:         options.Fallback,
+		fallbackProvider: fallbackProvider,
+		reason:           reason,
+	}
+}
+
+func (a *fallbackTextStreamAdapter) Name() string {
+	return a.name
+}
+
+func (a *fallbackTextStreamAdapter) StreamText(ctx context.Context, req TextStreamAdapterRequest) (<-chan TextStreamEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if a.primary == nil {
+		return a.startFallback(ctx, req, "primary_unavailable"), nil
+	}
+	primaryEvents, err := a.primary.StreamText(ctx, req)
+	if err != nil {
+		return a.startFallback(ctx, req, a.reason), nil
+	}
+	out := make(chan TextStreamEvent, 8)
+	go func() {
+		defer close(out)
+		contentSeen := false
+		for event := range primaryEvents {
+			if event.Err != nil && !contentSeen {
+				a.forwardFallback(ctx, req, out, a.reason)
+				return
+			}
+			if event.Kind == TextStreamDeltaDone && !contentSeen {
+				a.forwardFallback(ctx, req, out, "primary_empty")
+				return
+			}
+			if event.Kind == TextStreamDeltaContent && strings.TrimSpace(event.Text) != "" {
+				contentSeen = true
+			}
+			if !contentSeen && event.Kind == TextStreamDeltaReasoning {
+				continue
+			}
+			if !sendTextStreamEvent(ctx, out, event) {
+				return
+			}
+			if event.Err != nil {
+				return
+			}
+		}
+		if !contentSeen {
+			a.forwardFallback(ctx, req, out, "primary_empty")
+		}
+	}()
+	return out, nil
+}
+
+func (a *fallbackTextStreamAdapter) startFallback(ctx context.Context, req TextStreamAdapterRequest, reason string) <-chan TextStreamEvent {
+	out := make(chan TextStreamEvent, 8)
+	go func() {
+		defer close(out)
+		a.forwardFallback(ctx, req, out, reason)
+	}()
+	return out
+}
+
+func (a *fallbackTextStreamAdapter) forwardFallback(ctx context.Context, req TextStreamAdapterRequest, out chan<- TextStreamEvent, reason string) {
+	provider := safeVoicePipelineProfileName(a.fallbackProvider)
+	if provider == "" || provider == "unknown_provider" {
+		provider = "fallback"
+	}
+	if !sendTextStreamEvent(ctx, out, TextStreamEvent{
+		Finding: "provider_fallback_used",
+		Fallback: &TextStreamFallbackEvent{
+			Activated: true,
+			Provider:  provider,
+			Reason:    sanitizeVoicePipelineValue(reason, "primary_failed"),
+		},
+	}) {
+		return
+	}
+	if a.fallback == nil {
+		sendTextStreamEvent(ctx, out, TextStreamEvent{Finding: "text stream fallback adapter missing", Err: fmt.Errorf("text stream fallback adapter missing")})
+		return
+	}
+	fallbackEvents, err := a.fallback.StreamText(ctx, req)
+	if err != nil {
+		sendTextStreamEvent(ctx, out, TextStreamEvent{Finding: "text stream fallback adapter failed", Err: fmt.Errorf("text stream fallback adapter failed")})
+		return
+	}
+	for event := range fallbackEvents {
+		if !sendTextStreamEvent(ctx, out, event) {
+			return
+		}
+	}
+}
+
 func sendTextStreamEvent(ctx context.Context, out chan<- TextStreamEvent, event TextStreamEvent) bool {
 	select {
 	case <-ctx.Done():
@@ -513,23 +646,16 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		})
 		adapters.ExecutionMode = "host_local"
 	}
-	if profile, ok := openAITextStreamProfileFromEnv(env, selection.LLMProfile); ok {
-		adapters.TextStream = NewOpenAICompatibleTextStreamAdapter(OpenAICompatibleTextStreamAdapterOptions{
-			Name:         profile.Name,
-			ProviderName: profile.Name,
-			Env:          env,
-			Client:       options.TextHTTPClient,
-			MaxTokens:    textMaxTokens,
-		})
-		adapters.ExecutionMode = "host_local"
-	}
-	if profile, ok := ollamaTextStreamProfileFromEnv(env, selection.LLMProfile); ok {
-		adapters.TextStream = NewOllamaTextStreamAdapter(OllamaTextStreamAdapterOptions{
-			Name:      profile.Name,
-			Env:       env,
-			Client:    options.TextHTTPClient,
-			MaxTokens: textMaxTokens,
-		})
+	if textStream, ok := textStreamAdapterForPipelineProfile(env, selection.LLMProfile, options.TextHTTPClient, textMaxTokens); ok {
+		if fallback, fallbackOK := textStreamAdapterForPipelineProfile(env, selection.LLMFallbackProfile, options.TextHTTPClient, textMaxTokens); fallbackOK {
+			textStream = NewFallbackTextStreamAdapter(FallbackTextStreamAdapterOptions{
+				Primary:          textStream,
+				Fallback:         fallback,
+				FallbackProvider: selection.LLMFallbackProfile,
+				Reason:           "primary_failed",
+			})
+		}
+		adapters.TextStream = textStream
 		adapters.ExecutionMode = "host_local"
 	}
 	if isLocalTTSProfile(selection.TTSProfile) {
@@ -545,6 +671,27 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		adapters.ExecutionMode = "host_local"
 	}
 	return adapters
+}
+
+func textStreamAdapterForPipelineProfile(env []string, profileName string, client *http.Client, maxTokens int) (TextStreamAdapter, bool) {
+	if profile, ok := openAITextStreamProfileFromEnv(env, profileName); ok {
+		return NewOpenAICompatibleTextStreamAdapter(OpenAICompatibleTextStreamAdapterOptions{
+			Name:         profile.Name,
+			ProviderName: profile.Name,
+			Env:          env,
+			Client:       client,
+			MaxTokens:    maxTokens,
+		}), true
+	}
+	if profile, ok := ollamaTextStreamProfileFromEnv(env, profileName); ok {
+		return NewOllamaTextStreamAdapter(OllamaTextStreamAdapterOptions{
+			Name:      profile.Name,
+			Env:       env,
+			Client:    client,
+			MaxTokens: maxTokens,
+		}), true
+	}
+	return nil, false
 }
 
 func voiceTextMaxTokensFromEnv(env []string, override int) int {

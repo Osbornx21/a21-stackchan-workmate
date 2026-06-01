@@ -176,6 +176,17 @@ execution authorization, and true mainland latency evidence must be gathered on
 `5080lab` or another approved clean mainland lab host. Httptest-backed provider
 tests on a proxy-affected Mac prove protocol/redaction behavior only.
 
+The same host-local text path supports an explicit secondary provider through
+`A21_TEXT_STREAM_FALLBACK_PROFILE` or the loopback-only
+`--fallback-text-provider` / `A21_LOCAL_TEXT_FALLBACK_PROVIDER`. Fallback is
+allowed only to another configured, route-eligible text-stream profile. Reports
+record `provider_fallback_used`, the fallback provider name, and a coarse
+reason such as `primary_failed`, but still never record prompt text, transcript
+text, provider output, provider reasoning, API keys, model values, full URLs, or
+proxy values. This closes the PRD server-side router contract for
+`primary fail -> fallback success`; it does not by itself prove mainland p95/p99
+or physical StackChan playback.
+
 This v2 hardening is a report-contract and metric-shape change only. It does
 not authorize provider execute, V21 execute, Gateway runtime startup, binary
 Opus transport, AEC adapter implementation, WebRTC/ESP-SR native adapters, or

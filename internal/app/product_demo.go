@@ -145,23 +145,26 @@ type productVoiceReadiness struct {
 }
 
 type productVoicePipelineReadiness struct {
-	ASRProfile                 string  `json:"asr_profile"`
-	ASRProfileEnv              string  `json:"asr_profile_env"`
-	TextStreamProfile          string  `json:"text_stream_profile"`
-	TextStreamProfileEnv       string  `json:"text_stream_profile_env"`
-	TTSProfile                 string  `json:"tts_profile"`
-	TTSProfileEnv              string  `json:"tts_profile_env"`
-	ExecutionMode              string  `json:"execution_mode,omitempty"`
-	HostLocalASRReady          bool    `json:"host_local_asr_ready"`
-	HostLocalTextReady         bool    `json:"host_local_text_ready"`
-	HostLocalTTSReady          bool    `json:"host_local_tts_ready"`
-	HostLoopbackCandidateReady bool    `json:"host_loopback_candidate_ready"`
-	AcceptanceStatus           string  `json:"acceptance_status,omitempty"`
-	AnswerFirstAudioP95MS      float64 `json:"answer_first_audio_p95_ms"`
-	BargeInStopP95MS           float64 `json:"barge_in_stop_p95_ms"`
-	FailureCount               int     `json:"failure_count"`
-	SourceReport               string  `json:"source_report,omitempty"`
-	PRDAccepted                bool    `json:"prd_accepted"`
+	ASRProfile                   string  `json:"asr_profile"`
+	ASRProfileEnv                string  `json:"asr_profile_env"`
+	TextStreamProfile            string  `json:"text_stream_profile"`
+	TextStreamProfileEnv         string  `json:"text_stream_profile_env"`
+	TextStreamFallbackProfile    string  `json:"text_stream_fallback_profile,omitempty"`
+	TextStreamFallbackProfileEnv string  `json:"text_stream_fallback_profile_env,omitempty"`
+	TextStreamFallbackReady      bool    `json:"text_stream_fallback_ready,omitempty"`
+	TTSProfile                   string  `json:"tts_profile"`
+	TTSProfileEnv                string  `json:"tts_profile_env"`
+	ExecutionMode                string  `json:"execution_mode,omitempty"`
+	HostLocalASRReady            bool    `json:"host_local_asr_ready"`
+	HostLocalTextReady           bool    `json:"host_local_text_ready"`
+	HostLocalTTSReady            bool    `json:"host_local_tts_ready"`
+	HostLoopbackCandidateReady   bool    `json:"host_loopback_candidate_ready"`
+	AcceptanceStatus             string  `json:"acceptance_status,omitempty"`
+	AnswerFirstAudioP95MS        float64 `json:"answer_first_audio_p95_ms"`
+	BargeInStopP95MS             float64 `json:"barge_in_stop_p95_ms"`
+	FailureCount                 int     `json:"failure_count"`
+	SourceReport                 string  `json:"source_report,omitempty"`
+	PRDAccepted                  bool    `json:"prd_accepted"`
 }
 
 type productReadinessFinding struct {
@@ -453,6 +456,22 @@ func buildProductProviderReadiness(env []string) productProviderReadiness {
 	return readiness
 }
 
+func productTextStreamProviderReady(env []string, name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	catalog := providers.ProviderCatalogFromEnv(env)
+	for _, provider := range catalog.Providers {
+		if provider.Name == name {
+			return provider.Configured &&
+				provider.RouteEligible &&
+				providers.ProviderFamily(provider.Family) == providers.ProviderFamilyTextStream
+		}
+	}
+	return false
+}
+
 func buildProductV21Readiness(env []string) productV21Readiness {
 	adapterURL := appEnvValue(env, "A21_V21_ADAPTER_URL")
 	bridge := v21adapter.NewProfessionalBridgeReadiness(adapterURL)
@@ -533,13 +552,16 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 	asrProvider := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_ASR_PROVIDER")), "mock_asr")
 	selection := providers.VoicePipelineSelectionFromEnv(env)
 	voicePipeline := productVoicePipelineReadiness{
-		ASRProfile:           selection.ASRProfile,
-		ASRProfileEnv:        selection.ASRProfileEnv,
-		TextStreamProfile:    selection.LLMProfile,
-		TextStreamProfileEnv: selection.LLMProfileEnv,
-		TTSProfile:           selection.TTSProfile,
-		TTSProfileEnv:        selection.TTSProfileEnv,
-		ExecutionMode:        "env_configured",
+		ASRProfile:                   selection.ASRProfile,
+		ASRProfileEnv:                selection.ASRProfileEnv,
+		TextStreamProfile:            selection.LLMProfile,
+		TextStreamProfileEnv:         selection.LLMProfileEnv,
+		TextStreamFallbackProfile:    selection.LLMFallbackProfile,
+		TextStreamFallbackProfileEnv: selection.LLMFallbackProfileEnv,
+		TextStreamFallbackReady:      productTextStreamProviderReady(env, selection.LLMFallbackProfile),
+		TTSProfile:                   selection.TTSProfile,
+		TTSProfileEnv:                selection.TTSProfileEnv,
+		ExecutionMode:                "env_configured",
 	}
 	var xiaozhiEvidence productXiaozhiReportEvidence
 	if len(evidenceList) > 0 {

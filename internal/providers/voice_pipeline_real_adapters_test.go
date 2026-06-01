@@ -343,6 +343,104 @@ func TestVoicePipelineAdaptersFromEnvSelectsHotPlugOpenAITextStreamProfile(t *te
 	}
 }
 
+func TestVoicePipelineRunnerFallsBackToConfiguredTextStreamProfile(t *testing.T) {
+	profilePath := writeProviderProfileFile(t, `{
+		"name": "a21_voice_fallback",
+		"label": "A21 voice fallback text stream",
+		"family": "text_stream",
+		"protocol": "openai_chat_completions",
+		"capabilities": ["llm", "streaming_text", "text_stream"],
+		"api_key_env": "A21_VOICE_FALLBACK_API_KEY",
+		"model_env": "A21_VOICE_FALLBACK_MODEL",
+		"base_url_env": "A21_VOICE_FALLBACK_BASE_URL",
+		"endpoint_path": "/chat/completions",
+		"route_eligible": true
+	}`)
+	var sawPrimary bool
+	var sawFallback bool
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Host {
+		case "primary.invalid":
+			sawPrimary = true
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":"primary down sk-a21-primary-secret"}`)),
+				Request:    req,
+			}, nil
+		case "fallback.invalid":
+			sawFallback = true
+			body := readJSONRequestBody(t, req)
+			if got, ok := body["max_tokens"].(float64); !ok || int(got) != 16 {
+				t.Fatalf("fallback max_tokens = %#v, want 16", body["max_tokens"])
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+					`data: {"choices":[{"delta":{"reasoning":"fallback reasoning must not be stored"}}]}`,
+					`data: {"choices":[{"delta":{"content":"fallback voice answer"}}]}`,
+					`data: [DONE]`,
+					``,
+				}, "\n"))),
+				Request: req,
+			}, nil
+		default:
+			t.Fatalf("unexpected provider host = %q", req.URL.Host)
+			return nil, nil
+		}
+	})}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PROFILES_PATH=" + profilePath,
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_TEXT_STREAM_FALLBACK_PROFILE=a21_voice_fallback",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-primary-secret",
+		"A21_DEEPSEEK_BASE_URL=https://primary.invalid/v1",
+		"A21_VOICE_FALLBACK_API_KEY=sk-a21-fallback-secret",
+		"A21_VOICE_FALLBACK_MODEL=hidden-fallback-model",
+		"A21_VOICE_FALLBACK_BASE_URL=https://fallback.invalid/v1",
+	}, VoicePipelineAdapterOptions{
+		TextHTTPClient: client,
+		TextMaxTokens:  16,
+	})
+	result, err := NewVoicePipelineRunner(adapters).Run(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-fallback", SessionID: "a21-session-fallback", DeviceID: "stackchan-test"},
+		Mode:    "workmate",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawPrimary || !sawFallback {
+		t.Fatalf("saw primary/fallback = %v/%v, want both", sawPrimary, sawFallback)
+	}
+	if result.Status != VoicePipelineStatusCompleted {
+		t.Fatalf("status = %q, want completed: %#v", result.Status, result.Report.Findings)
+	}
+	if result.Report.Fallback == nil || !result.Report.Fallback.Activated || result.Report.Fallback.Provider != "a21_voice_fallback" {
+		t.Fatalf("fallback report = %+v, want activated a21_voice_fallback", result.Report.Fallback)
+	}
+	if result.Report.Selection.LLMFallbackProfile != "a21_voice_fallback" ||
+		result.Report.Selection.LLMFallbackProfileEnv != "A21_TEXT_STREAM_FALLBACK_PROFILE" {
+		t.Fatalf("selection fallback = %+v", result.Report.Selection)
+	}
+	rendered, err := json.Marshal(result.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"fallback"`, `"provider":"a21_voice_fallback"`, `"provider_fallback_used"`} {
+		if !strings.Contains(string(rendered), want) {
+			t.Fatalf("fallback report missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{profilePath, "primary.invalid", "fallback.invalid", "sk-a21-primary-secret", "sk-a21-fallback-secret", "hidden-fallback-model", "fallback voice answer", "fallback reasoning", "fixture transcript"} {
+		if strings.Contains(string(rendered), forbidden) {
+			t.Fatalf("fallback report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvAppliesVoiceTextMaxTokensToOpenAICompatibleRequests(t *testing.T) {
 	cases := []struct {
 		name string
