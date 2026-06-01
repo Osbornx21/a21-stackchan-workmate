@@ -3272,6 +3272,73 @@ func TestRunProviderLatencyBenchIngestsHostLoopbackReport(t *testing.T) {
 	}
 }
 
+func TestRunProviderLatencyBenchBlocksHostLoopbackCandidateOnTTSAudioQualityWarning(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "a21-host-loopback-audio-quality-warning.json")
+	writeProviderLatencyBenchHostLoopbackFixture(t, fixture)
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["tts_audio_quality"] = map[string]any{
+		"status":         "warning",
+		"codec":          "pcm_s16le",
+		"sample_rate_hz": 16000,
+		"channels":       1,
+		"peak_abs":       32767,
+		"findings": []string{
+			"audio_quality_clipping_detected",
+			"audio_quality_low_headroom",
+		},
+	}
+	data, err = json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-latency-bench", "--provider", "mock", "--mode", "host_loopback", "--fixture", fixture}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerLatencyBenchReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider latency report: %v\n%s", err, stdout.String())
+	}
+	answer := report.CanonicalMetrics["answer_first_audio_p95_ms"]
+	if !answer.Available || answer.P95MS >= 1500 {
+		t.Fatalf("answer_first_audio_p95_ms = %#v, want latency evidence preserved", answer)
+	}
+	barge := report.CanonicalMetrics["barge_in_stop_p95_ms"]
+	if !barge.Available || barge.P95MS >= 300 {
+		t.Fatalf("barge_in_stop_p95_ms = %#v, want barge-in evidence preserved", barge)
+	}
+	if report.AcceptanceStatus == "candidate_host_only" || report.PRDAccepted {
+		t.Fatalf("acceptance = %q prd=%v, want audio quality warning to block host-only candidate", report.AcceptanceStatus, report.PRDAccepted)
+	}
+	if !providerLatencyBenchHasFinding(report, "host_loopback_tts_audio_quality_failed") {
+		t.Fatalf("findings = %#v, want TTS audio quality gate finding", report.Findings)
+	}
+	if report.Counts.FailureCount != 2 {
+		t.Fatalf("failure count = %d, want TTS quality plus physical playback finding: %#v", report.Counts.FailureCount, report.Findings)
+	}
+	rendered := stdout.String()
+	for _, forbidden := range []string{dir, fixture, "32767", "pcm_s16le", "audio_quality_clipping_detected", "audio_quality_low_headroom"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stdout leaked audio-quality detail %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestRunProviderLatencyBenchIngestsHostLocalXiaozhiExecutionWithoutAcceptance(t *testing.T) {
 	dir := t.TempDir()
 	fixture := filepath.Join(dir, "a21-xiaozhi-host-local-slow-report.json")
@@ -3763,6 +3830,15 @@ func providerLatencyBenchStageByName(t *testing.T, report providerLatencyBenchRe
 	}
 	t.Fatalf("stage %q missing: %#v", name, report.StageAvailability)
 	return providerLatencyBenchStageAvailability{}
+}
+
+func providerLatencyBenchHasFinding(report providerLatencyBenchReport, code string) bool {
+	for _, finding := range report.Findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {

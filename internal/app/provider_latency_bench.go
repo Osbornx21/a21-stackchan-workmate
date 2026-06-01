@@ -371,6 +371,7 @@ func buildProviderLatencyBenchReport(options providerLatencyBenchOptions) (provi
 				hostLoopbackIngested = true
 				hostLoopbackPhysicalEvidence = evidence.PhysicalEvidence
 				report.Execution = providerLatencyHostLoopbackExecution(evidence.Execution)
+				report.Findings = append(report.Findings, evidence.AudioQualityFindings...)
 				if len(evidence.Samples) > 0 {
 					report.Iterations = len(evidence.Samples)
 				}
@@ -490,28 +491,37 @@ func providerLatencyPlaceholderReason(placeholder bool) string {
 }
 
 type providerLatencyBenchHostLoopbackEvidence struct {
-	Valid            bool
-	Samples          []providerLatencyBenchSample
-	PhysicalEvidence bool
-	Execution        providerLatencyBenchExecution
+	Valid                bool
+	Samples              []providerLatencyBenchSample
+	PhysicalEvidence     bool
+	Execution            providerLatencyBenchExecution
+	AudioQualityFindings []providerLatencyBenchFinding
 }
 
 type providerLatencyBenchHostLoopbackReport struct {
-	SchemaVersion       string                                  `json:"schema_version"`
-	Schema              string                                  `json:"schema"`
-	ExecutionMode       string                                  `json:"execution_mode"`
-	BaselineScope       string                                  `json:"baseline_scope"`
-	DeviceID            string                                  `json:"device_id"`
-	AnswerTurns         []providerLatencyBenchHostLoopbackTurn  `json:"answer_turns"`
-	BargeInTurns        []providerLatencyBenchHostLoopbackTurn  `json:"barge_in_turns"`
-	Samples             []providerLatencyBenchHostLoopbackTrace `json:"samples"`
-	FirstAudioSamplesMS []float64                               `json:"first_audio_samples_ms"`
-	AbortStopSamplesMS  []float64                               `json:"abort_stop_samples_ms"`
-	FirstAudioP95MS     *float64                                `json:"first_audio_p95_ms"`
-	AbortStopP95MS      *float64                                `json:"abort_stop_p95_ms"`
-	HostCandidate       bool                                    `json:"host_candidate"`
-	PRDAccepted         bool                                    `json:"prd_accepted"`
-	Execution           providerLatencyBenchExecution           `json:"execution"`
+	SchemaVersion        string                                  `json:"schema_version"`
+	Schema               string                                  `json:"schema"`
+	ExecutionMode        string                                  `json:"execution_mode"`
+	BaselineScope        string                                  `json:"baseline_scope"`
+	DeviceID             string                                  `json:"device_id"`
+	AnswerTurns          []providerLatencyBenchHostLoopbackTurn  `json:"answer_turns"`
+	BargeInTurns         []providerLatencyBenchHostLoopbackTurn  `json:"barge_in_turns"`
+	Samples              []providerLatencyBenchHostLoopbackTrace `json:"samples"`
+	FirstAudioSamplesMS  []float64                               `json:"first_audio_samples_ms"`
+	AbortStopSamplesMS   []float64                               `json:"abort_stop_samples_ms"`
+	FirstAudioP95MS      *float64                                `json:"first_audio_p95_ms"`
+	AbortStopP95MS       *float64                                `json:"abort_stop_p95_ms"`
+	HostCandidate        bool                                    `json:"host_candidate"`
+	PRDAccepted          bool                                    `json:"prd_accepted"`
+	Execution            providerLatencyBenchExecution           `json:"execution"`
+	AudioQuality         *providerLatencyBenchAudioQualityReport `json:"audio_quality,omitempty"`
+	LocalAckAudioQuality *providerLatencyBenchAudioQualityReport `json:"local_ack_audio_quality,omitempty"`
+	TTSAudioQuality      *providerLatencyBenchAudioQualityReport `json:"tts_audio_quality,omitempty"`
+}
+
+type providerLatencyBenchAudioQualityReport struct {
+	Status   string   `json:"status"`
+	Findings []string `json:"findings,omitempty"`
 }
 
 type providerLatencyBenchHostLoopbackTurn struct {
@@ -578,9 +588,10 @@ func loadProviderLatencyBenchHostLoopbackReport(fixturePath string) (providerLat
 		return providerLatencyBenchHostLoopbackEvidence{}, []providerLatencyBenchFinding{invalidProviderLatencyHostLoopbackFinding()}
 	}
 	evidence := providerLatencyBenchHostLoopbackEvidence{
-		Valid:            true,
-		PhysicalEvidence: providerLatencyHostLoopbackHasPhysicalEvidence(hostReport),
-		Execution:        hostReport.Execution,
+		Valid:                true,
+		PhysicalEvidence:     providerLatencyHostLoopbackHasPhysicalEvidence(hostReport),
+		Execution:            hostReport.Execution,
+		AudioQualityFindings: providerLatencyHostLoopbackAudioQualityFindings(hostReport),
 	}
 	evidence.Samples = providerLatencyHostLoopbackSamples(hostReport, evidence.PhysicalEvidence)
 	return evidence, nil
@@ -619,6 +630,78 @@ func providerLatencyHostLoopbackHasPhysicalEvidence(report providerLatencyBenchH
 		return true
 	}
 	return strings.TrimSpace(report.BaselineScope) == "physical_stackchan"
+}
+
+func providerLatencyHostLoopbackAudioQualityFindings(report providerLatencyBenchHostLoopbackReport) []providerLatencyBenchFinding {
+	checks := []struct {
+		source  string
+		quality *providerLatencyBenchAudioQualityReport
+	}{
+		{source: "", quality: report.AudioQuality},
+		{source: "local_ack", quality: report.LocalAckAudioQuality},
+		{source: "tts", quality: report.TTSAudioQuality},
+	}
+	findings := make([]providerLatencyBenchFinding, 0)
+	for _, check := range checks {
+		if !providerLatencyAudioQualityBlocksHostCandidate(check.quality) {
+			continue
+		}
+		findings = append(findings, providerLatencyHostLoopbackAudioQualityFinding(check.source))
+	}
+	return findings
+}
+
+func providerLatencyAudioQualityBlocksHostCandidate(quality *providerLatencyBenchAudioQualityReport) bool {
+	if quality == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(quality.Status)) {
+	case "warning", "failed":
+		return true
+	}
+	for _, finding := range quality.Findings {
+		if providerLatencyBlockingAudioQualityFinding(finding) {
+			return true
+		}
+	}
+	return false
+}
+
+func providerLatencyBlockingAudioQualityFinding(code string) bool {
+	switch strings.TrimSpace(code) {
+	case "audio_quality_clipping_detected",
+		"audio_quality_low_headroom",
+		"audio_quality_near_silence",
+		"audio_quality_dc_offset_detected",
+		"audio_quality_invalid_payload",
+		"audio_quality_invalid_format",
+		"audio_quality_unsupported_codec",
+		"audio_quality_unavailable",
+		"audio_quality_format_mismatch":
+		return true
+	default:
+		return false
+	}
+}
+
+func providerLatencyHostLoopbackAudioQualityFinding(source string) providerLatencyBenchFinding {
+	switch source {
+	case "local_ack":
+		return providerLatencyBenchFinding{
+			Code:    "host_loopback_local_ack_audio_quality_failed",
+			Message: "host-loopback local acknowledgement audio quality guard reported a warning or failure",
+		}
+	case "tts":
+		return providerLatencyBenchFinding{
+			Code:    "host_loopback_tts_audio_quality_failed",
+			Message: "host-loopback TTS audio quality guard reported a warning or failure",
+		}
+	default:
+		return providerLatencyBenchFinding{
+			Code:    "host_loopback_audio_quality_failed",
+			Message: "host-loopback audio quality guard reported a warning or failure",
+		}
+	}
 }
 
 func providerLatencyHostLoopbackExecution(source providerLatencyBenchExecution) providerLatencyBenchExecution {

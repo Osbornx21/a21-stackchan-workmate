@@ -158,6 +158,15 @@ ASR/LLM/TTS profile names and `A21_` env names, plus host-local ASR/text/TTS
 stage booleans. These fields are host-only evidence and do not flip
 `provider_executed`, `v21_executed`, `hardware_executed`, `promotion_gate`, or
 `prd_accepted`.
+When an ingested host-loopback report contains `audio_quality`,
+`local_ack_audio_quality`, or `tts_audio_quality`, warning/failed quality states
+and fixed PCM guard findings such as clipping, low headroom, near-silence, DC
+offset, invalid payload/format, unsupported codec, unavailable quality, or
+format mismatch produce structured redacted findings and block
+`candidate_host_only`. The benchmark still preserves the latency waterfall so
+the team can see that timing passed while audio quality failed, but it must not
+store peak values, codec internals, raw finding lists, paths, prompts,
+transcripts, provider output, or audio payloads in the promoted report.
 When `--fixture` points at a redacted JSON sidecar, the report may include
 `schema_version=a21.provider_latency_fixture.v1`, fixture identity, audio
 format, sample rate, channel count, duration, sample count, window length, and
