@@ -133,6 +133,17 @@ local runtime file `.a21-run/gateway/a21-wake-word.json`. Reports and traces
 must not store Wi-Fi credentials, provider keys, raw audio, transcripts,
 prompts, full URLs, proxy values, or absolute local paths for this feature.
 
+### Fast Companion Runtime
+
+`POST /v1/fast-companion/turn` remains a Gateway-owned fast companion seam.
+When `local_audio.frames` is omitted, it reports the existing text-stream
+boundary placeholder and does not execute a provider. When callers include
+bounded `pcm_s16le` mono local-audio frames, Gateway decodes them only in
+memory and passes them to the same provider-neutral `VoicePipelineRunner` used
+by the xiaozhi runtime. Responses may include control events and audio playback
+chunks, but must not echo transcripts, provider text, raw audio, base64 input
+audio, full URLs, credentials, proxy values, or local paths.
+
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future

@@ -116,9 +116,21 @@ type RealtimeSessionResponse struct {
 }
 
 type FastCompanionLocalAudioResult struct {
-	ASRProvider          string `json:"asr_provider,omitempty"`
-	FirstPartialMS       int64  `json:"first_partial_ms,omitempty"`
-	FinalTranscriptChars int    `json:"final_transcript_chars,omitempty"`
+	ASRProvider          string                         `json:"asr_provider,omitempty"`
+	FirstPartialMS       int64                          `json:"first_partial_ms,omitempty"`
+	FinalTranscriptChars int                            `json:"final_transcript_chars,omitempty"`
+	Frames               []FastCompanionLocalAudioFrame `json:"frames,omitempty"`
+}
+
+type FastCompanionLocalAudioFrame struct {
+	Seq          uint64  `json:"seq,omitempty"`
+	Codec        string  `json:"codec,omitempty"`
+	SampleRateHz int     `json:"sample_rate_hz,omitempty"`
+	Channels     int     `json:"channels,omitempty"`
+	DurationMS   int     `json:"duration_ms,omitempty"`
+	ByteCount    int     `json:"byte_count,omitempty"`
+	RMS          float64 `json:"rms,omitempty"`
+	DataBase64   string  `json:"data_base64,omitempty"`
 }
 
 type FastCompanionTurnRequest struct {
@@ -3472,15 +3484,23 @@ func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "local_audio timing and transcript counts must be non-negative", http.StatusBadRequest)
 		return
 	}
+	frames, err := fastCompanionVoicePipelineFrames(req.LocalAudio.Frames)
+	if err != nil {
+		http.Error(w, "invalid local_audio.frames", http.StatusBadRequest)
+		return
+	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
 	req.SessionID = sessionID
 	receivedAtMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.turn.received", receivedAtMS)
-	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(req, receivedAtMS))
+	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(r.Context(), req, receivedAtMS, frames))
 }
 
-func (s *Server) fastCompanionTurnResponse(req FastCompanionTurnRequest, receivedAtMS int64) FastCompanionTurnResponse {
+func (s *Server) fastCompanionTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame) FastCompanionTurnResponse {
+	if len(frames) > 0 {
+		return s.fastCompanionVoicePipelineTurnResponse(ctx, req, receivedAtMS, frames)
+	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	asrFirstPartialAtMS := receivedAtMS + req.LocalAudio.FirstPartialMS
 	placeholderStartAtMS := asrFirstPartialAtMS + 1
@@ -3510,6 +3530,125 @@ func (s *Server) fastCompanionTurnResponse(req FastCompanionTurnRequest, receive
 		TextStreamExecuted: false,
 		Events:             events,
 	}
+}
+
+func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame) FastCompanionTurnResponse {
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", receivedAtMS)
+	startAtMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.start", startAtMS)
+	newRunner := s.xiaozhiVoicePipelineRunner
+	if newRunner == nil {
+		newRunner = defaultXiaozhiVoicePipelineRunner
+	}
+	runner := newRunner()
+	request := providers.VoicePipelineRequest{
+		Session: providers.VoiceSession{
+			TraceID:   traceID,
+			SessionID: sessionID,
+			DeviceID:  req.DeviceID,
+		},
+		Mode:   string(req.Mode),
+		Frames: append([]providers.VoicePipelinePCMFrame(nil), frames...),
+	}
+	result, err := runner.Run(ctx, request)
+	if err != nil || result.Status != providers.VoicePipelineStatusCompleted || len(result.AudioChunks) == 0 {
+		s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.unavailable", s.now().UnixMilli())
+		events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+			{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
+			{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "本地语音链路暂时没有给出可播放答案。"},
+			{State: protocol.ExpressionError, Mode: protocol.ModeError, Text: "本地语音链路暂时不可用。", Final: true},
+		})
+		return FastCompanionTurnResponse{
+			TraceID:            traceID,
+			SessionID:          sessionID,
+			DeviceID:           req.DeviceID,
+			Mode:               req.Mode,
+			Status:             "pipeline_unavailable",
+			Route:              "fast_companion_hybrid",
+			AudioFrontend:      "local_audio",
+			TextStreamProvider: firstNonEmpty(result.Report.Selection.LLMProfile, "unknown"),
+			ProviderFamily:     string(providers.ProviderFamilyTextStream),
+			TextStreamExecuted: result.Report.Output.LLMContentChars > 0,
+			Events:             events,
+		}
+	}
+	s.recordXiaozhiVoicePipelineStageMarkers(traceID, sessionID, req.DeviceID, startAtMS, result.Timing)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.completed", s.now().UnixMilli())
+	streamID := "a21-fast-companion-voice-pipeline"
+	events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{
+		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
+		{State: protocol.ExpressionThinking, Mode: req.Mode, Text: "我把本地语音接到文本流。"},
+		{State: protocol.ExpressionSpeaking, Mode: req.Mode, Final: true, StreamID: streamID},
+	})
+	sentAt := s.now().UnixMilli()
+	for _, chunk := range result.AudioChunks {
+		if len(events) == 3 {
+			s.recordTrace(traceID, sessionID, req.DeviceID, "audio.downlink.first_frame", sentAt)
+		}
+		chunk := chunk
+		events = append(events, s.voiceAudioPlaybackChunk(req.DeviceID, traceID, sessionID, uint64(len(events)+1), sentAt+int64(len(events)-3), streamID, &chunk))
+	}
+	return FastCompanionTurnResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Mode:               req.Mode,
+		Status:             "pipeline_completed",
+		Route:              "fast_companion_hybrid",
+		AudioFrontend:      "local_audio",
+		TextStreamProvider: firstNonEmpty(result.Report.Selection.LLMProfile, "unknown"),
+		ProviderFamily:     string(providers.ProviderFamilyTextStream),
+		TextStreamExecuted: result.Report.Output.LLMContentChars > 0,
+		Events:             events,
+	}
+}
+
+func fastCompanionVoicePipelineFrames(raw []FastCompanionLocalAudioFrame) ([]providers.VoicePipelinePCMFrame, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > 64 {
+		return nil, fmt.Errorf("too many local audio frames")
+	}
+	frames := make([]providers.VoicePipelinePCMFrame, 0, len(raw))
+	for i, frame := range raw {
+		codec := strings.ToLower(strings.TrimSpace(frame.Codec))
+		if codec == "" {
+			codec = string(protocol.AudioCodecPCMS16LE)
+		}
+		if codec != string(protocol.AudioCodecPCMS16LE) {
+			return nil, fmt.Errorf("local audio frame codec must be pcm_s16le")
+		}
+		if frame.SampleRateHz <= 0 || frame.Channels != 1 || frame.DurationMS <= 0 {
+			return nil, fmt.Errorf("local audio frame audio shape invalid")
+		}
+		if frame.RMS < 0 {
+			return nil, fmt.Errorf("local audio frame rms invalid")
+		}
+		pcm, err := base64.StdEncoding.DecodeString(strings.TrimSpace(frame.DataBase64))
+		if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 {
+			return nil, fmt.Errorf("local audio frame payload invalid")
+		}
+		if frame.ByteCount > 0 && frame.ByteCount != len(pcm) {
+			return nil, fmt.Errorf("local audio frame byte count mismatch")
+		}
+		seq := frame.Seq
+		if seq == 0 {
+			seq = uint64(i + 1)
+		}
+		frames = append(frames, providers.VoicePipelinePCMFrame{
+			Seq:          seq,
+			Codec:        codec,
+			SampleRateHz: frame.SampleRateHz,
+			Channels:     frame.Channels,
+			DurationMS:   frame.DurationMS,
+			ByteCount:    len(pcm),
+			RMS:          frame.RMS,
+			PCM16LE:      pcm,
+		})
+	}
+	return frames, nil
 }
 
 func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {

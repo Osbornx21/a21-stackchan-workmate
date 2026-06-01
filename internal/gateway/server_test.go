@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -620,6 +621,101 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 		"tts.first_audio",
 		"audio.downlink.first_frame",
 		"device.playback.start",
+	} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
+func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "selected provider should not run", Final: true},
+		},
+	}
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
+	handler := server.Handler()
+	frameBase64 := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1, 0}, 960))
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(fmt.Sprintf(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"workmate",
+		"trace_id":"a21-trace-fast-pipeline-001",
+		"session_id":"a21-session-fast-pipeline-001",
+		"local_audio":{
+			"asr_provider":"mock_asr",
+			"first_partial_ms":42,
+			"final_transcript_chars":11,
+			"frames":[{"seq":1,"codec":"pcm_s16le","sample_rate_hz":16000,"channels":1,"duration_ms":60,"byte_count":1920,"rms":0.04,"data_base64":%q}]
+		}
+	}`, frameBase64)))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"fixture transcript should never be stored", "mock provider output should never be stored", frameBase64} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("fast companion response leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+	var response struct {
+		Status             string              `json:"status"`
+		TextStreamProvider string              `json:"text_stream_provider"`
+		ProviderFamily     string              `json:"provider_family"`
+		TextStreamExecuted bool                `json:"text_stream_executed"`
+		Events             []protocol.Envelope `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "pipeline_completed" || response.ProviderFamily != "text_stream" || response.TextStreamProvider != "mock" || !response.TextStreamExecuted {
+		t.Fatalf("response pipeline status = %+v", response)
+	}
+	var audioChunks int
+	var speaking protocol.ControlEventPayload
+	for _, event := range response.Events {
+		switch event.Kind {
+		case protocol.KindAudioPlaybackChunk:
+			audioChunks++
+		case protocol.KindControlEvent:
+			var payload protocol.ControlEventPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.State == protocol.ExpressionSpeaking {
+				speaking = payload
+			}
+		}
+	}
+	if audioChunks == 0 {
+		t.Fatalf("events = %#v, want at least one audio playback chunk", response.Events)
+	}
+	if speaking.State != protocol.ExpressionSpeaking || speaking.StreamID != "a21-fast-companion-voice-pipeline" {
+		t.Fatalf("speaking payload = %+v", speaking)
+	}
+	if provider.startCalls != 0 {
+		t.Fatalf("voice provider start calls = %d, want 0", provider.startCalls)
+	}
+	if v21.calls != 0 {
+		t.Fatalf("v21 calls = %d, want 0", v21.calls)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-fast-pipeline-001", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	for _, want := range []string{
+		"fast_companion.voice_pipeline.start",
+		"provider.first_content",
+		"tts.first_audio",
+		"audio.downlink.first_frame",
+		"fast_companion.voice_pipeline.completed",
 	} {
 		if !strings.Contains(traceRec.Body.String(), want) {
 			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())

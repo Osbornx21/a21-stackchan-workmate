@@ -325,6 +325,9 @@ Current mock trace events include:
 - `fast_companion.turn.received`
 - `fast_companion.local_audio.frontend.accepted`
 - `provider.text_stream.route.placeholder`
+- `fast_companion.voice_pipeline.start`
+- `fast_companion.voice_pipeline.completed`
+- `fast_companion.voice_pipeline.unavailable`
 - `xiaozhi.voice_pipeline.start`
 - `xiaozhi.voice_pipeline.completed`
 - `xiaozhi.voice_pipeline.unavailable`
