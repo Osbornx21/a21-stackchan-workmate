@@ -792,6 +792,7 @@ type xiaozhiTurn struct {
 	ctx          context.Context
 	cancel       context.CancelCauseFunc
 	pacer        *audio.AudioRateController
+	mode         protocol.Mode
 	cancelReason string
 }
 
@@ -812,6 +813,7 @@ type xiaozhiTurnTask struct {
 	audioIngressBase       map[string]any
 	voicePipelineFrames    []providers.VoicePipelinePCMFrame
 	voicePipelineHasSpeech bool
+	mode                   protocol.Mode
 }
 
 func defaultXiaozhiVoicePipelineRunner() xiaozhiVoicePipelineRunner {
@@ -837,9 +839,12 @@ func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
 	session.sessionID = frame.SessionID
 }
 
-func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhiTurn {
+func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context, mode protocol.Mode) *xiaozhiTurn {
 	if parent == nil {
 		parent = context.Background()
+	}
+	if mode == "" {
+		mode = protocol.ModeWorkmate
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
@@ -850,6 +855,7 @@ func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhi
 		id:     session.nextTurnID,
 		ctx:    ctx,
 		cancel: cancel,
+		mode:   mode,
 		pacer: audio.NewAudioRateController(audio.AudioRateControllerConfig{
 			FrameDuration:   60 * time.Millisecond,
 			PrebufferFrames: 5,
@@ -857,6 +863,17 @@ func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context) *xiaozhi
 	}
 	session.currentTurn = turn
 	return turn
+}
+
+func (session *xiaozhiSession) setCurrentXiaozhiTurnMode(mode protocol.Mode) {
+	if mode == "" {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.currentTurn != nil {
+		session.currentTurn.mode = mode
+	}
 }
 
 func (session *xiaozhiSession) currentXiaozhiTurn() *xiaozhiTurn {
@@ -930,6 +947,13 @@ func xiaozhiTurnID(turn *xiaozhiTurn) string {
 		return ""
 	}
 	return fmt.Sprintf("a21-xiaozhi-turn-%06d", turn.id)
+}
+
+func xiaozhiTurnMode(turn *xiaozhiTurn) protocol.Mode {
+	if turn == nil || turn.mode == "" {
+		return protocol.ModeWorkmate
+	}
+	return turn.mode
 }
 
 func (session *xiaozhiSession) resetXiaozhiTTSStop() {
@@ -1113,9 +1137,10 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
 			return true
 		}
+		mode := xiaozhiListenMode(frame.Control.Listen.Mode)
 		switch frame.Control.Listen.State {
 		case "start":
-			turn := session.startXiaozhiTurn(ctx)
+			turn := session.startXiaozhiTurn(ctx, mode)
 			session.listening = true
 			session.resetXiaozhiOpusIngress()
 			session.resetXiaozhiTTSStop()
@@ -1132,6 +1157,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				return true
 			}
 			session.listening = false
+			if mode == protocol.ModeProfessional {
+				session.setCurrentXiaozhiTurnMode(mode)
+			}
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
 			task := s.newXiaozhiTurnTask(session, session.currentXiaozhiTurn())
 			s.startXiaozhiTurnTask(ctx, conn, session, task)
@@ -1331,6 +1359,13 @@ func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
 	return "stock"
 }
 
+func xiaozhiListenMode(raw string) protocol.Mode {
+	if strings.TrimSpace(strings.ToLower(raw)) == string(protocol.ModeProfessional) {
+		return protocol.ModeProfessional
+	}
+	return protocol.ModeWorkmate
+}
+
 func mergeDeviceCapabilities(existing map[string]string, additions map[string]string) map[string]string {
 	if len(existing) == 0 {
 		merged := make(map[string]string, len(additions))
@@ -1358,6 +1393,7 @@ func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) 
 		traceID:   session.traceID,
 		sessionID: session.sessionID,
 		deviceID:  session.deviceID,
+		mode:      xiaozhiTurnMode(turn),
 		audioIngressBase: map[string]any{
 			"codec":                "opus",
 			"profile":              xiaozhiBinaryProfile(session.binaryProtocolVersion),
@@ -1416,6 +1452,10 @@ func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason strin
 }
 
 func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	if task.mode == protocol.ModeProfessional {
+		s.writeXiaozhiProfessionalTTS(ctx, conn, session, task)
+		return
+	}
 	if s.writeXiaozhiVoicePipelineTTS(ctx, conn, session, task) {
 		return
 	}
@@ -1423,6 +1463,125 @@ func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, sess
 		return
 	}
 	s.writeXiaozhiPlaceholderTTS(ctx, conn, session, task)
+}
+
+func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	turn := task.turn
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":          "tts",
+		"state":         "start",
+		"mode":          string(protocol.ModeProfessional),
+		"turn_id":       task.turnID,
+		"trace_id":      task.traceID,
+		"session_id":    task.sessionID,
+		"device_id":     task.deviceID,
+		"audio_ingress": task.audioIngressSummary("professional_boundary", "checking_then_evidence"),
+	}); err != nil {
+		return
+	}
+	request := v21adapter.QueryRequest{
+		TraceID:            task.traceID,
+		SessionID:          task.sessionID,
+		Mode:               "professional",
+		Utterance:          "xiaozhi professional voice turn",
+		LatencyProfile:     "fast_first",
+		AnswerStyle:        "voice_first_with_citations",
+		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
+		PrivacyScope:       "professional_only",
+	}
+	receipt, err := v21adapter.NewProfessionalBridgeReceipt(request)
+	if err != nil {
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_receipt_unavailable")
+		return
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":         "tts",
+		"state":        "sentence_start",
+		"phase":        "professional_checking",
+		"mode":         string(protocol.ModeProfessional),
+		"turn_id":      task.turnID,
+		"trace_id":     task.traceID,
+		"session_id":   task.sessionID,
+		"device_id":    task.deviceID,
+		"text":         receipt.Text,
+		"professional": receipt,
+	}); err != nil {
+		session.cancelXiaozhiTurnContext(turn, "professional_checking_write_error")
+		return
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
+	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
+	defer cancel()
+	started := time.Now()
+	response, err := s.v21.Query(queryCtx, request)
+	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
+	if err != nil {
+		marker := "v21.query.error"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
+			marker = "v21.query.timeout"
+		}
+		if errors.Is(err, context.Canceled) || session.shouldAbortXiaozhiTurn(turn) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+			return
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker, s.now().UnixMilli())
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_v21_unavailable")
+		return
+	}
+	if session.shouldAbortXiaozhiTurn(turn) {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
+		return
+	}
+	report, err := v21adapter.NewProfessionalBridgeEvidenceReport(response)
+	if err != nil {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.error", s.now().UnixMilli())
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_contract_invalid")
+		return
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.first_result", s.now().UnixMilli())
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":         "tts",
+		"state":        "sentence_start",
+		"phase":        "professional_result",
+		"mode":         string(protocol.ModeProfessional),
+		"turn_id":      task.turnID,
+		"trace_id":     task.traceID,
+		"session_id":   task.sessionID,
+		"device_id":    task.deviceID,
+		"text":         response.FastAnswer,
+		"confidence":   response.Confidence,
+		"professional": report,
+	}); err != nil {
+		session.cancelXiaozhiTurnContext(turn, "professional_result_write_error")
+		return
+	}
+	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "professional_result_completed")
+}
+
+func (s *Server) writeXiaozhiProfessionalFallback(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, reason string) {
+	turn := task.turn
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
+		"type":       "tts",
+		"state":      "sentence_start",
+		"phase":      "professional_unavailable",
+		"mode":       string(protocol.ModeProfessional),
+		"turn_id":    task.turnID,
+		"trace_id":   task.traceID,
+		"session_id": task.sessionID,
+		"device_id":  task.deviceID,
+		"text":       "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
+	}); err != nil {
+		session.cancelXiaozhiTurnContext(turn, "professional_fallback_write_error")
+		return
+	}
+	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, reason)
 }
 
 func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) bool {

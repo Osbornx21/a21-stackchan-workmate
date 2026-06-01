@@ -1411,7 +1411,7 @@ func TestXiaozhiWebSocketRecordsDebugProfileWithoutLeakingHelloReply(t *testing.
 
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
-	turn := session.startXiaozhiTurn(context.Background())
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
 	if turn.id != 1 {
 		t.Fatalf("turn id = %d, want 1", turn.id)
 	}
@@ -1443,7 +1443,7 @@ func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing
 		t.Fatalf("sent frames = %d, want pacer reset on cancel", turn.pacer.SentFrames())
 	}
 
-	next := session.startXiaozhiTurn(context.Background())
+	next := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
 	if next.id != 2 {
 		t.Fatalf("next turn id = %d, want 2", next.id)
 	}
@@ -1588,7 +1588,7 @@ func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 		traceID:   "a21-trace-xiaozhi-downlink",
 		sessionID: "a21-session-xiaozhi-downlink",
 	}
-	turn := session.startXiaozhiTurn(context.Background())
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
 		if err != nil {
@@ -1648,7 +1648,7 @@ func TestWriteXiaozhiOpusDownlinkSkipsStaleTurn(t *testing.T) {
 		traceID:   "a21-trace-xiaozhi-stale-turn",
 		sessionID: "a21-session-xiaozhi-stale-turn",
 	}
-	turn := session.startXiaozhiTurn(context.Background())
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
 	session.cancelCurrentXiaozhiTurn("abort")
 
 	ok, err := server.writeXiaozhiOpusDownlink(context.Background(), nil, session, turn, providers.VoiceAudioChunk{
@@ -2028,6 +2028,246 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
 	}
+}
+
+func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(200 * time.Millisecond)
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-delayed",
+		"session_id": "a21-session-xiaozhi-pro-delayed",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ackCtx, ackCancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer ackCancel()
+	ttsStart := readXiaozhiJSON(t, ackCtx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" || ttsStart["mode"] != "professional" {
+		t.Fatalf("professional tts start = %#v", ttsStart)
+	}
+	checking := readXiaozhiJSON(t, ackCtx, conn)
+	if checking["type"] != "tts" || checking["state"] != "sentence_start" || checking["phase"] != "professional_checking" || checking["mode"] != "professional" {
+		t.Fatalf("checking feedback = %#v", checking)
+	}
+	if !strings.Contains(asString(checking["text"]), "我在查") {
+		t.Fatalf("checking text = %#v, want 我在查", checking["text"])
+	}
+	select {
+	case <-v21.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional V21 query did not start after checking feedback")
+	}
+
+	result := readXiaozhiJSON(t, ctx, conn)
+	if result["type"] != "tts" || result["state"] != "sentence_start" || result["phase"] != "professional_result" || result["mode"] != "professional" {
+		t.Fatalf("professional result = %#v", result)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "professional_result_completed" {
+		t.Fatalf("professional stop = %#v", stop)
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-pro-delayed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	checkingAt, ok := traceEventAtMS(traces.Events, "professional.checking_feedback.sent")
+	if !ok {
+		t.Fatalf("trace missing professional.checking_feedback.sent: %+v", traces.Events)
+	}
+	v21StartAt, ok := traceEventAtMS(traces.Events, "v21.query.start")
+	if !ok {
+		t.Fatalf("trace missing v21.query.start: %+v", traces.Events)
+	}
+	if checkingAt > v21StartAt || v21StartAt-checkingAt > 1200 {
+		t.Fatalf("checking/v21 ordering checking=%d v21_start=%d", checkingAt, v21StartAt)
+	}
+}
+
+func TestXiaozhiWebSocketProfessionalModeSendsStructuredRedactedResult(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-structured",
+		"session_id": "a21-session-xiaozhi-pro-structured",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	result := readXiaozhiJSON(t, ctx, conn)
+	professional, ok := result["professional"].(map[string]any)
+	if !ok {
+		t.Fatalf("professional report = %#v", result["professional"])
+	}
+	for key, want := range map[string]float64{
+		"evidence_count":     1,
+		"screen_card_count":  1,
+		"follow_up_count":    1,
+		"speech_block_count": 1,
+	} {
+		if professional[key] != want {
+			t.Fatalf("professional[%s] = %#v, want %.0f", key, professional[key], want)
+		}
+	}
+	if result["text"] != "结论：需要按可引用证据复核。" || result["confidence"] != 0.77 {
+		t.Fatalf("professional conclusion/confidence = %#v", result)
+	}
+	encoded := mustJSON(t, result)
+	for _, forbidden := range []string{"RAW_SECRET_EVIDENCE_BODY", "RAW_SECRET_QUOTE", "RAW_SECRET_CARD_TEXT", "v21-doc-secret-raw"} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("professional result leaked %q: %s", forbidden, encoded)
+		}
+	}
+	readXiaozhiJSON(t, ctx, conn)
+}
+
+func TestXiaozhiWebSocketProfessionalAbortSuppressesStaleResult(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(-1)
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-abort",
+		"session_id": "a21-session-xiaozhi-pro-abort",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	select {
+	case <-v21.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional V21 query did not start")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	v21.release()
+	select {
+	case <-v21.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("professional V21 query did not observe abort cancellation")
+	}
+	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
+}
+
+func TestXiaozhiWebSocketProfessionalNewTurnSuppressesStaleResult(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(-1)
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-pro-new-turn",
+		"session_id": "a21-session-xiaozhi-pro-new-turn",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "professional"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	select {
+	case <-v21.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional V21 query did not start")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	newTurnAck := readXiaozhiJSON(t, ctx, conn)
+	if newTurnAck["type"] != "listen" || newTurnAck["state"] != "start" || newTurnAck["status"] != "accepted" {
+		t.Fatalf("new turn ack = %#v", newTurnAck)
+	}
+	v21.release()
+	select {
+	case <-v21.canceled:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("professional V21 query did not observe new-turn cancellation")
+	}
+	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
 }
 
 func TestXiaozhiWebSocketSendsFastAckBeforeVoicePipelineCompletes(t *testing.T) {
@@ -5256,6 +5496,11 @@ func mustJSON(t *testing.T, value any) string {
 	return string(data)
 }
 
+func asString(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
 func webSocketURL(serverURL string, path string) string {
 	return "ws" + strings.TrimPrefix(serverURL, "http") + path
 }
@@ -5474,6 +5719,75 @@ func (c slowV21Client) Query(ctx context.Context, request v21adapter.QueryReques
 	case <-timer.C:
 		return v21adapter.NewMockClient().Query(ctx, request)
 	}
+}
+
+type delayedXiaozhiProfessionalV21Client struct {
+	delay    time.Duration
+	started  chan struct{}
+	released chan struct{}
+	canceled chan struct{}
+	once     sync.Once
+}
+
+func newDelayedXiaozhiProfessionalV21Client(delay time.Duration) *delayedXiaozhiProfessionalV21Client {
+	return &delayedXiaozhiProfessionalV21Client{
+		delay:    delay,
+		started:  make(chan struct{}),
+		released: make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+}
+
+func (c *delayedXiaozhiProfessionalV21Client) release() {
+	c.once.Do(func() {
+		close(c.released)
+	})
+}
+
+func (c *delayedXiaozhiProfessionalV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	select {
+	case <-c.started:
+	default:
+		close(c.started)
+	}
+	if c.delay > 0 {
+		timer := time.NewTimer(c.delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			close(c.canceled)
+			return v21adapter.QueryResponse{}, ctx.Err()
+		case <-timer.C:
+		}
+	} else if c.delay < 0 {
+		select {
+		case <-ctx.Done():
+			close(c.canceled)
+			return v21adapter.QueryResponse{}, ctx.Err()
+		case <-c.released:
+		}
+	}
+	select {
+	case <-ctx.Done():
+		close(c.canceled)
+		return v21adapter.QueryResponse{}, ctx.Err()
+	default:
+	}
+	return v21adapter.QueryResponse{
+		TraceID:    request.TraceID,
+		FastAnswer: "结论：需要按可引用证据复核。",
+		Confidence: 0.77,
+		Evidence: []v21adapter.Evidence{{
+			Title:    "raw evidence title",
+			Type:     "meeting",
+			SourceID: "v21-doc-secret-raw",
+			Summary:  "RAW_SECRET_EVIDENCE_BODY",
+			Quote:    "RAW_SECRET_QUOTE",
+		}},
+		SpeechBlocks: []string{"RAW_SECRET_SPEECH_BLOCK"},
+		ScreenCards:  []v21adapter.ScreenCard{{Label: "结论", Text: "RAW_SECRET_CARD_TEXT"}},
+		FollowUps:    []string{"RAW_SECRET_FOLLOW_UP"},
+	}, nil
 }
 
 type gatewaySileroVADRunner struct {
