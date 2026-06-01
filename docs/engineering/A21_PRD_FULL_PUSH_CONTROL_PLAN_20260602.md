@@ -4,8 +4,8 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `24b4f6a chore(control): checkpoint voice readiness closure`
-Current active-worker checkpoint: this document revision
+Current integration checkpoint: `35e62aa fix(readiness): require repeated local voice loopback evidence`
+Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
 
@@ -35,8 +35,8 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD before this active-worker checkpoint:
-  `24b4f6a chore(control): checkpoint voice readiness closure`
+- HEAD before this post-worker checkpoint:
+  `35e62aa fix(readiness): require repeated local voice loopback evidence`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -50,7 +50,8 @@ Current integration branch:
   host product-chain evidence now requires `repeat >= 3`, at least three answer
   turns, at least three barge-in turns, zero failures, answer first-audio p95
   under 1500 ms, and barge-in stop p95 under 300 ms before readiness can ingest
-  it.
+  it. Local voice loopback evidence now also requires `repeat >= 3` before it
+  can close continuous voice or host voice loopback readiness.
 - Current provider state: `provider.real_provider_ready=false`; the 5080lab
   operator packet exists, but no real returned bundle has been imported yet.
 - Current wake-word state: `wake_word.product_ready=false` and
@@ -113,12 +114,14 @@ gaps:
   `93cba07 fix(wake-word): require reviewed build evidence`
 - Xiaozhi host product-chain evidence guard:
   `f1b1510 fix(readiness): require xiaozhi voice bench rounds`
+- Local voice loopback evidence guard:
+  `35e62aa fix(readiness): require repeated local voice loopback evidence`
 
 Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Launch-rollup false-green review | `019e8559-7305-75c3-a3b6-e929e0a3bb57` | `/Users/jiyurun/.codex/worktrees/06f6/New project` | must switch/create `codex/a21-launch-rollup-falsegreen-review-20260602` | Review product-readiness/server-side/provider/wake/voice/V21/physical evidence loaders for stale, missing, or mismatched report false-greens; commit only a real rejection gap | Active; poll before editing launch rollup/readiness code |
+| None | - | - | - | - | No active write worker at this checkpoint. Spawn the next slice in a fresh worktree instead of reviving stale workers. |
 
 Recently completed workers:
 
@@ -133,6 +136,7 @@ Recently completed workers:
 | Provider 5080lab operator packet | `019e8544-788b-7e21-924c-0af318e6d8fa` | `/Users/jiyurun/.codex/worktrees/fe41/New project` | `codex/a21-provider-5080lab-closure-20260602` | Print-only selected-provider 5080lab runbook with mock/unsafe path rejection | Merged via `6e83e72`; do not duplicate |
 | Wake build authenticity guard | `019e8544-42e4-7b82-816c-ecea282af127` | `/Users/jiyurun/.codex/worktrees/8e44/New project` | `codex/a21-wake-build-authenticity-guard-20260602` | Require explicit matching reviewed-build evidence before producing `a21-wake-word-build.json` | Merged via `93cba07`; do not duplicate |
 | Voice product-chain readiness | `019e8550-ea8d-7bc2-b248-115a4574cacb` | `/Users/jiyurun/.codex/worktrees/95ac/New project` | `codex/a21-voice-product-chain-readiness-20260602` | Require xiaozhi host product-chain reports to prove at least three answer and barge-in rounds before closing continuous voice readiness | Merged via `f1b1510`; do not duplicate |
+| Launch-rollup false-green review | `019e8559-7305-75c3-a3b6-e929e0a3bb57` | `/Users/jiyurun/.codex/worktrees/06f6/New project` | `codex/a21-launch-rollup-falsegreen-review-20260602` | Require local voice loopback reports to prove repeated evidence before closing continuous voice or host loopback readiness | Merged via `35e62aa`; do not duplicate |
 
 Current canonical PRD gaps from the latest product-readiness run:
 
@@ -160,10 +164,11 @@ Current next moves:
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. No-hardware launch-rollup review: open a fresh read/write worker only if it
-   finds a concrete false-green risk after reading the current product-readiness
-   matrix. Scope is stale/missing/mismatched report rejection for provider,
-   wake, voice, V21, and physical evidence; do not reimplement the voice chain.
+3. No-hardware provider/wake operator closure: no more local code is known to
+   be required for provider and wake package evidence. Produce/import the real
+   5080lab provider bundle and obtain the real reviewed wake build/package
+   input; only spawn another worker if those commands reveal a concrete report
+   or import bug.
 4. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
@@ -388,12 +393,12 @@ Run in this order:
 2. Wake/package lane: obtain real reviewed-build evidence for the current custom
    MultiNet build, then run receipt/package on the control machine. Keep this
    below activation and explicitly not product-ready.
-3. Dispatch one fresh no-hardware launch-rollup review worker. Scope: verify
-   product-readiness cannot false-green when provider, wake, voice, V21, or
-   physical reports are absent/stale/mismatched. It should commit only a real
-   rejection gap, not cosmetic governance.
-4. Dispatch AgentTask bridge or mode/privacy UX polish only after the voice and
-   launch-rollup deltas are stable; these must not enter the first-audio path.
+3. Dispatch a fresh no-hardware worker only for a concrete new failing command
+   or report/import gap. The next likely code-free moves are external 5080lab
+   provider execution and reviewed wake package input collection.
+4. Dispatch AgentTask bridge or mode/privacy UX polish only after provider/wake
+   evidence import is not blocking server-side readiness; these must not enter
+   the first-audio path.
 5. When CoreS3 returns, open exactly one Slice G foreground hardware window for
    physical online, microphone, speaker, barge-in stop, screen/touch/servo/RGB,
    and custom wake-word acceptance.
@@ -411,13 +416,11 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-The current next implementation move is a fresh no-hardware launch-rollup
-false-green review worker from `codex/a21-integration-runtime-readiness-20260601`.
-Do not revive old detached workers and do not patch this in the control thread
-unless the change is a merge/conflict fix. The worker should start by reading
-the current `product-readiness`, `server-side-readiness-bundle`, provider
-evidence import, wake package ingestion, xiaozhi bench ingestion, V21
-professional reports, and physical evidence loaders. It should implement only a
-specific stale/missing/mismatched evidence rejection gap, if one remains.
+The current next move is code-light unless new evidence reveals a bug: generate
+the 5080lab provider runbook, run the printed provider execute/package commands
+on 5080lab, import the returned bundle on the control machine, and produce the
+reviewed wake build/package input. If either external lane returns a concrete
+report/import failure, spawn a fresh worker scoped to that failure. Do not
+revive old detached workers.
 
 Voice clarity is not an open implementation gap; it is a regression check.
