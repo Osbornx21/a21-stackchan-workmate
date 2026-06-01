@@ -891,7 +891,7 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32]")
+			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32] [--warm-product-chain]")
 			return 0
 		case "--addr":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -928,14 +928,23 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 			}
 			i++
 			options.VoiceTextMaxTokens = args[i]
+		case "--warm-product-chain":
+			options.WarmProductChain = true
 		default:
 			fmt.Fprintf(stderr, "unknown gateway option %q\n", args[i])
 			return 2
 		}
 	}
 
+	env := applyXiaozhiProductChainEnvDefaults(gatewayEnvWithCLIOptions(os.Environ(), options))
+	if options.WarmProductChain {
+		if err := warmGatewayProductChain(context.Background(), env); err != nil {
+			fmt.Fprintf(stderr, "gateway product chain warmup failed: %v\n", err)
+			return 1
+		}
+	}
 	fmt.Fprintf(stdout, "a21 gateway listening on %s\n", options.Addr)
-	if err := http.ListenAndServe(options.Addr, newGatewayServerFromEnv(gatewayEnvWithCLIOptions(os.Environ(), options)).Handler()); err != nil {
+	if err := http.ListenAndServe(options.Addr, newGatewayServerFromEnv(env).Handler()); err != nil {
 		fmt.Fprintf(stderr, "gateway: %v\n", err)
 		return 1
 	}
@@ -948,6 +957,7 @@ type gatewayCLIOptions struct {
 	LocalOllamaBaseURL string
 	LocalOllamaModel   string
 	VoiceTextMaxTokens string
+	WarmProductChain   bool
 }
 
 func gatewayEnvWithCLIOptions(env []string, options gatewayCLIOptions) []string {
@@ -999,7 +1009,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 }
 
 func applyXiaozhiProductChainEnvDefaults(env []string) []string {
-	switch strings.ToLower(strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_XIAOZHI_PRODUCT_CHAIN"), appEnvValue(env, "A21_PRODUCT_CHAIN")))) {
+	switch gatewayProductChainMode(env) {
 	case "host_local", "host-local", "product", "real":
 	default:
 		return env
@@ -1020,6 +1030,57 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 		out = append(out, "A21_TEXT_STREAM_PROFILE=local_ollama")
 	}
 	return out
+}
+
+func gatewayProductChainMode(env []string) string {
+	return strings.ToLower(strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_XIAOZHI_PRODUCT_CHAIN"), appEnvValue(env, "A21_PRODUCT_CHAIN"))))
+}
+
+func warmGatewayProductChain(ctx context.Context, env []string) error {
+	switch gatewayProductChainMode(env) {
+	case "host_local", "host-local", "product", "real":
+	default:
+		return nil
+	}
+	warmCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if strings.Contains(strings.ToLower(appEnvValue(env, "A21_ASR_LOCAL_PROFILE")), "sherpa") {
+		result, err := audio.RunSherpaONNXASR(warmCtx, audio.LocalASROptions{})
+		if err != nil {
+			return fmt.Errorf("ASR warmup failed")
+		}
+		if result.Report.Status != "passed" {
+			return fmt.Errorf("ASR warmup did not pass")
+		}
+	}
+	textProfile := firstNonEmpty(appEnvValue(env, "A21_TEXT_STREAM_PROFILE"), appEnvValue(env, "A21_PROVIDER_PRIMARY"))
+	if xiaozhiVoiceBenchNonMockStageProfile(textProfile) {
+		if _, err := providers.RunTextStreamCompletionFromEnv(warmCtx, env, providers.TextStreamCompletionOptions{
+			ProviderName: textProfile,
+			Prompt:       "A21 warmup. Reply briefly.",
+			MaxTokens:    8,
+		}); err != nil {
+			return fmt.Errorf("text stream warmup failed")
+		}
+	}
+	ttsProfile := firstNonEmpty(appEnvValue(env, "A21_TTS_FAST_PROFILE"), appEnvValue(env, "A21_TTS_BALANCED_PROFILE"), appEnvValue(env, "A21_TTS_QUALITY_PROFILE"))
+	if strings.Contains(strings.ToLower(ttsProfile), "sherpa") {
+		outputDir := filepath.Join(os.TempDir(), "a21-product-chain-warmup")
+		_ = os.RemoveAll(outputDir)
+		defer os.RemoveAll(outputDir)
+		report, err := audio.SynthesizeSherpaONNX(warmCtx, audio.LocalTTSOptions{
+			Text:      "A21 warmup",
+			OutputDir: outputDir,
+			SpeakerID: 21,
+		})
+		if err != nil {
+			return fmt.Errorf("TTS warmup failed")
+		}
+		if report.Status != "passed" {
+			return fmt.Errorf("TTS warmup did not pass")
+		}
+	}
+	return nil
 }
 
 func newAudioIngressConfigFromEnv(env []string) audio.IngressConfig {

@@ -2912,6 +2912,20 @@ func TestGatewayCLIOptionsApplyProductChainEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestRunGatewayHelpIncludesProductChainWarmupFlag(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"gateway", "--help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "--warm-product-chain") {
+		t.Fatalf("help missing --warm-product-chain: %s", stdout.String())
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=professional",
