@@ -132,7 +132,7 @@ type productPhysicalStackChanReadiness struct {
 	FindingCodes                           []string        `json:"finding_codes,omitempty"`
 }
 
-const productPhysicalDeviceFreshMaxAgeMS int64 = 30000
+const productPhysicalDeviceFreshMaxAgeMS int64 = 300000
 
 type productVoiceReadiness struct {
 	LocalTTSReady        bool                          `json:"local_tts_ready"`
