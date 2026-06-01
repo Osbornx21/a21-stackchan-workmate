@@ -28,6 +28,7 @@ type productReadinessOptions struct {
 	V21ProfessionalReport   string
 	V21AdapterSmokeReport   string
 	PhysicalStackChanReport string
+	WakeWordFirmwarePlan    string
 	UseLatestReports        bool
 	RequireReal             bool
 	OpenBrowser             bool
@@ -160,6 +161,12 @@ type productWakeWordReadiness struct {
 	RuntimeConfigurable   bool   `json:"runtime_configurable"`
 	FirmwareBuildRequired bool   `json:"firmware_build_required"`
 	Code                  string `json:"code,omitempty"`
+	FirmwarePlanAvailable bool   `json:"firmware_plan_available"`
+	FirmwarePlanStatus    string `json:"firmware_plan_status,omitempty"`
+	FirmwarePlanSource    string `json:"firmware_plan_source_report,omitempty"`
+	FirmwarePlanDryRun    bool   `json:"firmware_plan_dry_run"`
+	FirmwarePlanBuild     bool   `json:"firmware_plan_build_allowed"`
+	FirmwarePlanFlash     bool   `json:"firmware_plan_flash_allowed"`
 }
 
 type productVoicePipelineReadiness struct {
@@ -200,7 +207,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -228,6 +235,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--physical-stackchan-report":
 			if !readStringOption(args, &i, stderr, "--physical-stackchan-report", &options.PhysicalStackChanReport) {
+				return 2
+			}
+		case "--wake-word-firmware-plan":
+			if !readStringOption(args, &i, stderr, "--wake-word-firmware-plan", &options.WakeWordFirmwarePlan) {
 				return 2
 			}
 		case "--use-latest-reports":
@@ -347,6 +358,11 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 			"a21-xiaozhi-physical-evidence-*.json",
 		})
 	}
+	if strings.TrimSpace(options.WakeWordFirmwarePlan) == "" {
+		options.WakeWordFirmwarePlan = latestProductReadinessReportPath(reportDir, []string{
+			"a21-wake-word-firmware-plan-*.json",
+		})
+	}
 	return options
 }
 
@@ -408,6 +424,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
+	wakeWordPlan, wakeWordPlanFindings := loadProductWakeWordFirmwarePlanEvidence(options.WakeWordFirmwarePlan)
+	report.Findings = append(report.Findings, wakeWordPlanFindings...)
+	if wakeWordPlan.Valid {
+		report.Findings = append(report.Findings, attachProductWakeWordFirmwarePlan(&report.WakeWord, wakeWordPlan)...)
+	}
 	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
 	report.Findings = append(report.Findings, professionalFindings...)
 	if professionalEvidence.Valid {
@@ -623,6 +644,215 @@ func productWakeWordStatusReady(status gateway.WakeWordConfigResponse) bool {
 		return false
 	}
 	return strings.TrimSpace(status.RuntimeStatus) != "" && strings.TrimSpace(status.RuntimeStatus) != "unavailable"
+}
+
+type productWakeWordFirmwarePlanEvidence struct {
+	Valid                 bool
+	Status                string
+	SourceReport          string
+	DryRun                bool
+	FirmwareBuildRequired bool
+	BuildAllowed          bool
+	FlashAllowed          bool
+	Mode                  string
+	DesiredPhrase         string
+	DesiredPinyin         string
+	Threshold             int
+}
+
+type productWakeWordFirmwarePlanFixture struct {
+	SchemaVersion            string `json:"schema_version"`
+	Status                   string `json:"status"`
+	DryRun                   *bool  `json:"dry_run"`
+	FirmwareBuildRequired    *bool  `json:"firmware_build_required"`
+	BuildAllowed             *bool  `json:"build_allowed"`
+	FlashAllowed             *bool  `json:"flash_allowed"`
+	FirmwareID               string `json:"firmware_id"`
+	TargetBoard              string `json:"target_board"`
+	TargetProfile            string `json:"target_profile"`
+	GuardTier                string `json:"guard_tier"`
+	Mode                     string `json:"mode"`
+	DesiredPhrase            string `json:"desired_phrase"`
+	DesiredPinyin            string `json:"desired_pinyin"`
+	Threshold                int    `json:"threshold"`
+	RuntimeStatus            string `json:"runtime_status"`
+	NextRequiredConfirmation string `json:"next_required_confirmation"`
+	ReportPath               string `json:"report_path"`
+}
+
+func loadProductWakeWordFirmwarePlanEvidence(path string) (productWakeWordFirmwarePlanEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productWakeWordFirmwarePlanEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productWakeWordFirmwarePlanContainsForbiddenValue(raw) {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	var fixture productWakeWordFirmwarePlanFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	if missingField := missingProductWakeWordFirmwarePlanField(fixture); missingField != "" {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{missingProductWakeWordFirmwarePlanFieldFinding(missingField)}
+	}
+	if !validProductWakeWordFirmwarePlanFixture(fixture) {
+		return productWakeWordFirmwarePlanEvidence{}, []productReadinessFinding{invalidProductWakeWordFirmwarePlanFinding()}
+	}
+	return productWakeWordFirmwarePlanEvidence{
+		Valid:                 true,
+		Status:                strings.TrimSpace(fixture.Status),
+		SourceReport:          filepath.Base(filepath.Clean(path)),
+		DryRun:                *fixture.DryRun,
+		FirmwareBuildRequired: *fixture.FirmwareBuildRequired,
+		BuildAllowed:          *fixture.BuildAllowed,
+		FlashAllowed:          *fixture.FlashAllowed,
+		Mode:                  strings.TrimSpace(fixture.Mode),
+		DesiredPhrase:         strings.TrimSpace(fixture.DesiredPhrase),
+		DesiredPinyin:         strings.TrimSpace(fixture.DesiredPinyin),
+		Threshold:             fixture.Threshold,
+	}, nil
+}
+
+func attachProductWakeWordFirmwarePlan(readiness *productWakeWordReadiness, plan productWakeWordFirmwarePlanEvidence) []productReadinessFinding {
+	if !matchingProductWakeWordFirmwarePlan(*readiness, plan) {
+		return []productReadinessFinding{{
+			Code:    "wake_word_firmware_plan_mismatch",
+			Message: "Wake word firmware plan does not match the current Gateway wake-word intent",
+			Detail:  plan.SourceReport,
+		}}
+	}
+	readiness.FirmwarePlanAvailable = true
+	readiness.FirmwarePlanStatus = plan.Status
+	readiness.FirmwarePlanSource = plan.SourceReport
+	readiness.FirmwarePlanDryRun = plan.DryRun
+	readiness.FirmwarePlanBuild = plan.BuildAllowed
+	readiness.FirmwarePlanFlash = plan.FlashAllowed
+	return []productReadinessFinding{{
+		Code:    "wake_word_firmware_plan_available",
+		Message: "Wake word firmware plan evidence is available for the current stored intent",
+		Detail:  plan.SourceReport,
+	}}
+}
+
+func matchingProductWakeWordFirmwarePlan(readiness productWakeWordReadiness, plan productWakeWordFirmwarePlanEvidence) bool {
+	if !readiness.Available || strings.TrimSpace(readiness.Mode) != plan.Mode {
+		return false
+	}
+	if readiness.FirmwareBuildRequired != plan.FirmwareBuildRequired {
+		return false
+	}
+	if readiness.Threshold != plan.Threshold {
+		return false
+	}
+	if plan.Mode == wakeWordFirmwareCustomMode {
+		return strings.TrimSpace(readiness.DesiredPhrase) == plan.DesiredPhrase &&
+			strings.TrimSpace(readiness.DesiredPinyin) == plan.DesiredPinyin
+	}
+	return plan.Mode == wakeWordFirmwareBuiltinMode
+}
+
+func validProductWakeWordFirmwarePlanFixture(fixture productWakeWordFirmwarePlanFixture) bool {
+	if fixture.SchemaVersion != wakeWordFirmwarePlanSchema ||
+		!*fixture.DryRun ||
+		*fixture.BuildAllowed ||
+		*fixture.FlashAllowed ||
+		strings.TrimSpace(fixture.FirmwareID) != wakeWordFirmwareID ||
+		strings.TrimSpace(fixture.TargetBoard) != wakeWordFirmwareTargetBoard ||
+		strings.TrimSpace(fixture.TargetProfile) != wakeWordFirmwareTargetProfile ||
+		strings.TrimSpace(fixture.GuardTier) != wakeWordFirmwareGuardTier ||
+		fixture.Threshold < 1 ||
+		fixture.Threshold > 100 {
+		return false
+	}
+	status := strings.TrimSpace(fixture.Status)
+	mode := strings.TrimSpace(fixture.Mode)
+	switch status {
+	case "pending_firmware_build":
+		return mode == wakeWordFirmwareCustomMode &&
+			*fixture.FirmwareBuildRequired &&
+			strings.TrimSpace(fixture.DesiredPhrase) != "" &&
+			strings.TrimSpace(fixture.DesiredPinyin) != "" &&
+			strings.TrimSpace(fixture.RuntimeStatus) == "pending_firmware_build" &&
+			strings.TrimSpace(fixture.NextRequiredConfirmation) == wakeWordFirmwareBuildConfirm
+	case "builtin_noop":
+		return mode == wakeWordFirmwareBuiltinMode && !*fixture.FirmwareBuildRequired
+	default:
+		return false
+	}
+}
+
+func missingProductWakeWordFirmwarePlanField(fixture productWakeWordFirmwarePlanFixture) string {
+	switch {
+	case fixture.DryRun == nil:
+		return "dry_run"
+	case fixture.FirmwareBuildRequired == nil:
+		return "firmware_build_required"
+	case fixture.BuildAllowed == nil:
+		return "build_allowed"
+	case fixture.FlashAllowed == nil:
+		return "flash_allowed"
+	default:
+		return ""
+	}
+}
+
+func missingProductWakeWordFirmwarePlanFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "wake_word_firmware_plan_missing_field",
+		Message: "Wake word firmware plan report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductWakeWordFirmwarePlanFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "wake_word_firmware_plan_invalid",
+		Message: "Wake word firmware plan report is invalid or unsafe",
+	}
+}
+
+func productWakeWordFirmwarePlanContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productWakeWordFirmwarePlanContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productWakeWordFirmwarePlanContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		lower := strings.ToLower(typed)
+		if containsLegacyIdentity(typed) {
+			return true
+		}
+		for _, forbidden := range []string{"http://", "https://", "/users/", "secret", "token", "proxy", "transcript", "provider output", "raw audio"} {
+			if strings.Contains(lower, forbidden) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID string) productStackChanReadiness {
@@ -1737,7 +1967,11 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if !report.WakeWord.ProductReady {
 		if report.WakeWord.FirmwareBuildRequired {
-			actions = append(actions, "build and flash guarded wake word firmware for the stored custom MultiNet profile")
+			if report.WakeWord.FirmwarePlanAvailable {
+				actions = append(actions, "use the wake word firmware plan to prepare the guarded build/package and hardware-window flash")
+			} else {
+				actions = append(actions, "run wake word firmware plan with `go run ./cmd/a21 wake-word-firmware-plan --output-dir reports` for the stored custom MultiNet profile")
+			}
 		} else {
 			actions = append(actions, "restore A21 Gateway wake word readiness before launch")
 		}

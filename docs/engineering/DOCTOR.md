@@ -163,8 +163,10 @@ requires an executed `v21-adapter-smoke --execute` report passed with
 `a21.xiaozhi_professional_bench.v1` report passed through
 `--v21-professional-report` after Gateway traces prove the V21 query markers.
 `--use-latest-reports` scans the selected output directory for the latest
-known A21 voice, professional, adapter-smoke, and physical evidence reports,
-then ingests them through the same explicit report contracts. The rollup
+known A21 voice, professional, adapter-smoke, physical evidence, and wake-word
+firmware-plan reports, then ingests them through the same explicit report
+contracts. `--wake-word-firmware-plan <report.json>` is the explicit equivalent
+for custom wake-word firmware planning evidence. The rollup
 ingests only fixed status/count/timing fields, keeps `prd_accepted=false`, and
 never stores query text, answer text, evidence bodies, full URLs, credentials,
 proxy values, or local paths. If physical StackChan is currently offline but a

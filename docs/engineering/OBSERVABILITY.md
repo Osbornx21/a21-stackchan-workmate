@@ -71,6 +71,13 @@ Built-in wake-word state is `builtin_noop`; custom MultiNet state is
 `a21-stackchan`, `m5stack-cores3`, and `xiaozhi_esp_sr_multinet`. It stores
 only sanitized wake-word intent fields and a basename `report_path`, not config
 paths, report directories, URLs, keys, proxy values, audio, or transcripts.
+`product-readiness --wake-word-firmware-plan <report.json>` and
+`product-readiness --use-latest-reports` ingest this report only when it
+matches the current Gateway wake-word intent. The rollup then exposes
+`firmware_plan_available`, `firmware_plan_status`, basename
+`firmware_plan_source_report`, and the plan's no-execute flags under
+`wake_word`; it still keeps launch blocked until a later guarded build/flash
+and physical acceptance prove the custom model on the device.
 
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 

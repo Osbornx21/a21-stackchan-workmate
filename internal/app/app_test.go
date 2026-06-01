@@ -989,6 +989,83 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 }
 
+func TestRunProductReadinessCommandUsesLatestWakeWordFirmwarePlanWithoutPathLeak(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"a21-gateway","status":"ok"}`))
+		case "/simulator":
+			w.Header().Set("content-type", "text/html")
+			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
+		case "/v1/devices":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
+		case "/v1/wake-word":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"custom_multinet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":35,"runtime_status":"pending_firmware_build","runtime_configurable":false,"firmware_build_required":true,"code":"a21_wake_word_firmware_build_required","message":"Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway only persists the requested profile."}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", `{
+  "schema_version": "a21.wake_word_firmware_plan.v1",
+  "generated_at_ms": 1780333200000,
+  "status": "pending_firmware_build",
+  "dry_run": true,
+  "firmware_build_required": true,
+  "build_allowed": false,
+  "flash_allowed": false,
+  "firmware_id": "a21-stackchan",
+  "target_board": "m5stack-cores3",
+  "target_profile": "xiaozhi_esp_sr_multinet",
+  "guard_tier": "T7",
+  "mode": "custom_multinet",
+  "active_phrase": "你好小智",
+  "active_pinyin": "ni hao xiao zhi",
+  "desired_phrase": "小阿二一",
+  "desired_pinyin": "xiao a er yi",
+  "threshold": 35,
+  "runtime_status": "pending_firmware_build",
+  "runtime_configurable": false,
+  "next_required_confirmation": "BUILD_A21_WAKE_WORD_FIRMWARE",
+  "report_path": "a21-wake-word-firmware-plan-20260602-010000.json"
+}`)
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"mode": "custom_multinet"`,
+		`"firmware_build_required": true`,
+		`"firmware_plan_available": true`,
+		`"firmware_plan_status": "pending_firmware_build"`,
+		`"firmware_plan_source_report": "a21-wake-word-firmware-plan-20260602-010000.json"`,
+		`"firmware_plan_dry_run": true`,
+		`"firmware_plan_build_allowed": false`,
+		`"firmware_plan_flash_allowed": false`,
+		`"wake_word_firmware_plan_available"`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, dir, "http://", "https://", "/Users/", `"launch_ready": true`, "secret", "token"} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("wake word plan readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandRejectsUnsafeV21ProfessionalReportWithoutLeak(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessV21ProfessionalReportFixtureFromData(t, strings.Replace(productReadinessV21ProfessionalReportFixtureJSON(), `  "report_path": "a21-v21-professional-readiness-host.json"`, `  "prompt": "professional readiness fixture query",

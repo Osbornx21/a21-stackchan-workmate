@@ -162,6 +162,10 @@ stored intent into a machine-readable firmware plan. Built-in Xiaozhi remains a
 firmware identity, CoreS3 board, target MultiNet profile, confirmation value,
 next actions, and basename report path. It does not build, flash, execute a
 provider, contact hardware, or log local config/report paths.
+`product-readiness` can ingest the report through
+`--wake-word-firmware-plan` or `--use-latest-reports`, but ingestion is evidence
+of a controlled plan only. It is not evidence that the custom wake model is
+compiled into firmware or active on StackChan hardware.
 
 ### Fast Companion Runtime
 
