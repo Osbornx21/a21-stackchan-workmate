@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -191,6 +192,16 @@ func TestSimulatorPageServed(t *testing.T) {
 		"startMicrophoneStream",
 		"stopMicrophoneStream",
 		"sendMockAudioBurst",
+		"Wake Word",
+		"/v1/wake-word",
+		`id="wakeWordMode"`,
+		`id="wakeWordPhrase"`,
+		`id="wakeWordPinyin"`,
+		`id="wakeWordThreshold"`,
+		`id="saveWakeWord"`,
+		`id="wakeWordStatus"`,
+		"refreshWakeWordConfig",
+		"saveWakeWordConfig",
 		"handleAudioPlaybackChunk",
 		"decodePCM16Base64",
 		"schedulePCMPlayback",
@@ -203,6 +214,87 @@ func TestSimulatorPageServed(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
+		}
+	}
+}
+
+func TestWakeWordConfigEndpointPersistsCustomMultinetRequest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a21-wake-word.json")
+	server := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	handler := server.Handler()
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/wake-word", nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", getRec.Code, getRec.Body.String())
+	}
+	if !bytes.Contains(getRec.Body.Bytes(), []byte(`"active_phrase":"你好小智"`)) ||
+		!bytes.Contains(getRec.Body.Bytes(), []byte(`"runtime_status":"active_builtin_model"`)) ||
+		!bytes.Contains(getRec.Body.Bytes(), []byte(`"runtime_configurable":false`)) {
+		t.Fatalf("default wake word response = %s", getRec.Body.String())
+	}
+
+	putReq := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(`{
+		"mode":"custom_multinet",
+		"desired_phrase":"小阿二一",
+		"desired_pinyin":"xiao a er yi",
+		"threshold":35
+	}`))
+	putReq.RemoteAddr = "127.0.0.1:12345"
+	putRec := httptest.NewRecorder()
+	handler.ServeHTTP(putRec, putReq)
+
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", putRec.Code, putRec.Body.String())
+	}
+	for _, want := range []string{
+		`"desired_phrase":"小阿二一"`,
+		`"desired_pinyin":"xiao a er yi"`,
+		`"threshold":35`,
+		`"runtime_status":"pending_firmware_build"`,
+		`"firmware_build_required":true`,
+		`"active_phrase":"你好小智"`,
+		`"code":"a21_wake_word_firmware_build_required"`,
+	} {
+		if !bytes.Contains(putRec.Body.Bytes(), []byte(want)) {
+			t.Fatalf("put response missing %q: %s", want, putRec.Body.String())
+		}
+	}
+
+	reloaded := NewServerWithOptions(ServerOptions{WakeWordConfigPath: path})
+	reloadedReq := httptest.NewRequest(http.MethodGet, "/v1/wake-word", nil)
+	reloadedRec := httptest.NewRecorder()
+	reloaded.Handler().ServeHTTP(reloadedRec, reloadedReq)
+
+	if reloadedRec.Code != http.StatusOK {
+		t.Fatalf("reload status = %d, want 200: %s", reloadedRec.Code, reloadedRec.Body.String())
+	}
+	if !bytes.Contains(reloadedRec.Body.Bytes(), []byte(`"desired_phrase":"小阿二一"`)) ||
+		!bytes.Contains(reloadedRec.Body.Bytes(), []byte(`"runtime_status":"pending_firmware_build"`)) {
+		t.Fatalf("reloaded wake word response = %s", reloadedRec.Body.String())
+	}
+}
+
+func TestWakeWordConfigEndpointRejectsUnsafeRequests(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	for _, body := range []string{
+		`{"mode":"custom_multinet","desired_phrase":"小阿二一","desired_pinyin":"http://bad","threshold":20}`,
+		`{"mode":"custom_multinet","desired_phrase":"token-secret","desired_pinyin":"xiao a er yi","threshold":20}`,
+		`{"mode":"custom_multinet","desired_phrase":"x21唤醒","desired_pinyin":"xiao a er yi","threshold":20}`,
+		`{"mode":"custom_multinet","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":120}`,
+		`{"mode":"custom_multinet","desired_phrase":"小阿二一","desired_pinyin":"","threshold":20}`,
+		`{"mode":"unknown","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":20}`,
+	} {
+		req := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d, want 400: %s", body, rec.Code, rec.Body.String())
 		}
 	}
 }

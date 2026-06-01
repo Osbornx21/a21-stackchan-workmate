@@ -114,6 +114,25 @@ the same Gateway-owned TTS adapter and paced OPUS binary downlink as normal
 voice answers; the structured evidence/card JSON remains metadata and must not
 replace audible device-facing frames.
 
+### Wake Word Configuration
+
+Gateway exposes `GET|PUT /v1/wake-word` for the local simulator and operator UI.
+It stores an A21 wake-word intent profile, not live stock-firmware behavior.
+The stock xiaozhi WakeNet model remains active as `你好小智` until a dedicated
+xiaozhi/ESP-SR MultiNet firmware build is produced and flashed through the
+guarded firmware lane. Custom requests therefore return
+`runtime_status=pending_firmware_build`, `firmware_build_required=true`, and
+`code=a21_wake_word_firmware_build_required` instead of pretending the Gateway
+can dynamically replace the device-side wake model.
+
+The request accepts `mode=custom_multinet`, `desired_phrase`, `desired_pinyin`,
+and a numeric `threshold` in the safe range 1-100. Gateway rejects secret-like,
+URL-like, legacy-looking, or malformed values before persistence. The config
+path is `A21_WAKE_WORD_CONFIG_PATH` when set; otherwise Gateway writes the
+local runtime file `.a21-run/gateway/a21-wake-word.json`. Reports and traces
+must not store Wi-Fi credentials, provider keys, raw audio, transcripts,
+prompts, full URLs, proxy values, or absolute local paths for this feature.
+
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future

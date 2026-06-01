@@ -56,6 +56,7 @@ type Server struct {
 	xiaozhiProfessionalASR     providers.ASRAdapter
 	xiaozhiFastAckTTS          providers.TTSAdapter
 	xiaozhiStockProfessional   bool
+	wakeWordConfigPath         string
 }
 
 type ServerOptions struct {
@@ -65,6 +66,7 @@ type ServerOptions struct {
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 	AudioIngressConfig           audio.IngressConfig
 	XiaozhiStockProfessional     bool
+	WakeWordConfigPath           string
 }
 
 type xiaozhiVoicePipelineMeta struct {
@@ -382,6 +384,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiProfessionalASR:     xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
 		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
+		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
 	}
 }
 
@@ -411,6 +414,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/fast-companion/turn", s.handleFastCompanionTurn)
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
+	mux.HandleFunc("/v1/wake-word", s.handleWakeWordConfig)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
 	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)

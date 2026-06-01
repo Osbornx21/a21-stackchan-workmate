@@ -140,7 +140,7 @@ const simulatorHTML = `<!doctype html>
     body[data-state="listening"] .eye { transform: scaleY(1.08); }
     .side {
       display: grid;
-      grid-template-rows: auto auto auto auto auto auto auto 1fr;
+      grid-template-rows: auto auto auto auto auto auto auto auto 1fr;
       gap: 18px;
       padding: 24px;
       min-width: 0;
@@ -214,14 +214,14 @@ const simulatorHTML = `<!doctype html>
     .badge.private[data-active="true"] { border-color: #82c68f; background: #16231b; }
     .badge.public[data-active="true"] { border-color: #d6b15f; background: #2a2315; }
     .badge.muted[data-active="true"] { border-color: #95a6aa; background: #1c2225; }
-    .registry, .audio-link, .latency-summary {
+    .registry, .audio-link, .latency-summary, .wake-word {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       background: #141a1d;
       min-width: 0;
     }
-    .registry h2, .audio-link h2, .latency-summary h2 {
+    .registry h2, .audio-link h2, .latency-summary h2, .wake-word h2 {
       margin: 0 0 10px;
       font-size: 13px;
       font-weight: 680;
@@ -442,6 +442,25 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Scheduled</label><div id="playbackScheduledChunks">0</div></div>
           </div>
         </section>
+        <section class="wake-word" aria-label="Wake Word">
+          <h2>Wake Word</h2>
+          <div class="fields">
+            <select id="wakeWordMode" aria-label="wake word mode">
+              <option value="builtin_xiaozhi">builtin_xiaozhi</option>
+              <option value="custom_multinet">custom_multinet</option>
+            </select>
+            <input id="wakeWordPhrase" value="小阿二一" aria-label="wake word phrase">
+            <input id="wakeWordPinyin" value="xiao a er yi" aria-label="wake word pinyin">
+            <input id="wakeWordThreshold" type="number" min="1" max="100" value="35" aria-label="wake word threshold">
+            <button id="saveWakeWord">Save</button>
+          </div>
+          <div class="registry-grid" style="margin-top:10px;">
+            <div class="metric"><label>Active</label><div id="wakeWordActive">你好小智</div></div>
+            <div class="metric"><label>Runtime</label><div id="wakeWordStatus">loading</div></div>
+            <div class="metric"><label>Build</label><div id="wakeWordBuild">unknown</div></div>
+            <div class="metric"><label>Code</label><div id="wakeWordCode">none</div></div>
+          </div>
+        </section>
         <section class="registry" aria-label="Device Registry">
           <h2>Device Registry</h2>
           <div class="registry-grid">
@@ -509,6 +528,14 @@ const simulatorHTML = `<!doctype html>
       registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
+      wakeWordMode: document.getElementById('wakeWordMode'),
+      wakeWordPhrase: document.getElementById('wakeWordPhrase'),
+      wakeWordPinyin: document.getElementById('wakeWordPinyin'),
+      wakeWordThreshold: document.getElementById('wakeWordThreshold'),
+      wakeWordActive: document.getElementById('wakeWordActive'),
+      wakeWordStatus: document.getElementById('wakeWordStatus'),
+      wakeWordBuild: document.getElementById('wakeWordBuild'),
+      wakeWordCode: document.getElementById('wakeWordCode'),
       waterfall: document.getElementById('waterfall'),
       latencyAudioPlayback: document.getElementById('latencyAudioPlayback'),
       latencyV21: document.getElementById('latencyV21'),
@@ -826,6 +853,52 @@ const simulatorHTML = `<!doctype html>
       ui.latencyBargeIn.textContent = fmt(summary.barge_in_stop_ms);
       ui.latencyProviderFirstAudio.textContent = fmt(summary.provider_commit_to_first_audio_ms);
     }
+    function renderWakeWordConfig(config) {
+      ui.wakeWordActive.textContent = config.active_phrase || 'none';
+      ui.wakeWordStatus.textContent = config.runtime_status || 'unknown';
+      ui.wakeWordBuild.textContent = config.firmware_build_required ? 'required' : 'not required';
+      ui.wakeWordCode.textContent = config.code || 'none';
+      if (config.mode) ui.wakeWordMode.value = config.mode;
+      if (config.desired_phrase) ui.wakeWordPhrase.value = config.desired_phrase;
+      if (config.desired_pinyin) ui.wakeWordPinyin.value = config.desired_pinyin;
+      if (config.threshold) ui.wakeWordThreshold.value = String(config.threshold);
+    }
+    async function refreshWakeWordConfig() {
+      try {
+        const response = await fetch('/v1/wake-word', { cache: 'no-store' });
+        if (!response.ok) {
+          ui.wakeWordStatus.textContent = 'error ' + response.status;
+          return;
+        }
+        renderWakeWordConfig(await response.json());
+      } catch (err) {
+        ui.wakeWordStatus.textContent = 'unavailable';
+      }
+    }
+    async function saveWakeWordConfig() {
+      const body = {
+        mode: ui.wakeWordMode.value,
+        desired_phrase: ui.wakeWordPhrase.value,
+        desired_pinyin: ui.wakeWordPinyin.value,
+        threshold: Number(ui.wakeWordThreshold.value || 0)
+      };
+      try {
+        const response = await fetch('/v1/wake-word', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+          ui.wakeWordStatus.textContent = 'rejected ' + response.status;
+          return;
+        }
+        const config = await response.json();
+        renderWakeWordConfig(config);
+        log('wake word config saved ' + (config.runtime_status || 'unknown'));
+      } catch (err) {
+        ui.wakeWordStatus.textContent = 'unavailable';
+      }
+    }
     function connect() {
       if (sim.control && sim.control.readyState === WebSocket.OPEN) return;
       sim.control = new WebSocket(wsURL('/ws/control'));
@@ -986,7 +1059,9 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('startMic').addEventListener('click', startMicrophoneStream);
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
     document.getElementById('mockAudioBurst').addEventListener('click', sendMockAudioBurst);
+    document.getElementById('saveWakeWord').addEventListener('click', saveWakeWordConfig);
     refreshRegistry();
+    refreshWakeWordConfig();
     setMode(ui.mode.value);
     updateVisibilityBadges();
   </script>
