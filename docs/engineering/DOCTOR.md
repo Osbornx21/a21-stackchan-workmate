@@ -179,6 +179,11 @@ provider are skipped with basename-only findings so an older matching 5080lab
 report can still close the provider gap. `provider-evidence-package` and
 `provider-evidence-import` enforce the same selected-provider match when the
 operator environment contains a configured selected route-eligible text provider.
+For 5080lab handoff, generate the exact print-only operator bundle with
+`make provider-5080lab-runbook A21_PROVIDER=<selected-provider>`; it refuses
+blank or `mock` providers and prints the lab smoke, package, return, import,
+and product-readiness commands without executing provider traffic on the control
+machine.
 For custom wake words, run `wake-word-firmware-build-receipt` after a reviewed
 xiaozhi/ESP-SR build and pass the resulting `a21-wake-word-build.json` to
 `wake-word-firmware-package --build-receipt`; both remain no-flash, below

@@ -107,6 +107,17 @@ reports with `product-readiness`.
 Use this exact sequence on `5080lab`, replacing only the provider/env file with
 the selected route-eligible profile:
 
+The lowest-error way to generate the sequence is print-only and safe to run on
+the Mac because it does not execute providers:
+
+```bash
+make provider-5080lab-runbook A21_PROVIDER=a21_selected_route_provider
+```
+
+The target rejects blank or `mock` provider ids, prints only relative paths and
+env-name labels, and leaves execution to the lab operator. The printed commands
+are the executable contract below.
+
 ```bash
 cd "<A21 repo checkout>"
 git status --short --branch
@@ -137,6 +148,11 @@ contract and can be pointed at the lab return directory with
 The matching package wrapper is `make provider-evidence-package`, using
 `A21_PROVIDER_EVIDENCE_INPUT_DIR=reports/5080lab-provider` and
 `A21_PROVIDER_EVIDENCE_OUTPUT_DIR=reports`.
+Prefer `make provider-5080lab-runbook A21_PROVIDER=<selected-provider>` when
+handing commands to an operator, because it prints the dry-run, executed smoke,
+readiness, bundle, return, import, and final product-readiness commands together
+without starting Gateway, V21, hardware, audio, or provider traffic on the
+control machine.
 
 `.a21-run/5080lab/provider.env` must stay local to the lab host and should
 contain only `A21_` variables such as `A21_PROVIDER_PRIMARY`, the selected

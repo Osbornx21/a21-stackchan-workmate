@@ -40,6 +40,8 @@ A21_XIAOZHI_FIRMWARE_FLASH_CONFIRM ?=
 A21_WAKE_WORD_FIRMWARE_PLAN ?=
 A21_WAKE_WORD_FIRMWARE_OUTPUT_DIR ?= firmware/artifacts/wake-word
 A21_WAKE_WORD_BUILD_RECEIPT_OUTPUT_DIR ?= firmware/artifacts/wake-word
+A21_PROVIDER ?=
+A21_PROVIDER_5080LAB_OUTPUT_DIR ?= reports/5080lab-provider
 A21_PROVIDER_EVIDENCE_INPUT_DIR ?= reports/5080lab-provider
 A21_CONTROL_COMMAND ?=
 A21_CONTROL_TIER ?=
@@ -47,7 +49,7 @@ A21_IDF_EXPORT ?= /Users/jiyurun/esp/esp-idf-v5.5.2/export.sh
 A21_V21_ADAPTER_ADDR ?= 127.0.0.1:21121
 A21_V21_BACKEND_URL ?= http://127.0.0.1:18080
 
-.PHONY: test verify gate preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness server-side-readiness-bundle server-side-readiness-collect agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-evidence-package provider-evidence-import provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-bridge v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute wake-word-firmware-plan wake-word-firmware-build-receipt wake-word-firmware-package xiaozhi-firmware-flash-plan xiaozhi-firmware-flash-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-sensor-probe-flash-execute
+.PHONY: test verify gate preflight namespace-audit promotion-readiness control-guard doctor gateway demo product-readiness server-side-readiness-bundle server-side-readiness-collect agent-plan agent-io-smoke agent-io-smoke-execute lan-probe provider-smoke provider-smoke-execute provider-5080lab-runbook provider-evidence-package provider-evidence-import provider-realtime-plan provider-realtime-fixture provider-latency-bench v21-adapter-bridge v21-adapter-smoke v21-adapter-smoke-execute audio-front-end-eval local-tts-smoke local-asr-smoke local-voice-loopback stackchan-local-tts-playback stackchan-fast-companion-turn stackchan-official-baseline stackchan-official-baseline-build stackchan-official-audio-smoke-build stackchan-official-pcm-bridge-build stackchan-official-audio-smoke-flash-plan stackchan-official-audio-smoke-flash-execute stackchan-official-pcm-bridge-flash-plan stackchan-official-pcm-bridge-nvs-plan stackchan-official-pcm-bridge-nvs-execute wake-word-firmware-plan wake-word-firmware-build-receipt wake-word-firmware-package xiaozhi-firmware-flash-plan xiaozhi-firmware-flash-execute latency-bench release-check firmware-tools firmware-check firmware-test firmware-build firmware-mic-probe-build firmware-imu-probe-build firmware-sensor-probe-build firmware-avatar-spike-build firmware-upload-blocker-check firmware-mic-probe-upload-blocker-check firmware-imu-probe-upload-blocker-check firmware-sensor-probe-upload-blocker-check firmware-clean-check firmware-package firmware-current-artifact-check firmware-artifact-prune-plan firmware-artifact-check firmware-upload-check firmware-device-report office-handoff office-preflight office-acceptance stackchan-identity-acceptance stackchan-physical-evidence stackchan-capability-acceptance stackchan-mic-probe-acceptance stackchan-imu-probe-acceptance stackchan-sensor-probe-acceptance stackchan-half-duplex-acceptance stackchan-speaker-acceptance stackchan-touch-acceptance stackchan-hardware-mainline firmware-device-check firmware-flash-plan firmware-bootstrap-flash-plan firmware-bootstrap-flash-execute firmware-mic-probe-flash-plan firmware-mic-probe-flash-execute firmware-imu-probe-flash-plan firmware-sensor-probe-flash-execute
 
 test:
 	go test ./...
@@ -111,6 +113,42 @@ provider-smoke:
 provider-smoke-execute:
 	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required"; exit 2)
 	go run ./cmd/a21 provider-smoke --provider "$(A21_PROVIDER)" --execute --stream --repeat "$${A21_PROVIDER_SMOKE_REPEAT:-3}" --output-dir "$${A21_PROVIDER_SMOKE_OUTPUT_DIR:-reports}"
+
+provider-5080lab-runbook:
+	@test -n "$(A21_PROVIDER)" || (echo "A21_PROVIDER is required, for example A21_PROVIDER=a21_selected_route_provider"; exit 2)
+	@test "$(A21_PROVIDER)" != "mock" || (echo "A21_PROVIDER must be one selected non-mock route-eligible provider"; exit 2)
+	@case "$(A21_PROVIDER)" in *[!A-Za-z0-9_]* ) echo "A21_PROVIDER must be an A21 provider id, not a shell command"; exit 2;; esac
+	@case "$(A21_PROVIDER_5080LAB_OUTPUT_DIR)" in ""|/*|*..*|*[!A-Za-z0-9_./-]* ) echo "A21_PROVIDER_5080LAB_OUTPUT_DIR must be a safe relative A21 reports directory"; exit 2;; esac
+	@printf '%s\n' \
+		'# A21 5080lab selected-provider closure runbook (print-only)' \
+		'# Run these commands on 5080lab or another approved clean mainland lab host.' \
+		'cd "<A21 repo checkout>"' \
+		'git status --short --branch' \
+		'git rev-parse --short HEAD' \
+		'mkdir -p .a21-run/5080lab $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'chmod 700 .a21-run/5080lab' \
+		'# Create .a21-run/5080lab/provider.env with A21_PROVIDER_PRIMARY=$(A21_PROVIDER),' \
+		'# the selected provider key/model/base-url env names, and optional A21_PROVIDER_PROFILES_PATH.' \
+		'set -a' \
+		'. ./.a21-run/5080lab/provider.env' \
+		'set +a' \
+		'test "$${A21_PROVIDER_PRIMARY}" = "$(A21_PROVIDER)"' \
+		'test "$${A21_PROVIDER_PRIMARY}" != "mock"' \
+		'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy' \
+		'export NO_PROXY="localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16"' \
+		'export no_proxy="$${NO_PROXY}"' \
+		'go run ./cmd/a21 doctor --output-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'go run ./cmd/a21 provider-smoke --provider "$${A21_PROVIDER_PRIMARY}" --stream --repeat 3 --output-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'# Confirm the dry-run report shows configured=true, route_eligible=true, stream=true, executed=false, and no missing_env.' \
+		'go run ./cmd/a21 provider-smoke --provider "$${A21_PROVIDER_PRIMARY}" --execute --stream --repeat 3 --output-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'LATEST_PROVIDER_REPORT="$$(ls -t $(A21_PROVIDER_5080LAB_OUTPUT_DIR)/a21-provider-smoke-*.json | head -n 1)"' \
+		'go run ./cmd/a21 product-readiness --provider-smoke-report "$${LATEST_PROVIDER_REPORT}" --output-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'go run ./cmd/a21 server-side-readiness-bundle --provider-smoke-report "$${LATEST_PROVIDER_REPORT}" --output-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR)' \
+		'go run ./cmd/a21 provider-evidence-package --input-dir $(A21_PROVIDER_5080LAB_OUTPUT_DIR) --output-dir reports' \
+		'' \
+		'# Return reports/a21-5080lab-provider-evidence-*.tgz to the control machine, then run:' \
+		'go run ./cmd/a21 provider-evidence-import --bundle reports/a21-5080lab-provider-evidence-YYYYMMDD-HHMMSS.tgz --output-dir reports' \
+		'go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports'
 
 provider-evidence-package:
 	@test -n "$(A21_PROVIDER_EVIDENCE_INPUT_DIR)" || (echo "A21_PROVIDER_EVIDENCE_INPUT_DIR is required"; exit 2)
