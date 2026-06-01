@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `8e221de merge: personality runtime prompt slice`
+Current integration checkpoint: `bcaa61c chore(control): close personality runtime slice`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -36,7 +36,7 @@ Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
 - HEAD before this post-worker checkpoint:
-  `8e221de merge: personality runtime prompt slice`
+  `bcaa61c chore(control): close personality runtime slice`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current `product-readiness --use-latest-reports`: `status=mock_demo_ready`,
   `launch_ready=false`, `demo_ready=true`,
@@ -84,12 +84,37 @@ Current integration branch:
   passed, `git diff --check` passed, and
   `product-readiness --use-latest-reports` stayed `launch_ready=false` with the
   same real-evidence gaps.
+- Latest control-tower refresh:
+  `go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports`
+  wrote `a21-product-readiness-20260602-073617.json` with
+  `status=mock_demo_ready`, `launch_ready=false`, `demo_ready=true`,
+  server-side `missing_evidence=["provider_smoke","wake_word"]`, and canonical
+  `missing_real_evidence=["real_provider_smoke","physical_stackchan_online","physical_stackchan_prd_acceptance","wake_word_product_ready"]`.
+- Latest V21 adapter refresh:
+  `go run ./cmd/a21 v21-adapter-smoke --adapter-url http://127.0.0.1:21121 --execute --output-dir reports`
+  passed against the explicit A21 adapter bridge and wrote
+  `a21-v21-adapter-smoke-20260602-073834.json`. The follow-up
+  `product-readiness --use-latest-reports` wrote
+  `a21-product-readiness-20260602-073848.json`, with
+  `v21.v21_professional_execution.valid=true`, source
+  `a21-v21-adapter-smoke-20260602-073834.json`, and the same remaining
+  server-side gaps: `provider_smoke`, `wake_word`.
+- Latest server-side bundle refresh:
+  `go run ./cmd/a21 server-side-readiness-bundle --use-latest-reports --output-dir reports`
+  wrote `a21-server-side-readiness-bundle-20260602-073853.json`, with
+  `v21.ready=true`, `host_voice.ready=true`, `provider.ready=false`,
+  `wake_word.ready=false`, and no PRD fake-green.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
   command bundle only, and
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider A21_PROVIDER_5080LAB_OUTPUT_DIR=/tmp/a21`
   failed with exit 2.
+- Latest provider operator packet refresh:
+  `make provider-5080lab-runbook A21_PROVIDER=deepseek` printed the current
+  print-only 5080lab command sequence. The next provider burn-down event is the
+  returned `a21-5080lab-provider-evidence-*.tgz` import, not any Mac-side
+  provider `--execute`.
 - Latest no-hardware CLI smoke:
   `wake-word-firmware-build-receipt` without `--review-report` failed without
   writing a receipt; the same command with matching
@@ -100,6 +125,16 @@ Current integration branch:
   `status=packaged`, `product_ready=false`,
   `build_review=a21-wake-word-build-review.json`, and the expected
   `wake_word_firmware_package_below_activation` finding.
+- Latest real build-dir wake-word diagnostic:
+  `/Users/jiyurun/Documents/小马暴力/sources/xiaozhi-esp32/build-m5stack-core-s3/xiaozhi.bin`
+  exists, but its source `sdkconfig` keeps `CONFIG_USE_AFE_WAKE_WORD=y` and
+  `CONFIG_USE_CUSTOM_WAKE_WORD` disabled, with logs packaging
+  `wn9_nihaoxiaozhi_tts`. This is stock `你好小智`, not the current A21
+  custom `小阿二一` MultiNet build. Running
+  `wake-word-firmware-package --plan reports/a21-wake-word-firmware-plan-20260602-073252-1780356772002781000.json --build-dir /Users/jiyurun/Documents/小马暴力/sources/xiaozhi-esp32/build-m5stack-core-s3 --commit x21-stock-check --output-dir reports`
+  correctly rejected the input and wrote
+  `a21-wake-word-firmware-package-20260602-073950-1780357190953924000.json`.
+  Do not use this stock build to close `wake_word_product_ready`.
 
 Already merged into the current baseline and must not be rediscovered as active
 gaps:
@@ -153,7 +188,20 @@ Active workers that the control tower must poll before duplicating work:
 
 | Worker | Thread | Worktree | Branch | Owned slice | Current status |
 | --- | --- | --- | --- | --- | --- |
-| None | - | - | - | - | No active write worker as of `8e221de`; start a fresh bounded worker before any new implementation slice |
+| None | - | - | - | - | No active write worker as of `bcaa61c`; start a fresh bounded worker before any new implementation slice |
+
+Worktree hygiene checkpoint:
+
+- Main worktree dirty state is still only untracked `tools/__pycache__/`.
+- Completed worker worktrees may remain for audit/history. Do not merge or reset
+  them directly after context compression.
+- Three old worktrees still show local dirty entries, but their useful ideas are
+  already represented in current mainline or must be re-applied from a fresh
+  current-HEAD branch if needed:
+  `/Users/jiyurun/.codex/worktrees/5434/New project`,
+  `/Users/jiyurun/.codex/worktrees/7232/New project`, and
+  `/Users/jiyurun/.codex/worktrees/de71/New project`.
+  Treat them as frozen reference material, not active implementation lanes.
 
 Recently completed workers:
 
@@ -194,17 +242,24 @@ Current next moves:
    import the returned bundle on the control machine, then rerun
    product-readiness to reduce `real_provider_smoke`. Do not run provider
    `--execute` on this Mac.
-2. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
+2. V21 adapter evidence refresh is current as of
+   `a21-v21-adapter-smoke-20260602-073834.json`. Keep it as evidence and do not
+   open more V21 implementation work unless the adapter contract regresses or a
+   newer backend change requires a refresh. Do not call V21 internals from A21
+   code.
+3. Wake-word package closure: obtain a real reviewed xiaozhi/ESP-SR MultiNet
    build review JSON for the current custom phrase, run
    `wake-word-firmware-build-receipt --review-report`, then
    `wake-word-firmware-package --build-receipt` to produce the current matching
    package report. This may close `firmware_package_available`, but
    `product_ready` must remain false until guarded flash and physical wake proof.
-3. Optional no-hardware polish should be dispatched only if it burns a current
+   The currently found X21 stock build directory is explicitly not matching
+   custom `小阿二一`; treat it as rejected diagnostic evidence only.
+4. Optional no-hardware polish should be dispatched only if it burns a current
    PRD gap or fixes a regression. Do not reopen audio clarity, host voice
    loopback, voice-mode selector, personality runtime, selected-provider
    import, or launch false-green guards unless a new regression appears.
-4. Hardware window when CoreS3 returns: collect physical online/audio/playback
+5. Hardware window when CoreS3 returns: collect physical online/audio/playback
    stop/custom wake evidence only after the server/provider/wake package seams
    are ready.
 
@@ -457,10 +512,9 @@ Done means:
 
 Run in this order:
 
-1. Local no-hardware implementation lane: dispatch Slice H explicit
-   `voice_mode` selector in a fresh worktree from current `2120ee6`. This is a
-   bounded Gateway/simulator/app/doc slice and should not touch provider,
-   readiness, wake firmware, V21, or hardware.
+1. Control-tower no-hardware evidence refresh: done for V21 adapter at
+   `127.0.0.1:21121`, using explicit A21 adapter smoke only. Do not repeat this
+   unless the adapter/backend changes.
 2. External/provider lane: produce or import a real 5080lab provider evidence
    bundle using the generated runbook. The Mac control tower can package/import
    returned redacted reports, but executed provider smoke belongs on 5080lab.
@@ -490,11 +544,22 @@ Every control-tower report to the user must answer:
 
 ## 6. Current Next Move
 
-Start Slice H in a fresh worker/worktree from `2120ee6`, then keep the control
-tower on merge/verification and burn-down reporting. In parallel, prepare the
-5080lab provider runbook and wake reviewed-build/package input, but do not run
-provider `--execute` on this Mac and do not treat firmware package evidence as
-physical wake acceptance.
+Do not start Slice H again; explicit `voice_mode` is already merged. The current
+next move is to burn down server-side evidence:
+
+1. Wait for or trigger the approved 5080lab selected-provider execution bundle,
+   then import it with `provider-evidence-import`.
+2. Continue wake-word build/package preparation only from a real reviewed
+   xiaozhi/ESP-SR MultiNet build receipt.
+   The found X21 stock `build-m5stack-core-s3` path is not acceptable for this
+   closure because it lacks the matching custom wake receipt.
+3. If neither external evidence lane is immediately available, open one fresh
+   no-hardware worker only for a concrete report-ingestion bug or operator
+   helper that reduces `provider_smoke` or `wake_word`.
+
+Provider `--execute` still does not run on this Mac. Firmware package evidence is
+not physical wake acceptance, and no CoreS3 absence may block simulator,
+protocol, provider packaging, V21 boundary, or report-ingestion work.
 
 Voice clarity is not an open implementation gap; it is a regression check.
 Old detached rescue branches are source material only; no stale branch should
