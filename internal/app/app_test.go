@@ -1399,6 +1399,65 @@ func TestRunServerSideReadinessBundleRequireCandidateFailsWithMissingHostVoice(t
 	}
 }
 
+func TestRunServerSideReadinessBundleDoesNotCollectMockProviderAsServerEvidence(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"server-side-readiness-bundle", "--gateway-url", server.URL, "--use-latest-reports", "--collect-missing", "--execute-provider-smoke", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 without --require-candidate: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"status": "server_side_blocked"`,
+		`"candidate_ready": false`,
+		`"name": "provider_smoke"`,
+		`"status": "skipped"`,
+		`"reason": "configure a real A21 provider before provider smoke"`,
+		"configure a real A21 provider with A21_PROVIDER_PRIMARY plus its required env names",
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	providerReports, err := filepath.Glob(filepath.Join(dir, "a21-provider-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providerReports) != 0 {
+		t.Fatalf("provider reports = %v, want no mock provider execution", providerReports)
+	}
+	for _, forbidden := range []string{
+		"provider-smoke --provider mock",
+		server.URL,
+		dir,
+		"http://",
+		"https://",
+		"/Users/",
+		`"candidate_ready": true`,
+		`"launch_ready": true`,
+		`"prd_accepted": true`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side mock provider evidence leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunServerSideReadinessBundleCollectsMissingHostVoiceEvidence(t *testing.T) {
 	gatewayServer := newGatewayServerFromEnv(nil)
 	httpServer := httptest.NewServer(gatewayServer.Handler())

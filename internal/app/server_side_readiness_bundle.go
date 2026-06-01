@@ -283,15 +283,19 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 }
 
 func collectServerSideProviderSmoke(options serverSideReadinessBundleOptions, report productReadinessReport) serverSideReadinessCollectionStep {
-	provider := safeServerSideProviderName(report.Provider.Selected)
+	provider, ok := serverSideProviderSmokeTarget(report)
 	step := serverSideReadinessCollectionStep{
 		Name:                "provider_smoke",
 		Status:              "skipped",
 		Reason:              "requires --execute-provider-smoke",
-		Command:             fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider),
 		ExecutionAuthorized: options.ExecuteProviderSmoke,
 		ExternalExecution:   true,
 	}
+	if !ok {
+		step.Reason = "configure a real A21 provider before provider smoke"
+		return step
+	}
+	step.Command = fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider)
 	if !options.ExecuteProviderSmoke {
 		return step
 	}
@@ -379,8 +383,9 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 		case "gateway":
 			commands = append(commands, "go run ./cmd/a21 gateway --addr 127.0.0.1:21080")
 		case "provider_smoke":
-			provider := safeServerSideProviderName(report.Provider.Selected)
-			commands = append(commands, fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider))
+			if provider, ok := serverSideProviderSmokeTarget(report); ok {
+				commands = append(commands, fmt.Sprintf("go run ./cmd/a21 provider-smoke --provider %s --execute --stream --repeat 3 --output-dir reports", provider))
+			}
 		case "v21_professional_smoke":
 			commands = append(commands, "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports")
 		case "host_voice_loopback":
@@ -403,6 +408,13 @@ func buildServerSideReadinessNextActions(report productReadinessReport) []string
 		actions = append(actions, action)
 	}
 	return actions
+}
+
+func serverSideProviderSmokeTarget(report productReadinessReport) (string, bool) {
+	if report.Provider.Selected == "" || report.Provider.Selected == "mock" || !report.Provider.SelectedConfigured {
+		return "", false
+	}
+	return safeServerSideProviderName(report.Provider.Selected), true
 }
 
 func safeServerSideProviderName(value string) string {
