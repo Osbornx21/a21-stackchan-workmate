@@ -1286,6 +1286,119 @@ func TestRunProductReadinessCommandUsesLatestReportsWithoutPathLeak(t *testing.T
 	}
 }
 
+func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"server-side-readiness-bundle", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.server_side_readiness_bundle.v1"`,
+		`"status": "server_side_candidate_ready"`,
+		`"candidate_ready": true`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+		`"requires_physical_acceptance": true`,
+		`"product_readiness_status": "server_side_candidate_ready"`,
+		`"provider_smoke_source_report": "a21-provider-smoke-20260602-100000.json"`,
+		`"v21_professional_source_report": "a21-v21-adapter-smoke-20260602-100200.json"`,
+		`"host_voice_source_report": "a21-xiaozhi-voice-bench-20260602-100100.json"`,
+		`"payloads_stored": false`,
+		`"report_path": "a21-server-side-readiness-bundle-`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-server-side-readiness-bundle-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("bundle reports = %d, want 1: %v", len(matches), matches)
+	}
+	bundleData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		server.URL,
+		dir,
+		"http://",
+		"https://",
+		"/Users/",
+		"secret-value",
+		`"launch_ready": true`,
+		`"prd_accepted": true`,
+		`"missing_evidence"`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(string(bundleData), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side bundle leaked or overclaimed %q: stdout=%s report=%s stderr=%s", forbidden, rendered, bundleData, stderr.String())
+		}
+	}
+}
+
+func TestRunServerSideReadinessBundleRequireCandidateFailsWithMissingHostVoice(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
+	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"server-side-readiness-bundle", "--gateway-url", server.URL, "--use-latest-reports", "--require-candidate", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"status": "server_side_blocked"`,
+		`"candidate_ready": false`,
+		`"host_voice_loopback"`,
+		`"go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --output-dir reports"`,
+		`"report_path": "a21-server-side-readiness-bundle-`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, dir, "http://", "https://", "/Users/", "secret-value", `"candidate_ready": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("server-side bundle leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandUsesLatestWakeWordFirmwarePlanWithoutPathLeak(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

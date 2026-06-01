@@ -88,6 +88,15 @@ acceptance: a server candidate can be green while `launch_ready=false` and
 `requires_physical_acceptance=true`, so dashboards must not treat it as
 physical StackChan PRD acceptance.
 
+`server-side-readiness-bundle` packages that same no-hardware chain into a
+single redacted report artifact, `a21.server_side_readiness_bundle.v1`. It
+keeps per-slice readiness, source report basenames, fixed missing-evidence
+labels, and safe collection commands for Gateway, provider smoke, V21
+professional smoke, host voice loopback, and wake-word readiness. It must not
+store prompts, transcripts, provider output, evidence bodies, full URLs,
+credential values, proxy values, or local paths, and its `candidate_ready` field
+must never be interpreted as physical StackChan PRD acceptance.
+
 Provider comparison reports must use the shared benchmark contract in `docs/engineering/A21_PROVIDER_BENCHMARKS.md`. External benchmark names and leaderboards may appear in engineering notes, but runtime evidence must use A21 metric names, A21 trace IDs, and redacted A21 reports before it can influence promotion.
 
 The WS-2 product voice pipeline contract emits schema

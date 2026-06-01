@@ -205,6 +205,23 @@ are reported as fixed `server_side.missing_evidence` labels such as
 `provider_smoke`, `v21_professional_smoke`, `host_voice_loopback`, or
 `wake_word`.
 
+`server-side-readiness-bundle` is the control-tower wrapper for that no-hardware
+gate:
+
+```bash
+go run ./cmd/a21 server-side-readiness-bundle --use-latest-reports --output-dir reports
+make server-side-readiness-bundle
+```
+
+It writes `reports/a21-server-side-readiness-bundle-YYYYMMDD-HHMMSS.json` with
+schema `a21.server_side_readiness_bundle.v1`. The bundle summarizes the
+redacted provider-smoke, V21 professional, host voice loopback, Gateway, and
+wake-word signals plus fixed missing-evidence labels and safe collection
+commands. `--require-candidate` returns nonzero when the server-side candidate
+chain is incomplete. It is still a no-hardware artifact: it stores only
+basename source reports and redaction booleans, keeps `prd_accepted=false`, and
+does not replace physical StackChan launch acceptance.
+
 `audio-front-end-plan` and `audio-front-end-eval` now expose a machine-readable Fast Companion VAD/AEC adapter evidence shape. WebRTC APM, ESP-SR, provider-side VAD, and Silero VAD runtime candidates are placeholders or unavailable until a later authorized adapter or hardware window supplies evidence. The A21 RMS detector remains an available host-only development baseline, not a production candidate.
 
 `provider-latency-bench` now exists as a mock/fixture scaffold for the shared
