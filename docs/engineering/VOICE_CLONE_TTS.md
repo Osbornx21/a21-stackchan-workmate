@@ -70,3 +70,40 @@ go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports
 ```
 
 These are host-local checks. They do not imply physical StackChan speaker acceptance.
+
+## 5080 IndexTTS2 Bridge
+
+When IndexTTS2 is warmed on the 5080 lab host, do not point
+`A21_VOICE_CLONE_COMMAND` directly at a remote `ssh ... infer_v2.py` command.
+A21 passes a local Mac `--output` path to the wrapper, and a remote process
+cannot write that path. Use the local bridge instead:
+
+```bash
+export A21_VOICE_CLONE_COMMAND="python3 scripts/a21_5080_indextts2_bridge.py --ssh-host ${A21_5080_SSH_HOST} --ssh-key ${A21_5080_SSH_KEY} --remote-repo ${A21_5080_INDEXTTS2_REPO} --remote-work-root ${A21_5080_WORK_ROOT}"
+```
+
+The bridge copies A21's UTF-8 text file, reference audio, and reference text
+file to a per-run remote directory, executes IndexTTS2 from the remote repo
+root so `infer_v2.py` resolves `checkpoints/hf_cache`, copies the generated WAV
+back to A21's local `--output`, and leaves `local-tts-smoke` responsible for
+the redacted report and aggregate `audio_quality` block. Set `HF_ENDPOINT` in
+the local bridge environment only when the lab host needs the Hugging Face
+mirror.
+
+Bridge dry run:
+
+```bash
+python3 scripts/a21_5080_indextts2_bridge.py --dry-run \
+  --ssh-host "$A21_5080_SSH_HOST" \
+  --ssh-key "$A21_5080_SSH_KEY" \
+  --remote-repo "$A21_5080_INDEXTTS2_REPO" \
+  --remote-work-root "$A21_5080_WORK_ROOT" \
+  --text-file /tmp/a21-text.txt \
+  --ref-audio /tmp/a21-reference.wav \
+  --ref-text-file /tmp/a21-reference.txt \
+  --output /tmp/a21-output.wav \
+  --sample-rate 16000
+```
+
+The dry run prints basename-only plan fields and does not execute SSH/SCP or
+model inference.
