@@ -179,27 +179,26 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
-		`GetHAL().requestXiaozhiStart();`,
+		`GetHAL().startXiaozhi();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
 		}
 	}
-	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") || strings.Contains(overlay, "+    GetHAL().startXiaozhi();") {
+	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") {
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
-	installDanceIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppDance>());`)
-	installSetupIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppSetup>());`)
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	requestStartIndex := strings.Index(overlay, `GetHAL().requestXiaozhiStart();`)
-	if installDanceIndex < 0 || installSetupIndex < 0 || volumeIndex < 0 || requestStartIndex < 0 {
+	startRuntimeIndex := strings.Index(overlay, `GetHAL().startXiaozhi();`)
+	installLauncherIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppLauncher>());`)
+	if volumeIndex < 0 || startRuntimeIndex < 0 || installLauncherIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if installDanceIndex > volumeIndex || installSetupIndex > volumeIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must install official StackChan apps before A21 autostart")
+	if volumeIndex > startRuntimeIndex || startRuntimeIndex > installLauncherIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume and enter Xiaozhi before setup apps can trap the device")
 	}
-	if volumeIndex > requestStartIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before requesting the official Xiaozhi start path")
+	if strings.Contains(overlay, `GetHAL().requestXiaozhiStart();`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must not request Xiaozhi through setup flow after the welcome-screen regression")
 	}
 }
 

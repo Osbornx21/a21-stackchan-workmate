@@ -42,10 +42,10 @@ Chinese wake word `紫悦`.
   the source Kconfig supports it.
 - The stock HiStackChan WakeNet model is explicitly disabled so the product
   candidate has one active wake identity: `紫悦`.
-- A21 autostart preserves the official StackChan main flow: official apps are
-  installed first, then A21 sets codec volume and requests Xiaozhi start through
-  `GetHAL().requestXiaozhiStart()`. The final official
-  `GetHAL().startXiaozhi()` path remains preserved.
+- A21 autostart intentionally bypasses the official welcome/setup flow for this
+  contest recovery package: it sets codec volume and calls
+  `GetHAL().startXiaozhi()` before setup apps can trap the device. Retaining
+  official app loading without showing welcome/setup is a follow-up transition.
 - The product candidate can be built, no-write planned, and flashed only through
   `a21-stackchan-official-xiaozhi-compatible-flash-*`.
 
@@ -77,9 +77,8 @@ Chinese wake word `紫悦`.
 2. Add or extend focused tests to assert the product overlay still preserves
    official Xiaozhi runtime startup and now carries the `紫悦` custom wake
    contract.
-3. Assert the overlay installs the official StackChan apps before A21 requests
-   Xiaozhi autostart, so the compatible app does not bypass official app/action
-   initialization.
+3. Assert the overlay does not call `GetHAL().requestXiaozhiStart()` through the
+   welcome/setup flow after the physical device got stuck on that screen.
 4. Run focused Go tests for the official StackChan app lane.
 5. Run `git diff --check`.
 6. Build the product candidate:
@@ -88,7 +87,8 @@ Chinese wake word `紫悦`.
    `/tmp/a21-stackchan-official-build/config/sdkconfig.json` and confirm board,
    wake type, phrase, display string, threshold, and app artifact.
 8. Inspect patched `firmware/main/main.cpp` in the official-clean workdir and
-   confirm app installation happens before A21 `requestXiaozhiStart()`.
+   confirm A21 sets codec volume and directly starts Xiaozhi before the
+   welcome/setup app flow.
 9. Run no-write flash plan:
    `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`.
 10. Because the user explicitly allowed this round to burn/verify after merge,
@@ -136,6 +136,9 @@ Chinese wake word `紫悦`.
 - `zi yue` may be too short for robust MultiNet wake detection and may need
   threshold or phrase tuning.
 - A threshold of `20` improves sensitivity but can increase false wakes.
+- Direct autostart recovers the stuck welcome screen but may still leave some
+  official app-loading affordances below the activation line. The follow-up
+  should explore a no-welcome app preload shape without blocking boot.
 - Custom wake may affect first-turn audio timing depending on whether wake data
   is sent. This transition keeps `CONFIG_SEND_WAKE_WORD_DATA=n` to avoid
   introducing a protocol behavior change.

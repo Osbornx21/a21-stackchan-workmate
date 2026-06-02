@@ -52,9 +52,9 @@ index 83314f7..3d5a248 100644
  #include <smooth_ui_toolkit.hpp>
  #include <uitk/short_namespace.hpp>
  #include <mooncake_log.h>
-@@ -35,6 +37,15 @@ extern "C" void app_main(void)
-     GetMooncake().installApp(std::make_unique<AppDance>());
-     GetMooncake().installApp(std::make_unique<AppSetup>());
+@@ -26,7 +28,15 @@ extern "C" void app_main(void)
+     ui_hal::on_delay([](uint32_t ms) { GetHAL().delay(ms); });
+     ui_hal::on_get_tick([]() { return GetHAL().millis(); });
 
 +#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
 +    auto* codec = Board::GetInstance().GetAudioCodec();
@@ -62,9 +62,10 @@ index 83314f7..3d5a248 100644
 +        codec->SetOutputVolume(92);
 +    }
 +
-+    GetHAL().requestXiaozhiStart();
++    GetHAL().startXiaozhi();
 +#endif
 +
-     // Main loop
-     while (1) {
-         GetHAL().feedTheDog();
+     // Install apps
+     GetMooncake().installApp(std::make_unique<AppLauncher>());
+     GetMooncake().installApp(std::make_unique<AppAiAgent>());
+     GetMooncake().installApp(std::make_unique<AppAvatar>());

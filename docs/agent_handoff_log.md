@@ -3221,10 +3221,13 @@ Actual completed work before flash:
   - `CONFIG_SEND_WAKE_WORD_DATA=n`;
   - `# CONFIG_USE_AFE_WAKE_WORD is not set`;
   - `# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`.
-- Fixed the compatible overlay autostart order after the sidecar audit flagged
-  a risk: the overlay now installs official StackChan apps first, sets codec
-  volume, then calls `GetHAL().requestXiaozhiStart()` so the official main loop
-  still reaches the preserved `GetHAL().startXiaozhi()` path.
+- Tried the sidecar-audit suggestion to move autostart closer to the official
+  app flow, then recorded the physical regression: the device got stuck on the
+  welcome/setup screen and Skip/Start were ineffective.
+- Applied the contest recovery hotfix: keep `紫悦` custom wake, but start
+  Xiaozhi directly before the welcome/setup flow. Retaining official app loading
+  without showing welcome/setup is now a separate transition, not part of this
+  recovery flash.
 - Added a focused app test that asserts the official-compatible overlay keeps
   the StackChan product identity and does not point to the bare Xiaozhi app
   lane.
@@ -3286,17 +3289,17 @@ Validation results before flash:
   `make a21-stackchan-official-xiaozhi-compatible-build` after the autostart
   correction: passed.
 - Build report:
-  `reports/a21-stackchan-official-baseline-20260603-025420-1780426460868295000.json`.
+  `reports/a21-stackchan-official-baseline-20260603-030428-1780427068064697000.json`.
 - Product app artifact:
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
 - Product app SHA-256:
-  `092ff74686636ba6698926d73c03dd6a13903639031a2a0869670e1525b42961`.
+  `3f7dcd291a2efb586f11aa3b6c6ca3003cae0d53be45225854502ccd0e6fa4cf`.
 - Build config inspection passed for StackChan board identity, `紫悦` custom
   wake, MultiNet7, disabled AFE WakeNet, and disabled HiStackChan WakeNet.
-- Patched `main.cpp` inspection passed: official apps are installed before A21
-  sets codec volume and requests Xiaozhi start.
+- Patched `main.cpp` inspection passed: A21 sets codec volume and starts
+  Xiaozhi before the welcome/setup flow.
 - No-write flash plan:
-  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-025440-1780426480789692000.json`
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-030447-1780427087258380000.json`
   is `status=ready`, `dry_run=true`, `flash_allowed=false`,
   `flash_executed=false`, app `a21-stackchan-official-xiaozhi-compatible.bin`,
   offset `0x20000`, port `/dev/cu.usbmodem1101`.
