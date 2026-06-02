@@ -5537,3 +5537,82 @@ Current validation request:
 - A first ad-hoc Python JSON scan and two piped curl/json-tool queries hung;
   only those diagnostic processes were killed. Gateway and device services were
   not stopped.
+
+## 2026-06-03 - T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001 - Implementation Closeout
+
+本轮目标:
+
+- Implement the smallest no-audio/no-hardware Sherpa real-model streaming ASR
+  smoke so the repo can either prove real local model startup/append/commit or
+  truthfully record a stable blocker.
+
+实际完成内容:
+
+- Created scoped branch
+  `codex/a21-sherpa-realmodel-no-audio-smoke-20260603` from detached `5047b5d`.
+- Added `a21 local-asr-streaming-smoke`, registered it in the app command
+  router, and added `make local-asr-streaming-smoke`.
+- The smoke validates helper/model preflight, writes only redacted report
+  fields, and sends one generated in-memory PCM16LE silence frame only when
+  helper and streaming model files are present.
+- Ran the local smoke with helper
+  `scripts/a21_sherpa_onnx_streaming_asr_session.py` and no model download. It
+  produced ignored report
+  `reports/a21-local-asr-streaming-smoke-20260603-070451-1780441491984219000.json`
+  with `status=blocked`, finding `model_dir_missing`,
+  `model_files_present=false`, and zero appended frames/events.
+- Updated `docs/project_state_machine.md` to mark this transition completed as
+  a truthful blocker, not ASR runtime or physical Xiaozhi acceptance.
+
+修改过的文件:
+
+- `Makefile`
+- `internal/app/app_plan_execute.go`
+- `internal/app/local_asr_streaming_smoke.go`
+- `internal/app/local_asr_streaming_smoke_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Real local Sherpa streaming ASR remains unproven until
+  `A21_SHERPA_ONNX_ASR_MODEL_DIR` points to a valid local streaming Zipformer
+  cache and the smoke can start/append/commit against real model files.
+
+已知风险和阻塞点:
+
+- Current stable blocker: `model_dir_missing`.
+- This no-audio smoke is below stock `/v1/xiaozhi` physical realtime parity and
+  below PRD acceptance.
+
+下一轮建议动作:
+
+1. Configure or stage a valid local Sherpa streaming Zipformer model cache
+   without downloading inside an implementation worker, then rerun
+   `a21 local-asr-streaming-smoke`.
+2. Continue `T-STREAMING-TTS-RUNTIME-PROOF-001` for the next missing realtime
+   chain segment.
+
+测试/构建/运行结果:
+
+- Red test first:
+  `go test ./internal/app -run TestRunLocalASRStreamingSmoke -count=1` failed
+  because `local-asr-streaming-smoke` was not registered.
+- Focused app tests:
+  `go test ./internal/app -run 'TestRunLocalASRStreamingSmoke|TestLocalASRStreaming' -count=1`
+  passed.
+- Focused provider tests:
+  `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa' -count=1`
+  passed.
+- Runtime smoke command:
+  `go run ./cmd/a21 local-asr-streaming-smoke --helper scripts/a21_sherpa_onnx_streaming_asr_session.py --output-dir reports`
+  returned nonzero as expected for the truthful blocker and wrote the ignored
+  `model_dir_missing` report named above.
+- Final `git diff --check`: passed.
+- Final `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- Earlier focused app test assertion was too broad and matched the required
+  `audio_payload_policy` redaction field; the assertion was narrowed to actual
+  encoded payload field names.

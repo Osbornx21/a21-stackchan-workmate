@@ -156,6 +156,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runLocalTTSSmoke(args[1:], stdout, stderr), true
 	case "local-asr-smoke":
 		return runLocalASRSmoke(args[1:], stdout, stderr), true
+	case "local-asr-streaming-smoke":
+		return runLocalASRStreamingSmoke(args[1:], stdout, stderr), true
 	case "firmware-device-report":
 		return runFirmwareDeviceReport(args[1:], stdout, stderr), true
 	case "wake-word-firmware-plan":
