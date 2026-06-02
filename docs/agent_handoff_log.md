@@ -5032,8 +5032,9 @@ Current validation request:
 
 当前未完成事项:
 
-- Need rerun `make verify` after the timeout hardening patch.
-- Need commit the hardening patch if verification passes.
+- `make verify` was rerun after the timeout hardening patch and passed.
+- The timeout hardening patch plus this handoff update were committed as
+  `987a532`.
 - No real sherpa-onnx model, live Gateway turn, provider call, V21 call,
   firmware build, flash, NVS write, or audio playback occurred in this
   integration verification step.
@@ -5047,11 +5048,11 @@ Current validation request:
 
 下一轮建议动作:
 
-1. Rerun `make verify` on mainline.
-2. If green, commit the test hardening and this handoff update.
-3. Continue with real-model no-audio Sherpa smoke, streaming TTS runtime proof,
-   and physical `/v1/xiaozhi` realtime parity only under explicit hardware
-   window rules.
+1. Continue with real-model no-audio Sherpa smoke once the model path/weights
+   are confirmed.
+2. Continue streaming TTS runtime proof without provider key leakage.
+3. Continue physical `/v1/xiaozhi` realtime parity from an operator-triggered
+   turn only after setup/wake state is stable.
 
 测试/构建/运行结果:
 
@@ -5071,6 +5072,14 @@ Current validation request:
   passed.
 - Full provider package stress:
   `go test ./internal/providers -count=20 -failfast -v`: passed.
+- `git diff --check`: passed after the timeout hardening patch.
+- `go test ./internal/providers -run TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper -count=20 -failfast`:
+  passed after the timeout hardening patch.
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa|TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal' -count=1`:
+  passed after the timeout hardening patch.
+- `go test ./internal/app -run TestXiaozhiStreamingProviderReadiness -count=1`:
+  passed after the timeout hardening patch.
+- Final `make verify`: passed after the timeout hardening patch.
 
 如果中途失败，记录失败位置和原因:
 
@@ -5079,3 +5088,52 @@ Current validation request:
 - Failure reason: brittle one-second test timeout under full-repo parallel
   verification load, not observed as a helper protocol or runtime failure in
   direct repeated tests.
+
+## 2026-06-03 - T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001 - Mainline State Closeout
+
+本轮目标:
+
+- Remove stale "need rerun/need commit" wording after the successful mainline
+  verification commit.
+- Update the project state machine so a fresh model can see that the helper is
+  now a mainline candidate, not only a worker candidate.
+
+实际完成内容:
+
+- Updated `docs/project_state_machine.md` current/next state to
+  `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-MAINLINE-CANDIDATE`.
+- Recorded mainline integration commit `041ad69` and test hardening commit
+  `987a532`.
+- Updated this handoff log to reflect that `make verify` passed and the
+  hardening commit exists.
+
+修改过的文件:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- No code/runtime work remains in this closeout step after commit.
+- No runtime, hardware, provider, V21, firmware, NVS, or audio playback action
+  occurred in this closeout step.
+
+已知风险和阻塞点:
+
+- Mainline candidate status is still not real-model, live-Gateway, wake, or
+  physical PRD acceptance.
+
+下一轮建议动作:
+
+1. Continue with real-model no-audio Sherpa smoke.
+2. Continue streaming TTS runtime proof.
+3. Continue physical Xiaozhi parity under the
+   existing hardware-window discipline.
+
+测试/构建/运行结果:
+
+- `git diff --check`: passed for the documentation closeout.
+
+如果中途失败，记录失败位置和原因:
+
+- No closeout failure at the time of writing.

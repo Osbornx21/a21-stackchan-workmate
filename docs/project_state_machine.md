@@ -621,7 +621,7 @@ Next state:
 
 Current state:
 
-- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-MAINLINE-CANDIDATE`
 
 Trigger:
 
@@ -632,7 +632,7 @@ Trigger:
 
 Target state:
 
-- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-MAINLINE-CANDIDATE`
 
 Action:
 
@@ -658,6 +658,10 @@ Acceptance conditions:
   `codex/a21-sherpa-streaming-asr-runtime-manual-20260603` adds the JSONL
   helper and subprocess session; fake-helper tests prove `AppendFrame` produces
   partial and `Commit` produces final without calling the batch WAV runner.
+- Mainline fast-forward integration commit: `041ad69`.
+- Mainline test hardening commit: `987a532`.
+- Mainline focused tests and `make verify` pass after increasing the
+  subprocess-helper test event wait to tolerate full-repo package parallelism.
 
 Failure states:
 
@@ -676,7 +680,7 @@ Rollback path:
 
 Next state:
 
-- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-MAINLINE-CANDIDATE`
 - Next transition: real no-audio model smoke, then stock `/v1/xiaozhi`
   operator-triggered physical realtime parity.
 
