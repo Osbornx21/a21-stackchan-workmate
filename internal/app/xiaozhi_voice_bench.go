@@ -72,6 +72,7 @@ type xiaozhiVoiceBenchTurn struct {
 	HelloAccepted          bool                           `json:"hello_accepted"`
 	ListenAck              bool                           `json:"listen_ack"`
 	BinaryDownlinkFrames   int                            `json:"binary_downlink_frames"`
+	DownlinkAudioQuality   *audio.PCMQualityReport        `json:"downlink_audio_quality,omitempty"`
 	FirstAudioMS           *int64                         `json:"first_audio_ms,omitempty"`
 	TTSStopReceived        bool                           `json:"tts_stop_received"`
 	AbortSent              bool                           `json:"abort_sent"`
@@ -385,6 +386,12 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 		receipt.Findings = append(receipt.Findings, "listen_stop_send_failed")
 		return receipt
 	}
+	downlinkCodec, err := opuscodec.New(16000, 1, 60)
+	if err != nil {
+		receipt.Findings = append(receipt.Findings, "downlink_opus_decoder_unavailable")
+		return receipt
+	}
+	var downlinkPCM []byte
 	var abortAt time.Time
 	for {
 		messageType, data, err := conn.Read(turnCtx)
@@ -410,6 +417,16 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 			}
 		case websocket.MessageBinary:
 			receipt.BinaryDownlinkFrames++
+			pcm, err := downlinkCodec.DecodePCM16(data)
+			if err != nil {
+				receipt.Findings = append(receipt.Findings, "downlink_opus_decode_failed")
+				return receipt
+			}
+			downlinkPCM = appendPCM16LE(downlinkPCM, pcm)
+			if quality, err := audio.AnalyzePCM16LEQuality("pcm_s16le", 16000, 1, 0, downlinkPCM); err == nil {
+				quality.Codec = "opus_decoded_pcm_s16le"
+				receipt.DownlinkAudioQuality = &quality
+			}
 			if receipt.FirstAudioMS == nil {
 				value := int64(time.Since(startAt) / time.Millisecond)
 				receipt.FirstAudioMS = &value
@@ -424,6 +441,13 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 			}
 		}
 	}
+}
+
+func appendPCM16LE(out []byte, pcm []int16) []byte {
+	for _, sample := range pcm {
+		out = binary.LittleEndian.AppendUint16(out, uint16(sample))
+	}
+	return out
 }
 
 func summarizeXiaozhiVoiceBenchExecution(answerTurns []xiaozhiVoiceBenchTurn, bargeInTurns []xiaozhiVoiceBenchTurn) xiaozhiVoiceBenchExecution {

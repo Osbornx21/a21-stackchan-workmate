@@ -579,3 +579,211 @@ Recommended next action:
   operator/instrument audible observation matched to a fresh physical trace.
 - Then rerun `xiaozhi-physical-evidence`, `product-readiness`, and
   `server-side-readiness-bundle`.
+
+## 2026-06-02 - T-AUDIO-001 - Isolate Xiaozhi TTS Sound Quality
+
+Goal:
+
+- Answer whether the audio-quality/TTS optimization actually landed.
+- Check whether the current physical path is fully Xiaozhi audio/protocol or
+  still using the old A21 diagnostic/PCM bridge path.
+- Continue the hardware main flow by isolating the bad sound as TTS generation,
+  Opus/downlink, firmware speaker playback, or stock-control compatibility.
+- Keep the main thread in control-tower mode and route implementation/evidence
+  work to a worker.
+
+Actual completed work:
+
+- Confirmed current branch `codex/a21-hardware-window-20260602-stackchan-prd`
+  at `49b9e458d44b` with a clean worktree before this docs update.
+- Dispatched read-only worker
+  `019e888d-f57d-7922-8e48-24b00255a122` for audio/protocol audit.
+- Read worker result: audio optimization landed; current physical audio path
+  is stock-profile Xiaozhi Opus through A21 Gateway, not the old PCM bridge;
+  the most likely bad-sound boundary is Gateway TTS generation/PCM before
+  Opus/downlink.
+- Rechecked current Gateway health/device state: LAN Gateway on port `21081`
+  is healthy; physical device was online with stock Xiaozhi Opus ingress and
+  downlink capabilities during the checked window.
+- Inspected source around xiaozhi listen handling, TTS pipeline, local TTS
+  adapter, PCM quality guard, and Opus downlink.
+- Confirmed the stock firmware serial log repeatedly reports `Unknown message
+  type: listen` while still entering `speaking`, so the binary audio path works
+  but stock-control cleanliness still needs a follow-up.
+- Created
+  `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md`.
+- Updated `docs/project_state_machine.md` with active child transition
+  `T-AUDIO-001` and blocked transition `T-AUDIO-002`.
+- Dispatched implementation/evidence worker
+  `019e8895-43a6-7e23-a4f3-601f0451ab50` titled
+  `Isolate TTS audio quality`.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md`
+
+Current repository state:
+
+- Control branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Current HEAD before this documentation update: `49b9e458d44b`.
+- Worktree before docs update: clean.
+- Current total state remains
+  `S-HW-PHYSICAL-XIAOZHI-GATEWAY-DOWNLINK-CANDIDATE` with active child
+  `T-AUDIO-001`.
+
+Key evidence and conclusions:
+
+- Audio-quality/downlink optimization landed in code and history, including
+  the downlink clarity, PCM quality guard, host loopback quality gate, and
+  xiaozhi downlink clarity test commits.
+- The current physical product route is stock Xiaozhi profile plus A21 Gateway
+  `/v1/xiaozhi`: stock-compatible WebSocket, Opus uplink/downlink, listen and
+  abort, A21-owned ASR/text/TTS generation, and paced Opus binary downlink.
+- The old A21 PCM bridge is not the current product audio path.
+- This is not upstream Xiaozhi end-to-end; it is a stock-compatible A21 Gateway
+  implementation.
+- The physical report remains `candidate_gateway_downlink`, not audible
+  playback acceptance.
+- The current host-local evidence selects `sherpa_onnx_tts` through
+  `A21_TTS_FAST_PROFILE`; an IndexTTS2/voice-clone smoke report exists but was
+  not the current physical-path TTS evidence.
+
+Unfinished items:
+
+- Worker `019e8895-43a6-7e23-a4f3-601f0451ab50` must complete Phase 1 host
+  downlink objective isolation and return whether any report/test addition was
+  needed.
+- Physical foreground A/B still needs to compare current TTS against a known
+  good or alternate TTS candidate through the same stock Xiaozhi route.
+- Device playback ack, operator/instrument audible observation, device
+  downlink first-frame timing, first-audible timing, and barge-in `stop_done`
+  remain missing.
+- Real provider smoke and custom wake proof remain outside this audio RCA
+  transition and are still not launch green.
+
+Known risks and blockers:
+
+- Host PCM quality can pass while voice naturalness/prosody still sounds bad.
+- Stock firmware `Unknown message type: listen` warnings can pollute protocol
+  polish even if they are not the primary TTS-quality root cause.
+- Do not switch TTS profiles in a background worker because the physical device
+  is currently using a foreground Gateway route.
+- Do not claim PRD physical acceptance until audible observation or trusted
+  playback ack exists.
+
+Validation results:
+
+- `curl -sS --max-time 3 http://127.0.0.1:21080/healthz`: healthy A21 Gateway.
+- `curl -sS --max-time 3 http://127.0.0.1:21081/healthz`: healthy A21 Gateway.
+- `curl -sS --max-time 3 http://127.0.0.1:21081/v1/devices`: physical device
+  online during the checked window with stock Xiaozhi Opus ingress/downlink
+  capabilities.
+- `curl -sS --max-time 3 http://127.0.0.1:21081/v1/providers/voice/health`:
+  healthy mock voice provider surface; it does not expose xiaozhi product-chain
+  TTS selection.
+- `go test ./internal/audio ./internal/providers ./internal/gateway ./internal/app -run 'PCMQuality|LocalTTS|VoicePipeline|Xiaozhi.*Opus|Xiaozhi.*Stock|XiaozhiWebSocketListen|XiaozhiPhysicalEvidence' -count=1`:
+  passed.
+- `git diff --check`: passed.
+
+Recommended next action:
+
+- Read worker `019e8895-43a6-7e23-a4f3-601f0451ab50` when it finishes.
+- If worker adds host downlink decoded `audio_quality` evidence and tests pass,
+  review and integrate the worker change.
+- Then run the foreground physical A/B from the plan, changing only the TTS
+  candidate/profile while preserving the same firmware, NVS route, Gateway
+  port, and stock Xiaozhi path.
+
+## 2026-06-02 - T-AUDIO-001a - Integrate Xiaozhi Downlink Quality Evidence
+
+Goal:
+
+- Integrate worker `019e8895-43a6-7e23-a4f3-601f0451ab50` Phase 1 output into
+  the control branch.
+- Keep the change limited to host-only evidence so the bad sound can be
+  isolated without touching firmware, NVS, serial, provider/V21 execution, or
+  Mac audio playback.
+- Preserve the distinction between host objective downlink evidence and
+  physical audible acceptance.
+
+Actual completed work:
+
+- Reviewed the worker summary and manually integrated the narrow code/test
+  change onto the control branch.
+- Added decoded Opus/downlink aggregate quality reporting to
+  `xiaozhi-voice-bench`.
+- Added regression assertions so the bench output includes
+  `downlink_audio_quality`, `codec: opus_decoded_pcm_s16le`,
+  `sample_rate_hz: 16000`, and a passed quality status.
+- Updated `docs/project_state_machine.md` to mark `T-AUDIO-001a` complete and
+  keep `T-AUDIO-001` Phase 2 as the active physical A/B path.
+- Updated
+  `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md` with Phase 1
+  completion status.
+
+Files changed:
+
+- `internal/app/xiaozhi_voice_bench.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md`
+
+Current repository state:
+
+- Control branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Starting HEAD for this handoff entry: `49b9e458d44b`.
+- Active transition remains `T-AUDIO-001`, with `T-AUDIO-001a` completed and
+  physical A/B still pending.
+
+Current conclusions:
+
+- The audio/TTS optimization was already landed before this round.
+- The current physical path is stock-profile Xiaozhi Opus uplink/downlink
+  through A21 Gateway, not the old A21 PCM bridge.
+- The end-to-end route is not upstream Xiaozhi cloud; A21 Gateway still owns
+  ASR/text/TTS generation and Opus downlink.
+- The most likely blocker remains TTS/model/voice generation unless the new
+  host post-Opus metrics or a foreground physical A/B points elsewhere.
+
+Unfinished items:
+
+- Run a fresh `xiaozhi-voice-bench --require-product-chain` against the active
+  Gateway route to generate a new report containing `downlink_audio_quality`.
+- Run foreground physical A/B with the same firmware, NVS route, Gateway port,
+  and stock Xiaozhi path, changing only the approved TTS candidate/profile or
+  fixture source.
+- Record operator/instrument audible observation or trusted device playback ack
+  tied to a fresh trace.
+- Regenerate `xiaozhi-physical-evidence` and product readiness after physical
+  A/B.
+- Clean or gate stock-incompatible `listen` ack behavior if it is confirmed to
+  be product-polish or runtime-noise risk.
+
+Known risks and blockers:
+
+- Host PCM and post-Opus objective quality can pass while the voice still
+  sounds unnatural, robotic, or unfit for product use.
+- Physical speaker/decode/playback can still be the root cause even if host
+  downlink metrics are clean.
+- Stock firmware still logs `Unknown message type: listen`; do not conflate
+  that warning with TTS quality until isolated by evidence.
+- Do not treat this host-only report enhancement as PRD physical acceptance.
+
+Validation results:
+
+- `go test ./internal/audio ./internal/providers ./internal/gateway ./internal/app -run 'PCMQuality|LocalTTS|VoicePipeline|Xiaozhi.*Opus|Xiaozhi.*Stock|XiaozhiWebSocketListen|XiaozhiPhysicalEvidence|XiaozhiVoiceBench' -count=1`:
+  passed.
+- `gofmt` was run on `internal/app/xiaozhi_voice_bench.go` and
+  `internal/app/app_test.go`.
+- `git diff --check`: passed.
+
+Recommended next action:
+
+- Execute `T-AUDIO-001` Phase 2: foreground physical A/B on the current stock
+  Xiaozhi route after operator approval for any Gateway/TTS profile swap.
+- Use the new `downlink_audio_quality` evidence to decide whether the next fix
+  belongs to TTS/model selection, Opus/downlink pacing/quality, firmware
+  playback, or protocol cleanup.
