@@ -4,7 +4,7 @@ Status: active control-tower plan
 Date: 2026-06-02  
 Owner: A21 control tower  
 Base branch: `codex/a21-integration-runtime-readiness-20260601`  
-Current integration checkpoint: `4de78c5 chore(control): record wake package evidence`
+Current integration checkpoint: `472b5fb merge: wake physical acceptance seam`
 Current post-worker checkpoint: this document revision
 
 ## 0. Control Rule
@@ -38,8 +38,8 @@ implementation waves.
 Current integration branch:
 
 - Branch: `codex/a21-integration-runtime-readiness-20260601`
-- HEAD before this post-worker checkpoint:
-  `4de78c5 chore(control): record wake package evidence`
+- Current HEAD after this wake-physical-acceptance checkpoint:
+  `472b5fb merge: wake physical acceptance seam`
 - Main worktree dirty state: only untracked `tools/__pycache__/`
 - Current explicit-provider `product-readiness --use-latest-reports` with
   `A21_PROVIDER_PRIMARY=local_ollama`,
@@ -72,8 +72,11 @@ Current integration branch:
   MultiNet package exists at
   `a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`
   for desired phrase `小阿二一` / `xiao a er yi`. It is below activation:
-  `flash_allowed=false`, `flash_executed=false`, and physical wake proof is
-  still required before `wake_word_product_ready` may close.
+  `flash_allowed=false`, `flash_executed=false`, and
+  `wake_word.physical_acceptance_available=false`. The
+  `wake-word-physical-acceptance` command/report seam is now implemented, but a
+  real guarded-flash/operator physical proof report is still required before
+  `wake_word_product_ready` may close.
 - Latest full verification:
   `env NO_PROXY='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' no_proxy='localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16' make verify`
   passed after the provider runbook, reviewed-build receipt guard, voice
@@ -86,8 +89,13 @@ Current integration branch:
   `go test ./internal/app -run 'StackChanSpeaker|StackChanTouch|ProductReadiness' -count=1`
   passed.
 - Latest wake/readiness targeted verification:
-  `go test ./internal/app -run 'WakeWordFirmware|ProductReadiness' -count=1`
-  passed on current mainline after ingesting the custom wake package evidence.
+  `go test ./internal/app -run 'WakeWord.*Physical|WakeWord.*Acceptance|ProductReadiness|ServerSideReadinessBundle' -count=1`
+  passed on current mainline after merging the wake physical acceptance seam.
+  A temporary fixture-only CLI smoke for
+  `go run ./cmd/a21 wake-word-physical-acceptance --package-report <fixture>
+  --proof-report <fixture> --output-dir <tmp>` emitted
+  `a21.wake_word_physical_acceptance.v1` and wrote exactly one temp report; the
+  temp report was removed and is not product evidence.
 - Latest voice-mode verification:
   `go test ./internal/gateway -run 'VoiceMode|FastCompanion|DeviceControl|Simulator' -count=1`
   passed,
@@ -124,10 +132,19 @@ Current integration branch:
   next-action is gone when the explicit adapter URL is supplied.
 - Latest server-side bundle refresh:
   `A21_PROVIDER_PRIMARY=local_ollama A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434 A21_LOCAL_OLLAMA_MODEL=<local-model> A21_V21_ADAPTER_URL=http://127.0.0.1:21121 server-side-readiness-bundle --provider-smoke-report reports/a21-provider-smoke-20260602-075644-199710000.json --use-latest-reports`
-  wrote `a21-server-side-readiness-bundle-20260602-075651.json`, with
+  wrote `a21-server-side-readiness-bundle-20260602-081517.json`, with
   `provider.ready=true`, `v21.ready=true`, `host_voice.ready=true`,
-  `wake_word.ready=false`, next action only for wake-word, and no PRD
-  fake-green.
+  `wake_word.ready=false`, wake source
+  `a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`,
+  next action only for wake-word physical acceptance, and no PRD fake-green.
+- Latest product-readiness refresh after the wake physical acceptance seam:
+  `A21_PROVIDER_PRIMARY=local_ollama A21_LOCAL_OLLAMA_BASE_URL=http://127.0.0.1:11434 A21_LOCAL_OLLAMA_MODEL=<local-model> A21_V21_ADAPTER_URL=http://127.0.0.1:21121 product-readiness --provider-smoke-report reports/a21-provider-smoke-20260602-075644-199710000.json --use-latest-reports`
+  wrote `a21-product-readiness-20260602-081517.json`, with
+  `status=mock_demo_ready`, `launch_ready=false`,
+  `wake_word.product_ready=false`,
+  `wake_word.physical_acceptance_available=false`,
+  server-side `missing_evidence=["wake_word"]`, and canonical
+  `missing_real_evidence=["physical_stackchan_online","physical_stackchan_prd_acceptance","wake_word_product_ready"]`.
 - Latest provider operator safety smoke:
   `make provider-5080lab-runbook A21_PROVIDER=mock` failed with exit 2,
   `make provider-5080lab-runbook A21_PROVIDER=selected_provider` printed a
@@ -256,6 +273,7 @@ Recently completed workers:
 | Realtime evidence closure | `019e851c-1c6b-7d53-8437-6cbe4b57692c` | `/Users/jiyurun/.codex/worktrees/5434/New project` | `codex/a21-realtime-evidence-closure-20260602` | Provider realtime fixture report/output-dir and product-readiness visibility | Merged via `66798f8` and `9526976`; do not duplicate |
 | Mode/privacy closure | `019e851d-1917-75c1-b4cb-f4a26c7851ca` | `/Users/jiyurun/.codex/worktrees/7232/New project` | `codex/a21-mode-privacy-closure-20260602` | Public/private/focus/professional mode red lines and visible state | Merged via `2d102c4` and `61d121d`; do not duplicate |
 | Wake-word no-hardware diagnostic closure | `019e8528-fd53-77b3-a17e-676eed19ed9e` | `/Users/jiyurun/.codex/worktrees/7a3c/New project` | `codex/a21-wake-word-package-readiness-20260602` | Missing build-dir/receipt diagnostic package reports and product-readiness next-action guard | Merged via `2f01049`; do not duplicate |
+| Wake physical acceptance seam | `019e85a1-94d5-7052-9859-89b62da4ef2e` | `/Users/jiyurun/.codex/worktrees/9004/New project` | `codex/a21-wake-physical-acceptance-20260602` | Post-flash custom wake proof report, product-readiness ingestion, latest-report matching, server-side bundle surfacing | Worker stopped after red tests; control tower reclaimed, implemented, verified, and merged via `40109e4`/`472b5fb`; do not duplicate |
 | Provider selected-evidence closure | `019e8529-78c3-7fa3-9a23-a776180e5009` | `/Users/jiyurun/.codex/worktrees/fc26/New project` | `codex/a21-provider-5080lab-evidence-closure-20260602` | Selected-provider matching for latest smoke evidence, package/import, and 5080lab repeat-3 runbook | Merged via `f57cbda`; do not duplicate |
 | Wake build receipt closure | `019e8537-d0bf-71b1-b72a-b5e3cf90c793` | `/Users/jiyurun/.codex/worktrees/c7e2/New project` | `codex/a21-wake-build-receipt-20260602` | Build receipt command and explicit receipt-to-package bridge for reviewed xiaozhi/ESP-SR MultiNet output | Merged via `f288741`; do not duplicate |
 | No-hardware PRD gap audit | `019e8537-d17e-7320-a13d-6a122cab9dd0` | `/Users/jiyurun/.codex/worktrees/efbe/New project` | detached at `9939bda` | Read-only audit of current no-hardware gaps | Completed read-only; no merge needed |
@@ -295,8 +313,10 @@ Current next moves:
    the current `小阿二一` / `xiao a er yi` MultiNet build. Do not rebuild this
    unless the desired phrase/threshold or upstream xiaozhi commit changes.
    `product_ready` must remain false until a guarded flash and physical wake
-   proof are collected. The previously found X21 stock build directory remains
-   rejected diagnostic evidence only.
+   proof are collected, then recorded with
+   `wake-word-physical-acceptance --package-report reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json --proof-report <physical-proof.json> --output-dir reports`.
+   The previously found X21 stock build directory remains rejected diagnostic
+   evidence only.
 4. Optional no-hardware polish should be dispatched only if it burns a current
    PRD gap or fixes a regression. Do not reopen audio clarity, host voice
    loopback, voice-mode selector, personality runtime, selected-provider
@@ -316,7 +336,7 @@ Current next moves:
 | V21 professional mode | No-hardware evidence ready, launch physical/user acceptance pending | V21 adapter contract, checking feedback, evidence/cards/follow-ups, `v21_professional_execution` rollup | Keep real adapter evidence current; physical/public-mode acceptance still required |
 | Agent task bridge | Contract done | AgentTask interface, Hermes/MiMo profiles, safety mapper | Keep out of first-audio path; later UX polish only |
 | Physical StackChan | Partial | Capability charts, evidence commands, playback ack/debug profile, firmware guards, candidate downlink reports | CoreS3 physical online, mic/audio/playback stop, touch/screen/servo/RGB/wake word acceptance |
-| Wake word | No-hardware config/plan/build-receipt/custom package path done; product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge, current reviewed `小阿二一` MultiNet package artifact and sha | Guarded flash and physical custom wake proof |
+| Wake word | No-hardware config/plan/build-receipt/custom package path and physical acceptance seam done; product-ready still pending | Frontend/Gateway desired phrase persistence, pending firmware status, guarded plan/package commands, package report ingestion, missing build-dir/receipt diagnostic reports, explicit build receipt bridge, current reviewed `小阿二一` MultiNet package artifact and sha, `wake-word-physical-acceptance` report ingestion/latest matching | Real guarded flash plus physical custom wake proof report |
 | Personality and playbooks | Runtime workmate composer done, scenario UX later only when needed | `docs/personality` assets merged; `internal/personality` composes core + tone + one mode + optional scenario/failure overlay for fast companion prompt | Scenario selection/product UX polish only when a real flow needs it |
 
 Important correction: `8bfed60 fix(audio): improve xiaozhi tts downlink clarity` is already merged into the current baseline. The previous audio-risk review is not a live gap. Treat it as a regression guard only.
