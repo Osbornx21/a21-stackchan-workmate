@@ -221,7 +221,7 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 		`CONFIG_SEND_WAKE_WORD_DATA=n`,
 		`# CONFIG_USE_AFE_WAKE_WORD is not set`,
 		`CONFIG_USE_CUSTOM_WAKE_WORD=y`,
-		`CONFIG_CUSTOM_WAKE_WORD="zi yue"`,
+		`CONFIG_CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`,
 		`CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"`,
 		`CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20`,
 		`CONFIG_SR_MN_CN_MULTINET7_QUANT=y`,

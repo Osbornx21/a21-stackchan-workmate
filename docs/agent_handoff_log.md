@@ -3345,3 +3345,104 @@ Failure location and reason:
 - The request-start autostart variant physically regressed to the official
   welcome/setup screen with ineffective Skip/Start buttons. It was superseded
   by direct Xiaozhi autostart before product recovery flash.
+
+## 2026-06-03 - T-WAKE-003 / T-ASR-GREEN-LATENCY-001 - Wake Rejected And Green Listen Bounded
+
+Goal:
+
+- Preserve the last round's progress after the operator pasted the prior
+  status output back into the thread.
+- Record that `紫悦` physical wake validation failed instead of keeping it
+  pending or green.
+- Separate the ASR green-light waiting problem from wake-word acceptance.
+- Create the smallest contest-path hotfix candidate for both issues without
+  touching provider, V21, NVS, Wi-Fi, or TTS gain.
+
+Actual completed work:
+
+- Pulled live Gateway trace
+  `a21-trace-44-1b-f6-e2-6a-60` from `127.0.0.1:21081`.
+- Summarized the trace:
+  - `event_count=22129`;
+  - `xiaozhi.listen.start=19`;
+  - `vad.speech.start=13`;
+  - `vad.speech.end=13`;
+  - `xiaozhi.listen.auto_stop=13`;
+  - `xiaozhi.voice_pipeline.start=13`;
+  - some listen windows were far too long, including about 25s, 38s, 70s, and
+    108s before auto-stop or replacement by another listen.
+- Created plan
+  `docs/plans/2026-06-03-wake-and-asr-green-latency-recovery.md`.
+- Updated the official-compatible firmware overlay wake command list from
+  `zi yue` to
+  `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue`, while keeping display
+  `紫悦`, threshold `20`, custom MultiNet, and the product app lane.
+- Added Gateway stock Xiaozhi max-listen safety stop:
+  - default `7000 ms`;
+  - env override `A21_XIAOZHI_LISTEN_MAX_MS`;
+  - active only after speech has been detected;
+  - records `xiaozhi.listen.max_duration_auto_stop` then
+    `xiaozhi.listen.auto_stop`;
+  - starts the normal voice pipeline task rather than inventing a new path.
+- Improved trace summary pairing so reused hardware trace ids use the latest
+  complete event pair instead of pairing the first old event with a later turn.
+- Updated `docs/project_state_machine.md`:
+  - total state now records wake failure and ASR latency hotfix candidate;
+  - `T-WAKE-002` is rejected, not accepted;
+  - `T-WAKE-003-ZI-YUE-PHRASE-TUNING` is active;
+  - `T-ASR-GREEN-LATENCY-001-XIAOZHI-LISTEN-AUTO-STOP` is active.
+
+Modified files:
+
+- `docs/plans/2026-06-03-wake-and-asr-green-latency-recovery.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- Full `make verify` passed for this round.
+- The tuned wake phrase has not been built or flashed yet.
+- The live Gateway has not yet been restarted with the max-listen hotfix.
+- Physical wake acceptance remains failed until the operator confirms a tuned
+  phrase wakes the device without touch.
+- Green-light latency remains a candidate fix until the operator retests the
+  live device.
+
+Known risks and blockers:
+
+- MultiNet may still not reliably recognize the two-syllable `紫悦`; the longer
+  aliases are a pragmatic contest-path improvement, not proof.
+- A 7s max listen cap can cut off very long utterances. It is env configurable
+  through `A21_XIAOZHI_LISTEN_MAX_MS`.
+- The serial diagnostic read path was unreliable on this machine because Python
+  lacked `serial` and a Perl read blocked; no serial proof was collected this
+  round.
+- No new background worker could be spawned initially because the subagent
+  thread limit was reached; the main control thread executed the bounded
+  changes directly.
+
+Next recommended actions:
+
+1. Commit the hotfix candidate.
+2. Build the official-compatible product app and inspect `sdkconfig.json`.
+3. Run a no-write official-compatible flash plan, then guarded flash execute
+   only from a clean worktree.
+4. Restart/deploy the Gateway hotfix or otherwise ensure the live Gateway is
+   running this commit before retesting green-light latency.
+5. Ask the operator to test `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`, and to
+   report whether green ASR wait is shorter.
+
+Test/build/run results so far:
+
+- `go test ./internal/gateway -run 'TestTraceEndpointUsesLatestCompletePairForReusedHardwareTrace|TestTraceEndpointReturnsVoicePipelineSplitSummary|TestTraceEndpointUsesASRFinalWhenPartialIsUnavailable|TestXiaozhiWebSocketVADSpeechEndAutoStopsRealtimeTurn|TestXiaozhiWebSocketMaxListenDurationAutoStopsAfterSpeech' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration|TestGatewayServerOptionsFromEnvWiresSileroVADConfig|TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake|TestOfficialXiaozhiCompatibleOverlayPreservesOfficialStackChanAppSurface' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed.

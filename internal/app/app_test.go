@@ -4484,6 +4484,15 @@ func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_LISTEN_MAX_MS=4500",
+	})
+	if options.XiaozhiListenMaxDuration != 4500*time.Millisecond {
+		t.Fatalf("listen max = %s, want 4500ms", options.XiaozhiListenMaxDuration)
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresSileroVADConfig(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_VAD_PREFERENCE=silero",

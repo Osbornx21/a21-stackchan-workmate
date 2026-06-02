@@ -657,6 +657,27 @@ func TestTraceEndpointUsesASRFinalWhenPartialIsUnavailable(t *testing.T) {
 	assertSummaryDelta(t, "answer_first_audio_total_ms", response.Summary.AnswerFirstAudioTotalMS, 1640)
 }
 
+func TestTraceEndpointUsesLatestCompletePairForReusedHardwareTrace(t *testing.T) {
+	server := NewServer()
+	server.recordTrace("a21-trace-reused-001", "s1", "stackchan-001", "audio.ingress.buffered", 1000)
+	server.recordTrace("a21-trace-reused-001", "s1", "stackchan-001", "asr.final", 100000)
+	server.recordTrace("a21-trace-reused-001", "s2", "stackchan-001", "audio.ingress.buffered", 110000)
+	server.recordTrace("a21-trace-reused-001", "s2", "stackchan-001", "asr.final", 110550)
+	req := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-reused-001", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response TraceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	assertSummaryDelta(t, "asr_first_partial_ms", response.Summary.ASRFirstPartialMS, 550)
+}
+
 func TestTraceEndpointRequiresTraceID(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/traces", nil)
@@ -4295,6 +4316,77 @@ func TestXiaozhiWebSocketVADSpeechEndAutoStopsRealtimeTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"vad.speech.end", "xiaozhi.listen.auto_stop", "xiaozhi.voice_pipeline.start", "xiaozhi.opus_frame.ignored_not_listening"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
+func TestXiaozhiWebSocketMaxListenDurationAutoStopsAfterSpeech(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiListenMaxDuration: 180 * time.Millisecond,
+	})
+	runner := newRecordingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	nowMS := int64(1000)
+	server.now = func() time.Time {
+		nowMS += 60
+		return time.UnixMilli(nowMS)
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-max-listen",
+		"session_id": "a21-session-xiaozhi-max-listen",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	for i := 0; i < 4; i++ {
+		if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	var captured providers.VoicePipelineRequest
+	select {
+	case captured = <-runner.requests:
+	case <-time.After(time.Second):
+		t.Fatal("voice pipeline runner did not capture request")
+	}
+	if len(captured.Frames) == 0 {
+		t.Fatal("captured frames empty")
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-max-listen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"vad.speech.start", "xiaozhi.listen.max_duration_auto_stop", "xiaozhi.listen.auto_stop", "xiaozhi.voice_pipeline.start"} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}

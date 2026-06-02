@@ -32,6 +32,7 @@ import (
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
+const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
@@ -63,6 +64,7 @@ type Server struct {
 	xiaozhiProfessionalASR     providers.ASRAdapter
 	xiaozhiFastAckTTS          providers.TTSAdapter
 	xiaozhiStockProfessional   bool
+	xiaozhiListenMaxDurationMS int64
 	wakeWordConfigPath         string
 	voiceModeConfig            string
 }
@@ -74,6 +76,7 @@ type ServerOptions struct {
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 	AudioIngressConfig           audio.IngressConfig
 	XiaozhiStockProfessional     bool
+	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
 }
 
@@ -452,6 +455,10 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if v21TTL <= 0 {
 		v21TTL = 3 * time.Second
 	}
+	xiaozhiListenMaxDurationMS := defaultXiaozhiListenMaxDurationMS
+	if options.XiaozhiListenMaxDuration > 0 {
+		xiaozhiListenMaxDurationMS = int64(options.XiaozhiListenMaxDuration / time.Millisecond)
+	}
 	xiaozhiRunnerFactory := defaultXiaozhiVoicePipelineRunner
 	xiaozhiPipelineMeta := xiaozhiVoicePipelineMeta{
 		Selection:     providers.VoicePipelineSelectionFromEnv(nil),
@@ -507,6 +514,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiProfessionalASR:     xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
 		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
+		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
 	}
 }
@@ -1433,6 +1441,7 @@ type xiaozhiSession struct {
 	nextTurnID               uint64
 	helloReceived            bool
 	listening                bool
+	listenStartedAtMS        int64
 	binaryProtocolVersion    int
 	opusCodec                *opuscodec.Codec
 	opusSampleRateHz         int
@@ -1865,6 +1874,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		}
 		session.helloReceived = true
 		session.listening = false
+		session.listenStartedAtMS = 0
 		session.resetXiaozhiTTSStop()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
@@ -1884,6 +1894,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			nowMS := s.now().UnixMilli()
 			if session.xiaozhiInputSuppressed(nowMS) {
 				session.listening = false
+				session.listenStartedAtMS = 0
 				session.resetXiaozhiOpusIngress()
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_after_barge", nowMS)
@@ -1897,6 +1908,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			}
 			turn := session.startXiaozhiTurn(ctx, mode)
 			session.listening = true
+			session.listenStartedAtMS = nowMS
 			session.resetXiaozhiOpusIngress()
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
@@ -1916,6 +1928,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				return true
 			}
 			session.listening = false
+			session.listenStartedAtMS = 0
 			if mode == protocol.ModeProfessional {
 				session.setCurrentXiaozhiTurnMode(mode)
 			}
@@ -1929,6 +1942,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			return true
 		}
 		session.listening = false
+		session.listenStartedAtMS = 0
 		abortReason := frame.Control.Abort.Reason
 		turn := session.cancelCurrentXiaozhiTurn(abortReason)
 		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
@@ -2111,7 +2125,7 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 		}
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, string(event), s.now().UnixMilli())
 	}
-	s.maybeAutoStopXiaozhiTurnOnSpeechEnd(ctx, conn, session, result.Events)
+	s.maybeAutoStopXiaozhiTurnOnIngress(ctx, conn, session, result.Events)
 }
 
 func pcm16Base64(pcm []int16) string {
@@ -2323,8 +2337,14 @@ func (s *Server) startXiaozhiTurnTask(ctx context.Context, conn *websocket.Conn,
 	}()
 }
 
-func (s *Server) maybeAutoStopXiaozhiTurnOnSpeechEnd(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, events []audio.Event) {
-	if !containsAudioIngressEvent(events, audio.EventVADSpeechEnd) || !session.voicePipelineHasSpeech || !session.listening {
+func (s *Server) maybeAutoStopXiaozhiTurnOnIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, events []audio.Event) {
+	autoStopReason := ""
+	if containsAudioIngressEvent(events, audio.EventVADSpeechEnd) {
+		autoStopReason = "speech_end"
+	} else if s.xiaozhiListenMaxDurationReached(session, s.now().UnixMilli()) {
+		autoStopReason = "max_duration"
+	}
+	if autoStopReason == "" || !session.voicePipelineHasSpeech || !session.listening {
 		return
 	}
 	turn := session.currentXiaozhiTurn()
@@ -2332,9 +2352,23 @@ func (s *Server) maybeAutoStopXiaozhiTurnOnSpeechEnd(ctx context.Context, conn *
 		return
 	}
 	session.listening = false
+	session.listenStartedAtMS = 0
+	if autoStopReason == "max_duration" {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.max_duration_auto_stop", s.now().UnixMilli())
+	}
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
 	task := s.newXiaozhiTurnTask(session, turn)
 	s.startXiaozhiTurnTask(ctx, conn, session, task)
+}
+
+func (s *Server) xiaozhiListenMaxDurationReached(session *xiaozhiSession, nowMS int64) bool {
+	if s == nil || session == nil || s.xiaozhiListenMaxDurationMS <= 0 || nowMS <= 0 {
+		return false
+	}
+	if !session.listening || !session.voicePipelineHasSpeech || session.listenStartedAtMS <= 0 {
+		return false
+	}
+	return nowMS-session.listenStartedAtMS >= s.xiaozhiListenMaxDurationMS
 }
 
 func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason string, hadTurn bool) {
@@ -4087,9 +4121,10 @@ func traceLatencySummary(events []TraceEvent) TraceLatencySummary {
 func traceDeltaMS(events []TraceEvent, startName string, endName string) *int64 {
 	var startAtMS int64
 	hasStart := false
+	var latestDelta *int64
 	for _, event := range events {
 		switch {
-		case event.Name == startName && !hasStart:
+		case event.Name == startName:
 			startAtMS = event.AtMS
 			hasStart = true
 		case event.Name == endName && hasStart:
@@ -4097,10 +4132,11 @@ func traceDeltaMS(events []TraceEvent, startName string, endName string) *int64 
 			if delta < 0 {
 				delta = 0
 			}
-			return &delta
+			latestDelta = &delta
+			hasStart = false
 		}
 	}
-	return nil
+	return latestDelta
 }
 
 func firstTraceDelta(values ...*int64) *int64 {

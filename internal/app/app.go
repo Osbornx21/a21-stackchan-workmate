@@ -1003,6 +1003,9 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		AudioIngressConfig:           newAudioIngressConfigFromEnv(env),
 		XiaozhiStockProfessional:     appEnvBool(env, "A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE"),
 	}
+	if listenMaxMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_XIAOZHI_LISTEN_MAX_MS"))); err == nil && listenMaxMS > 0 {
+		options.XiaozhiListenMaxDuration = time.Duration(listenMaxMS) * time.Millisecond
+	}
 	if adapterURL := strings.TrimSpace(appEnvValue(env, "A21_V21_ADAPTER_URL")); adapterURL != "" {
 		client, err := v21adapter.NewHTTPClient(adapterURL)
 		if err != nil {
