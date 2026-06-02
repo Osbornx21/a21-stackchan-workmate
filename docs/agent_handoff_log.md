@@ -1,7 +1,7 @@
 # A21 Agent Handoff Log
 
 Status: active handoff document.
-Last updated: 2026-06-02.
+Last updated: 2026-06-03.
 
 This log is the recovery surface for Codex workers and future control-tower
 threads. Every work round must add or update an entry before handoff. Keep this
@@ -2540,3 +2540,252 @@ Validation results:
   `stackchan-half-duplex-acceptance` correctly not run.
 - Worker Wake: package hash/size checks passed; wake-related Go tests passed;
   readiness stayed red as expected.
+
+## 2026-06-03 - T-PROVIDER-PLAYBACK-001 Stock Xiaozhi Relay WAV Playback Host Support
+
+Round goal:
+
+- Execute Worker PLAYBACK for `T-PROVIDER-PLAYBACK-001`: TDD-implement
+  `/v1/xiaozhi/say` optional `wav_path` support so a local A21-compatible
+  16 kHz mono WAV can be delivered through the same stock TTS lifecycle and
+  Opus downlink path as text say.
+
+Actual completed work:
+
+- Read `AGENTS.md`, `docs/project_state_machine.md`,
+  `docs/agent_handoff_log.md`, and
+  `docs/plans/2026-06-03-stock-xiaozhi-relay-wav-playback.md`.
+- Confirmed checkout branch `codex/a21-hardware-window-20260602-stackchan-prd`
+  at baseline `6eb8062`.
+- Added the focused Gateway RED test first. It failed as expected because the
+  pre-change handler ignored `wav_path` and returned `400: text is required`.
+- Added `wav_path` to `XiaozhiSayRequest`, requiring exactly one playable
+  source: `text` or `wav_path`.
+- Implemented local 16 kHz mono PCM WAV chunk loading through existing audio
+  helpers and fed those chunks into the existing `writeXiaozhiOpusDownlink`
+  path.
+- Preserved the stock `tts/start`, `tts/sentence_start`, binary Opus downlink,
+  `tts/stop`, and post-say input-suppression lifecycle.
+- Added basename-only response metadata for WAV playback:
+  `audio_source=wav_file` and `audio_basename`; no full local path, raw/base64
+  audio, transcript/provider output, credentials, or proxy values are returned.
+- Updated the protocol and state-machine docs for the new host support.
+- Probed Gateway `21081`: health passed and device `44:1b:f6:e2:6a:60` was
+  online/fresh.
+- Sent a gated foreground `/v1/xiaozhi/say` `wav_path` request to the live
+  Gateway using relay WAV basename
+  `a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`. The live process
+  returned `400: text is required`, proving it was still running the old
+  text-only handler; no audio was delivered.
+
+Files changed this round:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- The live Gateway on `21081` must be restarted or redeployed from this branch
+  before physical relay WAV playback can actually deliver audio.
+- Operator listening acceptance or rejection remains missing.
+
+Known risks and blockers:
+
+- Do not expose relay WAV full paths, raw/base64 audio, transcript/provider
+  output, credentials, proxy values, or other local path values beyond safe
+  basenames.
+- Host tests prove the transport path only; physical acceptance still requires
+  live Gateway code plus operator listening evidence.
+
+Recommended next action:
+
+- Restart/deploy Gateway `21081` from the branch containing this `wav_path`
+  support, confirm `/v1/devices` shows `44:1b:f6:e2:6a:60` online/fresh, then
+  resend `/v1/xiaozhi/say` with the relay WAV and capture operator feedback.
+
+Validation results:
+
+- RED: `go test ./internal/gateway -run TestXiaozhiSayDeliversWAVAsStockTTSDownlink -count=1`
+  failed with `say wav status = 400: text is required`.
+- GREEN: `go test ./internal/gateway -run TestXiaozhiSayDeliversWAVAsStockTTSDownlink -count=1`
+  passed.
+- Regression:
+  `go test ./internal/gateway -run 'TestXiaozhiSay(DeliversWAVAsStockTTSDownlink|DeliversTextAsStockTTSDownlink|SuppressesImmediateListenRestartForStockPhysical)' -count=1`
+  passed.
+- Package: `go test ./internal/gateway -count=1` passed.
+- Repo: `make verify` passed, including `go test ./...` and
+  `git diff --check`.
+- Physical playback: gated request attempted only after online/fresh device
+  proof; no physical audio was delivered because the live Gateway rejected
+  `wav_path` before starting a turn.
+- Live rejection trace query returned `event_count=0`, confirming no delivery
+  trace was produced by the old handler.
+
+## 2026-06-03 01:48 CST - T-WAKE-FLASH-GATE-001 Build Dir Search Remains Blocked By Provenance
+
+Round goal:
+
+- Run Worker WAKE-BUILDDIR as a read-only search for the reviewed A21 ESP-IDF
+  build directory or enough provenance to safely run a no-write wake flash plan
+  for artifact SHA
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`.
+
+Actual completed work:
+
+- Searched A21 workspace, `reports`, `.a21-run`, `dist`, `firmware`,
+  `/Users/jiyurun/.codex/worktrees`, `/private/tmp`, `/tmp`, user Desktop,
+  Downloads, and adjacent document folders.
+- Found the only full build-shaped matching dir:
+  `/private/tmp/a21-xiaozhi-wake-build/xiaozhi-esp32/build`.
+- Verified `xiaozhi.bin` in that scratch dir exactly matches SHA
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b` and
+  matches the package artifact by `cmp`.
+- Verified required flash-shaped files exist in the scratch dir, including
+  `flash_args`, `flasher_args.json`, `config/sdkconfig.json`, `xiaozhi.bin`,
+  bootloader, partition table, OTA data, generated assets, review JSON, and
+  receipt JSON.
+- Verified config/assets contain the intended custom wake payload:
+  CoreS3, `USE_CUSTOM_WAKE_WORD=true`, command `xiao a er yi`, display
+  `小阿二一`, and threshold `35` / `0.35`.
+
+Files changed this round:
+
+- None by Worker WAKE-BUILDDIR.
+
+Current unfinished items:
+
+- No safe no-write flash plan was run from this dir.
+- The matching dir is reviewed for the no-hardware package lane, but it is not
+  valid A21-owned flash input under current governance because provenance shows
+  it was copied from the frozen X21 source tree.
+
+Known risks and blockers:
+
+- Using the scratch X21-derived build dir mechanically would bypass the current
+  A21-owned flash-input rule.
+- A21 workspace still lacks a durable reviewed full build dir for the wake
+  artifact.
+- Product readiness must remain red until guarded flash and physical proof.
+
+Recommended next action:
+
+- Rebuild or restore the wake firmware from an A21-owned/reviewed source path,
+  then run no-write `xiaozhi-firmware-flash-plan`.
+- Do not execute wake flash from `/private/tmp/a21-xiaozhi-wake-build/...`
+  unless the governance rule is explicitly changed by the operator.
+
+Validation results:
+
+- `find`, `rg`, `shasum -a 256`, `wc -c`, `cmp -s`, `strings`, `realpath`,
+  `stat`, and USB port listing were run read-only.
+- No edits, no flash, no NVS write, no provider/V21/runtime execution.
+
+## 2026-06-03 01:55 CST - T-PROVIDER-PLAYBACK-001 Physical Relay WAV Delivered, Half-Duplex Blocked
+
+Round goal:
+
+- Integrate Worker PLAYBACK implementation, restart live Gateway with the new
+  stock Xiaozhi `wav_path` support, physically play the 5080 relay
+  StepFun+Iflytek WAV, and immediately probe half-duplex while preserving
+  launch-grade honesty.
+
+Actual completed work:
+
+- Main-thread review found Worker PLAYBACK stayed in scope:
+  - code changes only in Gateway stock say path;
+  - no firmware, NVS, provider adapter, global proxy, wake, or half-duplex
+    implementation changes;
+  - `wav_path` response metadata is basename-only.
+- Focused Gateway regression passed locally after worker return.
+- `make verify` passed after the implementation.
+- Restarted tmux Gateway session `a21-gateway-21081` from this working tree
+  with the same host-local parameters and direct `NO_PROXY` coverage.
+- Confirmed `http://127.0.0.1:21081/healthz` returned ok after restart.
+- Waited for physical device `44:1b:f6:e2:6a:60` to reconnect; `/v1/devices`
+  showed it `online` with fresh `device_age_ms`.
+- Delivered runtime speaker volume `100` over stock MCP:
+  - trace `a21-trace-relay-playback-volume-1780450901`;
+  - response `delivered_transport=xiaozhi_mcp`;
+  - tool `self.audio_speaker.set_volume`.
+- Delivered the 5080 relay StepFun+Iflytek WAV through stock `/v1/xiaozhi/say`
+  `wav_path`:
+  - trace `a21-trace-provider-playback-wav-1780450901`;
+  - response `delivered_transport=xiaozhi_ws`;
+  - `audio_chunks=40`;
+  - `audio_source=wav_file`;
+  - `audio_basename=a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`;
+  - no full WAV path in the response.
+- Trace summary for `a21-trace-provider-playback-wav-1780450901` recorded:
+  - `event_count=452`;
+  - `xiaozhi.say.start=1`;
+  - `tts.first_audio=1`;
+  - `audio.downlink.first_frame=1`;
+  - `xiaozhi.say.downlink=1`;
+  - `xiaozhi.tts.opus_frame.downlink=40`;
+  - `xiaozhi.say.input_suppression_armed=1`;
+  - `xiaozhi.say.delivered=1`.
+- Operator listening feedback immediately after playback: "好多了".
+- Ran `A21_GATEWAY_URL=http://127.0.0.1:21081 A21_DEVICE_ID=44:1b:f6:e2:6a:60 make stackchan-half-duplex-acceptance`.
+- Half-duplex report
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json`
+  was generated and correctly blocked with
+  `half_duplex_acceptance_status=blocked`.
+
+Files changed this round:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-03-stock-xiaozhi-relay-wav-playback.md`
+- Ignored/generated report:
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json`
+
+Current unfinished items:
+
+- Relay WAV has positive physical listening feedback, but a longer normal
+  dialogue run is still needed before full conversation acceptance.
+- Instrumented half-duplex remains blocked by current stock firmware
+  capabilities and missing runtime echo counters.
+- Wake remains blocked by missing A21-owned reviewed build dir and physical
+  custom wake proof.
+- Selected-provider readiness/bundle still needs a pinned refresh that does not
+  fall back to `mock`.
+
+Known risks and blockers:
+
+- The live Gateway is now running from the dirty working tree until this round
+  is committed.
+- `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json` proves
+  the half-duplex gate is blocked, not accepted. Findings include
+  `device_identity_not_ok`, firmware id/board/commit mismatch,
+  `microphone_not_diagnostic_probe`, `speaker_not_available`, and missing
+  runtime echo fields.
+- Operator "好多了" is strong positive voice feedback, but not full PRD launch
+  acceptance.
+
+Recommended next action:
+
+- Commit this host playback support and state update.
+- Execute `T-PROVIDER-001b`: refresh selected-provider/server-side readiness
+  using the StepFun/Iflytek relay evidence without leaking keys or promoting
+  mock evidence.
+- Decide `T-HALF-DUPLEX-002`: no-flash normal-dialogue observation versus a
+  separate guarded diagnostic-capability firmware plan.
+- Rebuild/restore an A21-owned wake firmware build dir before any wake flash
+  plan.
+
+Validation results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiSayDeliversWAVAsStockTTSDownlink|TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical' -count=1`:
+  passed.
+- `git diff --check`: passed before this log update.
+- `make verify`: passed before live Gateway restart.
+- Live Gateway restart: passed; `healthz` ok.
+- Live relay WAV playback: delivered as above.
+- Half-duplex acceptance command: exited nonzero with blocked report as
+  expected; no flash or NVS write occurred.

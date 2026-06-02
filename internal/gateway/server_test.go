@@ -3035,6 +3035,156 @@ func TestXiaozhiSayDeliversTextAsStockTTSDownlink(t *testing.T) {
 	}
 }
 
+func TestXiaozhiSayDeliversWAVAsStockTTSDownlink(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	wavPath := filepath.Join(t.TempDir(), "a21-relay-candidate.wav")
+	if err := audio.WritePCM16MonoWAV(wavPath, 16000, make([]byte, 1920)); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-say-wav",
+		"session_id": "a21-session-say-wav",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	type sayFrames struct {
+		start    map[string]any
+		sentence map[string]any
+		packet   []byte
+		stop     map[string]any
+	}
+	framesCh := make(chan sayFrames, 1)
+	readErrCh := make(chan error, 1)
+	readMap := func() (map[string]any, error) {
+		var message map[string]any
+		if err := wsjson.Read(ctx, conn, &message); err != nil {
+			return nil, err
+		}
+		return message, nil
+	}
+	go func() {
+		start, err := readMap()
+		if err != nil {
+			readErrCh <- err
+			return
+		}
+		sentence, err := readMap()
+		if err != nil {
+			readErrCh <- err
+			return
+		}
+		messageType, packet, err := conn.Read(ctx)
+		if err != nil {
+			readErrCh <- err
+			return
+		}
+		if messageType != websocket.MessageBinary || len(packet) == 0 {
+			readErrCh <- fmt.Errorf("say wav downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(packet))
+			return
+		}
+		stop, err := readMap()
+		if err != nil {
+			readErrCh <- err
+			return
+		}
+		framesCh <- sayFrames{start: start, sentence: sentence, packet: packet, stop: stop}
+	}()
+
+	payload, err := json.Marshal(map[string]string{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"wav_path":   wavPath,
+		"trace_id":   "a21-trace-say-wav",
+		"session_id": "a21-session-say-wav",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := (&http.Client{Timeout: 2 * time.Second}).Post(
+		httpServer.URL+"/v1/xiaozhi/say",
+		"application/json",
+		bytes.NewReader(payload),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("say wav status = %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["delivered_transport"] != "xiaozhi_ws" || response["audio_source"] != "wav_file" || response["audio_basename"] != "a21-relay-candidate.wav" {
+		t.Fatalf("say wav response = %+v", response)
+	}
+	if response["text_chars"] != float64(0) || response["audio_chunks"] != float64(1) {
+		t.Fatalf("say wav counts = %+v", response)
+	}
+	forbiddenResponse := string(body)
+	for _, forbidden := range []string{wavPath, filepath.Dir(wavPath), "data:", "base64", "transcript", "provider", "proxy"} {
+		if strings.Contains(forbiddenResponse, forbidden) {
+			t.Fatalf("say wav response leaked %q: %s", forbidden, forbiddenResponse)
+		}
+	}
+
+	var frames sayFrames
+	select {
+	case err := <-readErrCh:
+		t.Fatal(err)
+	case frames = <-framesCh:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if frames.start["type"] != "tts" || frames.start["state"] != "start" || frames.start["phase"] != "host_say" {
+		t.Fatalf("say wav start = %#v", frames.start)
+	}
+	if frames.sentence["type"] != "tts" || frames.sentence["state"] != "sentence_start" || frames.sentence["phase"] != "host_say" {
+		t.Fatalf("say wav sentence = %#v", frames.sentence)
+	}
+	if frames.stop["type"] != "tts" || frames.stop["state"] != "stop" || frames.stop["reason"] != "host_say_complete" {
+		t.Fatalf("say wav stop = %#v", frames.stop)
+	}
+	if len(frames.packet) == 0 {
+		t.Fatal("say wav binary packet is empty")
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-say-wav", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.say.start", "xiaozhi.tts.opus_frame.downlink", "xiaozhi.say.input_suppression_armed", "xiaozhi.say.delivered"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
 func TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical(t *testing.T) {
 	adapters := providers.VoicePipelineAdapters{
 		ASR:        providers.NewMockASRAdapter("mock-local-asr"),

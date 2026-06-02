@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -247,6 +248,7 @@ type XiaozhiSpeakerVolumeResponse struct {
 type XiaozhiSayRequest struct {
 	DeviceID  string        `json:"device_id"`
 	Text      string        `json:"text"`
+	WAVPath   string        `json:"wav_path,omitempty"`
 	Mode      protocol.Mode `json:"mode,omitempty"`
 	TraceID   string        `json:"trace_id,omitempty"`
 	SessionID string        `json:"session_id,omitempty"`
@@ -260,6 +262,8 @@ type XiaozhiSayResponse struct {
 	DeliveredTransport string `json:"delivered_transport"`
 	TextChars          int    `json:"text_chars"`
 	AudioChunks        int    `json:"audio_chunks"`
+	AudioSource        string `json:"audio_source,omitempty"`
+	AudioBasename      string `json:"audio_basename,omitempty"`
 }
 
 type xiaozhiDeviceSocket struct {
@@ -843,9 +847,36 @@ func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := strings.TrimSpace(req.Text)
-	if text == "" {
-		http.Error(w, "text is required", http.StatusBadRequest)
+	wavPath := strings.TrimSpace(req.WAVPath)
+	if text == "" && wavPath == "" {
+		http.Error(w, "text or wav_path is required", http.StatusBadRequest)
 		return
+	}
+	if text != "" && wavPath != "" {
+		http.Error(w, "provide either text or wav_path, not both", http.StatusBadRequest)
+		return
+	}
+	var wavChunks []providers.VoiceAudioChunk
+	audioSource := ""
+	audioBasename := ""
+	if wavPath != "" {
+		chunks, err := audio.ReadPCM16MonoWAVChunksForSampleRate(wavPath, 60, 16000)
+		if err != nil || len(chunks) == 0 {
+			http.Error(w, "wav_path must reference an A21-compatible 16 kHz mono PCM WAV", http.StatusBadRequest)
+			return
+		}
+		audioSource = "wav_file"
+		audioBasename = filepath.Base(wavPath)
+		wavChunks = make([]providers.VoiceAudioChunk, 0, len(chunks))
+		for _, chunk := range chunks {
+			wavChunks = append(wavChunks, providers.VoiceAudioChunk{
+				Codec:        string(protocol.AudioCodecPCMS16LE),
+				SampleRateHz: chunk.SampleRateHz,
+				Channels:     chunk.Channels,
+				DurationMS:   chunk.DurationMS,
+				DataBase64:   chunk.DataBase64,
+			})
+		}
 	}
 	socket, ok := s.xiaozhiSocket(req.DeviceID)
 	if !ok || socket.session == nil {
@@ -897,7 +928,12 @@ func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "xiaozhi say sentence delivery failed", http.StatusBadGateway)
 		return
 	}
-	audioChunks, ok := s.writeXiaozhiTextAudioDownlink(r.Context(), socket.conn, session, task, text, mode, "xiaozhi.say")
+	var audioChunks int
+	if wavPath != "" {
+		audioChunks, ok = s.writeXiaozhiWAVAudioDownlink(r.Context(), socket.conn, session, task, wavChunks, "xiaozhi.say")
+	} else {
+		audioChunks, ok = s.writeXiaozhiTextAudioDownlink(r.Context(), socket.conn, session, task, text, mode, "xiaozhi.say")
+	}
 	if !ok {
 		s.writeXiaozhiTTSStop(r.Context(), socket.conn, session, turn, task, "host_say_unavailable")
 		http.Error(w, "xiaozhi say audio delivery failed", http.StatusBadGateway)
@@ -915,6 +951,8 @@ func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
 		DeliveredTransport: "xiaozhi_ws",
 		TextChars:          len([]rune(text)),
 		AudioChunks:        audioChunks,
+		AudioSource:        audioSource,
+		AudioBasename:      audioBasename,
 	})
 }
 
@@ -2612,6 +2650,46 @@ func (s *Server) writeXiaozhiTextAudioDownlink(ctx context.Context, conn *websoc
 	}
 	if !wrote {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
+	}
+	return audioChunks, wrote
+}
+
+func (s *Server) writeXiaozhiWAVAudioDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, chunks []providers.VoiceAudioChunk, marker string) (int, bool) {
+	turn := task.turn
+	if session.shouldAbortXiaozhiTurn(turn) {
+		return 0, false
+	}
+	if len(chunks) == 0 {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
+		return 0, false
+	}
+	firstAudio := true
+	wrote := false
+	audioChunks := 0
+	for _, chunk := range chunks {
+		if session.shouldAbortXiaozhiTurn(turn) {
+			return audioChunks, false
+		}
+		if firstAudio {
+			firstAudio = false
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "tts.first_audio", s.now().UnixMilli())
+		}
+		ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, chunk)
+		if err != nil {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_error", s.now().UnixMilli())
+			session.cancelXiaozhiTurnContext(turn, marker+"_downlink_error")
+			return audioChunks, false
+		}
+		if !ok {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_aborted", s.now().UnixMilli())
+			return audioChunks, false
+		}
+		audioChunks++
+		if !wrote {
+			wrote = true
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink", s.now().UnixMilli())
+		}
 	}
 	return audioChunks, wrote
 }

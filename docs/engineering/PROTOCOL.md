@@ -315,10 +315,16 @@ surface:
   MCP command was sent to the device socket; physical loudness acceptance still
   requires operator or instrument evidence.
 - `POST /v1/xiaozhi/say` is an operator foreground test path for an already
-  connected stock Xiaozhi device. It validates `device_id` and `text`, starts a
-  Gateway turn on the live `/v1/xiaozhi` WebSocket, writes the stock TTS
-  lifecycle (`start`, `sentence_start`, binary Opus downlink, `stop`), and
-  returns only after the text audio has been delivered. This is for physical
+  connected stock Xiaozhi device. It validates `device_id` and exactly one
+  playable source: either `text` or `wav_path`. `text` uses the configured
+  Gateway TTS path; `wav_path` must point to a local A21-compatible 16 kHz mono
+  PCM WAV and is converted into the same downlink chunk shape used by TTS. The
+  Gateway starts a turn on the live `/v1/xiaozhi` WebSocket, writes the stock
+  TTS lifecycle (`start`, `sentence_start`, binary Opus downlink, `stop`), and
+  returns only after the audio has been delivered. Responses for WAV playback
+  may include `audio_source=wav_file` and the safe file basename only; they must
+  not include the full path, raw/base64 audio, transcript, provider output,
+  credentials, proxy values, or local path values. This is for physical
   speaker/TTS A/B tests and urgent operator playback; it does not replace
   wake-word activation, normal listen/ASR flow, or physical PRD acceptance. For
   stock physical devices it also arms a short post-`say` input suppression
