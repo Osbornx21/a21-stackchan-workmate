@@ -3304,8 +3304,44 @@ Validation results before flash:
   `flash_executed=false`, app `a21-stackchan-official-xiaozhi-compatible.bin`,
   offset `0x20000`, port `/dev/cu.usbmodem1101`.
 
+Actual completed work after flash:
+
+- A first execute attempt after the welcome-screen hotfix was correctly blocked
+  by the T7 guard because the worktree had two dirty files.
+- Committed the recovery hotfix as
+  `7f3225e fix(firmware): bypass stackchan welcome setup`.
+- Re-ran guarded official-compatible product flash after the worktree was clean.
+- Flash execution passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-030818-1780427298506934000.json`.
+- Flash details:
+  - port `/dev/cu.usbmodem1101`;
+  - app `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app offset `0x20000`;
+  - app SHA-256
+    `3f7dcd291a2efb586f11aa3b6c6ca3003cae0d53be45225854502ccd0e6fa4cf`;
+  - control commit `7f3225ee1fe7`;
+  - `flash_allowed=true`;
+  - `flash_executed=true`.
+- Gateway `127.0.0.1:21081` stayed healthy after flash.
+- Device `44:1b:f6:e2:6a:60` reconnected online after flash; polling observed
+  `online` at 03:08:51 with trace `a21-trace-44-1b-f6-e2-6a-60` and speaker
+  volume `100`.
+
+Current unfinished items after flash:
+
+- Operator must confirm the screen is no longer stuck on
+  "Welcome! Let's get started".
+- Operator must say `紫悦` and report whether the device wakes without screen
+  touch.
+- Official app loading / professional-mode frontend parity should be handled in
+  a separate planned transition:
+  `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`.
+
 Failure location and reason:
 
 - The only build failure in this round was local ESP-IDF Python 3.13 importing
   `_csv` under ninja for certificate bundle generation. Manual command replay
   and rerun succeeded, so no firmware code rollback was needed.
+- The request-start autostart variant physically regressed to the official
+  welcome/setup screen with ineffective Skip/Start buttons. It was superseded
+  by direct Xiaozhi autostart before product recovery flash.
