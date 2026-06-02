@@ -3618,3 +3618,30 @@ Physical regression and immediate hotfix:
   `reports/a21-stackchan-official-baseline-20260603-041402-1780431242345821000.json`.
 - Hotfix product app SHA-256:
   `7ff81bb0e564e020128e02068bc7d83b36f90c21de8cbd3d4b89b1dd1d6e9cf3`.
+- Committed as `9ba8bc1 fix(firmware): skip welcome after stackchan app preload`.
+- No-write flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-041530-1780431330430536000.json`.
+- Guarded flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-041636-1780431396539566000.json`.
+- Flash details:
+  - port `/dev/cu.usbmodem1101`;
+  - app `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app offset `0x20000`;
+  - app SHA-256
+    `7ff81bb0e564e020128e02068bc7d83b36f90c21de8cbd3d4b89b1dd1d6e9cf3`;
+  - control commit `9ba8bc11e2d4`;
+  - `flash_allowed=true`;
+  - `flash_executed=true`.
+- Gateway `127.0.0.1:21081` saw device `44:1b:f6:e2:6a:60` reconnect
+  `online` after flash.
+- Runtime speaker volume `100` delivered through stock MCP on trace
+  `a21-trace-direct-preload-hotfix-volume-1780431400`.
+
+Current operator validation needed:
+
+- Confirm the screen is no longer on "Welcome! Let's get started".
+- Confirm the device reaches the A21/Xiaozhi runtime without tapping Skip or
+  Start.
+- Try wake phrases: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
+- If tapping the screen enters green listening with no speech, confirm it exits
+  in roughly 7 seconds.
