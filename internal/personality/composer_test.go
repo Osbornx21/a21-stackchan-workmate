@@ -1,6 +1,7 @@
 package personality
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -95,5 +96,56 @@ func TestPersonalityComposeProfessionalIncludesEvidenceBoundaryAndPublicPrivateS
 	}
 	if strings.Contains(prompt, "Workmate Mode") {
 		t.Fatalf("professional prompt included workmate mode:\n%s", prompt)
+	}
+}
+
+func TestPersonalityMemoryStateFromEnvRedactsReportAndBuildsPromptHints(t *testing.T) {
+	state, hints := MemoryStateFromEnv([]string{
+		"A21_MEMORY_USER_PREFERENCES=偏好短句\n不要鸡汤",
+		"A21_MEMORY_SESSION_NOTES=当前任务是座舱 PRD 评审\nhttp://secret.example/leak\n/Users/me/a21-secret.txt",
+	})
+
+	if !state.ContractReady || !state.Configured || !state.PromptInputReady || state.Status != "ready" {
+		t.Fatalf("memory state = %+v, want configured prompt-ready contract", state)
+	}
+	if state.UserPreferenceCount != 2 || state.SessionMemoryCount != 1 {
+		t.Fatalf("memory counts = preferences:%d session:%d, want 2/1", state.UserPreferenceCount, state.SessionMemoryCount)
+	}
+	if len(hints) != 3 {
+		t.Fatalf("hints = %#v, want three safe prompt hints", hints)
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"偏好短句", "不要鸡汤", "当前任务是座舱 PRD 评审", "secret.example", "/Users/me"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("memory report leaked %q: %s", forbidden, string(data))
+		}
+	}
+
+	prompt, err := Compose(Options{
+		Mode:        ModeWorkmate,
+		UserText:    "先接住这一轮",
+		MemoryHints: hints,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Memory Hints",
+		"user_preference:user_preference_1",
+		"偏好短句",
+		"session_memory:session_memory_1",
+		"当前任务是座舱 PRD 评审",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing memory hint %q:\n%s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{"secret.example", "/Users/me"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("prompt included unsafe memory hint %q:\n%s", forbidden, prompt)
+		}
 	}
 }

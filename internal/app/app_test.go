@@ -92,6 +92,64 @@ func TestProductReadinessReportsMockDemoWithoutFullURLLeak(t *testing.T) {
 	}
 }
 
+func TestProductReadinessReportsPersonalityMemoryStateWithoutLeakingText(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+		"A21_MEMORY_USER_PREFERENCES=偏好短句\n不要鸡汤",
+		"A21_MEMORY_SESSION_NOTES=当前任务是座舱 PRD 评审\nhttp://secret.example/leak\n/Users/me/a21-secret.txt",
+	})
+
+	if !report.Memory.ContractReady || !report.Memory.Configured || !report.Memory.PromptInputReady {
+		t.Fatalf("memory readiness = %+v, want configured prompt-ready contract", report.Memory)
+	}
+	if report.Memory.UserPreferenceCount != 2 || report.Memory.SessionMemoryCount != 1 {
+		t.Fatalf("memory counts = preferences:%d session:%d, want 2/1", report.Memory.UserPreferenceCount, report.Memory.SessionMemoryCount)
+	}
+	if report.Memory.Redaction.MemoryTextStored ||
+		report.Memory.Redaction.PromptTextStored ||
+		report.Memory.Redaction.TranscriptStored ||
+		report.Memory.Redaction.ProviderOutputStored ||
+		report.Memory.Redaction.LocalPathsStored {
+		t.Fatalf("memory redaction = %+v, want no sensitive material stored", report.Memory.Redaction)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"memory": {`,
+		`"schema_version": "a21.personality_memory_state.v1"`,
+		`"policy": "bounded_prompt_hints"`,
+		`"memory_text_stored": false`,
+		`"source_env":`,
+		`"A21_MEMORY_USER_PREFERENCES"`,
+		`"A21_MEMORY_SESSION_NOTES"`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"偏好短句",
+		"不要鸡汤",
+		"当前任务是座舱 PRD 评审",
+		"secret.example",
+		"/Users/me",
+		"raw prompt text",
+		"raw transcript text",
+		"raw provider output",
+	} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
 	ttsModelDir := createProductReadinessTTSModelDir(t)
@@ -7525,6 +7583,27 @@ func TestFastCompanionTextStreamPromptUsesPersonalityRuntimeAssets(t *testing.T)
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("prompt included unselected asset %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
+func TestFastCompanionTextStreamPromptIncludesBoundedMemoryHints(t *testing.T) {
+	t.Setenv("A21_MEMORY_USER_PREFERENCES", "偏好短句")
+	t.Setenv("A21_MEMORY_SESSION_NOTES", "当前任务是座舱 PRD 评审")
+
+	prompt := fastCompanionTextStreamPrompt("a21 mock transcript")
+
+	for _, want := range []string{
+		"Workmate Mode",
+		"Memory Hints",
+		"user_preference:user_preference_1",
+		"偏好短句",
+		"session_memory:session_memory_1",
+		"当前任务是座舱 PRD 评审",
+		"a21 mock transcript",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }

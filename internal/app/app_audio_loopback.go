@@ -588,7 +588,7 @@ func validateLocalVoiceLoopbackTextProvider(env []string, provider string) error
 func runLocalVoiceLoopbackTextStreamCompletion(ctx context.Context, prompt string, provider string, options localVoiceLoopbackTextStreamOptions) (providers.TextStreamCompletionResult, error) {
 	return providers.RunTextStreamCompletionFromEnv(ctx, options.Env, providers.TextStreamCompletionOptions{
 		ProviderName: provider,
-		Prompt:       fastCompanionTextStreamPrompt(prompt),
+		Prompt:       fastCompanionTextStreamPromptFromEnv(prompt, options.Env),
 		MaxTokens:    fastCompanionTextStreamMaxTokens,
 		Client:       options.Client,
 	})
@@ -605,9 +605,15 @@ func applyLocalVoiceLoopbackTextStreamResult(report *localVoiceLoopbackReport, r
 	report.TextStreamDone = result.Done
 }
 func fastCompanionTextStreamPrompt(transcript string) string {
+	return fastCompanionTextStreamPromptFromEnv(transcript, os.Environ())
+}
+
+func fastCompanionTextStreamPromptFromEnv(transcript string, env []string) string {
+	_, memoryHints := personality.MemoryStateFromEnv(env)
 	prompt, err := personality.Compose(personality.Options{
 		Mode:             personality.ModeWorkmate,
 		UserText:         transcript,
+		MemoryHints:      memoryHints,
 		MaxResponseRunes: fastCompanionTextStreamMaxTokens,
 	})
 	if err == nil {

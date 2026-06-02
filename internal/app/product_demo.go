@@ -16,6 +16,7 @@ import (
 
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/gateway"
+	"a21.local/a21/internal/personality"
 	"a21.local/a21/internal/providers"
 	"a21.local/a21/internal/v21adapter"
 )
@@ -53,6 +54,7 @@ type productReadinessReport struct {
 	V21               productV21Readiness               `json:"v21"`
 	StackChan         productStackChanReadiness         `json:"stackchan"`
 	Voice             productVoiceReadiness             `json:"voice"`
+	Memory            personality.MemoryState           `json:"memory"`
 	WakeWord          productWakeWordReadiness          `json:"wake_word"`
 	ServerSide        productServerSideReadiness        `json:"server_side"`
 	CanonicalDecision productCanonicalReadinessDecision `json:"canonical_decision"`
@@ -721,6 +723,7 @@ func latestAcceptedProductReadinessReportAcrossKinds(reportDir string, kinds []p
 func buildProductReadinessReport(ctx context.Context, options productReadinessOptions, env []string) productReadinessReport {
 	gatewayURL := firstNonEmpty(strings.TrimSpace(options.GatewayURL), "http://127.0.0.1:21080")
 	deviceID := firstNonEmpty(strings.TrimSpace(options.DeviceID), "stackchan-001")
+	memoryState, _ := personality.MemoryStateFromEnv(env)
 	report := productReadinessReport{
 		SchemaVersion: "a21.product_readiness.v1",
 		GeneratedAtMS: time.Now().UnixMilli(),
@@ -730,6 +733,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 			URL: productSurfaceLabel(gatewayURL, ""),
 		},
 		StackChan: productStackChanReadiness{DeviceID: deviceID},
+		Memory:    memoryState,
 	}
 	report.Findings = append(report.Findings, options.LatestReportFindings...)
 	report.Gateway.Healthy = gatewayHealthOK(ctx, gatewayURL)
