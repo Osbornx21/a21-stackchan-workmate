@@ -1285,3 +1285,128 @@ Recommended next action:
 - Next transition: `T-HW-VOLUME-001b` foreground StackChan volume A/B
   acceptance. Use guarded flash only in an operator-approved hardware window,
   then record before/after audio and rerun physical/readiness evidence.
+
+## 2026-06-02 22:59 CST - T-HW-VOLUME-001b Flash Gate And A/B Worker Dispatch
+
+Round goal:
+
+- Continue under the control-tower workflow after the user asked to keep
+  pushing with branch/thread tools.
+- Advance the fixed StackChan codec-volume candidate from no-write build passed
+  to foreground flash-window readiness.
+- Use worker threads for bounded review/runbook prep while keeping the main
+  thread in control and avoiding silent hardware writes.
+
+Actual completed work:
+
+- Recovered current state from `AGENTS.md`, `docs/project_state_machine.md`,
+  `docs/agent_handoff_log.md`, and the StackChan volume/action plan.
+- Confirmed main branch `codex/a21-hardware-window-20260602-stackchan-prd` was
+  clean at `f0603f5e0f7f1744c73042c2e335b1719bf2c8b7`.
+- Verified USB serial candidate `/dev/cu.usbmodem1101` and current official
+  build artifacts under `/tmp/a21-stackchan-official-build`.
+- Ran only the no-write flash plan:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`.
+- Created and pinned read-only worker
+  `019e88d6-1734-75d2-897b-aa2da3069885`
+  (`A21 T-HW-VOLUME-001b flash gate review`) in worktree
+  `/Users/jiyurun/.codex/worktrees/37f0/New project`.
+- Created and pinned read-only worker
+  `019e88d6-ad61-7513-b379-aa21ae7db150`
+  (`A21 T-HW-VOLUME-001b A/B evidence runbook`) in worktree
+  `/Users/jiyurun/.codex/worktrees/4f7d/New project`.
+- Integrated the completed flash-gate worker conclusion into
+  `docs/project_state_machine.md`: the gate is ready to request an
+  operator-approved foreground flash window, but not physical acceptance.
+- Main-thread runbook inventory confirmed the post-flash evidence path should
+  use real stock Xiaozhi physical turns, phone/instrument recordings,
+  `xiaozhi-instrument-observation`, `xiaozhi-physical-evidence`, and
+  `product-readiness --use-latest-reports`; the legacy
+  `stackchan-local-tts-playback` path remains invalid for current stock
+  Xiaozhi physical loudness because it previously returned HTTP 409 audio
+  WebSocket disconnected.
+
+Files changed:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current repository state:
+
+- Main branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Reports remain under ignored `reports/`; paths are recorded as evidence but
+  not committed.
+- Worker `019e88d6-1734-75d2-897b-aa2da3069885` returned `STATUS=DONE`.
+- Worker `019e88d6-ad61-7513-b379-aa21ae7db150` returned `STATUS=DONE`.
+  It stayed read-only, found that ignored `reports/` evidence lives in the main
+  checkout rather than its detached worktree, and produced the foreground A/B
+  runbook.
+
+Flash gate evidence:
+
+- No-write build report:
+  `reports/a21-stackchan-official-baseline-20260602-225207-1780411927040145000.json`.
+- Built app SHA-256:
+  `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`.
+- No-write flash-plan report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-225600-1780412160509265000.json`.
+- Flash-plan fields: `status=ready`, `port=/dev/cu.usbmodem1101`,
+  `dry_run=true`, `flash_allowed=false`, `flash_executed=false`, app offset
+  `0x20000`, app SHA-256
+  `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`.
+- Rollback baseline:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`,
+  app SHA-256
+  `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d`.
+- Required execute confirmation token:
+  `WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP`.
+
+Current unfinished items:
+
+- Ask the operator to explicitly open the foreground hardware flash window
+  before running the execute command.
+- After flash, trigger real stock Xiaozhi physical turns on the device and
+  capture before/after phone or instrument recordings.
+- Convert the audible observation into a redacted sidecar with
+  `xiaozhi-instrument-observation`, regenerate `xiaozhi-physical-evidence`, and
+  refresh readiness with `product-readiness --use-latest-reports`.
+
+Known risks and blockers:
+
+- No physical loudness result exists yet for the `SetOutputVolume(92)` build.
+- The flash plan is ready, but `flash_allowed=false` by design until the
+  foreground execute command is deliberately run with the confirmation token.
+- Raising codec output may introduce clipping, enclosure resonance, or worse
+  TTS intelligibility; before/after recordings are required before acceptance.
+- Current stock `/v1/xiaozhi` still has no Gateway runtime volume setter.
+- `stackchan-local-tts-playback` and diagnostic tone remain non-product paths
+  for this stock physical session.
+- A/B worker confirmed invalid evidence includes Mac volume changes,
+  `stackchan-local-tts-playback`, `/v1/devices/control` diagnostic tone, old
+  PCM/audio WebSocket proof, host-only `xiaozhi-voice-bench`, decoded Opus
+  quality, dry-run reports, and debug playback ack unless explicitly negotiated
+  in a debug profile.
+
+Recommended next action:
+
+- If the operator approves hardware execution, run exactly:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP make a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Then trigger a real stock Xiaozhi turn on StackChan, record before/after
+  phone or instrument samples with the same phone position and prompt class,
+  analyze LUFS/peak/RMS/active-frame ratio/clipping, create an instrument
+  observation report, rerun physical evidence, and refresh product readiness.
+
+Validation results:
+
+- `git status --short --branch`: clean before this docs update.
+- `ls -1 /dev/cu.usb*`: found `/dev/cu.usbmodem1101`.
+- `ls -l /tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin /tmp/a21-stackchan-official-build/flash_args`:
+  artifacts present.
+- `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`:
+  passed; no flash/NVS/serial write executed.
+- `go run ./cmd/a21 xiaozhi-physical-evidence --help`: printed expected
+  physical-evidence command shape.
+- `go run ./cmd/a21 xiaozhi-instrument-observation --help`: printed expected
+  instrument-observation command shape.
+- `go run ./cmd/a21 product-readiness --help`: printed expected latest-report
+  readiness refresh flags.
