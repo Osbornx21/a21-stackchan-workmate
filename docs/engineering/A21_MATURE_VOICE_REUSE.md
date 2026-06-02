@@ -88,6 +88,10 @@ change, or hardware acceptance.
 
 - M5Unified and StackChan-BSP stay the first choice for CoreS3 display, speaker, touch, sensors, RGB, and servo APIs.
 - M5Stack-Avatar or the original StackChan expression concepts should be preferred before A21 invents a worse face, mouth, blink, gaze, or breath engine.
+- The current product route is explicit: Xiaozhi handles the stock-compatible
+  voice firmware/protocol, while StackChan official avatar/action handles screen
+  and body behavior. A21 OEM personalization must attach to the official
+  adapter, not to a new self-drawn expression engine.
 - Firmware effects that are worse than the original StackChan experience stay diagnostic or planned.
 
 ## Mandatory Design Check

@@ -51,6 +51,7 @@ type Server struct {
 	realtimeArmedSessions      map[string]bool
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
+	xiaozhiSockets             map[string]*xiaozhiDeviceSocket
 	audioCaptureFrames         []AudioCaptureFrame
 	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
 	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
@@ -190,6 +191,41 @@ type DeviceControlResponse struct {
 type deviceSocket struct {
 	conn      *websocket.Conn
 	writeMu   *sync.Mutex
+	connected int64
+}
+
+type XiaozhiDeviceControlRequest struct {
+	DeviceID  string `json:"device_id"`
+	Kind      string `json:"kind,omitempty"`
+	Event     string `json:"event,omitempty"`
+	State     string `json:"state,omitempty"`
+	Face      string `json:"face,omitempty"`
+	Emotion   string `json:"emotion,omitempty"`
+	Display   string `json:"display,omitempty"`
+	Slot      string `json:"slot,omitempty"`
+	Motion    string `json:"motion,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+	YAngle    int    `json:"y_angle,omitempty"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type XiaozhiDeviceControlResponse struct {
+	TraceID            string `json:"trace_id"`
+	SessionID          string `json:"session_id"`
+	DeviceID           string `json:"device_id"`
+	Status             string `json:"status"`
+	DeliveredTransport string `json:"delivered_transport"`
+	Event              string `json:"event"`
+	Value              string `json:"value"`
+}
+
+type xiaozhiDeviceSocket struct {
+	conn      *websocket.Conn
+	writeMu   *sync.Mutex
+	features  xiaozhitransport.HelloFeatures
 	connected int64
 }
 
@@ -418,6 +454,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		realtimeArmedSessions:      make(map[string]bool),
 		audioIngress:               audio.NewIngress(options.AudioIngressConfig),
 		audioSockets:               make(map[string]*deviceSocket),
+		xiaozhiSockets:             make(map[string]*xiaozhiDeviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
 		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
@@ -456,6 +493,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mock-turn", s.handleMockTurn)
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/v1/wake-word", s.handleWakeWordConfig)
+	mux.HandleFunc("/v1/xiaozhi/control", s.handleXiaozhiDeviceControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
 	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)
@@ -676,6 +714,103 @@ func (s *Server) handleDeviceControl(w http.ResponseWriter, r *http.Request) {
 		Status:             "delivered",
 		DeliveredTransport: "audio_ws",
 		Events:             events,
+	})
+}
+
+func (s *Server) handleXiaozhiDeviceControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiDeviceControlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	event, err := xiaozhiDeviceControlEventFromRequest(req)
+	if err != nil {
+		http.Error(w, "invalid xiaozhi device event", http.StatusBadRequest)
+		return
+	}
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindState, xiaozhitransport.DeviceEventKindFace, xiaozhitransport.DeviceEventKindDisplay, xiaozhitransport.DeviceEventKindMotion:
+	default:
+		http.Error(w, "unsupported xiaozhi device control event", http.StatusBadRequest)
+		return
+	}
+	socket, ok := s.xiaozhiSocket(req.DeviceID)
+	if !ok {
+		http.Error(w, "xiaozhi websocket is not connected", http.StatusConflict)
+		return
+	}
+	if !socket.features.DeviceEvents {
+		http.Error(w, "xiaozhi device events require debug profile negotiation", http.StatusConflict)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	payload, err := xiaozhitransport.BuildDeviceExtensionEvent(xiaozhitransport.Identity{
+		DeviceID:  req.DeviceID,
+		TraceID:   traceID,
+		SessionID: sessionID,
+	}, socket.features, xiaozhitransport.DeviceExtensionProfileDebug, event)
+	if err != nil {
+		http.Error(w, "invalid xiaozhi device event", http.StatusBadRequest)
+		return
+	}
+	socket.writeMu.Lock()
+	err = socket.conn.Write(r.Context(), websocket.MessageText, payload)
+	socket.writeMu.Unlock()
+	if err != nil {
+		http.Error(w, "xiaozhi device command delivery failed", http.StatusBadGateway)
+		return
+	}
+	s.recordXiaozhiDeviceControlDelivered(req.DeviceID, traceID, sessionID, event)
+	writeJSON(w, http.StatusOK, XiaozhiDeviceControlResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_ws",
+		Event:              string(event.Kind),
+		Value:              event.Value,
+	})
+}
+
+func xiaozhiDeviceControlEventFromRequest(req XiaozhiDeviceControlRequest) (xiaozhitransport.DeviceExtensionEvent, error) {
+	kind := strings.TrimSpace(strings.ToLower(firstNonEmpty(req.Event, req.Kind)))
+	if kind == "" {
+		switch {
+		case strings.TrimSpace(req.State) != "":
+			kind = string(xiaozhitransport.DeviceEventKindState)
+		case strings.TrimSpace(firstNonEmpty(req.Emotion, req.Face)) != "":
+			kind = string(xiaozhitransport.DeviceEventKindFace)
+		case strings.TrimSpace(firstNonEmpty(req.Slot, req.Display)) != "":
+			kind = string(xiaozhitransport.DeviceEventKindDisplay)
+		case strings.TrimSpace(firstNonEmpty(req.Name, req.Motion)) != "":
+			kind = string(xiaozhitransport.DeviceEventKindMotion)
+		}
+	}
+	value := ""
+	switch xiaozhitransport.DeviceEventKind(kind) {
+	case xiaozhitransport.DeviceEventKindState:
+		value = req.State
+	case xiaozhitransport.DeviceEventKindFace:
+		value = firstNonEmpty(req.Emotion, req.Face)
+	case xiaozhitransport.DeviceEventKindDisplay:
+		value = firstNonEmpty(req.Slot, req.Display)
+	case xiaozhitransport.DeviceEventKindMotion:
+		value = firstNonEmpty(req.Name, req.Motion)
+	}
+	return xiaozhitransport.NormalizeDeviceExtensionEvent(xiaozhitransport.DeviceExtensionEvent{
+		Kind:   xiaozhitransport.DeviceEventKind(kind),
+		Value:  value,
+		YAngle: req.YAngle,
+		Text:   req.Text,
+		Reason: req.Reason,
 	})
 }
 
@@ -1338,6 +1473,9 @@ func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 		deviceID:              deviceID,
 		binaryProtocolVersion: protocolVersion,
 	}
+	defer func() {
+		s.unregisterXiaozhiSocket(session.deviceID, conn)
+	}()
 	for {
 		messageType, data, err := conn.Read(ctx)
 		if err != nil {
@@ -1393,6 +1531,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.resetXiaozhiTTSStop()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
+		s.registerXiaozhiSocket(session.deviceID, conn, &session.writeMu, session.features)
 		s.recordXiaozhiDeviceSeen(frame)
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiHelloReply(session))
@@ -3600,6 +3739,68 @@ func (s *Server) audioSocket(deviceID string) (*deviceSocket, bool) {
 	defer s.mu.Unlock()
 	socket := s.audioSockets[deviceID]
 	return socket, socket != nil
+}
+
+func (s *Server) registerXiaozhiSocket(deviceID string, conn *websocket.Conn, writeMu *sync.Mutex, features xiaozhitransport.HelloFeatures) {
+	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.xiaozhiSockets[deviceID] = &xiaozhiDeviceSocket{
+		conn:      conn,
+		writeMu:   writeMu,
+		features:  features,
+		connected: s.now().UnixMilli(),
+	}
+}
+
+func (s *Server) unregisterXiaozhiSocket(deviceID string, conn *websocket.Conn) {
+	if deviceID == "" || conn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.xiaozhiSockets[deviceID]
+	if socket != nil && socket.conn == conn {
+		delete(s.xiaozhiSockets, deviceID)
+	}
+}
+
+func (s *Server) xiaozhiSocket(deviceID string) (*xiaozhiDeviceSocket, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.xiaozhiSockets[deviceID]
+	return socket, socket != nil
+}
+
+func (s *Server) recordXiaozhiDeviceControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent) {
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "xiaozhi.device_command."+string(event.Kind), nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "xiaozhi.device_command.delivered", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindState, xiaozhitransport.DeviceEventKindFace:
+		record.CurrentExpr = protocol.ExpressionState(event.Value)
+	case xiaozhitransport.DeviceEventKindMotion:
+		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"last_motion_command": event.Value})
+	case xiaozhitransport.DeviceEventKindDisplay:
+		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"last_display_slot": event.Value})
+	}
+	record.LastEvent = protocol.DeviceEventKind("xiaozhi.device_command." + string(event.Kind))
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = nowMS
+	s.devices[deviceID] = record
 }
 
 func (s *Server) deviceRecords() []DeviceRecord {

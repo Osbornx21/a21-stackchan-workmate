@@ -2199,6 +2199,121 @@ func TestXiaozhiWebSocketDebugProfileHelloReplyIncludesA21DeviceEventsAllowance(
 	}
 }
 
+func TestXiaozhiControlEndpointDeliversFirmwareCompatibleDeviceEvent(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "stackchan-debug-001",
+		"features": map[string]any{
+			"mcp":           true,
+			"aec":           true,
+			"device_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-debug-001","event":"motion","name":"nod","reason":"acceptance","y_angle":120,"trace_id":"a21-trace-xiaozhi-control","session_id":"a21-session-xiaozhi-control"}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/xiaozhi/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	var delivered map[string]any
+	if err := wsjson.Read(ctx, conn, &delivered); err != nil {
+		t.Fatal(err)
+	}
+	if delivered["type"] != "device" || delivered["event"] != "motion" || delivered["name"] != "nod" {
+		t.Fatalf("delivered = %#v, want firmware-compatible motion command", delivered)
+	}
+	if delivered["kind"] != nil || delivered["motion"] != nil {
+		t.Fatalf("delivered leaked legacy server-only device fields: %#v", delivered)
+	}
+	if delivered["y_angle"] != float64(85) {
+		t.Fatalf("y_angle = %#v, want clamped 85", delivered["y_angle"])
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+		var response XiaozhiDeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Status != "delivered" || response.DeliveredTransport != "xiaozhi_ws" || response.Event != "motion" || response.Value != "nod" {
+			t.Fatalf("response = %+v, want delivered motion nod", response)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-control")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	traceBody, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.device_command.motion", "xiaozhi.device_command.delivered"} {
+		if !strings.Contains(string(traceBody), want) {
+			t.Fatalf("trace missing %q: %s", want, traceBody)
+		}
+	}
+}
+
+func TestXiaozhiControlEndpointRejectsStockProfile(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "stackchan-stock-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(httpServer.URL+"/v1/xiaozhi/control", "application/json", bytes.NewBufferString(`{"device_id":"stackchan-stock-001","event":"face","emotion":"happy"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+}
+
 func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

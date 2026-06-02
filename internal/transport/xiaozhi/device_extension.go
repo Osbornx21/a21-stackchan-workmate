@@ -38,6 +38,8 @@ type DeviceExtensionEvent struct {
 	Value    string
 	YAngle   int
 	StreamID string
+	Text     string
+	Reason   string
 }
 
 type InlineDeviceMarks struct {
@@ -47,14 +49,20 @@ type InlineDeviceMarks struct {
 
 type deviceExtensionWire struct {
 	Type      string `json:"type"`
-	Kind      string `json:"kind"`
+	Kind      string `json:"kind,omitempty"`
+	Event     string `json:"event,omitempty"`
 	State     string `json:"state,omitempty"`
 	Face      string `json:"face,omitempty"`
+	Emotion   string `json:"emotion,omitempty"`
 	Display   string `json:"display,omitempty"`
+	Slot      string `json:"slot,omitempty"`
 	Motion    string `json:"motion,omitempty"`
+	Name      string `json:"name,omitempty"`
 	Playback  string `json:"playback,omitempty"`
 	YAngle    *int   `json:"y_angle,omitempty"`
 	StreamID  string `json:"stream_id,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Reason    string `json:"reason,omitempty"`
 	TraceID   string `json:"trace_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	DeviceID  string `json:"device_id,omitempty"`
@@ -78,7 +86,6 @@ func BuildDeviceExtensionEvent(identity Identity, features HelloFeatures, profil
 	}
 	wire := deviceExtensionWire{
 		Type:      "device",
-		Kind:      string(normalized.Kind),
 		TraceID:   resolved.TraceID,
 		SessionID: resolved.SessionID,
 		DeviceID:  resolved.DeviceID,
@@ -95,16 +102,20 @@ func ParseDeviceExtensionEvent(data []byte) (DeviceExtensionEvent, error) {
 	if strings.TrimSpace(wire.Type) != "device" {
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: device", ErrUnsupportedMessageType)
 	}
-	event := DeviceExtensionEvent{Kind: DeviceEventKind(strings.TrimSpace(wire.Kind))}
+	event := DeviceExtensionEvent{
+		Kind:   DeviceEventKind(firstNonEmpty(wire.Kind, wire.Event)),
+		Text:   wire.Text,
+		Reason: wire.Reason,
+	}
 	switch event.Kind {
 	case DeviceEventKindState:
 		event.Value = wire.State
 	case DeviceEventKindFace:
-		event.Value = wire.Face
+		event.Value = firstNonEmpty(wire.Face, wire.Emotion)
 	case DeviceEventKindDisplay:
-		event.Value = wire.Display
+		event.Value = firstNonEmpty(wire.Display, wire.Slot)
 	case DeviceEventKindMotion:
-		event.Value = wire.Motion
+		event.Value = firstNonEmpty(wire.Motion, wire.Name)
 		if wire.YAngle != nil {
 			event.YAngle = *wire.YAngle
 		}
@@ -130,8 +141,12 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 		Value:    value,
 		YAngle:   event.YAngle,
 		StreamID: strings.TrimSpace(event.StreamID),
+		Text:     strings.TrimSpace(event.Text),
+		Reason:   strings.TrimSpace(event.Reason),
 	}
-	if containsLegacyIdentity(normalized.StreamID) {
+	if containsLegacyIdentity(normalized.StreamID) ||
+		containsLegacyIdentity(normalized.Text) ||
+		containsLegacyIdentity(normalized.Reason) {
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: device extension", ErrLegacyIdentity)
 	}
 	switch kind {
@@ -215,15 +230,18 @@ func deviceExtensionAllowed(features HelloFeatures, profile DeviceExtensionProfi
 }
 
 func assignDeviceEventValue(wire *deviceExtensionWire, event DeviceExtensionEvent) {
+	wire.Event = string(event.Kind)
 	switch event.Kind {
 	case DeviceEventKindState:
 		wire.State = event.Value
 	case DeviceEventKindFace:
-		wire.Face = event.Value
+		wire.Emotion = event.Value
 	case DeviceEventKindDisplay:
-		wire.Display = event.Value
+		wire.Slot = event.Value
+		wire.Text = event.Text
 	case DeviceEventKindMotion:
-		wire.Motion = event.Value
+		wire.Name = event.Value
+		wire.Reason = event.Reason
 		if event.YAngle != 0 {
 			yAngle := event.YAngle
 			wire.YAngle = &yAngle

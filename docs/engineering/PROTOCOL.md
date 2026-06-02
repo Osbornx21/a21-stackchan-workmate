@@ -284,24 +284,34 @@ device-control integration:
   names, and redact sensitive argument fields such as keys, tokens, prompt or
   transcript text, raw/base64 audio, provider output, URLs, proxies, and local
   paths.
-- Server-to-device expression uses stock xiaozhi `type=llm` messages with an
-  `emotion` field. A21 expression states currently map to
-  `idle`, `listening`, `thinking`, `speaking`, `interrupted`, `professional`,
-  `local_fallback`, and `error`.
+- The product audio contract is stock-compatible Xiaozhi voice firmware plus
+  A21 Gateway `/v1/xiaozhi`: Opus uplink/downlink, listen/abort, turn cancel,
+  pacing, and playback traces must stay compatible with Xiaozhi audio
+  expectations.
+- Product screen and body behavior are not implemented by custom drawing inside
+  the Xiaozhi voice firmware. A21 product avatar/action must route through the
+  official StackChan avatar/action implementation, with A21 only supplying
+  bounded OEM semantic events. Later personality-specific expressions may be
+  layered on that official adapter, not on a new hand-drawn face engine.
+- Stock Xiaozhi `type=llm` messages may still carry a stock `emotion` field for
+  compatibility, but that is not the A21 product avatar contract and cannot be
+  used as physical screen/action acceptance.
 - Optional motion parameters clamp `y_angle` to the stock-safe 5-85 degree
   range before any later adapter may send them.
 
 ### A21 StackChan Device Extension
 
 WS-5 also defines an A21-only StackChan semantic device extension in
-`internal/transport/xiaozhi`. It is host-only schema, builder, and parser
-proof for future Gateway-to-device integration; it does not make `type=device`
-part of the stock xiaozhi profile. Stock hello and server hello remain free of
-debug or device-extension requirements. A debug client that explicitly
-advertises `features.device_events=true` receives only an A21-namespaced server
-allowance: `a21.profile=debug` and `a21.device_events=true`. Stock server
-hellos remain free of `a21`, `device_events`, and `debug_metrics`. A host may
-build `type=device` extension events only when the connected profile explicitly
+`internal/transport/xiaozhi`. It is a host/Gateway OEM schema, builder, and
+parser proof for a future official StackChan avatar/action adapter; it does not
+make `type=device` part of the stock Xiaozhi audio profile, and it does not
+authorize A21-specific display rendering inside the Xiaozhi voice firmware.
+Stock hello and server hello remain free of debug or device-extension
+requirements. A debug client that explicitly advertises
+`features.device_events=true` receives only an A21-namespaced server allowance:
+`a21.profile=debug` and `a21.device_events=true`. Stock server hellos remain
+free of `a21`, `device_events`, and `debug_metrics`. A host may build
+`type=device` extension events only when the connected profile explicitly
 advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
 
@@ -318,6 +328,11 @@ semantics:
   `device.playback.start`; `stop_done` is recorded as
   `device.playback.stop_done` and may prove barge-in stop completion when it
   follows `barge_in.detected`.
+
+For launch readiness, the extension's visual/action events are candidate
+transport evidence only until a flashed official StackChan avatar/action
+adapter emits physical observation or accepted runtime echo. Gateway delivery
+of `state`, `face`, `display`, or `motion` is not PRD screen/action acceptance.
 
 The repo-owned firmware overlay
 `firmware/xiaozhi/overlays/a21-debug-playback-ack.patch` keeps this out of the

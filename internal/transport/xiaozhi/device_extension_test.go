@@ -56,11 +56,37 @@ func TestBuildDeviceExtensionEventAllowsDebugExtensionProfile(t *testing.T) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire["type"] != "device" || wire["kind"] != "motion" || wire["motion"] != "nod" {
-		t.Fatalf("wire = %#v, want type=device motion nod", wire)
+	if wire["type"] != "device" || wire["event"] != "motion" || wire["name"] != "nod" {
+		t.Fatalf("wire = %#v, want firmware-compatible type=device event=motion name=nod", wire)
 	}
 	if wire["y_angle"] != float64(85) {
 		t.Fatalf("y_angle = %#v, want clamped 85", wire["y_angle"])
+	}
+}
+
+func TestParseDeviceExtensionEventAcceptsFirmwareCompatibleFields(t *testing.T) {
+	event, err := ParseDeviceExtensionEvent([]byte(`{
+		"type":"device",
+		"event":"motion",
+		"name":"nod",
+		"reason":"acceptance",
+		"trace_id":"a21-trace-xiaozhi-motion",
+		"session_id":"a21-session-xiaozhi-motion",
+		"device_id":"stackchan-debug-001"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Kind != DeviceEventKindMotion || event.Value != "nod" || event.Reason != "acceptance" {
+		t.Fatalf("event = %+v, want firmware-compatible motion nod", event)
+	}
+
+	face, err := ParseDeviceExtensionEvent([]byte(`{"type":"device","event":"face","emotion":"happy"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if face.Kind != DeviceEventKindFace || face.Value != "happy" {
+		t.Fatalf("face = %+v, want face happy", face)
 	}
 }
 
