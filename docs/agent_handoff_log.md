@@ -916,3 +916,88 @@ Recommended next action:
 - Change only the approved TTS candidate/profile or fixture source, and require
   operator/instrument audible observation plus fresh trace linkage before
   updating physical acceptance.
+
+## 2026-06-02 22:16 CST - T-AUDIO-001c Foreground Long-TTS Playback Attempt
+
+Round goal:
+
+- Respond to the operator request to set volume to maximum and play a long TTS
+  passage for a fresh phone recording.
+- Keep the work inside `T-AUDIO-001` Phase 2 and avoid firmware, NVS, provider,
+  V21, or business-code changes.
+
+Actual completed work:
+
+- Confirmed physical device `44:1b:f6:e2:6a:60` was online on Gateway
+  `127.0.0.1:21081` with stock Xiaozhi Opus ingress/downlink capabilities.
+- Set macOS output volume to 100 after explicit operator approval.
+- Attempted to deliver a long Chinese diagnostic passage through
+  `stackchan-local-tts-playback` with `--engine sherpa_onnx` against the
+  physical Gateway/device.
+- The command failed before physical playback with:
+  `gateway device control returned status 409: device audio websocket is not connected`.
+- Inspected Gateway routing and confirmed the failure is expected for the
+  current physical session: the old `/v1/devices/control` PCM playback surface
+  requires the legacy A21 audio WebSocket, while the current hardware is online
+  through stock `/v1/xiaozhi` WebSocket.
+- Confirmed the stock Xiaozhi physical path sends TTS only inside a
+  device-driven listen/audio turn. Existing HTTP control for Xiaozhi supports
+  debug state/face/display/motion events only, not arbitrary stock TTS audio
+  injection.
+- Updated `docs/project_state_machine.md` to preserve this boundary and prevent
+  future false evidence from the wrong playback surface.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Current repository state:
+
+- Branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Active transition: `T-AUDIO-001`.
+- Current TTS/audio state:
+  `S1C-STOCK-XIAOZHI-OPERATOR-RECORDING-PENDING`.
+- No business code, firmware, NVS, provider, or V21 surfaces were modified.
+
+Current unfinished items:
+
+- Collect a fresh physical audible recording from a real stock Xiaozhi
+  listen/audio turn.
+- Tie the recording to the latest trace/session and regenerate
+  `xiaozhi-physical-evidence`, `product-readiness`, and readiness bundle.
+- If the team wants host-driven long TTS on the physical stock Xiaozhi session,
+  create a separate plan/worker transition for a stock-safe injection seam
+  before implementation.
+
+Known risks and blockers:
+
+- The long TTS passage was not played through the physical StackChan speaker in
+  this round; do not treat this attempt as audible playback evidence.
+- Running `xiaozhi-voice-bench` or any virtual client with the physical device
+  id would only prove host/bench downlink and could mask the real physical
+  socket, so it must not be used as the operator recording path.
+- macOS volume being set to 100 does not necessarily affect physical StackChan
+  speaker loudness on stock Xiaozhi Opus downlink.
+
+Validation results:
+
+- `curl http://127.0.0.1:21081/v1/devices`: physical device online,
+  `xiaozhi_profile=stock`, `xiaozhi_transport=websocket`,
+  `xiaozhi_audio=opus_16000hz_mono_60ms`.
+- `osascript -e 'set volume output volume 100'`: passed after explicit
+  operator approval.
+- `go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --engine sherpa_onnx ...`:
+  failed with Gateway `409 device audio websocket is not connected`.
+- No build/test suite was rerun because this round only updated governance
+  docs after a foreground runtime attempt.
+
+Recommended next action:
+
+- For immediate recording, trigger a real stock Xiaozhi turn on the device and
+  record the physical response from 20-30 cm in front of the speaker.
+- Use a prompt that encourages a long spoken response, then upload the new
+  phone recording for analysis.
+- If a deterministic host-pushed long TTS is required, first open
+  `T-AUDIO-003: Stock-safe physical TTS injection plan` rather than reusing
+  the legacy PCM control path.

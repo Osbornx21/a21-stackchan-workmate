@@ -59,7 +59,7 @@ Current notable baseline:
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
 | Physical StackChan acceptance | `S2-CANDIDATE-GATEWAY-DOWNLINK` | `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json` reports physical device online, stock profile, mic delivery ratio 1, answer first downlink 555 ms, and barge-in metrics; PRD accepted remains false | `S3-AUDIBLE-PLAYBACK-AND-PRD-ACCEPTED` |
 | Xiaozhi audio/protocol | `S2-STOCK-OPUS-A21-GATEWAY-COMPAT-WARNING` | Physical path uses stock Xiaozhi profile and Opus uplink/downlink, but serial log `reports/a21-stackchan-physical-wake-serial-20260602-2130.log` shows repeated stock-firmware `Unknown message type: listen` warnings | `S3-STOCK-CLEAN-AUDIO-ISOLATED` |
-| TTS/audio quality | `S1B-HOST-POST-OPUS-PASS-PHYSICAL-AUDIBLE-PENDING` | `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed host product-chain bench on `21080` with `sherpa_onnx_tts`, answer p95 397 ms, and decoded Opus `downlink_audio_quality=passed`; `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a one-round host check on the physical LAN Gateway `21081`; current physical evidence still lacks operator/instrument audible observation | `S2-TTS-VS-DOWNLINK-ROOT-CAUSE-ISOLATED` |
+| TTS/audio quality | `S1C-STOCK-XIAOZHI-OPERATOR-RECORDING-PENDING` | `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed host product-chain bench on `21080` with `sherpa_onnx_tts`, answer p95 397 ms, and decoded Opus `downlink_audio_quality=passed`; `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a one-round host check on the physical LAN Gateway `21081`; on 2026-06-02 22:16 CST the foreground attempt to push long TTS through `stackchan-local-tts-playback` failed with Gateway `409 device audio websocket is not connected`, proving the old PCM control surface is not connected to the current stock Xiaozhi physical session; current physical evidence still lacks operator/instrument audible observation | `S2-TTS-VS-DOWNLINK-ROOT-CAUSE-ISOLATED` |
 
 ## Active Transition
 
@@ -67,7 +67,7 @@ Current notable baseline:
 
 Current state:
 
-- `S1-HOST-PCM-GUARDED-PHYSICAL-BAD-SOUND`
+- `S1C-STOCK-XIAOZHI-OPERATOR-RECORDING-PENDING`
 
 Target state:
 
@@ -89,10 +89,17 @@ Actions:
   Opus/downlink PCM quality without storing raw audio.
 - Run host-only product-chain bench against current A21 Gateways to verify
   post-Opus quality before touching physical firmware or TTS profile routing.
-- Avoid hardware writes, NVS writes, provider/V21 execution, Mac audio
-  playback, and PRD overclaiming.
+- Avoid hardware writes, NVS writes, provider/V21 execution, unapproved Mac
+  audio playback, and PRD overclaiming.
 - After worker return, run a foreground physical A/B only if the operator
   approves any Gateway/TTS profile change.
+- For the current stock Xiaozhi physical connection, do not use
+  `stackchan-local-tts-playback` as evidence: it requires the legacy A21 audio
+  WebSocket and returned `409 device audio websocket is not connected` during
+  the 2026-06-02 foreground recording window.
+- Collect the next physical audible sample by triggering a real stock Xiaozhi
+  listen/audio turn on the device, or first create a separate planned
+  transition for a stock-safe TTS injection seam.
 
 Acceptance conditions:
 
@@ -204,13 +211,14 @@ Next state:
 | T-AUDIO-000: Read-only Xiaozhi audio/protocol audit | Completed | Worker thread `019e888d-f57d-7922-8e48-24b00255a122` found audio optimization landed, the physical audio path is stock-profile Xiaozhi Opus through A21 Gateway rather than old PCM bridge, and the most likely bad-sound boundary is TTS generation before Opus/downlink. |
 | T-AUDIO-001a: Host downlink objective isolation | Completed | Worker thread `019e8895-43a6-7e23-a4f3-601f0451ab50`; `xiaozhi-voice-bench` now decodes captured binary downlink Opus frames and reports redacted aggregate `downlink_audio_quality` while preserving host-only candidate semantics. |
 | T-AUDIO-001b: Host/Gateway post-Opus quality run | Completed host-only candidate | `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed 3-repeat host product-chain bench with `sherpa_onnx_tts`, answer p95 397 ms, and post-Opus quality passed; `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a one-round check on the physical LAN Gateway; readiness `reports/a21-product-readiness-20260602-220447.json` and bundle `reports/a21-server-side-readiness-bundle-20260602-220501.json` still correctly block launch. |
+| T-AUDIO-001c: Foreground long-TTS push attempt | Blocked, evidence-preserving | macOS output volume was set to 100 after explicit operator request; physical device `44:1b:f6:e2:6a:60` was online on stock Xiaozhi Opus via Gateway `21081`; `go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --engine sherpa_onnx ...` returned `409 device audio websocket is not connected`, so no valid physical StackChan playback was claimed. |
 
 ## Blocked Transitions
 
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
 | T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Gateway downlink exists, but device playback ack or operator/instrument audible observation is missing | Collect accepted audible playback evidence, device playback timing, and barge-in playback stop_done, then regenerate `xiaozhi-physical-evidence`. |
-| T-AUDIO-002: Declare product voice quality acceptable | Physical sound is reported wrong; host/Gateway post-Opus answer metrics pass, but foreground physical A/B and audible observation are still missing | Complete `T-AUDIO-001` Phase 2, run foreground physical A/B, then record operator/instrument observation. |
+| T-AUDIO-002: Declare product voice quality acceptable | Physical sound is reported wrong; host/Gateway post-Opus answer metrics pass, but foreground physical A/B and audible observation are still missing; legacy PCM control playback is not connected to the current stock Xiaozhi physical session | Complete `T-AUDIO-001` Phase 2 through a real stock Xiaozhi operator-triggered turn, or approve a separate planned stock-safe TTS injection transition, then record operator/instrument observation. |
 | T-PROVIDER-001: Real provider smoke on hardware path | Latest readiness still selects `mock`; `real_provider_smoke` missing | Run approved host-side provider smoke/rotation with keys outside firmware and redacted reports. |
 | T-PRD-001: Declare full PRD physical acceptance | Candidate physical Gateway evidence exists but PRD accepted remains false | Close `T-HW-002b`, `T-PROVIDER-001`, and custom wake proof, then rerun product readiness. |
 | T-FW-003: Custom wake-word product acceptance | Needs guarded flash and physical proof | Wake package review, false-wake rejection, operator wake proof. |
