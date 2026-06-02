@@ -202,7 +202,7 @@ Current notable baseline:
 | Control workflow | `S1-REPO-CARRIED-CONTROL` | Commit `69c4bbe`; `docs/agent_handoff_log.md`, `docs/project_state_machine.md`, and `docs/plans/` exist | `S2-WORKER-TRANSITION-OPERATING` |
 | Gateway `/v1/xiaozhi` | `S3-PHYSICAL-DEVICE-CONNECTED` | Gateway on `127.0.0.1:21081` / LAN port `21081` accepted the physical device via stock Xiaozhi WebSocket; trace `a21-trace-44-1b-f6-e2-6a-60` has Opus uplink, VAD, ASR final, provider first content, TTS first audio, and Opus downlink | `S4-AUDIBLE-PLAYBACK-ACCEPTED` |
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
-| Firmware candidate | `S5M-CURRENT-HEAD-NO-WELCOME-REFLASHED` | Commit `a986d6b` request-start physical flash regressed to the welcome/setup trap. Hotfix commit `9ba8bc1` moved the direct Xiaozhi start before visible setup, and `e694550` parked `app_main` after `GetHAL().startXiaozhi()` because `startXiaozhi()` returns and otherwise falls into the Mooncake welcome/setup loop. After the operator reported a welcome regression again, the control tower rebuilt the current HEAD `7906975` product app through the guarded official-compatible lane. Build report `reports/a21-stackchan-official-baseline-20260603-062637-1780439197207182000.json` passed with app SHA-256 `fc7788736ced71c98cee846892a867d306d663c5ceb31014cc01079a381e766c`; flash plan `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062715-1780439235852990000.json` was ready; guarded flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062853-1780439333539408000.json` passed on `/dev/cu.usbmodem1101` from clean commit `790697518c3e`. Device `44:1b:f6:e2:6a:60` reconnected online; post-flash trace since `1780439333539` contains only `xiaozhi.hello.received=1` and no `xiaozhi.listen.start`; runtime speaker volume `100` was delivered on trace `a21-trace-current-head-volume-1780439333`. Operator still needs to visually confirm the screen is no longer on Welcome. | `S5N-NO-WELCOME-PHYSICAL-VISUAL-ACCEPTED` |
+| Firmware candidate | `S5N-NO-WELCOME-IDLE-SOCKET-CANDIDATE` | Commit `a986d6b` request-start physical flash regressed to the welcome/setup trap. Hotfix commit `9ba8bc1` moved the direct Xiaozhi start before visible setup, and `e694550` parked `app_main` after `GetHAL().startXiaozhi()` because `startXiaozhi()` returns and otherwise falls into the Mooncake welcome/setup loop. After the operator reported a welcome regression again, the control tower rebuilt the current HEAD `7906975` product app through the guarded official-compatible lane. Build report `reports/a21-stackchan-official-baseline-20260603-062637-1780439197207182000.json` passed with app SHA-256 `fc7788736ced71c98cee846892a867d306d663c5ceb31014cc01079a381e766c`; flash plan `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062715-1780439235852990000.json` was ready; guarded flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062853-1780439333539408000.json` passed on `/dev/cu.usbmodem1101` from clean commit `790697518c3e`. Device `44:1b:f6:e2:6a:60` is online on Gateway `21081`; `/v1/devices` reports `last_event=xiaozhi.hello`, `speaker_volume=100`, and trace `a21-trace-44-1b-f6-e2-6a-60`. The operator later confirmed setup is fixed. Recovery trace analysis found the old touch-start episode had only one `xiaozhi.listen.start` and one `xiaozhi.listen.stop`, with `xiaozhi.no_speech.input_suppression_armed=1`, `xiaozhi.listen.start.input_suppressed=1`, and `xiaozhi.listen.start.suppressed_after_no_speech=1`; the latest trace event is `xiaozhi.hello.received`, so current state is idle socket connected rather than infinite listening. Runtime speaker volume `100` was re-delivered on trace `a21-trace-recovery-volume-1780441733`. Physical wake and touch retry remain pending. | `S5O-WAKE-AND-TOUCH-PHYSICAL-ACCEPTED` |
 | Device connection/NVS | `S3-LAN-GATEWAY-CONNECTED` | Latest guarded NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json` pointed OTA/WS to the LAN-bound A21 Gateway; reset serial log shows OTA connection to `21081` and activation | `S4-STABLE-RECONNECT-EVIDENCE` |
 | Provider hot-plug | `S4A-SELECTED-PROVIDER-READY-VOICE-CHAIN-CANDIDATE` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` unblocked the host chain through 5080 relay: Iflytek TTS report `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json` passed with first audio `100.299 ms`, and StepFun+Iflytek chain report `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json` passed with text first content `229.077 ms` and TTS first audio `87.947 ms`. After deploying the new Gateway handler, relay WAV playback through stock `/v1/xiaozhi/say` delivered `audio_chunks=40` on trace `a21-trace-provider-playback-wav-1780450901`; operator feedback was positive: "好多了". Worker `019e8974-346e-7912-93b2-77cdbb9f3acf` then refreshed selected-provider readiness with route-eligible DeepSeek evidence: `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json` has `provider.selected=deepseek`, `provider.real_provider_ready=true`, and `provider.smoke_status=passed`; `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json` has `provider.ready=true`. StepFun/Iflytek remains voice-chain candidate evidence rather than being forced into the product provider slot. | `S5-VOICE-CHAIN-EVIDENCE-INGRESS-OR-LONG-DIALOGUE` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
@@ -337,7 +337,7 @@ Next state:
 
 Current state:
 
-- `F-APP-PRELOAD-WELCOME-TRAP`
+- `S-APP-PRELOAD-NO-WELCOME-IDLE-SOCKET-CANDIDATE`
 
 Target state:
 
@@ -407,7 +407,27 @@ Current result:
   preventing AppLauncher/AppSetup from rendering `Welcome! Let's get started`.
 - Focused app test now guards this control-flow contract by requiring
   `GetHAL().feedTheDog()` and `GetHAL().delay(1000)` before the Mooncake main
-  loop anchor. Physical flash/validation for this latest hotfix is pending.
+  loop anchor.
+- The latest guarded product flash report is
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062853-1780439333539408000.json`;
+  T7 guard recorded clean commit `790697518c3e`, product app
+  `a21-stackchan-official-xiaozhi-compatible.bin`, and app SHA-256
+  `fc7788736ced71c98cee846892a867d306d663c5ceb31014cc01079a381e766c`.
+- The operator later confirmed setup is fixed. Current live Gateway evidence
+  from `/v1/devices` on `127.0.0.1:21081` shows physical device
+  `44:1b:f6:e2:6a:60` is `online`, `last_event=xiaozhi.hello`, and
+  `speaker_volume=100`.
+- Recovery trace analysis for `a21-trace-44-1b-f6-e2-6a-60` shows the old
+  touch-start episode had only one `xiaozhi.listen.start`, one
+  `xiaozhi.listen.stop`, one `xiaozhi.turn.start`, and no ongoing loop. The
+  no-speech cooldown fired once with
+  `xiaozhi.no_speech.input_suppression_armed=1`,
+  `xiaozhi.listen.start.input_suppressed=1`, and
+  `xiaozhi.listen.start.suppressed_after_no_speech=1`; the latest event is
+  `xiaozhi.hello.received`.
+- Runtime speaker volume `100` was re-delivered through stock MCP on trace
+  `a21-trace-recovery-volume-1780441733`.
+- Physical wake with `紫悦` variants and touch/no-speech retry remain pending.
 
 Acceptance conditions:
 

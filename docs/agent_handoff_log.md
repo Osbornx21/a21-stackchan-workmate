@@ -5428,3 +5428,112 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No failure in main control thread.
+
+## 2026-06-03 - T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001 - Recovery From Lost Progress
+
+本轮目标:
+
+- Recover from control-thread context loss without restarting the design.
+- Continue from the operator-confirmed fact that setup/welcome is fixed.
+- Verify current physical Gateway state before deciding whether to flash or
+  hotfix again.
+
+实际完成内容:
+
+- Re-read `AGENTS.md` instructions provided in-thread, the latest handoff log,
+  the boot idle socket plan, and `docs/project_state_machine.md`.
+- Confirmed the current branch is
+  `codex/a21-hardware-window-20260602-stackchan-prd`, clean, at
+  `e7d3a40c6e50`; the firmware product flash evidence was created earlier from
+  clean commit `790697518c3e` before later docs/control commits.
+- Confirmed the current overlay already contains:
+  - direct Xiaozhi start followed by `GetHAL().feedTheDog()` /
+    `GetHAL().delay(1000)` parking to avoid the Mooncake welcome/setup loop;
+  - A21 quiet idle websocket preconnect;
+  - A21 no-speech / VAD listen bounding;
+  - split `紫悦` MultiNet command registration.
+- Verified latest guarded product flash identity:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062853-1780439333539408000.json`
+  passed through T7 from clean commit `790697518c3e`, flashed product app
+  `a21-stackchan-official-xiaozhi-compatible.bin`, app SHA-256
+  `fc7788736ced71c98cee846892a867d306d663c5ceb31014cc01079a381e766c`.
+- Confirmed Gateway health on `127.0.0.1:21080` and `127.0.0.1:21081`.
+- Queried current physical device registry on `21081`: device
+  `44:1b:f6:e2:6a:60` is `online`, `last_event=xiaozhi.hello`,
+  `speaker_volume=100`, trace `a21-trace-44-1b-f6-e2-6a-60`.
+- Parsed physical trace `a21-trace-44-1b-f6-e2-6a-60`:
+  - `event_count=1016`;
+  - `xiaozhi.listen.start=1`;
+  - `xiaozhi.listen.stop=1`;
+  - `xiaozhi.turn.start=1`;
+  - `xiaozhi.no_speech.input_suppression_armed=1`;
+  - `xiaozhi.listen.start.input_suppressed=1`;
+  - `xiaozhi.listen.start.suppressed_after_no_speech=1`;
+  - latest event is `xiaozhi.hello.received`.
+- Delivered runtime speaker volume `100` again through stock MCP on trace
+  `a21-trace-recovery-volume-1780441733`; response status was `delivered`.
+- Updated `docs/project_state_machine.md` from the stale welcome failure state
+  to `S-APP-PRELOAD-NO-WELCOME-IDLE-SOCKET-CANDIDATE`, without marking wake or
+  touch acceptance green.
+- Read existing worker threads:
+  - `019e8a8e-df69-70e3-a18f-c083d33023ea` Sherpa smoke worker is still
+    active and had reached an honest `model_dir_missing` blocked smoke result
+    before its final docs/commit verification.
+  - Prior read-only provider/ASR workers confirmed there is no real streaming
+    ASR provider evidence yet; cloud ASR evidence is final-only and local
+    `streaming_zipformer` evidence was WAV/file-smoke only.
+
+修改过的文件:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Operator physical retry is still required:
+  - confirm the screen remains out of `Welcome! Let's get started`;
+  - tap once without speaking and confirm green listening exits instead of
+    looping;
+  - from idle, try `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
+- Poll and integrate the Sherpa no-audio smoke worker if it commits cleanly.
+- If all wake variants still fail from idle while socket is online, start
+  `T-WAKE-004-AFE-VS-CUSTOM-PARITY` with custom wake init/feed logging or
+  AFE-vs-MultiNet parity as the next firmware transition.
+
+已知风险和阻塞点:
+
+- `S-APP-PRELOAD-NO-WELCOME-IDLE-SOCKET-CANDIDATE` is not full acceptance:
+  wake and touch physical checks are still open.
+- The trace still contains an old touch-start/listen episode, so future
+  reviewers must distinguish historical events from the latest idle hello
+  state.
+- Real Xiaozhi realtime ASR provider evidence remains blocked; this should not
+  block the immediate wake/touch physical validation but still blocks full PRD
+  acceptance.
+
+下一轮建议动作:
+
+1. Ask the operator to perform the three physical checks above while keeping
+   Gateway `21081` running.
+2. Immediately re-query `/v1/devices` and
+   `/v1/traces?trace_id=a21-trace-44-1b-f6-e2-6a-60` after the operator action.
+3. If wake fails with the device online and idle, dispatch/execute
+   `T-WAKE-004-AFE-VS-CUSTOM-PARITY`; do not re-open setup or flash bare
+   `xiaozhi.bin`.
+
+测试/构建/运行结果:
+
+- `curl http://127.0.0.1:21080/healthz`: passed.
+- `curl http://127.0.0.1:21081/healthz`: passed.
+- `curl http://127.0.0.1:21081/v1/devices`: returned physical StackChan
+  online with `last_event=xiaozhi.hello`.
+- `curl http://127.0.0.1:21081/v1/xiaozhi/speaker-volume`: delivered MCP
+  volume `100` on trace `a21-trace-recovery-volume-1780441733`.
+- No firmware build, flash, NVS write, provider execution, V21 execution, audio
+  playback, or service restart was performed in this recovery round.
+
+如果中途失败，记录失败位置和原因:
+
+- A first ad-hoc Python JSON scan and two piped curl/json-tool queries hung;
+  only those diagnostic processes were killed. Gateway and device services were
+  not stopped.
