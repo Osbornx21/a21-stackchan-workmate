@@ -3025,3 +3025,160 @@ Validation results:
 - No flash, NVS write, global proxy change, provider secret output, V21
   execution, or StackChan firmware change occurred.
 - 5080 worker did not modify tracked A21 files.
+
+## 2026-06-03 02:24 CST - Bare Wake Flash Incident Rolled Back, StackChan-Compatible App Restored
+
+Round goal:
+
+- Continue hardware convergence after operator explicitly allowed build,
+  compile, and flash.
+- Try to close custom wake activation without losing the accepted StackChan
+  avatar/audio path.
+- Preserve control-tower rules and update state from the actual hardware
+  result.
+
+Actual completed work:
+
+- Restored the previously reviewed custom wake ESP-IDF flash input into an
+  ignored A21 run path and verified its key values:
+  - app file `xiaozhi.bin`;
+  - app SHA-256
+    `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`;
+  - phrase `小阿二一` / `xiao a er yi`;
+  - threshold `35`.
+- Ran generic bare Xiaozhi no-write flash plan:
+  `reports/a21-xiaozhi-firmware-flash-20260603-021247-1780423967840224000.json`;
+  it reported `status=ready`, `dry_run=true`, `flash_allowed=false`, and
+  `flash_executed=false`.
+- Executed the generic bare Xiaozhi flash after operator hardware approval:
+  `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json`;
+  it reported `status=passed`, `flash_allowed=true`, and
+  `flash_executed=true`.
+- Operator immediately reported the device returned to the plain Xiaozhi UI.
+  Root cause: the flashed app part was `xiaozhi.bin`, not the StackChan product
+  app `a21-stackchan-official-xiaozhi-compatible.bin`. This was the wrong
+  product lane even though the generic hardware guard passed.
+- Located the correct StackChan-compatible product candidate in
+  `/tmp/a21-stackchan-official-build`:
+  - app file `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app SHA-256
+    `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`;
+  - flash app offset `0x20000`.
+- Ran correct StackChan-compatible no-write flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-021802-1780424282862523000.json`;
+  it reported `status=ready`, `firmware_candidate=a21-stackchan-official-xiaozhi-compatible`,
+  `dry_run=true`, `flash_allowed=false`, and `flash_executed=false`.
+- Executed the corrective StackChan-compatible flash:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-021849-1780424329771759000.json`;
+  it reported `status=passed`, `flash_allowed=true`, and
+  `flash_executed=true`.
+- Verified post-restore Gateway/device state:
+  - Gateway `http://127.0.0.1:21081/healthz` returned ok.
+  - Device `44:1b:f6:e2:6a:60` reconnected with a fresh `xiaozhi.hello`.
+  - Runtime speaker volume `100` delivered through stock MCP on trace
+    `a21-trace-recovery-stackchan-volume-1780424386012`.
+  - Accepted 5080 StepFun+Iflytek relay WAV
+    `a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` delivered through
+    stock `/v1/xiaozhi/say` on trace
+    `a21-trace-recovery-stackchan-relay-wav-1780424386012` with
+    `audio_chunks=40`.
+- Spawned read-only sidecar `019e898e-5c43-7050-9cff-1ecb6f646e2d` to review
+  the wake/flash lane boundary. It confirmed:
+  - product StackChan app flashes must use
+    `a21-stackchan-official-xiaozhi-compatible-flash-execute`;
+  - schema must be `a21.stackchan.official_xiaozhi_compatible_flash_execution.v1`;
+  - app file must be `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - generic `xiaozhi-firmware-flash-execute` / `xiaozhi.bin` must be rejected
+    for product StackChan devices.
+- Spawned read-only sidecar `019e898e-75f1-7a81-9969-70de7112271f` to check
+  CosyVoice/clone TTS. It confirmed:
+  - A21 already has the `voice_clone_cli` seam;
+  - an old IndexTTS2 smoke passed but was too slow at about `23899 ms` first
+    audio;
+  - no ready CosyVoice weights or `qwen0.6bemo4-merge` IndexTTS2 checkpoint
+    were found on the Mac/known pullback paths;
+  - StepFun+Iflytek remains the current accepted contest voice candidate while
+    clone weights are restored in parallel.
+- Spawned code worker `019e8993-0987-7601-9b8a-3aa4e88ebfaa` for
+  `T-FLASH-GUARD-001`, scoped to a small artifact-lane guard and focused tests;
+  no hardware writes were allowed in that worker.
+- Integrated `T-FLASH-GUARD-001`:
+  - generic `xiaozhi-firmware-flash-*` now rejects product-looking
+    `xiaozhi.bin` at app offset `0x20000` unless the command explicitly passes
+    `--non-product-dev`;
+  - the rejection points to
+    `a21-stackchan-official-xiaozhi-compatible-flash-execute` for the product
+    StackChan app;
+  - allowed generic dev receipts include
+    `"build_lane_role": "non_product_dev"`;
+  - official StackChan-compatible flash commands are unchanged.
+- Proved the guard against the real incident build:
+  - `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_XIAOZHI_FIRMWARE_BUILD_DIR=... make xiaozhi-firmware-flash-plan`
+    now exits nonzero before any write with
+    `xiaozhi-firmware-flash is not a product StackChan flash lane for xiaozhi.bin at 0x20000`;
+  - `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`
+    still passes and wrote
+    `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-023008-1780425008542994000.json`.
+- Updated:
+  - `AGENTS.md`;
+  - `internal/app/xiaozhi_firmware.go`;
+  - `internal/app/official_stackchan_test.go`;
+  - `docs/project_state_machine.md`;
+  - `docs/plans/2026-06-03-guarded-wake-flash-physical-proof.md`;
+  - `docs/plans/2026-06-03-flash-lane-identity-guard.md`;
+  - this handoff log.
+
+Files changed this round:
+
+- `AGENTS.md`
+- `internal/app/xiaozhi_firmware.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-03-guarded-wake-flash-physical-proof.md`
+- `docs/plans/2026-06-03-flash-lane-identity-guard.md`
+- `docs/agent_handoff_log.md`
+- Ignored/runtime flash inputs under `.a21-run/wake-word/`
+- Ignored/generated flash reports under `reports/`
+
+Current unfinished items:
+
+- Custom wake is not product-ready. The bare wake artifact is evidence only and
+  must not be flashed again onto the product StackChan device.
+- Custom wake must be rebuilt or overlaid into
+  `a21-stackchan-official-xiaozhi-compatible.bin`, with official avatar/action
+  and Xiaozhi runtime preservation proven before no-write flash.
+- Touch/barge-in operator proof and final physical evidence regeneration remain
+  open for full PRD acceptance.
+- Clone-capable local TTS is not ready; keep StepFun+Iflytek as current contest
+  voice path until a redacted clone smoke and listening acceptance pass.
+
+Known risks and blockers:
+
+- Do not treat
+  `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json`
+  as a successful product flash; it is an incident report.
+- Do not run another wake flash unless the app file is
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+
+Recommended next action:
+
+- Start `T-WAKE-INTEGRATE-001` as a worker task: port custom wake assets into
+  the StackChan-compatible app lane and produce an official-compatible no-write
+  flash plan only.
+- Continue `T-VOICE-CHAIN-EVIDENCE-001` so the accepted StepFun+Iflytek relay
+  chain is represented in the correct readiness surface without replacing
+  route-eligible provider evidence.
+
+Validation results:
+
+- Generic bare Xiaozhi flash executed and is classified as incident evidence.
+- Corrective StackChan-compatible flash executed successfully and restored the
+  product app.
+- Post-restore Gateway health, device fresh reconnect, runtime volume `100`,
+  and relay WAV playback all passed.
+- Focused tests passed:
+  `go test ./internal/app -run 'TestRunXiaozhiFirmwareFlash|TestRunStackChanOfficialXiaozhiCompatibleFlash|TestCollectOfficialStackChanBuildArtifactsFindsXiaozhiCompatibleAppFromFlashArgs|TestRunWakeWordFirmware(BuildReceipt|Package)' -count=1`.
+- `git diff --check` passed.
+- `make verify` passed.
+- No NVS write, global proxy change, provider secret output, or V21 execution
+  occurred in this recovery round.

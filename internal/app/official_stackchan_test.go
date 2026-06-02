@@ -714,7 +714,7 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand(t *
 	}
 }
 
-func TestRunXiaozhiFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
+func TestRunXiaozhiFirmwareFlashPlanRejectsProductStackChanWithoutDevMarker(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
 		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
@@ -732,6 +732,86 @@ func TestRunXiaozhiFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 		"--port", "/dev/cu.usbmodemA21",
 		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
 	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("unmarked xiaozhi product-looking flash unexpectedly passed: %s", stdout.String())
+	}
+	for _, want := range []string{
+		"product StackChan",
+		"a21-stackchan-official-xiaozhi-compatible-flash-execute",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("rejection leaked build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunXiaozhiFirmwareFlashExecuteRejectsProductStackChanWithoutDevMarkerBeforeControlGuard(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runXiaozhiFirmwareFlashCommand
+	runXiaozhiFirmwareFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		t.Fatalf("generic xiaozhi execute command should not run for unmarked product-looking StackChan app")
+		return nil
+	}
+	defer func() {
+		runXiaozhiFirmwareFlashCommand = originalRunner
+	}()
+
+	buildDir := writeTestXiaozhiFirmwareBuild(t)
+	idfExport := filepath.Join(t.TempDir(), "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-firmware-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", idfExport,
+		"--confirm", "WRITE_A21_XIAOZHI_FIRMWARE",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("unmarked xiaozhi product-looking execute unexpectedly passed: %s", stdout.String())
+	}
+	for _, want := range []string{
+		"product StackChan",
+		"a21-stackchan-official-xiaozhi-compatible-flash-execute",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("execute rejection leaked build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunXiaozhiFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestXiaozhiFirmwareBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-firmware-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+		"--non-product-dev",
+	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
@@ -739,6 +819,7 @@ func TestRunXiaozhiFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 		`"schema_version": "a21.xiaozhi_firmware_flash_plan.v1"`,
 		`"flash_allowed": false`,
 		`"flash_executed": false`,
+		`"build_lane_role": "non_product_dev"`,
 		`"app"`,
 		`"xiaozhi.bin"`,
 		`"offset": "0x800000"`,
@@ -858,6 +939,7 @@ func TestRunXiaozhiFirmwareFlashExecuteRunsGuardedCommand(t *testing.T) {
 		"--build-dir", buildDir,
 		"--port", "/dev/cu.usbmodemA21",
 		"--idf-export", idfExport,
+		"--non-product-dev",
 		"--confirm", "WRITE_A21_XIAOZHI_FIRMWARE",
 	}, &stdout, &stderr)
 	if code != 0 {

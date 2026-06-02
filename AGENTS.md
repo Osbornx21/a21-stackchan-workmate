@@ -16,6 +16,12 @@ The A21 architecture and product direction come from the user. External document
 - StackChan is strong hardware, not a disposable ESP32 edge client. A21 must preserve and expose its full hardware surface, including camera, IMU, sensors, screen, touch, RGB, speaker, microphone, battery, NFC, infrared, and servos. Capabilities that are not implemented yet must be marked as planned or unavailable honestly, never hidden by a simplified protocol.
 - No provider API key may be stored in firmware.
 - Firmware builds and uploads require strict A21 identity, board, version, artifact, and upload-target checks. Never add an unguarded firmware upload command.
+- Physical product StackChan app flashes must use the official-compatible
+  product lane and app artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`. The generic
+  `xiaozhi-firmware-flash-*` lane and `xiaozhi.bin` app artifact are
+  non-product/dev evidence only and must not be used to flash the product
+  StackChan device unless an explicit ADR and plan redefine the product lane.
 - Localhost, LAN, `.local`, StackChan, and V21 adapter traffic must not silently inherit global proxies.
 - Every runtime path must carry or be ready to carry `trace_id`, `session_id`, and `device_id`.
 - Every latency-sensitive path must be designed for traces and metrics before it is optimized.

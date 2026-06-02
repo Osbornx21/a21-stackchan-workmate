@@ -18,16 +18,18 @@ import (
 const xiaozhiFirmwareFlashPlanSchema = "a21.xiaozhi_firmware_flash_plan.v1"
 const xiaozhiFirmwareFlashExecutionSchema = "a21.xiaozhi_firmware_flash_execution.v1"
 const xiaozhiFirmwareFlashConfirm = "WRITE_A21_XIAOZHI_FIRMWARE"
+const xiaozhiFirmwareNonProductDevLane = "non_product_dev"
 
 var runXiaozhiFirmwareFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 
 type xiaozhiFirmwareFlashOptions struct {
-	BuildDir  string
-	IDFExport string
-	Port      string
-	OutputDir string
-	Confirm   string
-	Execute   bool
+	BuildDir      string
+	IDFExport     string
+	Port          string
+	OutputDir     string
+	Confirm       string
+	Execute       bool
+	NonProductDev bool
 }
 
 type xiaozhiFirmwareFlashReport struct {
@@ -40,6 +42,7 @@ type xiaozhiFirmwareFlashReport struct {
 	ControlGuard             *runtimeguard.ControlGuardReport   `json:"control_guard,omitempty"`
 	Port                     string                             `json:"port"`
 	BuildDirName             string                             `json:"build_dir_name"`
+	BuildLaneRole            string                             `json:"build_lane_role,omitempty"`
 	IDFExportConfigured      bool                               `json:"idf_export_configured"`
 	OTA                      xiaozhiFirmwareOTAConfig           `json:"ota"`
 	FlashLogFile             string                             `json:"flash_log_file,omitempty"`
@@ -78,7 +81,7 @@ func runXiaozhiFirmwareFlash(args []string, stdout io.Writer, stderr io.Writer) 
 	for i := 0; i < len(clean); i++ {
 		switch clean[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 xiaozhi-firmware-flash --build-dir /path/to/xiaozhi/build-m5stack-core-s3 --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_XIAOZHI_FIRMWARE] [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 xiaozhi-firmware-flash --build-dir /path/to/xiaozhi/build-m5stack-core-s3 --port /dev/cu.usbmodemXXXX --non-product-dev [--execute --confirm WRITE_A21_XIAOZHI_FIRMWARE] [--idf-export /path/to/export.sh] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(clean) || strings.HasPrefix(clean[i+1], "-") {
@@ -115,22 +118,18 @@ func runXiaozhiFirmwareFlash(args []string, stdout io.Writer, stderr io.Writer) 
 			}
 			i++
 			options.Confirm = clean[i]
+		case "--non-product-dev":
+			options.NonProductDev = true
 		default:
 			fmt.Fprintf(stderr, "unknown xiaozhi firmware flash option %q\n", clean[i])
 			return 2
 		}
 	}
 
-	var controlGuard runtimeguard.ControlGuardReport
 	if execute {
 		if options.Confirm != xiaozhiFirmwareFlashConfirm {
 			fmt.Fprintf(stderr, "xiaozhi firmware flash execute requires --confirm %s\n", xiaozhiFirmwareFlashConfirm)
 			return 2
-		}
-		var code int
-		controlGuard, code = requireA21ControlAllowed("xiaozhi-firmware-flash --execute", stderr)
-		if code != 0 {
-			return code
 		}
 	}
 	report, err := buildXiaozhiFirmwareFlashReport(options)
@@ -139,6 +138,10 @@ func runXiaozhiFirmwareFlash(args []string, stdout io.Writer, stderr io.Writer) 
 		return 1
 	}
 	if execute {
+		controlGuard, code := requireA21ControlAllowed("xiaozhi-firmware-flash --execute", stderr)
+		if code != 0 {
+			return code
+		}
 		report.ControlGuard = &controlGuard
 		if err := executeXiaozhiFirmwareFlash(context.Background(), options, &report); err != nil {
 			report.Status = "failed"
@@ -202,9 +205,16 @@ func buildXiaozhiFirmwareFlashReport(options xiaozhiFirmwareFlashOptions) (xiaoz
 	if err != nil {
 		return xiaozhiFirmwareFlashReport{}, err
 	}
+	if err := validateXiaozhiFirmwareGenericFlashLane(options, parts); err != nil {
+		return xiaozhiFirmwareFlashReport{}, err
+	}
 	schema := xiaozhiFirmwareFlashPlanSchema
 	if options.Execute {
 		schema = xiaozhiFirmwareFlashExecutionSchema
+	}
+	buildLaneRole := ""
+	if options.NonProductDev {
+		buildLaneRole = xiaozhiFirmwareNonProductDevLane
 	}
 	return xiaozhiFirmwareFlashReport{
 		SchemaVersion:            schema,
@@ -215,11 +225,24 @@ func buildXiaozhiFirmwareFlashReport(options xiaozhiFirmwareFlashOptions) (xiaoz
 		FlashExecuted:            false,
 		Port:                     options.Port,
 		BuildDirName:             filepath.Base(buildDir),
+		BuildLaneRole:            buildLaneRole,
 		IDFExportConfigured:      strings.TrimSpace(options.IDFExport) != "",
 		OTA:                      ota,
 		NextRequiredConfirmation: "xiaozhi-firmware-flash-execute_with_confirmation_token",
 		Parts:                    parts,
 	}, nil
+}
+
+func validateXiaozhiFirmwareGenericFlashLane(options xiaozhiFirmwareFlashOptions, parts []xiaozhiFirmwareFlashPart) error {
+	if options.NonProductDev {
+		return nil
+	}
+	for _, part := range parts {
+		if part.Name == "app" && part.Offset == "0x20000" && part.File == "xiaozhi.bin" {
+			return fmt.Errorf("xiaozhi-firmware-flash is not a product StackChan flash lane for xiaozhi.bin at 0x20000; use a21-stackchan-official-xiaozhi-compatible-flash-execute for product StackChan, or pass --non-product-dev only for non-product/dev evidence")
+		}
+	}
+	return nil
 }
 
 func inspectXiaozhiFirmwareOTAConfig(buildDir string) (xiaozhiFirmwareOTAConfig, error) {
