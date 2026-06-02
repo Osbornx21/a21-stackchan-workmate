@@ -5312,7 +5312,7 @@ Current validation request:
   - Recommended `T-XIAOZHI-CONTINUOUS-TURN-OVERLAP-001` after ASR/TTS runtime
     proof.
 - Read-only worker `019e8a8a-7263-7b20-94b9-9b2847aa741d`
-  remains active on ESP32/CoreS3 audio HAL and wake/VAD parity.
+  initially remained active on ESP32/CoreS3 audio HAL and wake/VAD parity.
 - Dispatched implementation worker
   `019e8a8e-df69-70e3-a18f-c083d33023ea` for
   `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` in isolated worktree
@@ -5357,3 +5357,74 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No failure in main control thread; worker results are pending.
+
+## 2026-06-03 - T-AUDIO-BARE-XIAOZHI-PARITY-001 / T-WAKE - Audio HAL Worker Return
+
+本轮目标:
+
+- Record the final read-only audio HAL/wake worker findings so the next model
+  does not lose them during realtime-ASR/TTS work.
+
+实际完成内容:
+
+- Read-only worker `019e8a8a-7263-7b20-94b9-9b2847aa741d` completed.
+- Confirmed no edits, no commits, no builds, no runtime/service changes, no
+  provider/V21 execution, no hardware/audio/flash/NVS actions in that worker.
+- Key findings:
+  - A21 product overlay still bypasses the official StackChan app lifecycle by
+    calling `GetHAL().startXiaozhi()` and then parking, while official
+    StackChan installs AppLauncher/AppAiAgent/AppAvatar/AppDance/AppSetup and
+    runs Mooncake before Xiaozhi start. This is interaction-critical for
+    display, touch, RGB, servo, and avatar coupling.
+  - Wake path differs from official default: official S3 favors AFE WakeNet
+    when available; A21 product overlay disables AFE wake and uses custom
+    MultiNet aliases for `紫悦`. This is a likely P0 for wake failure and must
+    remain separate from loudness/TTS work.
+  - Device HAL is official-like, but A21 still applies host-side downlink
+    leveling, Go Opus encode, pacing, and provider/TTS decisions before device
+    decode. This supports keeping official codec/HAL while proving provider and
+    Gateway differences with evidence.
+  - Official StackChan CoreS3 source uses `input_gain=60`; upstream Xiaozhi
+    CoreS3 source uses `input_gain=30`. Recognition impact is unproven but
+    source-level difference is real and wake/ASR-relevant.
+  - `/v1/xiaozhi/say` remains useful for downlink/audio checks only; it is not
+    a wake/VAD-driven physical turn acceptance path.
+- Suggested future transitions from the worker:
+  - `T-WAKE-004-AFE-VS-CUSTOM-PARITY`
+  - `T-STACKCHAN-APP-LIFECYCLE-PARITY`
+  - `T-HAL-AUDIO-CONFIG-PARITY`
+  - Continue `T-XIAOZHI-REALTIME-VOICE-PARITY-RUNTIME`
+
+修改过的文件:
+
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Need add the three worker-suggested transitions to state machine candidate
+  queue when the main thread next edits governance docs.
+- Need review the active Sherpa smoke worker result.
+- Need avoid firmware/lifecycle/wake edits until a scoped plan/worker is
+  created; current implementation worker is ASR smoke only.
+
+已知风险和阻塞点:
+
+- If we only fix provider streaming while leaving app lifecycle/wake diverged,
+  physical UX can still feel unlike official StackChan/Xiaozhi.
+- If we restore official app lifecycle naively, the welcome/setup trap may come
+  back; it needs its own scoped transition.
+- `紫悦` wake should not be marked accepted without physical proof.
+
+下一轮建议动作:
+
+1. Continue current `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` worker to completion.
+2. After ASR/TTS runtime proof, plan `T-WAKE-004-AFE-VS-CUSTOM-PARITY`.
+3. Plan `T-STACKCHAN-APP-LIFECYCLE-PARITY` before touching overlay lifecycle.
+
+测试/构建/运行结果:
+
+- No code tests run for this log-only recording.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure in main control thread.

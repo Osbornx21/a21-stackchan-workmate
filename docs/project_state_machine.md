@@ -1735,3 +1735,22 @@ Next state:
      run a no-audio provider smoke for realtime TTS, then rerun physical
      `xiaozhi-realtime-parity` on an operator-triggered stock `/v1/xiaozhi`
      turn.
+
+9. `T-WAKE-004-AFE-VS-CUSTOM-PARITY`
+   - Current phase: candidate from read-only audio HAL/wake worker
+     `019e8a8a-7263-7b20-94b9-9b2847aa741d`.
+   - Next action: plan whether to restore official AFE WakeNet behavior or
+     harden custom MultiNet `紫悦`; acceptance must be physical wake from idle,
+     not screen tap.
+
+10. `T-STACKCHAN-APP-LIFECYCLE-PARITY`
+    - Current phase: candidate from read-only audio HAL/wake worker.
+    - Next action: plan how to preserve official StackChan AppLauncher,
+      AppAiAgent, AppAvatar, AppDance, AppSetup/Mooncake lifecycle while still
+      avoiding the welcome/setup trap.
+
+11. `T-HAL-AUDIO-CONFIG-PARITY`
+    - Current phase: candidate from read-only audio HAL/wake worker.
+    - Next action: record and, if evidence supports it, align CoreS3/StackChan
+      codec constants and init order such as ES7210 input gain, AFE/AEC/VAD,
+      AW88298 output, and runtime MCP/NVS volume behavior.
