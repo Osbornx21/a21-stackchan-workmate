@@ -13,20 +13,22 @@ import (
 )
 
 type serverSideReadinessBundleOptions struct {
-	GatewayURL            string
-	DeviceID              string
-	OutputDir             string
-	ProviderSmokeReport   string
-	XiaozhiReport         string
-	V21ProfessionalReport string
-	V21AdapterSmokeReport string
-	WakeWordFirmwarePlan  string
-	UseLatestReports      bool
-	RequireCandidate      bool
-	CollectMissing        bool
-	ExecuteProviderSmoke  bool
-	ExecuteV21Smoke       bool
-	CollectRepeat         int
+	GatewayURL                 string
+	DeviceID                   string
+	OutputDir                  string
+	ProviderSmokeReport        string
+	XiaozhiReport              string
+	V21ProfessionalReport      string
+	V21AdapterSmokeReport      string
+	WakeWordFirmwarePlan       string
+	WakeWordFirmwarePackage    string
+	WakeWordPhysicalAcceptance string
+	UseLatestReports           bool
+	RequireCandidate           bool
+	CollectMissing             bool
+	ExecuteProviderSmoke       bool
+	ExecuteV21Smoke            bool
+	CollectRepeat              int
 }
 
 type serverSideReadinessBundleReport struct {
@@ -97,7 +99,7 @@ func runServerSideReadinessBundle(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 server-side-readiness-bundle [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--wake-word-firmware-plan report.json] [--use-latest-reports] [--collect-missing] [--execute-provider-smoke] [--execute-v21-smoke] [--collect-repeat 3] [--require-candidate] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 server-side-readiness-bundle [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--collect-missing] [--execute-provider-smoke] [--execute-v21-smoke] [--collect-repeat 3] [--require-candidate] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -129,6 +131,14 @@ func runServerSideReadinessBundle(args []string, stdout io.Writer, stderr io.Wri
 			}
 		case "--wake-word-firmware-plan":
 			if !readStringOption(args, &i, stderr, "--wake-word-firmware-plan", &options.WakeWordFirmwarePlan) {
+				return 2
+			}
+		case "--wake-word-firmware-package-report":
+			if !readStringOption(args, &i, stderr, "--wake-word-firmware-package-report", &options.WakeWordFirmwarePackage) {
+				return 2
+			}
+		case "--wake-word-physical-acceptance-report":
+			if !readStringOption(args, &i, stderr, "--wake-word-physical-acceptance-report", &options.WakeWordPhysicalAcceptance) {
 				return 2
 			}
 		case "--use-latest-reports":
@@ -182,15 +192,17 @@ func runServerSideReadinessBundle(args []string, stdout io.Writer, stderr io.Wri
 
 func serverSideProductReadinessOptions(options serverSideReadinessBundleOptions) productReadinessOptions {
 	productOptions := productReadinessOptions{
-		GatewayURL:            options.GatewayURL,
-		DeviceID:              options.DeviceID,
-		OutputDir:             options.OutputDir,
-		ProviderSmokeReport:   options.ProviderSmokeReport,
-		XiaozhiReport:         options.XiaozhiReport,
-		V21ProfessionalReport: options.V21ProfessionalReport,
-		V21AdapterSmokeReport: options.V21AdapterSmokeReport,
-		WakeWordFirmwarePlan:  options.WakeWordFirmwarePlan,
-		UseLatestReports:      options.UseLatestReports,
+		GatewayURL:                 options.GatewayURL,
+		DeviceID:                   options.DeviceID,
+		OutputDir:                  options.OutputDir,
+		ProviderSmokeReport:        options.ProviderSmokeReport,
+		XiaozhiReport:              options.XiaozhiReport,
+		V21ProfessionalReport:      options.V21ProfessionalReport,
+		V21AdapterSmokeReport:      options.V21AdapterSmokeReport,
+		WakeWordFirmwarePlan:       options.WakeWordFirmwarePlan,
+		WakeWordFirmwarePackage:    options.WakeWordFirmwarePackage,
+		WakeWordPhysicalAcceptance: options.WakeWordPhysicalAcceptance,
+		UseLatestReports:           options.UseLatestReports,
 	}
 	if options.UseLatestReports {
 		productOptions = resolveLatestProductReadinessReports(productOptions)
@@ -235,8 +247,9 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			SourceReport: productReport.Voice.VoicePipeline.SourceReport,
 		},
 		WakeWord: serverSideReadinessBundleEvidence{
-			Ready:  productReport.ServerSide.WakeWordReady,
-			Status: productReport.WakeWord.RuntimeStatus,
+			Ready:        productReport.ServerSide.WakeWordReady,
+			Status:       productReport.WakeWord.RuntimeStatus,
+			SourceReport: firstNonEmpty(productReport.WakeWord.PhysicalAcceptanceSource, productReport.WakeWord.FirmwarePackageSource, productReport.WakeWord.FirmwarePlanSource),
 		},
 		ServerSide:         productReport.ServerSide,
 		CanonicalDecision:  productReport.CanonicalDecision,
@@ -279,7 +292,7 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 	case "gateway":
 		return serverSideReadinessCollectionStep{Name: missing, Status: "skipped", Reason: "start gateway separately", Command: "go run ./cmd/a21 gateway --addr 127.0.0.1:21080"}
 	case "wake_word":
-		return serverSideReadinessCollectionStep{Name: missing, Status: "skipped", Reason: "gateway wake-word status required", Command: "go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports"}
+		return serverSideReadinessCollectionStep{Name: missing, Status: "skipped", Reason: "guarded flash and physical custom wake proof required", Command: serverSideWakeWordCollectionCommand(report)}
 	default:
 		return serverSideReadinessCollectionStep{Name: safeServerSideEvidenceName(missing), Status: "skipped", Reason: "unknown missing evidence"}
 	}
@@ -394,10 +407,17 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 		case "host_voice_loopback":
 			commands = append(commands, "go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
 		case "wake_word":
-			commands = append(commands, "go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports")
+			commands = append(commands, serverSideWakeWordCollectionCommand(report))
 		}
 	}
 	return commands
+}
+
+func serverSideWakeWordCollectionCommand(report productReadinessReport) string {
+	if report.WakeWord.FirmwarePackageSource != "" {
+		return "go run ./cmd/a21 wake-word-physical-acceptance --package-report reports/" + report.WakeWord.FirmwarePackageSource + " --proof-report reports/a21-wake-word-physical-proof-*.json --output-dir reports"
+	}
+	return "go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports"
 }
 
 func buildServerSideReadinessNextActions(report productReadinessReport) []string {

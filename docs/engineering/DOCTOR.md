@@ -199,12 +199,16 @@ requires an executed `v21-adapter-smoke --execute` report passed with
 `--v21-professional-report` after Gateway traces prove the V21 query markers.
 `--use-latest-reports` scans the selected output directory for the latest
 known A21 provider-smoke, voice, professional, adapter-smoke, physical evidence,
-and wake-word firmware-plan reports, then ingests them through the same explicit
-report contracts. `--wake-word-firmware-plan <report.json>` is the explicit equivalent
-for custom wake-word firmware planning evidence. `wake-word-firmware-package`
-output is lower than activation: it proves only that a reviewed xiaozhi/ESP-SR
-build was wrapped into A21-named artifact files, below the guarded flash and
-physical custom-wake proof gates. The rollup
+and wake-word firmware-plan/package/physical-acceptance reports, then ingests
+them through the same explicit report contracts.
+`--wake-word-firmware-plan <report.json>` is the explicit equivalent for custom
+wake-word firmware planning evidence. `wake-word-firmware-package` output is
+lower than activation: it proves only that a reviewed xiaozhi/ESP-SR build was
+wrapped into A21-named artifact files. After the guarded hardware-window flash
+and operator custom-wake observation are complete,
+`wake-word-physical-acceptance --package-report <package.json> --proof-report
+<physical-proof.json> --output-dir reports` writes the accepted wake proof that
+can close `wake_word.product_ready`. The rollup
 ingests only fixed status/count/timing fields, keeps `prd_accepted=false`, and
 never stores query text, answer text, evidence bodies, full URLs, credentials,
 proxy values, or local paths. If physical StackChan is currently offline but a
