@@ -12,10 +12,10 @@ are the project memory.
 Current total state: `S-INT-HARDWARE-CANDIDATE`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
-official StackChan avatar/action relay, provider/V21 boundaries, and a newly
-added official StackChan Xiaozhi-compatible firmware candidate. It is not yet
-fully PRD accepted because physical StackChan flashing and hardware evidence are
-still pending.
+official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
+control workflow, and a freshly rebuilt official StackChan Xiaozhi-compatible
+firmware candidate. It is not yet fully PRD accepted because physical StackChan
+flashing and hardware evidence are still pending.
 
 Current control branch:
 
@@ -23,16 +23,17 @@ Current control branch:
 
 Current notable baseline:
 
+- `69c4bbe docs(control): add handoff and state machine workflow`
 - `987bbb0 feat(firmware): add official xiaozhi compatible stackchan build`
 
 ## Module States
 
 | Module | State | Evidence | Next state |
 | --- | --- | --- | --- |
-| Control workflow | `S0-BOOTSTRAPPING` | `T-GOV-001` adds docs for handoff/state-machine execution | `S1-REPO-CARRIED-CONTROL` |
+| Control workflow | `S1-REPO-CARRIED-CONTROL` | Commit `69c4bbe`; `docs/agent_handoff_log.md`, `docs/project_state_machine.md`, and `docs/plans/` exist | `S2-WORKER-TRANSITION-OPERATING` |
 | Gateway `/v1/xiaozhi` | `S2-HOST-READY` | Stock-compatible hello/listen/abort, binary unwrap, Opus, turn/cancel, pacing, and downlink tests exist | `S3-PHYSICAL-VOICE-EVIDENCE` |
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
-| Firmware candidate | `S2-BUILD-CANDIDATE` | `a21-stackchan-official-xiaozhi-compatible` preserves official avatar/action and Xiaozhi start in build report | `S3-FLASH-PLAN-APPROVED` |
+| Firmware candidate | `S2-BUILD-CANDIDATE` | `a21-stackchan-official-xiaozhi-compatible` preserves official avatar/action and Xiaozhi start in mainline report `reports/a21-stackchan-official-baseline-20260602-193126-1780399886135502000.json` | `S3-FLASH-PLAN-APPROVED` |
 | Provider hot-plug | `S2-HOST-READY` | Provider profiles and redacted smoke/evidence contracts exist | `S3-REAL-PROVIDER-ROTATION` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
@@ -40,50 +41,57 @@ Current notable baseline:
 
 ## Active Transition
 
-### T-GOV-001: Establish Repo-Carried Handoff And State Machine Workflow
+### T-HW-001: Flash Official Xiaozhi-Compatible Candidate And Collect Evidence
 
 Current state:
 
-- `S0-THREAD-CARRIED-CONTROL`
+- `S2-BUILD-CANDIDATE`
 
 Target state:
 
-- `S1-REPO-CARRIED-CONTROL`
+- `S3-PHYSICAL-VOICE-EVIDENCE`
 
 Trigger:
 
-- User requested that A21 stop relying on long Codex context and use main
-  control, scoped workers, handoff logs, plans, and state transitions.
+- Integrated host verification passed and a fresh official Xiaozhi-compatible
+  firmware candidate has been rebuilt from the control branch.
 
 Actions:
 
-- Update `AGENTS.md` with concise workflow discipline.
-- Add `docs/agent_handoff_log.md`.
-- Add `docs/project_state_machine.md`.
-- Add a first detailed plan under `docs/plans/`.
+- Create or update the hardware-window plan before any hardware write.
+- Run a no-write flash plan with the exact port, board, artifact, and identity
+  checks.
+- Execute flash only in a foreground operator window with explicit confirmation.
+- Collect physical audio, barge-in, avatar/action, wake, provider, and readiness
+  evidence.
 
 Acceptance conditions:
 
-- Only governance/docs files changed.
-- `git diff --check` passes.
-- The transition is committed on a scoped docs branch.
-- The main control thread receives branch, commit, changed files, verification
-  results, and next candidate transitions.
+- Official candidate flashes successfully to the intended StackChan hardware.
+- Device connects to A21 Gateway using stock-compatible Xiaozhi protocol.
+- Real audio output, microphone input, barge-in stop, official avatar/action,
+  wake behavior, and provider rotation evidence are recorded without leaking
+  keys or debug-only protocol fields.
+- Host/mock/candidate evidence remains labeled separately from physical
+  acceptance.
 
 Failure state:
 
-- `F-GOV-001-DOCS-DRIFT` if the transition touches business code, firmware,
-  provider, Gateway runtime, or hardware paths.
-- `F-GOV-001-UNCOMMITTED` if work remains dirty without an intentional handoff.
+- `F-HW-001-WRONG-ARTIFACT` if the selected artifact is not the official
+  Xiaozhi-compatible A21 candidate.
+- `F-HW-001-UNCONFIRMED-WRITE` if a worker attempts background flash/NVS writes
+  without explicit foreground confirmation.
+- `F-HW-001-NO-PHYSICAL-EVIDENCE` if the device is flashed but evidence is not
+  recorded.
 
 Rollback path:
 
-- Revert the docs commit or remove the three new docs plus the `AGENTS.md`
-  workflow section.
+- Restore the previous known-good official StackChan package using the guarded
+  flash path and record the rollback evidence.
 
 Next state:
 
-- `S1-REPO-CARRIED-CONTROL`
+- `S3-PHYSICAL-VOICE-EVIDENCE`
 
 ## Completed Transitions
 
@@ -94,6 +102,8 @@ Next state:
 | T-GW-002: Relay official StackChan avatar actions | Completed | Commit `ea51c67`; maps Gateway state/action to official StackChan relay. |
 | T-TR-001: Map A21 events to official StackChan frames | Completed | Commit `cdabe89`; keeps screen/action relay on official StackChan packet shapes. |
 | T-FW-002: Add official Xiaozhi-compatible StackChan build | Completed host/build candidate | Commit `987bbb0`; candidate build lane exists, physical flash still pending. |
+| T-GOV-001: Establish repo-carried workflow state | Completed | Commit `69c4bbe`; adds handoff log, state machine, and plan discipline. |
+| T-VERIFY-001: Integrated host verification after governance merge | Completed | `make verify` passed; mainline official candidate rebuild passed with app SHA-256 `053d3ba0d0c8690898967337a02bce8d3fd957899ebdabe4d9f4ae1e2b28c80d`. |
 
 ## Blocked Transitions
 
@@ -105,19 +115,20 @@ Next state:
 
 ## Next Candidate Transitions
 
-1. `T-VERIFY-001: Integrated Host Verification After Governance Merge`
-   - Run `make verify` on the integrated control branch.
-   - Rebuild `a21-stackchan-official-xiaozhi-compatible` from mainline if a
-     fresh integrated report/artifact is needed.
-
-2. `T-HW-001: Flash Official Xiaozhi-Compatible Candidate And Collect Evidence`
+1. `T-HW-001: Flash Official Xiaozhi-Compatible Candidate And Collect Evidence`
    - Create a foreground hardware-window branch.
    - Run no-write flash plan first.
    - Execute flash only with explicit confirmation and operator presence.
 
-3. `T-PRD-002: Refresh PRD Burn-Down With Repo-Carried Evidence`
+2. `T-PRD-002: Refresh PRD Burn-Down With Repo-Carried Evidence`
    - Re-read `docs/prd/A21_PRD.md` and latest reports.
    - Classify each requirement as implemented, host-ready, simulated,
      candidate, blocked by hardware, or missing.
    - Keep host/mock/candidate evidence separate from physical acceptance.
 
+3. `T-PROVIDER-001: Real Provider Rotation Evidence On Hardware Path`
+   - Run local ASR + cloud LLM + local TTS, cloud ASR + cloud LLM + local TTS,
+     and cloud ASR + cloud LLM + cloud TTS through the selected Gateway profile.
+   - Keep provider keys host-side only and reports redacted.
+   - Record latency and quality evidence without changing firmware provider
+     storage.
