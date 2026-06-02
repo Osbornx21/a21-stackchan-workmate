@@ -4368,7 +4368,10 @@ Current validation request:
   worktree at start.
 - Dispatched three projectless read-only workers:
   - `019e8a52-c184-7e53-ba3c-c3b9205950fb`: official Xiaozhi protocol/audio
-    source audit; still in progress at handoff time.
+    source audit; completed and confirmed stock hello/Opus, `tts` start/stop,
+    local wake/AFE, AudioService, and 60 ms pacer are the non-negotiable parity
+    shape. It also warned that `/v1/xiaozhi/say` and host-only good audio must
+    not replace real `/v1/xiaozhi` physical trace evidence.
   - `019e8a52-c5ee-73a2-a28b-40d5f6624fba`: A21 Gateway `/v1/xiaozhi`
     realtime gap audit; completed and confirmed Gateway has the streaming ASR
     seam but real provider/TTS streaming remains missing.
@@ -4411,9 +4414,8 @@ Current validation request:
 
 - No real streaming ASR provider is implemented yet.
 - No true streaming TTS adapter is implemented yet.
-- Worker threads were still in progress when this handoff entry was written;
-  their final reports should be read next and folded into the next provider
-  implementation transition.
+- All three read-only worker reports have now completed and should be used as
+  input to the next provider implementation transition.
 - Physical `xiaozhi-realtime-parity` remains unaccepted until a real
   operator-triggered `/v1/xiaozhi` turn proves streaming ASR/LLM/TTS/downlink
   ordering.
