@@ -460,3 +460,122 @@ Recommended next action:
 - First decide the network route: operator-visible `Xiaozhi-6A61` Wi-Fi
   configuration or a foreground guarded NVS relay update.
 - Then reconnect the device to A21 Gateway and collect physical PRD evidence.
+
+## 2026-06-02 - T-HW-002 - Recover Network Route And Prove Physical Xiaozhi Candidate
+
+Goal:
+
+- Continue under the repo-carried control workflow and quickly run the A21
+  physical main flow without redesigning the architecture.
+- Recover the flashed official Xiaozhi-compatible StackChan from stale
+  relay/Wi-Fi state to an A21 Gateway connection.
+- Keep evidence honest: candidate Gateway downlink is progress, not full PRD
+  launch acceptance.
+
+Actual completed work:
+
+- Spawned worker thread `019e887f-b94c-78b0-8edc-7315ed56b59d` for read-only
+  `T-HW-002 Phase 1` relay/network reconnaissance.
+- Worker confirmed the previous temporary relay resolved but OTA/WS probes
+  returned `503`, so it should be treated as stale.
+- Confirmed a LAN-bound A21 Gateway was already running on port `21081` and
+  returning healthy `/healthz`, OTA discovery, and stock Xiaozhi WebSocket
+  route information.
+- Committed the previous control/state recovery docs as
+  `eeacbd3 docs(control): recover hardware network state` so T7 guarded NVS
+  execution could run from a clean worktree.
+- Ran a no-write NVS plan for the LAN route; status was `ready` and
+  `write_executed=false`.
+- Ran foreground T7 guarded NVS execution on `/dev/cu.usbmodem1101`; status
+  `passed`, `write_executed=true`, Wi-Fi credentials and servo calibration
+  preserved, and only Xiaozhi connection keys mutated.
+- Hard-reset the device through esptool and captured boot serial evidence.
+- Captured physical wake/turn serial evidence after operator wake:
+  WakeNet detected `Hi,Stack Chan`, the device connected to
+  `ws://192.168.1.20:21081/v1/xiaozhi`, and state moved through
+  `listening`/`speaking` cycles.
+- Gateway `/v1/devices` showed physical device `44:1b:f6:e2:6a:60` online
+  with stock Xiaozhi WebSocket, microphone uplink, and speaker downlink
+  capabilities.
+- Generated physical Xiaozhi evidence and readiness reports.
+
+Files changed:
+
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-a21-hardware-network-evidence-recovery.md`
+- `docs/agent_handoff_log.md`
+
+Current repository state:
+
+- Control branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- HEAD during foreground hardware run: `eeacbd3`.
+- Current total state after this transition:
+  `S-HW-PHYSICAL-XIAOZHI-GATEWAY-DOWNLINK-CANDIDATE`.
+
+Key evidence from this round:
+
+- Guarded NVS execution:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json`.
+- Reset serial log:
+  `reports/a21-stackchan-direct-xiaozhi-serial-reset-20260602-2128.log`.
+- Physical wake/turn serial log:
+  `reports/a21-stackchan-physical-wake-serial-20260602-2130.log`.
+- Physical Xiaozhi evidence:
+  `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json`.
+- Product readiness:
+  `reports/a21-product-readiness-20260602-213204.json`.
+- Server-side readiness bundle:
+  `reports/a21-server-side-readiness-bundle-20260602-213204.json`.
+
+Important results:
+
+- Physical device is online through stock Xiaozhi profile.
+- Physical microphone uplink reached Gateway: 64 frames, delivery ratio 1.
+- Gateway downlink reached physical device path; answer first downlink was
+  555 ms in the physical evidence report.
+- Barge-in trace metrics are present.
+- `product-readiness` reports `demo_ready=true`, `launch_ready=false`,
+  `status=server_side_blocked`.
+
+Unfinished items:
+
+- Full physical PRD acceptance is not green.
+- Missing device playback ack or operator/instrument audible playback
+  observation.
+- Missing device downlink first-frame timing and speech-end to first audible
+  response timing.
+- Missing barge-in playback `stop_done` evidence.
+- Missing real provider smoke; readiness currently selects `mock`.
+- Custom wake product proof is still blocked by guarded wake firmware flash and
+  physical wake acceptance.
+
+Known risks and blockers:
+
+- Do not treat `candidate_gateway_downlink` as audible playback acceptance.
+- Port `21081` is a foreground LAN-bound Gateway route used to run the hardware
+  window quickly; document or retire it before treating it as a durable launch
+  route.
+- Official StackChan serial shows repeated `Unknown message type: listen`
+  warnings during the turn; this did not block uplink/downlink evidence but
+  should be reviewed before declaring product polish.
+- Old `stackchan-accept` diagnostic gates remain blocked because they expect
+  diagnostic probe/runtime echo fields, not the stock Xiaozhi capability shape.
+
+Validation results:
+
+- `git diff --check`: passed.
+- Scoped secret scan over changed handoff/state/plan docs: no matches for key,
+  Bearer, password, or token patterns.
+- Previous docs checkpoint committed as `eeacbd3`.
+- Foreground NVS execute passed with T7 control guard and clean worktree.
+- `xiaozhi-physical-evidence` passed and wrote candidate physical evidence.
+- `product-readiness --use-latest-reports` passed and correctly kept
+  `launch_ready=false`.
+
+Recommended next action:
+
+- Execute `T-HW-003: Close Physical Audible Playback And PRD Evidence`.
+- Capture either trusted device playback ack/runtime echo or an approved
+  operator/instrument audible observation matched to a fresh physical trace.
+- Then rerun `xiaozhi-physical-evidence`, `product-readiness`, and
+  `server-side-readiness-bundle`.

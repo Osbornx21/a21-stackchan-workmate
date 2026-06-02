@@ -1,8 +1,34 @@
 # A21 Hardware Network And Evidence Recovery Plan
 
-Status: active plan.
+Status: active plan; network/Gateway-downlink phases partially completed.
 Date: 2026-06-02.
 Transition: `T-HW-002`.
+
+## 2026-06-02 Status Update
+
+The old temporary relay was verified stale with an OTA/WS `503` response. The
+control thread used the already-running LAN-bound A21 Gateway on port `21081`,
+verified `/healthz` and `/xiaozhi/ota/`, then performed a foreground guarded
+NVS connection update to that route. The device was hard-reset, requested OTA
+from the LAN Gateway, activated, detected the stock wake phrase, connected to
+`/v1/xiaozhi`, and produced physical Gateway evidence:
+
+- guarded NVS execution:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json`;
+- reset serial log:
+  `reports/a21-stackchan-direct-xiaozhi-serial-reset-20260602-2128.log`;
+- physical wake/turn serial log:
+  `reports/a21-stackchan-physical-wake-serial-20260602-2130.log`;
+- physical Xiaozhi evidence:
+  `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json`;
+- readiness:
+  `reports/a21-product-readiness-20260602-213204.json` and
+  `reports/a21-server-side-readiness-bundle-20260602-213204.json`.
+
+Current evidence is candidate-level, not launch acceptance. It proves physical
+device online, stock Xiaozhi profile, microphone uplink, Gateway downlink, and
+barge-in trace metrics. It does not yet prove audible playback observation or
+trusted device playback ack, real provider smoke, or custom wake product proof.
 
 ## Background And Problem Definition
 

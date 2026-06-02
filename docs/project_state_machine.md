@@ -9,15 +9,18 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-FLASHED-OFFICIAL-RUNTIME-NETWORK-BLOCKED`
+Current total state: `S-HW-PHYSICAL-XIAOZHI-GATEWAY-DOWNLINK-CANDIDATE`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
 control workflow, and a freshly rebuilt official StackChan Xiaozhi-compatible
-firmware candidate. The official-compatible candidate has now been flashed in a
-foreground hardware window, and the latest firmware enters the official
-Xiaozhi runtime directly. It is not yet fully PRD accepted because the device is
-currently blocked at Wi-Fi/relay provisioning and physical evidence collection.
+firmware candidate. The official-compatible candidate has been flashed in a
+foreground hardware window, the latest firmware enters the official Xiaozhi
+runtime directly, and the device has now connected to an A21 Gateway over the
+stock Xiaozhi WebSocket path. A physical wake/turn produced Gateway uplink,
+downlink, and barge-in candidate evidence. It is not yet full PRD accepted
+because audible playback observation or trusted device playback ack, real
+provider smoke, and custom wake proof remain missing.
 
 Current control branch:
 
@@ -26,6 +29,7 @@ Current control branch:
 Current notable baseline:
 
 - `4613946 fix(firmware): enter official xiaozhi runtime directly`
+- `eeacbd3 docs(control): recover hardware network state`
 - `e7e9b03 feat(firmware): autostart official xiaozhi candidate`
 - `37ef8f3 feat(firmware): add official xiaozhi nvs connection config`
 - `6f34091 feat(firmware): add official xiaozhi compatible flash plan`
@@ -38,14 +42,14 @@ Current notable baseline:
 | Module | State | Evidence | Next state |
 | --- | --- | --- | --- |
 | Control workflow | `S1-REPO-CARRIED-CONTROL` | Commit `69c4bbe`; `docs/agent_handoff_log.md`, `docs/project_state_machine.md`, and `docs/plans/` exist | `S2-WORKER-TRANSITION-OPERATING` |
-| Gateway `/v1/xiaozhi` | `S2-HOST-READY` | Stock-compatible hello/listen/abort, binary unwrap, Opus, turn/cancel, pacing, and downlink tests exist | `S3-PHYSICAL-VOICE-EVIDENCE` |
+| Gateway `/v1/xiaozhi` | `S3-PHYSICAL-DEVICE-CONNECTED` | Gateway on `127.0.0.1:21081` / LAN port `21081` accepted the physical device via stock Xiaozhi WebSocket; trace `a21-trace-44-1b-f6-e2-6a-60` has Opus uplink, VAD, ASR final, provider first content, TTS first audio, and Opus downlink | `S4-AUDIBLE-PLAYBACK-ACCEPTED` |
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
-| Firmware candidate | `S4-FOREGROUND-FLASHED-DIRECT-RUNTIME` | Commit `4613946`; flash report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`; app SHA-256 `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d` | `S5-GATEWAY-CONNECTED` |
-| Device connection/NVS | `S2-NVS-WRITTEN-RELAY-STALE-OR-WIFI-MISSING` | NVS report `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-204515-1780404315388792000.json`; latest serial log shows `No AP found` then AP `Xiaozhi-6A61` | `S3-WIFI-OR-RELAY-CONNECTED` |
+| Firmware candidate | `S5-GATEWAY-CONNECTED` | Commit `4613946`; flash report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`; app SHA-256 `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d` | `S6-PRD-PHYSICAL-ACCEPTED` |
+| Device connection/NVS | `S3-LAN-GATEWAY-CONNECTED` | Latest guarded NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json` pointed OTA/WS to the LAN-bound A21 Gateway; reset serial log shows OTA connection to `21081` and activation | `S4-STABLE-RECONNECT-EVIDENCE` |
 | Provider hot-plug | `S2-HOST-READY` | Provider profiles and redacted smoke/evidence contracts exist | `S3-REAL-PROVIDER-ROTATION` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
-| Physical StackChan acceptance | `S1-FLASHED-NOT-ONLINE` | Official-compatible candidate is flashed, but no current Gateway connection or PRD physical evidence is recorded after the direct-runtime fix | `S2-CONNECTED-AND-OBSERVED` |
+| Physical StackChan acceptance | `S2-CANDIDATE-GATEWAY-DOWNLINK` | `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json` reports physical device online, stock profile, mic delivery ratio 1, answer first downlink 555 ms, and barge-in metrics; PRD accepted remains false | `S3-AUDIBLE-PLAYBACK-AND-PRD-ACCEPTED` |
 
 ## Active Transition
 
@@ -53,7 +57,7 @@ Current notable baseline:
 
 Current state:
 
-- `S-HW-FLASHED-OFFICIAL-RUNTIME-NETWORK-BLOCKED`
+- `S-HW-PHYSICAL-XIAOZHI-GATEWAY-DOWNLINK-CANDIDATE`
 
 Target state:
 
@@ -64,23 +68,28 @@ Trigger:
 - The official Xiaozhi-compatible candidate was flashed through the T7
   foreground guard.
 - The latest firmware no longer enters the setup/QR or watchdog failure path.
-- Serial evidence now shows Wi-Fi scan failure and AP `Xiaozhi-6A61`.
+- The old temporary relay returned `503`; a LAN-bound A21 Gateway on port
+  `21081` was verified by `/healthz` and `/xiaozhi/ota/`.
+- A foreground guarded NVS update pointed OTA/WS to the LAN Gateway and the
+  device connected through stock Xiaozhi WebSocket after wake.
 
 Actions:
 
-- Confirm current branch, HEAD, dirty state, serial port, and relay freshness.
-- Choose either operator-visible Wi-Fi configuration through `Xiaozhi-6A61` or
-  a guarded NVS connection update for a current relay.
-- Reconnect the device to A21 Gateway using stock-compatible Xiaozhi protocol.
-- Collect physical audio, barge-in, avatar/action, wake, provider, and
-  readiness evidence.
+- Complete audible playback or trusted device playback ack evidence for the
+  physical Xiaozhi turn.
+- Preserve the physical Gateway trace and serial evidence without storing raw
+  audio or transcript bodies.
+- Close real provider smoke on the host side, then rerun readiness.
+- Keep custom wake as blocked until guarded wake firmware flash and physical
+  custom wake proof are recorded.
 
 Acceptance conditions:
 
 - Device connects to A21 Gateway using stock-compatible Xiaozhi protocol.
-- Real audio output, microphone input, barge-in stop, official avatar/action,
-  wake behavior, and provider rotation evidence are recorded without leaking
-  keys or debug-only protocol fields.
+- Real microphone input, Gateway downlink, barge-in stop, official
+  avatar/action, wake behavior, and provider rotation evidence are recorded
+  without leaking keys or debug-only protocol fields.
+- Audible playback observation or trusted device playback ack is present.
 - Host/mock/candidate evidence remains labeled separately from physical
   acceptance.
 
@@ -93,6 +102,8 @@ Failure state:
   writes.
 - `F-HW-002-NO-PHYSICAL-EVIDENCE` if the device connects but evidence is not
   recorded.
+- `F-HW-002-AUDIBLE-ACK-MISSING` if Gateway downlink exists but physical
+  audible playback or trusted device playback ack remains unproven.
 
 Rollback path:
 
@@ -119,34 +130,36 @@ Next state:
 | T-FW-005: Add official compatible NVS connection config | Completed | Commit `37ef8f3`; T7 NVS write report `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-204515-1780404315388792000.json` preserved servo calibration and Wi-Fi credentials while updating OTA/WS route. |
 | T-FW-006: Autostart official Xiaozhi candidate | Superseded | Commit `e7e9b03`; initial autostart removed setup gate but hit a setup-uninstall watchdog path during field testing. |
 | T-FW-007: Enter official Xiaozhi runtime directly | Completed | Commit `4613946`; latest app SHA-256 `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d`; flashed through report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`. |
+| T-GOV-002: Recover hardware network state docs | Completed | Commit `eeacbd3`; reconciled collapsed control thread, active plan, state machine, and handoff log before foreground NVS execution. |
+| T-HW-002a: Refresh connection route and prove physical Gateway downlink | Completed candidate | Latest NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json`; serial logs `reports/a21-stackchan-direct-xiaozhi-serial-reset-20260602-2128.log` and `reports/a21-stackchan-physical-wake-serial-20260602-2130.log`; physical evidence report `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json`; readiness report `reports/a21-product-readiness-20260602-213204.json`. |
 
 ## Blocked Transitions
 
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
-| T-HW-001b: Full StackChan physical acceptance after flash | Flash executed, but Gateway connection and physical PRD evidence remain incomplete | Complete `T-HW-002`, then collect accepted physical audio, barge-in, avatar/action, wake, provider, and readiness reports. |
-| T-HW-002: Network/relay recovery after direct runtime flash | Device is in Wi-Fi config AP after `No AP found`; relay host may be temporary/stale | Operator-visible Wi-Fi configuration or foreground guarded NVS relay update. |
-| T-PRD-001: Declare full PRD physical acceptance | Missing flashed-device evidence | Physical audio, barge-in, action/screen, wake, provider, and readiness reports. |
+| T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Gateway downlink exists, but device playback ack or operator/instrument audible observation is missing | Collect accepted audible playback evidence, device playback timing, and barge-in playback stop_done, then regenerate `xiaozhi-physical-evidence`. |
+| T-PROVIDER-001: Real provider smoke on hardware path | Latest readiness still selects `mock`; `real_provider_smoke` missing | Run approved host-side provider smoke/rotation with keys outside firmware and redacted reports. |
+| T-PRD-001: Declare full PRD physical acceptance | Candidate physical Gateway evidence exists but PRD accepted remains false | Close `T-HW-002b`, `T-PROVIDER-001`, and custom wake proof, then rerun product readiness. |
 | T-FW-003: Custom wake-word product acceptance | Needs guarded flash and physical proof | Wake package review, false-wake rejection, operator wake proof. |
 
 ## Next Candidate Transitions
 
-1. `T-HW-002: Recover Network/Relay And Collect Physical Evidence`
-   - Confirm whether to configure AP `Xiaozhi-6A61` or write a fresh guarded
-     NVS relay.
-   - Reconnect the flashed candidate to A21 Gateway.
-   - Collect physical audio, barge-in, avatar/action, wake, provider, and
-     readiness evidence.
+1. `T-HW-003: Close Physical Audible Playback And PRD Evidence`
+   - Collect operator or instrument audible playback observation matched to
+     trace `a21-trace-44-1b-f6-e2-6a-60` or a fresh trace.
+   - Capture trusted device playback ack/timing and barge-in stop_done if
+     available.
+   - Rerun `xiaozhi-physical-evidence` and product readiness.
 
-2. `T-PRD-002: Refresh PRD Burn-Down With Repo-Carried Evidence`
-   - Re-read `docs/prd/A21_PRD.md` and latest reports.
-   - Classify each requirement as implemented, host-ready, simulated,
-     candidate, blocked by hardware, or missing.
-   - Keep host/mock/candidate evidence separate from physical acceptance.
-
-3. `T-PROVIDER-001: Real Provider Rotation Evidence On Hardware Path`
+2. `T-PROVIDER-001: Real Provider Rotation Evidence On Hardware Path`
    - Run local ASR + cloud LLM + local TTS, cloud ASR + cloud LLM + local TTS,
      and cloud ASR + cloud LLM + cloud TTS through the selected Gateway profile.
    - Keep provider keys host-side only and reports redacted.
    - Record latency and quality evidence without changing firmware provider
      storage.
+
+3. `T-WAKE-001: Guarded Custom Wake Physical Proof`
+   - Use the existing wake firmware package only through a guarded hardware
+     window.
+   - Prove the custom wake phrase, false-wake rejection, stock-wake rejection,
+     and product readiness without fake-greening the current stock wake.
