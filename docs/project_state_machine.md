@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-STACKCHAN-COMPATIBLE-ZI-YUE-WAKE-FAILED-ASR-LATENCY-HOTFIX-CANDIDATE`
+Current total state: `S-HW-STACKCHAN-COMPATIBLE-ZI-YUE-TUNED-FLASHED-ASR-LATENCY-HOTFIX-RUNNING`
 
 Active child transitions:
 
@@ -145,7 +145,19 @@ stock Xiaozhi listen windows, including about 25s, 38s, 70s, and 108s before
 auto-stop or replacement by a new listen. The current unflashed hotfix candidate
 keeps the display identity `紫悦`, adds longer MultiNet command aliases, adds a
 Gateway max-listen safety stop with `A21_XIAOZHI_LISTEN_MAX_MS`, and improves
-trace summary pairing for reused hardware trace ids. `T-FLASH-GUARD-001` is now integrated: the
+trace summary pairing for reused hardware trace ids. Commit `5242349` was
+built and flashed through the official-compatible product lane: build report
+`reports/a21-stackchan-official-baseline-20260603-032615-1780428375746120000.json`;
+no-write flash plan
+`reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-032627-1780428387219884000.json`;
+flash execute
+`reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-032734-1780428454747199000.json`;
+app SHA-256
+`e13a6cbd63596cd1388f5a540b488b3e35b449e49a5e31891cf133436561dc6e`.
+Gateway `a21-gateway-21081` was restarted from this commit with
+`A21_XIAOZHI_LISTEN_MAX_MS=7000`, device `44:1b:f6:e2:6a:60` reconnected
+online, and runtime speaker volume `100` was delivered on trace
+`a21-trace-wake-asr-hotfix-volume-1780428544`. `T-FLASH-GUARD-001` is now integrated: the
 generic `xiaozhi-firmware-flash-*` lane rejects product-looking `xiaozhi.bin`
 at app offset `0x20000` unless explicitly marked `--non-product-dev`, while
 the official-compatible product flash plan still passes.
@@ -191,7 +203,7 @@ Current notable baseline:
 | Local clone TTS / CosyVoice | `S1-5080-SOURCE-PRESENT-WEIGHTS-MISSING` | Worker `019e897d-d4b4-78c3-9358-ac27a4f61d0d` confirmed 5080 is online and found CosyVoice source plus venv, IndexTTS2 source/venv/runner with CUDA, and traces of F5-TTS/GPT-SoVITS. No clone WAV was produced: CosyVoice venv lacks `torch`/`tqdm` and has no usable `pretrained_models/CosyVoice-*` weights; IndexTTS2 is closest but fails because `checkpoints/qwen0.6bemo4-merge/` is missing or not loadable; F5-TTS/GPT-SoVITS have no confirmed ready checkpoint/run path. Plan `docs/plans/2026-06-03-cosyvoice-5080-local-clone-candidate.md` now tracks restoration. | `S2-LOCAL-CLONE-SMOKE-WAV-PRODUCED` |
 | StackChan volume/action control | `S5-RUNTIME-VOLUME100-PHYSICAL-ACCEPTED` | `POST /v1/xiaozhi/speaker-volume` delivered official MCP `self.audio_speaker.set_volume` with `volume=100` to live device `44:1b:f6:e2:6a:60`; latest 3x trace is `a21-trace-stackchan-volume-1780417211`. Desktop helper supports both `volume` and `say`; physical loudness is accepted through final operator recording `10.m4a`. | `S6-FROZEN-FOR-CONTEST-FLOW` |
 | Half-duplex / echo control | `S3A-NO-FLASH-NORMAL-DIALOGUE-NO-SELF-TRIGGER-CANDIDATE` | `/v1/xiaozhi/say` now arms a short input-suppression window for stock physical devices after host-say completion; focused test proves immediate listen restart and Opus echo are ignored without starting a new voice pipeline. Physical 3x trace `a21-trace-stackchan-say-1780417217` recorded `xiaozhi.say.input_suppression_armed=1` and `xiaozhi.listen.start.input_suppressed=1`. Diagnostic counter reports `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json` and `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json` are blocked because current stock firmware lacks A21 identity, diagnostic mic-probe capability, available speaker echo fields, and runtime echo counters. That diagnostic blocker no longer blocks the contest path: no-flash normal-dialogue observation report `reports/a21-no-flash-normal-dialogue-observation-20260603-020055.json` delivered the accepted StepFun+Iflytek WAV through stock `/v1/xiaozhi/say` on trace `a21-trace-no-flash-dialogue-observe-1780423245`, waited `20000 ms`, observed `869` trace events, recorded `xiaozhi.listen.start.input_suppressed=1`, and found no `xiaozhi.listen.start`, `provider.start_turn.start`, `provider.realtime_session.start`, or `xiaozhi.voice_pipeline.start` self-trigger events. | `S4-TOUCH-BARGE-IN-OPERATOR-CHECK-OR-DIAGNOSTIC-COUNTERS` |
-| Wake word | `S4F-ZI-YUE-PHYSICAL-WAKE-REJECTED` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` and bare flash report `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json` remain incident/background evidence only because `xiaozhi.bin` regressed the product UI. `T-WAKE-002` integrated the requested wake word into the product app lane and flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-030818-1780427298506934000.json` passed, but operator physical verification failed: saying `紫悦` produced no response. `T-WAKE-003` keeps display `紫悦` and updates the custom MultiNet command string to `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue` while staying in the official-compatible product lane. | `S4G-ZI-YUE-PHRASE-TUNED-FLASH-READY` |
+| Wake word | `S4G-ZI-YUE-PHRASE-TUNED-FLASHED-AWAITING-PROOF` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` and bare flash report `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json` remain incident/background evidence only because `xiaozhi.bin` regressed the product UI. `T-WAKE-002` integrated the requested wake word into the product app lane and flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-030818-1780427298506934000.json` passed, but operator physical verification failed: saying `紫悦` produced no response. `T-WAKE-003` keeps display `紫悦` and updates the custom MultiNet command string to `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue` while staying in the official-compatible product lane. Build report `reports/a21-stackchan-official-baseline-20260603-032615-1780428375746120000.json` passed; flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-032734-1780428454747199000.json` passed; device reconnected online. | `S5-ZI-YUE-TUNED-PHYSICAL-WAKE-ACCEPTED` |
 
 ## Active Transitions
 
@@ -199,11 +211,11 @@ Current notable baseline:
 
 Current state:
 
-- `S4F-ZI-YUE-PHYSICAL-WAKE-REJECTED`
+- `S4G-ZI-YUE-PHRASE-TUNED-FLASHED-AWAITING-PROOF`
 
 Target state:
 
-- `S4G-ZI-YUE-PHRASE-TUNED-FLASH-READY`
+- `S5-ZI-YUE-TUNED-PHYSICAL-WAKE-ACCEPTED`
 
 Trigger:
 
@@ -220,6 +232,15 @@ Actions:
 - Keep visible wake identity `紫悦`.
 - Tune only the custom MultiNet command list to
   `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue`.
+
+Current result:
+
+- Commit `5242349` passed focused tests and `make verify`.
+- Official-compatible build passed with app SHA-256
+  `e13a6cbd63596cd1388f5a540b488b3e35b449e49a5e31891cf133436561dc6e`.
+- Guarded official-compatible flash execute passed on `/dev/cu.usbmodem1101`.
+- Device `44:1b:f6:e2:6a:60` reconnected online.
+- Physical wake proof is still pending operator retry.
 
 Acceptance conditions:
 
@@ -241,13 +262,13 @@ Rollback path:
 
 Next state:
 
-- `S4G-ZI-YUE-PHRASE-TUNED-FLASH-READY`
+- `S5-ZI-YUE-TUNED-PHYSICAL-WAKE-ACCEPTED`
 
 ### Active T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop
 
 Current state:
 
-- `S-GREEN-ASR-LISTEN-WINDOWS-TOO-LONG`
+- `S-GREEN-ASR-LISTEN-HOTFIX-RUNNING-AWAITING-PHYSICAL-RETEST`
 
 Target state:
 
@@ -268,6 +289,16 @@ Actions:
 - Default max listen is 7000 ms and can be overridden with
   `A21_XIAOZHI_LISTEN_MAX_MS`.
 - Improve trace summary pairing for reused physical trace ids.
+
+Current result:
+
+- Commit `5242349` passed focused tests and `make verify`.
+- Gateway `a21-gateway-21081` was restarted with
+  `A21_XIAOZHI_LISTEN_MAX_MS=7000`.
+- Device `44:1b:f6:e2:6a:60` reconnected online to the restarted Gateway.
+- Runtime volume `100` was redelivered through stock MCP on trace
+  `a21-trace-wake-asr-hotfix-volume-1780428544`.
+- Operator retest is still required.
 
 Acceptance conditions:
 
@@ -1158,10 +1189,10 @@ Next state:
      app, then physically retry `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
 
 2. `T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop`
-   - Current phase: Gateway hotfix candidate bounds green listen duration and
-     fixes reused-trace summary pairing.
-   - Next action: run full verify, restart/deploy Gateway, then ask the
-     operator to test green-light wait.
+   - Current phase: Gateway hotfix is running on `21081` with
+     `A21_XIAOZHI_LISTEN_MAX_MS=7000`.
+   - Next action: ask the operator to test green-light wait and capture the
+     resulting trace.
 
 3. `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001: Official Frontend Without Setup Trap`
    - Current phase: official request/start flow trapped the device on

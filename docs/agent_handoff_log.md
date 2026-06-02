@@ -3446,3 +3446,42 @@ Test/build/run results so far:
   passed.
 - `git diff --check`: passed.
 - `make verify`: passed.
+
+Post-commit build/flash/runtime results:
+
+- Committed as `5242349 fix(voice): bound xiaozhi listen and tune zi yue wake`.
+- `make a21-stackchan-official-xiaozhi-compatible-build`: passed.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-032615-1780428375746120000.json`.
+- Product app:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- Product app SHA-256:
+  `e13a6cbd63596cd1388f5a540b488b3e35b449e49a5e31891cf133436561dc6e`.
+- Generated `sdkconfig.json` proves:
+  - `BOARD_TYPE_M5STACK_STACK_CHAN=true`;
+  - `USE_CUSTOM_WAKE_WORD=true`;
+  - `CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`;
+  - `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `SR_MN_CN_MULTINET7_QUANT=true`;
+  - `USE_AFE_WAKE_WORD=false`;
+  - `SR_WN_WN9_HISTACKCHAN_TTS3=false`.
+- No-write flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-032627-1780428387219884000.json`,
+  `status=ready`, app offset `0x20000`, app file
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+- Guarded flash execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-032734-1780428454747199000.json`,
+  `status=passed`, `flash_executed=true`, control commit `5242349a2095`,
+  port `/dev/cu.usbmodem1101`.
+- Restarted tmux Gateway `a21-gateway-21081` from this commit with
+  `A21_XIAOZHI_LISTEN_MAX_MS=7000`; health returned ok.
+- Device `44:1b:f6:e2:6a:60` reconnected online after the Gateway restart.
+- Delivered runtime speaker volume `100` through stock MCP on trace
+  `a21-trace-wake-asr-hotfix-volume-1780428544`.
+
+Current operator validation needed:
+
+- Try wake phrases: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
+- Verify whether the green ASR wait now stops within roughly 7 seconds after
+  speech is detected.
