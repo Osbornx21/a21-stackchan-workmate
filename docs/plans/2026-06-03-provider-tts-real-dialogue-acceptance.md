@@ -259,6 +259,26 @@ Acceptance:
   retried twice and failed on the Mac direct path with HTTP header timeout then
   TLS handshake timeout. Treat Mac direct real-time loopback as unstable.
 
+## 2026-06-03 CosyVoice/Clone Candidate Update
+
+- A separate 5080 worker checked local clone-capable TTS assets without
+  touching A21 code, firmware, NVS, provider secrets, global proxy, or
+  StackChan hardware.
+- CosyVoice source and a `.venv` exist on 5080, but the CosyVoice venv lacks
+  `torch` and `tqdm`, and no usable `pretrained_models/CosyVoice-*` weights
+  were found.
+- CosyVoice classes can be imported from the IndexTTS venv and CUDA is
+  available there, but no CosyVoice model weights are ready for generation.
+- IndexTTS2 is closest to usable: source, venv, runner, CUDA, and partial
+  checkpoints exist, but inference currently fails because
+  `checkpoints/qwen0.6bemo4-merge/` is missing or not loadable.
+- F5-TTS and GPT-SoVITS source traces exist, but no ready checkpoint/run path
+  was confirmed.
+- No clone WAV was produced. Clone-capable local TTS remains a retained
+  `voice_clone_cli` candidate, not the current contest default.
+- Recovery is now tracked under
+  `docs/plans/2026-06-03-cosyvoice-5080-local-clone-candidate.md`.
+
 Next worker should execute `T-PROVIDER-002b`: use the fastest real egress path
 for TTS, preferably 5080/Alibaba relay if direct Mac remains blocked, then run
 Iflytek smoke, StepFun+TTS loopback, and physical StackChan playback.

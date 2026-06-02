@@ -2910,3 +2910,118 @@ Validation results:
 - No tracked code was modified.
 - No flash, NVS write, global proxy change, provider secret output, or V21
   execution occurred.
+
+## 2026-06-03 02:09 CST - T-HALF-DUPLEX-002 No-Flash Observation Passed, 5080 Clone Check Routed
+
+Round goal:
+
+- Keep convergence fast without letting "no firmware flash" or "operator did
+  not click" become a hard blocker.
+- Run no-flash normal dialogue self-trigger observation while the device is
+  online.
+- Dispatch a parallel 5080 worker to check whether local CosyVoice or another
+  clone-capable TTS path already exists and can produce a smoke WAV.
+
+Actual completed work:
+
+- Spawned 5080/CosyVoice worker `019e897d-d4b4-78c3-9358-ac27a4f61d0d` with
+  strict no-repo-edit, no-secret, no-hardware, no-global-proxy boundaries.
+- Ran no-flash normal dialogue observation from the main thread:
+  - Gateway `http://127.0.0.1:21081` was healthy.
+  - Device `44:1b:f6:e2:6a:60` was online.
+  - Runtime speaker volume `100` was delivered before playback.
+  - Accepted relay WAV
+    `a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` was played via
+    stock `/v1/xiaozhi/say`.
+  - Trace: `a21-trace-no-flash-dialogue-observe-1780423245`.
+  - Session: `a21-session-no-flash-dialogue-observe-1780423245`.
+  - Playback delivered `40` audio chunks.
+  - Post-say observation window was extended to `20000 ms`.
+  - Trace event count reached `869`.
+  - Self-trigger event names were empty for `xiaozhi.listen.start`,
+    `provider.start_turn.start`, `provider.realtime_session.start`, and
+    `xiaozhi.voice_pipeline.start`.
+  - `xiaozhi.listen.start.input_suppressed=1` was observed.
+- Generated ignored no-flash report
+  `reports/a21-no-flash-normal-dialogue-observation-20260603-020055.json` with
+  `status=candidate_passed_no_self_trigger`.
+- Redaction scan of the no-flash report found no API key, secret,
+  Authorization, base64 audio, raw audio, transcript, provider output, full
+  local path, or non-loopback URL.
+- Updated the half-duplex plan to separate the contest no-flash observation
+  track from the optional diagnostic-counter firmware path.
+- Ran a fresh product readiness sweep:
+  `reports/a21-product-readiness-20260603-020743.json`.
+  It remains `server_side_blocked`; because this quick sweep did not pin the
+  provider report/env it selected `mock`, so use it only as a gap inventory.
+- 5080/CosyVoice worker result:
+  - 5080 LAN SSH is online; `D:/a21-mainland-latency-lab`, `inbox`, and
+    `outbox` exist.
+  - CosyVoice source and venv exist, but the CosyVoice venv lacks `torch` and
+    `tqdm`, and no usable `pretrained_models/CosyVoice-*` weights were found.
+  - CosyVoice classes can be imported from the IndexTTS venv and CUDA is
+    available there, but no CosyVoice weights are ready for generation.
+  - IndexTTS2 source, venv, runner, CUDA, and partial checkpoints exist, but
+    inference fails because `checkpoints/qwen0.6bemo4-merge/` is missing or not
+    loadable.
+  - F5-TTS and GPT-SoVITS source traces exist, but no ready checkpoint/run path
+    was confirmed.
+  - No clone WAV was produced.
+- Created plan
+  `docs/plans/2026-06-03-cosyvoice-5080-local-clone-candidate.md` before any
+  model restoration/download task.
+- Updated `docs/project_state_machine.md` and
+  `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md` with the
+  5080 clone status.
+
+Files changed this round:
+
+- `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`
+- `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`
+- `docs/plans/2026-06-03-cosyvoice-5080-local-clone-candidate.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- Ignored/generated reports:
+  - `reports/a21-no-flash-normal-dialogue-observation-20260603-020055.json`
+  - `reports/a21-product-readiness-20260603-020743.json`
+
+Current unfinished items:
+
+- No-flash self-trigger observation is candidate-passed, but touch/barge-in
+  operator proof is still pending before full PRD physical acceptance.
+- Instrumented half-duplex counter acceptance remains optional/diagnostic and
+  would require guarded diagnostic firmware if machine counters are mandatory.
+- Wake remains blocked by missing A21-owned reviewed full build dir and
+  physical custom wake proof.
+- CosyVoice/IndexTTS2 local clone path is not usable until weights/dependencies
+  are restored; StepFun+Iflytek remains the current accepted contest voice
+  candidate.
+- Product readiness still needs explicit provider pinning when run; generic
+  `--use-latest-reports` can select `mock`.
+
+Known risks and blockers:
+
+- Do not promote the no-flash observation to full diagnostic half-duplex
+  acceptance.
+- Do not start large 5080 model downloads without the CosyVoice recovery plan
+  and a redacted source/size summary.
+- Do not switch the contest default to clone TTS until a WAV is generated and
+  operator listening accepts it.
+
+Recommended next action:
+
+- Continue with `T-WAKE-FLASH-GATE-001` by restoring/rebuilding the A21-owned
+  wake build dir.
+- In parallel, run the next 5080 clone recovery worker under
+  `docs/plans/2026-06-03-cosyvoice-5080-local-clone-candidate.md`, preferring
+  the quickest cached IndexTTS2 `qwen0.6bemo4-merge` restoration.
+- Add or reuse a voice-chain evidence ingress so the accepted StepFun+Iflytek
+  relay path closes the right readiness gap without changing provider route
+  eligibility.
+
+Validation results:
+
+- No-flash normal dialogue observation report generated and redaction-scanned.
+- No flash, NVS write, global proxy change, provider secret output, V21
+  execution, or StackChan firmware change occurred.
+- 5080 worker did not modify tracked A21 files.
