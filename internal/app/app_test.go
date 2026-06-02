@@ -2786,6 +2786,60 @@ func TestRunProductReadinessCommandIngestsWakeWordFirmwarePackageWithoutGreenOrL
 	}
 }
 
+func TestRunProductReadinessCommandUsesLatestMatchingWakeWordFirmwarePackage(t *testing.T) {
+	server := newProductReadinessCustomWakeTestServer(t)
+	dir := t.TempDir()
+	matching := writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-package-20260602-030000.json", productReadinessWakeWordFirmwarePackageReportFixtureJSON())
+	mismatched := writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-package-20260602-050000.json", strings.Replace(productReadinessWakeWordFirmwarePackageReportFixtureJSON(), `"threshold": 35`, `"threshold": 45`, 1))
+	older := time.Date(2026, 6, 2, 3, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 6, 2, 5, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(matching, older, older); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(mismatched, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("A21_PROVIDER_PRIMARY", "mock")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"firmware_package_available": true`,
+		`"firmware_package_source_report": "a21-wake-word-firmware-package-20260602-030000.json"`,
+		`"wake_word_firmware_package_available"`,
+		`"detail": "wake_word_firmware_package:a21-wake-word-firmware-package-20260602-050000.json"`,
+		`"product_ready": false`,
+		`"wake_word_ready": false`,
+		`"launch_ready": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		`"firmware_package_source_report": "a21-wake-word-firmware-package-20260602-050000.json"`,
+		matching,
+		mismatched,
+		dir,
+		server.URL,
+		"http://",
+		"https://",
+		"/Users/",
+		`"wake_word_ready": true`,
+		`"launch_ready": true`,
+	} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest matching wake word package leaked or misselected %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestRunProductReadinessCommandRejectsWakeWordFirmwarePackageMismatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

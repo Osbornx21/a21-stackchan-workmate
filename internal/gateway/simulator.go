@@ -459,6 +459,8 @@ const simulatorHTML = `<!doctype html>
             <input id="wakeWordPinyin" value="xiao a er yi" aria-label="wake word pinyin">
             <input id="wakeWordThreshold" type="number" min="1" max="100" value="35" aria-label="wake word threshold">
             <button id="saveWakeWord">Save</button>
+            <button id="resetWakeWord">Reset</button>
+            <button id="exportWakeWord">Export</button>
           </div>
           <div class="registry-grid" style="margin-top:10px;">
             <div class="metric"><label>Active</label><div id="wakeWordActive">你好小智</div></div>
@@ -543,6 +545,8 @@ const simulatorHTML = `<!doctype html>
       wakeWordPhrase: document.getElementById('wakeWordPhrase'),
       wakeWordPinyin: document.getElementById('wakeWordPinyin'),
       wakeWordThreshold: document.getElementById('wakeWordThreshold'),
+      resetWakeWord: document.getElementById('resetWakeWord'),
+      exportWakeWord: document.getElementById('exportWakeWord'),
       wakeWordActive: document.getElementById('wakeWordActive'),
       wakeWordStatus: document.getElementById('wakeWordStatus'),
       wakeWordBuild: document.getElementById('wakeWordBuild'),
@@ -560,6 +564,7 @@ const simulatorHTML = `<!doctype html>
       voiceMode: document.getElementById('voiceMode'),
       utterance: document.getElementById('utterance')
     };
+    let latestWakeWordConfig = null;
     const sim = {
       control: null,
       audio: null,
@@ -904,6 +909,7 @@ const simulatorHTML = `<!doctype html>
       ui.latencyProviderFirstAudio.textContent = fmt(summary.provider_commit_to_first_audio_ms);
     }
     function renderWakeWordConfig(config) {
+      latestWakeWordConfig = config;
       ui.wakeWordActive.textContent = config.active_phrase || 'none';
       ui.wakeWordStatus.textContent = config.runtime_status || 'unknown';
       ui.wakeWordBuild.textContent = config.firmware_build_required ? 'required' : 'not required';
@@ -911,8 +917,8 @@ const simulatorHTML = `<!doctype html>
       ui.wakeWordHotSwap.textContent = config.runtime_hot_swap_supported ? (config.custom_runtime_active ? 'custom active' : 'supported') : 'disabled';
       ui.wakeWordCode.textContent = config.code || 'none';
       if (config.mode) ui.wakeWordMode.value = config.mode;
-      if (config.desired_phrase) ui.wakeWordPhrase.value = config.desired_phrase;
-      if (config.desired_pinyin) ui.wakeWordPinyin.value = config.desired_pinyin;
+      ui.wakeWordPhrase.value = config.desired_phrase || '';
+      ui.wakeWordPinyin.value = config.desired_pinyin || '';
       if (config.threshold) ui.wakeWordThreshold.value = String(config.threshold);
     }
     async function refreshWakeWordConfig() {
@@ -950,6 +956,41 @@ const simulatorHTML = `<!doctype html>
       } catch (err) {
         ui.wakeWordStatus.textContent = 'unavailable';
       }
+    }
+    async function resetWakeWordConfig() {
+      try {
+        const response = await fetch('/v1/wake-word', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'builtin_xiaozhi', threshold: 30 })
+        });
+        if (!response.ok) {
+          ui.wakeWordStatus.textContent = 'rejected ' + response.status;
+          return;
+        }
+        const config = await response.json();
+        renderWakeWordConfig(config);
+        log('wake word config reset ' + (config.runtime_status || 'unknown'));
+      } catch (err) {
+        ui.wakeWordStatus.textContent = 'unavailable';
+      }
+    }
+    async function exportWakeWordConfig() {
+      if (!latestWakeWordConfig) {
+        await refreshWakeWordConfig();
+      }
+      if (!latestWakeWordConfig) {
+        ui.wakeWordStatus.textContent = 'unavailable';
+        return;
+      }
+      const blob = new Blob([JSON.stringify(latestWakeWordConfig, null, 2) + '\n'], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'a21-wake-word-config.json';
+      link.click();
+      URL.revokeObjectURL(url);
+      log('wake word config exported ' + (latestWakeWordConfig.runtime_status || 'unknown'));
     }
     function connect() {
       if (sim.control && sim.control.readyState === WebSocket.OPEN) return;
@@ -1112,6 +1153,8 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
     document.getElementById('mockAudioBurst').addEventListener('click', sendMockAudioBurst);
     document.getElementById('saveWakeWord').addEventListener('click', saveWakeWordConfig);
+    ui.resetWakeWord.addEventListener('click', resetWakeWordConfig);
+    ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
     refreshRegistry();
     refreshVoiceModes();

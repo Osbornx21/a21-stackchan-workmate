@@ -99,3 +99,72 @@ func TestSimulatorWakeWordPanelShowsRuntimeAndFirmwareSeparation(t *testing.T) {
 		}
 	}
 }
+
+func TestSimulatorWakeWordPanelShowsResetAndExportAffordances(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/simulator", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`id="resetWakeWord"`,
+		`id="exportWakeWord"`,
+		"resetWakeWordConfig",
+		"exportWakeWordConfig",
+		`mode: 'builtin_xiaozhi'`,
+		"a21-wake-word-config.json",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("simulator page missing %q", want)
+		}
+	}
+}
+
+func TestWakeWordBuiltinResetClearsCustomIntentWithoutRuntimeClaim(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{WakeWordConfigPath: filepath.Join(t.TempDir(), "a21-wake-word.json")})
+	customReq := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(`{
+		"mode":"custom_multinet",
+		"desired_phrase":"小阿二一",
+		"desired_pinyin":"xiao a er yi",
+		"threshold":35
+	}`))
+	customRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(customRec, customReq)
+	if customRec.Code != http.StatusOK {
+		t.Fatalf("custom status = %d, want 200: %s", customRec.Code, customRec.Body.String())
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPut, "/v1/wake-word", strings.NewReader(`{
+		"mode":"builtin_xiaozhi",
+		"threshold":30
+	}`))
+	resetRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(resetRec, resetReq)
+
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200: %s", resetRec.Code, resetRec.Body.String())
+	}
+	body := resetRec.Body.String()
+	for _, want := range []string{
+		`"mode":"builtin_xiaozhi"`,
+		`"active_phrase":"你好小智"`,
+		`"runtime_status":"active_builtin_model"`,
+		`"firmware_build_required":false`,
+		`"firmware_status":"builtin_active"`,
+		`"custom_runtime_active":false`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reset response missing %q: %s", want, body)
+		}
+	}
+	for _, forbidden := range []string{"desired_phrase", "custom_pending_firmware", "pending_firmware_build", "product_ready"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("reset response overclaimed or kept custom field %q: %s", forbidden, body)
+		}
+	}
+}
