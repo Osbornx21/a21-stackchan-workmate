@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-STACKCHAN-COMPATIBLE-ZI-YUE-TUNED-FLASHED-ASR-LATENCY-HOTFIX-RUNNING`
+Current total state: `S-HW-STACKCHAN-COMPATIBLE-LISTEN-BOUNDED-CANDIDATE-BUILT`
 
 Active child transitions:
 
@@ -1320,6 +1320,7 @@ Next state:
 | T-AUDIO-003: Bounded 3x TTS gain and host-say suppression | Completed accepted | 4x gain was rejected by operator listening feedback; final 3x gain delivered `a21-trace-stackchan-say-1780417217`, final accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds, and host-say suppression markers were observed. |
 | T-AUDIO-004a: Bare Xiaozhi audio and whole-device parity read-only audit | Completed read-only audit | Sidecar thread `019e899d-e8c2-71e0-a10c-9e7e34ac4cff` reported the operator-confirmed fact that bare `xiaozhi.bin` was louder and clearer, while keeping it classified as a non-product/incident artifact. The explanation is not protocol alone: the key differences are official CoreS3 codec/HAL behavior, source TTS/mastering, runtime volume/NVS/MCP state, bounded leveling, gopus downlink, pacer/encoder state, and official StackChan app/action initialization. It recommends migrating parity conditions into `a21-stackchan-official-xiaozhi-compatible`, not returning to the bare `xiaozhi.bin` or the old M5Unified PCM bridge. |
 | T-HALF-DUPLEX-002: No-flash normal dialogue self-trigger observation | Completed candidate | Main thread used the online stock Xiaozhi device without firmware flash or operator click, delivered relay WAV `a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` through `/v1/xiaozhi/say`, and generated `reports/a21-no-flash-normal-dialogue-observation-20260603-020055.json` with `status=candidate_passed_no_self_trigger`, trace `a21-trace-no-flash-dialogue-observe-1780423245`, `audio_chunks=40`, `wait_after_say_ms=20000`, `event_count=869`, empty `self_trigger_event_names`, and `input_suppressed_count=1`. Diagnostic half-duplex counters remain a separate optional firmware path. |
+| T-ASR-GREEN-LATENCY-001: Bound Xiaozhi listen from firmware | Completed build candidate, flash pending | Physical trace `a21-trace-44-1b-f6-e2-6a-60` showed `xiaozhi.listen.start=110`, `xiaozhi.opus_frame.received=8034`, repeated `listen.stop -> listen.start`, and wake disabled while listening. Root cause candidate: official `HandleStartListeningEvent()` forced `kListeningModeManualStop`, while the A21 no-speech timeout only armed for `kListeningModeAutoStop`. The overlay now routes StartListening through `GetDefaultListeningMode()`, starts the no-speech timer for non-realtime listening, and keeps VAD silence auto-stop scoped to AutoStop after speech. Focused tests, `make verify`, and product build passed; build report `reports/a21-stackchan-official-baseline-20260603-042940-1780432180247638000.json`, app SHA-256 `ca0877d09eecfb9c69f2279ce14c95942a2cf966e05f118e82551e92c14665b9`. |
 
 ## Blocked Transitions
 
@@ -1338,10 +1339,11 @@ Next state:
      app, then physically retry `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
 
 2. `T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop`
-   - Current phase: Gateway hotfix is running on `21081` with
-     `A21_XIAOZHI_LISTEN_MAX_MS=7000`.
-   - Next action: ask the operator to test green-light wait and capture the
-     resulting trace.
+   - Current phase: firmware candidate built to remove the unbounded
+     `kListeningModeManualStop` StartListening path and stop no-speech
+     listening for all non-realtime modes.
+   - Next action: run no-write flash plan, guarded-flash the product app, then
+     ask the operator to test touch/no-speech green timeout and wake from idle.
 
 3. `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001: Official Frontend Without Setup Trap`
    - Current phase: active overlay/test candidate preloads official apps,

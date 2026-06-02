@@ -3645,3 +3645,99 @@ Current operator validation needed:
 - Try wake phrases: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
 - If tapping the screen enters green listening with no speech, confirm it exits
   in roughly 7 seconds.
+
+## 2026-06-03 04:32 CST - T-ASR-GREEN-LATENCY-001 firmware listen-bound candidate
+
+Round goal:
+
+- Continue from the confirmed setup/welcome fix.
+- Treat the current physical failure as `无限 ASR + wake disabled while
+  listening`, not as a standalone wake-word threshold issue.
+- Produce a focused product-firmware candidate that keeps the official
+  Xiaozhi-compatible lane and does not touch provider/TTS/gain.
+
+Actual completed:
+
+- Pulled live Gateway state for physical device `44:1b:f6:e2:6a:60` on
+  Gateway `127.0.0.1:21081`; device was online and last event was
+  `xiaozhi.opus_frame.decoded`.
+- Pulled trace `a21-trace-44-1b-f6-e2-6a-60` and confirmed:
+  - `xiaozhi.listen.start=110`;
+  - `xiaozhi.opus_frame.received=8034`;
+  - `xiaozhi.opus_frame.decoded=8034`;
+  - repeated `listen.stop -> listen.start`;
+  - wake is expected to be ineffective while listening because the product
+    config has `WAKE_WORD_DETECTION_IN_LISTENING=false`.
+- Root cause candidate:
+  - official `Application::HandleStartListeningEvent()` forces
+    `kListeningModeManualStop`;
+  - existing A21 no-speech timer only armed for `kListeningModeAutoStop`;
+  - therefore any official `StartListening()` path can bypass the 7 second
+    no-speech timeout and keep the device in green/listening, suppressing wake.
+- Updated the official-compatible overlay so:
+  - `HandleStartListeningEvent()` uses `GetDefaultListeningMode()` instead of
+    `kListeningModeManualStop`;
+  - `SetListeningMode()` arms the A21 no-speech timer for all non-realtime
+    listening modes;
+  - no-speech timeout stops listening for any mode;
+  - VAD silence after speech remains restricted to AutoStop, preserving the
+    normal Xiaozhi speech turn behavior.
+- Added focused guard tests to prevent reintroducing the unbounded manual
+  listening path.
+- Rebuilt the product firmware candidate.
+
+Modified files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Test/build/run results:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake|TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime' -count=1`: passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+- `make a21-stackchan-official-xiaozhi-compatible-build`: passed.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-042940-1780432180247638000.json`.
+- Product app:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- Product app SHA-256:
+  `ca0877d09eecfb9c69f2279ce14c95942a2cf966e05f118e82551e92c14665b9`.
+- Generated `sdkconfig.json` confirms:
+  - `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`;
+  - `USE_CUSTOM_WAKE_WORD=true`;
+  - `CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`;
+  - `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `SR_MN_CN_MULTINET7_QUANT=true`;
+  - `USE_AFE_WAKE_WORD=false`;
+  - `WAKE_WORD_DETECTION_IN_LISTENING=false`;
+  - `SEND_WAKE_WORD_DATA=false`.
+
+Current unfinished items:
+
+- Commit the focused firmware/test/docs change.
+- Run no-write flash plan and guarded flash execute on `/dev/cu.usbmodem1101`.
+- After flash, deliver runtime speaker volume `100` again.
+- Physical operator validation is still required:
+  - boot reaches Xiaozhi runtime without welcome/setup;
+  - touch/no-speech green listening exits instead of looping forever;
+  - wake variants work from idle: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
+
+Known risks and blockers:
+
+- This fixes the most likely firmware state-machine cause, but physical proof is
+  not yet collected.
+- If an official frontend path repeatedly sends `StartListening()` on a tight
+  loop, the timer should now stop each no-speech listen, but a second transition
+  may still be needed to suppress that trigger source.
+- Do not mark wake product-ready until the operator confirms wake from idle.
+
+Next recommended actions:
+
+1. Commit this focused candidate.
+2. Run guarded product flash on `/dev/cu.usbmodem1101`.
+3. Poll Gateway trace after flash and ask the operator to test no-speech green
+   timeout plus the four wake variants.

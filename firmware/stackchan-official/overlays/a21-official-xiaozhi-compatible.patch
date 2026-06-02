@@ -220,6 +220,26 @@ index 3b6f07e..396b23a 100644
 +            display->ShowNotification("紫悦服务连接失败，正在重试", 5000);
 +            display->SetChatMessage("system", "正在连接紫悦服务...");
              return;
+@@ -828,16 +913,17 @@ void Application::HandleStartListeningEvent() {
+         if (!protocol_->IsAudioChannelOpened()) {
+             SetDeviceState(kDeviceStateConnecting);
+             // Schedule to let the state change be processed first (UI update)
+-            Schedule([this]() {
+-                ContinueOpenAudioChannel(kListeningModeManualStop);
++            ListeningMode mode = GetDefaultListeningMode();
++            Schedule([this, mode]() {
++                ContinueOpenAudioChannel(mode);
+             });
+             return;
+         }
+-        SetListeningMode(kListeningModeManualStop);
++        SetListeningMode(GetDefaultListeningMode());
+     } else if (state == kDeviceStateSpeaking) {
+         AbortSpeaking(kAbortReasonNone);
+-        SetListeningMode(kListeningModeManualStop);
++        SetListeningMode(GetDefaultListeningMode());
+     }
+ }
 @@ -872,2 +957,7 @@ void Application::HandleStateChangedEvent() {
              display->SetEmotion("neutral"); // Then set emotion (wechat mode checks child count)
 +            if (vad_stop_timer_handle_ != nullptr) {
@@ -239,7 +259,7 @@ index 3b6f07e..396b23a 100644
 @@ -947,4 +1042,64 @@ void Application::AbortSpeaking(AbortReason reason) {
 
 +void Application::HandleVadChange(bool speaking) {
-+    if (GetDeviceState() != kDeviceStateListening || listening_mode_ != kListeningModeAutoStop) {
++    if (GetDeviceState() != kDeviceStateListening) {
 +        return;
 +    }
 +
@@ -248,6 +268,10 @@ index 3b6f07e..396b23a 100644
 +        if (vad_stop_timer_handle_ != nullptr) {
 +            esp_timer_stop(vad_stop_timer_handle_);
 +        }
++        return;
++    }
++
++    if (listening_mode_ != kListeningModeAutoStop) {
 +        return;
 +    }
 +
@@ -266,9 +290,7 @@ index 3b6f07e..396b23a 100644
 +}
 +
 +void Application::HandleVadStopTimeoutEvent() {
-+    if (GetDeviceState() != kDeviceStateListening ||
-+            listening_mode_ != kListeningModeAutoStop ||
-+            vad_speaking_) {
++    if (GetDeviceState() != kDeviceStateListening || vad_speaking_) {
 +        return;
 +    }
 +
@@ -276,6 +298,10 @@ index 3b6f07e..396b23a 100644
 +    if (!vad_speech_seen_) {
 +        ESP_LOGI(TAG, "A21 no-speech timeout, stop listening elapsed=%lld ms", (long long)elapsed_ms);
 +        StopListening();
++        return;
++    }
++
++    if (listening_mode_ != kListeningModeAutoStop) {
 +        return;
 +    }
 +
@@ -297,7 +323,7 @@ index 3b6f07e..396b23a 100644
 +    if (vad_stop_timer_handle_ != nullptr) {
 +        esp_timer_stop(vad_stop_timer_handle_);
 +    }
-+    if (mode == kListeningModeAutoStop && vad_stop_timer_handle_ != nullptr) {
++    if (mode != kListeningModeRealtime && vad_stop_timer_handle_ != nullptr) {
 +        esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);
 +    }
      SetDeviceState(kDeviceStateListening);

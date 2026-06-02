@@ -271,10 +271,25 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 		`HandleVadChange`,
 		`HandleVadStopTimeoutEvent`,
 		`protocol_->OpenAudioChannel()`,
+		`ContinueOpenAudioChannel(mode);`,
+		`SetListeningMode(GetDefaultListeningMode());`,
+		`mode != kListeningModeRealtime`,
+		`listening_mode_ != kListeningModeAutoStop`,
 		`esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing A21 idle socket contract %q", required)
+		}
+	}
+	forbiddenAdded := []string{
+		`+                ContinueOpenAudioChannel(kListeningModeManualStop);`,
+		`+        SetListeningMode(kListeningModeManualStop);`,
+		`+    if (mode == kListeningModeAutoStop && vad_stop_timer_handle_ != nullptr) {`,
+		`+            listening_mode_ != kListeningModeAutoStop ||`,
+	}
+	for _, forbidden := range forbiddenAdded {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("A21 overlay must not reintroduce unbounded manual listening path %q", forbidden)
 		}
 	}
 	for _, line := range strings.Split(overlay, "\n") {
