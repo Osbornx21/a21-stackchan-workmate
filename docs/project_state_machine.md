@@ -9,14 +9,16 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-STACKCHAN-COMPATIBLE-MULTI-WAKE-FLASHED-PHYSICAL-VALIDATION-PENDING`
+Current total state: `S-HW-STACKCHAN-COMPATIBLE-MULTI-WAKE-FLASHED-GATEWAY-NO-SPEECH-COOLDOWN-LIVE`
 
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`
 - `T-ASR-GREEN-LATENCY-001-XIAOZHI-LISTEN-AUTO-STOP`
+- `T-ASR-GREEN-LATENCY-002-XIAOZHI-NO-SPEECH-COOLDOWN`
 - `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`
 - `T-AUDIO-BARE-XIAOZHI-PARITY-001`
+- `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
 
@@ -1322,6 +1324,7 @@ Next state:
 | T-HALF-DUPLEX-002: No-flash normal dialogue self-trigger observation | Completed candidate | Main thread used the online stock Xiaozhi device without firmware flash or operator click, delivered relay WAV `a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` through `/v1/xiaozhi/say`, and generated `reports/a21-no-flash-normal-dialogue-observation-20260603-020055.json` with `status=candidate_passed_no_self_trigger`, trace `a21-trace-no-flash-dialogue-observe-1780423245`, `audio_chunks=40`, `wait_after_say_ms=20000`, `event_count=869`, empty `self_trigger_event_names`, and `input_suppressed_count=1`. Diagnostic half-duplex counters remain a separate optional firmware path. |
 | T-ASR-GREEN-LATENCY-001: Bound Xiaozhi listen from firmware | Flashed, physical validation pending | Physical trace `a21-trace-44-1b-f6-e2-6a-60` showed `xiaozhi.listen.start=110`, `xiaozhi.opus_frame.received=8034`, repeated `listen.stop -> listen.start`, and wake disabled while listening. Root cause candidate: official `HandleStartListeningEvent()` forced `kListeningModeManualStop`, while the A21 no-speech timeout only armed for `kListeningModeAutoStop`. The overlay now routes StartListening through `GetDefaultListeningMode()`, starts the no-speech timer for non-realtime listening, and keeps VAD silence auto-stop scoped to AutoStop after speech. Focused tests, `make verify`, and product build passed; build report `reports/a21-stackchan-official-baseline-20260603-042940-1780432180247638000.json`, app SHA-256 `ca0877d09eecfb9c69f2279ce14c95942a2cf966e05f118e82551e92c14665b9`. No-write plan `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-043116-1780432276384588000.json` passed, and guarded flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-043222-1780432342953949000.json` passed on `/dev/cu.usbmodem1101` from clean commit `88cb8a92069d`. Post-flash Gateway evidence: device `44:1b:f6:e2:6a:60` reconnected online, runtime volume `100` was delivered by stock MCP trace `a21-trace-listen-bound-volume-1780432365`, and post-flash trace events since `1780432350000` contained only `xiaozhi.hello.received=1` with no automatic `listen.start`. |
 | T-WAKE-003b: Split Zi Yue MultiNet command list | Flashed, physical validation pending | Source inspection found `CUSTOM_WAKE_WORD` is documented as one pinyin command, while `CustomWakeWord::Initialize()` adds each command through `esp_mn_commands_add`. The earlier `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue` config therefore likely registered as one invalid/overlong command instead of four alternatives. The overlay now splits `CONFIG_CUSTOM_WAKE_WORD` on `|`, trims each command, and registers each as a separate wake command with display/greeting `紫悦`. Focused tests, `make verify`, and official-compatible build passed; build report `reports/a21-stackchan-official-baseline-20260603-043851-1780432731137364000.json`; app SHA-256 `a0638a3b9872c98456c4dee9c8503dfa6d6d27f2374b499fe7c36033aeccb575`. Binary strings include `Loaded %d A21 custom wake command(s) for %s` and the multi-phrase config. Commit `8e4df0b` was flashed through no-write report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-044128-1780432888876682000.json` and guarded execute report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-044234-1780432954645477000.json` on `/dev/cu.usbmodem1101`; T7 guard saw clean commit `8e4df0b30c0f`, app SHA `a0638a3b9872c98456c4dee9c8503dfa6d6d27f2374b499fe7c36033aeccb575`. Device `44:1b:f6:e2:6a:60` reconnected online, runtime volume `100` delivered by trace `a21-trace-multi-wake-volume-1780432980`, and post-flash trace since `1780432954000` showed only `xiaozhi.hello.received=1` with no automatic `listen.start`. |
+| T-ASR-GREEN-LATENCY-002: Gateway no-speech cooldown | Completed runtime hotfix, physical validation pending | Live trace before the fix showed `xiaozhi.listen.start=333`, `audio.ingress.buffered=25115`, `stackchan.official_auto.not_connected=1025`, and repeated `listen.stop -> placeholder tts.stop -> listen.start` loops. Gateway now arms a short stock-physical input suppression after `placeholder_no_asr_tts`, recording `xiaozhi.no_speech.input_suppression_armed` and reason-specific `xiaozhi.listen.start.suppressed_after_no_speech` so an immediate restart is ignored instead of opening a new turn. Focused Gateway tests passed, `make verify` passed, Gateway `a21-gateway-21081` was restarted from this worktree, `/healthz` returned `service=a21-gateway,status=ok`, device `44:1b:f6:e2:6a:60` reconnected online, runtime volume `100` was delivered by `a21-trace-no-speech-cooldown-final-volume-1780434593`, and live trace `a21-trace-44-1b-f6-e2-6a-60` later showed the cooldown firing once: `xiaozhi.no_speech.input_suppression_armed=1`, `xiaozhi.listen.start.input_suppressed=1`, `xiaozhi.listen.start.suppressed_after_no_speech=1`, with only one `xiaozhi.turn.start`. |
 
 ## Blocked Transitions
 
@@ -1342,25 +1345,27 @@ Next state:
      or tune threshold next.
 
 2. `T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop`
-   - Current phase: product app flashed and Gateway evidence shows boot hello
-     without automatic `listen.start`; physical touch/wake validation remains
-     pending.
+   - Current phase: product app flashed, firmware no-speech timer is present,
+     and Gateway now suppresses immediate no-speech placeholder listen restarts
+     for stock physical devices.
    - Next action: ask the operator to tap once and confirm no-speech green
-     listening exits, then test wake from idle with `紫悦`, `紫悦紫悦`,
-     `你好紫悦`, and `小紫悦`.
+     listening exits instead of looping, then test wake from idle with `紫悦`,
+     `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
 
 3. `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001: Official Frontend Without Setup Trap`
-   - Current phase: active overlay/test candidate preloads official apps,
-     requests Xiaozhi immediately, adds quiet idle socket readiness, and adds
-     `紫悦` not-connected feedback plus no-speech listen timeout.
-   - Next action: run `make verify`, build the official-compatible product app,
-     inspect `sdkconfig.json`, then guarded-flash from a clean worktree.
+   - Current phase: no-welcome/direct Xiaozhi path is physically useful, but
+     the latest read-only audit says full official AppAvatar/AppDance/AppSetup
+     lifecycle parity is not proven because the Mooncake app update path is
+     bypassed.
+   - Next action: keep current contest package unless welcome regresses; plan a
+     separate official-app-lifecycle parity transition after wake/tap validation.
 
 4. `T-AUDIO-BARE-XIAOZHI-PARITY-001: Migrate Bare-Package Audio Advantages`
-   - Current phase: active worker dispatched for a bounded parity checklist;
-     no product audio behavior has been changed in this main-thread slice.
-   - Next action: integrate the worker checklist only if it is read-only/docs
-     safe, then plan any A/B before changing provider, gain, or codec behavior.
+   - Current phase: read-only parity audit confirms the device side is official
+     Xiaozhi Opus/AudioService, while the remaining audio gap is mainly host
+     provider/TTS PCM/WAV source quality, chunking, leveling, and re-encoding.
+   - Next action: keep 3x accepted gain frozen; plan TTS streaming/mastering A/B
+     before changing provider, gain, codec, or firmware.
 
 5. `T-VOICE-CHAIN-EVIDENCE-001: Selected Voice-Chain Readiness Ingress`
    - Current phase: StepFun+Iflytek relay evidence is the best operator
@@ -1369,3 +1374,13 @@ Next state:
    - Next action: either add a narrow redacted voice-chain evidence ingestion
      surface, or run the existing host voice/continuous pipeline report shape
      with the selected relay chain without changing provider route eligibility.
+
+6. `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
+   - Current phase: read-only Gateway/provider audit confirmed `/v1/xiaozhi`
+     is the closest product path: real Opus ingress, VAD buffering, voice
+     pipeline, and Opus downlink, while ASR/TTS are still not fully streaming.
+   - Next action: run one real `/v1/xiaozhi` basic dialogue smoke on the live
+     device, not `/v1/xiaozhi/say` or `fast-companion-turn`; evidence must
+     include Opus ingress, VAD/listen stop, `asr.final`,
+     `provider.first_content`, `tts.first_audio`,
+     `audio.downlink.first_frame`, and `xiaozhi.voice_pipeline.completed`.

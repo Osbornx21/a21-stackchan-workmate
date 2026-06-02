@@ -32,6 +32,7 @@ import (
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
+const xiaozhiNoSpeechInputCooldownMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
@@ -1044,8 +1045,17 @@ func (s *Server) suppressXiaozhiInputAfterHostSay(session *xiaozhiSession, task 
 		return
 	}
 	untilMS := s.now().UnixMilli() + xiaozhiHostSayInputCooldownMS
-	session.suppressXiaozhiInputUntil(untilMS)
+	session.suppressXiaozhiInputUntil(untilMS, "after_host_say")
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.say.input_suppression_armed", s.now().UnixMilli())
+}
+
+func (s *Server) suppressXiaozhiInputAfterNoSpeechPlaceholder(session *xiaozhiSession, task xiaozhiTurnTask) {
+	if session == nil || !hardwareMACDeviceID(session.deviceID) || xiaozhiClientProfile(session.features) == "debug" {
+		return
+	}
+	untilMS := s.now().UnixMilli() + xiaozhiNoSpeechInputCooldownMS
+	session.suppressXiaozhiInputUntil(untilMS, "after_no_speech")
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.no_speech.input_suppression_armed", s.now().UnixMilli())
 }
 
 func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.Request) {
@@ -1459,6 +1469,7 @@ type xiaozhiSession struct {
 	lastDownlinkTurnID       string
 	lastPlaybackStopDoneAtMS int64
 	inputCooldownUntilMS     int64
+	inputCooldownReason      string
 	officialStackChanState   string
 }
 
@@ -1615,18 +1626,22 @@ func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, n
 	}, true
 }
 
-func (session *xiaozhiSession) suppressXiaozhiInputUntil(untilMS int64) {
+func (session *xiaozhiSession) suppressXiaozhiInputUntil(untilMS int64, reason string) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	if untilMS > session.inputCooldownUntilMS {
 		session.inputCooldownUntilMS = untilMS
+		session.inputCooldownReason = safeGatewayFallbackToken(reason, "cooldown")
 	}
 }
 
-func (session *xiaozhiSession) xiaozhiInputSuppressed(nowMS int64) bool {
+func (session *xiaozhiSession) xiaozhiInputSuppression(nowMS int64) (bool, string) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	return session.inputCooldownUntilMS > 0 && nowMS >= 0 && nowMS < session.inputCooldownUntilMS
+	if session.inputCooldownUntilMS > 0 && nowMS >= 0 && nowMS < session.inputCooldownUntilMS {
+		return true, firstNonEmpty(session.inputCooldownReason, "cooldown")
+	}
+	return false, ""
 }
 
 func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reason string) {
@@ -1892,12 +1907,12 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		switch frame.Control.Listen.State {
 		case "start":
 			nowMS := s.now().UnixMilli()
-			if session.xiaozhiInputSuppressed(nowMS) {
+			if suppressed, reason := session.xiaozhiInputSuppression(nowMS); suppressed {
 				session.listening = false
 				session.listenStartedAtMS = 0
 				session.resetXiaozhiOpusIngress()
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_after_barge", nowMS)
+				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_"+reason, nowMS)
 				s.writeXiaozhiListenReply(ctx, conn, session, "start", "ignored", "")
 				return true
 			}
@@ -1947,7 +1962,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		turn := session.cancelCurrentXiaozhiTurn(abortReason)
 		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
 		if strings.TrimSpace(abortReason) == "" {
-			session.suppressXiaozhiInputUntil(s.now().UnixMilli() + xiaozhiTouchBargeInInputCooldownMS)
+			session.suppressXiaozhiInputUntil(s.now().UnixMilli()+xiaozhiTouchBargeInInputCooldownMS, "after_barge")
 		}
 		s.writeXiaozhiTTSStop(ctx, conn, session, nil, xiaozhiTurnTask{
 			turn:      turn,
@@ -3197,6 +3212,7 @@ func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket
 		return
 	}
 	s.writeXiaozhiTTSStop(ctx, conn, session, task.turn, task, "placeholder_no_asr_tts")
+	s.suppressXiaozhiInputAfterNoSpeechPlaceholder(session, task)
 }
 
 func (s *Server) writeXiaozhiTTSStop(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, reason string) bool {

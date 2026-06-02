@@ -3920,3 +3920,114 @@ Current validation request:
 - If all wake variants still fail, next transition should add
   `CustomWakeWord` init/feed/logging or tune threshold; do not revert to bare
   `xiaozhi.bin`.
+
+## 2026-06-03 - Gateway No-Speech Cooldown And Xiaozhi Parity Control-Tower Round
+
+本轮目标:
+
+- Continue from recovered state without redesigning the project.
+- Investigate why the live device again showed long/repeated green listening
+  after the multi-wake flash.
+- Keep the main thread as control tower, use parallel read-only workers for
+  Xiaozhi protocol/audio, Gateway/provider streaming, and StackChan
+  no-welcome/hardware parity.
+- Make only the minimal runtime hotfix needed to reduce the green-listening
+  loop; do not flash firmware, change gain, change provider, or touch V21.
+
+实际完成内容:
+
+- Dispatched three read-only subagents:
+  - `019e8a21-8fed-7442-9de0-10a774f61ae4` reported that the product firmware
+    device side is still official Xiaozhi WebSocket JSON + binary Opus +
+    AudioService/AudioCodec, while remaining audio parity gaps are mainly
+    host-side provider/TTS PCM/WAV source quality, chunking, leveling, and
+    Gateway re-encoding.
+  - `019e8a21-d3e3-7802-93b6-a7190e08e55f` reported that `/v1/xiaozhi` is the
+    fastest real basic dialogue path, but current ASR/provider still starts
+    after VAD/listen stop rather than true live streaming ASR.
+  - `019e8a21-b1f5-7ef2-bec1-f084d4b3a4b2` reported that no-welcome/direct
+    Xiaozhi is useful but full official AppAvatar/AppDance/AppSetup lifecycle
+    parity is not proven because the Mooncake app update path is bypassed.
+- Confirmed live pre-fix trace `a21-trace-44-1b-f6-e2-6a-60` had
+  `xiaozhi.listen.start=333`, `audio.ingress.buffered=25115`,
+  `stackchan.official_auto.not_connected=1025`, and repeated
+  `listen.stop -> placeholder tts.stop -> listen.start`.
+- Added Gateway stock-physical no-speech input cooldown after
+  `placeholder_no_asr_tts`.
+- Made listen-start suppression reason-specific:
+  - `xiaozhi.listen.start.suppressed_after_no_speech`;
+  - `xiaozhi.listen.start.suppressed_after_host_say`;
+  - `xiaozhi.listen.start.suppressed_after_barge`.
+- Restarted the existing `a21-gateway-21081` tmux Gateway from the patched
+  worktree and verified `/healthz`.
+- Device `44:1b:f6:e2:6a:60` reconnected online after the final restart; fresh
+  trace contained only `xiaozhi.hello.received=1` before operator touch/wake.
+- Delivered runtime speaker volume `100` through stock MCP on trace
+  `a21-trace-no-speech-cooldown-final-volume-1780434593`.
+- Updated `docs/plans/2026-06-03-wake-and-asr-green-latency-recovery.md`.
+- Updated `docs/project_state_machine.md`.
+
+修改过的文件:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-03-wake-and-asr-green-latency-recovery.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Physical operator validation is still required:
+  - tap once and confirm green listening exits instead of looping;
+  - from idle, test `小紫悦`, `你好紫悦`, `紫悦紫悦`, `紫悦`;
+  - verify no welcome/setup regression.
+- Real basic dialogue smoke is not yet run. The next correct path is real
+  `/v1/xiaozhi` listen + Opus ingress + voice pipeline + Opus downlink, not
+  `/v1/xiaozhi/say` or `fast-companion-turn`.
+
+已知风险和阻塞点:
+
+- Wake is still not accepted; do not mark `wake_word.product_ready=true`.
+- Full official StackChan app lifecycle parity is not proven; current contest
+  package preserves the Xiaozhi display/HAL path but bypasses Mooncake app
+  running lifecycle to avoid welcome/setup.
+- Audio is official on the device side, but source TTS/mastering remains a
+  host-side quality and streaming gap.
+- `stackchan.official_auto.not_connected` remains a separate official relay
+  issue and should not be mistaken for Xiaozhi voice socket failure.
+
+下一轮建议动作:
+
+1. Commit this Gateway cooldown patch if review finds no blocking issue.
+2. Ask the operator to tap once from idle and observe whether green listening
+   exits; inspect trace for `suppressed_after_no_speech` if it loops.
+3. Run `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE` on the live device
+   using real `/v1/xiaozhi`, with evidence for Opus ingress, VAD/listen stop,
+   `asr.final`, `provider.first_content`, `tts.first_audio`,
+   `audio.downlink.first_frame`, and `xiaozhi.voice_pipeline.completed`.
+
+测试/构建/运行结果:
+
+- `go test ./internal/gateway -run 'TestXiaozhiWebSocket(NoSpeechPlaceholderSuppressesImmediateListenRestartForStockPhysical|TouchAbortSuppressesImmediateListenRestart|SaySuppressesImmediateListenRestartForStockPhysical|VADSpeechEndAutoStopsRealtimeTurn|MaxListenDurationAutoStopsAfterSpeech)$' -count=1`:
+  passed.
+- `make verify`: passed after the final reason-specific cooldown edits and docs.
+- Final live Gateway restart command succeeded:
+  `tmux kill-session -t a21-gateway-21081 && tmux new-session -d -s a21-gateway-21081 ... go run ./cmd/a21 gateway --addr 0.0.0.0:21081 ...`.
+- `/healthz`: `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- `/v1/devices`: device `44:1b:f6:e2:6a:60` reconnected `online` with
+  `last_event=xiaozhi.hello`.
+- Fresh trace `a21-trace-44-1b-f6-e2-6a-60` after final restart contained only
+  `xiaozhi.hello.received=1` before operator touch/wake.
+- A later live trace read showed the cooldown fired once and blocked the
+  immediate restart loop:
+  - `xiaozhi.no_speech.input_suppression_armed=1`;
+  - `xiaozhi.listen.start.input_suppressed=1`;
+  - `xiaozhi.listen.start.suppressed_after_no_speech=1`;
+  - `xiaozhi.turn.start=1`.
+- Runtime volume `100` delivered by stock MCP trace
+  `a21-trace-no-speech-cooldown-final-volume-1780434593`.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure yet. Remaining work is physical validation and optional commit,
+  not a code blocker.

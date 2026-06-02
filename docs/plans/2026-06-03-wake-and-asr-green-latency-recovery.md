@@ -108,3 +108,33 @@ Gateway listen/VAD收口 problem and must not be mixed into wake acceptance.
 - Operator confirms whether `紫悦`, `紫悦紫悦`, `你好紫悦`, or `小紫悦` wakes the
   device.
 - Operator confirms whether the green ASR waiting time is materially shorter.
+
+## 2026-06-03 Gateway No-Speech Cooldown Update
+
+Live trace `a21-trace-44-1b-f6-e2-6a-60` later showed a second failure mode
+after the firmware listen-bound flash: repeated
+`listen.stop -> placeholder_no_asr_tts -> listen.start` loops. The trace had
+`xiaozhi.listen.start=333`, `audio.ingress.buffered=25115`, and
+`stackchan.official_auto.not_connected=1025`.
+
+The bounded Gateway fix is:
+
+- arm a short stock-physical input cooldown after `placeholder_no_asr_tts`;
+- record `xiaozhi.no_speech.input_suppression_armed`;
+- record reason-specific listen suppression such as
+  `xiaozhi.listen.start.suppressed_after_no_speech`;
+- keep `/v1/xiaozhi/say` and touch-abort suppression reason-specific as
+  `suppressed_after_host_say` and `suppressed_after_barge`.
+
+Acceptance evidence for this update:
+
+- focused Gateway tests prove immediate restart after no-speech placeholder is
+  ignored and does not open a second turn;
+- `make verify` passes;
+- Gateway `a21-gateway-21081` is restarted from the patched worktree;
+- fresh device trace after restart contains only `xiaozhi.hello.received`
+  before operator touch/wake.
+
+This update does not claim wake acceptance. It only reduces the green-listening
+loop risk so wake and touch can be physically validated from a cleaner idle
+state.

@@ -3429,6 +3429,83 @@ func TestXiaozhiWebSocketTouchAbortSuppressesImmediateListenRestart(t *testing.T
 	}
 }
 
+func TestXiaozhiWebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForStockPhysical(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-xiaozhi-no-speech-cooldown",
+		"session_id": "a21-session-xiaozhi-no-speech-cooldown",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	sentence := readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["placeholder"] != true {
+		t.Fatalf("placeholder sentence = %#v", sentence)
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "placeholder_no_asr_tts" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "listen",
+		"state":      "start",
+		"trace_id":   "a21-trace-xiaozhi-no-speech-cooldown",
+		"session_id": "a21-session-xiaozhi-no-speech-cooldown",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-no-speech-cooldown", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.no_speech.input_suppression_armed",
+		"xiaozhi.listen.start.input_suppressed",
+		"xiaozhi.listen.start.suppressed_after_no_speech",
+		"xiaozhi.opus_frame.ignored_not_listening",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	if countTraceEvents(traces.Events, "xiaozhi.turn.start") != 1 {
+		t.Fatalf("turn starts = %+v, want only the no-speech turn", traces.Events)
+	}
+}
+
 func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	server := NewServer()
 	session := &xiaozhiSession{
