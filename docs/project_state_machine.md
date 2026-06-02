@@ -9,13 +9,14 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INT-HARDWARE-CANDIDATE`
+Current total state: `S-INT-FLASH-PLAN-READY`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
 control workflow, and a freshly rebuilt official StackChan Xiaozhi-compatible
-firmware candidate. It is not yet fully PRD accepted because physical StackChan
-flashing and hardware evidence are still pending.
+firmware candidate with a dedicated no-write flash plan. It is not yet fully
+PRD accepted because the physical StackChan flash and hardware evidence are
+still pending.
 
 Current control branch:
 
@@ -23,6 +24,8 @@ Current control branch:
 
 Current notable baseline:
 
+- `6f34091 feat(firmware): add official xiaozhi compatible flash plan`
+- `59f30f4 docs(control): record official flash seam worker dispatch`
 - `69c4bbe docs(control): add handoff and state machine workflow`
 - `987bbb0 feat(firmware): add official xiaozhi compatible stackchan build`
 
@@ -33,7 +36,7 @@ Current notable baseline:
 | Control workflow | `S1-REPO-CARRIED-CONTROL` | Commit `69c4bbe`; `docs/agent_handoff_log.md`, `docs/project_state_machine.md`, and `docs/plans/` exist | `S2-WORKER-TRANSITION-OPERATING` |
 | Gateway `/v1/xiaozhi` | `S2-HOST-READY` | Stock-compatible hello/listen/abort, binary unwrap, Opus, turn/cancel, pacing, and downlink tests exist | `S3-PHYSICAL-VOICE-EVIDENCE` |
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
-| Firmware candidate | `S2-BUILD-CANDIDATE` | `a21-stackchan-official-xiaozhi-compatible` preserves official avatar/action and Xiaozhi start in mainline report `reports/a21-stackchan-official-baseline-20260602-193126-1780399886135502000.json` | `S3-FLASH-PLAN-APPROVED` |
+| Firmware candidate | `S3-FLASH-PLAN-APPROVED` | Commit `6f34091`; no-write report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-195247-1780401167369729000.json`; app SHA-256 `053d3ba0d0c8690898967337a02bce8d3fd957899ebdabe4d9f4ae1e2b28c80d` | `S4-FOREGROUND-FLASHED` |
 | Provider hot-plug | `S2-HOST-READY` | Provider profiles and redacted smoke/evidence contracts exist | `S3-REAL-PROVIDER-ROTATION` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
@@ -45,7 +48,7 @@ Current notable baseline:
 
 Current state:
 
-- `S2-BUILD-CANDIDATE`
+- `S3-FLASH-PLAN-APPROVED`
 
 Target state:
 
@@ -55,12 +58,13 @@ Trigger:
 
 - Integrated host verification passed and a fresh official Xiaozhi-compatible
   firmware candidate has been rebuilt from the control branch.
+- Dedicated no-write plan/execute seams exist for the official
+  Xiaozhi-compatible A21 product candidate.
 
 Actions:
 
-- Create or update the hardware-window plan before any hardware write.
-- Run a no-write flash plan with the exact port, board, artifact, and identity
-  checks.
+- Re-run the no-write flash plan if the port, build directory, or artifact
+  changed.
 - Execute flash only in a foreground operator window with explicit confirmation.
 - Collect physical audio, barge-in, avatar/action, wake, provider, and readiness
   evidence.
@@ -104,12 +108,13 @@ Next state:
 | T-FW-002: Add official Xiaozhi-compatible StackChan build | Completed host/build candidate | Commit `987bbb0`; candidate build lane exists, physical flash still pending. |
 | T-GOV-001: Establish repo-carried workflow state | Completed | Commit `69c4bbe`; adds handoff log, state machine, and plan discipline. |
 | T-VERIFY-001: Integrated host verification after governance merge | Completed | `make verify` passed; mainline official candidate rebuild passed with app SHA-256 `053d3ba0d0c8690898967337a02bce8d3fd957899ebdabe4d9f4ae1e2b28c80d`. |
+| T-FW-004: Add official compatible candidate flash seam | Completed | Commit `6f34091`; no-write plan passed for `/dev/cu.usbmodem1101` with `dry_run=true`, `flash_allowed=false`, and app offset `0x20000`. |
 
 ## Blocked Transitions
 
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
-| T-HW-001: Physical flash and full StackChan acceptance | Hardware/foreground operator window required | Approved flash plan, explicit port/device ID, Gateway profile, no background worker writes. |
+| T-HW-001: Physical flash and full StackChan acceptance | Hardware/foreground operator window required | Explicit execute confirmation, operator presence, Gateway profile, no background worker writes. |
 | T-PRD-001: Declare full PRD physical acceptance | Missing flashed-device evidence | Physical audio, barge-in, action/screen, wake, provider, and readiness reports. |
 | T-FW-003: Custom wake-word product acceptance | Needs guarded flash and physical proof | Wake package review, false-wake rejection, operator wake proof. |
 
@@ -117,7 +122,7 @@ Next state:
 
 1. `T-HW-001: Flash Official Xiaozhi-Compatible Candidate And Collect Evidence`
    - Create a foreground hardware-window branch.
-   - Run no-write flash plan first.
+   - Re-run no-write flash plan if port or artifact changed.
    - Execute flash only with explicit confirmation and operator presence.
 
 2. `T-PRD-002: Refresh PRD Burn-Down With Repo-Carried Evidence`

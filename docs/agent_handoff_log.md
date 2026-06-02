@@ -272,3 +272,92 @@ Recommended next action:
   the control branch.
 - Run the new no-write flash-plan command on the foreground control thread for
   `/dev/cu.usbmodem1101`.
+
+## 2026-06-02 - T-FW-004 - Complete Official Compatible Candidate Flash Seam
+
+Goal:
+
+- Finish the dedicated plan/execute seam for the official
+  Xiaozhi-compatible A21 StackChan product candidate.
+- Keep the product candidate separated from legacy `xiaozhi.bin` and the
+  diagnostic PCM bridge lane.
+- Produce no-write evidence that the exact current candidate can be planned for
+  the current foreground serial port without flashing.
+
+Actual completed work:
+
+- Took over the stalled implementation worker worktree after instructing the
+  worker to stop.
+- Added dedicated CLI and Make targets:
+  `a21-stackchan-official-xiaozhi-compatible-flash-plan` and
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Added a product-candidate flash report schema that records only basename/file
+  artifact information for the candidate receipt, while keeping full paths
+  internal to execution.
+- Added guarded execute wiring for
+  `WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP`.
+- Registered the new execute command in `runtimeguard` as a T7 hardware-write
+  command.
+- Cherry-picked worker commit `cbbd70e` to the control branch as
+  `6f34091 feat(firmware): add official xiaozhi compatible flash plan`.
+
+Files changed:
+
+- `Makefile`
+- `internal/app/app_plan_execute.go`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `internal/runtimeguard/control.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Validation results:
+
+- Worker scoped test:
+  `go test ./internal/app -run 'Official.*Xiaozhi.*Flash|StackChanOfficial|XiaozhiFirmware|Firmware|Frozen' -count=1`
+  passed.
+- Worker runtimeguard scoped test:
+  `go test ./internal/runtimeguard -run 'Control|Default|Firmware|Xiaozhi' -count=1`
+  passed.
+- Worker `make verify` passed, including `go test ./...` and
+  `git diff --check`.
+- Control branch `make verify` passed after cherry-pick, including
+  `go test ./...` and `git diff --check`.
+- Control branch no-write plan passed:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`.
+- No-write plan report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-195247-1780401167369729000.json`.
+- Planned app part:
+  `a21-stackchan-official-xiaozhi-compatible.bin` at offset `0x20000`.
+- Planned app SHA-256:
+  `053d3ba0d0c8690898967337a02bce8d3fd957899ebdabe4d9f4ae1e2b28c80d`.
+- The plan receipt reports `dry_run=true`, `flash_allowed=false`, and
+  `flash_executed=false`.
+
+Unfinished items:
+
+- No flash, NVS write, serial monitor, provider execution, V21 execution,
+  Gateway long-running runtime, or Mac audio playback was performed in this
+  transition.
+- Physical PRD acceptance remains pending until the official candidate is
+  flashed and real StackChan audio, microphone, barge-in, avatar/action, wake,
+  provider, and readiness evidence is recorded.
+
+Known risks and blockers:
+
+- The generated no-write report is local evidence under `reports/`; it is not a
+  physical acceptance report.
+- Execute remains intentionally gated by explicit confirmation and
+  `runtimeguard` hardware-write checks.
+- The current candidate artifact is under `/tmp/a21-stackchan-official-build`;
+  rebuild or re-run the no-write plan before flashing if the build directory is
+  refreshed.
+
+Recommended next action:
+
+- Execute the foreground hardware transition: re-run the no-write plan if the
+  port/artifact changed, then run the guarded execute command only with operator
+  presence and explicit confirmation.
+- After flash, collect the PRD evidence bundle: connection, audible TTS,
+  microphone input, barge-in stop, official avatar/action, wake, provider
+  rotation, and readiness reports.
