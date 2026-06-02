@@ -5281,3 +5281,79 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No failure at the time of writing.
+
+## 2026-06-03 - T-XIAOZHI-FULL-REALTIME-VOICE-CONVERGENCE-001 - Worker Returns And Sherpa Smoke Dispatch
+
+本轮目标:
+
+- Record the committed convergence planning bundle.
+- Record read-only worker conclusions that arrived after the initial plan.
+- Dispatch the next scoped implementation worker without expanding scope.
+
+实际完成内容:
+
+- Committed the convergence/Sherpa-smoke plan bundle as `5047b5d`
+  (`docs(control): plan xiaozhi realtime convergence`).
+- Read-only worker `019e8a8a-7268-7210-bf9c-eca8ab1c5c6d`
+  completed protocol/state-machine parity audit:
+  - A21 already has stock-shaped WebSocket/Opus shell and streaming seams.
+  - Full Xiaozhi realtime parity is not already true.
+  - LLM/TTS still start after ASR transcript/final availability.
+  - Real Sherpa streaming model proof and live provider/physical evidence are
+    missing.
+  - Suggested next transitions align with the new convergence plan.
+- Read-only worker `019e8a8a-7265-71d3-ae47-0dd708965ec6`
+  completed A21 runtime path audit:
+  - Opus ingress and ASR append are realtime.
+  - Answer path still begins after `listen.stop` or VAD/max-duration auto-stop.
+  - `RunStream()` can stream LLM segments into TTS, but only after ASR commit.
+  - Defaults can still select batch Sherpa ASR and WAV Sherpa TTS unless env is
+    explicit.
+  - Recommended `T-XIAOZHI-CONTINUOUS-TURN-OVERLAP-001` after ASR/TTS runtime
+    proof.
+- Read-only worker `019e8a8a-7263-7b20-94b9-9b2847aa741d`
+  remains active on ESP32/CoreS3 audio HAL and wake/VAD parity.
+- Dispatched implementation worker
+  `019e8a8e-df69-70e3-a18f-c083d33023ea` for
+  `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` in isolated worktree
+  `/Users/jiyurun/.codex/worktrees/cdf0/New project`.
+
+修改过的文件:
+
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Need read the audio HAL worker final result when it completes.
+- Need read and review the Sherpa real-model smoke worker result.
+- Need integrate the worker branch only after its tests pass and scope is
+  confirmed.
+- No provider execution, V21 execution, hardware, firmware build, flash, NVS
+  write, service restart, or audio playback occurred in the main control thread.
+
+已知风险和阻塞点:
+
+- The current Gateway is realtime at Opus ingress and ASR append, but not yet
+  true Xiaozhi continuous overlap because answer generation starts after ASR
+  commit.
+- Static readiness and adapter seams still cannot satisfy physical PRD
+  acceptance.
+- Audio HAL/wake worker may reprioritize the next firmware/audio transition
+  after it returns.
+
+下一轮建议动作:
+
+1. Poll `019e8a8e-df69-70e3-a18f-c083d33023ea` for the Sherpa smoke worker
+   summary and commit.
+2. Poll `019e8a8a-7263-7b20-94b9-9b2847aa741d` for audio HAL/wake findings.
+3. If Sherpa smoke is clean, review and fast-forward/cherry-pick it; then
+   proceed to `T-STREAMING-TTS-RUNTIME-PROOF-001`.
+
+测试/构建/运行结果:
+
+- Main control thread ran `git diff --check` before commit `5047b5d`: passed.
+- No code tests were run in this main-thread dispatch update.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure in main control thread; worker results are pending.
