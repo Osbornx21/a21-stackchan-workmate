@@ -5758,3 +5758,90 @@ Current validation request:
   `019e8a9e-02da-7b41-9cec-0e9a767fe16b`, and
   `019e8a9e-02d9-7453-a475-2df57956b865` ended with `systemError`, so their
   results were discarded.
+
+## 2026-06-03 07:49 CST - Worker Completes Streaming TTS Runtime Smoke
+
+本轮目标:
+
+- Execute scoped transition `T-STREAMING-TTS-RUNTIME-PROOF-001`.
+- Add redacted `a21 streaming-tts-runtime-smoke` and
+  `make streaming-tts-runtime-smoke` without real provider execution unless
+  `--execute` is explicit.
+
+实际完成内容:
+
+- Added a redacted streaming TTS runtime smoke report schema.
+- Default no-execute path writes `status=blocked` with finding
+  `execute_flag_required`.
+- `--execute` with incomplete env writes stable env names only:
+  `A21_TTS_FAST_PROFILE`, `A21_DOUBAO_API_KEY`, `A21_DOUBAO_TTS_MODEL`, and
+  `A21_DOUBAO_TTS_VOICE`.
+- Fake realtime tests prove `tts_session.update`, `input_text.append`, and
+  `input_text.done` are sent, the first provider audio delta is observed while
+  the stream is open, and at least one exact 60 ms PCM16 mono chunk is counted
+  without a WAV/file boundary.
+- Added a tiny Doubao realtime TTS provider-session read seam for the smoke.
+- Ran the safe default Make target; it wrote
+  `reports/a21-streaming-tts-runtime-smoke-20260603-074721-1780444041851710000.json`
+  with `status=blocked` and finding `execute_flag_required`.
+
+修改过的文件:
+
+- `Makefile`
+- `internal/app/app_plan_execute.go`
+- `internal/app/streaming_tts_runtime_smoke.go`
+- `internal/app/streaming_tts_runtime_smoke_test.go`
+- `internal/providers/doubao_realtime_tts_provider.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Real Doubao realtime TTS provider execution remains blocked until an operator
+  explicitly runs `a21 streaming-tts-runtime-smoke --execute` with complete env.
+- Physical `/v1/xiaozhi` / StackChan acceptance remains a later transition.
+
+已知风险和阻塞点:
+
+- Runtime result is `blocked`, stable finding `execute_flag_required`.
+- Fake realtime proof is test evidence only and must not be promoted to real
+  provider runtime or physical PRD acceptance.
+
+下一轮建议动作:
+
+1. If operator authorizes provider cost/network use, run
+   `a21 streaming-tts-runtime-smoke --execute --output-dir reports` with
+   complete Doubao realtime TTS env.
+2. Feed an accepted executed TTS runtime report into the next Xiaozhi realtime
+   parity gate without claiming physical acceptance.
+
+测试/构建/运行结果:
+
+- Red test first:
+  `go test ./internal/app -run TestRunStreamingTTSRuntimeSmoke -count=1`
+  failed before implementation because `streamingTTSRuntimeSmokeDialer` and
+  `streamingTTSRuntimeSmokeReport` were undefined.
+- Focused app tests:
+  `go test ./internal/app -run TestRunStreamingTTSRuntimeSmoke -count=1`
+  passed.
+- Focused provider tests:
+  `go test ./internal/providers -run 'TestDoubaoRealtimeTTS|TestDoubaoRealtimeTTSTTSAdapterStreamsProviderDeltasAsDownlinkChunks' -count=1`
+  passed.
+- Broader focused app/provider tests:
+  `go test ./internal/app -run 'TestRunStreamingTTSRuntimeSmoke|TestRunLocalASRStreamingSmoke|TestXiaozhiStreamingProviderReadiness' -count=1`
+  passed.
+  `go test ./internal/providers -run 'TestDoubaoRealtimeTTS|TestDoubaoRealtimeTTSTTSAdapterStreamsProviderDeltasAsDownlinkChunks|TestVoicePipelineAdaptersFromEnv.*Doubao' -count=1`
+  passed.
+- Runtime smoke command:
+  `make streaming-tts-runtime-smoke` returned nonzero as expected for the
+  no-execute blocker and wrote the report named above.
+- Final `git diff --check`: passed after this handoff entry.
+- Final `make verify`: passed.
+- No ASR, LLM, V21, `/v1/xiaozhi/say`, Gateway start/stop, provider execution,
+  physical device path, firmware build, flash, NVS write, serial access, or
+  audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The Make target failure is expected default blocker
+  behavior because `--execute` was not supplied.

@@ -23,7 +23,6 @@ Active child transitions:
 - `T-XIAOZHI-STREAMING-ASR-001`
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
-- `T-STREAMING-TTS-RUNTIME-PROOF-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -58,6 +57,11 @@ local TTS remain explicit recovery tasks rather than hidden blockers.
 no-audio smoke blocker: the helper script is present, but the local
 `A21_SHERPA_ONNX_ASR_MODEL_DIR` cache was not configured, so the report records
 `model_dir_missing` and no real-model ASR pass is claimed.
+`T-STREAMING-TTS-RUNTIME-PROOF-001` is now recorded as a redacted runtime smoke
+tool with truthful no-execute blocker: fake realtime tests prove provider audio
+delta to exact 60 ms PCM16 mono chunking before any WAV/file boundary, while the
+local default report records `execute_flag_required` and no real provider
+runtime pass is claimed.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -835,11 +839,11 @@ Next state:
 - `S-SHERPA-STREAMING-ASR-REALMODEL-SMOKE-RECORDED`
 - Next transition: `T-STREAMING-TTS-RUNTIME-PROOF-001`.
 
-### Active T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS Runtime Proof
+### Completed T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS Runtime Proof
 
 Current state:
 
-- `S-STREAMING-TTS-ADAPTER-SEAM-STATIC-ONLY`
+- `S-STREAMING-TTS-RUNTIME-SMOKE-RECORDED-BLOCKED-NO-EXECUTE`
 
 Target state:
 
@@ -867,6 +871,12 @@ Actions:
   TTS session, send a short A21-owned test text, observe first provider audio
   delta, count valid 60 ms PCM chunks, close the session, and write redacted
   timing/count evidence.
+- Worker result: added `a21 streaming-tts-runtime-smoke` and
+  `make streaming-tts-runtime-smoke`. Default local runtime report
+  `reports/a21-streaming-tts-runtime-smoke-20260603-074721-1780444041851710000.json`
+  is `status=blocked` with finding `execute_flag_required`; no real provider
+  call, Gateway call, ASR/LLM/V21 call, `/v1/xiaozhi/say`, physical device
+  path, audio playback, firmware build, flash, or NVS write occurred.
 
 Acceptance conditions:
 
@@ -887,6 +897,11 @@ Failure states:
   for a complete file before first chunk.
 - `F-STREAMING-TTS-RUNTIME-FAKE-GREEN` if static env/config or fake provider
   tests are promoted as real provider/runtime or physical Xiaozhi acceptance.
+
+Next candidate transition:
+
+- Operator-authorized real Doubao realtime TTS runtime execution with
+  `--execute` and complete env, still below physical `/v1/xiaozhi` acceptance.
 
 Rollback path:
 
@@ -1755,6 +1770,7 @@ Next state:
 | T-XIAOZHI-SHERPA-STREAMING-ASR-ADAPTER-001: Selectable Sherpa streaming ASR seam | Completed adapter seam, runtime helper not proven | Plan `docs/plans/2026-06-03-sherpa-streaming-asr-adapter.md` scoped the work. Added `sherpa_onnx_streaming` / `local_sherpa_onnx_streaming` / `streaming_zipformer` selection for a `providers.StreamingASRAdapter` wrapper that keeps the old batch Sherpa adapter as fallback and starts streaming only through a configured session factory. Existing `sherpa_onnx` remains batch/WAV and is still blocked as `asr_batch_wav_boundary_not_xiaozhi_streaming`. New readiness reports prove the distinction: `reports/a21-xiaozhi-streaming-provider-readiness-20260603-060837-1780438117185327000.json` blocks missing streaming helper/model without WAV-boundary findings, while `reports/a21-xiaozhi-streaming-provider-readiness-20260603-060837-1780438117326052000.json` marks ASR+LLM ready when helper/model env are present but still blocks on `tts_wav_file_boundary_not_xiaozhi_streaming`. Focused provider/app tests, `git diff --check`, and `make verify` passed. No firmware, provider execution, service restart, flash, or audio playback occurred. |
 | T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001: Sherpa streaming ASR real-model no-audio smoke | Completed truthful blocker | Added `a21 local-asr-streaming-smoke` plus `make local-asr-streaming-smoke` to drive the JSONL helper with in-memory PCM16LE silence only after helper/model preflight. Local report `reports/a21-local-asr-streaming-smoke-20260603-070451-1780441491984219000.json` is `status=blocked`, finding `model_dir_missing`, with no transcript/raw audio/base64/full path/secret in stdout or report. Focused app/provider tests, final `git diff --check`, and `make verify` passed. |
 | T-XIAOZHI-STREAMING-TTS-ADAPTER-001: Doubao realtime TTS adapter seam | Completed adapter seam, runtime provider not executed | Plan `docs/plans/2026-06-03-xiaozhi-streaming-tts-adapter.md` scoped the work. Added an explicit `providers.StreamingTTSAdapter` marker, a Doubao realtime TTS pipeline adapter selected by `A21_TTS_FAST_PROFILE=doubao_tts_realtime`, and a PCM16 mono chunker that turns provider audio deltas into exact 60 ms downlink-ready chunks without writing or reading a WAV. Local/Iflytek/voice-clone TTS remain classified as WAV/file boundaries. New readiness reports prove the distinction: `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061849-1780438729911945000.json` blocks missing Doubao TTS config, `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730222971000.json` marks TTS ready but still blocks ASR helper proof, and `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730359984000.json` passes the static provider-shape gate when ASR helper env, StepFun, and Doubao realtime TTS env are all present. `prd_accepted` remains false because no real provider execution or physical `/v1/xiaozhi` trace was captured. Focused provider/app tests, `git diff --check`, and `make verify` passed. |
+| T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS runtime smoke | Completed truthful blocker | Added redacted `a21 streaming-tts-runtime-smoke` plus `make streaming-tts-runtime-smoke`. Without `--execute`, local report `reports/a21-streaming-tts-runtime-smoke-20260603-074721-1780444041851710000.json` is `status=blocked`, finding `execute_flag_required`. Tests use a fake realtime dialer/session to prove `tts_session.update`, `input_text.append`, and `input_text.done` are sent, the first provider audio delta is observed while the stream is open, and at least one exact 60 ms PCM16 mono chunk is counted without WAV/file boundary. No real provider execution or physical Xiaozhi/StackChan path was used. |
 
 ## Blocked Transitions
 

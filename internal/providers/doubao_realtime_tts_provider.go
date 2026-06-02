@@ -159,6 +159,24 @@ func (s *DoubaoRealtimeTTSProviderSession) Close(ctx context.Context) error {
 	return s.session.Close(ctx)
 }
 
+func (s *DoubaoRealtimeTTSProviderSession) OutputSampleRateHz() int {
+	if s == nil || s.outputSampleRate == 0 {
+		return 16000
+	}
+	return s.outputSampleRate
+}
+
+func (s *DoubaoRealtimeTTSProviderSession) ReadVoiceEvent(ctx context.Context) (VoiceEvent, bool, error) {
+	if s == nil || s.session == nil {
+		return VoiceEvent{}, false, fmt.Errorf("doubao realtime TTS provider session is not connected")
+	}
+	raw, err := s.session.ReadEvent(ctx)
+	if err != nil {
+		return VoiceEvent{}, false, err
+	}
+	return s.ServerEventToVoiceEvent(raw)
+}
+
 func (s *DoubaoRealtimeTTSProviderSession) ServerEventToVoiceEvent(raw map[string]any) (VoiceEvent, bool, error) {
 	if s == nil {
 		return VoiceEvent{}, false, fmt.Errorf("doubao realtime TTS provider session is not connected")
