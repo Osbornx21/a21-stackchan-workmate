@@ -10,9 +10,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"a21.local/a21/internal/audio"
 )
@@ -41,6 +43,8 @@ type LocalSherpaONNXASRAdapterOptions struct {
 type LocalSherpaONNXStreamingASRAdapterOptions struct {
 	LocalSherpaONNXASRAdapterOptions
 	StreamingSessionFactory StreamingASRSessionFactory
+	StreamingHelperPath     string
+	StreamingPythonPath     string
 }
 
 type localSherpaONNXASRAdapter struct {
@@ -88,10 +92,19 @@ func NewLocalSherpaONNXStreamingASRAdapter(options LocalSherpaONNXStreamingASRAd
 	}
 	batchOptions := options.LocalSherpaONNXASRAdapterOptions
 	batchOptions.Name = name
+	streamingFactory := options.StreamingSessionFactory
+	if streamingFactory == nil {
+		streamingFactory = newSherpaStreamingASRSubprocessFactory(sherpaStreamingASRSubprocessOptions{
+			HelperPath: strings.TrimSpace(options.StreamingHelperPath),
+			PythonPath: strings.TrimSpace(options.StreamingPythonPath),
+			ModelDir:   strings.TrimSpace(options.ModelDir),
+			Family:     strings.TrimSpace(options.Family),
+		})
+	}
 	return &localSherpaONNXStreamingASRAdapter{
 		batch:                   NewLocalSherpaONNXASRAdapter(batchOptions),
 		name:                    name,
-		streamingSessionFactory: options.StreamingSessionFactory,
+		streamingSessionFactory: streamingFactory,
 	}
 }
 
@@ -119,6 +132,223 @@ func (a *localSherpaONNXStreamingASRAdapter) StartStreamingASR(ctx context.Conte
 		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
 	}
 	return session, nil
+}
+
+type sherpaStreamingASRSubprocessOptions struct {
+	HelperPath string
+	PythonPath string
+	ModelDir   string
+	Family     string
+}
+
+type sherpaStreamingASRSubprocessSession struct {
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	encoder *json.Encoder
+	events  chan ASRAdapterEvent
+	mu      sync.Mutex
+	closed  bool
+}
+
+type sherpaStreamingASRCommand struct {
+	Type         string `json:"type"`
+	Seq          uint64 `json:"seq,omitempty"`
+	SampleRateHz int    `json:"sample_rate_hz,omitempty"`
+	Channels     int    `json:"channels,omitempty"`
+	DurationMS   int    `json:"duration_ms,omitempty"`
+	PCM16LEB64   string `json:"pcm16le_b64,omitempty"`
+	Mode         string `json:"mode,omitempty"`
+	TraceID      string `json:"trace_id,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
+	ModelDir     string `json:"model_dir,omitempty"`
+	Family       string `json:"family,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+type sherpaStreamingASREvent struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	Code string `json:"code,omitempty"`
+}
+
+func newSherpaStreamingASRSubprocessFactory(options sherpaStreamingASRSubprocessOptions) StreamingASRSessionFactory {
+	helperPath := strings.TrimSpace(options.HelperPath)
+	modelDir := strings.TrimSpace(options.ModelDir)
+	if helperPath == "" || modelDir == "" {
+		return nil
+	}
+	family := strings.TrimSpace(options.Family)
+	if family == "" {
+		family = "streaming_zipformer"
+	}
+	return func(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error) {
+		return startSherpaStreamingASRSubprocessSession(ctx, options, family, req)
+	}
+}
+
+func startSherpaStreamingASRSubprocessSession(ctx context.Context, options sherpaStreamingASRSubprocessOptions, family string, req StreamingASRStartRequest) (StreamingASRSession, error) {
+	helperPath := strings.TrimSpace(options.HelperPath)
+	modelDir := strings.TrimSpace(options.ModelDir)
+	if helperPath == "" || modelDir == "" {
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper is not configured")
+	}
+	cmdName := helperPath
+	args := []string{}
+	if pythonPath := strings.TrimSpace(options.PythonPath); pythonPath != "" {
+		cmdName = pythonPath
+		args = append(args, helperPath)
+	}
+	cmd := exec.CommandContext(ctx, cmdName, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	session := &sherpaStreamingASRSubprocessSession{
+		cmd:     cmd,
+		stdin:   stdin,
+		encoder: json.NewEncoder(stdin),
+		events:  make(chan ASRAdapterEvent, 8),
+	}
+	go func() {
+		defer session.closeEvents()
+		session.readEvents(stdout)
+	}()
+	go func() {
+		_ = cmd.Wait()
+	}()
+	if err := session.writeCommand(ctx, sherpaStreamingASRCommand{
+		Type:         "start",
+		SampleRateHz: 16000,
+		Channels:     1,
+		Mode:         sanitizeVoicePipelineValue(req.Mode, "workmate"),
+		TraceID:      "redacted",
+		SessionID:    "redacted",
+		ModelDir:     modelDir,
+		Family:       family,
+	}); err != nil {
+		session.Cancel(err)
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	return session, nil
+}
+
+func (s *sherpaStreamingASRSubprocessSession) AppendFrame(ctx context.Context, frame VoicePipelinePCMFrame) error {
+	if err := validateSherpaStreamingASRFrame(frame); err != nil {
+		return err
+	}
+	return s.writeCommand(ctx, sherpaStreamingASRCommand{
+		Type:         "append",
+		Seq:          frame.Seq,
+		SampleRateHz: frame.SampleRateHz,
+		Channels:     frame.Channels,
+		DurationMS:   frame.DurationMS,
+		PCM16LEB64:   base64.StdEncoding.EncodeToString(frame.PCM16LE),
+	})
+}
+
+func (s *sherpaStreamingASRSubprocessSession) Events() <-chan ASRAdapterEvent {
+	return s.events
+}
+
+func (s *sherpaStreamingASRSubprocessSession) Commit(ctx context.Context) error {
+	return s.writeCommand(ctx, sherpaStreamingASRCommand{Type: "commit"})
+}
+
+func (s *sherpaStreamingASRSubprocessSession) Cancel(cause error) {
+	_ = s.writeCommand(context.Background(), sherpaStreamingASRCommand{Type: "cancel", Reason: "cancelled"})
+	s.mu.Lock()
+	if !s.closed {
+		s.closed = true
+		_ = s.stdin.Close()
+		if s.cmd != nil && s.cmd.Process != nil {
+			_ = s.cmd.Process.Kill()
+		}
+	}
+	s.mu.Unlock()
+}
+
+func (s *sherpaStreamingASRSubprocessSession) writeCommand(ctx context.Context, command sherpaStreamingASRCommand) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return fmt.Errorf("sherpa-onnx streaming ASR helper exited")
+	}
+	if err := s.encoder.Encode(command); err != nil {
+		s.closed = true
+		_ = s.stdin.Close()
+		return fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	return nil
+}
+
+func (s *sherpaStreamingASRSubprocessSession) readEvents(stdout io.Reader) {
+	decoder := json.NewDecoder(stdout)
+	for {
+		var event sherpaStreamingASREvent
+		if err := decoder.Decode(&event); err != nil {
+			if err != io.EOF {
+				sendASRAdapterEvent(context.Background(), s.events, ASRAdapterEvent{
+					Finding: "sherpa-onnx streaming ASR helper protocol error",
+					Err:     fmt.Errorf("sherpa-onnx streaming ASR helper protocol error"),
+				})
+			}
+			return
+		}
+		switch strings.ToLower(strings.TrimSpace(event.Type)) {
+		case "ready":
+			continue
+		case "partial":
+			sendASRAdapterEvent(context.Background(), s.events, ASRAdapterEvent{Text: event.Text})
+		case "final":
+			sendASRAdapterEvent(context.Background(), s.events, ASRAdapterEvent{Text: event.Text, Final: true})
+		case "error":
+			sendASRAdapterEvent(context.Background(), s.events, ASRAdapterEvent{
+				Finding: "sherpa-onnx streaming ASR helper failed",
+				Err:     fmt.Errorf("sherpa-onnx streaming ASR helper failed"),
+			})
+			return
+		default:
+			sendASRAdapterEvent(context.Background(), s.events, ASRAdapterEvent{
+				Finding: "sherpa-onnx streaming ASR helper protocol error",
+				Err:     fmt.Errorf("sherpa-onnx streaming ASR helper protocol error"),
+			})
+			return
+		}
+	}
+}
+
+func (s *sherpaStreamingASRSubprocessSession) closeEvents() {
+	s.mu.Lock()
+	s.closed = true
+	_ = s.stdin.Close()
+	s.mu.Unlock()
+	close(s.events)
+}
+
+func validateSherpaStreamingASRFrame(frame VoicePipelinePCMFrame) error {
+	if strings.ToLower(strings.TrimSpace(frame.Codec)) != "pcm_s16le" {
+		return fmt.Errorf("sherpa-onnx streaming ASR frame codec must be pcm_s16le")
+	}
+	if frame.SampleRateHz <= 0 || frame.Channels != 1 || frame.DurationMS <= 0 {
+		return fmt.Errorf("sherpa-onnx streaming ASR frame metadata invalid")
+	}
+	if len(frame.PCM16LE) == 0 || len(frame.PCM16LE)%2 != 0 {
+		return fmt.Errorf("sherpa-onnx streaming ASR frame payload invalid")
+	}
+	return nil
 }
 
 func (a *localSherpaONNXASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
@@ -845,14 +1075,18 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		ExecutionMode: "fixture",
 	}
 	if isLocalSherpaStreamingASRProfile(selection.ASRProfile) {
+		asrModelDir := firstNonEmptyPipelineValue(strings.TrimSpace(options.ASRModelDir), strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")))
+		asrFamily := firstNonEmptyPipelineValue(strings.TrimSpace(options.ASRFamily), strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_ASR_FAMILY")), "streaming_zipformer")
 		adapters.ASR = NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{
 			LocalSherpaONNXASRAdapterOptions: LocalSherpaONNXASRAdapterOptions{
 				Name:     selection.ASRProfile,
-				ModelDir: options.ASRModelDir,
-				Family:   options.ASRFamily,
+				ModelDir: asrModelDir,
+				Family:   asrFamily,
 				Runner:   options.ASRRunner,
 			},
 			StreamingSessionFactory: options.StreamingASRSessionFactory,
+			StreamingHelperPath:     strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")),
+			StreamingPythonPath:     strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_PYTHON")),
 		})
 		adapters.ExecutionMode = "host_local"
 	} else if isLocalSherpaASRProfile(selection.ASRProfile) {
@@ -1052,4 +1286,13 @@ func localTTSOptionsFromEnv(env []string, base audio.LocalTTSOptions) audio.Loca
 
 func normalizePipelineProfile(profile string) string {
 	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(profile)), "-", "_")
+}
+
+func firstNonEmptyPipelineValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

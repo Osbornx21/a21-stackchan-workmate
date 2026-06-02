@@ -412,6 +412,69 @@ func TestLocalSherpaONNXStreamingASRAdapterRequiresConfiguredSession(t *testing.
 	}
 }
 
+func TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "helper-commands.jsonl")
+	helperPath := writeFakeSherpaStreamingHelper(t, logPath)
+	adapter := NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{
+		LocalSherpaONNXASRAdapterOptions: LocalSherpaONNXASRAdapterOptions{
+			Name:     "sherpa_onnx_streaming",
+			ModelDir: filepath.Join(t.TempDir(), "a21-streaming-model"),
+			Family:   "streaming_zipformer",
+			Runner: func(ctx context.Context, options audio.LocalASROptions) (audio.LocalASRResult, error) {
+				t.Fatal("streaming ASR path must not call batch WAV runner")
+				return audio.LocalASRResult{}, nil
+			},
+		},
+		StreamingHelperPath: helperPath,
+	})
+	streaming, ok := adapter.(StreamingASRAdapter)
+	if !ok {
+		t.Fatalf("adapter %T does not implement StreamingASRAdapter", adapter)
+	}
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{
+		Session: VoiceSession{TraceID: "a21-trace-subprocess", SessionID: "a21-session-subprocess", DeviceID: "stackchan-001"},
+		Mode:    "workmate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Seq:          9,
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    4,
+		RMS:          0.2,
+		PCM16LE:      []byte{1, 0, 2, 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	partial := receiveASREvent(t, session.Events())
+	if partial.Final || partial.Text != "partial-from-helper" {
+		t.Fatalf("partial = %+v, want helper partial", partial)
+	}
+	if err := session.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	final := receiveASREvent(t, session.Events())
+	if !final.Final || final.Text != "final-from-helper" {
+		t.Fatalf("final = %+v, want helper final", final)
+	}
+	rendered := eventuallyReadFile(t, logPath)
+	startIndex := strings.Index(rendered, `"type":"start"`)
+	appendIndex := strings.Index(rendered, `"type":"append"`)
+	commitIndex := strings.Index(rendered, `"type":"commit"`)
+	if startIndex < 0 || appendIndex < 0 || commitIndex < 0 || !(startIndex < appendIndex && appendIndex < commitIndex) {
+		t.Fatalf("helper commands out of order:\n%s", rendered)
+	}
+	for _, forbidden := range []string{".wav", "a21-trace-subprocess", "a21-session-subprocess"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("helper command log leaked or used forbidden value %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvSelectsSherpaONNXStreamingASR(t *testing.T) {
 	adapters := VoicePipelineAdaptersFromEnv([]string{
 		"A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming",
@@ -449,6 +512,44 @@ func TestVoicePipelineAdaptersFromEnvSelectsSherpaONNXStreamingASR(t *testing.T)
 	}
 	if event := receiveASREvent(t, session.Events()); event.Final || strings.TrimSpace(event.Text) == "" {
 		t.Fatalf("partial = %+v, want non-final text", event)
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvWiresSherpaStreamingSubprocessHelper(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "helper-commands.jsonl")
+	helperPath := writeFakeSherpaStreamingHelper(t, logPath)
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming",
+		"A21_SHERPA_ONNX_STREAMING_HELPER=" + helperPath,
+		"A21_SHERPA_ONNX_ASR_MODEL_DIR=" + filepath.Join(t.TempDir(), "a21-streaming-model"),
+		"A21_SHERPA_ONNX_ASR_FAMILY=streaming_zipformer",
+	}, VoicePipelineAdapterOptions{
+		ASRRunner: func(ctx context.Context, options audio.LocalASROptions) (audio.LocalASRResult, error) {
+			t.Fatal("streaming helper env must not call batch WAV runner")
+			return audio.LocalASRResult{}, nil
+		},
+	})
+	streaming, ok := adapters.ASR.(StreamingASRAdapter)
+	if adapters.ExecutionMode != "host_local" || adapters.ASR.Name() != "sherpa_onnx_streaming" || !ok {
+		t.Fatalf("ASR adapter = %T/%s mode=%s, want streaming sherpa host_local", adapters.ASR, adapters.ASR.Name(), adapters.ExecutionMode)
+	}
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{Mode: "workmate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Seq:          1,
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    2,
+		PCM16LE:      []byte{1, 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if event := receiveASREvent(t, session.Events()); event.Final || event.Text != "partial-from-helper" {
+		t.Fatalf("partial = %+v, want helper partial", event)
 	}
 }
 
@@ -916,6 +1017,42 @@ func collectASREvents(t *testing.T, events <-chan ASRAdapterEvent) []ASRAdapterE
 		collected = append(collected, event)
 	}
 	return collected
+}
+
+func writeFakeSherpaStreamingHelper(t *testing.T, logPath string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "a21-fake-sherpa-streaming-helper.sh")
+	script := `#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "` + logPath + `"
+  case "$line" in
+    *'"type":"start"'*) printf '%s\n' '{"type":"ready"}' ;;
+    *'"type":"append"'*) printf '%s\n' '{"type":"partial","text":"partial-from-helper"}' ;;
+    *'"type":"commit"'*) printf '%s\n' '{"type":"final","text":"final-from-helper"}'; exit 0 ;;
+    *'"type":"cancel"'*) exit 0 ;;
+  esac
+done
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func eventuallyReadFile(t *testing.T, path string) string {
+	t.Helper()
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			return string(data)
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("read %s: %v", path, lastErr)
+	return ""
 }
 
 func receiveASREvent(t *testing.T, events <-chan ASRAdapterEvent) ASRAdapterEvent {

@@ -621,7 +621,7 @@ Next state:
 
 Current state:
 
-- `S-XIAOZHI-SHERPA-STREAMING-ASR-ADAPTER-SEAM-COMMITTED`
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
 
 Trigger:
 
@@ -654,6 +654,10 @@ Acceptance conditions:
   integration.
 - Handoff logs state that this is runtime-helper candidate evidence only, not
   full Xiaozhi realtime acceptance.
+- Worker branch
+  `codex/a21-sherpa-streaming-asr-runtime-manual-20260603` adds the JSONL
+  helper and subprocess session; fake-helper tests prove `AppendFrame` produces
+  partial and `Commit` produces final without calling the batch WAV runner.
 
 Failure states:
 

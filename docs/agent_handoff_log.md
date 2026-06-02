@@ -4879,3 +4879,115 @@ Current validation request:
   immediately list readable thread ids. The main thread therefore recorded the
   dispatch and continued with repo-carried plan/state instead of waiting on UI
   state.
+
+## 2026-06-03 - T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001 - Worker Implementation Candidate
+
+本轮目标:
+
+- Execute the committed runtime-helper plan in an isolated worktree:
+  `/Users/jiyurun/.codex/worktrees/a21-sherpa-streaming-asr-runtime-manual/New project`.
+- Add a real subprocess-backed `StreamingASRSessionFactory` for
+  `sherpa_onnx_streaming` without touching firmware, Gateway runtime, providers,
+  V21, hardware, or audio playback.
+
+实际完成内容:
+
+- Created branch
+  `codex/a21-sherpa-streaming-asr-runtime-manual-20260603` from main HEAD
+  `20a75f9`.
+- Verified isolated-worktree baseline with `make verify`: passed.
+- Added repo-owned helper script
+  `scripts/a21_sherpa_onnx_streaming_asr_session.py`.
+  - JSONL stdin/stdout commands: `start`, `append`, `commit`, `cancel`.
+  - JSONL events: `ready`, `partial`, `final`, `error`.
+  - Fake mode via `A21_SHERPA_STREAMING_ASR_FAKE=1` for no-model dry checks.
+  - Real mode supports `streaming_zipformer` shape and emits stable error
+    codes when sherpa-onnx/model files are missing.
+- Added a Go subprocess-backed Sherpa streaming ASR session:
+  - starts helper through `A21_SHERPA_ONNX_STREAMING_HELPER`;
+  - optional `A21_SHERPA_ONNX_STREAMING_PYTHON`;
+  - requires `A21_SHERPA_ONNX_ASR_MODEL_DIR`;
+  - defaults family to `streaming_zipformer`;
+  - sends redacted trace/session IDs to the helper;
+  - sends each PCM frame as base64 in an `append` command;
+  - reads `partial`/`final` helper events into `ASRAdapterEvent`;
+  - discards stderr and returns stable redacted Go errors.
+- Wired `VoicePipelineAdaptersFromEnv` so only streaming Sherpa profiles use
+  the subprocess factory when helper/model env are configured:
+  `sherpa_onnx_streaming`, `local_sherpa_onnx_streaming`, and
+  `streaming_zipformer`.
+- Preserved batch `sherpa_onnx` / `local_sherpa_onnx` behavior.
+- Added fake-helper tests proving:
+  - `start -> append -> commit` command order;
+  - partial arrives after `AppendFrame`;
+  - final arrives after `Commit`;
+  - streaming path does not call the batch WAV runner;
+  - trace/session IDs are redacted in helper commands.
+- Found and fixed one race/flakiness during `make verify`: the initial
+  implementation let the `cmd.Wait()` goroutine close the events channel while
+  stdout reader was still responsible for sending helper events. The fix gives
+  channel close ownership to the stdout reader only.
+
+修改过的文件:
+
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `scripts/a21_sherpa_onnx_streaming_asr_session.py`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- No real sherpa-onnx model was executed.
+- No live Gateway `/v1/xiaozhi` turn used this helper yet.
+- No provider, V21, firmware, NVS, flash, hardware, or audio playback occurred.
+- Static `xiaozhi-streaming-provider-readiness` still must not be read as PRD
+  acceptance.
+- Full realtime chain remains incomplete until streaming TTS runtime proof,
+  wake proof, and physical stock Xiaozhi turn evidence are collected.
+
+已知风险和阻塞点:
+
+- The helper is process-per-ASR-session; long-run backpressure and crash
+  recovery still need a real no-audio model smoke.
+- Real sherpa-onnx model layout may differ from the assumed
+  `streaming_zipformer` files; helper returns stable model-missing errors but
+  has not been run against local model weights.
+- Reports must continue to avoid storing transcripts, paths, URLs, proxy
+  values, credentials, or raw audio.
+
+下一轮建议动作:
+
+1. Main control thread should review this worker diff and merge/cherry-pick the
+   branch into the main hardware branch if acceptable.
+2. Run a no-audio model smoke only after confirming actual model path/weights.
+3. After ASR helper runtime and streaming TTS runtime are both proven, run the
+   physical stock `/v1/xiaozhi` realtime parity gate from an operator-triggered
+   turn.
+
+测试/构建/运行结果:
+
+- Baseline in isolated worktree before edits: `make verify` passed.
+- `A21_SHERPA_STREAMING_ASR_FAKE=1 ... scripts/a21_sherpa_onnx_streaming_asr_session.py`:
+  passed with `ready`, `partial`, `final`.
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*Streaming|TestVoicePipelineAdaptersFromEnv.*Sherpa' -count=1`:
+  passed.
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa|TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal' -count=1`:
+  passed.
+- `go test ./internal/app -run TestXiaozhiStreamingProviderReadiness -count=1`:
+  passed.
+- `python3 -m py_compile scripts/a21_sherpa_onnx_streaming_asr_session.py`:
+  passed.
+- `git diff --check`: passed.
+- `go test ./internal/providers -count=1`: passed after fixing the events
+  close race.
+- Final `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- First final `make verify` failed in
+  `TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper` with a timeout
+  waiting for a helper ASR event. Root cause was event-channel close ownership:
+  `cmd.Wait()` could close the event channel before the stdout reader completed.
+  The fix moved close ownership to the stdout reader; rerun `make verify`
+  passed.
