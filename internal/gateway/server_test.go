@@ -2396,6 +2396,117 @@ func TestOfficialStackChanControlEndpointRequiresConnectedOfficialSocket(t *test
 	}
 }
 
+func TestXiaozhiTurnLifecycleFansOutToOfficialStackChanState(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	officialConn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = officialConn.Close(websocket.StatusNormalClosure, "test done") })
+
+	xiaozhiConn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = xiaozhiConn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, xiaozhiConn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-official-state",
+		"session_id": "a21-session-xiaozhi-official-state",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, xiaozhiConn)
+
+	if err := wsjson.Write(ctx, xiaozhiConn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, xiaozhiConn)
+	assertOfficialStackChanState(t, ctx, officialConn, "listening")
+
+	if err := wsjson.Write(ctx, xiaozhiConn, map[string]any{"type": "abort", "reason": "wake_word_detected"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, xiaozhiConn)
+	if stop["type"] != "tts" || stop["state"] != "stop" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+	assertOfficialStackChanState(t, ctx, officialConn, "listening")
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-official-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"stackchan.official_auto.state",
+		"stackchan.official_auto.delivered",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+}
+
+func TestXiaozhiOpusDownlinkFansOutOfficialStackChanSpeaking(t *testing.T) {
+	server := NewServer()
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-official-speaking",
+		sessionID: "a21-session-xiaozhi-official-speaking",
+	}
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	officialConn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?device_id=stackchan-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = officialConn.Close(websocket.StatusNormalClosure, "test done") })
+
+	xiaozhiRelay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		ok, err := server.writeXiaozhiOpusDownlink(context.Background(), conn, session, turn, providers.VoiceAudioChunk{
+			Codec:        string(protocol.AudioCodecPCMS16LE),
+			SampleRateHz: 24000,
+			Channels:     1,
+			DurationMS:   60,
+			DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 6000),
+		})
+		if err != nil || !ok {
+			t.Errorf("downlink = ok:%v err:%v", ok, err)
+		}
+	}))
+	t.Cleanup(xiaozhiRelay.Close)
+
+	xiaozhiConn, _, err := websocket.Dial(ctx, webSocketURL(xiaozhiRelay.URL, ""), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = xiaozhiConn.Close(websocket.StatusNormalClosure, "test done") })
+	readXiaozhiBinary(t, ctx, xiaozhiConn)
+	assertOfficialStackChanState(t, ctx, officialConn, "speaking")
+
+	if !traceContains(server.traceEvents("a21-trace-xiaozhi-official-speaking"), "stackchan.official_auto.delivered") {
+		t.Fatalf("trace missing official speaking fanout: %+v", server.traceEvents("a21-trace-xiaozhi-official-speaking"))
+	}
+}
+
 func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -8194,6 +8305,64 @@ func readXiaozhiBinary(t *testing.T, ctx context.Context, conn *websocket.Conn) 
 		t.Fatalf("xiaozhi binary message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
 	}
 	return data
+}
+
+func assertOfficialStackChanState(t *testing.T, ctx context.Context, conn *websocket.Conn, state string) {
+	t.Helper()
+	seenAvatar := false
+	seenMotion := false
+	for i := 0; i < 2; i++ {
+		messageType, frame, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if messageType != websocket.MessageBinary {
+			t.Fatalf("official stackchan message type = %v, want binary", messageType)
+		}
+		if len(frame) < 5 {
+			t.Fatalf("official stackchan frame too short: %#v", frame)
+		}
+		if got := binary.BigEndian.Uint32(frame[1:5]); got != uint32(len(frame)-5) {
+			t.Fatalf("official stackchan frame length = %d, want %d", got, len(frame)-5)
+		}
+		switch frame[0] {
+		case 0x03:
+			seenAvatar = true
+			var payload map[string]map[string]int
+			if err := json.Unmarshal(frame[5:], &payload); err != nil {
+				t.Fatal(err)
+			}
+			wantMouthWeight := 0
+			if state == "speaking" {
+				wantMouthWeight = 82
+			}
+			if payload["mouth"]["weight"] != wantMouthWeight {
+				t.Fatalf("official avatar payload = %#v, want %s mouth weight %d", payload, state, wantMouthWeight)
+			}
+		case 0x04:
+			seenMotion = true
+			var payload map[string]map[string]int
+			if err := json.Unmarshal(frame[5:], &payload); err != nil {
+				t.Fatal(err)
+			}
+			wantAngle := map[string]int{
+				"listening": 380,
+				"thinking":  520,
+				"speaking":  480,
+			}[state]
+			if wantAngle == 0 {
+				wantAngle = 450
+			}
+			if payload["pitchServo"]["angle"] != wantAngle {
+				t.Fatalf("official motion payload = %#v, want %s pitch %d", payload, state, wantAngle)
+			}
+		default:
+			t.Fatalf("official stackchan frame type = %#x, want avatar or motion", frame[0])
+		}
+	}
+	if !seenAvatar || !seenMotion {
+		t.Fatalf("official stackchan state %s frames missing avatar=%v motion=%v", state, seenAvatar, seenMotion)
+	}
 }
 
 func mustJSON(t *testing.T, value any) string {

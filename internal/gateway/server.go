@@ -1196,6 +1196,7 @@ type xiaozhiSession struct {
 	lastDownlinkTurnID       string
 	lastPlaybackStopDoneAtMS int64
 	inputCooldownUntilMS     int64
+	officialStackChanState   string
 }
 
 type xiaozhiTurn struct {
@@ -1421,6 +1422,20 @@ func (session *xiaozhiSession) claimXiaozhiTTSStop() bool {
 	return true
 }
 
+func (session *xiaozhiSession) claimOfficialStackChanState(state string, force bool) bool {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if !force && session.officialStackChanState == state {
+		return false
+	}
+	session.officialStackChanState = state
+	return true
+}
+
 func (session *xiaozhiSession) markXiaozhiDownlink(turn *xiaozhiTurn, atMS int64) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
@@ -1623,6 +1638,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
+			s.writeXiaozhiOfficialStackChanState(ctx, session, "listening", "listen_start", true)
 			if s.xiaozhiStockProfessionalRouteSelected(rawListenMode, session.features) {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.professional_route.stock_override", s.now().UnixMilli())
 			}
@@ -2098,6 +2114,7 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	if session.shouldAbortXiaozhiTurn(turn) {
 		return
 	}
+	s.writeXiaozhiOfficialStackChanState(ctx, session, "thinking", "professional_tts_start", false)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":          "tts",
 		"state":         "start",
@@ -2358,6 +2375,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		newRunner = defaultXiaozhiVoicePipelineRunner
 	}
 	runner := newRunner()
+	s.writeXiaozhiOfficialStackChanState(ctx, session, "thinking", "voice_pipeline_start", false)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":           "tts",
 		"state":          "start",
@@ -2789,6 +2807,7 @@ func safeGatewayFallbackToken(value string, fallback string) string {
 }
 
 func (s *Server) writeXiaozhiPlaceholderTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
+	s.writeXiaozhiOfficialStackChanState(ctx, session, "thinking", "placeholder_tts_start", false)
 	if err := session.writeXiaozhiJSON(ctx, conn, task.turn, map[string]any{
 		"type":          "tts",
 		"state":         "start",
@@ -2828,11 +2847,12 @@ func (s *Server) writeXiaozhiTTSStopWithOptions(ctx context.Context, conn *webso
 		return false
 	}
 	session.writeMu.Lock()
-	defer session.writeMu.Unlock()
 	if !force && turn != nil && session.shouldAbortXiaozhiTurn(turn) {
+		session.writeMu.Unlock()
 		return false
 	}
 	if !force && !session.claimXiaozhiTTSStop() {
+		session.writeMu.Unlock()
 		return false
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.tts.stop", s.now().UnixMilli())
@@ -2845,8 +2865,11 @@ func (s *Server) writeXiaozhiTTSStopWithOptions(ctx context.Context, conn *webso
 		"device_id":  task.deviceID,
 		"reason":     reason,
 	}); err != nil {
+		session.writeMu.Unlock()
 		return false
 	}
+	session.writeMu.Unlock()
+	s.writeXiaozhiOfficialStackChanState(ctx, session, xiaozhiOfficialStateForTTSStop(reason), "tts_stop_"+safeGatewayFallbackToken(reason, "unknown"), true)
 	return true
 }
 
@@ -2876,6 +2899,7 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 	if err != nil {
 		return false, err
 	}
+	s.writeXiaozhiOfficialStackChanState(ctx, session, "speaking", "opus_downlink", false)
 	return turn.pacer.Send(ctx, packet, func(ctx context.Context, frame []byte) error {
 		if session.shouldAbortXiaozhiTurn(turn) {
 			s.recordXiaozhiStaleDownlinkSuppressed(session)
@@ -3925,6 +3949,18 @@ func (s *Server) officialStackChanSocket(deviceID string) (*deviceSocket, bool) 
 	return socket, socket != nil
 }
 
+func (s *Server) officialStackChanSocketForXiaozhiDevice(deviceID string) (*deviceSocket, string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if socket := s.officialStackChanSockets[deviceID]; socket != nil {
+		return socket, deviceID, true
+	}
+	if socket := s.officialStackChanSockets[defaultOfficialStackChanDeviceID]; socket != nil {
+		return socket, defaultOfficialStackChanDeviceID, true
+	}
+	return nil, "", false
+}
+
 func (s *Server) recordOfficialStackChanConnected(deviceID string) {
 	nowMS := s.now().UnixMilli()
 	s.recordTrace("", "", deviceID, "stackchan.official_ws.connected", nowMS)
@@ -3942,6 +3978,91 @@ func (s *Server) recordOfficialStackChanConnected(deviceID string) {
 	record.LastSeenMS = nowMS
 	record.LastEvent = protocol.DeviceEventKind("stackchan.official_ws.connected")
 	s.devices[deviceID] = record
+}
+
+func (s *Server) writeXiaozhiOfficialStackChanState(ctx context.Context, session *xiaozhiSession, state string, reason string, force bool) bool {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return false
+	}
+	event := xiaozhitransport.DeviceExtensionEvent{
+		Kind:  xiaozhitransport.DeviceEventKindState,
+		Value: state,
+	}
+	packets, err := stackchantransport.BuildOfficialPackets(event)
+	if err != nil {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.unsupported", s.now().UnixMilli())
+		return false
+	}
+	socket, officialDeviceID, ok := s.officialStackChanSocketForXiaozhiDevice(session.deviceID)
+	if !ok {
+		if reason != "opus_downlink" {
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.not_connected", s.now().UnixMilli())
+		}
+		return false
+	}
+	if !session.claimOfficialStackChanState(state, force) {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	socket.writeMu.Lock()
+	for _, packet := range packets {
+		err = socket.conn.Write(writeCtx, websocket.MessageBinary, packet.Bytes())
+		if err != nil {
+			break
+		}
+	}
+	socket.writeMu.Unlock()
+	if err != nil {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.delivery_error", s.now().UnixMilli())
+		return false
+	}
+	s.recordOfficialStackChanAutoDelivered(session.deviceID, officialDeviceID, session.traceID, session.sessionID, event, len(packets), reason)
+	return true
+}
+
+func (s *Server) recordOfficialStackChanAutoDelivered(deviceID string, officialDeviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, packetCount int, reason string) {
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_auto."+string(event.Kind), nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_auto.delivered", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	if event.Kind == xiaozhitransport.DeviceEventKindState {
+		record.CurrentExpr = protocol.ExpressionState(event.Value)
+	}
+	record.LastEvent = protocol.DeviceEventKind("stackchan.official_auto." + string(event.Kind))
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = nowMS
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{
+		"official_stackchan_auto_state":   event.Value,
+		"official_stackchan_auto_reason":  safeGatewayFallbackToken(reason, "unknown"),
+		"official_stackchan_auto_target":  officialDeviceID,
+		"official_stackchan_auto_packets": strconv.Itoa(packetCount),
+	})
+	s.devices[deviceID] = record
+}
+
+func xiaozhiOfficialStateForTTSStop(reason string) string {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" || strings.Contains(reason, "abort") || strings.Contains(reason, "barge") || strings.Contains(reason, "wake") {
+		return "listening"
+	}
+	if strings.Contains(reason, "error") || strings.Contains(reason, "unavailable") {
+		return "error"
+	}
+	return "idle"
 }
 
 func (s *Server) recordXiaozhiDeviceControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent) {
