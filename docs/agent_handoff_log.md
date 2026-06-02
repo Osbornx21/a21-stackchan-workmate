@@ -361,3 +361,102 @@ Recommended next action:
 - After flash, collect the PRD evidence bundle: connection, audible TTS,
   microphone input, barge-in stop, official avatar/action, wake, provider
   rotation, and readiness reports.
+
+## 2026-06-02 - T-RECOVERY-001 - Recover Control Tower After Thread Collapse
+
+Goal:
+
+- Recover architecture-control ownership after network instability interrupted
+  Codex thread `019e7f81-e218-7df1-8743-1ed66e7ddd37`.
+- Read the interrupted thread progress and reconcile it with the current clean
+  checkout.
+- Update repository-carried workflow/state docs only; do not touch business
+  code, firmware logic, runtime services, provider/V21 execution, NVS, flash, or
+  Mac audio.
+
+Actual completed work:
+
+- Read the interrupted thread through all available pages.
+- Confirmed the latest meaningful hardware-window state:
+  - official-compatible flash seam existed and was used;
+  - NVS connection settings were written under guard;
+  - initial autostart removed the setup/QR gate but caused a watchdog through
+    the setup-uninstall path;
+  - latest firmware commit `4613946` changed the candidate to enter official
+    Xiaozhi runtime directly;
+  - latest serial evidence now shows Wi-Fi scan failure and config AP
+    `Xiaozhi-6A61`, so the active blocker is network/relay provisioning plus
+    physical evidence, not the old setup/QR or WDT failure.
+- Updated `AGENTS.md` with explicit plan/worker/handoff summary requirements.
+- Added the current continuation plan
+  `docs/plans/2026-06-02-a21-hardware-network-evidence-recovery.md`.
+- Marked the older hardware flash/evidence plan as partially completed and
+  pointed it to the continuation plan.
+- Updated `docs/project_state_machine.md` from flash-plan-ready to
+  `S-HW-FLASHED-OFFICIAL-RUNTIME-NETWORK-BLOCKED`.
+
+Files changed:
+
+- `AGENTS.md`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-a21-hardware-flash-evidence.md`
+- `docs/plans/2026-06-02-a21-hardware-network-evidence-recovery.md`
+
+Current repository state:
+
+- Control branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Current HEAD before this documentation update: `4613946`.
+- Working tree before this documentation update: clean.
+- Current total state after this documentation update:
+  `S-HW-FLASHED-OFFICIAL-RUNTIME-NETWORK-BLOCKED`.
+
+Key evidence from current checkout:
+
+- Latest build report:
+  `reports/a21-stackchan-official-baseline-20260602-204430-1780404270212940000.json`.
+- Latest app SHA-256:
+  `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d`.
+- Latest guarded NVS execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-204515-1780404315388792000.json`.
+- Latest guarded flash execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`.
+- Latest serial evidence:
+  `reports/a21-stackchan-direct-xiaozhi-serial-20260602-2047.log`.
+
+Unfinished items:
+
+- No new physical evidence was collected in this recovery/docs transition.
+- Device is not yet recorded as connected to A21 Gateway after the
+  direct-runtime firmware fix.
+- The latest temporary relay may be stale; network/relay decision must be made
+  before the next physical evidence window.
+- Full PRD acceptance remains blocked until physical audio, microphone,
+  barge-in, official avatar/action, wake, provider, and product-readiness
+  evidence pass.
+
+Known risks and blockers:
+
+- Do not let a worker perform background NVS/flash/serial/runtime actions.
+- Do not treat the flashed app or NVS write as physical PRD acceptance.
+- Do not use Mac audio for future physical prompts; operator speech should
+  trigger StackChan.
+- Temporary relay hosts expire quickly; stale relay failure must not be
+  misdiagnosed as Gateway or firmware protocol failure.
+
+Validation results:
+
+- `git diff --check`: passed.
+- Scoped secret scan over changed governance docs: no matches for key, Bearer,
+  password, or token patterns.
+- `make verify` was not run because this transition intentionally touched only
+  governance/state documents and did not change Go, firmware, runtime,
+  provider, or V21 code.
+
+Recommended next action:
+
+- Execute `T-HW-002` from
+  `docs/plans/2026-06-02-a21-hardware-network-evidence-recovery.md`.
+- First decide the network route: operator-visible `Xiaozhi-6A61` Wi-Fi
+  configuration or a foreground guarded NVS relay update.
+- Then reconnect the device to A21 Gateway and collect physical PRD evidence.

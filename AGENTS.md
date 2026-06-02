@@ -72,15 +72,26 @@ failure state, rollback path, and next state.
   implementation. This includes architecture changes, multi-file edits,
   protocol changes, state machines, audio/network paths, firmware builds, CI,
   task orchestration, provider integration, and device behavior.
+- Before dispatching a large task, the control conversation must record four
+  things in the plan or handoff log: the detailed plan path, the worker
+  execution task, the worker boundary conditions, and the summary format the
+  worker must return.
 - Implementation for large tasks must run in a scoped worker branch/worktree.
   Workers receive one transition, explicit boundaries, forbidden actions, and
   the required handoff format. Workers must not expand scope silently.
 - Every work round must update `docs/agent_handoff_log.md` before it is handed
   off. Do not write long run logs into this `AGENTS.md`; it only defines the
   discipline.
+- Each handoff-log entry must include the round goal, actual completed work,
+  changed files, unfinished items, known risks/blockers, recommended next
+  action, test/build/runtime results, and failure location/reason when a round
+  fails or is interrupted.
 - Project state must be maintained in `docs/project_state_machine.md`, including
   current project state, module states, active transition, completed
   transitions, blocked transitions, and next candidate transitions.
+- Worker completion summaries must be short and structured: what changed, files
+  changed, tests run and results, deviations from plan, remaining issues, and
+  next suggested action.
 - If a conversation is interrupted, compacted, or recovered by a new model, the
   next model must read `AGENTS.md`, `docs/agent_handoff_log.md`, the latest
   `docs/plans/*.md`, current git status/diff, and the latest recorded

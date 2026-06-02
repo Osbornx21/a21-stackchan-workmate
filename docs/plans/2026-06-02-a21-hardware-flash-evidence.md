@@ -1,8 +1,29 @@
 # A21 Hardware Flash And Evidence Plan
 
-Status: active plan.
+Status: partially completed; continuation plan is
+`docs/plans/2026-06-02-a21-hardware-network-evidence-recovery.md`.
 Date: 2026-06-02.
 Transition: `T-HW-001`.
+
+## 2026-06-02 Status Update
+
+This plan has advanced past no-write planning and foreground flash execution.
+The official Xiaozhi-compatible candidate was flashed under T7 guard, and NVS
+connection settings were written under T7 guard. The current continuation is no
+longer "prepare flash"; it is `T-HW-002`, recovering Wi-Fi/relay connectivity
+after the direct-runtime firmware fix and collecting physical PRD evidence.
+
+Current continuation facts:
+
+- Current HEAD: `4613946 fix(firmware): enter official xiaozhi runtime directly`.
+- Latest app SHA-256:
+  `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d`.
+- Latest flash execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`.
+- Latest NVS execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-204515-1780404315388792000.json`.
+- Latest serial log shows repeated `No AP found`, then Wi-Fi config AP
+  `Xiaozhi-6A61`.
 
 ## Background And Problem Definition
 
