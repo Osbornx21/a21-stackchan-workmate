@@ -3741,3 +3741,43 @@ Next recommended actions:
 2. Run guarded product flash on `/dev/cu.usbmodem1101`.
 3. Poll Gateway trace after flash and ask the operator to test no-speech green
    timeout plus the four wake variants.
+
+Follow-up execution in the same round:
+
+- Committed focused fix:
+  `88cb8a9 fix(firmware): bound stackchan listening state`.
+- No-write flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-043116-1780432276384588000.json`.
+- Guarded flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-043222-1780432342953949000.json`.
+- Flash details:
+  - port `/dev/cu.usbmodem1101`;
+  - product app `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app offset `0x20000`;
+  - app SHA-256
+    `ca0877d09eecfb9c69f2279ce14c95942a2cf966e05f118e82551e92c14665b9`;
+  - control commit `88cb8a92069d`;
+  - T7 guard saw `dirty_file_count=0`;
+  - `flash_allowed=true`;
+  - `flash_executed=true`.
+- Device `44:1b:f6:e2:6a:60` reconnected online on Gateway
+  `127.0.0.1:21081`.
+- Runtime speaker volume `100` delivered through stock MCP:
+  trace `a21-trace-listen-bound-volume-1780432365`,
+  tool `self.audio_speaker.set_volume`, status `delivered`.
+- Post-flash trace check on `a21-trace-44-1b-f6-e2-6a-60` for events after
+  `1780432350000` showed:
+  - `events_after_flash=1`;
+  - `xiaozhi.hello.received=1`;
+  - no automatic `xiaozhi.listen.start` observed in that window.
+
+Updated validation request:
+
+- Ask the operator to confirm the screen still reaches the Xiaozhi/StackChan
+  runtime without welcome/setup.
+- Tap the screen once and wait without speaking; expected result is that green
+  listening exits instead of looping indefinitely.
+- After it is idle, test wake phrases:
+  `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
+- If wake still fails from idle, keep `T-WAKE-003` open and tune the wake
+  phrase/threshold next; do not revert to bare `xiaozhi.bin`.
