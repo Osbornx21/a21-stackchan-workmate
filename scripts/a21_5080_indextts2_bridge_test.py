@@ -49,6 +49,8 @@ class IndexTTS2BridgeDryRunTest(unittest.TestCase):
                     str(key_path),
                     "--remote-repo",
                     "D:/a21-mainland-latency-lab/cache/git/index-tts",
+                    "--remote-model-dir",
+                    "D:/a21-model-cache/modelscope/IndexTeam/IndexTTS-2",
                     "--remote-work-root",
                     "D:/a21-mainland-latency-lab/tmp/a21-indextts2",
                     "--text-file",
@@ -78,6 +80,7 @@ class IndexTTS2BridgeDryRunTest(unittest.TestCase):
         self.assertEqual(plan["status"], "dry_run")
         self.assertEqual(plan["local_output"], "a21-output.wav")
         self.assertEqual(plan["remote_repo"], "index-tts")
+        self.assertEqual(plan["remote_model_dir"], "IndexTTS-2")
         self.assertEqual(plan["remote_output"], "a21-output.wav")
         self.assertIn("scp_inputs", plan["steps"])
         self.assertIn("run_indextts2_from_repo_root", plan["steps"])

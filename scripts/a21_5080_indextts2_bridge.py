@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ref-audio", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--sample-rate", type=int, required=True)
+    parser.add_argument("--model-dir", required=True)
     parser.add_argument("--use-cuda-kernel", action="store_true")
     return parser.parse_args()
 
@@ -53,7 +54,7 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     raw_output = output.with_name(output.stem + ".raw.wav")
 
-    checkpoint_dir = Path("checkpoints").resolve()
+    checkpoint_dir = Path(args.model_dir).resolve()
     tts = IndexTTS2(
         cfg_path=str(checkpoint_dir / "config.yaml"),
         model_dir=str(checkpoint_dir),
@@ -70,7 +71,14 @@ def main() -> int:
     target_rate = args.sample_rate
     if source_rate != target_rate:
         waveform = torchaudio.functional.resample(waveform, source_rate, target_rate)
-    torchaudio.save(str(output), waveform.cpu(), target_rate)
+    waveform = torch.clamp(waveform, -1.0, 1.0)
+    torchaudio.save(
+        str(output),
+        waveform.cpu(),
+        target_rate,
+        encoding="PCM_S",
+        bits_per_sample=16,
+    )
 
     duration_ms = waveform.shape[-1] / target_rate * 1000 if target_rate > 0 else 0
     print(json.dumps({
@@ -94,6 +102,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ssh-bin", default=os.environ.get("A21_5080_SSH_BIN", "ssh"))
     parser.add_argument("--scp-bin", default=os.environ.get("A21_5080_SCP_BIN", "scp"))
     parser.add_argument("--remote-repo", default=os.environ.get("A21_5080_INDEXTTS2_REPO", ""))
+    parser.add_argument("--remote-model-dir", default=os.environ.get("A21_5080_INDEXTTS2_MODEL_DIR", ""))
     parser.add_argument("--remote-work-root", default=os.environ.get("A21_5080_WORK_ROOT", ""))
     parser.add_argument(
         "--remote-python",
@@ -122,7 +131,7 @@ def parse_args() -> argparse.Namespace:
 
 def require_config(args: argparse.Namespace) -> None:
     missing = []
-    for name in ("ssh_host", "ssh_key", "remote_repo", "remote_work_root"):
+    for name in ("ssh_host", "ssh_key", "remote_repo", "remote_model_dir", "remote_work_root"):
         if not str(getattr(args, name)).strip():
             missing.append(name.replace("_", "-"))
     if missing:
@@ -247,6 +256,7 @@ def dry_run_report(args: argparse.Namespace, plan: dict[str, object]) -> dict[st
         "style_profile": args.style,
         "local_output": basename(args.output),
         "remote_repo": basename(args.remote_repo),
+        "remote_model_dir": basename(args.remote_model_dir),
         "remote_output": basename(str(plan["remote_output"])),
         "sample_rate_hz": args.sample_rate,
         "steps": [
@@ -306,6 +316,7 @@ def run_remote_indextts2(args: argparse.Namespace, plan: dict[str, object]) -> N
             f"--text-file {powershell_quote(str(plan['remote_text']))} "
             f"--ref-audio {powershell_quote(str(plan['remote_ref_audio']))} "
             f"--output {powershell_quote(str(plan['remote_output']))} "
+            f"--model-dir {powershell_quote(args.remote_model_dir)} "
             f"--sample-rate {int(args.sample_rate)}"
             + (" --use-cuda-kernel" if args.use_cuda_kernel else "")
         ),
