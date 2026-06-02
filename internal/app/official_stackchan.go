@@ -25,12 +25,15 @@ const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_br
 const stackChanOfficialPCMBridgeFlashExecutionSchema = "a21.stackchan.official_pcm_bridge_flash_execution.v1"
 const stackChanOfficialXiaozhiCompatibleFlashPlanSchema = "a21.stackchan.official_xiaozhi_compatible_flash_plan.v1"
 const stackChanOfficialXiaozhiCompatibleFlashExecutionSchema = "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1"
+const stackChanOfficialXiaozhiCompatibleNVSPlanSchema = "a21.stackchan.official_xiaozhi_compatible_nvs_plan.v1"
+const stackChanOfficialXiaozhiCompatibleNVSExecutionSchema = "a21.stackchan.official_xiaozhi_compatible_nvs_execution.v1"
 const stackChanOfficialPCMBridgeNVSPlanSchema = "a21.stackchan.official_pcm_bridge_nvs_plan.v1"
 const stackChanOfficialPCMBridgeNVSExecutionSchema = "a21.stackchan.official_pcm_bridge_nvs_execution.v1"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
 const stackChanOfficialPCMBridgeNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS"
 const stackChanOfficialPCMBridgeAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP"
 const stackChanOfficialXiaozhiCompatibleAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP"
+const stackChanOfficialXiaozhiCompatibleNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS"
 const stackChanOfficialPCMBridgeNVSOffset = "0x9000"
 const stackChanOfficialPCMBridgeNVSSizeHex = "0x4000"
 const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
@@ -38,6 +41,7 @@ const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialXiaozhiCompatibleFlashCommand = runStackChanOfficialSmokeFlashCommandExec
+var runStackChanOfficialXiaozhiCompatibleNVSCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeNVSCommand = runStackChanOfficialSmokeFlashCommandExec
 
 type stackChanOfficialBaselineOptions struct {
@@ -141,6 +145,18 @@ type stackChanOfficialXiaozhiCompatibleFlashOptions struct {
 	Execute   bool
 }
 
+type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
+	IDFExport        string
+	Port             string
+	OutputDir        string
+	RunDir           string
+	OTAURL           string
+	WebSocketURL     string
+	WebSocketVersion int
+	Confirm          string
+	Execute          bool
+}
+
 type stackChanOfficialPCMBridgeNVSOptions struct {
 	IDFExport  string
 	Port       string
@@ -210,6 +226,38 @@ type stackChanOfficialXiaozhiCompatibleFlashReport struct {
 	ReportPath               string                              `json:"report_path,omitempty"`
 }
 
+type stackChanOfficialXiaozhiCompatibleNVSReport struct {
+	SchemaVersion            string                                        `json:"schema_version"`
+	GeneratedAtMS            int64                                         `json:"generated_at_ms"`
+	Status                   string                                        `json:"status"`
+	DryRun                   bool                                          `json:"dry_run"`
+	WriteAllowed             bool                                          `json:"write_allowed"`
+	WriteExecuted            bool                                          `json:"write_executed"`
+	ControlGuard             *runtimeguard.ControlGuardReport              `json:"control_guard,omitempty"`
+	Port                     string                                        `json:"port"`
+	IDFExport                string                                        `json:"idf_export"`
+	RunDir                   string                                        `json:"run_dir"`
+	OTA                      stackChanOfficialXiaozhiNVSOTA                `json:"ota"`
+	WebSocket                stackChanOfficialXiaozhiNVSWebSocket          `json:"websocket"`
+	Partition                stackChanOfficialPCMBridgeNVSPartition        `json:"partition"`
+	Safety                   stackChanOfficialXiaozhiCompatibleNVSSafety   `json:"safety"`
+	Tools                    stackChanOfficialPCMBridgeNVSTools            `json:"tools"`
+	Summary                  *stackChanOfficialXiaozhiCompatibleNVSSummary `json:"summary,omitempty"`
+	BackupPath               string                                        `json:"backup_path,omitempty"`
+	BackupSHA256             string                                        `json:"backup_sha256,omitempty"`
+	ProvisionCSVPath         string                                        `json:"provision_csv_path,omitempty"`
+	ProvisionedBinPath       string                                        `json:"provisioned_bin_path,omitempty"`
+	ProvisionedBinSHA256     string                                        `json:"provisioned_bin_sha256,omitempty"`
+	ReadLogPath              string                                        `json:"read_log_path,omitempty"`
+	ParseLogPath             string                                        `json:"parse_log_path,omitempty"`
+	GenerateLogPath          string                                        `json:"generate_log_path,omitempty"`
+	VerifyLogPath            string                                        `json:"verify_log_path,omitempty"`
+	WriteLogPath             string                                        `json:"write_log_path,omitempty"`
+	NextRequiredConfirmation string                                        `json:"next_required_confirmation,omitempty"`
+	Findings                 []stackChanOfficialBaselineFinding            `json:"findings,omitempty"`
+	ReportPath               string                                        `json:"report_path,omitempty"`
+}
+
 type stackChanOfficialPCMBridgeNVSReport struct {
 	SchemaVersion            string                                 `json:"schema_version"`
 	GeneratedAtMS            int64                                  `json:"generated_at_ms"`
@@ -266,6 +314,36 @@ type stackChanOfficialPCMBridgeNVSSummary struct {
 	MutatedEntryCount       int  `json:"mutated_entry_count"`
 	ExistingA21EntryCount   int  `json:"existing_a21_entry_count"`
 	ServoCalibrationPresent bool `json:"servo_calibration_present"`
+}
+
+type stackChanOfficialXiaozhiNVSOTA struct {
+	Scheme string `json:"scheme"`
+	Host   string `json:"host"`
+	Path   string `json:"path"`
+}
+
+type stackChanOfficialXiaozhiNVSWebSocket struct {
+	Scheme          string `json:"scheme"`
+	Host            string `json:"host"`
+	Path            string `json:"path"`
+	Version         int    `json:"version"`
+	TokenConfigured bool   `json:"token_configured"`
+}
+
+type stackChanOfficialXiaozhiCompatibleNVSSafety struct {
+	BackupBeforeWrite                bool `json:"backup_before_write"`
+	PreserveExistingEntries          bool `json:"preserve_existing_entries"`
+	OnlyMutatesXiaozhiConnectionKeys bool `json:"only_mutates_xiaozhi_connection_keys"`
+	PreservesWiFiCredentials         bool `json:"preserves_wifi_credentials"`
+	ReportRedactsValues              bool `json:"report_redacts_values"`
+}
+
+type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
+	PreservedEntryCount          int  `json:"preserved_entry_count"`
+	MutatedEntryCount            int  `json:"mutated_entry_count"`
+	ExistingConnectionEntryCount int  `json:"existing_connection_entry_count"`
+	ServoCalibrationPresent      bool `json:"servo_calibration_present"`
+	WiFiCredentialsPreserved     bool `json:"wifi_credentials_preserved"`
 }
 
 type stackChanOfficialPCMBridgeAudioWS struct {
@@ -733,6 +811,146 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 	return 0
 }
 
+func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
+	options := stackChanOfficialXiaozhiCompatibleNVSOptions{
+		IDFExport:        firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:             strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		RunDir:           firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS_RUN_DIR"), filepath.Join(".a21-run", "firmware", "official-xiaozhi-compatible-nvs")),
+		OTAURL:           strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OTA_URL")),
+		WebSocketURL:     strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_URL")),
+		WebSocketVersion: 1,
+		Execute:          execute,
+	}
+	if version := strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_VERSION")); version != "" {
+		parsed, err := strconv.Atoi(version)
+		if err == nil {
+			options.WebSocketVersion = parsed
+		}
+	}
+	if execute {
+		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS_CONFIRM"))
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
+			return 0
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--run-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--run-dir requires a value")
+				return 2
+			}
+			i++
+			options.RunDir = args[i]
+		case "--ota-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--ota-url requires a value")
+				return 2
+			}
+			i++
+			options.OTAURL = args[i]
+		case "--websocket-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--websocket-url requires a value")
+				return 2
+			}
+			i++
+			options.WebSocketURL = args[i]
+		case "--websocket-version":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--websocket-version requires a value")
+				return 2
+			}
+			i++
+			version, err := strconv.Atoi(args[i])
+			if err != nil {
+				fmt.Fprintln(stderr, "--websocket-version must be an integer")
+				return 2
+			}
+			options.WebSocketVersion = version
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan official xiaozhi compatible nvs option %q\n", args[i])
+			return 2
+		}
+	}
+
+	var controlGuard runtimeguard.ControlGuardReport
+	if execute {
+		if options.Confirm != stackChanOfficialXiaozhiCompatibleNVSConfirm {
+			fmt.Fprintf(stderr, "stackchan official xiaozhi compatible nvs execute requires --confirm %s\n", stackChanOfficialXiaozhiCompatibleNVSConfirm)
+			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("a21-stackchan-official-xiaozhi-compatible-nvs --execute", stderr)
+		if code != 0 {
+			return code
+		}
+	}
+	report, err := buildStackChanOfficialXiaozhiCompatibleNVSReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan official xiaozhi compatible nvs: %v\n", err)
+		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
+		if err := executeStackChanOfficialXiaozhiCompatibleNVS(context.Background(), options, &report); err != nil {
+			report.Status = "failed"
+			report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
+				Code:    "nvs_execute_failed",
+				Message: err.Error(),
+			})
+		}
+	}
+	if options.OutputDir != "" {
+		if err := validateA21ReportDir(options.OutputDir); err != nil {
+			fmt.Fprintf(stderr, "official xiaozhi compatible nvs report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeStackChanOfficialXiaozhiCompatibleNVSReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write official xiaozhi compatible nvs report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanOfficialXiaozhiCompatibleNVS(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode official xiaozhi compatible nvs report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	return 0
+}
+
 func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialPCMBridgeNVSOptions{
 		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
@@ -1088,6 +1306,70 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 	}, nil
 }
 
+func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialXiaozhiCompatibleNVSOptions) (stackChanOfficialXiaozhiCompatibleNVSReport, error) {
+	runDir := filepath.Clean(options.RunDir)
+	if err := validateA21OfficialRunDir(runDir); err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, fmt.Errorf("run dir invalid: %w", err)
+	}
+	ota, err := parseOfficialXiaozhiNVSOTAURL(options.OTAURL)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
+	}
+	websocket, err := parseOfficialXiaozhiNVSWebSocketURL(options.WebSocketURL, options.WebSocketVersion)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
+	}
+	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
+	}
+	usage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, fmt.Errorf("inspect upload port: %w", err)
+	}
+	if !usage.Exists {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, fmt.Errorf("upload port %s does not exist", options.Port)
+	}
+	if usage.InUse {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, fmt.Errorf("upload port %s is already in use: %s", options.Port, usage.Detail)
+	}
+
+	schema := stackChanOfficialXiaozhiCompatibleNVSPlanSchema
+	if options.Execute {
+		schema = stackChanOfficialXiaozhiCompatibleNVSExecutionSchema
+	}
+	return stackChanOfficialXiaozhiCompatibleNVSReport{
+		SchemaVersion: schema,
+		GeneratedAtMS: time.Now().UnixMilli(),
+		Status:        "ready",
+		DryRun:        !options.Execute,
+		WriteAllowed:  false,
+		WriteExecuted: false,
+		Port:          options.Port,
+		IDFExport:     filepath.Clean(options.IDFExport),
+		RunDir:        runDir,
+		OTA:           ota,
+		WebSocket:     websocket,
+		Partition: stackChanOfficialPCMBridgeNVSPartition{
+			Offset:    stackChanOfficialPCMBridgeNVSOffset,
+			SizeHex:   stackChanOfficialPCMBridgeNVSSizeHex,
+			SizeBytes: stackChanOfficialPCMBridgeNVSSizeBytes,
+		},
+		Safety: stackChanOfficialXiaozhiCompatibleNVSSafety{
+			BackupBeforeWrite:                true,
+			PreserveExistingEntries:          true,
+			OnlyMutatesXiaozhiConnectionKeys: true,
+			PreservesWiFiCredentials:         true,
+			ReportRedactsValues:              true,
+		},
+		Tools: stackChanOfficialPCMBridgeNVSTools{
+			NVSToolPath:       officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_tool/nvs_tool.py"),
+			NVSGeneratorPath:  officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"),
+			EsptoolModuleName: "esptool",
+		},
+		NextRequiredConfirmation: "a21-stackchan-official-xiaozhi-compatible-nvs-execute_with_confirmation_token",
+	}, nil
+}
+
 func buildStackChanOfficialPCMBridgeNVSReport(options stackChanOfficialPCMBridgeNVSOptions) (stackChanOfficialPCMBridgeNVSReport, error) {
 	runDir := filepath.Clean(options.RunDir)
 	if err := validateA21OfficialRunDir(runDir); err != nil {
@@ -1276,6 +1558,79 @@ func parseOfficialPCMBridgeAudioWSURL(rawURL string, deviceID string) (stackChan
 	}, nil
 }
 
+func parseOfficialXiaozhiNVSOTAURL(rawURL string) (stackChanOfficialXiaozhiNVSOTA, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("--ota-url is required")
+	}
+	if containsLegacyIdentity(rawURL) {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url contains forbidden legacy identity")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("parse ota url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url must use http or https")
+	}
+	if parsed.User != nil {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url must not contain credentials")
+	}
+	if parsed.Host == "" {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url host is required")
+	}
+	if parsed.Path != "/xiaozhi/ota/" && parsed.Path != "/xiaozhi/ota" {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url path must be /xiaozhi/ota/")
+	}
+	if isLoopbackOrUnspecifiedHost(parsed.Hostname()) {
+		return stackChanOfficialXiaozhiNVSOTA{}, fmt.Errorf("ota url host must be reachable by the physical device")
+	}
+	return stackChanOfficialXiaozhiNVSOTA{
+		Scheme: parsed.Scheme,
+		Host:   parsed.Host,
+		Path:   parsed.Path,
+	}, nil
+}
+
+func parseOfficialXiaozhiNVSWebSocketURL(rawURL string, version int) (stackChanOfficialXiaozhiNVSWebSocket, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("--websocket-url is required")
+	}
+	if containsLegacyIdentity(rawURL) {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url contains forbidden legacy identity")
+	}
+	if version <= 0 {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket version must be positive")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("parse websocket url: %w", err)
+	}
+	if parsed.Scheme != "ws" && parsed.Scheme != "wss" {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url must use ws or wss")
+	}
+	if parsed.User != nil {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url must not contain credentials")
+	}
+	if parsed.Host == "" {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url host is required")
+	}
+	if parsed.Path != "/v1/xiaozhi" {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url path must be /v1/xiaozhi")
+	}
+	if isLoopbackOrUnspecifiedHost(parsed.Hostname()) {
+		return stackChanOfficialXiaozhiNVSWebSocket{}, fmt.Errorf("websocket url host must be reachable by the physical device")
+	}
+	return stackChanOfficialXiaozhiNVSWebSocket{
+		Scheme:          parsed.Scheme,
+		Host:            parsed.Host,
+		Path:            parsed.Path,
+		Version:         version,
+		TokenConfigured: false,
+	}, nil
+}
+
 type stackChanNVSMinimalEntry struct {
 	Namespace string      `json:"namespace"`
 	Key       string      `json:"key"`
@@ -1367,6 +1722,91 @@ func writeOfficialPCMBridgeNVSCSV(writer io.Writer, entries []stackChanNVSMinima
 	return summary, nil
 }
 
+func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, otaURL string, websocketURL string, websocketVersion int) (stackChanOfficialXiaozhiCompatibleNVSSummary, error) {
+	csvWriter := csv.NewWriter(writer)
+	if err := csvWriter.Write([]string{"key", "type", "encoding", "value"}); err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+	}
+
+	namespaceOrder := make([]string, 0)
+	seenNamespaces := make(map[string]bool)
+	grouped := make(map[string][][]string)
+	summary := stackChanOfficialXiaozhiCompatibleNVSSummary{}
+	for _, entry := range entries {
+		if entry.IsEmpty || entry.State != "Written" {
+			continue
+		}
+		namespace := strings.TrimSpace(entry.Namespace)
+		key := strings.TrimSpace(entry.Key)
+		if namespace == "" || key == "" {
+			continue
+		}
+		if isOfficialXiaozhiConnectionNVSKey(namespace, key) {
+			summary.ExistingConnectionEntryCount += 1
+			continue
+		}
+		encoding, err := nvsCSVEncoding(entry.Encoding)
+		if err != nil {
+			return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+		}
+		value, err := nvsCSVValue(entry.Data)
+		if err != nil {
+			return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+		}
+		if !seenNamespaces[namespace] {
+			seenNamespaces[namespace] = true
+			namespaceOrder = append(namespaceOrder, namespace)
+		}
+		grouped[namespace] = append(grouped[namespace], []string{key, "data", encoding, value})
+		summary.PreservedEntryCount += 1
+		if namespace == "servo" && (key == "zero_pos_1" || key == "zero_pos_2") {
+			if hasNVSEntry(entries, "servo", "zero_pos_1") && hasNVSEntry(entries, "servo", "zero_pos_2") {
+				summary.ServoCalibrationPresent = true
+			}
+		}
+	}
+	summary.WiFiCredentialsPreserved = hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
+	for _, namespace := range []string{"wifi", "websocket"} {
+		if !seenNamespaces[namespace] {
+			seenNamespaces[namespace] = true
+			namespaceOrder = append(namespaceOrder, namespace)
+		}
+	}
+	grouped["wifi"] = append(grouped["wifi"], []string{"ota_url", "data", "string", otaURL})
+	grouped["websocket"] = append(grouped["websocket"],
+		[]string{"url", "data", "string", websocketURL},
+		[]string{"version", "data", "u32", strconv.Itoa(websocketVersion)},
+	)
+	summary.MutatedEntryCount = 3
+
+	for _, namespace := range namespaceOrder {
+		if err := csvWriter.Write([]string{namespace, "namespace", "", ""}); err != nil {
+			return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+		}
+		for _, row := range grouped[namespace] {
+			if err := csvWriter.Write(row); err != nil {
+				return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+			}
+		}
+	}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
+	}
+	return summary, nil
+}
+
+func isOfficialXiaozhiConnectionNVSKey(namespace string, key string) bool {
+	switch namespace {
+	case "wifi":
+		return key == "ota_url"
+	case "websocket":
+		return key == "url" || key == "token" || key == "version"
+	default:
+		return false
+	}
+}
+
 func hasNVSEntry(entries []stackChanNVSMinimalEntry, namespace string, key string) bool {
 	for _, entry := range entries {
 		if entry.IsEmpty || entry.State != "Written" {
@@ -1436,6 +1876,26 @@ func verifyOfficialPCMBridgeNVSProvision(path string, deviceID string, audioWSUR
 	}
 	if !nvsEntryEquals(entries, "a21", "audio_ws_url", audioWSURL) {
 		return fmt.Errorf("provisioned NVS missing a21/audio_ws_url")
+	}
+	return nil
+}
+
+func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, websocketURL string, websocketVersion int) error {
+	entries, err := readStackChanNVSMinimalEntries(path)
+	if err != nil {
+		return err
+	}
+	if !nvsEntryEquals(entries, "wifi", "ota_url", otaURL) {
+		return fmt.Errorf("provisioned NVS missing wifi/ota_url")
+	}
+	if !nvsEntryEquals(entries, "websocket", "url", websocketURL) {
+		return fmt.Errorf("provisioned NVS missing websocket/url")
+	}
+	if !nvsEntryEquals(entries, "websocket", "version", strconv.Itoa(websocketVersion)) {
+		return fmt.Errorf("provisioned NVS missing websocket/version")
+	}
+	if hasNVSEntry(entries, "websocket", "token") {
+		return fmt.Errorf("provisioned NVS must clear websocket/token")
 	}
 	return nil
 }
@@ -1521,6 +1981,135 @@ func executeStackChanOfficialXiaozhiCompatibleFlash(ctx context.Context, options
 		return err
 	}
 	report.FlashExecuted = true
+	report.Status = "passed"
+	return nil
+}
+
+func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options stackChanOfficialXiaozhiCompatibleNVSOptions, report *stackChanOfficialXiaozhiCompatibleNVSReport) error {
+	if _, err := os.Stat(options.IDFExport); err != nil {
+		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
+	}
+	if _, err := os.Stat(report.Tools.NVSToolPath); err != nil {
+		return fmt.Errorf("ESP-IDF nvs_tool.py is missing: %w", err)
+	}
+	if _, err := os.Stat(report.Tools.NVSGeneratorPath); err != nil {
+		return fmt.Errorf("ESP-IDF nvs_partition_gen.py is missing: %w", err)
+	}
+	if err := os.MkdirAll(options.RunDir, 0o700); err != nil {
+		return fmt.Errorf("create nvs run dir: %w", err)
+	}
+
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-before-"+timestamp+".bin")
+	beforeJSONPath := filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-before-"+timestamp+".json")
+	provisionCSVPath := filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-provision-"+timestamp+".csv")
+	provisionedBinPath := filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-provision-"+timestamp+".bin")
+	afterJSONPath := filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-provision-"+timestamp+".json")
+	report.ReadLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-read-"+timestamp+".log")
+	report.ParseLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-parse-"+timestamp+".log")
+	report.GenerateLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-generate-"+timestamp+".log")
+	report.VerifyLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-verify-"+timestamp+".log")
+	report.WriteLogPath = filepath.Join(options.RunDir, "a21-stackchan-official-xiaozhi-compatible-nvs-write-"+timestamp+".log")
+
+	report.DryRun = false
+	report.WriteAllowed = true
+	report.NextRequiredConfirmation = ""
+	report.BackupPath = backupPath
+	report.ProvisionCSVPath = provisionCSVPath
+	report.ProvisionedBinPath = provisionedBinPath
+
+	readScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after no_reset read_flash %s %s %s",
+			shellSingleQuote(options.Port),
+			stackChanOfficialPCMBridgeNVSOffset,
+			stackChanOfficialPCMBridgeNVSSizeHex,
+			shellSingleQuote(backupPath)),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.ReadLogPath, readScript); err != nil {
+		return fmt.Errorf("read current NVS partition: %w", err)
+	}
+	backupSHA, err := sha256File(backupPath)
+	if err != nil {
+		return fmt.Errorf("hash NVS backup: %w", err)
+	}
+	report.BackupSHA256 = backupSHA
+
+	parseScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+			shellSingleQuote(report.Tools.NVSToolPath),
+			shellSingleQuote(backupPath),
+			shellSingleQuote(beforeJSONPath)),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.ParseLogPath, parseScript); err != nil {
+		return fmt.Errorf("parse current NVS partition: %w", err)
+	}
+	entries, err := readStackChanNVSMinimalEntries(beforeJSONPath)
+	if err != nil {
+		return err
+	}
+	csvFile, err := os.Create(provisionCSVPath)
+	if err != nil {
+		return fmt.Errorf("create NVS provision CSV: %w", err)
+	}
+	summary, csvErr := writeOfficialXiaozhiCompatibleNVSCSV(csvFile, entries, options.OTAURL, options.WebSocketURL, options.WebSocketVersion)
+	closeErr := csvFile.Close()
+	if csvErr != nil {
+		return csvErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close NVS provision CSV: %w", closeErr)
+	}
+	report.Summary = &summary
+
+	generateScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s generate %s %s %s",
+			shellSingleQuote(report.Tools.NVSGeneratorPath),
+			shellSingleQuote(provisionCSVPath),
+			shellSingleQuote(provisionedBinPath),
+			stackChanOfficialPCMBridgeNVSSizeHex),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.GenerateLogPath, generateScript); err != nil {
+		return fmt.Errorf("generate provisioned NVS partition: %w", err)
+	}
+	provisionedSHA, err := sha256File(provisionedBinPath)
+	if err != nil {
+		return fmt.Errorf("hash provisioned NVS partition: %w", err)
+	}
+	report.ProvisionedBinSHA256 = provisionedSHA
+
+	verifyScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+			shellSingleQuote(report.Tools.NVSToolPath),
+			shellSingleQuote(provisionedBinPath),
+			shellSingleQuote(afterJSONPath)),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.VerifyLogPath, verifyScript); err != nil {
+		return fmt.Errorf("verify provisioned NVS partition: %w", err)
+	}
+	if err := verifyOfficialXiaozhiCompatibleNVSProvision(afterJSONPath, options.OTAURL, options.WebSocketURL, options.WebSocketVersion); err != nil {
+		return err
+	}
+
+	writeScript := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash %s %s",
+			shellSingleQuote(options.Port),
+			stackChanOfficialPCMBridgeNVSOffset,
+			shellSingleQuote(provisionedBinPath)),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.WriteLogPath, writeScript); err != nil {
+		return fmt.Errorf("write provisioned NVS partition: %w", err)
+	}
+	report.WriteExecuted = true
 	report.Status = "passed"
 	return nil
 }
@@ -2177,6 +2766,23 @@ func writeStackChanOfficialXiaozhiCompatibleFlashReport(outputDir string, report
 	return reportPath, nil
 }
 
+func writeStackChanOfficialXiaozhiCompatibleNVSReport(outputDir string, report stackChanOfficialXiaozhiCompatibleNVSReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-xiaozhi-compatible-nvs-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := writeJSONStackChanOfficialXiaozhiCompatibleNVS(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeStackChanOfficialPCMBridgeNVSReport(outputDir string, report stackChanOfficialPCMBridgeNVSReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -2213,6 +2819,12 @@ func writeJSONStackChanOfficialPCMBridgeFlashPlan(writer io.Writer, report stack
 }
 
 func writeJSONStackChanOfficialXiaozhiCompatibleFlash(writer io.Writer, report stackChanOfficialXiaozhiCompatibleFlashReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanOfficialXiaozhiCompatibleNVS(writer io.Writer, report stackChanOfficialXiaozhiCompatibleNVSReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

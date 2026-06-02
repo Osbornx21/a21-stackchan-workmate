@@ -37,6 +37,11 @@ func runStackChanOfficialXiaozhiCompatibleFlashCLI(args []string, stdout io.Writ
 	return runStackChanOfficialXiaozhiCompatibleFlash(clean, execute, stdout, stderr)
 }
 
+func runStackChanOfficialXiaozhiCompatibleNVSCLI(args []string, stdout io.Writer, stderr io.Writer) int {
+	clean, execute := splitExecuteFlag(args)
+	return runStackChanOfficialXiaozhiCompatibleNVS(clean, execute, stdout, stderr)
+}
+
 func runStackChanOfficialPCMBridgeNVSCLI(args []string, stdout io.Writer, stderr io.Writer) int {
 	clean, execute := splitExecuteFlag(args)
 	return runStackChanOfficialPCMBridgeNVS(clean, execute, stdout, stderr)
@@ -91,6 +96,10 @@ func runDeprecatedPlanExecuteAlias(args []string, stdout io.Writer, stderr io.Wr
 		return runStackChanOfficialXiaozhiCompatibleFlashCLI(args[1:], stdout, stderr), true
 	case "a21-stackchan-official-xiaozhi-compatible-flash-execute":
 		return runStackChanOfficialXiaozhiCompatibleFlashCLI(withExecuteFlag(args[1:]), stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-nvs-plan":
+		return runStackChanOfficialXiaozhiCompatibleNVSCLI(args[1:], stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-nvs-execute":
+		return runStackChanOfficialXiaozhiCompatibleNVSCLI(withExecuteFlag(args[1:]), stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs-plan":
 		return runStackChanOfficialPCMBridgeNVSCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs-execute":
@@ -167,6 +176,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runStackChanOfficialPCMBridgeFlashCLI(args[1:], stdout, stderr), true
 	case "a21-stackchan-official-xiaozhi-compatible-flash":
 		return runStackChanOfficialXiaozhiCompatibleFlashCLI(args[1:], stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-nvs":
+		return runStackChanOfficialXiaozhiCompatibleNVSCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs":
 		return runStackChanOfficialPCMBridgeNVSCLI(args[1:], stdout, stderr), true
 	case "serial-list":

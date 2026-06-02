@@ -1048,6 +1048,192 @@ func TestRunStackChanOfficialPCMBridgeNVSExecuteRunsGuardedReadGenerateWriteFlow
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanBuildsRedactedNoWriteReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-plan",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_nvs_plan.v1"`,
+		`"dry_run": true`,
+		`"write_allowed": false`,
+		`"write_executed": false`,
+		`"path": "/xiaozhi/ota/"`,
+		`"path": "/v1/xiaozhi"`,
+		`"version": 1`,
+		`"only_mutates_xiaozhi_connection_keys": true`,
+		`"preserves_wifi_credentials": true`,
+		`"next_required_confirmation": "a21-stackchan-official-xiaozhi-compatible-nvs-execute_with_confirmation_token"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("nvs plan missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"http://192.0.2.10:21080/xiaozhi/ota/",
+		"ws://192.0.2.10:21080/v1/xiaozhi",
+		"old-token",
+		"Authorization",
+		"existing-secret",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("nvs plan leaked forbidden value %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanRejectsLoopbackGateway(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-plan",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://127.0.0.1:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://127.0.0.1:21080/v1/xiaozhi",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("loopback nvs plan unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "host must be reachable by the physical device") {
+		t.Fatalf("stderr missing physical reachability rejection: %s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "127.0.0.1") {
+		t.Fatalf("stdout leaked rejected loopback url: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRequiresConfirmationToken(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS") {
+		t.Fatalf("stderr missing confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateWriteFlow(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialXiaozhiCompatibleNVSCommand
+	var scripts []string
+	runStackChanOfficialXiaozhiCompatibleNVSCommand = func(ctx context.Context, logPath string, script string) error {
+		scripts = append(scripts, script)
+		switch {
+		case strings.Contains(script, " read_flash "):
+			writeTestFile(t, lastSingleQuotedPath(script), "backup")
+		case strings.Contains(script, "nvs_partition_tool/nvs_tool.py") && strings.Contains(script, "before-"):
+			writeTestFile(t, redirectSingleQuotedPath(script), testNVSJSONForXiaozhiCompatibleProvision("http://old.example/xiaozhi/ota/", "wss://old.example/v1/xiaozhi", true))
+		case strings.Contains(script, "nvs_partition_generator/nvs_partition_gen.py"):
+			writeTestFile(t, lastSingleQuotedPath(script), "provisioned")
+		case strings.Contains(script, "nvs_partition_tool/nvs_tool.py") && strings.Contains(script, "provision-"):
+			writeTestFile(t, redirectSingleQuotedPath(script), testNVSJSONForXiaozhiCompatibleProvision("http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", false))
+		}
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialXiaozhiCompatibleNVSCommand = originalRunner
+	}()
+
+	idfRoot := filepath.Join(t.TempDir(), "esp-idf-v5.5.2")
+	idfExport := filepath.Join(idfRoot, "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_tool", "nvs_tool.py"), "#!/usr/bin/env python\n")
+	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_generator", "nvs_partition_gen.py"), "#!/usr/bin/env python\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-execute",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
+		"--idf-export", idfExport,
+		"--run-dir", filepath.Join(t.TempDir(), "a21-official-xiaozhi-nvs-run"),
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if len(scripts) != 5 {
+		t.Fatalf("scripts = %d, want 5: %v", len(scripts), scripts)
+	}
+	joined := strings.Join(scripts, "\n")
+	for _, want := range []string{
+		"read_flash 0x9000 0x4000",
+		"nvs_partition_tool/nvs_tool.py",
+		"nvs_partition_generator/nvs_partition_gen.py",
+		"write_flash 0x9000",
+		"--after hard_reset",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("scripts missing %q:\n%s", want, joined)
+		}
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_nvs_execution.v1"`,
+		`"write_allowed": true`,
+		`"write_executed": true`,
+		`"control_guard"`,
+		`"preserved_entry_count": 5`,
+		`"mutated_entry_count": 3`,
+		`"existing_connection_entry_count": 4`,
+		`"wifi_credentials_preserved": true`,
+		`"servo_calibration_present": true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"http://192.0.2.10:21080/xiaozhi/ota/",
+		"ws://192.0.2.10:21080/v1/xiaozhi",
+		"old-token",
+		"existing-secret",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("execution report leaked forbidden value %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestOfficialPCMBridgeNVSCSVPreservesExistingEntriesAndOnlyOverwritesA21Keys(t *testing.T) {
 	entries := []stackChanNVSMinimalEntry{
 		{Namespace: "board", Key: "uuid", Encoding: "string", Data: "device-uuid", State: "Written"},
@@ -1090,6 +1276,57 @@ func TestOfficialPCMBridgeNVSCSVPreservesExistingEntriesAndOnlyOverwritesA21Keys
 	}
 }
 
+func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *testing.T) {
+	entries := []stackChanNVSMinimalEntry{
+		{Namespace: "board", Key: "uuid", Encoding: "string", Data: "device-uuid", State: "Written"},
+		{Namespace: "wifi", Key: "ssid", Encoding: "string", Data: "existing-wifi", State: "Written"},
+		{Namespace: "wifi", Key: "password", Encoding: "string", Data: "existing-secret", State: "Written"},
+		{Namespace: "wifi", Key: "ota_url", Encoding: "string", Data: "http://old.example/xiaozhi/ota/", State: "Written"},
+		{Namespace: "websocket", Key: "url", Encoding: "string", Data: "wss://old.example/v1/xiaozhi", State: "Written"},
+		{Namespace: "websocket", Key: "token", Encoding: "string", Data: "old-token", State: "Written"},
+		{Namespace: "websocket", Key: "version", Encoding: "uint32_t", Data: float64(3), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_1", Encoding: "int32_t", Data: float64(460), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_2", Encoding: "int32_t", Data: float64(620), State: "Written"},
+	}
+
+	var csv bytes.Buffer
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1)
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	text := csv.String()
+	for _, want := range []string{
+		"board,namespace,,",
+		"uuid,data,string,device-uuid",
+		"wifi,namespace,,",
+		"ssid,data,string,existing-wifi",
+		"password,data,string,existing-secret",
+		"ota_url,data,string,http://192.0.2.10:21080/xiaozhi/ota/",
+		"websocket,namespace,,",
+		"url,data,string,ws://192.0.2.10:21080/v1/xiaozhi",
+		"version,data,u32,1",
+		"servo,namespace,,",
+		"zero_pos_1,data,i32,460",
+		"zero_pos_2,data,i32,620",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("csv missing %q:\n%s", want, text)
+		}
+	}
+	for _, forbidden := range []string{"old-token", "wss://old.example", "http://old.example", "token,data"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("csv retained forbidden value %q:\n%s", forbidden, text)
+		}
+	}
+	if summary.PreservedEntryCount != 5 ||
+		summary.MutatedEntryCount != 3 ||
+		summary.ExistingConnectionEntryCount != 4 ||
+		!summary.WiFiCredentialsPreserved ||
+		!summary.ServoCalibrationPresent {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
+
 func lastSingleQuotedPath(text string) string {
 	end := strings.LastIndex(text, "'")
 	if end <= 0 {
@@ -1120,6 +1357,23 @@ func testNVSJSONForBridgeProvision(deviceID string, audioWSURL string) string {
   {"namespace":"a21","key":"device_id","encoding":"string","data":%q,"state":"Written","is_empty":false},
   {"namespace":"a21","key":"audio_ws_url","encoding":"string","data":%q,"state":"Written","is_empty":false}
 ]`, deviceID, audioWSURL)
+}
+
+func testNVSJSONForXiaozhiCompatibleProvision(otaURL string, websocketURL string, includeToken bool) string {
+	tokenEntry := ""
+	if includeToken {
+		tokenEntry = `  {"namespace":"websocket","key":"token","encoding":"string","data":"old-token","state":"Written","is_empty":false},` + "\n"
+	}
+	return fmt.Sprintf(`[
+  {"namespace":"board","key":"uuid","encoding":"string","data":"device-uuid","state":"Written","is_empty":false},
+  {"namespace":"wifi","key":"ssid","encoding":"string","data":"existing-wifi","state":"Written","is_empty":false},
+  {"namespace":"wifi","key":"password","encoding":"string","data":"existing-secret","state":"Written","is_empty":false},
+  {"namespace":"wifi","key":"ota_url","encoding":"string","data":%q,"state":"Written","is_empty":false},
+  {"namespace":"servo","key":"zero_pos_1","encoding":"int32_t","data":460,"state":"Written","is_empty":false},
+  {"namespace":"servo","key":"zero_pos_2","encoding":"int32_t","data":620,"state":"Written","is_empty":false},
+  {"namespace":"websocket","key":"url","encoding":"string","data":%q,"state":"Written","is_empty":false},
+%s  {"namespace":"websocket","key":"version","encoding":"uint32_t","data":1,"state":"Written","is_empty":false}
+]`, otaURL, websocketURL, tokenEntry)
 }
 
 func writeTestOfficialPCMBridgeNVSExecutionReport(t *testing.T, deviceID string, host string) string {
