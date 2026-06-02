@@ -3868,3 +3868,55 @@ Next recommended actions:
 1. Commit this focused candidate.
 2. Flash the new app on `/dev/cu.usbmodem1101`.
 3. Capture post-flash trace and operator wake result for all four phrases.
+
+Follow-up execution in the same round:
+
+- Read-only wake worker `019e8a0c-5d2d-7992-bb20-0ed64a889351`
+  independently confirmed the strongest root cause: `|` phrase list is likely
+  invalid/treated as one malformed command; `USE_CUSTOM_WAKE_WORD=true` with
+  `USE_AFE_WAKE_WORD=false` is structurally valid for MultiNet; old infinite
+  ASR is not the leading cause after the listen-bound flash.
+- Read-only hardware parity worker `019e8a0c-5d2d-7992-bb20-0ec6fcba6dbf`
+  found direct `GetHAL().startXiaozhi()` preserves the official Xiaozhi
+  runtime/HAL/audio path, and avatar/RGB/touch/modifiers are expected after
+  Xiaozhi `StackChanAvatarDisplay::SetupUI()`, while Mooncake launcher/app
+  runtime surfaces remain bypassed to avoid welcome/setup regression.
+- `make verify`: passed.
+- Committed focused fix:
+  `8e4df0b fix(firmware): split zi yue wake commands`.
+- No-write flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-044128-1780432888876682000.json`.
+- Guarded flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-044234-1780432954645477000.json`.
+- Flash details:
+  - port `/dev/cu.usbmodem1101`;
+  - product app `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app offset `0x20000`;
+  - app SHA-256
+    `a0638a3b9872c98456c4dee9c8503dfa6d6d27f2374b499fe7c36033aeccb575`;
+  - control commit `8e4df0b30c0f`;
+  - T7 guard saw `dirty_file_count=0`;
+  - `flash_allowed=true`;
+  - `flash_executed=true`.
+- Device `44:1b:f6:e2:6a:60` reconnected online on Gateway
+  `127.0.0.1:21081`, last event `xiaozhi.hello`.
+- Runtime speaker volume `100` delivered through stock MCP:
+  trace `a21-trace-multi-wake-volume-1780432980`,
+  tool `self.audio_speaker.set_volume`, status `delivered`.
+- Post-flash trace check on `a21-trace-44-1b-f6-e2-6a-60` for events after
+  `1780432954000` showed:
+  - `events_after_multi_wake_flash=1`;
+  - `xiaozhi.hello.received=1`;
+  - no automatic `xiaozhi.listen.start` observed in that window.
+
+Current validation request:
+
+- Confirm the screen still reaches the Xiaozhi/StackChan runtime without
+  welcome/setup.
+- Tap once and wait without speaking; expected result is that green listening
+  exits instead of looping indefinitely.
+- From idle, test wake phrases in this order:
+  `小紫悦`, `你好紫悦`, `紫悦紫悦`, `紫悦`.
+- If all wake variants still fail, next transition should add
+  `CustomWakeWord` init/feed/logging or tune threshold; do not revert to bare
+  `xiaozhi.bin`.
