@@ -1410,3 +1410,113 @@ Validation results:
   instrument-observation command shape.
 - `go run ./cmd/a21 product-readiness --help`: printed expected latest-report
   readiness refresh flags.
+
+## 2026-06-02 23:24 CST - T-HW-VOLUME-001c Foreground Flash Executed And State Converged
+
+Round goal:
+
+- Continue the control-tower flow after the operator explicitly requested the
+  guarded StackChan flash execute command.
+- Move the fixed official codec volume candidate from flash-plan-ready to
+  flashed-but-not-audibly-accepted.
+- Keep other work moving through scoped worker threads without expanding the
+  main thread into broad code changes.
+
+Actual completed work:
+
+- Executed the operator-approved foreground hardware command:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP make a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Flash execute passed and wrote report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-230350-1780412630917666000.json`.
+- Verified the flash report fields: `status=passed`, `port=/dev/cu.usbmodem1101`,
+  `dry_run=false`, `flash_allowed=true`, `flash_executed=true`, app SHA-256
+  `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`.
+- Checked post-flash Gateway health on `127.0.0.1:21081`; `/healthz` returned
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- Checked the Gateway device registry; physical device
+  `44:1b:f6:e2:6a:60` remained registered `online` on stock Xiaozhi WebSocket
+  with speaker `available_xiaozhi_opus_downlink`.
+- Pinned and collected worker `019e88dd-1517-77c2-a002-7db771ec016a`
+  (`T-PROTOCOL-001`). It found the strongest `Unknown message type: listen`
+  hypothesis: Gateway sends server-to-device `type=listen` ack frames that
+  stock firmware does not accept, while binary Opus/TTS downlink still reaches
+  `speaking`.
+- Added mainline plan
+  `docs/plans/2026-06-02-stock-xiaozhi-protocol-cleanup.md` from the protocol
+  worker result.
+- Pinned and collected read-only worker
+  `019e88dd-3efa-78e2-a7d3-7063089cbf30` (`T-PROVIDER-001`). It found the
+  state machine was stale: usable explicit DeepSeek and local Ollama provider
+  evidence exists, but newer generic readiness reports fell back to `mock`
+  because they omitted explicit provider report/env.
+- Updated `docs/project_state_machine.md` to record the foreground flash,
+  active physical A/B blocker, protocol cleanup plan, and provider evidence
+  truth.
+
+Files changed:
+
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-stock-xiaozhi-protocol-cleanup.md`
+- `docs/agent_handoff_log.md`
+
+Current repository state:
+
+- Branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- HEAD before this docs update: `18dc5539455e`.
+- Active transition: `T-HW-VOLUME-001`.
+- Current state: `S3-FOREGROUND-FLASHED-A-B-PENDING`.
+- Target state: `S4-PHYSICAL-LOUDNESS-A-B-RECORDED`.
+
+Current unfinished items:
+
+- Trigger a real stock Xiaozhi turn on the physical StackChan and collect the
+  post-flash phone recording with the same phone position and prompt class.
+- Compare post-flash loudness, peak, RMS/LUFS, clipping, active speech ratio,
+  and intelligibility against the previous operator recording.
+- Convert the result into an operator/instrument observation sidecar, rerun
+  `xiaozhi-physical-evidence`, and refresh product readiness.
+- Dispatch the scoped implementation worker for
+  `docs/plans/2026-06-02-stock-xiaozhi-protocol-cleanup.md`.
+- Refresh readiness with the selected provider report/env pinned if the control
+  tower needs a fresh readiness bundle; do not run generic readiness in a way
+  that silently selects `mock`.
+
+Known risks and blockers:
+
+- Flash success is not physical loudness acceptance.
+- `SetOutputVolume(92)` can still clip, distort, resonate, or fail to fix the
+  user's TTS complaint; only a post-flash physical recording can decide.
+- Current stock `/v1/xiaozhi` still has no Gateway runtime volume setter.
+- `stackchan-local-tts-playback`, macOS volume, diagnostic tone, host-only
+  `xiaozhi-voice-bench`, and dry-run reports remain invalid as physical
+  StackChan loudness acceptance.
+- The `listen` warning likely needs Gateway protocol cleanup, but it is
+  separate from the physical TTS/loudness verdict.
+- Provider evidence exists, but a careless generic readiness refresh can make
+  the status look red again by selecting `mock`.
+
+Recommended next action:
+
+- Operator: record one post-flash real stock Xiaozhi long-TTS sample from the
+  same phone position, then provide the file for analysis.
+- Control tower: after the recording arrives, run objective audio analysis and
+  update `T-HW-VOLUME-001d`.
+- Worker lane: dispatch `T-PROTOCOL-001 implementation` from
+  `docs/plans/2026-06-02-stock-xiaozhi-protocol-cleanup.md`.
+- Host readiness lane: refresh product readiness with the explicit selected
+  provider report/env pinned, not with generic mock fallback.
+
+Validation results:
+
+- Foreground flash execute command: passed.
+- Flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-230350-1780412630917666000.json`.
+- `curl --noproxy '*' -sS --max-time 3 http://127.0.0.1:21081/healthz`:
+  returned Gateway ok.
+- `curl --noproxy '*' -sS --max-time 3 http://127.0.0.1:21081/v1/devices`:
+  returned physical device `44:1b:f6:e2:6a:60` as `online`.
+- Protocol worker `019e88dd-1517-77c2-a002-7db771ec016a`: `STATUS=DONE`,
+  docs-only plan.
+- Provider worker `019e88dd-3efa-78e2-a7d3-7063089cbf30`: `STATUS=DONE`,
+  read-only.
+- No business code changed in this main-thread convergence step.
