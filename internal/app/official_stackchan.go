@@ -47,22 +47,28 @@ type stackChanOfficialBaselineOptions struct {
 }
 
 type stackChanOfficialBaselineReport struct {
-	SchemaVersion  string                             `json:"schema_version"`
-	GeneratedAtMS  int64                              `json:"generated_at_ms"`
-	Status         string                             `json:"status"`
-	Execute        bool                               `json:"execute"`
-	SourceRoot     string                             `json:"source_root"`
-	SourceCommit   string                             `json:"source_commit,omitempty"`
-	SourceClean    bool                               `json:"source_clean"`
-	DirtyFileCount int                                `json:"dirty_file_count"`
-	WorkDir        string                             `json:"work_dir"`
-	BuildDir       string                             `json:"build_dir"`
-	IDFExport      string                             `json:"idf_export"`
-	Overlays       []stackChanOfficialBaselineOverlay `json:"overlays,omitempty"`
-	Evidence       stackChanOfficialBaselineEvidence  `json:"evidence"`
-	Build          stackChanOfficialBaselineBuild     `json:"build"`
-	Findings       []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
-	ReportPath     string                             `json:"report_path,omitempty"`
+	SchemaVersion                 string                             `json:"schema_version"`
+	GeneratedAtMS                 int64                              `json:"generated_at_ms"`
+	Status                        string                             `json:"status"`
+	FirmwareCandidate             string                             `json:"firmware_candidate,omitempty"`
+	BuildLaneRole                 string                             `json:"build_lane_role,omitempty"`
+	OfficialAvatarActionPreserved bool                               `json:"official_avatar_action_preserved"`
+	OfficialXiaozhiStartPreserved bool                               `json:"official_xiaozhi_start_preserved"`
+	MinimalBridgeScreen           bool                               `json:"minimal_bridge_screen"`
+	SourceExportMode              string                             `json:"source_export_mode"`
+	Execute                       bool                               `json:"execute"`
+	SourceRoot                    string                             `json:"source_root"`
+	SourceCommit                  string                             `json:"source_commit,omitempty"`
+	SourceClean                   bool                               `json:"source_clean"`
+	DirtyFileCount                int                                `json:"dirty_file_count"`
+	WorkDir                       string                             `json:"work_dir"`
+	BuildDir                      string                             `json:"build_dir"`
+	IDFExport                     string                             `json:"idf_export"`
+	Overlays                      []stackChanOfficialBaselineOverlay `json:"overlays,omitempty"`
+	Evidence                      stackChanOfficialBaselineEvidence  `json:"evidence"`
+	Build                         stackChanOfficialBaselineBuild     `json:"build"`
+	Findings                      []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
+	ReportPath                    string                             `json:"report_path,omitempty"`
 }
 
 type stackChanOfficialBaselineEvidence struct {
@@ -745,17 +751,18 @@ func buildStackChanOfficialBaselineReport(options stackChanOfficialBaselineOptio
 	dirtyFiles := countNonEmptyLines(statusOutput)
 
 	report := stackChanOfficialBaselineReport{
-		SchemaVersion:  stackChanOfficialBaselineSchema,
-		GeneratedAtMS:  time.Now().UnixMilli(),
-		Status:         "ready",
-		Execute:        options.Execute,
-		SourceRoot:     sourceRoot,
-		SourceCommit:   strings.TrimSpace(commit),
-		SourceClean:    dirtyFiles == 0,
-		DirtyFileCount: dirtyFiles,
-		WorkDir:        filepath.Clean(options.WorkDir),
-		BuildDir:       filepath.Clean(options.BuildDir),
-		IDFExport:      filepath.Clean(options.IDFExport),
+		SchemaVersion:    stackChanOfficialBaselineSchema,
+		GeneratedAtMS:    time.Now().UnixMilli(),
+		Status:           "ready",
+		SourceExportMode: "git_head_archive_read_only",
+		Execute:          options.Execute,
+		SourceRoot:       sourceRoot,
+		SourceCommit:     strings.TrimSpace(commit),
+		SourceClean:      dirtyFiles == 0,
+		DirtyFileCount:   dirtyFiles,
+		WorkDir:          filepath.Clean(options.WorkDir),
+		BuildDir:         filepath.Clean(options.BuildDir),
+		IDFExport:        filepath.Clean(options.IDFExport),
 	}
 	for _, overlay := range options.Overlays {
 		report.Overlays = append(report.Overlays, stackChanOfficialBaselineOverlay{
@@ -763,6 +770,7 @@ func buildStackChanOfficialBaselineReport(options stackChanOfficialBaselineOptio
 		})
 	}
 	report.Evidence = inspectStackChanOfficialEvidence(sourceRoot)
+	applyStackChanOfficialCandidateContract(&report, sourceRoot, options.Overlays)
 	if !report.SourceClean {
 		report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
 			Code:    "source_worktree_dirty",
@@ -1470,6 +1478,90 @@ func inspectStackChanOfficialEvidence(sourceRoot string) stackChanOfficialBaseli
 	return evidence
 }
 
+func applyStackChanOfficialCandidateContract(report *stackChanOfficialBaselineReport, sourceRoot string, overlays []string) {
+	if report == nil {
+		return
+	}
+	mainCPP := readGitTrackedOrFile(sourceRoot, "firmware/main/main.cpp")
+	overlayText := readOfficialOverlayText(overlays)
+	candidate, role := classifyStackChanOfficialCandidate(overlays, mainCPP)
+
+	avatarPreserved := strings.Contains(mainCPP, "AppAvatar") &&
+		strings.Contains(mainCPP, "AppAiAgent") &&
+		strings.Contains(mainCPP, "GetMooncake().installApp")
+	xiaozhiStartPreserved := strings.Contains(mainCPP, "GetHAL().startXiaozhi()") &&
+		strings.Contains(mainCPP, "isXiaozhiStartRequested")
+	minimalBridgeScreen := strings.Contains(mainCPP, "A21 BRIDGE") ||
+		strings.Contains(mainCPP, "renderStatus()") ||
+		strings.Contains(overlayText, "A21 BRIDGE") ||
+		strings.Contains(overlayText, "renderStatus()")
+
+	if strings.Contains(overlayText, "-    GetMooncake().installApp(std::make_unique<AppAvatar>())") ||
+		strings.Contains(overlayText, "-    GetMooncake().installApp(std::make_unique<AppAiAgent>())") {
+		avatarPreserved = false
+	}
+	if strings.Contains(overlayText, "-    GetHAL().startXiaozhi()") {
+		xiaozhiStartPreserved = false
+	}
+	if strings.Contains(candidate, "pcm-bridge") {
+		role = "diagnostic_m3_prep"
+		minimalBridgeScreen = true
+		avatarPreserved = false
+		xiaozhiStartPreserved = false
+	}
+	if strings.Contains(candidate, "audio-smoke") {
+		role = "diagnostic_audio_smoke"
+		avatarPreserved = false
+		xiaozhiStartPreserved = false
+	}
+
+	report.FirmwareCandidate = candidate
+	report.BuildLaneRole = role
+	report.OfficialAvatarActionPreserved = avatarPreserved
+	report.OfficialXiaozhiStartPreserved = xiaozhiStartPreserved
+	report.MinimalBridgeScreen = minimalBridgeScreen
+}
+
+func classifyStackChanOfficialCandidate(overlays []string, mainCPP string) (string, string) {
+	for _, overlay := range overlays {
+		base := filepath.Base(overlay)
+		switch {
+		case strings.Contains(base, "xiaozhi-compatible"):
+			return "a21-stackchan-official-xiaozhi-compatible", "product_candidate"
+		case strings.Contains(base, "pcm-bridge"):
+			return "a21-stackchan-official-pcm-bridge", "diagnostic_m3_prep"
+		case strings.Contains(base, "audio-smoke"):
+			return "a21-stackchan-official-audio-smoke", "diagnostic_audio_smoke"
+		}
+	}
+	switch {
+	case strings.Contains(mainCPP, "A21 BRIDGE"):
+		return "a21-stackchan-official-pcm-bridge", "diagnostic_m3_prep"
+	case strings.Contains(mainCPP, "a21-stackchan-official-xiaozhi-compatible"):
+		return "a21-stackchan-official-xiaozhi-compatible", "product_candidate"
+	case strings.Contains(mainCPP, "a21-stackchan-official-audio-smoke"):
+		return "a21-stackchan-official-audio-smoke", "diagnostic_audio_smoke"
+	default:
+		return "stack-chan-official-baseline", "official_reference"
+	}
+}
+
+func readOfficialOverlayText(overlays []string) string {
+	var builder strings.Builder
+	for _, overlay := range overlays {
+		if containsLegacyIdentityPathToken(overlay) {
+			continue
+		}
+		data, err := os.ReadFile(overlay)
+		if err != nil {
+			continue
+		}
+		builder.Write(data)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
 func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOfficialBaselineOptions, report *stackChanOfficialBaselineReport) {
 	report.Status = "passed"
 	if err := os.RemoveAll(options.WorkDir); err != nil {
@@ -1515,6 +1607,7 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 	}
 
 	report.Evidence = inspectStackChanOfficialEvidence(options.WorkDir)
+	applyStackChanOfficialCandidateContract(report, options.WorkDir, options.Overlays)
 	report.Build.BuildExecuted = true
 	report.Build.BuildLogPath = buildLog
 	if _, err := os.Stat(options.IDFExport); err != nil {
@@ -1602,6 +1695,7 @@ func collectOfficialStackChanBuildArtifacts(buildDir string) []stackChanOfficial
 		{name: "app", path: filepath.Join(buildDir, "stack-chan.bin")},
 		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-audio-smoke.bin")},
 		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin")},
+		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin")},
 		{name: "assets", path: filepath.Join(buildDir, "generated_assets.bin")},
 	}
 	for _, candidate := range fallbackCandidates {

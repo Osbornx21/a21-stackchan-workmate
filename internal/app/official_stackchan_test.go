@@ -110,6 +110,93 @@ func TestRunStackChanOfficialBaselineNormalizesRelativeOverlayPath(t *testing.T)
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract(t *testing.T) {
+	source := writeTestOfficialStackChanRepo(t, true)
+	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-baseline",
+		"--source", source,
+		"--work-dir", filepath.Join(t.TempDir(), "a21-stackchan-official-clean"),
+		"--build-dir", filepath.Join(t.TempDir(), "a21-stackchan-official-build"),
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+		"--overlay", overlay,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	var report stackChanOfficialBaselineReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, stdout.String())
+	}
+	if report.FirmwareCandidate != "a21-stackchan-official-xiaozhi-compatible" {
+		t.Fatalf("firmware candidate = %q", report.FirmwareCandidate)
+	}
+	if !report.OfficialAvatarActionPreserved || !report.OfficialXiaozhiStartPreserved || report.MinimalBridgeScreen {
+		t.Fatalf("product candidate contract not preserved: avatar=%v xiaozhi=%v minimal_bridge=%v\n%s",
+			report.OfficialAvatarActionPreserved,
+			report.OfficialXiaozhiStartPreserved,
+			report.MinimalBridgeScreen,
+			stdout.String())
+	}
+	if strings.Contains(stdout.String(), "a21-stackchan-official-pcm-bridge") {
+		t.Fatalf("product candidate report should not identify as old pcm bridge: %s", stdout.String())
+	}
+}
+
+func TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecute(t *testing.T) {
+	source := writeTestOfficialStackChanRepo(t, true)
+	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	report := stackChanOfficialBaselineReport{}
+
+	applyStackChanOfficialCandidateContract(&report, source, []string{overlay})
+
+	if report.FirmwareCandidate != "a21-stackchan-official-xiaozhi-compatible" ||
+		report.BuildLaneRole != "product_candidate" ||
+		!report.OfficialAvatarActionPreserved ||
+		!report.OfficialXiaozhiStartPreserved ||
+		report.MinimalBridgeScreen {
+		t.Fatalf("execute candidate contract = %+v", report)
+	}
+}
+
+func TestRunStackChanOfficialPCMBridgePlanReportsDiagnosticContract(t *testing.T) {
+	source := writeTestOfficialStackChanRepo(t, true)
+	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-pcm-bridge.patch")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-baseline",
+		"--source", source,
+		"--work-dir", filepath.Join(t.TempDir(), "a21-stackchan-official-clean"),
+		"--build-dir", filepath.Join(t.TempDir(), "a21-stackchan-official-build"),
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+		"--overlay", overlay,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+
+	var report stackChanOfficialBaselineReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, stdout.String())
+	}
+	if report.FirmwareCandidate != "a21-stackchan-official-pcm-bridge" || report.BuildLaneRole != "diagnostic_m3_prep" {
+		t.Fatalf("candidate/role = %q/%q", report.FirmwareCandidate, report.BuildLaneRole)
+	}
+	if report.OfficialAvatarActionPreserved || report.OfficialXiaozhiStartPreserved || !report.MinimalBridgeScreen {
+		t.Fatalf("pcm bridge should remain diagnostic, not product candidate: avatar=%v xiaozhi=%v minimal_bridge=%v\n%s",
+			report.OfficialAvatarActionPreserved,
+			report.OfficialXiaozhiStartPreserved,
+			report.MinimalBridgeScreen,
+			stdout.String())
+	}
+}
+
 func TestCollectOfficialStackChanBuildArtifactsFindsAppFromFlashArgs(t *testing.T) {
 	buildDir := t.TempDir()
 	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
@@ -176,6 +263,41 @@ func TestCollectOfficialStackChanBuildArtifactsFindsPCMBridgeAppFromFlashArgs(t 
 		t.Fatalf("app flash offset = %q, want 0x20000", appArtifact.FlashOffset)
 	}
 	if !strings.HasSuffix(appArtifact.Path, "a21-stackchan-official-pcm-bridge.bin") {
+		t.Fatalf("app artifact path = %q", appArtifact.Path)
+	}
+}
+
+func TestCollectOfficialStackChanBuildArtifactsFindsXiaozhiCompatibleAppFromFlashArgs(t *testing.T) {
+	buildDir := t.TempDir()
+	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
+	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
+	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
+	writeTestFile(t, filepath.Join(buildDir, "generated_assets.bin"), "assets")
+	writeTestFile(t, filepath.Join(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin"), "app")
+	writeTestFile(t, filepath.Join(buildDir, "flash_args"), strings.Join([]string{
+		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
+		"0x0 bootloader/bootloader.bin",
+		"0x20000 a21-stackchan-official-xiaozhi-compatible.bin",
+		"0x8000 partition_table/partition-table.bin",
+		"0xd000 ota_data_initial.bin",
+		"0xa00000 generated_assets.bin",
+	}, "\n")+"\n")
+
+	artifacts := collectOfficialStackChanBuildArtifacts(buildDir)
+	var appArtifact stackChanOfficialBaselineBuildArtifact
+	for _, artifact := range artifacts {
+		if artifact.Name == "app" {
+			appArtifact = artifact
+			break
+		}
+	}
+	if appArtifact.Path == "" {
+		t.Fatalf("app artifact missing: %+v", artifacts)
+	}
+	if appArtifact.FlashOffset != "0x20000" {
+		t.Fatalf("app flash offset = %q, want 0x20000", appArtifact.FlashOffset)
+	}
+	if !strings.HasSuffix(appArtifact.Path, "a21-stackchan-official-xiaozhi-compatible.bin") {
 		t.Fatalf("app artifact path = %q", appArtifact.Path)
 	}
 }
@@ -912,6 +1034,34 @@ func writeTestOfficialStackChanRepo(t *testing.T, includeCodecEvidence bool) str
 		`CONFIG_LANGUAGE_EN_US=y`,
 		`CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y`,
 		`CONFIG_SEND_WAKE_WORD_DATA=n`,
+	}, "\n")+"\n")
+	writeTestFile(t, filepath.Join(dir, "firmware", "CMakeLists.txt"), strings.Join([]string{
+		`cmake_minimum_required(VERSION 3.16)`,
+		`set(PROJECT_VER "1.4.1")`,
+		`add_definitions(-DFIRMWARE_VERSION="${PROJECT_VER}")`,
+		`include($ENV{IDF_PATH}/tools/cmake/project.cmake)`,
+		`project(stack-chan)`,
+	}, "\n")+"\n")
+	writeTestFile(t, filepath.Join(dir, "firmware", "main", "main.cpp"), strings.Join([]string{
+		`#include <smooth_ui_toolkit.hpp>`,
+		`#include <uitk/short_namespace.hpp>`,
+		`#include <mooncake.h>`,
+		`#include <apps/apps.h>`,
+		`#include <hal/hal.h>`,
+		`extern "C" void app_main(void)`,
+		`{`,
+		`    GetHAL().init();`,
+		`    GetMooncake().installApp(std::make_unique<AppLauncher>());`,
+		`    GetMooncake().installApp(std::make_unique<AppAiAgent>());`,
+		`    GetMooncake().installApp(std::make_unique<AppAvatar>());`,
+		`    while (1) {`,
+		`        GetMooncake().update();`,
+		`        if (GetHAL().isXiaozhiStartRequested()) {`,
+		`            break;`,
+		`        }`,
+		`    }`,
+		`    GetHAL().startXiaozhi();`,
+		`}`,
 	}, "\n")+"\n")
 	writeTestFile(t, filepath.Join(dir, "firmware", "repos.json"), `[
   {
