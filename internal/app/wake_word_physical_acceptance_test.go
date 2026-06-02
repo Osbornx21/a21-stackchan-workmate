@@ -15,6 +15,174 @@ import (
 	"a21.local/a21/internal/firmwarecheck"
 )
 
+func TestRunWakeWordPhysicalProofCommandRecordsObservedProofNoHardware(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"wake-word-physical-proof",
+		"--physical-device-online",
+		"--firmware-flash-executed",
+		"--guarded-flash-report", "a21-wake-word-guarded-flash-20260602-040000.json",
+		"--operator-observed",
+		"--wake-phrase-matched",
+		"--false-wake-rejected",
+		"--stock-wake-rejected",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.wake_word_physical_proof.v1"`,
+		`"status": "observed"`,
+		`"physical_device_online": true`,
+		`"firmware_flash_executed": true`,
+		`"guarded_flash_report_source": "a21-wake-word-guarded-flash-20260602-040000.json"`,
+		`"operator_custom_wake_observation_present": true`,
+		`"wake_phrase_matched": true`,
+		`"false_wake_accepted": false`,
+		`"stock_wake_accepted": false`,
+		`"redaction_ok": true`,
+		`"report_path": "a21-wake-word-physical-proof-`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{dir, "http://", "https://", "/Users/", "secret", "token", "raw audio"} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("wake physical proof leaked %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-wake-word-physical-proof-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("proof reports = %#v, %v, want one report", matches, err)
+	}
+}
+
+func TestRunWakeWordPhysicalProofCommandRejectsMissingAffirmativeProofNoReport(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"wake-word-physical-proof",
+		"--physical-device-online",
+		"--firmware-flash-executed",
+		"--guarded-flash-report", "a21-wake-word-guarded-flash-20260602-040000.json",
+		"--wake-phrase-matched",
+		"--false-wake-rejected",
+		"--stock-wake-rejected",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want rejection: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %s, want no report", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-wake-word-physical-proof-*.json"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("proof reports = %#v, %v, want no report", matches, err)
+	}
+	for _, forbidden := range []string{dir, "a21-wake-word-guarded-flash-20260602-040000.json", "/Users/", "secret", "token"} {
+		if strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("rejection leaked %q: stderr=%s", forbidden, stderr.String())
+		}
+	}
+}
+
+func TestRunWakeWordPhysicalProofCommandRejectsUnsafeGuardedFlashReportNoLeak(t *testing.T) {
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"wake-word-physical-proof",
+		"--physical-device-online",
+		"--firmware-flash-executed",
+		"--guarded-flash-report", "/Users/private/a21/a21-wake-word-guarded-flash-20260602-040000.json",
+		"--operator-observed",
+		"--wake-phrase-matched",
+		"--false-wake-rejected",
+		"--stock-wake-rejected",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code = 0, want unsafe guarded flash report rejection: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %s, want no report", stdout.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-wake-word-physical-proof-*.json"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("proof reports = %#v, %v, want no report", matches, err)
+	}
+	for _, forbidden := range []string{dir, "/Users/private", "a21-wake-word-guarded-flash-20260602-040000.json", "secret", "token"} {
+		if strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("unsafe rejection leaked %q: stderr=%s", forbidden, stderr.String())
+		}
+	}
+}
+
+func TestRunWakeWordPhysicalAcceptanceConsumesProducedPhysicalProof(t *testing.T) {
+	dir := t.TempDir()
+	packagePath := writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-package-20260602-030000.json", productReadinessWakeWordFirmwarePackageReportFixtureJSON())
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"wake-word-physical-proof",
+		"--physical-device-online",
+		"--firmware-flash-executed",
+		"--guarded-flash-report", "a21-wake-word-guarded-flash-20260602-040000.json",
+		"--operator-observed",
+		"--wake-phrase-matched",
+		"--false-wake-rejected",
+		"--stock-wake-rejected",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("proof code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-wake-word-physical-proof-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("proof reports = %#v, %v, want one report", matches, err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{
+		"wake-word-physical-acceptance",
+		"--package-report", packagePath,
+		"--proof-report", matches[0],
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("acceptance code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"schema_version": "a21.wake_word_physical_acceptance.v1"`,
+		`"status": "accepted"`,
+		`"product_ready": true`,
+		`"guarded_flash_report_source": "a21-wake-word-guarded-flash-20260602-040000.json"`,
+		`"false_wake_accepted": false`,
+		`"stock_wake_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+}
+
 func TestRunWakeWordPhysicalAcceptanceCommandRecordsPackagePhysicalProofNoHardware(t *testing.T) {
 	dir := t.TempDir()
 	packagePath := writeProductReadinessReportFixtureFile(t, dir, "a21-wake-word-firmware-package-20260602-030000.json", productReadinessWakeWordFirmwarePackageReportFixtureJSON())

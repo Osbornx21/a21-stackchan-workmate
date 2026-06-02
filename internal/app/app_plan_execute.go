@@ -146,6 +146,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runWakeWordFirmwareBuildReceipt(args[1:], stdout, stderr), true
 	case "wake-word-firmware-package":
 		return runWakeWordFirmwarePackage(args[1:], stdout, stderr), true
+	case "wake-word-physical-proof":
+		return runWakeWordPhysicalProof(args[1:], stdout, stderr), true
 	case "wake-word-physical-acceptance":
 		return runWakeWordPhysicalAcceptance(args[1:], stdout, stderr), true
 	case "stackchan-official-baseline":

@@ -105,18 +105,23 @@ still emits a redacted diagnostic report with
 `status=missing_build_dir|missing_build_receipt`; these reports are actionable
 operator evidence only and are not accepted as package availability.
 
-`wake-word-physical-acceptance` writes
-`a21.wake_word_physical_acceptance.v1` after a guarded hardware-window flash
-and operator custom-wake proof have already been collected. It records
-basename-only package source, artifact, manifest, guarded flash report, and
-report path fields, plus booleans for physical online, flash executed,
-operator observation, phrase match, false wake rejection, stock wake rejection,
-and redaction. `product-readiness --wake-word-physical-acceptance-report` and
-`--use-latest-reports` accept it only when it matches the current Gateway
+`wake-word-physical-proof` writes `a21.wake_word_physical_proof.v1` from
+operator-confirmed hardware-window observations. It requires explicit flags for
+physical online, guarded flash executed, operator custom-wake observation,
+phrase match, false-wake rejection, and stock-wake rejection. It records only a
+basename guarded-flash report source and redacted booleans, and rejects missing
+affirmations or unsafe names without writing an observed proof.
+`wake-word-physical-acceptance` then writes
+`a21.wake_word_physical_acceptance.v1` from that proof plus the matching package
+report. It records basename-only package source, artifact, manifest, guarded
+flash report, and report path fields, plus booleans for physical online, flash
+executed, operator observation, phrase match, false wake rejection, stock wake
+rejection, and redaction. `product-readiness --wake-word-physical-acceptance-report`
+and `--use-latest-reports` accept it only when it matches the current Gateway
 custom MultiNet intent and the matching package report. Accepted evidence sets
 `wake_word.physical_acceptance_*`, `wake_word.product_ready=true`, and
-`server_side.wake_word_ready=true`; it still does not imply
-`launch_ready=true` without the separate physical StackChan PRD evidence.
+`server_side.wake_word_ready=true`; it still does not imply `launch_ready=true`
+without the separate physical StackChan PRD evidence.
 
 `product-readiness` also emits a `server_side` observability block for the
 no-hardware candidate chain. It summarizes the already-redacted Gateway,
