@@ -64,21 +64,6 @@ float a21ClampUnit(float value) {
   return value;
 }
 
-int a21RatioToRange(float ratio, int min_value, int max_value) {
-  const float clamped = a21ClampUnit(ratio);
-  return min_value + static_cast<int>((max_value - min_value) * clamped);
-}
-
-int a21GazeToOffset(float gaze, int range_px) {
-  if (gaze < -1.0f) {
-    gaze = -1.0f;
-  }
-  if (gaze > 1.0f) {
-    gaze = 1.0f;
-  }
-  return static_cast<int>(gaze * range_px);
-}
-
 #if defined(A21_ENABLE_M5STACK_AVATAR_SPIKE) && A21_ENABLE_M5STACK_AVATAR_SPIKE
 m5avatar::Expression a21AvatarSpikeExpression(A21AvatarExpression expression) {
   switch (expression) {
@@ -111,36 +96,6 @@ void a21ApplyAvatarSpikeFrame(const A21FaceFrame& face) {
 }
 #endif
 
-void drawA21FallbackFace(const A21FaceFrame& face, uint32_t accent) {
-  const int display_height = M5.Display.height();
-  const int center_x = M5.Display.width() / 2;
-  const int center_y = (display_height / 2) + 4;
-  const int eye_y = center_y - 42 + a21GazeToOffset(face.gaze_vertical, 12);
-  const int eye_x_offset = 46 + a21GazeToOffset(face.gaze_horizontal, 8);
-  const int eye_width = a21RatioToRange(face.eye_open_ratio, 16, 30);
-  const int eye_height = a21RatioToRange(face.eye_open_ratio, 3, 14);
-  const int eye_radius = eye_height > 3 ? eye_height / 2 : 1;
-  const int left_eye_x = center_x - eye_x_offset - (eye_width / 2);
-  const int right_eye_x = center_x + eye_x_offset - (eye_width / 2);
-
-  M5.Display.fillRoundRect(left_eye_x, eye_y, eye_width, eye_height, eye_radius, accent);
-  M5.Display.fillRoundRect(right_eye_x, eye_y, eye_width, eye_height, eye_radius, accent);
-
-  const int mouth_width = a21RatioToRange(face.mouth_open_ratio, 18, 46);
-  const int mouth_height = a21RatioToRange(face.mouth_open_ratio, 3, 20);
-  const int mouth_x = center_x - (mouth_width / 2);
-  const int mouth_y = center_y + 24;
-  const int mouth_radius = mouth_height > 4 ? mouth_height / 2 : 1;
-  if (face.mouth_open_ratio > 0.10f) {
-    M5.Display.fillRoundRect(mouth_x, mouth_y, mouth_width, mouth_height, mouth_radius, accent);
-    if (mouth_height > 8 && mouth_width > 12) {
-      M5.Display.fillRoundRect(mouth_x + 4, mouth_y + 4, mouth_width - 8, mouth_height - 8, mouth_radius / 2, TFT_BLACK);
-    }
-    return;
-  }
-  M5.Display.fillRoundRect(mouth_x, mouth_y + 7, mouth_width, mouth_height, mouth_radius, accent);
-}
-
 void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& network, const A21ConnectionState& connection) {
   const uint32_t accent = state_color(state.render_state);
   const A21FaceFrame face = a21FaceFrameForState(state.render_state);
@@ -164,8 +119,6 @@ void drawStateScreen(const A21FirmwareState& state, const A21NetworkConfig& netw
   M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Display.drawString("A21", 12, 8);
   M5.Display.drawString(firmware_label, 12, 28);
-
-  drawA21FallbackFace(face, accent);
 
   M5.Display.setTextDatum(middle_center);
   M5.Display.setTextColor(accent, TFT_BLACK);
