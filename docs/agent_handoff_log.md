@@ -5616,3 +5616,71 @@ Current validation request:
 - Earlier focused app test assertion was too broad and matched the required
   `audio_payload_policy` redaction field; the assertion was narrowed to actual
   encoded payload field names.
+
+## 2026-06-03 - Mainline Integration - No-Welcome Recovery And Sherpa Smoke
+
+本轮目标:
+
+- Integrate the recovered no-welcome/idle-socket state and the completed Sherpa
+  no-audio smoke worker into the main control branch.
+
+实际完成内容:
+
+- Committed main-thread recovery/state update as `7ea6e78`
+  (`docs(control): recover stackchan no-welcome state`).
+- Cherry-picked worker commit `8dbd5b9` into the main branch as `9c7cdbb`
+  (`feat(a21): add sherpa streaming asr smoke`).
+- Resolved the only cherry-pick conflict in `docs/agent_handoff_log.md` by
+  preserving both the hardware recovery handoff and the Sherpa worker closeout.
+- Verified the current physical StackChan state before integration:
+  `44:1b:f6:e2:6a:60` is online on Gateway `21081`, last event is
+  `xiaozhi.hello`, and runtime volume `100` was delivered through stock MCP on
+  trace `a21-trace-recovery-volume-1780441733`.
+
+修改过的文件:
+
+- `Makefile`
+- `internal/app/app_plan_execute.go`
+- `internal/app/local_asr_streaming_smoke.go`
+- `internal/app/local_asr_streaming_smoke_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Operator physical validation remains the immediate hardware task:
+  - screen must stay out of the welcome/setup page;
+  - tap once without speaking and verify green listening exits;
+  - from idle, try `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
+- Real local Sherpa streaming ASR remains blocked by missing local model dir:
+  `model_dir_missing`.
+
+已知风险和阻塞点:
+
+- Wake is still not accepted until physical proof passes from idle while the
+  socket is online.
+- The new Sherpa smoke is an honest no-audio blocker/reporting tool, not a
+  realtime ASR acceptance proof.
+
+下一轮建议动作:
+
+1. Run the physical wake/touch checks and immediately re-query
+   `/v1/devices` plus trace `a21-trace-44-1b-f6-e2-6a-60`.
+2. If wake still fails, start `T-WAKE-004-AFE-VS-CUSTOM-PARITY` and add
+   device-side custom wake init/feed evidence without reopening setup.
+3. Continue `T-STREAMING-TTS-RUNTIME-PROOF-001` or configure the local Sherpa
+   model cache, but do not claim real Xiaozhi realtime parity from the current
+   no-audio smoke.
+
+测试/构建/运行结果:
+
+- `go test ./internal/app -run 'TestRunLocalASRStreamingSmoke|TestLocalASRStreaming' -count=1`: passed.
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa' -count=1`: passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only merge conflict was in
+  `docs/agent_handoff_log.md` during worker cherry-pick and was resolved by
+  preserving both handoff entries.
