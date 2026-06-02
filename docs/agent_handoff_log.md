@@ -5137,3 +5137,147 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No closeout failure at the time of writing.
+
+## 2026-06-03 - T-XIAOZHI-FULL-REALTIME-VOICE-CONVERGENCE-001 - Control Plan And Read-Only Worker Fan-Out
+
+本轮目标:
+
+- Accept the user's Xiaozhi review as the realtime voice target, without
+  redefining success around helper seams, static readiness, `/say`, host
+  loopback, WAV/file TTS, or mock tests.
+- Dispatch independent read-only workers to cross-check official Xiaozhi
+  protocol/state, ESP32/CoreS3 audio HAL/wake behavior, and A21 actual runtime
+  gaps.
+- Write a repo-carried convergence plan before any further broad code changes.
+
+实际完成内容:
+
+- Confirmed main worktree state before edits:
+  branch `codex/a21-hardware-window-20260602-stackchan-prd`, HEAD `61b27ac`,
+  clean.
+- Used the Codex thread tools to dispatch three strict read-only workers:
+  - `019e8a8a-7268-7210-bf9c-eca8ab1c5c6d`:
+    Xiaozhi protocol/state-machine parity audit.
+  - `019e8a8a-7263-7b20-94b9-9b2847aa741d`:
+    Xiaozhi ESP32/CoreS3 audio HAL, wake/VAD, MCP volume, and hardware behavior
+    parity audit.
+  - `019e8a8a-7265-71d3-ae47-0dd708965ec6`:
+    A21 `/v1/xiaozhi` realtime runtime gap audit.
+- Added the control plan
+  `docs/plans/2026-06-03-xiaozhi-full-realtime-voice-convergence.md`.
+- Updated `docs/project_state_machine.md` with active transition
+  `T-XIAOZHI-FULL-REALTIME-VOICE-CONVERGENCE-001`.
+- Main-thread code read confirmed the current nuanced state:
+  - Gateway has stock-shaped long `/v1/xiaozhi` WebSocket and binary Opus
+    ingress/downlink.
+  - Gateway can start a streaming ASR session on listen start and append decoded
+    PCM frames.
+  - `VoicePipelineRunner` can reuse `ASRTranscript` from streaming ASR and avoid
+    re-running batch ASR.
+  - `RunStream()` can emit audio chunks as LLM text segments arrive.
+  - Full Xiaozhi realtime acceptance is still unproven because real Sherpa model
+    runtime, real streaming TTS/provider runtime, wake proof, and physical
+    stock `/v1/xiaozhi` realtime trace are missing.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-full-realtime-voice-convergence.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Need read worker returns and incorporate any corrected official-source
+  findings.
+- Need run `git diff --check` and commit the plan/state/log if clean.
+- Need dispatch the next implementation worker for exactly one transition:
+  likely real Sherpa streaming ASR no-audio smoke or streaming TTS runtime
+  proof.
+- No real provider execution, V21 execution, hardware, firmware build, flash,
+  NVS write, service restart, or audio playback occurred in this round.
+
+已知风险和阻塞点:
+
+- `xiaozhi-streaming-provider-readiness` can pass a static shape gate under
+  configured env, but that still is not runtime/provider/physical acceptance.
+- `sherpa_onnx_streaming` helper is mainline candidate only until a real model
+  smoke or stable missing-model report exists.
+- `doubao_tts_realtime` is an adapter seam and static readiness candidate only
+  until runtime provider proof exists.
+- Wake remains physical-red; screen tap can be an explicitly labeled fallback
+  trigger, not a wake acceptance substitute.
+- Bare `xiaozhi.bin` must not be used as product firmware even if it sounds
+  better; it is comparison evidence only.
+
+下一轮建议动作:
+
+1. Read the three worker returns and adjust the convergence plan/state if they
+   identify a stronger P0 than the current main-thread assessment.
+2. If no contradiction appears, dispatch `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001`
+   as the next scoped worker, because ASR runtime proof is the first missing
+   chain segment after Gateway streaming-session wiring.
+3. In parallel after ASR smoke, dispatch `T-STREAMING-TTS-RUNTIME-PROOF-001`
+   for provider/runtime TTS proof before any physical `/v1/xiaozhi` parity
+   acceptance attempt.
+
+测试/构建/运行结果:
+
+- `git diff --check`: passed for the initial convergence plan/state/log update.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure at the time of writing; worker results are still pending.
+
+## 2026-06-03 - T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001 - Plan Dispatch Prep
+
+本轮目标:
+
+- Prepare the next implementation transition after the Xiaozhi convergence
+  plan: prove or truthfully block real local Sherpa streaming ASR model runtime
+  without audio/hardware/provider side effects.
+
+实际完成内容:
+
+- Added plan
+  `docs/plans/2026-06-03-sherpa-realmodel-no-audio-smoke.md`.
+- Updated `docs/project_state_machine.md` with active transition
+  `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001`.
+- Scoped the worker boundary to no audio playback, no microphone capture, no
+  provider/V21 execution, no Gateway/service restart, no firmware/flash/NVS,
+  no model download, and no WAV boundary.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-sherpa-realmodel-no-audio-smoke.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Need run final `git diff --check`.
+- Need commit these planning/state/log updates.
+- Need dispatch the implementation worker for
+  `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` after the docs commit or from the
+  recorded plan.
+
+已知风险和阻塞点:
+
+- Local model files may be absent or in a different layout. The accepted
+  outcome is then a stable missing-model blocker, not a fake pass.
+- Real Sherpa Python package availability is unknown.
+- Even a passing no-audio smoke remains below physical Xiaozhi realtime
+  acceptance.
+
+下一轮建议动作:
+
+1. Commit the convergence and Sherpa smoke plans if diff checks pass.
+2. Dispatch one scoped worker to implement `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001`.
+3. Continue reading the read-only Xiaozhi parity worker returns in parallel.
+
+测试/构建/运行结果:
+
+- Pending final `git diff --check`.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure at the time of writing.

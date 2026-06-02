@@ -18,10 +18,12 @@ Active child transitions:
 - `T-ASR-GREEN-LATENCY-002-XIAOZHI-NO-SPEECH-COOLDOWN`
 - `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`
 - `T-AUDIO-BARE-XIAOZHI-PARITY-001`
+- `T-XIAOZHI-FULL-REALTIME-VOICE-CONVERGENCE-001`
 - `T-XIAOZHI-REALTIME-VOICE-PARITY-001`
 - `T-XIAOZHI-STREAMING-ASR-001`
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
+- `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -488,6 +490,69 @@ Next state:
 
 - `S-COMPATIBLE-PRODUCT-AUDIO-PARITY-CHECKLIST-ACTIONABLE`
 
+### Active T-XIAOZHI-FULL-REALTIME-VOICE-CONVERGENCE-001: Full Xiaozhi Realtime Voice Convergence
+
+Current state:
+
+- `S-XIAOZHI-REALTIME-SEAMS-MAINLINE-NOT-RUNTIME-ACCEPTED`
+
+Trigger:
+
+- The user's review correctly defines Xiaozhi voice as a realtime media system:
+  local wake/VAD, long Xiaozhi transport, small Opus frames, streaming ASR,
+  streaming LLM, streaming TTS, and paced Opus playback.
+- A21 has multiple correct-looking seams, but seams/static gates are not the
+  same as real runtime or physical acceptance.
+
+Target state:
+
+- `S-XIAOZHI-FULL-REALTIME-PHYSICAL-CANDIDATE`
+
+Action:
+
+- Use plan
+  `docs/plans/2026-06-03-xiaozhi-full-realtime-voice-convergence.md`.
+- Keep the product firmware lane on
+  `a21-stackchan-official-xiaozhi-compatible`.
+- Dispatch read-only worker audits for official Xiaozhi protocol/state,
+  CoreS3/audio HAL/wake behavior, and A21 runtime gaps.
+- Sequence the next implementation transitions as:
+  real Sherpa streaming ASR no-audio smoke, streaming TTS runtime proof,
+  physical stock `/v1/xiaozhi` realtime parity, local wake/state closure, and
+  official StackChan audio/HAL behavior parity.
+- Preserve strict evidence boundaries: host/static/mock/provider-shape evidence
+  cannot claim physical PRD acceptance.
+
+Acceptance conditions:
+
+- Plan exists and is committed.
+- Worker fan-out ids and boundaries are recorded in the plan/handoff.
+- `docs/project_state_machine.md` names this convergence transition so future
+  models do not treat individual ASR/TTS seams as final success.
+- The next code execution worker receives one scoped transition with explicit
+  no-flash/no-provider/no-hardware boundaries unless separately authorized.
+
+Failure states:
+
+- `F-XIAOZHI-CONVERGENCE-FAKE-GREEN` if mock, `/say`, host-loopback, static
+  readiness, or WAV/file paths are described as Xiaozhi realtime acceptance.
+- `F-XIAOZHI-CONVERGENCE-SCOPE-SPRAWL` if one worker silently changes firmware,
+  provider execution, wake, gain, and Gateway behavior together.
+- `F-XIAOZHI-CONVERGENCE-STOCK-PROFILE-LEAK` if debug/device extensions become
+  required in the stock Xiaozhi hello/runtime.
+
+Rollback path:
+
+- Revert the convergence plan/state/log entries. Existing ASR/TTS seams and
+  accepted contest audio path remain untouched.
+
+Next state:
+
+- `S-XIAOZHI-REALTIME-CONVERGENCE-PLAN-RECORDED`
+- Next transition: read worker returns, then dispatch either
+  `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` or
+  `T-STREAMING-TTS-RUNTIME-PROOF-001` depending on the strongest current gap.
+
 ### Active T-XIAOZHI-REALTIME-VOICE-PARITY-001: Xiaozhi Realtime Voice Parity Gate
 
 Current state:
@@ -683,6 +748,58 @@ Next state:
 - `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-MAINLINE-CANDIDATE`
 - Next transition: real no-audio model smoke, then stock `/v1/xiaozhi`
   operator-triggered physical realtime parity.
+
+### Active T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001: Sherpa Streaming ASR Real-Model No-Audio Smoke
+
+Current state:
+
+- `S-SHERPA-STREAMING-ASR-HELPER-SEAM-NO-REALMODEL-PROOF`
+
+Trigger:
+
+- The Sherpa streaming helper is mainline candidate, but fake helper tests do
+  not prove local real-model streaming ASR can start or commit.
+- Xiaozhi realtime parity requires ASR runtime proof before a physical
+  `/v1/xiaozhi` turn can be classified as more than a seam/static candidate.
+
+Target state:
+
+- `S-SHERPA-STREAMING-ASR-REALMODEL-SMOKE-RECORDED`
+
+Action:
+
+- Use plan `docs/plans/2026-06-03-sherpa-realmodel-no-audio-smoke.md`.
+- Add or reuse a redacted no-audio smoke report for
+  `sherpa_onnx_streaming`.
+- Run the JSONL helper against real local model files if present; otherwise
+  record a stable model/package blocker.
+- Do not write WAV, play audio, capture mic, call providers/V21, start/stop
+  Gateway, flash firmware, or write NVS.
+
+Acceptance conditions:
+
+- Smoke outcome is recorded as either real-model pass or truthful blocker.
+- Report stores no transcript, raw audio, raw helper payload, credential, full
+  URL, or absolute local path.
+- Focused tests, `git diff --check`, and `make verify` pass before commit.
+- State/log make clear this remains below physical PRD acceptance.
+
+Failure states:
+
+- `F-SHERPA-REALMODEL-SMOKE-WAV-BOUNDARY` if the smoke writes or reads WAV.
+- `F-SHERPA-REALMODEL-SMOKE-SECRET-LEAK` if reports leak path/transcript/audio
+  or secret values.
+- `F-SHERPA-REALMODEL-SMOKE-FAKE-GREEN` if missing model files or missing
+  sherpa-onnx package are treated as pass.
+
+Rollback path:
+
+- Revert the smoke CLI/report/tests/docs. Keep the streaming helper seam.
+
+Next state:
+
+- `S-SHERPA-STREAMING-ASR-REALMODEL-SMOKE-RECORDED`
+- Next transition: `T-STREAMING-TTS-RUNTIME-PROOF-001`.
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 
