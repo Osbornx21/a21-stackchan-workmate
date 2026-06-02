@@ -18,6 +18,7 @@ Active child transitions:
 - `T-ASR-GREEN-LATENCY-002-XIAOZHI-NO-SPEECH-COOLDOWN`
 - `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`
 - `T-AUDIO-BARE-XIAOZHI-PARITY-001`
+- `T-XIAOZHI-REALTIME-VOICE-PARITY-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -473,6 +474,65 @@ Rollback path:
 Next state:
 
 - `S-COMPATIBLE-PRODUCT-AUDIO-PARITY-CHECKLIST-ACTIONABLE`
+
+### Active T-XIAOZHI-REALTIME-VOICE-PARITY-001: Xiaozhi Realtime Voice Parity Gate
+
+Current state:
+
+- `S-XIAOZHI-STOCK-OPUS-TRANSPORT-TURN-BUFFERED-HOST`
+
+Trigger:
+
+- User review requires A21 to match Xiaozhi's realtime voice design rather than
+  behaving like a normal full-WAV/full-HTTP voice bot.
+- Three read-only worker audits on 2026-06-03 agreed that the product device
+  lane is stock-shaped at the `/v1/xiaozhi` Opus/WebSocket boundary, but the
+  host voice pipeline is still turn-buffered at the ASR boundary.
+
+Target state:
+
+- `S-XIAOZHI-REALTIME-PARITY-GATE-LANDED`
+
+Action:
+
+- Keep product firmware on `a21-stackchan-official-xiaozhi-compatible.bin`.
+- Add a trace-only `xiaozhi-realtime-parity` evidence command that reads
+  Gateway `/v1/devices` and `/v1/traces` without driving `/say`, synthetic
+  host-loopback WebSocket audio, provider execution, V21 execution, flash, NVS,
+  or audio playback.
+- Classify live traces as `blocked`, `stock_opus_transport_only`,
+  `turn_buffered_xiaozhi_candidate`, or `xiaozhi_realtime_candidate`.
+- Reject fake path markers such as `/v1/xiaozhi/say`,
+  `fast_companion.voice_pipeline.*`, and local fallback control events.
+
+Acceptance conditions:
+
+- Focused tests pass for physical stock Opus traces, streaming-ordering traces,
+  and fake `/say` traces.
+- The report redacts payloads, credentials, full URLs, local paths,
+  transcripts, and raw audio.
+- The report never sets `prd_accepted=true` and does not claim local wake,
+  audible playback, interruption, or setup-free product acceptance.
+
+Failure states:
+
+- `F-XIAOZHI-REALTIME-PARITY-FAKE-GREEN` if host-loopback, `/say`, or
+  fast-companion traces can pass as realtime parity.
+- `F-XIAOZHI-REALTIME-PARITY-UNSAFE-REPORT` if report output stores secrets,
+  raw audio, transcripts, full URLs, or local paths.
+- `F-XIAOZHI-REALTIME-PARITY-BEHAVIOR-REGRESSION` if adding the evidence gate
+  changes Gateway or firmware runtime behavior.
+
+Rollback path:
+
+- Remove the additive CLI/report/tests and revert this state/log entry. No
+  firmware, provider, Gateway runtime, or NVS rollback is required for Phase 1.
+
+Next state:
+
+- `S-XIAOZHI-REALTIME-PARITY-GATE-LANDED`
+- Follow-up transition if the live report remains turn-buffered:
+  `T-XIAOZHI-STREAMING-ASR-001`.
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 
@@ -1379,8 +1439,16 @@ Next state:
    - Current phase: read-only Gateway/provider audit confirmed `/v1/xiaozhi`
      is the closest product path: real Opus ingress, VAD buffering, voice
      pipeline, and Opus downlink, while ASR/TTS are still not fully streaming.
-   - Next action: run one real `/v1/xiaozhi` basic dialogue smoke on the live
-     device, not `/v1/xiaozhi/say` or `fast-companion-turn`; evidence must
-     include Opus ingress, VAD/listen stop, `asr.final`,
-     `provider.first_content`, `tts.first_audio`,
-     `audio.downlink.first_frame`, and `xiaozhi.voice_pipeline.completed`.
+   - Next action: after an operator-triggered real `/v1/xiaozhi` turn, run
+     `xiaozhi-realtime-parity` against the live trace. Do not use
+     `/v1/xiaozhi/say`, `xiaozhi-voice-bench`, or `fast-companion-turn` as
+     physical parity evidence.
+
+7. `T-XIAOZHI-STREAMING-ASR-001`
+   - Current phase: not started. Read-only workers agreed the present stock
+     `/v1/xiaozhi` path is still turn-buffered at the ASR boundary: Opus frames
+     are decoded live, but ASR starts from accumulated frames after stop/VAD end.
+   - Next action: write a plan for streaming ASR on stock `/v1/xiaozhi`:
+     pre-open ASR session on listen start, feed decoded PCM frames as they
+     arrive, let VAD end commit/finalize, and prove `asr.first_partial` occurs
+     before `vad.speech.end`/listen stop.

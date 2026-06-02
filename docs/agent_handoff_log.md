@@ -4031,3 +4031,110 @@ Current validation request:
 
 - No failure yet. Remaining work is physical validation and optional commit,
   not a code blocker.
+
+## 2026-06-03 - T-XIAOZHI-REALTIME-VOICE-PARITY-001 - Realtime Parity Gate Landed
+
+本轮目标:
+
+- Respond to the user's Xiaozhi protocol review by separating "stock Opus
+  transport works" from "full Xiaozhi-style realtime ASR/LLM/TTS works".
+- Use parallel read-only workers to audit device-side protocol/audio, host
+  voice pipeline streaming, and official-compatible firmware setup/wake state.
+- Add a non-invasive evidence gate for real `/v1/xiaozhi` traces without
+  driving `/say`, synthetic host loopback, provider execution, V21 execution,
+  flash, NVS, or audio playback.
+
+实际完成内容:
+
+- Dispatched and received three read-only worker audits:
+  - `019e8a30-6e40-7d60-970c-2795e4bae94b`: confirmed product-compatible
+    firmware is the official Xiaozhi/CoreS3 path, while current `/v1/xiaozhi`
+    host flow is still not streaming-ASR-first.
+  - `019e8a30-87b8-7422-8874-c3a14d7911e3`: confirmed Gateway is
+    `Opus ingress/downlink shell + turn-buffered ASR input + LLM/TTS answer
+    streaming`, not full streaming ASR/LLM/TTS.
+  - `019e8a30-a839-74c0-98cd-4bd2723be831`: confirmed no-welcome direct
+    `startXiaozhi()` overlay is the protected product path; `requestXiaozhiStart`
+    or bare `xiaozhi.bin` can reintroduce the setup/plain-Xiaozhi regression.
+- Added plan `docs/plans/2026-06-03-xiaozhi-realtime-voice-parity.md`.
+- Added CLI `a21 xiaozhi-realtime-parity`:
+  - reads `/v1/devices` and `/v1/traces`;
+  - does not trigger conversation or audio;
+  - classifies traces as `blocked`, `stock_opus_transport_only`,
+    `turn_buffered_xiaozhi_candidate`, or `xiaozhi_realtime_candidate`;
+  - rejects `/say`, fast-companion, and local-fallback markers;
+  - returns success only for `turn_buffered_xiaozhi_candidate` or
+    `xiaozhi_realtime_candidate`.
+- Updated `docs/project_state_machine.md` with
+  `T-XIAOZHI-REALTIME-VOICE-PARITY-001` and follow-up candidate
+  `T-XIAOZHI-STREAMING-ASR-001`.
+- Ran the new CLI against current live trace
+  `a21-trace-44-1b-f6-e2-6a-60`:
+  - device online, stock WebSocket, physical id, and Opus ingress/decode were
+    present;
+  - counts included `opus_frames_decoded=25` and `pcm_ingress_frames=25`;
+  - no VAD speech end, ASR final, provider first content, TTS first audio,
+    downlink first frame, or pipeline completion existed;
+  - classification was `stock_opus_transport_only`;
+  - command returned non-zero as intended.
+
+修改过的文件:
+
+- `internal/app/app.go`
+- `internal/app/xiaozhi_realtime_parity.go`
+- `internal/app/xiaozhi_realtime_parity_test.go`
+- `docs/plans/2026-06-03-xiaozhi-realtime-voice-parity.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- `T-XIAOZHI-STREAMING-ASR-001` is not implemented. Current production path is
+  still turn-buffered at the ASR boundary until a streaming ASR session feeds
+  decoded PCM frames before listen stop/VAD end.
+- Need an operator-triggered real `/v1/xiaozhi` turn, then rerun
+  `xiaozhi-realtime-parity` on the resulting trace.
+- Wake remains unaccepted physically; do not mark
+  `wake_word.product_ready=true`.
+- Setup/no-welcome must still be physically guarded after any future firmware
+  package/flash.
+
+已知风险和阻塞点:
+
+- Current live trace has stock transport and Opus ingress only; it is not a
+  real basic dialogue smoke.
+- `xiaozhi-voice-bench` remains host-loopback/synthetic unless explicitly
+  proven otherwise; do not use it as physical StackChan acceptance.
+- `/v1/xiaozhi/say` can sound good but is not the realtime dialogue path.
+- Local TTS and many local ASR/TTS paths still cross WAV/file boundaries and
+  must not be labeled true streaming.
+
+下一轮建议动作:
+
+1. Trigger a real physical `/v1/xiaozhi` turn by tap or wake, then run:
+   `go run ./cmd/a21 xiaozhi-realtime-parity --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --trace-id <trace> --session-id <session> --output-dir reports`.
+2. If classification is `turn_buffered_xiaozhi_candidate`, write and execute
+   `T-XIAOZHI-STREAMING-ASR-001`: pre-open ASR on listen start, feed decoded
+   PCM frames on ingress, and let VAD end commit/finalize.
+3. In parallel, keep `T-WAKE-003` physical wake validation and
+   `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001` regression checks alive; do not
+   flash bare `xiaozhi.bin` or return to `requestXiaozhiStart()`.
+
+测试/构建/运行结果:
+
+- `go test ./internal/app -run 'TestXiaozhiRealtimeParity' -count=1`: passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+- Gateway live health:
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- `/v1/devices`: device `44:1b:f6:e2:6a:60` online, stock Xiaozhi WebSocket,
+  `speaker_volume=100`, last trace `a21-trace-44-1b-f6-e2-6a-60`.
+- Live `xiaozhi-realtime-parity` against current trace returned exit code `1`
+  with classification `stock_opus_transport_only`, which is expected because
+  the trace did not contain a completed voice turn.
+
+如果中途失败，记录失败位置和原因:
+
+- No implementation failure. The live trace classification is red by design:
+  current trace has transport/Opus ingress evidence only, not full real
+  dialogue or streaming parity evidence.

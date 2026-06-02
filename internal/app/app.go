@@ -61,6 +61,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProviderLatencyBench(args[1:], stdout, stderr)
 	case "xiaozhi-voice-bench":
 		return runXiaozhiVoiceBench(args[1:], stdout, stderr)
+	case "xiaozhi-realtime-parity":
+		return runXiaozhiRealtimeParity(args[1:], stdout, stderr)
 	case "xiaozhi-professional-bench":
 		return runXiaozhiProfessionalBench(args[1:], stdout, stderr)
 	case "xiaozhi-physical-evidence":
