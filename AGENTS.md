@@ -59,6 +59,37 @@ Default stance:
 - `docs/engineering/V21_INTEGRATION.md`
 - `docs/engineering/DOCTOR.md`
 
+## Control-Tower Workflow
+
+A21 work must be recoverable from the repository, not from one long Codex
+conversation. Treat each substantial task as a state transition with an
+explicit current state, target state, trigger, action, acceptance condition,
+failure state, rollback path, and next state.
+
+- The main control conversation owns architecture direction, branch/worktree
+  routing, worker dispatch, final review, and integration decisions.
+- Large tasks must first create or update a plan under `docs/plans/` before
+  implementation. This includes architecture changes, multi-file edits,
+  protocol changes, state machines, audio/network paths, firmware builds, CI,
+  task orchestration, provider integration, and device behavior.
+- Implementation for large tasks must run in a scoped worker branch/worktree.
+  Workers receive one transition, explicit boundaries, forbidden actions, and
+  the required handoff format. Workers must not expand scope silently.
+- Every work round must update `docs/agent_handoff_log.md` before it is handed
+  off. Do not write long run logs into this `AGENTS.md`; it only defines the
+  discipline.
+- Project state must be maintained in `docs/project_state_machine.md`, including
+  current project state, module states, active transition, completed
+  transitions, blocked transitions, and next candidate transitions.
+- If a conversation is interrupted, compacted, or recovered by a new model, the
+  next model must read `AGENTS.md`, `docs/agent_handoff_log.md`, the latest
+  `docs/plans/*.md`, current git status/diff, and the latest recorded
+  test/build results before continuing. It must continue from the latest
+  explicit transition state instead of redesigning the project.
+- If a local conversation is derived from a stuck thread, it must first compare
+  the working tree, read the handoff log and latest plan, identify the
+  interruption point, and state the continuation plan before editing.
+
 ## Current Default Commands
 
 ```bash
