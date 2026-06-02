@@ -4681,3 +4681,112 @@ Current validation request:
 - No failing implementation attempt. Worker thread creation/listing was
   asynchronous, so the control tower implemented the bounded no-provider TTS
   seam directly after writing the plan.
+
+## 2026-06-03 - T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001b - Current HEAD Reflash Recovery
+
+本轮目标:
+
+- Recover from the operator report that the physical StackChan was again stuck
+  on the official first-run "Welcome! Let's get started" setup page.
+- Preserve the current control-tower rules: no bare `xiaozhi.bin`, no broad
+  business-code changes, no provider/V21 execution, and product firmware only
+  through the guarded `a21-stackchan-official-xiaozhi-compatible` lane.
+
+实际完成内容:
+
+- Confirmed the main worktree is on branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`, clean at HEAD
+  `790697518c3e1c24e72668bd5da3decfe3fab626`.
+- Read the current no-welcome state from `docs/project_state_machine.md`,
+  `docs/agent_handoff_log.md`, recent plan/report files, and the compatible
+  overlay.
+- Verified the current overlay still contains the no-welcome hotfix:
+  `GetHAL().startXiaozhi()` is followed by a watchdog-feeding infinite park
+  loop, preventing fall-through into the Mooncake welcome/setup loop.
+- Rebuilt the current HEAD product firmware with
+  `make a21-stackchan-official-xiaozhi-compatible-build`.
+- Ran the no-write flash plan for `/dev/cu.usbmodem1101`.
+- Executed the guarded product flash on `/dev/cu.usbmodem1101`.
+- Verified Gateway `127.0.0.1:21081` stayed healthy.
+- Verified the physical device `44:1b:f6:e2:6a:60` reconnected online after
+  flash.
+- Verified post-flash trace events since the flash execution contain only
+  `xiaozhi.hello.received=1` and no `xiaozhi.listen.start`, so the previous
+  infinite green/listening loop did not automatically restart after this flash.
+- Delivered runtime speaker volume `100` over stock MCP to the live device.
+- Opened a read-only background thread request to inspect stale artifact /
+  partition / welcome-regression causes; it was not available before this log
+  entry, so the main thread did not wait for it.
+
+修改过的文件:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Operator visual confirmation is still required: the screen must be checked
+  physically to confirm it is no longer on "Welcome! Let's get started".
+- Wake word physical proof remains red; this flash only restores the current
+  no-welcome product candidate.
+- Normal click/touch barge-in and no-speech UX still need physical acceptance.
+- The full Xiaozhi realtime parity objective remains open: real streaming ASR
+  helper/runtime, streaming TTS provider execution, and physical stock
+  `/v1/xiaozhi` turn proof are not complete.
+
+已知风险和阻塞点:
+
+- If the welcome screen still appears after this current-HEAD flash, treat it as
+  a stale partition/OTA/runtime boot selection problem, not as evidence that
+  the overlay source lacks the park-after-start hotfix.
+- Do not use the generic `xiaozhi-firmware-flash-*` lane for product recovery;
+  it can regress the device to plain Xiaozhi UI.
+- The Gateway process is still the 05:09 `a21-gateway-21081` tmux service. It
+  is healthy and has the no-speech cooldown env, but it was not restarted in
+  this round.
+
+下一轮建议动作:
+
+1. Ask the operator to visually confirm the welcome/setup page is gone. If it
+   is still visible, read the serial boot partition/app logs before changing
+   source code.
+2. From the idle screen, test wake phrases `紫悦`, `紫悦紫悦`, `你好紫悦`, and
+   `小紫悦`; record whether a `xiaozhi.listen.start` appears without a touch.
+3. If visual no-welcome is clean but wake still fails, continue `T-WAKE-003`
+   with device-side custom wake init/feed logging or threshold tuning.
+
+测试/构建/运行结果:
+
+- `make a21-stackchan-official-xiaozhi-compatible-build`: passed.
+  - Report:
+    `reports/a21-stackchan-official-baseline-20260603-062637-1780439197207182000.json`
+  - App SHA-256:
+    `fc7788736ced71c98cee846892a867d306d663c5ceb31014cc01079a381e766c`
+- `make a21-stackchan-official-xiaozhi-compatible-flash-plan A21_UPLOAD_PORT=/dev/cu.usbmodem1101`:
+  passed as no-write ready.
+  - Report:
+    `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062715-1780439235852990000.json`
+- `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP make a21-stackchan-official-xiaozhi-compatible-flash-execute`:
+  passed.
+  - Report:
+    `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-062853-1780439333539408000.json`
+  - Guard commit: `790697518c3e`
+  - Dirty file count at flash: `0`
+  - App part: `a21-stackchan-official-xiaozhi-compatible.bin` at `0x20000`
+- `curl http://127.0.0.1:21081/healthz`: passed with
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- `curl http://127.0.0.1:21081/v1/devices`: passed; device
+  `44:1b:f6:e2:6a:60` was `online`, last event `xiaozhi.hello`, speaker volume
+  capability `100`.
+- `curl http://127.0.0.1:21081/v1/traces?trace_id=a21-trace-44-1b-f6-e2-6a-60`
+  plus local `jq` filter: post-flash event count `1`, only
+  `xiaozhi.hello.received`, no automatic `xiaozhi.listen.start`.
+- `POST /v1/xiaozhi/speaker-volume` with trace
+  `a21-trace-current-head-volume-1780439333`: passed, status `delivered`,
+  transport `xiaozhi_mcp`, tool `self.audio_speaker.set_volume`, volume `100`.
+
+如果中途失败，记录失败位置和原因:
+
+- No code fix failed in this round. The key recovery action was re-building and
+  re-flashing the current HEAD product app to eliminate stale artifact or stale
+  flash-state ambiguity.
