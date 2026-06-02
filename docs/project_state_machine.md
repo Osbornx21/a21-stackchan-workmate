@@ -23,6 +23,7 @@ Active child transitions:
 - `T-XIAOZHI-STREAMING-ASR-001`
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
+- `T-STREAMING-TTS-RUNTIME-PROOF-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -833,6 +834,70 @@ Next state:
 
 - `S-SHERPA-STREAMING-ASR-REALMODEL-SMOKE-RECORDED`
 - Next transition: `T-STREAMING-TTS-RUNTIME-PROOF-001`.
+
+### Active T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS Runtime Proof
+
+Current state:
+
+- `S-STREAMING-TTS-ADAPTER-SEAM-STATIC-ONLY`
+
+Target state:
+
+- `S-STREAMING-TTS-RUNTIME-SMOKE-RECORDED`
+
+Trigger:
+
+- `T-XIAOZHI-STREAMING-TTS-ADAPTER-001` added a selectable
+  `doubao_tts_realtime` streaming TTS adapter seam, but no real runtime smoke
+  has proven or truthfully blocked provider session start, text append, first
+  audio delta, 60 ms PCM chunk framing, and session close.
+- Xiaozhi realtime parity still requires evidence that selected TTS can emit
+  audio before a complete WAV/file or provider EOF exists.
+
+Actions:
+
+- Use plan `docs/plans/2026-06-03-streaming-tts-runtime-proof.md`.
+- Add a scoped app smoke such as `a21 streaming-tts-runtime-smoke` plus Make
+  target.
+- Default to no-provider execution and report `execute_flag_required` unless
+  `--execute` is explicit.
+- With missing env, report stable blocker names instead of failing obscurely or
+  echoing secret values.
+- With explicit `--execute` and complete env, start only the selected realtime
+  TTS session, send a short A21-owned test text, observe first provider audio
+  delta, count valid 60 ms PCM chunks, close the session, and write redacted
+  timing/count evidence.
+
+Acceptance conditions:
+
+- Focused app/provider tests prove no-execute blocker, missing-env blocker,
+  fake realtime first-audio-before-EOF behavior, no WAV/file boundary, and
+  redaction.
+- Runtime report stores no user transcript, provider output text, raw/base64
+  audio, credentials, full URL, proxy value, or absolute path.
+- If real provider execution is not authorized or fails, the transition records
+  a truthful blocked/failed status and remains below PRD acceptance.
+- `git diff --check` and relevant focused tests pass before integration.
+
+Failure states:
+
+- `F-STREAMING-TTS-RUNTIME-SECRET-LEAK` if output/report leaks credentials,
+  raw/base64 audio, full URL, proxy value, user text, or absolute path.
+- `F-STREAMING-TTS-RUNTIME-WAV-BOUNDARY` if the smoke writes/reads WAV or waits
+  for a complete file before first chunk.
+- `F-STREAMING-TTS-RUNTIME-FAKE-GREEN` if static env/config or fake provider
+  tests are promoted as real provider/runtime or physical Xiaozhi acceptance.
+
+Rollback path:
+
+- Revert the smoke command, Make target, tests, and docs. Keep the existing
+  static adapter seam and accepted physical 3x contest audio path.
+
+Next state:
+
+- `S-STREAMING-TTS-RUNTIME-SMOKE-RECORDED`
+- Next transition: stock `/v1/xiaozhi` realtime parity proof after ASR and TTS
+  runtime evidence are both available.
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 

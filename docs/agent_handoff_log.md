@@ -5684,3 +5684,77 @@ Current validation request:
 - No unresolved failure. The only merge conflict was in
   `docs/agent_handoff_log.md` during worker cherry-pick and was resolved by
   preserving both handoff entries.
+
+## 2026-06-03 - Control Recovery - Setup Fixed, Resume Realtime Chain
+
+本轮目标:
+
+- Recover the control-tower state after context loss without reopening the
+  already-fixed setup/welcome issue.
+- Preserve the current transition state in repo documents and continue from the
+  latest explicit next step toward Xiaozhi-style realtime voice.
+
+实际完成内容:
+
+- Re-read the live branch status, recent commits, latest handoff entries,
+  current state-machine wake/no-welcome/realtime sections, and latest plan list.
+- Confirmed the current repo baseline records the operator's later result that
+  setup/no-welcome is fixed.
+- Confirmed the working tree had only governance-document changes from the
+  in-progress `T-STREAMING-TTS-RUNTIME-PROOF-001` plan/state update.
+- Found the three latest read-only audit workers for Xiaozhi realtime parity,
+  streaming TTS runtime proof, and wake endpoint parity ended in `systemError`;
+  their outputs are not accepted as evidence.
+- Kept the continuation point at `T-STREAMING-TTS-RUNTIME-PROOF-001` while
+  leaving wake/touch physical validation explicitly open.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-streaming-tts-runtime-proof.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Implement `T-STREAMING-TTS-RUNTIME-PROOF-001` in a scoped worker branch.
+- Physically retry wake/touch from the current setup-free, idle socket state:
+  `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦`.
+- Continue to keep full PRD/Xiaozhi realtime parity red until real ASR runtime,
+  real TTS runtime, stock `/v1/xiaozhi` trace, wake, touch/barge-in, and
+  physical behavior are all proven.
+
+已知风险和阻塞点:
+
+- Setup/welcome should not be reopened unless it physically regresses again.
+- The failed audit workers created no usable evidence; future workers must
+  restate branch/HEAD/dirty and boundaries.
+- `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` remains a truthful blocker because
+  `A21_SHERPA_ONNX_ASR_MODEL_DIR` was missing.
+- `T-STREAMING-TTS-RUNTIME-PROOF-001` must not promote static env/config or
+  fake provider tests as real provider/runtime or physical StackChan acceptance.
+
+下一轮建议动作:
+
+1. Commit this recovery/state/plan update.
+2. Dispatch a scoped implementation worker for
+   `T-STREAMING-TTS-RUNTIME-PROOF-001`.
+3. In parallel, keep the physical validation checklist focused on wake/touch
+   from idle socket; do not change the setup path unless the operator reports a
+   new welcome regression.
+
+测试/构建/运行结果:
+
+- `git status --short --branch`: branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`; modified
+  `docs/project_state_machine.md`; new
+  `docs/plans/2026-06-03-streaming-tts-runtime-proof.md`.
+- `git diff --check`: passed.
+- No code tests, provider execution, Gateway restart, firmware build, flash,
+  NVS write, serial access, V21 execution, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- Read-only worker threads `019e8a9e-02dc-7cf2-9e3c-0bb159c4e00b`,
+  `019e8a9e-02da-7b41-9cec-0e9a767fe16b`, and
+  `019e8a9e-02d9-7453-a475-2df57956b865` ended with `systemError`, so their
+  results were discarded.
