@@ -4572,3 +4572,112 @@ Current validation request:
 - Initial parallel CLI gate runs used the prior second-resolution filename and
   wrote the same report path. The report writer was fixed to include
   `UnixNano`; reruns produced unique report files.
+
+## 2026-06-03 - T-XIAOZHI-STREAMING-TTS-ADAPTER-001 - Doubao Realtime TTS Seam
+
+本轮目标:
+
+- Continue the full Xiaozhi parity objective from the user's protocol review:
+  local wake/VAD, long stock socket, Opus 60 ms frames, streaming ASR, streaming
+  LLM, streaming TTS, and paced Opus playback.
+- Dispatch multiple read-only workers to re-read Xiaozhi/A21 protocol and audio
+  paths before further implementation.
+- Remove the next known false-streaming boundary: TTS adapters that return a
+  channel only after a complete WAV/file exists.
+
+实际完成内容:
+
+- Confirmed branch `codex/a21-hardware-window-20260602-stackchan-prd`, starting
+  HEAD `399a2a6`, and clean worktree at start.
+- Dispatched read-only worker threads for:
+  - official Xiaozhi protocol/audio implementation parity;
+  - A21 Gateway `/v1/xiaozhi` streaming/state-machine gap map;
+  - A21 provider ASR/TTS streaming gap review.
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-streaming-tts-adapter.md`.
+- Added `providers.StreamingTTSAdapter` as an explicit capability marker. Local
+  WAV/file TTS adapters do not implement it.
+- Added a Doubao realtime TTS pipeline adapter selected by
+  `A21_TTS_FAST_PROFILE=doubao_tts_realtime` or `doubao_realtime_tts`.
+- Reused the existing `DoubaoRealtimeTTSProvider` and realtime WebSocket session
+  primitives; no new provider protocol was invented.
+- Added a PCM16 mono chunker that accumulates arbitrary provider
+  `response.audio.delta` payloads and emits exact `pcm_s16le`, mono, 60 ms
+  `VoiceAudioChunk` values for Gateway Opus downlink.
+- The new adapter writes no WAV/file and tests use fake realtime connection
+  messages only; no real provider call was made.
+- Updated `xiaozhi-streaming-provider-readiness` so:
+  - local/Iflytek/voice-clone TTS remain blocked as WAV/file boundary;
+  - `doubao_tts_realtime` is recognized as streaming and implemented in
+    Gateway;
+  - missing Doubao env yields `tts_doubao_realtime_config_missing`;
+  - configured Doubao env makes the TTS stage ready without storing secrets.
+- Updated `docs/project_state_machine.md` with the completed adapter seam.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-streaming-tts-adapter.md`
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- No real Doubao/Iflytek/5080 provider execution was run in this transition.
+- No physical `/v1/xiaozhi` realtime parity trace was captured.
+- Sherpa streaming ASR still needs a real long-lived helper/runtime proof.
+- Wake word physical proof remains separate and not accepted.
+- Full PRD launch remains red.
+
+已知风险和阻塞点:
+
+- Static provider-shape gate can now pass when ASR helper env, StepFun, and
+  Doubao realtime TTS env are all present; this must not be confused with
+  runtime provider proof or physical acceptance.
+- Doubao realtime TTS is one reusable streaming adapter seam, not necessarily
+  the final contest voice. Iflytek/5080 streaming adapters can reuse the same
+  60 ms chunking shape.
+- Provider audio deltas may arrive in arbitrary sizes; the chunker buffers
+  partial frames and pads only on final drain.
+
+下一轮建议动作:
+
+1. Implement/connect the long-lived Sherpa streaming ASR helper and prove real
+   runtime `AppendFrame -> partial -> Commit -> final` without WAV.
+2. Run a no-audio-output realtime TTS provider smoke against the selected
+   provider path, keeping reports redacted.
+3. Once ASR helper and TTS provider runtime evidence are real, run physical
+   `xiaozhi-realtime-parity` from an operator-triggered stock `/v1/xiaozhi`
+   turn.
+
+测试/构建/运行结果:
+
+- `go test ./internal/providers -run 'TestDoubaoRealtimeTTS|TestVoicePipelineAdaptersFromEnv.*TTS|TestLocalTTSAdapter' -count=1`:
+  passed.
+- `go test ./internal/app -run TestXiaozhiStreamingProviderReadiness -count=1`:
+  passed.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=doubao_tts_realtime go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  intentionally exited non-zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061849-1780438729911945000.json`
+  blocks missing ASR helper/model and missing Doubao realtime TTS config.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=doubao_tts_realtime A21_DOUBAO_API_KEY=sk-a21-secret A21_DOUBAO_TTS_MODEL=doubao-tts A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  intentionally exited non-zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730222971000.json`
+  marks TTS ready but blocks missing ASR helper/model.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming A21_SHERPA_ONNX_STREAMING_HELPER=/redacted/a21-sherpa-streaming-helper A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/a21-sherpa-model A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=doubao_tts_realtime A21_DOUBAO_API_KEY=sk-a21-secret A21_DOUBAO_TTS_MODEL=doubao-tts A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  exited zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730359984000.json`
+  has `gate_status=passed` for the static provider-shape gate and
+  `prd_accepted=false`.
+- `git diff --check`: passed.
+- `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- No failing implementation attempt. Worker thread creation/listing was
+  asynchronous, so the control tower implemented the bounded no-provider TTS
+  seam directly after writing the plan.

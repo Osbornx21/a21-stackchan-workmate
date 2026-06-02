@@ -117,6 +117,64 @@ func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredSherpaStreamingASRSta
 	}
 }
 
+func TestXiaozhiStreamingProviderReadinessBlocksDoubaoRealtimeTTSWhenConfigMissing(t *testing.T) {
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"blocked"`,
+		`"profile":"doubao_tts_realtime"`,
+		`"adapter":"doubao_realtime_tts_adapter"`,
+		`"streaming":true`,
+		`"uses_file_boundary":false`,
+		`"uses_wav_boundary":false`,
+		`"tts_doubao_realtime_config_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "tts_wav_file_boundary_not_xiaozhi_streaming") {
+		t.Fatalf("doubao realtime TTS was misclassified as WAV: %s", stdout.String())
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredDoubaoRealtimeTTSStageOnly(t *testing.T) {
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "zh_female_kailangjiejie_moon_bigtts")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked by ASR helper stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"adapter":"doubao_realtime_tts_adapter"`,
+		`"ready":true`,
+		`"real_provider":true`,
+		`"streaming":true`,
+		`"asr_sherpa_streaming_helper_or_model_missing"`,
+		`"gate_status":"blocked"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "doubao-tts", "zh_female_kailangjiejie_moon_bigtts", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiStreamingProviderReadinessAcceptsOnlyAllStreamingFixture(t *testing.T) {
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "a21_fixture_streaming_asr")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "a21_fixture_text_stream")

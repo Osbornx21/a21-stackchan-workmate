@@ -97,7 +97,7 @@ func buildXiaozhiStreamingProviderReadinessReport(env []string) xiaozhiStreaming
 	selection := providers.VoicePipelineSelectionFromEnv(env)
 	asr := classifyXiaozhiStreamingASR(env, selection)
 	llm := classifyXiaozhiStreamingLLM(env, selection)
-	tts := classifyXiaozhiStreamingTTS(selection)
+	tts := classifyXiaozhiStreamingTTS(env, selection)
 	findings := append([]string{}, asrFindings(asr)...)
 	findings = append(findings, llmFindings(llm)...)
 	findings = append(findings, ttsFindings(tts)...)
@@ -208,7 +208,7 @@ func classifyXiaozhiStreamingLLM(env []string, selection providers.VoicePipeline
 	return stage
 }
 
-func classifyXiaozhiStreamingTTS(selection providers.VoicePipelineSelection) xiaozhiStreamingProviderReadinessStage {
+func classifyXiaozhiStreamingTTS(env []string, selection providers.VoicePipelineSelection) xiaozhiStreamingProviderReadinessStage {
 	profile := normalizeXiaozhiStreamingProfile(selection.TTSProfile)
 	stage := xiaozhiStreamingProviderReadinessStage{
 		Profile:    profile,
@@ -222,6 +222,14 @@ func classifyXiaozhiStreamingTTS(selection providers.VoicePipelineSelection) xia
 		stage.RealProvider = true
 		stage.Streaming = true
 		stage.ImplementedInGateway = true
+	case "doubao_tts_realtime", "doubao_realtime_tts":
+		stage.Adapter = "doubao_realtime_tts_adapter"
+		stage.RealProvider = true
+		stage.Streaming = true
+		stage.ImplementedInGateway = true
+		if xiaozhiDoubaoRealtimeTTSConfigured(env) {
+			stage.Ready = true
+		}
 	case "iflytek_tts", "iflytek", "xfyun", "xfyun_tts":
 		stage.Adapter = "iflytek_tts_via_local_wav_adapter"
 		stage.RealProvider = true
@@ -281,6 +289,9 @@ func ttsFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 	if stage.UsesWAVBoundary {
 		return []string{"tts_wav_file_boundary_not_xiaozhi_streaming"}
 	}
+	if stage.Adapter == "doubao_realtime_tts_adapter" {
+		return []string{"tts_doubao_realtime_config_missing"}
+	}
 	return []string{"tts_streaming_adapter_missing"}
 }
 
@@ -311,6 +322,12 @@ func xiaozhiStreamingTextProfileConfigured(env []string, profile string) bool {
 func xiaozhiSherpaStreamingASRConfigured(env []string) bool {
 	return strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")) != "" &&
 		strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")) != ""
+}
+
+func xiaozhiDoubaoRealtimeTTSConfigured(env []string) bool {
+	return strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_API_KEY")) != "" &&
+		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_MODEL")) != "" &&
+		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_VOICE")) != ""
 }
 
 func normalizeXiaozhiStreamingProfile(value string) string {

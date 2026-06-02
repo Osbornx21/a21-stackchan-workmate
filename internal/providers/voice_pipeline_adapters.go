@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -584,6 +585,13 @@ func sendTextStreamEvent(ctx context.Context, out chan<- TextStreamEvent, event 
 
 type LocalTTSSynthesizer func(context.Context, audio.LocalTTSOptions) (audio.LocalTTSReport, error)
 
+type DoubaoRealtimeTTSTTSAdapterOptions struct {
+	Name     string
+	Env      []string
+	Provider *DoubaoRealtimeTTSProvider
+	Dialer   RealtimeDialer
+}
+
 type LocalTTSAdapterOptions struct {
 	Name        string
 	BaseOptions audio.LocalTTSOptions
@@ -594,6 +602,13 @@ type localTTSAdapter struct {
 	name        string
 	baseOptions audio.LocalTTSOptions
 	synthesizer LocalTTSSynthesizer
+}
+
+type doubaoRealtimeTTSTTSAdapter struct {
+	name     string
+	env      []string
+	provider *DoubaoRealtimeTTSProvider
+	dialer   RealtimeDialer
 }
 
 func NewLocalTTSAdapter(options LocalTTSAdapterOptions) TTSAdapter {
@@ -608,9 +623,28 @@ func NewLocalTTSAdapter(options LocalTTSAdapterOptions) TTSAdapter {
 	return &localTTSAdapter{name: name, baseOptions: options.BaseOptions, synthesizer: synthesizer}
 }
 
+func NewDoubaoRealtimeTTSTTSAdapter(options DoubaoRealtimeTTSTTSAdapterOptions) TTSAdapter {
+	name := strings.TrimSpace(options.Name)
+	if name == "" {
+		name = "doubao_tts_realtime"
+	}
+	return &doubaoRealtimeTTSTTSAdapter{
+		name:     name,
+		env:      append([]string(nil), options.Env...),
+		provider: options.Provider,
+		dialer:   options.Dialer,
+	}
+}
+
 func (a *localTTSAdapter) Name() string {
 	return a.name
 }
+
+func (a *doubaoRealtimeTTSTTSAdapter) Name() string {
+	return a.name
+}
+
+func (a *doubaoRealtimeTTSTTSAdapter) StreamingTTSAdapter() {}
 
 func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
 	if err := ctx.Err(); err != nil {
@@ -662,6 +696,127 @@ func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest)
 	return out, nil
 }
 
+func (a *doubaoRealtimeTTSTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	provider := a.provider
+	if provider == nil {
+		provider = NewDoubaoRealtimeTTSProviderFromEnv(a.env, a.dialer)
+	}
+	session, err := provider.StartRealtimeTTSSession(ctx, req.Session)
+	if err != nil {
+		return nil, fmt.Errorf("doubao realtime TTS adapter failed to start")
+	}
+	if err := session.SendText(ctx, req.Text); err != nil {
+		_ = session.Close(ctx)
+		return nil, fmt.Errorf("doubao realtime TTS adapter failed to send text")
+	}
+	if err := session.TextDone(ctx); err != nil {
+		_ = session.Close(ctx)
+		return nil, fmt.Errorf("doubao realtime TTS adapter failed to finish text")
+	}
+	out := make(chan VoiceAudioChunk, 4)
+	go func() {
+		defer close(out)
+		defer session.Close(context.Background())
+		chunker := newPCM16Mono60MSChunker(session.outputSampleRate)
+		for {
+			raw, err := session.session.ReadEvent(ctx)
+			if err != nil {
+				if err == io.EOF {
+					for _, chunk := range chunker.Flush() {
+						if !sendVoiceAudioChunk(ctx, out, chunk) {
+							return
+						}
+					}
+				}
+				return
+			}
+			event, ok, err := session.ServerEventToVoiceEvent(raw)
+			if err != nil || !ok || event.Audio == nil {
+				continue
+			}
+			chunks, err := chunker.AppendBase64(event.Audio.DataBase64)
+			if err != nil {
+				return
+			}
+			for _, chunk := range chunks {
+				if !sendVoiceAudioChunk(ctx, out, chunk) {
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+type pcm16Mono60MSChunker struct {
+	sampleRateHz int
+	frameBytes   int
+	buffer       []byte
+}
+
+func newPCM16Mono60MSChunker(sampleRateHz int) *pcm16Mono60MSChunker {
+	if sampleRateHz == 0 {
+		sampleRateHz = 24000
+	}
+	return &pcm16Mono60MSChunker{
+		sampleRateHz: sampleRateHz,
+		frameBytes:   sampleRateHz * 60 / 1000 * 2,
+	}
+}
+
+func (c *pcm16Mono60MSChunker) AppendBase64(value string) ([]VoiceAudioChunk, error) {
+	pcm, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(pcm) == 0 {
+		return nil, fmt.Errorf("streaming TTS adapter received invalid PCM delta")
+	}
+	if len(pcm)%2 != 0 {
+		return nil, fmt.Errorf("streaming TTS adapter received odd PCM delta")
+	}
+	c.buffer = append(c.buffer, pcm...)
+	return c.drain(false), nil
+}
+
+func (c *pcm16Mono60MSChunker) Flush() []VoiceAudioChunk {
+	return c.drain(true)
+}
+
+func (c *pcm16Mono60MSChunker) drain(final bool) []VoiceAudioChunk {
+	var chunks []VoiceAudioChunk
+	for len(c.buffer) >= c.frameBytes {
+		chunks = append(chunks, c.chunkFromPCM(c.buffer[:c.frameBytes]))
+		c.buffer = c.buffer[c.frameBytes:]
+	}
+	if final && len(c.buffer) > 0 {
+		padded := make([]byte, c.frameBytes)
+		copy(padded, c.buffer)
+		chunks = append(chunks, c.chunkFromPCM(padded))
+		c.buffer = nil
+	}
+	return chunks
+}
+
+func (c *pcm16Mono60MSChunker) chunkFromPCM(pcm []byte) VoiceAudioChunk {
+	return VoiceAudioChunk{
+		Codec:        "pcm_s16le",
+		SampleRateHz: c.sampleRateHz,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   base64.StdEncoding.EncodeToString(pcm),
+	}
+}
+
+func sendVoiceAudioChunk(ctx context.Context, out chan<- VoiceAudioChunk, chunk VoiceAudioChunk) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case out <- chunk:
+		return true
+	}
+}
+
 type VoicePipelineAdapterOptions struct {
 	ASRRunner                  LocalASRRunner
 	ASRModelDir                string
@@ -670,6 +825,7 @@ type VoicePipelineAdapterOptions struct {
 	TextHTTPClient             *http.Client
 	TextMaxTokens              int
 	TTSSynthesizer             LocalTTSSynthesizer
+	TTSRealtimeDialer          RealtimeDialer
 	TTSOptions                 audio.LocalTTSOptions
 }
 
@@ -720,7 +876,14 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		adapters.TextStream = textStream
 		adapters.ExecutionMode = "host_local"
 	}
-	if isLocalTTSProfile(selection.TTSProfile) {
+	if isDoubaoRealtimeTTSProfile(selection.TTSProfile) {
+		adapters.TTS = NewDoubaoRealtimeTTSTTSAdapter(DoubaoRealtimeTTSTTSAdapterOptions{
+			Name:   selection.TTSProfile,
+			Env:    env,
+			Dialer: options.TTSRealtimeDialer,
+		})
+		adapters.ExecutionMode = "host_local"
+	} else if isLocalTTSProfile(selection.TTSProfile) {
 		synthesizer := options.TTSSynthesizer
 		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "macos_say" {
 			synthesizer = audio.SynthesizeMacOSSay
@@ -826,6 +989,15 @@ func textStreamProfileFromEnv(env []string, profile string, protocol string) (Pr
 func isLocalTTSProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
 	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say", "voice_clone_cli", "iflytek_tts", "iflytek", "xfyun", "xfyun_tts":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDoubaoRealtimeTTSProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "doubao_tts_realtime", "doubao_realtime_tts":
 		return true
 	default:
 		return false

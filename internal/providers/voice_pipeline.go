@@ -176,6 +176,11 @@ type TTSAdapter interface {
 	Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error)
 }
 
+type StreamingTTSAdapter interface {
+	TTSAdapter
+	StreamingTTSAdapter()
+}
+
 type TTSAdapterRequest struct {
 	Session VoiceSession
 	Mode    string

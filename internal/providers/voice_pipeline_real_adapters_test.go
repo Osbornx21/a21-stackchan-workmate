@@ -236,6 +236,67 @@ func TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks(t *testing.T) {
 	}
 }
 
+func TestDoubaoRealtimeTTSTTSAdapterStreamsProviderDeltasAsDownlinkChunks(t *testing.T) {
+	delta := base64.StdEncoding.EncodeToString(make([]byte, 2880))
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{{
+			"type":    "response.audio.delta",
+			"item_id": "a21-doubao-tts-stream-001",
+			"delta":   delta,
+		}},
+	}
+	provider := NewDoubaoRealtimeTTSProvider(DoubaoRealtimeTTSProviderConfig{
+		APIKey:                "sk-a21-secret",
+		Model:                 "doubao-tts",
+		Voice:                 "zh_female_kailangjiejie_moon_bigtts",
+		OutputAudioSampleRate: 24000,
+	}, fakeRealtimeDialer{conn: conn})
+	adapter := NewDoubaoRealtimeTTSTTSAdapter(DoubaoRealtimeTTSTTSAdapterOptions{
+		Name:     "doubao_tts_realtime",
+		Provider: provider,
+	})
+	if _, ok := adapter.(StreamingTTSAdapter); !ok {
+		t.Fatalf("adapter %T does not implement StreamingTTSAdapter", adapter)
+	}
+
+	chunks, err := adapter.Synthesize(context.Background(), TTSAdapterRequest{
+		Session: VoiceSession{TraceID: "a21-trace-doubao-tts-stream", SessionID: "a21-session-doubao-tts-stream", DeviceID: "stackchan-001"},
+		Mode:    "workmate",
+		Text:    "用户文本不能进报告",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := receiveVoiceAudioChunk(t, chunks)
+	if first.Codec != "pcm_s16le" || first.SampleRateHz != 24000 || first.Channels != 1 || first.DurationMS != 60 {
+		t.Fatalf("first chunk = %+v, want 24k mono 60ms pcm_s16le", first)
+	}
+	pcm, err := base64.StdEncoding.DecodeString(first.DataBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pcm) != 2880 {
+		t.Fatalf("first chunk bytes = %d, want 2880", len(pcm))
+	}
+	_ = collectVoiceChunks(t, chunks)
+	if !conn.closed {
+		t.Fatal("realtime TTS connection was not closed")
+	}
+	got := realtimeEventTypes(conn.messages)
+	want := []string{"tts_session.update", "input_text.append", "input_text.done"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("event types = %#v, want %#v", got, want)
+	}
+	for _, message := range conn.messages {
+		rendered := mustProviderJSON(t, message)
+		for _, forbidden := range []string{"sk-a21-secret", "Authorization", "Bearer"} {
+			if strings.Contains(rendered, forbidden) {
+				t.Fatalf("provider event leaked %q: %s", forbidden, rendered)
+			}
+		}
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal(t *testing.T) {
 	defaults := VoicePipelineAdaptersFromEnv(nil)
 	if defaults.ExecutionMode != "fixture" {
@@ -447,6 +508,38 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 		captured.VoiceClonePersona != "A21 Workmate" ||
 		captured.VoiceCloneStyle != "Warm-Pro" {
 		t.Fatalf("captured TTS options = %+v", captured)
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvSelectsDoubaoRealtimeTTS(t *testing.T) {
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{{
+			"type":  "response.audio.delta",
+			"delta": base64.StdEncoding.EncodeToString(make([]byte, 2880)),
+		}},
+	}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_TTS_FAST_PROFILE=doubao_tts_realtime",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+		"A21_DOUBAO_TTS_SAMPLE_RATE_HZ=24000",
+	}, VoicePipelineAdapterOptions{
+		TTSRealtimeDialer: fakeRealtimeDialer{conn: conn},
+	})
+	if adapters.ExecutionMode != "host_local" || adapters.TTS.Name() != "doubao_tts_realtime" {
+		t.Fatalf("adapters execution/TTS = %q/%q", adapters.ExecutionMode, adapters.TTS.Name())
+	}
+	if _, ok := adapters.TTS.(StreamingTTSAdapter); !ok {
+		t.Fatalf("selected TTS %T does not implement StreamingTTSAdapter", adapters.TTS)
+	}
+	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "文本不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := receiveVoiceAudioChunk(t, chunks)
+	if first.SampleRateHz != 24000 || first.DurationMS != 60 {
+		t.Fatalf("first chunk = %+v, want 24k 60ms", first)
 	}
 }
 
@@ -855,6 +948,20 @@ func collectVoiceChunks(t *testing.T, chunks <-chan VoiceAudioChunk) []VoiceAudi
 		collected = append(collected, chunk)
 	}
 	return collected
+}
+
+func receiveVoiceAudioChunk(t *testing.T, chunks <-chan VoiceAudioChunk) VoiceAudioChunk {
+	t.Helper()
+	select {
+	case chunk, ok := <-chunks:
+		if !ok {
+			t.Fatal("voice audio chunk channel closed before chunk")
+		}
+		return chunk
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for voice audio chunk")
+	}
+	return VoiceAudioChunk{}
 }
 
 func readJSONRequestBody(t *testing.T, req *http.Request) map[string]any {
