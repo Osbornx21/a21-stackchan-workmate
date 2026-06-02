@@ -276,14 +276,19 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	refTextPath := filepath.Join(t.TempDir(), "a21-reference.txt")
+	if err := os.WriteFile(refTextPath, []byte("参考文本不能进报告"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var captured audio.LocalTTSOptions
 	outputDir := t.TempDir()
+	command := "/usr/bin/ssh -i /a21-lab/secrets/a21_5080_fixture_ed25519 21@192.168.1.6 powershell -NoProfile -File D:/a21-mainland-latency-lab/outbox/a21-index-tts2-wrapper.ps1"
 	adapters := VoicePipelineAdaptersFromEnv([]string{
 		"A21_TTS_FAST_PROFILE=voice_clone_cli",
-		"A21_VOICE_CLONE_COMMAND=/a21/bin/a21-index-tts2-wrapper",
+		"A21_VOICE_CLONE_COMMAND=" + command,
 		"A21_VOICE_CLONE_MODEL=Index-TTS2",
 		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
-		"A21_VOICE_CLONE_REF_TEXT=参考文本不能进报告",
+		"A21_VOICE_CLONE_REF_TEXT_FILE=" + refTextPath,
 		"A21_VOICE_PERSONA=A21 Workmate",
 		"A21_VOICE_STYLE=Warm-Pro",
 	}, VoicePipelineAdapterOptions{
@@ -314,10 +319,11 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	}
 	if captured.Text != "用户原文不进报告" ||
 		captured.OutputSampleRateHz != 48000 ||
-		captured.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+		captured.VoiceCloneCommand != command ||
 		captured.VoiceCloneModel != "Index-TTS2" ||
 		captured.VoiceCloneReferenceAudioPath != refAudio ||
-		captured.VoiceCloneReferenceText != "参考文本不能进报告" ||
+		captured.VoiceCloneReferenceText != "" ||
+		captured.VoiceCloneReferenceTextPath != refTextPath ||
 		captured.VoiceClonePersona != "A21 Workmate" ||
 		captured.VoiceCloneStyle != "Warm-Pro" {
 		t.Fatalf("captured TTS options = %+v", captured)

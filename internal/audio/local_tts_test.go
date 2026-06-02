@@ -64,6 +64,32 @@ func (r *recordingVoiceCloneRunner) Run(ctx context.Context, name string, args .
 	return nil
 }
 
+type inspectingVoiceCloneRunner struct {
+	name    string
+	args    []string
+	text    string
+	refText string
+}
+
+func (r *inspectingVoiceCloneRunner) Run(ctx context.Context, name string, args ...string) error {
+	r.name = name
+	r.args = append([]string(nil), args...)
+	textPath := argValue(args, "--text-file")
+	refTextPath := argValue(args, "--ref-text-file")
+	outputPath := argValue(args, "--output")
+	textData, err := os.ReadFile(textPath)
+	if err != nil {
+		return err
+	}
+	refTextData, err := os.ReadFile(refTextPath)
+	if err != nil {
+		return err
+	}
+	r.text = string(textData)
+	r.refText = string(refTextData)
+	return WritePCM16MonoWAV(outputPath, 16000, pcm16Bytes(0, 900, -900, 1600, -1600))
+}
+
 func TestMacOSSayLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
 	dir := t.TempDir()
 	runner := &fakeTTSCommandRunner{}
@@ -250,6 +276,79 @@ func TestVoiceCloneCLILocalTTSSynthesizesRedactedPersonaReport(t *testing.T) {
 	}
 }
 
+func TestVoiceCloneCLILocalTTSAllowsRemoteWrapperCommandAndUTF8TempFiles(t *testing.T) {
+	dir := t.TempDir()
+	refAudio := filepath.Join(t.TempDir(), "a21-reference.wav")
+	if err := WritePCM16MonoWAV(refAudio, 16000, pcm16Bytes(0, 300, -300)); err != nil {
+		t.Fatal(err)
+	}
+	refTextPath := filepath.Join(t.TempDir(), "a21-reference.txt")
+	refText := "参考文本：你好，A21。"
+	if err := os.WriteFile(refTextPath, []byte(refText), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &inspectingVoiceCloneRunner{}
+
+	report, err := SynthesizeVoiceCloneCLI(context.Background(), LocalTTSOptions{
+		Text:                         "用户输入：请用轻松语气说这句。",
+		OutputDir:                    dir,
+		CommandRunner:                runner,
+		VoiceCloneCommand:            "/usr/bin/ssh -i /a21-lab/secrets/a21_5080_fixture_ed25519 21@192.168.1.6 powershell -NoProfile -File D:/a21-mainland-latency-lab/outbox/a21-index-tts2-wrapper.ps1",
+		VoiceCloneModel:              "Index-TTS2",
+		VoiceCloneReferenceAudioPath: refAudio,
+		VoiceCloneReferenceTextPath:  refTextPath,
+		VoiceClonePersona:            "A21 Workmate",
+		VoiceCloneStyle:              "Warm-Pro",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.name != "/usr/bin/ssh" {
+		t.Fatalf("runner name = %q, want /usr/bin/ssh", runner.name)
+	}
+	wantPrefix := []string{
+		"-i",
+		"/a21-lab/secrets/a21_5080_fixture_ed25519",
+		"21@192.168.1.6",
+		"powershell",
+		"-NoProfile",
+		"-File",
+		"D:/a21-mainland-latency-lab/outbox/a21-index-tts2-wrapper.ps1",
+	}
+	if len(runner.args) < len(wantPrefix) {
+		t.Fatalf("runner args = %#v, want prefix %#v", runner.args, wantPrefix)
+	}
+	for i, want := range wantPrefix {
+		if runner.args[i] != want {
+			t.Fatalf("runner arg %d = %q, want %q in %#v", i, runner.args[i], want, runner.args)
+		}
+	}
+	if runner.text != "用户输入：请用轻松语气说这句。" || runner.refText != refText {
+		t.Fatalf("wrapper temp files text=%q ref=%q", runner.text, runner.refText)
+	}
+	if report.Status != "passed" || report.ReferenceAudio != "a21-reference.wav" {
+		t.Fatalf("report = %+v", report)
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{
+		"用户输入",
+		refText,
+		refTextPath,
+		refAudio,
+		dir,
+		report.OutputPath,
+		"a21_5080_fixture_ed25519",
+		"192.168.1.6",
+		"Authorization",
+		"Bearer",
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("voice clone report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestLocalTTSOutputPathsAreUniqueAcrossFastConsecutiveCalls(t *testing.T) {
 	dir := t.TempDir()
 	runner := &fakeTTSCommandRunner{}
@@ -286,4 +385,13 @@ func mustJSON(t *testing.T, value any) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func argValue(args []string, flag string) string {
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }

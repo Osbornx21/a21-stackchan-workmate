@@ -7370,12 +7370,18 @@ func TestRunLocalTTSSmokeSupportsVoiceCloneCLIEngine(t *testing.T) {
 	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	refTextPath := filepath.Join(t.TempDir(), "a21-reference.txt")
+	if err := os.WriteFile(refTextPath, []byte("参考文本不能进报告"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := "/usr/bin/ssh -i /a21-lab/secrets/a21_5080_fixture_ed25519 21@192.168.1.6 powershell -NoProfile -File D:/a21-mainland-latency-lab/outbox/a21-index-tts2-wrapper.ps1"
 	synthesizeVoiceCloneCLI = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
 		if options.Text != "不能进报告" ||
-			options.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+			options.VoiceCloneCommand != command ||
 			options.VoiceCloneModel != "Index-TTS2" ||
 			options.VoiceCloneReferenceAudioPath != refAudio ||
-			options.VoiceCloneReferenceText != "参考文本不能进报告" ||
+			options.VoiceCloneReferenceText != "" ||
+			options.VoiceCloneReferenceTextPath != refTextPath ||
 			options.VoiceClonePersona != "A21 Workmate" ||
 			options.VoiceCloneStyle != "Warm-Pro" {
 			t.Fatalf("clone options = %+v", options)
@@ -7411,10 +7417,10 @@ func TestRunLocalTTSSmokeSupportsVoiceCloneCLIEngine(t *testing.T) {
 		"local-tts-smoke",
 		"--engine", "voice_clone_cli",
 		"--text", "不能进报告",
-		"--clone-command", "/a21/bin/a21-index-tts2-wrapper",
+		"--clone-command", command,
 		"--clone-model", "Index-TTS2",
 		"--clone-ref-audio", refAudio,
-		"--clone-ref-text", "参考文本不能进报告",
+		"--clone-ref-text-file", refTextPath,
 		"--voice-persona", "A21 Workmate",
 		"--voice-style", "Warm-Pro",
 		"--output-dir", dir,
@@ -7436,7 +7442,7 @@ func TestRunLocalTTSSmokeSupportsVoiceCloneCLIEngine(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"不能进报告", "参考文本不能进报告", refAudio, "Authorization", "Bearer", "raw_audio", "data_base64"} {
+	for _, forbidden := range []string{"不能进报告", "参考文本不能进报告", refTextPath, refAudio, dir, "a21_5080_fixture_ed25519", "192.168.1.6", "Authorization", "Bearer", "raw_audio", "data_base64"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("voice clone smoke leaked %q: %s", forbidden, stdout.String())
 		}

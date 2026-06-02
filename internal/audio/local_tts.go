@@ -2,6 +2,7 @@ package audio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type LocalTTSOptions struct {
@@ -59,6 +61,16 @@ type LocalTTSReport struct {
 	TTSFirstAudioMS float64           `json:"tts_first_audio_ms,omitempty"`
 	AudioQuality    *PCMQualityReport `json:"audio_quality,omitempty"`
 	Findings        []string          `json:"findings,omitempty"`
+}
+
+func (report LocalTTSReport) MarshalJSON() ([]byte, error) {
+	type localTTSReportJSON LocalTTSReport
+	redacted := localTTSReportJSON(report)
+	redacted.ReferenceAudio = localTTSBaseName(report.ReferenceAudio)
+	redacted.ModelDir = localTTSBaseName(report.ModelDir)
+	redacted.OutputPath = localTTSBaseName(report.OutputPath)
+	redacted.ReportPath = localTTSBaseName(report.ReportPath)
+	return json.Marshal(redacted)
 }
 
 func (execCommandRunner) Run(ctx context.Context, name string, args ...string) error {
@@ -291,6 +303,11 @@ func SynthesizeVoiceCloneCLI(ctx context.Context, options LocalTTSOptions) (Loca
 		report.Findings = append(report.Findings, "voice clone command is missing")
 		return report, nil
 	}
+	commandName, commandPrefixArgs, err := splitLocalTTSCommand(commandPath)
+	if err != nil {
+		report.Findings = append(report.Findings, "voice clone command is invalid")
+		return report, err
+	}
 	referenceAudioPath := strings.TrimSpace(options.VoiceCloneReferenceAudioPath)
 	if err := validateVoiceCloneReferenceAudioPath(referenceAudioPath); err != nil {
 		report.Status = "skipped"
@@ -332,7 +349,8 @@ func SynthesizeVoiceCloneCLI(ctx context.Context, options LocalTTSOptions) (Loca
 		report.Findings = append(report.Findings, err.Error())
 		return report, err
 	}
-	args := []string{
+	args := append([]string(nil), commandPrefixArgs...)
+	args = append(args,
 		"--text-file", textPath,
 		"--output", wavPath,
 		"--sample-rate", strconv.Itoa(outputSampleRateHz),
@@ -341,8 +359,8 @@ func SynthesizeVoiceCloneCLI(ctx context.Context, options LocalTTSOptions) (Loca
 		"--model", model,
 		"--persona", persona,
 		"--style", style,
-	}
-	if err := runner.Run(ctx, commandPath, args...); err != nil {
+	)
+	if err := runner.Run(ctx, commandName, args...); err != nil {
 		report.Findings = append(report.Findings, "voice clone command failed")
 		return report, err
 	}
@@ -466,6 +484,66 @@ func localTTSBaseName(path string) string {
 		return ""
 	}
 	return base
+}
+
+func splitLocalTTSCommand(command string) (string, []string, error) {
+	fields, err := localTTSCommandFields(command)
+	if err != nil || len(fields) == 0 {
+		return "", nil, fmt.Errorf("voice clone command is invalid")
+	}
+	return fields[0], append([]string(nil), fields[1:]...), nil
+}
+
+func localTTSCommandFields(command string) ([]string, error) {
+	var fields []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+	sawField := false
+	for _, r := range strings.TrimSpace(command) {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			sawField = true
+			continue
+		}
+		if quote != '\'' && r == '\\' {
+			escaped = true
+			sawField = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+				sawField = true
+				continue
+			}
+			current.WriteRune(r)
+			sawField = true
+			continue
+		}
+		switch {
+		case r == '\'' || r == '"':
+			quote = r
+			sawField = true
+		case unicode.IsSpace(r):
+			if sawField {
+				fields = append(fields, current.String())
+				current.Reset()
+				sawField = false
+			}
+		default:
+			current.WriteRune(r)
+			sawField = true
+		}
+	}
+	if escaped || quote != 0 {
+		return nil, fmt.Errorf("voice clone command is invalid")
+	}
+	if sawField {
+		fields = append(fields, current.String())
+	}
+	return fields, nil
 }
 
 func uniqueLocalTTSFilename(prefix string) string {
