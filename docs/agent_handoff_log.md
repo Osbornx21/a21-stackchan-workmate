@@ -162,3 +162,61 @@ Recommended next action:
   then explicit confirmed flash of the official Xiaozhi-compatible candidate,
   then collect audio, barge-in, avatar/action, wake, provider, and readiness
   evidence.
+
+## 2026-06-02 - T-HW-001 - Plan And Dispatch No-Write Hardware Preparation
+
+Goal:
+
+- Move from verified host/build candidate into the controlled hardware
+  transition without letting the main conversation perform background hardware
+  writes.
+- Create the detailed hardware flash/evidence plan required before any large
+  hardware transition.
+- Dispatch a scoped worker for read-only/no-write preparation.
+
+Actual completed work:
+
+- Created `docs/plans/2026-06-02-a21-hardware-flash-evidence.md`.
+- Committed the plan on the control branch as
+  `114f1e3 docs(control): plan hardware flash evidence transition`.
+- Launched worker thread `019e881d-96be-79e1-bc4f-d19f90a19dba` titled
+  `A21 T-HW-001 no-write flash plan`.
+- Worker branch/worktree: `codex/a21-hw-flash-plan-20260602` in a separate
+  Codex worktree.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-02-a21-hardware-flash-evidence.md`
+
+Worker boundary:
+
+- Read-only/no-write hardware preparation only.
+- Allowed: read docs, inspect Makefile targets, list serial port candidates,
+  identify no-write plan command, return flash/evidence/rollback templates.
+- Forbidden: flash, NVS write, serial write/open, provider execute, V21 execute,
+  long-running Gateway start, Mac audio playback, and business-code edits.
+
+Current status:
+
+- Control branch is clean at `114f1e3` before this handoff-log update.
+- Worker is active and has attached to branch
+  `codex/a21-hw-flash-plan-20260602`.
+- No physical hardware write has been executed by the control thread.
+
+Known risks and blockers:
+
+- The new official Xiaozhi-compatible candidate still needs an explicit
+  candidate-specific flash-plan path or a verified existing target; the worker
+  is checking this now.
+- Serial/upload port must be confirmed in the foreground before any write.
+- Rollback package choice must be confirmed before flashing if the device must
+  return to a previous known-good state.
+
+Recommended next action:
+
+- Read the worker handoff.
+- If a no-write flash-plan command exists, run it in the main foreground
+  control thread.
+- If the command is missing, route a narrow implementation transition for the
+  missing official-candidate flash-plan target before any hardware write.
