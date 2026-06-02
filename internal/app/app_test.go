@@ -5287,6 +5287,54 @@ func TestRunProviderCompatMatrixUseLatestReportsIncludesLocalLLM(t *testing.T) {
 	}
 }
 
+func TestRunProviderCompatMatrixUseLatestReportsIncludesVoiceCloneLocalTTS(t *testing.T) {
+	reportDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(reportDir, "a21-local-tts-smoke-20260602-120100.json"), []byte(`{
+  "schema_version": "a21.audio.local_tts.v1",
+  "generated_at_ms": 1780368260000,
+  "status": "passed",
+  "provider": "voice_clone_cli",
+  "engine": "voice_clone_cli",
+  "voice": "a21_workmate",
+  "model": "index_tts2",
+  "voice_persona": "a21_workmate",
+  "style_profile": "workmate_warm",
+  "reference_audio": "a21-persona-reference.wav",
+  "output_format": "wav_pcm_s16le_16000_mono",
+  "tts_first_audio_ms": 71.688,
+  "report_path": "D:\\a21-mainland-latency-lab\\outbox\\a21-local-tts-smoke-20260602-120100.json"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-compat-matrix", "--use-latest-reports", "--reports-dir", reportDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerCompatMatrixReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider compat matrix: %v\n%s", err, stdout.String())
+	}
+	if !report.Coverage.LocalTTS {
+		t.Fatalf("coverage = %+v, want voice_clone_cli local TTS covered", report.Coverage)
+	}
+	if len(report.Rows) != 1 {
+		t.Fatalf("rows = %#v, want one voice clone local TTS row", report.Rows)
+	}
+	row := report.Rows[0]
+	if row.Provider != "voice_clone_cli" || row.Model != "index_tts2" || row.SourceReport != "a21-local-tts-smoke-20260602-120100.json" {
+		t.Fatalf("voice clone row = %+v", row)
+	}
+	for _, forbidden := range []string{reportDir, filepath.ToSlash(reportDir), "D:\\", "D:/", "outbox"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("provider compat matrix leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunProviderCompatMatrixIngestsCloudAudioSmokeReports(t *testing.T) {
 	dir := t.TempDir()
 	asrPath := filepath.Join(dir, "a21-provider-audio-smoke-asr.json")

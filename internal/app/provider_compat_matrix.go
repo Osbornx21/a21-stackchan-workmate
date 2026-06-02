@@ -91,6 +91,7 @@ type providerCompatLocalAudioRow struct {
 	Status           string  `json:"status"`
 	Provider         string  `json:"provider"`
 	Engine           string  `json:"engine"`
+	Model            string  `json:"model"`
 	ModelDir         string  `json:"model_dir"`
 	MatrixModel      string  `json:"matrix_model"`
 	MatrixFamily     string  `json:"matrix_family"`
@@ -305,12 +306,12 @@ func providerCompatRowsFromLocalAudioReport(path string, stage string) []provide
 			Provider:         providerLatencySafeIdentifier(report.Provider, false),
 			Family:           string(providers.ProviderFamilyLocalAudio),
 			Protocol:         "local_asr_smoke",
-			Model:            filepath.Base(filepath.Clean(report.ModelDir)),
+			Model:            providerCompatBaseName(report.ModelDir),
 			Status:           providerCompatSafeStatus(report.Status),
 			Executed:         report.Status == "passed",
 			Configured:       report.Status == "passed",
 			EvidenceMode:     "a21_local_asr_smoke",
-			SourceReport:     filepath.Base(filepath.Clean(providerCompatFirstNonEmpty(report.ReportPath, path))),
+			SourceReport:     providerCompatBaseName(providerCompatFirstNonEmpty(report.ReportPath, path)),
 			DecodeDurationMS: optionalFloat64(report.DecodeDurationMS),
 			RealTimeFactor:   optionalFloat64(report.RealTimeFactor),
 			Detail:           "local ASR smoke report",
@@ -326,12 +327,12 @@ func providerCompatRowsFromLocalAudioReport(path string, stage string) []provide
 			Provider:        providerLatencySafeIdentifier(report.Provider, false),
 			Family:          string(providers.ProviderFamilyLocalAudio),
 			Protocol:        "local_tts_smoke",
-			Model:           filepath.Base(filepath.Clean(report.ModelDir)),
+			Model:           providerCompatBaseName(providerCompatFirstNonEmpty(report.ModelDir, report.Model)),
 			Status:          providerCompatSafeStatus(report.Status),
 			Executed:        report.Status == "passed",
 			Configured:      report.Status == "passed",
 			EvidenceMode:    "a21_local_tts_smoke",
-			SourceReport:    filepath.Base(filepath.Clean(providerCompatFirstNonEmpty(report.ReportPath, path))),
+			SourceReport:    providerCompatBaseName(providerCompatFirstNonEmpty(report.ReportPath, path)),
 			TTSFirstAudioMS: optionalFloat64(report.TTSFirstAudioMS),
 			Detail:          "local TTS smoke report",
 		}}
@@ -465,7 +466,7 @@ func providerCompatRowFromProviderSmoke(report providers.ProviderSmokeReport, ev
 		Configured:        report.Configured,
 		RouteEligible:     report.RouteEligible,
 		EvidenceMode:      evidenceMode,
-		SourceReport:      filepath.Base(filepath.Clean(providerCompatFirstNonEmpty(report.ReportPath, sourcePath))),
+		SourceReport:      providerCompatBaseName(providerCompatFirstNonEmpty(report.ReportPath, sourcePath)),
 		Attempts:          report.Repeat,
 		EndpointHost:      report.EndpointHost,
 		Detail:            report.Detail,
@@ -486,7 +487,7 @@ func providerCompatRowFromProviderSmoke(report providers.ProviderSmokeReport, ev
 }
 
 func providerCompatRowFromLocalAudioSummary(stage string, entry providerCompatLocalAudioRow) providerCompatMatrixRow {
-	model := providerCompatFirstNonEmpty(entry.MatrixModel, entry.ModelDir)
+	model := providerCompatFirstNonEmpty(entry.MatrixModel, entry.ModelDir, entry.Model)
 	provider := providerLatencySafeIdentifier(providerCompatFirstNonEmpty(entry.Provider, "local_audio"), false)
 	protocol := "local_" + stage + "_smoke"
 	row := providerCompatMatrixRow{
@@ -495,12 +496,12 @@ func providerCompatRowFromLocalAudioSummary(stage string, entry providerCompatLo
 		Provider:     provider,
 		Family:       string(providers.ProviderFamilyLocalAudio),
 		Protocol:     protocol,
-		Model:        filepath.Base(filepath.Clean(model)),
+		Model:        providerCompatBaseName(model),
 		Status:       providerCompatSafeStatus(entry.Status),
 		Executed:     entry.Status == "passed",
 		Configured:   entry.Status == "passed",
 		EvidenceMode: "5080lab_" + protocol,
-		SourceReport: filepath.Base(filepath.Clean(entry.ReportPath)),
+		SourceReport: providerCompatBaseName(entry.ReportPath),
 		Detail:       "5080lab local audio matrix",
 	}
 	if stage == "asr" {
