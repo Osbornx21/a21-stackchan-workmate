@@ -11,7 +11,11 @@ are the project memory.
 
 Current total state: `S-HW-PHYSICAL-XIAOZHI-AUDIO-HOTFIX-INTEGRATED`
 
-Active child transition: `T-PROVIDER-002-REAL-TTS-LLM-SELECTION`.
+Active child transitions:
+
+- `T-PROVIDER-002b-IFLYTEK-REAL-TTS-LIVE-CHAIN-UNBLOCK`
+- `T-HALF-DUPLEX-001-NORMAL-DIALOGUE-ECHO-SUPPRESSION-ACCEPTANCE`
+- `T-FW-003-GUARDED-CUSTOM-WAKE-FLASH-AND-PHYSICAL-PROOF`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -25,15 +29,17 @@ is now materially cleaner after the stock-audio hotfix, but still not at
 expected maximum loudness. The 2026-06-02 emergency RCA split the problem into
 official audio parity, runtime speaker-volume control, TTS source quality, and
 wake-word activation rather than treating it as only loudness. The accepted
-3x Gateway gain is now frozen for the contest path, and the active control
-focus is `T-PROVIDER-002-REAL-TTS-LLM-SELECTION`: switch the host-side dialogue
-candidate from the disliked local TTS source to the 5080-recommended
-StepFun text stream plus Iflytek 16 kHz PCM TTS while preserving stock Xiaozhi
-firmware/protocol boundaries. The old `sherpa_onnx` local voice is now only an
-emergency/diagnostic fallback for this contest path; `voice_clone_cli` remains
-the retained A21 voice-clone seam for IndexTTS2/CosyVoice/F5-TTS/GPT-SoVITS and
-must not be removed just because the immediate fast-dialogue path selects
-Iflytek. The fixed
+3x Gateway gain is now frozen for the contest path. `T-PROVIDER-002` has
+landed host-side hot-plug code for the 5080-recommended StepFun text stream
+plus Iflytek 16 kHz PCM TTS while preserving stock Xiaozhi firmware/protocol
+boundaries; commit `b5a405e` is the current integration baseline. The old
+`sherpa_onnx` local voice is now only an emergency/diagnostic fallback for this
+contest path; `voice_clone_cli` remains the retained A21 voice-clone seam for
+IndexTTS2/CosyVoice/F5-TTS/GPT-SoVITS and must not be removed just because the
+immediate fast-dialogue path selects Iflytek. The current control focus is now
+three parallel transitions: unblock the live real-TTS chain, collect normal
+dialogue half-duplex evidence, and prepare guarded custom wake flash/proof.
+The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
 official-compatible build/report passed with app SHA-256
@@ -112,6 +118,7 @@ Current notable baseline:
 - `69c4bbe docs(control): add handoff and state machine workflow`
 - `987bbb0 feat(firmware): add official xiaozhi compatible stackchan build`
 - `060d2bb fix(audio): accept stackchan xiaozhi playback hotfix`
+- `b5a405e feat(audio): add hot-pluggable iflytek tts candidate`
 
 ## Module States
 
@@ -122,25 +129,24 @@ Current notable baseline:
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
 | Firmware candidate | `S5B-VOLUME-CANDIDATE-FLASHED` | Commit `f0603f5`; foreground flash report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-230350-1780412630917666000.json`; app SHA-256 `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`; rollback baseline remains report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`, app SHA-256 `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d` | `S6-PRD-PHYSICAL-ACCEPTED` |
 | Device connection/NVS | `S3-LAN-GATEWAY-CONNECTED` | Latest guarded NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json` pointed OTA/WS to the LAN-bound A21 Gateway; reset serial log shows OTA connection to `21081` and activation | `S4-STABLE-RECONNECT-EVIDENCE` |
-| Provider hot-plug | `S3C-STEPFUN-IFLYTEK-HOTPLUG-CODED` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Live StepFun direct smoke passed in `reports/provider-tts-candidate/a21-provider-smoke-20260603-010652-957877000.json` with `route_eligible=false`, `network_mode=direct`, `repeat=2`; host loopback StepFun was still unstable on the Mac direct path, timing out during headers/TLS in two attempts. | `S4-STEPFUN-IFLYTEK-CANDIDATE-RUNNING` |
+| Provider hot-plug | `S3E-5080-RELAY-CHAIN-PASSED-PHYSICAL-STALE-BLOCKED` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Live StepFun direct smoke passed in `reports/provider-tts-candidate/a21-provider-smoke-20260603-010652-957877000.json` with `route_eligible=false`, `network_mode=direct`, `repeat=2`; host loopback StepFun was still unstable on the Mac direct path. Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` unblocked the host chain through 5080 relay: Iflytek TTS report `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json` passed with first audio `100.299 ms`, and StepFun+Iflytek chain report `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json` passed with text first content `229.077 ms` and TTS first audio `87.947 ms`. Physical playback is blocked until device `44:1b:f6:e2:6a:60` reconnects fresh on Gateway `21081`. | `S4-STEPFUN-IFLYTEK-CANDIDATE-RUNNING` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
-| Physical StackChan acceptance | `S3-AUDIBLE-PLAYBACK-ACCEPTED-WAKE-PENDING` | Physical stock Xiaozhi path is online; runtime volume `100` and 3x `/v1/xiaozhi/say` were delivered to `44:1b:f6:e2:6a:60`; accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. Full PRD accepted remains false because custom wake and broader dialogue half-duplex evidence are still pending. | `S4-PRD-PHYSICAL-ACCEPTED` |
+| Physical StackChan acceptance | `S3B-AUDIBLE-PLAYBACK-ACCEPTED-DEVICE-REFRESH-PENDING` | Physical stock Xiaozhi path was online; runtime volume `100` and 3x `/v1/xiaozhi/say` were delivered to `44:1b:f6:e2:6a:60`; accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. Main-thread probe on 2026-06-03 found Gateway `127.0.0.1:21081` healthy but device registry `connection_status=stale`, so fresh physical acceptance must first re-wake/reconnect the device. Full PRD accepted remains false because custom wake and broader dialogue half-duplex evidence are still pending. | `S4-PRD-PHYSICAL-ACCEPTED` |
 | Xiaozhi audio/protocol | `S3D-LIVE-SAY-HOTFIX-RUNNING` | Plan `docs/plans/2026-06-02-stackchan-audio-official-parity-hotfix.md`; server/downlink hello restored to stock-compatible 24 kHz while client/uplink remains 16 kHz; stock physical MAC devices no longer receive unsupported server `type=listen` replies; `/v1/xiaozhi/say` delivers TTS lifecycle and Opus binary to the live stock socket; focused Gateway/transport/app tests pass | `S4-PHYSICAL-STOCK-AUDIO-RETESTED` |
-| TTS/audio quality | `S6C-IFLYTEK-CODED-MAC-DIRECT-BLOCKED` | Recording `9.m4a` from 3 seconds stayed weak at `-36.99 LUFS` and `-16.05 dBTP`; bounded Gateway PCM leveling at 4x produced `/Users/jiyurun/Downloads/纳仕张江国际社区云庐B区.m4a` at `-21.65 LUFS` and `-4.72 dBTP`, but the operator reported subtle electrical interruption and reduced clarity. Follow-up recording `/Users/jiyurun/Downloads/浦东新区第二中心小学(申江校区) 3.m4a` measured `-26.4 LUFS` and `-9.0 dBFS` true peak from 3 seconds. Current code uses bounded 3x gain, noise gate, and headroom; live 3x trace `a21-trace-stackchan-say-1780417217` delivered `579` chunks. Operator accepted final recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a`, measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. Iflytek TTS is now coded as the immediate clearer TTS source; `voice_clone_cli` remains the voice-clone/persona seam; old `sherpa_onnx` is emergency/diagnostic only. Live Mac direct Iflytek smoke extracted the 5080 report credentials in memory without printing them, then failed at WebSocket dial; redacted report `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json` has `status=failed`, `network_mode=direct`, finding `iflytek_tts_websocket_dial_failed`. Next improvement is provider/TTS network unblock or 5080/Alibaba relay, not additional Gateway gain. | `S7-IFLYTEK-TTS-PHYSICAL-ACCEPTED` |
+| TTS/audio quality | `S6E-RELAY-TTS-CANDIDATE-READY-FOR-PHYSICAL-PLAYBACK` | Recording `9.m4a` from 3 seconds stayed weak at `-36.99 LUFS` and `-16.05 dBTP`; bounded Gateway PCM leveling at 4x produced `/Users/jiyurun/Downloads/纳仕张江国际社区云庐B区.m4a` at `-21.65 LUFS` and `-4.72 dBTP`, but the operator reported subtle electrical interruption and reduced clarity. Follow-up recording `/Users/jiyurun/Downloads/浦东新区第二中心小学(申江校区) 3.m4a` measured `-26.4 LUFS` and `-9.0 dBFS` true peak from 3 seconds. Current code uses bounded 3x gain, noise gate, and headroom; live 3x trace `a21-trace-stackchan-say-1780417217` delivered `579` chunks. Operator accepted final recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a`, measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. Iflytek TTS is now coded as the immediate clearer TTS source; `voice_clone_cli` remains the voice-clone/persona seam; old `sherpa_onnx` is emergency/diagnostic only. Live Mac direct Iflytek smoke extracted the 5080 report credentials in memory without printing them, then failed at WebSocket dial; redacted report `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json` has `status=failed`, `network_mode=direct`, finding `iflytek_tts_websocket_dial_failed`. 5080 relay now has passed host-chain WAV `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`; next improvement is physical playback/listening acceptance after device refresh, not additional Gateway gain. | `S7-IFLYTEK-TTS-PHYSICAL-ACCEPTED` |
 | StackChan volume/action control | `S5-RUNTIME-VOLUME100-PHYSICAL-ACCEPTED` | `POST /v1/xiaozhi/speaker-volume` delivered official MCP `self.audio_speaker.set_volume` with `volume=100` to live device `44:1b:f6:e2:6a:60`; latest 3x trace is `a21-trace-stackchan-volume-1780417211`. Desktop helper supports both `volume` and `say`; physical loudness is accepted through final operator recording `10.m4a`. | `S6-FROZEN-FOR-CONTEST-FLOW` |
-| Half-duplex / echo control | `S2B-HOST-SAY-SUPPRESSION-PHYSICAL-OBSERVED` | `/v1/xiaozhi/say` now arms a short input-suppression window for stock physical devices after host-say completion; focused test proves immediate listen restart and Opus echo are ignored without starting a new voice pipeline. Physical 3x trace `a21-trace-stackchan-say-1780417217` recorded `xiaozhi.say.input_suppression_armed=1` and `xiaozhi.listen.start.input_suppressed=1`. Normal dialogue half-duplex is not yet physically accepted. | `S3-PHYSICAL-NO-SELF-TRIGGER-AFTER-TTS` |
-| Wake word | `S2-CUSTOM-PACKAGED-NOT-FLASHED` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` is `status=packaged`, `package_written=true`, but `product_ready=false`, `flash_allowed=false`, and `flash_executed=false`. Current official-compatible physical firmware has not merged/flashed this package, so the live device still relies on stock Xiaozhi WakeNet/touch. | `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF` |
+| Half-duplex / echo control | `S2C-NORMAL-DIALOGUE-ACCEPTANCE-IN-PROGRESS` | `/v1/xiaozhi/say` now arms a short input-suppression window for stock physical devices after host-say completion; focused test proves immediate listen restart and Opus echo are ignored without starting a new voice pipeline. Physical 3x trace `a21-trace-stackchan-say-1780417217` recorded `xiaozhi.say.input_suppression_armed=1` and `xiaozhi.listen.start.input_suppressed=1`. Normal dialogue half-duplex is not yet physically accepted. Active plan `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`; worker `019e8956-7c31-78e3-bd96-f04b94f52d0b` owns safe readiness/probe/report work. Current Gateway is healthy but the device registry is stale, so physical proof is gated on device refresh. | `S3-PHYSICAL-NO-SELF-TRIGGER-AFTER-TTS` |
+| Wake word | `S2C-CUSTOM-WAKE-PACKAGE-INTEGRITY-PASSED-BUILD-DIR-MISSING` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` is `status=packaged`, `package_written=true`, but `product_ready=false`, `flash_allowed=false`, and `flash_executed=false`. Current official-compatible physical firmware has not merged/flashed this package, so the live device still relies on stock Xiaozhi WakeNet/touch. Worker `019e8956-9692-7ae1-bc14-99a311b1c080` verified artifact SHA-256 `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`, size `2853680`, and matching manifest; readiness report `reports/a21-product-readiness-20260603-011911.json` stayed blocked as expected. No exact guarded flash command is ready because the reviewed A21 ESP-IDF build directory with full flash inputs is missing. | `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF` |
 
-## Active Transition
+## Active Transitions
 
-### Active T-PROVIDER-002: Real Provider/TTS Dialogue Candidate
+### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 
 Current state:
 
-- `S-HW-PHYSICAL-XIAOZHI-AUDIO-HOTFIX-INTEGRATED`
-- `S3C-STEPFUN-IFLYTEK-HOTPLUG-CODED`
-- `S6C-IFLYTEK-CODED-MAC-DIRECT-BLOCKED`
+- `S3E-5080-RELAY-CHAIN-PASSED-PHYSICAL-STALE-BLOCKED`
+- `S6E-RELAY-TTS-CANDIDATE-READY-FOR-PHYSICAL-PLAYBACK`
 
 Target state:
 
@@ -148,59 +154,198 @@ Target state:
 
 Trigger:
 
-- Operator accepted the 3x physical audio hotfix but rejected the current local
-  TTS source as contest dialogue quality.
-- 5080lab returned `outbox/A21-VOICE-FULL-REPORT.md`, recommending StepFun
-  text streaming plus Iflytek real-time TTS for the immediate real dialogue
-  candidate.
+- `T-PROVIDER-002` integrated host-side StepFun and Iflytek hot-plug code in
+  commit `b5a405e`, but live Mac direct Iflytek WebSocket dial failed and
+  StepFun loopback was unstable on the Mac direct path.
+- The operator rejected the old local TTS source for contest dialogue quality.
 
 Actions:
 
-- Use plan
-  `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`.
-- Keep global Mac/Codex proxy settings unchanged.
-- Add only a host-side env-driven Iflytek TTS adapter if current code lacks it.
-- Select StepFun through existing text-stream profile/env for explicit
-  candidate execution.
-- Preserve `voice_clone_cli`; it is the retained voice-clone capability, not
-  the rejected old local voice.
-- Treat `sherpa_onnx` as emergency/diagnostic rollback only for this window.
-- Keep firmware, stock Xiaozhi protocol, wake-word firmware, V21, and accepted
-  3x Gateway gain out of scope unless a later physical playback test proves a
-  rollback is needed.
+- Use `docs/plans/2026-06-03-provider-tts-live-chain-unblock.md`.
+- Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` used 5080 relay first instead
+  of adding a WebSocket adapter.
+- Keep provider credentials host-side, reports redacted, global proxy
+  unchanged, and firmware/NVS out of scope.
+
+Current result:
+
+- 5080 relay Iflytek TTS passed:
+  `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json`,
+  first audio `100.299 ms`.
+- 5080 relay StepFun `step-1-8k` plus Iflytek TTS chain passed:
+  `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json`,
+  text first content `229.077 ms`, TTS first audio `87.947 ms`.
+- Candidate WAVs were imported under `reports/provider-tts-candidate/`.
+- Physical playback was not attempted because Gateway `21081` showed device
+  `44:1b:f6:e2:6a:60` as `connection_status=stale`.
 
 Acceptance conditions:
 
-- Iflytek TTS smoke passes with redacted report output.
-- StepFun text stream can run as an explicit candidate without product
-  route-eligibility overclaim.
-- `voice_clone_cli` smoke/loopback/readiness tests remain covered so voice
-  cloning is not regressed while Iflytek is tested.
-- A physical StackChan foreground playback or fast companion turn uses the new
-  TTS source and is accepted by operator listening.
-- Full PRD remains honestly blocked by custom wake proof and broader normal
-  dialogue half-duplex until their own transitions pass.
+- Physical StackChan playback uses the relay-generated StepFun+Iflytek WAV or
+  equivalent live chain through the stock Xiaozhi path.
+- Operator accepts or rejects the new voice with a concrete listening reason.
+- StepFun remains an explicit compatibility candidate until a separate
+  readiness promotion.
 
 Failure state:
 
-- `F-PROVIDER-002-SECRETS-LEAKED` if credentials, auth query, full URL, proxy
-  value, transcript, provider output, raw/base64 audio, or local path enter
-  reports/docs/logs.
-- `F-PROVIDER-002-TTS-UNAVAILABLE` if Iflytek cannot synthesize 16 kHz PCM from
-  env-provided credentials.
-- `F-PROVIDER-002-PHYSICAL-REJECTED` if physical playback is unclear, clipped,
-  or worse than the accepted 3x baseline.
+- `F-PROVIDER-002B-SECRETS-LEAKED` if credentials, auth URL/query, transcript,
+  provider output, raw/base64 audio, proxy value, or local path enter reports
+  or docs.
+- `F-PROVIDER-002B-PHYSICAL-STALE` while no fresh physical socket is available
+  for playback.
+- `F-PROVIDER-002B-PHYSICAL-REJECTED` if operator rejects the relay voice after
+  stock Xiaozhi playback.
 
 Rollback path:
 
-- Revert runtime selection to `sherpa_onnx` only as an emergency/diagnostic
-  fallback, or select `voice_clone_cli` when a configured clone wrapper is the
-  desired voice. Leave firmware/Gateway gain unchanged.
-- Remove any temporary StepFun route-eligible profile file if one was created.
+- Keep accepted 3x Gateway gain and stock firmware.
+- Use `sherpa_onnx` only as emergency/diagnostic fallback, or `voice_clone_cli`
+  when a configured clone wrapper is selected.
 
 Next state:
 
 - `S-PROVIDER-TTS-REAL-DIALOGUE-CANDIDATE-RUNNING`
+
+### Active T-HALF-DUPLEX-001: Normal Dialogue Echo Suppression Acceptance
+
+Current state:
+
+- `S2C-NORMAL-DIALOGUE-ACCEPTANCE-IN-PROGRESS`
+
+Target state:
+
+- `S-HALF-DUPLEX-NORMAL-DIALOGUE-PHYSICAL-ACCEPTED`
+
+Trigger:
+
+- Host-say suppression is physically observed, but normal dialogue after a real
+  user turn has not proven no self-trigger after assistant TTS.
+
+Actions:
+
+- Use `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`.
+- Worker `019e8956-7c31-78e3-bd96-f04b94f52d0b` owns safe readiness and probe
+  work only.
+
+Current result:
+
+- Gateway `127.0.0.1:21081` is healthy.
+- Device `44:1b:f6:e2:6a:60` is registered but stale, with
+  `identity_status=unknown`, empty firmware identity, microphone
+  `available_xiaozhi_opus_ingress`, and speaker
+  `available_xiaozhi_opus_downlink`.
+- `stackchan-half-duplex-acceptance` was not run because the device was not
+  online/fresh and does not expose the diagnostic mic-probe capability required
+  by the plan.
+
+Acceptance conditions:
+
+- Device is online/fresh and exposes the needed speaker/microphone evidence.
+- `stackchan-half-duplex-acceptance` or normal-dialogue trace proves no
+  unwanted self-trigger after TTS while preserving touch/barge-in.
+
+Failure state:
+
+- `F-HALF-DUPLEX-001-DEVICE-STALE` if device cannot be refreshed for live
+  acceptance.
+- `F-HALF-DUPLEX-001-NO-DIAGNOSTIC-MIC` if current firmware lacks the required
+  mic-probe counters for instrumented acceptance.
+- `F-HALF-DUPLEX-001-OVER-SUPPRESSED` if a fix makes touch/barge-in feel deaf.
+
+Rollback path:
+
+- Revert only half-duplex suppression tuning if it blocks user interruption.
+- Keep accepted 3x gain, stock protocol, provider selection, wake firmware, and
+  NVS unchanged.
+
+Next state:
+
+- `S-HALF-DUPLEX-NORMAL-DIALOGUE-PHYSICAL-ACCEPTED`
+
+### Active T-FW-003: Guarded Custom Wake Flash And Physical Proof
+
+Current state:
+
+- `S2B-CUSTOM-WAKE-NO-WRITE-GATE-IN-PROGRESS`
+
+Target state:
+
+- `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF`
+
+Trigger:
+
+- Custom wake package exists, but the live physical firmware still uses stock
+  Xiaozhi WakeNet/touch activation and the operator reports weak wake response.
+
+Actions:
+
+- Use `docs/plans/2026-06-03-guarded-wake-flash-physical-proof.md`.
+- Worker `019e8956-9692-7ae1-bc14-99a311b1c080` owns package integrity and
+  no-write gate prep only.
+
+Current result:
+
+- Wake package integrity passed below activation:
+  `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`.
+- Artifact exists and matches SHA-256
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`.
+- Product readiness report
+  `reports/a21-product-readiness-20260603-011911.json` stayed blocked with
+  `launch_ready=false`, `wake_word.product_ready=false`,
+  `firmware_package_flash_allowed=false`, and
+  `physical_firmware_flash_executed=false`.
+- No exact guarded flash command is ready because the reviewed A21 ESP-IDF
+  build directory with full flash inputs is not present in the A21 workspace.
+
+Acceptance conditions:
+
+- Restore/provide the reviewed A21 build directory that produced the wake
+  artifact, outside frozen external/X21 paths.
+- Run no-write `xiaozhi-firmware-flash-plan` first.
+- Only after explicit operator confirmation, execute guarded flash and collect
+  physical custom wake proof.
+
+Failure state:
+
+- `F-FW-003-UNGUARDED-WRITE` if any background flash/NVS write is attempted.
+- `F-FW-003-PACKAGE-STALE` if the wake package cannot be reconciled with the
+  accepted audio/official-compatible baseline.
+- `F-FW-003-BUILD-DIR-MISSING` while no reviewed A21 flash build directory is
+  available.
+- `F-FW-003-PHYSICAL-WAKE-REJECTED` if a guarded flash later fails operator
+  proof.
+
+Rollback path:
+
+- Reflash the last accepted official-compatible app artifact through a guarded
+  foreground path if custom wake regresses behavior.
+- Preserve NVS connection settings unless a rollback plan explicitly requires
+  reprovisioning.
+
+Next state:
+
+- `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF`
+
+### Completed T-PROVIDER-002: Real Provider/TTS Hot-Plug Candidate
+
+Current state:
+
+- `S-HW-PHYSICAL-XIAOZHI-AUDIO-HOTFIX-INTEGRATED`
+- `S3C-STEPFUN-IFLYTEK-HOTPLUG-CODED`
+
+Result:
+
+- Commit `b5a405e` added host-side `iflytek_tts`, StepFun explicit
+  compatibility selection, voice-pipeline TTS selection, and retained
+  `voice_clone_cli`.
+- Focused tests and `make verify` passed before this follow-up transition.
+- Mac direct Iflytek TTS remained blocked, which created active
+  `T-PROVIDER-002b`.
+
+Next state:
+
+- `S3D-STEPFUN-IFLYTEK-LIVE-UNBLOCK-IN-PROGRESS`
 
 ### Completed T-INTEGRATE-001: Review And Integrate Accepted Audio Hotfixes
 
@@ -651,38 +796,34 @@ Next state:
 
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
-| T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Audible playback is accepted for the current foreground contest path, but broader normal-dialogue half-duplex and custom wake evidence are still missing | Collect normal dialogue half-duplex proof, custom wake proof, device playback timing, and barge-in playback stop_done, then regenerate `xiaozhi-physical-evidence`. |
+| T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Audible playback is accepted for the current foreground contest path, but broader normal-dialogue half-duplex and custom wake evidence are still missing; current device registry is stale on Gateway `21081` | Reconnect/wake device `44:1b:f6:e2:6a:60`, collect normal dialogue half-duplex proof, custom wake proof, device playback timing, and barge-in playback stop_done, then regenerate `xiaozhi-physical-evidence`. |
 | T-PROVIDER-001b: Selected provider readiness refresh | Explicit real/local provider evidence exists, but newest generic readiness selected `mock` because it omitted explicit provider env/report | Rerun readiness and server-side bundle with the chosen provider report/env pinned, preserving redacted evidence and avoiding firmware key storage. |
-| T-PROVIDER-002b: Iflytek/real-TTS live chain unblock | Iflytek TTS code path and redacted failure report exist, but Mac direct WebSocket dial to `tts-api.xfyun.cn` failed and StepFun loopback was unstable despite provider-smoke success | Run the same TTS through 5080/Alibaba relay or add an explicit WebSocket provider egress adapter; then replay `local-tts-smoke`, `local-voice-loopback`, and physical StackChan playback. |
+| T-PROVIDER-002b: Iflytek/real-TTS live chain unblock | 5080 relay unblocked the real TTS and StepFun+TTS host chain, but physical StackChan playback was not attempted because device `44:1b:f6:e2:6a:60` was registered stale on Gateway `21081` | Reconnect/wake the physical device until `/v1/devices` is fresh/online, then play `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` through `stackchan-local-tts-playback` and collect operator listening acceptance. |
 | T-PRD-001: Declare full PRD physical acceptance | Audio path is accepted, but PRD accepted remains false because custom wake, broader half-duplex, and selected-provider readiness refresh are still pending | Close `T-HW-002b` and custom wake proof, refresh selected-provider readiness without falling back to `mock`, then rerun product readiness. |
-| T-FW-003: Custom wake-word product acceptance | Needs guarded flash and physical proof | Wake package review, false-wake rejection, operator wake proof. |
+| T-FW-003: Custom wake-word product acceptance | Wake package integrity passed, but no package-level guarded flash command exists and the reviewed A21 ESP-IDF flash build directory is missing | Restore/provide the reviewed A21 build directory for SHA `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`, run no-write flash plan, then request explicit foreground flash and physical wake proof. |
 
 ## Next Candidate Transitions
 
-1. `T-FW-003: Guarded Custom Wake Flash And Physical Proof`
-   - Current phase: custom MultiNet package exists but is not flashed into the
-     current physical app.
-   - Next action: create/update a flash plan, run no-write build/package review,
-     request an explicit foreground guarded flash only if the package matches,
-     then collect physical wake proof.
-   - Acceptance requires `wake_word.product_ready=true` only after guarded flash
-     and physical custom wake evidence.
+1. `T-DEVICE-REFRESH-001: Foreground StackChan Reconnect`
+   - Current phase: Gateway `21081` is healthy but physical device
+     `44:1b:f6:e2:6a:60` is stale.
+   - Next action: foreground wake/touch/reboot as needed until `/v1/devices`
+     shows a fresh online socket, without NVS/flash writes.
+   - This unblocks provider physical playback and half-duplex acceptance.
 
-2. `T-HALF-DUPLEX-001: Normal Dialogue Echo Suppression Acceptance`
-   - Current phase: host-say foreground suppression is physically observed, but
-     normal dialogue TTS after a real user turn is not yet accepted.
-   - Next action: record a normal voice turn with post-TTS microphone ingress,
-     prove no self-trigger or prove exactly where it happens, then tune only the
-     smallest suppression/AEC/ducking boundary needed.
-   - Acceptance requires physical trace evidence, not only host tests.
+2. `T-PROVIDER-PLAYBACK-001: Relay Voice Physical Listening Acceptance`
+   - Current phase: StepFun+Iflytek relay WAV exists and host-chain reports
+     pass.
+   - Next action: play
+     `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`
+     through the stock Xiaozhi path after device reconnect, then capture
+     operator accept/reject.
+   - Keep Mac direct Iflytek as a known blocker, not the contest fast path.
 
-3. `T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock`
-   - Current phase: code and tests are ready, StepFun provider-smoke passed,
-     but Mac direct Iflytek WebSocket failed and StepFun loopback was unstable.
-   - Next action: choose the fastest real egress path: 5080/Alibaba relay, or a
-     tested explicit WebSocket provider-proxy adapter, then rerun Iflytek smoke
-     and physical StackChan playback.
-   - Next action is a host-side readiness/bundle refresh pinned to the selected
-     provider smoke report and provider env.
-   - Keep provider keys host-side only and reports redacted; do not change
-     firmware provider storage.
+3. `T-WAKE-FLASH-GATE-001: Restore Reviewed A21 Wake Build Directory`
+   - Current phase: wake package/hash/manifest are valid, but full flash inputs
+     are missing.
+   - Next action: restore/provide the reviewed A21 ESP-IDF build dir for SHA
+     `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`,
+     run no-write flash plan, then request operator foreground flash only if
+     the plan is ready.

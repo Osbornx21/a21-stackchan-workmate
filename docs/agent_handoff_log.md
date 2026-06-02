@@ -2213,3 +2213,330 @@ Validation results:
 - Live Iflytek TTS smoke:
   `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json`
   failed at WebSocket dial as described above.
+
+## 2026-06-03 01:18 CST - T-HALF-DUPLEX-001 Readiness Blocked By Stale Device
+
+Round goal:
+
+- Execute Worker HALF-DUPLEX readiness/probe/report work for
+  `T-HALF-DUPLEX-001` without firmware flash, NVS writes, provider/TTS
+  changes, wake-word changes, or product-ready overclaim.
+
+Actual completed work:
+
+- Read `AGENTS.md`, `docs/project_state_machine.md`,
+  `docs/agent_handoff_log.md`, and
+  `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`.
+- Confirmed checkout baseline `b5a405eedabd11b2b5e23e38fdf1b220c5b69ce6`
+  on branch `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Checked live Gateway health on `127.0.0.1:21081`; response was
+  `service=a21-gateway`, `status=ok`, `version=0.1.0-dev`.
+- Checked `/v1/devices` on `127.0.0.1:21081` twice. Physical device
+  `44:1b:f6:e2:6a:60` was registered but stale:
+  - `connection_status=stale`;
+  - latest observed `device_age_ms=534028`;
+  - `identity_status=unknown`;
+  - `firmware={}`;
+  - `microphone=available_xiaozhi_opus_ingress`;
+  - `speaker=available_xiaozhi_opus_downlink`;
+  - `speaker_volume=100`;
+  - `last_event=xiaozhi.tts.opus_frame.downlink`;
+  - `last_trace_id=a21-trace-44-1b-f6-e2-6a-60`;
+  - `last_session_id=a21-session-44-1b-f6-e2-6a-60`.
+- Checked default Gateway `127.0.0.1:21080`; health was ok but `/v1/devices`
+  only showed stale virtual device `stackchan-virtual-a21-bench-001`.
+- Did not run `stackchan-half-duplex-acceptance` because the plan permits the
+  physical probe only if the live device is online/fresh. Current device state
+  would block before valid normal-dialogue half-duplex evidence and lacks the
+  diagnostic mic capability required by the plan.
+
+Files changed this round:
+
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- No half-duplex acceptance report was generated in this round.
+- Normal dialogue half-duplex remains unaccepted.
+- The live physical device must reconnect freshly before the instrumented probe
+  can be rerun.
+- The current stock Xiaozhi firmware reports microphone capability
+  `available_xiaozhi_opus_ingress`, not
+  `diagnostic_probe_m5unified_i2s_capture`, so this transition may still need
+  an explicit foreground diagnostic-capability decision before acceptance.
+
+Known risks and blockers:
+
+- `connection_status=stale` means a control write would not be valid physical
+  acceptance evidence.
+- Empty firmware identity and `identity_status=unknown` would block the current
+  half-duplex acceptance report even if a control request were attempted.
+- Do not interpret prior host-say suppression markers as normal-dialogue
+  half-duplex acceptance.
+
+Recommended next action:
+
+- Foreground operator should wake/reconnect the physical StackChan to Gateway
+  `127.0.0.1:21081`, confirm `/v1/devices` shows
+  `connection_status=online`, then rerun:
+  `A21_GATEWAY_URL=http://127.0.0.1:21081 A21_DEVICE_ID=44:1b:f6:e2:6a:60 make stackchan-half-duplex-acceptance`.
+- If the device still does not expose
+  `diagnostic_probe_m5unified_i2s_capture`, block honestly or dispatch a
+  separate guarded diagnostic firmware/capability plan; do not flash from this
+  worker.
+
+Validation results:
+
+- `curl http://127.0.0.1:21081/healthz`: passed.
+- `curl http://127.0.0.1:21081/v1/devices`: passed twice, physical device
+  stale.
+- `curl http://127.0.0.1:21080/healthz`: passed.
+- `curl http://127.0.0.1:21080/v1/devices`: passed, virtual stale device only.
+- `stackchan-half-duplex-acceptance`: not run; blocked by stale physical device
+  state.
+
+## 2026-06-03 01:31 CST - T-PROVIDER-002b 5080 Relay TTS Chain Unblocked, Physical Playback Stale-Blocked
+
+Round goal:
+
+- Execute Worker PROVIDER for `T-PROVIDER-002b`: unblock the real TTS live
+  chain using 5080/Alibaba relay first, falling back to an explicit WebSocket
+  egress adapter only if the relay was blocked.
+
+Actual completed work:
+
+- Read `AGENTS.md`, `docs/project_state_machine.md`,
+  `docs/agent_handoff_log.md`, and
+  `docs/plans/2026-06-03-provider-tts-live-chain-unblock.md`.
+- Confirmed checkout baseline `b5a405eedabd11b2b5e23e38fdf1b220c5b69ce6`
+  on branch `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Confirmed 5080 SSH was reachable through the established inbox/outbox lane.
+- Used the existing 5080 Iflytek helper as the relay base without printing
+  credentials.
+- Ran a throwaway remote 5080 harness that imported the existing helper,
+  synthesized Iflytek 16 kHz PCM TTS, wrote a WAV, and returned only a redacted
+  report bundle.
+- Ran a second throwaway remote 5080 harness that executed StepFun
+  `step-1-8k` streaming text, fed the returned content directly into Iflytek
+  TTS, wrote a WAV, and returned only a redacted loopback report bundle.
+- Imported the returned redacted reports and WAV files under
+  `reports/provider-tts-candidate/`.
+- Ran a secret/text/path scan on the imported JSON reports; it found no auth
+  query, API key, API secret, bearer token, raw/base64 audio marker, full URL,
+  provider env name, local path, or probe text.
+- Checked Gateway `127.0.0.1:21081` health; it was ok.
+- Checked `/v1/devices`; physical device `44:1b:f6:e2:6a:60` was registered
+  but `connection_status=stale`, so no physical playback command was sent.
+
+Files changed this round:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json`
+- `reports/provider-tts-candidate/a21-iflytek-tts-5080-relay-20260603-0125.wav`
+- `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json`
+- `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`
+
+Current unfinished items:
+
+- Physical StackChan playback of the StepFun+Iflytek chain was not attempted
+  because the physical socket was stale.
+- Operator listening acceptance remains missing.
+- Mac direct Iflytek WebSocket remains blocked; relay is the working path for
+  this window.
+
+Known risks and blockers:
+
+- The remote 5080 source report still contains plaintext credentials outside
+  this repo; do not copy values into repo docs, reports, commands, or final
+  messages.
+- The imported WAV is candidate audio evidence, not physical acceptance until
+  replayed through the live stock Xiaozhi path and judged by the operator.
+- StepFun remains an explicit compatibility candidate in this evidence; it is
+  not promoted to product `route_eligible=true`.
+
+Recommended next action:
+
+- Foreground operator should wake/reconnect StackChan to Gateway `21081` until
+  `/v1/devices` shows `connection_status=online`, then run:
+  `go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --wav reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav --output-dir reports/provider-tts-candidate`
+  and record operator listening acceptance or rejection.
+
+Validation results:
+
+- 5080 Iflytek TTS relay smoke: passed; report
+  `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json`;
+  WAV `reports/provider-tts-candidate/a21-iflytek-tts-5080-relay-20260603-0125.wav`;
+  `tts_first_audio_ms=100.299`.
+- 5080 StepFun+Iflytek relay chain: passed; report
+  `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json`;
+  WAV `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`;
+  `text_stream_first_content_ms=229.077`, `tts_first_audio_ms=87.947`.
+- Imported report redaction scan: passed.
+- `curl http://127.0.0.1:21081/healthz`: passed.
+- `curl http://127.0.0.1:21081/v1/devices`: passed, physical device stale.
+- Physical playback: not attempted because stale device state would not produce
+  valid acceptance evidence.
+
+## 2026-06-03 01:42 CST - T-FW-003 Wake Package Integrity Passed, Guarded Flash Blocked By Missing Build Dir
+
+Round goal:
+
+- Execute Worker WAKE for `T-FW-003` package integrity and no-write gate prep
+  without firmware flash, NVS writes, provider/TTS edits, half-duplex edits, or
+  product-ready overclaim.
+
+Actual completed work:
+
+- Verified wake package report
+  `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`
+  is below activation: `status=packaged`, `package_written=true`,
+  `product_ready=false`, `flash_allowed=false`, `flash_executed=false`.
+- Verified artifact exists:
+  `reports/a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`.
+- Verified artifact SHA-256 matches package report and `.sha256`:
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`.
+- Verified artifact size matches app part: `2853680` bytes.
+- Verified manifest exists and matches package metadata.
+- Ran product readiness with the wake package report; report
+  `reports/a21-product-readiness-20260603-011911.json` stayed blocked as
+  expected with `launch_ready=false`, `wake_word.product_ready=false`,
+  `firmware_package_available=true`,
+  `firmware_package_flash_allowed=false`, and
+  `physical_firmware_flash_executed=false`.
+- Did not produce an exact guarded flash command because the reviewed A21
+  ESP-IDF build directory is missing from the workspace/reports lane. The
+  package lane only has copied app artifact plus manifest/hash, not full flash
+  inputs.
+
+Files changed this round:
+
+- Ignored/generated report:
+  `reports/a21-product-readiness-20260603-011911.json`
+- No tracked files changed by Worker WAKE.
+
+Current unfinished items:
+
+- No wake flash-plan report was generated.
+- No custom wake firmware was flashed.
+- No custom wake physical proof exists.
+- Need the reviewed A21 scratch Xiaozhi build directory that produced SHA
+  `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`,
+  outside any frozen X21/external source path.
+
+Known risks and blockers:
+
+- Current repo command family `xiaozhi-firmware-flash` requires the reviewed
+  build dir with `sdkconfig.json`, flash args, app bin, bootloader, partition,
+  OTA data, and assets.
+- External Xiaozhi/X21-adjacent build dirs are explicitly rejected by A21
+  guardrails and cannot be used as valid flash inputs for this transition.
+- Product readiness must remain red until guarded flash plus physical custom
+  wake proof.
+
+Recommended next action:
+
+- Restore/provide the reviewed A21 build directory for the wake artifact SHA.
+- Confirm foreground upload port, currently expected as `/dev/cu.usbmodem1101`.
+- Run no-write `xiaozhi-firmware-flash-plan` first; only execute after that
+  plan is ready and the operator explicitly opens the guarded write window.
+
+Validation results:
+
+- `shasum -a 256 reports/a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`:
+  passed.
+- `wc -c reports/a21-wake-word-xiaozhi-esp-sr-multinet-m5stack-cores3-a2d3dc882b42-20260602-075112.bin`:
+  passed.
+- `go run ./cmd/a21 product-readiness --wake-word-firmware-package-report reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json --output-dir reports --require-real`:
+  exited `1` as expected because launch readiness is false and wrote
+  `reports/a21-product-readiness-20260603-011911.json`.
+- `go test ./internal/app -run 'WakeWordFirmware|XiaozhiFirmwareFlash' -count=1`:
+  passed.
+- `go test ./internal/runtimeguard -count=1`: passed.
+
+## 2026-06-03 01:48 CST - Control Tower Integrates Three Active Transition Results
+
+Round goal:
+
+- Maintain main-thread control while three scoped workers advance
+  `T-PROVIDER-002b`, `T-HALF-DUPLEX-001`, and `T-FW-003`.
+- Keep changes limited to governance/planning/state docs and generated/ignored
+  evidence; do not modify business code, flash firmware, write NVS, or change
+  global proxy settings.
+
+Actual completed work:
+
+- Confirmed current branch
+  `codex/a21-hardware-window-20260602-stackchan-prd` at baseline commit
+  `b5a405e feat(audio): add hot-pluggable iflytek tts candidate`.
+- Added transition plan docs:
+  - `docs/plans/2026-06-03-provider-tts-live-chain-unblock.md`;
+  - `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`;
+  - `docs/plans/2026-06-03-guarded-wake-flash-physical-proof.md`.
+- Dispatched Provider worker `019e8954-e65c-72a2-9847-a17a59a0ad6b`,
+  Half-duplex worker `019e8956-7c31-78e3-bd96-f04b94f52d0b`, and Wake worker
+  `019e8956-9692-7ae1-bc14-99a311b1c080`.
+- Main-thread Gateway probe confirmed `http://127.0.0.1:21081/healthz` is ok.
+- Main-thread device probe confirmed physical device `44:1b:f6:e2:6a:60` is
+  registered but stale on Gateway `21081`.
+- Updated `docs/project_state_machine.md` so active transitions now accurately
+  reflect:
+  - provider/TTS relay chain passed on 5080 but physical playback is stale
+    blocked;
+  - half-duplex is blocked by stale device and missing diagnostic mic-probe
+    capability;
+  - wake package integrity passed but guarded flash is blocked by missing
+    reviewed A21 build dir.
+
+Files changed this round:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-03-provider-tts-live-chain-unblock.md`
+- `docs/plans/2026-06-03-normal-dialogue-half-duplex-acceptance.md`
+- `docs/plans/2026-06-03-guarded-wake-flash-physical-proof.md`
+- Ignored/generated provider candidate reports and WAVs under
+  `reports/provider-tts-candidate/`
+- Ignored/generated readiness report
+  `reports/a21-product-readiness-20260603-011911.json`
+
+Current unfinished items:
+
+- Physical StackChan must reconnect fresh before provider playback and
+  half-duplex acceptance can continue.
+- The relay-produced StepFun+Iflytek WAV has not yet been played through the
+  live stock Xiaozhi path.
+- Normal dialogue half-duplex remains unaccepted.
+- Custom wake remains unflashed and unaccepted because full guarded flash inputs
+  are missing.
+- Selected-provider readiness/bundle refresh should wait until the chosen
+  provider/TTS physical playback result is known.
+
+Known risks and blockers:
+
+- Do not copy 5080 plaintext credentials into repo docs, logs, reports, shell
+  snippets, or final messages.
+- Candidate WAV files are host/relay evidence only until physical playback and
+  operator listening acceptance happen.
+- A stale device registry must not be treated as valid physical acceptance.
+- Wake package integrity is not enough for product readiness or flash execution.
+
+Recommended next action:
+
+- Execute `T-DEVICE-REFRESH-001`: foreground wake/touch/reboot StackChan until
+  `/v1/devices` on Gateway `21081` shows `connection_status=online`.
+- Then execute `T-PROVIDER-PLAYBACK-001`: play
+  `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav`
+  through the stock Xiaozhi path and collect operator listening acceptance.
+- In parallel, execute `T-WAKE-FLASH-GATE-001`: restore/provide the reviewed
+  A21 ESP-IDF wake build dir and run a no-write flash plan before any guarded
+  foreground flash.
+
+Validation results:
+
+- Worker Provider: 5080 relay Iflytek TTS smoke passed; StepFun+Iflytek relay
+  chain passed; JSON redaction scan passed; Gateway health passed.
+- Worker Half-duplex: Gateway health passed; device probe passed but stale;
+  `stackchan-half-duplex-acceptance` correctly not run.
+- Worker Wake: package hash/size checks passed; wake-related Go tests passed;
+  readiness stayed red as expected.
