@@ -19,6 +19,7 @@ Active child transitions:
 - `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`
 - `T-AUDIO-BARE-XIAOZHI-PARITY-001`
 - `T-XIAOZHI-REALTIME-VOICE-PARITY-001`
+- `T-XIAOZHI-STREAMING-ASR-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -533,6 +534,76 @@ Next state:
 - `S-XIAOZHI-REALTIME-PARITY-GATE-LANDED`
 - Follow-up transition if the live report remains turn-buffered:
   `T-XIAOZHI-STREAMING-ASR-001`.
+
+### Active T-XIAOZHI-STREAMING-ASR-001: Stock Xiaozhi Streaming ASR Session
+
+Current state:
+
+- `S-XIAOZHI-STREAMING-ASR-SESSION-SEAM-IMPLEMENTED-FAKE-ONLY`
+
+Trigger:
+
+- User review requires A21 to match Xiaozhi's realtime chain:
+  local wake/VAD, long socket, Opus frames, streaming ASR, streaming LLM,
+  streaming TTS, and paced Opus playback.
+- Read-only workers confirmed current `/v1/xiaozhi` was previously
+  turn-buffered at the ASR boundary: decoded PCM frames were accumulated, then
+  ASR ran after stop/VAD end.
+
+Target state:
+
+- `S-XIAOZHI-STREAMING-ASR-PROVIDER-READY`
+
+Action:
+
+- Use `docs/plans/2026-06-03-xiaozhi-streaming-asr.md`.
+- Add optional `providers.StreamingASRAdapter` and `StreamingASRSession`
+  alongside existing batch `ASRAdapter`.
+- Start a streaming ASR session on stock `/v1/xiaozhi` listen start when the
+  selected ASR adapter supports it.
+- Feed decoded Opus PCM frames into the streaming ASR session in
+  `observeXiaozhiDecodedIngress`.
+- Commit the streaming ASR session on `listen.stop` or VAD auto-stop.
+- Reuse streaming ASR final text in the voice pipeline so batch ASR is not
+  re-run when streaming final is available.
+- Keep existing accumulated `voicePipelineFrames` and batch ASR fallback when no
+  streaming session/final exists.
+
+Acceptance conditions:
+
+- Gateway test proves `asr.first_partial` appears before `xiaozhi.listen.stop`
+  and before `xiaozhi.voice_pipeline.start`.
+- Existing listen-stop and VAD auto-stop tests still pass.
+- Provider test proves mock streaming ASR emits partial on frame append and
+  final only on commit.
+- `xiaozhi-realtime-parity` counts `asr.stream.start`,
+  `asr.audio.append`, and `asr.stream.commit`, and requires stream start/append
+  for `xiaozhi_realtime_candidate`.
+- This phase is not real provider acceptance; it is a session seam and fake
+  adapter proof.
+
+Failure states:
+
+- `F-XIAOZHI-STREAMING-ASR-BATCH-REGRESSION` if non-streaming ASR fallback no
+  longer works.
+- `F-XIAOZHI-STREAMING-ASR-FAKE-PROVIDER-GREEN` if fake streaming ASR is
+  recorded as real provider readiness.
+- `F-XIAOZHI-STREAMING-ASR-GOROUTINE-LEAK` if abort/socket close does not cancel
+  sessions.
+- `F-XIAOZHI-STREAMING-ASR-TRACE-ORDERING-REGRESSION` if partial/final markers
+  occur only after listen stop.
+
+Rollback path:
+
+- Revert the additive provider interfaces, Gateway session lifecycle hooks,
+  tests, and this state entry. No firmware, NVS, provider credential, or audio
+  gain rollback is involved.
+
+Next state:
+
+- `S-XIAOZHI-STREAMING-ASR-PROVIDER-READY`
+- Next transition:
+  `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`.
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 

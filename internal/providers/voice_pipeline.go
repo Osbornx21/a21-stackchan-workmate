@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,9 +32,10 @@ type VoicePipelinePCMFrame struct {
 }
 
 type VoicePipelineRequest struct {
-	Session VoiceSession
-	Mode    string
-	Frames  []VoicePipelinePCMFrame
+	Session       VoiceSession
+	Mode          string
+	Frames        []VoicePipelinePCMFrame
+	ASRTranscript string `json:"-"`
 }
 
 type VoicePipelineSelection struct {
@@ -126,6 +128,23 @@ type VoicePipelineRedactionPolicies struct {
 type ASRAdapter interface {
 	Name() string
 	Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error)
+}
+
+type StreamingASRAdapter interface {
+	Name() string
+	StartStreamingASR(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error)
+}
+
+type StreamingASRStartRequest struct {
+	Session VoiceSession
+	Mode    string
+}
+
+type StreamingASRSession interface {
+	AppendFrame(ctx context.Context, frame VoicePipelinePCMFrame) error
+	Events() <-chan ASRAdapterEvent
+	Commit(ctx context.Context) error
+	Cancel(error)
 }
 
 type ASRAdapterRequest struct {
@@ -258,33 +277,41 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 		return result, nil
 	}
 
-	asrEvents, err := r.adapters.ASR.Transcribe(ctx, ASRAdapterRequest{Session: req.Session, Mode: req.Mode, Frames: req.Frames})
-	if err != nil {
-		report.Status = string(VoicePipelineStatusFailed)
-		report.Findings = append(report.Findings, "asr adapter failed")
-		result.Report = report
-		return result, err
-	}
 	var transcript string
-	for event := range asrEvents {
-		if event.Finding != "" {
-			report.Findings = append(report.Findings, event.Finding)
-		}
-		if event.Err != nil {
+	if strings.TrimSpace(req.ASRTranscript) != "" {
+		transcript = req.ASRTranscript
+		result.Timing.ASRFirstPartialMS = 0
+		result.Timing.ASRFinalMS = 0
+		result.Timing.SpeechEndToFinalASRMS = 0
+		report.Findings = append(report.Findings, "streaming_asr_final_reused")
+	} else {
+		asrEvents, err := r.adapters.ASR.Transcribe(ctx, ASRAdapterRequest{Session: req.Session, Mode: req.Mode, Frames: req.Frames})
+		if err != nil {
 			report.Status = string(VoicePipelineStatusFailed)
-			if event.Finding == "" {
-				report.Findings = append(report.Findings, "asr adapter failed")
-			}
+			report.Findings = append(report.Findings, "asr adapter failed")
 			result.Report = report
-			return result, event.Err
+			return result, err
 		}
-		if result.Timing.ASRFirstPartialMS < 0 && strings.TrimSpace(event.Text) != "" {
-			result.Timing.ASRFirstPartialMS = pipelineElapsedMS(start)
-		}
-		if event.Final {
-			transcript = event.Text
-			result.Timing.ASRFinalMS = pipelineElapsedMS(start)
-			result.Timing.SpeechEndToFinalASRMS = result.Timing.ASRFinalMS
+		for event := range asrEvents {
+			if event.Finding != "" {
+				report.Findings = append(report.Findings, event.Finding)
+			}
+			if event.Err != nil {
+				report.Status = string(VoicePipelineStatusFailed)
+				if event.Finding == "" {
+					report.Findings = append(report.Findings, "asr adapter failed")
+				}
+				result.Report = report
+				return result, event.Err
+			}
+			if result.Timing.ASRFirstPartialMS < 0 && strings.TrimSpace(event.Text) != "" {
+				result.Timing.ASRFirstPartialMS = pipelineElapsedMS(start)
+			}
+			if event.Final {
+				transcript = event.Text
+				result.Timing.ASRFinalMS = pipelineElapsedMS(start)
+				result.Timing.SpeechEndToFinalASRMS = result.Timing.ASRFinalMS
+			}
 		}
 	}
 	if cancelled := r.applyCancel(ctx, start, &result); cancelled {
@@ -722,6 +749,18 @@ type mockASRAdapter struct {
 	name string
 }
 
+type mockStreamingASRAdapter struct {
+	name string
+}
+
+type mockStreamingASRSession struct {
+	mu          sync.Mutex
+	events      chan ASRAdapterEvent
+	partialSent bool
+	finalSent   bool
+	closed      bool
+}
+
 func NewMockASRAdapter(name string) ASRAdapter {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -730,8 +769,24 @@ func NewMockASRAdapter(name string) ASRAdapter {
 	return mockASRAdapter{name: name}
 }
 
+func NewMockStreamingASRAdapter(name string) StreamingASRAdapter {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "mock-streaming-asr"
+	}
+	return mockStreamingASRAdapter{name: name}
+}
+
 func (a mockASRAdapter) Name() string {
 	return a.name
+}
+
+func (a mockStreamingASRAdapter) Name() string {
+	return a.name
+}
+
+func (a mockStreamingASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
+	return mockASRAdapter{name: a.name}.Transcribe(ctx, req)
 }
 
 func (a mockASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
@@ -743,6 +798,67 @@ func (a mockASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (
 	events <- ASRAdapterEvent{Text: "fixture transcript should never be stored", Final: true}
 	close(events)
 	return events, nil
+}
+
+func (a mockStreamingASRAdapter) StartStreamingASR(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &mockStreamingASRSession{events: make(chan ASRAdapterEvent, 4)}, nil
+}
+
+func (s *mockStreamingASRSession) AppendFrame(ctx context.Context, frame VoicePipelinePCMFrame) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.partialSent || (frame.RMS <= 0 && frame.ByteCount <= 0) {
+		return nil
+	}
+	s.partialSent = true
+	return s.sendLocked(ctx, ASRAdapterEvent{Text: "fixture transcript should never be stored"})
+}
+
+func (s *mockStreamingASRSession) Events() <-chan ASRAdapterEvent {
+	return s.events
+}
+
+func (s *mockStreamingASRSession) Commit(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.finalSent {
+		return nil
+	}
+	s.finalSent = true
+	if err := s.sendLocked(ctx, ASRAdapterEvent{Text: "fixture transcript should never be stored", Final: true}); err != nil {
+		return err
+	}
+	close(s.events)
+	s.closed = true
+	return nil
+}
+
+func (s *mockStreamingASRSession) Cancel(error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	close(s.events)
+	s.closed = true
+}
+
+func (s *mockStreamingASRSession) sendLocked(ctx context.Context, event ASRAdapterEvent) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case s.events <- event:
+		return nil
+	}
 }
 
 type mockTextStreamAdapter struct {

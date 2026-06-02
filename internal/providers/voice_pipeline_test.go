@@ -104,6 +104,46 @@ func TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport(t *
 	}
 }
 
+func TestMockStreamingASRAdapterEmitsPartialOnFrameAndFinalOnCommit(t *testing.T) {
+	adapter := NewMockStreamingASRAdapter("mock-streaming-asr")
+	session, err := adapter.StartStreamingASR(context.Background(), StreamingASRStartRequest{
+		Session: VoiceSession{
+			TraceID:   "a21-trace-streaming-asr",
+			SessionID: "a21-session-streaming-asr",
+			DeviceID:  "stackchan-001",
+		},
+		Mode: "workmate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Seq:          1,
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    1920,
+		RMS:          0.12,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	partial := <-session.Events()
+	if partial.Final || strings.TrimSpace(partial.Text) == "" {
+		t.Fatalf("partial = %+v, want non-final text", partial)
+	}
+	if err := session.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	final := <-session.Events()
+	if !final.Final || strings.TrimSpace(final.Text) == "" {
+		t.Fatalf("final = %+v, want final text", final)
+	}
+	if _, ok := <-session.Events(); ok {
+		t.Fatal("events channel still open after final commit")
+	}
+}
+
 func TestVoicePipelineReportFlagsTTSClippingWithoutAudioPayload(t *testing.T) {
 	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
 		ASR:        scriptedPipelineASRAdapter{text: "private asr words never stored"},

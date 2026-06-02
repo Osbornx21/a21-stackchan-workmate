@@ -199,6 +199,7 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 			xiaozhiRealtimeParityTraceEvent("tts.first_audio", 1190, 190),
 			xiaozhiRealtimeParityTraceEvent("audio.downlink.first_frame", 1210, 210),
 			xiaozhiRealtimeParityTraceEvent("xiaozhi.tts.opus_frame.downlink", 1210, 210),
+			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.answer.downlink", 1210, 210),
 		)
 	}
 	events = append(events,
@@ -213,6 +214,7 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 			xiaozhiRealtimeParityTraceEvent("tts.first_audio", 1440, 440),
 			xiaozhiRealtimeParityTraceEvent("audio.downlink.first_frame", 1460, 460),
 			xiaozhiRealtimeParityTraceEvent("xiaozhi.tts.opus_frame.downlink", 1460, 460),
+			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.answer.downlink", 1460, 460),
 		)
 	} else {
 		events = append(events, xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.start", 1090, 90))

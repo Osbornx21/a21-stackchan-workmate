@@ -55,10 +55,14 @@ type xiaozhiRealtimeParityCounts struct {
 	VADSpeechEnd            int `json:"vad_speech_end"`
 	ASRFirstPartial         int `json:"asr_first_partial"`
 	ASRFinal                int `json:"asr_final"`
+	ASRStreamStart          int `json:"asr_stream_start"`
+	ASRAudioAppend          int `json:"asr_audio_append"`
+	ASRStreamCommit         int `json:"asr_stream_commit"`
 	ProviderFirstContent    int `json:"provider_first_content"`
 	TTSFirstAudio           int `json:"tts_first_audio"`
 	AudioDownlinkFirstFrame int `json:"audio_downlink_first_frame"`
 	OpusDownlinkFrames      int `json:"opus_downlink_frames"`
+	AnswerDownlinkFrames    int `json:"answer_downlink_frames"`
 	VoicePipelineStart      int `json:"voice_pipeline_start"`
 	VoicePipelineCompleted  int `json:"voice_pipeline_completed"`
 	DevicePlaybackStart     int `json:"device_playback_start"`
@@ -248,6 +252,12 @@ func xiaozhiRealtimeParityCountEvents(events []gateway.TraceEvent) xiaozhiRealti
 			counts.ASRFirstPartial++
 		case "asr.final":
 			counts.ASRFinal++
+		case "asr.stream.start":
+			counts.ASRStreamStart++
+		case "asr.audio.append":
+			counts.ASRAudioAppend++
+		case "asr.stream.commit":
+			counts.ASRStreamCommit++
 		case "provider.first_content":
 			counts.ProviderFirstContent++
 		case "tts.first_audio":
@@ -256,6 +266,8 @@ func xiaozhiRealtimeParityCountEvents(events []gateway.TraceEvent) xiaozhiRealti
 			counts.AudioDownlinkFirstFrame++
 		case "xiaozhi.tts.opus_frame.downlink":
 			counts.OpusDownlinkFrames++
+		case "xiaozhi.voice_pipeline.answer.downlink":
+			counts.AnswerDownlinkFrames++
 		case "xiaozhi.voice_pipeline.start":
 			counts.VoicePipelineStart++
 		case "xiaozhi.voice_pipeline.completed":
@@ -305,7 +317,8 @@ func xiaozhiRealtimeParityForbiddenFakeEvent(name string) bool {
 		"xiaozhi.say.wav_playback",
 		"fast_companion.voice_pipeline.start",
 		"fast_companion.voice_pipeline.completed",
-		"control.local_fallback.sent":
+		"control.local_fallback.sent",
+		"xiaozhi.local_fallback.sent":
 		return true
 	default:
 		return false
@@ -322,12 +335,16 @@ func xiaozhiRealtimeParityStageAvailability(report xiaozhiRealtimeParityReport, 
 		"xiaozhi.opus.ingress":               xiaozhiPhysicalBoolMetric(report.Counts.OpusFramesDecoded > 0 && report.Counts.PCMIngressFrames > 0, "gateway_trace"),
 		"vad.speech.end":                     xiaozhiPhysicalBoolMetric(report.Counts.VADSpeechEnd > 0, "gateway_trace"),
 		"asr.partial_before_speech_end":      xiaozhiPhysicalBoolMetric(report.Ordering.StreamingASRBeforeSpeechEnd, "gateway_trace"),
+		"asr.stream.start":                   xiaozhiPhysicalBoolMetric(report.Counts.ASRStreamStart > 0, "gateway_trace"),
+		"asr.audio.append":                   xiaozhiPhysicalBoolMetric(report.Counts.ASRAudioAppend > 0, "gateway_trace"),
+		"asr.stream.commit":                  xiaozhiPhysicalBoolMetric(report.Counts.ASRStreamCommit > 0, "gateway_trace"),
 		"asr.final":                          xiaozhiPhysicalBoolMetric(report.Counts.ASRFinal > 0, "gateway_trace"),
 		"llm.provider.first_content":         xiaozhiPhysicalBoolMetric(report.Counts.ProviderFirstContent > 0, "gateway_trace"),
 		"llm.provider_before_asr_final":      xiaozhiPhysicalBoolMetric(report.Ordering.ProviderBeforeASRFinal, "gateway_trace"),
 		"tts.first_audio":                    xiaozhiPhysicalBoolMetric(report.Counts.TTSFirstAudio > 0, "gateway_trace"),
 		"tts.before_pipeline_completed":      xiaozhiPhysicalBoolMetric(report.Ordering.TTSBeforePipelineCompleted, "gateway_trace"),
 		"opus.downlink.first_frame":          xiaozhiPhysicalBoolMetric(report.Counts.AudioDownlinkFirstFrame > 0 && report.Counts.OpusDownlinkFrames > 0, "gateway_trace"),
+		"voice_pipeline.answer.downlink":     xiaozhiPhysicalBoolMetric(report.Counts.AnswerDownlinkFrames > 0, "gateway_trace"),
 		"downlink.before_pipeline_completed": xiaozhiPhysicalBoolMetric(report.Ordering.DownlinkBeforePipelineCompleted, "gateway_trace"),
 		"voice_pipeline.completed":           xiaozhiPhysicalBoolMetric(report.Counts.VoicePipelineCompleted > 0, "gateway_trace"),
 		"fake_path.absent":                   xiaozhiPhysicalBoolMetric(report.Counts.ForbiddenFakePath == 0, "gateway_trace"),
@@ -353,8 +370,11 @@ func xiaozhiRealtimeParityClassification(report xiaozhiRealtimeParityReport) str
 		return "stock_opus_transport_only"
 	}
 	hasRealtime := report.StageAvailability["asr.partial_before_speech_end"].Available &&
+		report.StageAvailability["asr.stream.start"].Available &&
+		report.StageAvailability["asr.audio.append"].Available &&
 		report.StageAvailability["llm.provider_before_asr_final"].Available &&
 		report.StageAvailability["tts.before_pipeline_completed"].Available &&
+		report.StageAvailability["voice_pipeline.answer.downlink"].Available &&
 		report.StageAvailability["downlink.before_pipeline_completed"].Available
 	if hasRealtime {
 		return "xiaozhi_realtime_candidate"

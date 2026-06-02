@@ -4138,3 +4138,112 @@ Current validation request:
 - No implementation failure. The live trace classification is red by design:
   current trace has transport/Opus ingress evidence only, not full real
   dialogue or streaming parity evidence.
+
+## 2026-06-03 - T-XIAOZHI-STREAMING-ASR-001 - Streaming ASR Session Seam
+
+本轮目标:
+
+- Continue from the realtime parity gate toward actual Xiaozhi-style voice:
+  pre-open ASR on stock `/v1/xiaozhi` listen start, feed decoded Opus PCM frames
+  as they arrive, and use VAD/listen stop only to commit/finalize.
+- Preserve the existing turn-buffered ASR fallback and do not disturb firmware,
+  wake, provider credentials, V21, audio gain, or TTS source selection.
+
+实际完成内容:
+
+- Added plan `docs/plans/2026-06-03-xiaozhi-streaming-asr.md`.
+- Dispatched and received three read-only workers:
+  - `019e8a3a-fbe7-7bf1-af8a-2d3fd3263985`: Gateway seam audit; confirmed
+    attach points at listen start, `observeXiaozhiDecodedIngress`, stop/VAD
+    commit, and abort/close cancellation.
+  - `019e8a3b-166c-73b2-b2d1-c9d7cd5ce95b`: provider ASR audit; confirmed
+    existing Sherpa path is WAV/buffered fallback and must not be marked true
+    streaming.
+  - `019e8a3b-3224-7d21-8a17-0676824dec38`: trace/parity audit; confirmed
+    `xiaozhi-realtime-parity` should require ASR stream markers and answer
+    downlink markers to avoid fast-ack/fallback false green.
+- Added optional provider interfaces:
+  - `providers.StreamingASRAdapter`;
+  - `providers.StreamingASRSession`;
+  - `providers.StreamingASRStartRequest`.
+- Added `providers.NewMockStreamingASRAdapter` for tests. It also satisfies the
+  existing `ASRAdapter` fallback contract, so old batch path remains available.
+- Added Gateway streaming ASR lifecycle:
+  - start session on `/v1/xiaozhi` listen start if selected ASR supports it;
+  - feed decoded PCM frames from `observeXiaozhiDecodedIngress`;
+  - record `asr.stream.start`, `asr.audio.append`, `asr.stream.commit`,
+    `asr.first_partial`, and `asr.final`;
+  - commit on listen stop / VAD auto-stop;
+  - cancel on abort/socket close/reset.
+- Added `VoicePipelineRequest.ASRTranscript` so a streaming final transcript can
+  be reused without re-running batch ASR. The transcript is in-memory only and
+  not stored in reports.
+- Added answer downlink marker `xiaozhi.voice_pipeline.answer.downlink`.
+- Hardened `xiaozhi-realtime-parity`:
+  - counts `asr.stream.start`, `asr.audio.append`, and `asr.stream.commit`;
+  - requires ASR stream start/append and answer downlink for
+    `xiaozhi_realtime_candidate`;
+  - treats `xiaozhi.local_fallback.sent` as a forbidden fake/fallback marker.
+- Updated `docs/project_state_machine.md` with active
+  `T-XIAOZHI-STREAMING-ASR-001`.
+
+修改过的文件:
+
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/xiaozhi_realtime_parity.go`
+- `internal/app/xiaozhi_realtime_parity_test.go`
+- `docs/plans/2026-06-03-xiaozhi-streaming-asr.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Real streaming ASR provider/local engine is not connected yet. This phase
+  proves the Gateway/session seam with a mock streaming ASR adapter only.
+- Current live Gateway process was not restarted in this round, so live hardware
+  remains on the previous binary until a deliberate restart/deploy.
+- `xiaozhi-realtime-parity` live classification should be rerun after a Gateway
+  restart and a real physical `/v1/xiaozhi` turn.
+- `T-XIAOZHI-STREAMING-ASR-PROVIDER-001` must select and implement a real
+  streaming ASR provider/session; Sherpa WAV fallback is explicitly not enough.
+
+已知风险和阻塞点:
+
+- Fake streaming ASR tests prove architecture and ordering only; they do not
+  prove provider readiness, wake readiness, or physical product acceptance.
+- Existing TTS may still be file/segment based depending on selected adapter;
+  full Xiaozhi parity also needs true streaming TTS/provider evidence.
+- `device.playback.start` remains debug/device-events evidence, not stock
+  baseline acceptance.
+- Stock protocol direction allowlist remains a separate transition and was not
+  mixed into this work.
+
+下一轮建议动作:
+
+1. Start `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`: choose the real streaming ASR
+   backend/session API and wire it into `providers.StreamingASRAdapter`.
+2. Restart Gateway from the new commit only after review/commit, then run one
+   real physical `/v1/xiaozhi` turn and collect `xiaozhi-realtime-parity`.
+3. Keep wake/setup validation parallel: no bare `xiaozhi.bin`, no
+   `requestXiaozhiStart()`, and no `wake_word.product_ready=true` without
+   physical proof.
+
+测试/构建/运行结果:
+
+- `go test ./internal/providers -run 'TestMockStreamingASRAdapter' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestXiaozhiWebSocket(StreamingASRStartsBeforeListenStop|ListenStopRunsVoicePipelineAndSendsPacedOpus|VADSpeechEndAutoStopsRealtimeTurn)$' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestXiaozhiRealtimeParity' -count=1`: passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `go test ./internal/providers -count=1`: passed.
+- `make verify`: passed.
+- `git diff --check`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure. Scope is intentionally Phase 1: streaming ASR session seam and
+  trace-order proof with a mock adapter, not real provider acceptance.
