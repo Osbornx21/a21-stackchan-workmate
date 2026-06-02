@@ -4291,8 +4291,8 @@ Current validation request:
 
 当前未完成事项:
 
-- Official-compatible product build, no-write flash plan, guarded flash
-  execute, and physical no-welcome validation are pending.
+- Operator physical no-welcome validation is pending: visually confirm the
+  screen is no longer on "Welcome! Let's get started".
 - Wake remains physically unaccepted; do not mark
   `wake_word.product_ready=true`.
 - Streaming ASR provider is still not real-provider accepted; workers confirmed
@@ -4310,13 +4310,12 @@ Current validation request:
 
 下一轮建议动作:
 
-1. Run `make verify`.
-2. Commit this hotfix from a clean worktree.
-3. Build and guarded-flash only
-   `a21-stackchan-official-xiaozhi-compatible.bin`, then ask the operator to
-   confirm the welcome/setup page is gone.
-4. After no-welcome is physically clean, validate idle socket, touch no-speech
+1. Ask the operator to confirm the welcome/setup page is gone after the
+   `e3758cff...` product flash.
+2. After no-welcome is physically clean, validate idle socket, touch no-speech
    exit, and wake variants `小紫悦`, `你好紫悦`, `紫悦紫悦`, `紫悦`.
+3. If welcome still appears, treat stale artifact/partition mismatch as the
+   next hypothesis and inspect serial boot logs plus app partition SHA.
 
 测试/构建/运行结果:
 
@@ -4324,6 +4323,25 @@ Current validation request:
   passed.
 - `git diff --check`: passed.
 - `make verify`: passed.
+- Official-compatible product build:
+  `reports/a21-stackchan-official-baseline-20260603-054837-1780436917458986000.json`,
+  status `passed`, app SHA-256
+  `e3758cffdc294e74220f5288a33306d4aace164279bea6acb3a2cea5af17e1c3`.
+- No-write flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-054848-1780436928156547000.json`,
+  status `ready`, same app SHA.
+- Guarded flash execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-054954-1780436994114555000.json`,
+  status `passed`, `flash_executed=true`, clean control commit
+  `e694550f1739`, port `/dev/cu.usbmodem1101`.
+- Gateway health after flash returned
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- Device `44:1b:f6:e2:6a:60` reconnected `online` after reboot with
+  `last_event=xiaozhi.hello`.
+- Runtime volume `100` delivered through stock MCP on trace
+  `a21-trace-no-welcome-park-volume-1780437008`.
+- Post-flash trace events filtered since `1780436933516` contained only
+  `xiaozhi.hello.received=2`, with no automatic `listen.start`.
 
 如果中途失败，记录失败位置和原因:
 
