@@ -13,6 +13,8 @@ const (
 	DataTypeControlAvatar byte = 0x03
 	DataTypeControlMotion byte = 0x04
 	DataTypeDanceSequence byte = 0x14
+	DataTypeHeartbeatPing byte = 0x10
+	DataTypeHeartbeatPong byte = 0x11
 )
 
 var ErrUnsupportedOfficialEvent = errors.New("unsupported official stackchan event")

@@ -306,6 +306,12 @@ device-control integration:
   `updateAvatarFromJson`, `updateMotionFromJson`, or `DanceModifier`.
   `display`, `heartbeat`, and playback diagnostics remain outside this
   avatar/action adapter.
+- Gateway exposes `/stackChan/ws` as the official StackChan avatar/action relay
+  path for upstream-compatible clients. A21 validation may send semantic
+  commands through `POST /v1/stackchan/official/control`; Gateway then writes
+  official binary avatar/action packets to the connected `/stackChan/ws`
+  socket. This relay is separate from the stock Xiaozhi voice socket and must
+  not add A21 visual semantics to Xiaozhi stock audio messages.
 
 ### A21 StackChan Device Extension
 

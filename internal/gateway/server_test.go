@@ -2314,6 +2314,88 @@ func TestXiaozhiControlEndpointRejectsStockProfile(t *testing.T) {
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 }
 
+func TestOfficialStackChanControlEndpointDeliversOfficialMotionFrame(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?deviceType=StackChan&device_id=stackchan-official-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-official-001","event":"motion","name":"look_up","y_angle":120,"trace_id":"a21-trace-stackchan-official-control","session_id":"a21-session-stackchan-official-control"}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/stackchan/official/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	msgType, frame, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msgType != websocket.MessageBinary {
+		t.Fatalf("message type = %v, want binary", msgType)
+	}
+	if len(frame) < 5 || frame[0] != 0x04 {
+		t.Fatalf("frame header = %#v, want official ControlMotion", frame[:min(len(frame), 5)])
+	}
+	if got := binary.BigEndian.Uint32(frame[1:5]); got != uint32(len(frame)-5) {
+		t.Fatalf("frame length = %d, want %d", got, len(frame)-5)
+	}
+	var payload map[string]map[string]int
+	if err := json.Unmarshal(frame[5:], &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["pitchServo"]["angle"] != 850 {
+		t.Fatalf("payload = %#v, want y_angle 120 clamped to official 850 units", payload)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+		var response XiaozhiDeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Status != "delivered" || response.DeliveredTransport != "stackchan_official_ws" {
+			t.Fatalf("response = %+v, want official delivery", response)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestOfficialStackChanControlEndpointRequiresConnectedOfficialSocket(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	resp, err := http.Post(httpServer.URL+"/v1/stackchan/official/control", "application/json", bytes.NewBufferString(`{"device_id":"stackchan-official-001","event":"face","emotion":"happy"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+}
+
 func TestXiaozhiDebugProfileRecordsPlaybackStartDeviceEvent(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

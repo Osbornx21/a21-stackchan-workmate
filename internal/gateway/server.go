@@ -21,6 +21,7 @@ import (
 	"a21.local/a21/internal/buildinfo"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	stackchantransport "a21.local/a21/internal/transport/stackchan"
 	xiaozhitransport "a21.local/a21/internal/transport/xiaozhi"
 	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
@@ -29,6 +30,7 @@ import (
 
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
+const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
 type Server struct {
@@ -52,6 +54,7 @@ type Server struct {
 	audioIngress               *audio.Ingress
 	audioSockets               map[string]*deviceSocket
 	xiaozhiSockets             map[string]*xiaozhiDeviceSocket
+	officialStackChanSockets   map[string]*deviceSocket
 	audioCaptureFrames         []AudioCaptureFrame
 	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
 	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
@@ -455,6 +458,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		audioIngress:               audio.NewIngress(options.AudioIngressConfig),
 		audioSockets:               make(map[string]*deviceSocket),
 		xiaozhiSockets:             make(map[string]*xiaozhiDeviceSocket),
+		officialStackChanSockets:   make(map[string]*deviceSocket),
 		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
 		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
 		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
@@ -495,6 +499,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/wake-word", s.handleWakeWordConfig)
 	mux.HandleFunc("/v1/xiaozhi/control", s.handleXiaozhiDeviceControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
+	mux.HandleFunc("/stackChan/ws", s.handleOfficialStackChanWS)
+	mux.HandleFunc("/v1/stackchan/official/control", s.handleOfficialStackChanControl)
 	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
 	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -775,6 +781,60 @@ func (s *Server) handleXiaozhiDeviceControl(w http.ResponseWriter, r *http.Reque
 		DeviceID:           req.DeviceID,
 		Status:             "delivered",
 		DeliveredTransport: "xiaozhi_ws",
+		Event:              string(event.Kind),
+		Value:              event.Value,
+	})
+}
+
+func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiDeviceControlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	event, err := xiaozhiDeviceControlEventFromRequest(req)
+	if err != nil {
+		http.Error(w, "invalid official stackchan event", http.StatusBadRequest)
+		return
+	}
+	packets, err := stackchantransport.BuildOfficialPackets(event)
+	if err != nil {
+		http.Error(w, "unsupported official stackchan event", http.StatusBadRequest)
+		return
+	}
+	socket, ok := s.officialStackChanSocket(req.DeviceID)
+	if !ok {
+		http.Error(w, "official stackchan websocket is not connected", http.StatusConflict)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	socket.writeMu.Lock()
+	for _, packet := range packets {
+		err = socket.conn.Write(r.Context(), websocket.MessageBinary, packet.Bytes())
+		if err != nil {
+			break
+		}
+	}
+	socket.writeMu.Unlock()
+	if err != nil {
+		http.Error(w, "official stackchan command delivery failed", http.StatusBadGateway)
+		return
+	}
+	s.recordOfficialStackChanControlDelivered(req.DeviceID, traceID, sessionID, event, len(packets))
+	writeJSON(w, http.StatusOK, XiaozhiDeviceControlResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "stackchan_official_ws",
 		Event:              string(event.Kind),
 		Value:              event.Value,
 	})
@@ -2990,6 +3050,69 @@ func xiaozhiErrorDetail(err error) string {
 	return err.Error()
 }
 
+func (s *Server) handleOfficialStackChanWS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := officialStackChanDeviceID(r)
+	if !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
+	if err != nil {
+		return
+	}
+	writeMu := &sync.Mutex{}
+	s.registerOfficialStackChanSocket(deviceID, conn, writeMu)
+	s.recordOfficialStackChanConnected(deviceID)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	defer s.unregisterOfficialStackChanSocket(deviceID, conn)
+	defer conn.Close(websocket.StatusNormalClosure, "official stackchan websocket closed")
+
+	go s.writeOfficialStackChanHeartbeat(ctx, conn, writeMu)
+
+	for {
+		messageType, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		if messageType == websocket.MessageBinary && len(data) > 0 && data[0] == stackchantransport.DataTypeHeartbeatPong {
+			s.recordTrace("", "", deviceID, "stackchan.official_ws.heartbeat_pong", s.now().UnixMilli())
+		}
+	}
+}
+
+func officialStackChanDeviceID(r *http.Request) string {
+	query := r.URL.Query()
+	deviceID := firstNonEmpty(query.Get("device_id"), query.Get("deviceId"), query.Get("id"))
+	if strings.TrimSpace(deviceID) == "" {
+		return defaultOfficialStackChanDeviceID
+	}
+	return strings.TrimSpace(deviceID)
+}
+
+func (s *Server) writeOfficialStackChanHeartbeat(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	packet := stackchantransport.OfficialPacket{Type: stackchantransport.DataTypeHeartbeatPing}.Bytes()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			writeMu.Lock()
+			err := conn.Write(ctx, websocket.MessageBinary, packet)
+			writeMu.Unlock()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
 func (s *Server) handleControlWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, a21WebSocketAcceptOptions())
 	if err != nil {
@@ -3774,6 +3897,53 @@ func (s *Server) xiaozhiSocket(deviceID string) (*xiaozhiDeviceSocket, bool) {
 	return socket, socket != nil
 }
 
+func (s *Server) registerOfficialStackChanSocket(deviceID string, conn *websocket.Conn, writeMu *sync.Mutex) {
+	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.officialStackChanSockets[deviceID] = &deviceSocket{conn: conn, writeMu: writeMu, connected: s.now().UnixMilli()}
+}
+
+func (s *Server) unregisterOfficialStackChanSocket(deviceID string, conn *websocket.Conn) {
+	if deviceID == "" || conn == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.officialStackChanSockets[deviceID]
+	if socket != nil && socket.conn == conn {
+		delete(s.officialStackChanSockets, deviceID)
+	}
+}
+
+func (s *Server) officialStackChanSocket(deviceID string) (*deviceSocket, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	socket := s.officialStackChanSockets[deviceID]
+	return socket, socket != nil
+}
+
+func (s *Server) recordOfficialStackChanConnected(deviceID string) {
+	nowMS := s.now().UnixMilli()
+	s.recordTrace("", "", deviceID, "stackchan.official_ws.connected", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.ConnectionStatus = "official_stackchan_ws_connected"
+	record.LastSeenMS = nowMS
+	record.LastEvent = protocol.DeviceEventKind("stackchan.official_ws.connected")
+	s.devices[deviceID] = record
+}
+
 func (s *Server) recordXiaozhiDeviceControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent) {
 	nowMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, deviceID, "xiaozhi.device_command."+string(event.Kind), nowMS)
@@ -3800,6 +3970,35 @@ func (s *Server) recordXiaozhiDeviceControlDelivered(deviceID string, traceID st
 	record.LastTraceID = traceID
 	record.LastSessionID = sessionID
 	record.LastSeenMS = nowMS
+	s.devices[deviceID] = record
+}
+
+func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, packetCount int) {
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_control."+string(event.Kind), nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_control.delivered", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.ConnectionStatus = "official_stackchan_ws_connected"
+	record.LastEvent = protocol.DeviceEventKind("stackchan.official_control." + string(event.Kind))
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = nowMS
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindState, xiaozhitransport.DeviceEventKindFace:
+		record.CurrentExpr = protocol.ExpressionState(event.Value)
+	case xiaozhitransport.DeviceEventKindMotion:
+		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"official_stackchan_last_motion": event.Value})
+	}
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"official_stackchan_packets": strconv.Itoa(packetCount)})
 	s.devices[deviceID] = record
 }
 
