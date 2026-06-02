@@ -65,8 +65,32 @@ Gateway fills missing xiaozhi pipeline defaults with
 `A21_ASR_LOCAL_PROFILE=sherpa_onnx`, `A21_TTS_FAST_PROFILE=sherpa_onnx_tts`,
 and, when local Ollama URL/model env is present and no text profile is selected,
 `A21_TEXT_STREAM_PROFILE=local_ollama`. Explicit ASR/text/TTS env values always
-win over these defaults. The seam decodes valid uplink Opus frames to PCM16 to
-produce aggregate telemetry
+win over these defaults.
+
+Runtime hot-plug selection is separate from product readiness promotion. When
+the operator or frontend explicitly sets `A21_TEXT_STREAM_PROFILE`,
+`A21_PROVIDER_PRIMARY`, `A21_TTS_FAST_PROFILE`, or `A21_LOCAL_TTS_ENGINE`, the
+host voice path may execute that configured candidate if it matches the A21
+text-stream/TTS adapter contract. `route_eligible=false` candidates such as
+StepFun can be used for an explicit contest/listening run, but that does not
+make them product-ready. Product readiness still requires the separate
+route/evidence gates. Current host-side TTS selectors include
+`iflytek_tts` for the immediate real-time cloud TTS candidate and
+`voice_clone_cli` for the retained voice-clone seam. `sherpa_onnx` remains
+available as an emergency/diagnostic local path but is not the desired contest
+voice.
+
+Iflytek/Xfyun host TTS uses these secret env names only:
+`A21_IFLYTEK_TTS_APP_ID`, `A21_IFLYTEK_TTS_API_KEY`, and
+`A21_IFLYTEK_TTS_API_SECRET`. Reports may store `provider=iflytek_tts`,
+`endpoint_host=tts-api.xfyun.cn`, `network_mode=direct`, aggregate timing, and
+PCM quality, but must not store auth query values, credentials, input text,
+provider output, raw/base64 audio, full URLs, proxy values, or local paths. The
+WebSocket client intentionally ignores ambient `HTTP_PROXY` / `HTTPS_PROXY` in
+the current direct mode; explicit WebSocket provider-proxy support needs its
+own adapter transition.
+
+The seam decodes valid uplink Opus frames to PCM16 to produce aggregate telemetry
 (`decoded_frame_count`, `decoded_sample_count`, `decoded_duration_ms`) and an
 honest `decode_status` such as `opus_decoded_pcm16` or `opus_decode_error`.
 Decoded PCM also enters the existing `audio.Ingress` buffer and VAD markers so

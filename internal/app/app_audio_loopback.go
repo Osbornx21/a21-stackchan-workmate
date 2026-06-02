@@ -108,7 +108,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say|voice_clone_cli] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama|<A21_PROVIDER_PROFILES_PATH route-eligible profile>] [--fallback-text-provider local_ollama|<route-eligible profile>] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say|voice_clone_cli|iflytek_tts] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama|stepfun|<A21_PROVIDER_PROFILES_PATH text_stream profile>] [--fallback-text-provider local_ollama|<text_stream profile>] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -529,13 +529,12 @@ func runLocalVoiceLoopbackTextStream(ctx context.Context, prompt string, options
 		report.Findings = append(report.Findings, "unsupported local text provider")
 		return "", fmt.Errorf("unsupported local text provider")
 	}
-	if !profile.RouteEligible {
-		report.Findings = append(report.Findings, "local text provider is not route eligible")
-		return "", fmt.Errorf("unsupported local text provider")
-	}
 	if profile.Protocol != "openai_chat_completions" && profile.Protocol != "ollama_chat" {
 		report.Findings = append(report.Findings, "unsupported local text provider protocol")
 		return "", fmt.Errorf("unsupported local text provider")
+	}
+	if !profile.RouteEligible {
+		report.Findings = append(report.Findings, "local text provider is compatibility-only; product route eligibility is unchanged")
 	}
 	if !options.Execute {
 		report.Findings = append(report.Findings, provider+" text stream not executed; mock text stream used")
@@ -574,9 +573,6 @@ func normalizeLocalVoiceLoopbackProvider(provider string) string {
 func validateLocalVoiceLoopbackTextProvider(env []string, provider string) error {
 	profile, _, ok := providers.ProviderProfileByNameFromEnv(env, provider)
 	if !ok || profile.Family != providers.ProviderFamilyTextStream {
-		return fmt.Errorf("unsupported local text provider")
-	}
-	if !profile.RouteEligible {
 		return fmt.Errorf("unsupported local text provider")
 	}
 	if profile.Protocol != "openai_chat_completions" && profile.Protocol != "ollama_chat" {

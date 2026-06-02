@@ -16,6 +16,7 @@ import (
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
 var synthesizeVoiceCloneCLI = audio.SynthesizeVoiceCloneCLI
+var synthesizeIflytekTTS = audio.SynthesizeIflytekTTS
 var runSherpaONNXASR = audio.RunSherpaONNXASR
 var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 
@@ -136,7 +137,7 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-tts-smoke [--engine sherpa_onnx|macos_say|voice_clone_cli] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-tts-smoke [--engine sherpa_onnx|macos_say|voice_clone_cli|iflytek_tts] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -253,6 +254,12 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 		VoiceClone: clone,
 	})
 	if err != nil {
+		if strings.TrimSpace(report.SchemaVersion) != "" {
+			if reportPath, writeErr := writeLocalTTSSmokeReport(outputDir, report); writeErr == nil {
+				report.ReportPath = reportPath
+				_ = writeJSONLocalTTSSmoke(stdout, report)
+			}
+		}
 		fmt.Fprintf(stderr, "local TTS smoke failed: %v\n", err)
 		return 1
 	}
@@ -318,6 +325,8 @@ func synthesizeLocalTTS(ctx context.Context, options localTTSRuntimeOptions) (au
 		return synthesizeSherpaONNX(ctx, ttsOptions)
 	case "voice_clone_cli":
 		return synthesizeVoiceCloneCLI(ctx, ttsOptions)
+	case "iflytek_tts":
+		return synthesizeIflytekTTS(ctx, ttsOptions)
 	default:
 		return audio.LocalTTSReport{}, fmt.Errorf("unsupported local TTS engine")
 	}
@@ -332,6 +341,8 @@ func normalizeLocalTTSEngine(raw string) (string, error) {
 		return "macos_say", nil
 	case "clone", "voice_clone", "voice_clone_cli", "a21_voice_clone":
 		return "voice_clone_cli", nil
+	case "iflytek", "xfyun", "iflytek_tts", "xfyun_tts":
+		return "iflytek_tts", nil
 	default:
 		return "", fmt.Errorf("unsupported local TTS engine")
 	}

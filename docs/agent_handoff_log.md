@@ -2087,3 +2087,129 @@ Validation results:
 - Desktop helper syntax checks: passed.
 - `git diff --check`: passed.
 - `make verify`: passed, including `go test ./...` and `git diff --check`.
+
+## 2026-06-03 01:10 CST - T-PROVIDER-002 Hot-Plug TTS/LLM And Voice Clone Recovery
+
+Round goal:
+
+- Respond to the operator correction that A21 must keep voice-clone capability.
+- Preserve `voice_clone_cli` while adding the immediate contest candidate path:
+  StepFun `step-1-8k` text stream plus Iflytek/Xfyun real-time TTS.
+- Keep stock Xiaozhi firmware/protocol, accepted 3x Gateway gain, and Codex/global
+  proxy settings unchanged.
+
+Actual completed work:
+
+- Confirmed by code search and read-only subagent `019e8943-e565-7c62-9fff-23fcb2c904c4`
+  that `voice_clone_cli` is still the retained A21 voice-clone seam:
+  `internal/audio/local_tts.go`, `internal/app/app_audio.go`,
+  `internal/providers/voice_pipeline_adapters.go`,
+  `internal/app/product_demo.go`, `scripts/a21_5080_indextts2_bridge.py`,
+  `scripts/a21_5080_indextts2_bridge_test.py`, and
+  `docs/engineering/VOICE_CLONE_TTS.md`.
+- Integrated host-side Iflytek TTS as `iflytek_tts`:
+  - env names: `A21_IFLYTEK_TTS_APP_ID`,
+    `A21_IFLYTEK_TTS_API_KEY`, `A21_IFLYTEK_TTS_API_SECRET`;
+  - HMAC WebSocket auth URL generation;
+  - 16 kHz PCM request and WAV writing;
+  - redacted `a21.audio.local_tts.v1` report with endpoint host, direct network
+    mode, timing, and PCM quality;
+  - direct WebSocket HTTP client that ignores ambient `HTTP_PROXY` /
+    `HTTPS_PROXY`.
+- Exposed `iflytek_tts` through:
+  - `local-tts-smoke`;
+  - `local-voice-loopback`;
+  - `stackchan-local-tts-playback`;
+  - `stackchan-fast-companion-turn`;
+  - Gateway voice-pipeline TTS selection via `A21_TTS_FAST_PROFILE`.
+- Relaxed runtime text-stream hot-plug selection so explicit compatibility
+  candidates such as `stepfun` can execute without being promoted to product
+  `route_eligible=true`.
+- Added failure-report behavior for `local-tts-smoke`: provider synthesis
+  errors now still write a redacted report when the synthesizer returns one.
+- Updated docs to separate the four TTS concepts:
+  - Iflytek: immediate fast real-time contest TTS candidate;
+  - StepFun: explicit text-stream candidate, not product route-eligible yet;
+  - `voice_clone_cli`: retained voice-clone/persona capability;
+  - `sherpa_onnx`: emergency/diagnostic fallback only for this contest window.
+- Read the 5080 report through SSH without storing it in the repo. The report
+  contains plaintext credentials; repo docs/logs record only env names and
+  redacted evidence.
+
+Files changed this round:
+
+- `internal/audio/local_tts.go`
+- `internal/audio/local_tts_test.go`
+- `internal/app/app.go`
+- `internal/app/app_audio.go`
+- `internal/app/app_audio_loopback.go`
+- `internal/app/app_stackchan_playback.go`
+- `internal/app/app_test.go`
+- `internal/app/fast_companion_turn.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/NETWORK.md`
+- `docs/engineering/VOICE_CLONE_TTS.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- Iflytek TTS is coded and tested, but Mac direct live WebSocket smoke is
+  blocked:
+  `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json`
+  has `status=failed`, `network_mode=direct`, finding
+  `iflytek_tts_websocket_dial_failed`.
+- StepFun direct provider-smoke passed, but `local-voice-loopback` with StepFun
+  was unstable on the Mac direct path:
+  - first retry failed awaiting headers after client timeout;
+  - second retry failed during TLS handshake.
+- No physical StackChan playback was attempted in this round because the real
+  TTS source did not synthesize successfully.
+- Full PRD acceptance remains blocked by custom wake proof, normal dialogue
+  half-duplex proof, and selected-provider/live-TTS readiness.
+
+Known risks and blockers:
+
+- The 5080 report contains plaintext credentials; do not copy values into repo
+  docs, shell snippets, reports, or final messages. Consider rotating them
+  outside this repo.
+- Mac direct provider network is not reliable enough for the real-time loopback
+  path even though `provider-smoke` can pass.
+- If explicit WebSocket provider proxying is needed, it requires a separate
+  adapter transition; the current Iflytek WebSocket path is direct-only by
+  design.
+- `voice_clone_cli` readiness is configuration/file-existence readiness until
+  a wrapper/model smoke and physical playback acceptance run.
+
+Recommended next action:
+
+- Execute `T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock`.
+- Fastest likely path: use 5080/Alibaba as the TTS egress/relay rather than
+  continuing to rely on Mac direct WebSocket, then rerun:
+  - `local-tts-smoke --engine iflytek_tts`;
+  - `local-voice-loopback --engine iflytek_tts --text-provider stepfun
+    --execute-text-provider`;
+  - physical `stackchan-local-tts-playback` or `stackchan-fast-companion-turn`
+    through Gateway `21081`.
+- Keep `voice_clone_cli` available for a parallel clone/persona smoke after the
+  immediate Iflytek real-time path is unblocked.
+
+Validation results:
+
+- `go test ./internal/audio ./internal/providers ./internal/app -run 'Iflytek|VoiceClone|LocalTTS|LocalVoiceLoopback|StackChanLocalTTSPlayback|ProductVoiceReadiness|ProviderCompatMatrix|VoicePipelineAdapters' -count=1`:
+  passed.
+- `python3 scripts/a21_5080_indextts2_bridge_test.py`: passed.
+- `go test ./internal/app ./internal/gateway ./internal/providers ./internal/audio -run 'Iflytek|VoiceClone|VoicePipeline|LocalVoiceLoopback|StackChan|FastCompanion|Xiaozhi' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed, including `go test ./...` and `git diff --check`.
+- Live StepFun provider smoke:
+  `reports/provider-tts-candidate/a21-provider-smoke-20260603-010652-957877000.json`
+  passed with `provider=stepfun`, `network_mode=direct`, `route_eligible=false`,
+  `repeat=2`, first-content p50 `442.975 ms`, p95 `1095.192 ms`.
+- Live Iflytek TTS smoke:
+  `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json`
+  failed at WebSocket dial as described above.

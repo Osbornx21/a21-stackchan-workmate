@@ -4,6 +4,13 @@ Status: host-local integration contract.
 
 A21 uses `voice_clone_cli` as the product-facing voice-clone TTS seam. The Gateway and voice pipeline do not import a model repository directly; they call an A21-owned wrapper command that can target a local model such as IndexTTS2, CosyVoice, F5-TTS, or GPT-SoVITS.
 
+This capability is separate from the rejected old local contest voice. During
+`T-PROVIDER-002`, Iflytek TTS may be selected as the immediate fast real-time
+dialogue source, but `voice_clone_cli` remains the retained A21 path for cloned
+or persona voices. CosyVoice is a valid future ordinary local fallback and
+voice-clone model candidate after a dedicated bakeoff; it must not be silently
+substituted for the active contest TTS without evidence.
+
 ## Model Priority
 
 1. `index_tts2`: preferred A21 personality voice target because it exposes voice cloning plus style/emotion controls.

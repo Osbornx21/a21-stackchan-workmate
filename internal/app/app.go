@@ -1075,7 +1075,8 @@ func warmGatewayProductChain(ctx context.Context, env []string) error {
 		}
 	}
 	ttsProfile := firstNonEmpty(appEnvValue(env, "A21_TTS_FAST_PROFILE"), appEnvValue(env, "A21_TTS_BALANCED_PROFILE"), appEnvValue(env, "A21_TTS_QUALITY_PROFILE"))
-	if strings.Contains(strings.ToLower(ttsProfile), "sherpa") {
+	normalizedTTSProfile := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(ttsProfile)), "-", "_")
+	if strings.Contains(normalizedTTSProfile, "sherpa") {
 		outputDir := filepath.Join(os.TempDir(), "a21-product-chain-warmup")
 		_ = os.RemoveAll(outputDir)
 		defer os.RemoveAll(outputDir)
@@ -1090,7 +1091,7 @@ func warmGatewayProductChain(ctx context.Context, env []string) error {
 		if report.Status != "passed" {
 			return fmt.Errorf("TTS warmup did not pass")
 		}
-	} else if strings.ToLower(strings.TrimSpace(ttsProfile)) == "voice_clone_cli" {
+	} else if normalizedTTSProfile == "voice_clone_cli" {
 		outputDir := filepath.Join(os.TempDir(), "a21-product-chain-warmup")
 		_ = os.RemoveAll(outputDir)
 		defer os.RemoveAll(outputDir)
@@ -1111,6 +1112,20 @@ func warmGatewayProductChain(ctx context.Context, env []string) error {
 		}
 		if report.Status != "passed" {
 			return fmt.Errorf("voice clone TTS warmup did not pass")
+		}
+	} else if normalizedTTSProfile == "iflytek_tts" || normalizedTTSProfile == "iflytek" || normalizedTTSProfile == "xfyun" || normalizedTTSProfile == "xfyun_tts" {
+		outputDir := filepath.Join(os.TempDir(), "a21-product-chain-warmup")
+		_ = os.RemoveAll(outputDir)
+		defer os.RemoveAll(outputDir)
+		report, err := audio.SynthesizeIflytekTTS(warmCtx, audio.LocalTTSOptions{
+			Text:      "A21 warmup",
+			OutputDir: outputDir,
+		})
+		if err != nil {
+			return fmt.Errorf("Iflytek TTS warmup failed")
+		}
+		if report.Status != "passed" {
+			return fmt.Errorf("Iflytek TTS warmup did not pass")
 		}
 	}
 	return nil

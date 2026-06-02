@@ -330,6 +330,41 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvSelectsIflytekTTS(t *testing.T) {
+	var captured audio.LocalTTSOptions
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_TTS_FAST_PROFILE=iflytek_tts",
+	}, VoicePipelineAdapterOptions{
+		TTSOptions: audio.LocalTTSOptions{OutputDir: t.TempDir()},
+		TTSSynthesizer: func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+			captured = options
+			if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(options.OutputDir, "a21-iflytek-adapter.wav")
+			if err := audio.WritePCM16MonoWAV(path, 24000, make([]byte, 2880)); err != nil {
+				t.Fatal(err)
+			}
+			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
+		},
+	})
+
+	if adapters.ExecutionMode != "host_local" || adapters.TTS.Name() != "iflytek_tts" {
+		t.Fatalf("adapters execution/TTS = %q/%q", adapters.ExecutionMode, adapters.TTS.Name())
+	}
+	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "用户原文不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collected := collectVoiceChunks(t, chunks)
+	if len(collected) != 1 || collected[0].SampleRateHz != 24000 || collected[0].DurationMS != 60 {
+		t.Fatalf("chunks = %+v, want one 24k 60ms chunk", collected)
+	}
+	if captured.Text != "用户原文不进报告" || captured.OutputSampleRateHz != 24000 {
+		t.Fatalf("captured TTS options = %+v", captured)
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvSelectsLocalOllama(t *testing.T) {
 	adapters := VoicePipelineAdaptersFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=local_ollama",
@@ -399,6 +434,51 @@ func TestVoicePipelineAdaptersFromEnvSelectsHotPlugOpenAITextStreamProfile(t *te
 	got, ok := body["max_tokens"].(float64)
 	if !ok || int(got) != 15 {
 		t.Fatalf("max_tokens = %#v, want 15", body["max_tokens"])
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvSelectsCompatibilityTextStreamProfile(t *testing.T) {
+	var body map[string]any
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host != "a21-stepfun.invalid" || req.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("request URL = %s, want a21-stepfun.invalid/v1/chat/completions", req.URL.String())
+		}
+		body = readJSONRequestBody(t, req)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\ndata: [DONE]\n")),
+			Request:    req,
+		}, nil
+	})}
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=stepfun",
+		"A21_TEXT_STREAM_PROFILE=stepfun",
+		"A21_LAB_STEPFUN_API_KEY=configured-token",
+		"A21_STEPFUN_MODEL=step-1-8k",
+		"A21_STEPFUN_BASE_URL=https://a21-stepfun.invalid/v1",
+	}, VoicePipelineAdapterOptions{
+		TextHTTPClient: client,
+		TextMaxTokens:  9,
+	})
+
+	if adapters.ExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local", adapters.ExecutionMode)
+	}
+	if adapters.TextStream.Name() != "stepfun" {
+		t.Fatalf("text stream adapter = %s, want stepfun", adapters.TextStream.Name())
+	}
+	events, err := adapters.TextStream.StreamText(context.Background(), TextStreamAdapterRequest{Text: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = collectTextEvents(t, events)
+
+	if got, ok := body["max_tokens"].(float64); !ok || int(got) != 9 {
+		t.Fatalf("max_tokens = %#v, want 9", body["max_tokens"])
+	}
+	if got := body["model"]; got != "step-1-8k" {
+		t.Fatalf("model = %#v, want step-1-8k", got)
 	}
 }
 

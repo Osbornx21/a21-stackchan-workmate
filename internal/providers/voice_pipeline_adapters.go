@@ -667,6 +667,9 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "voice_clone_cli" {
 			synthesizer = audio.SynthesizeVoiceCloneCLI
 		}
+		if synthesizer == nil && isIflytekTTSProfile(selection.TTSProfile) {
+			synthesizer = audio.SynthesizeIflytekTTS
+		}
 		adapters.TTS = NewLocalTTSAdapter(LocalTTSAdapterOptions{
 			Name:        selection.TTSProfile,
 			BaseOptions: ttsOptions,
@@ -734,25 +737,34 @@ func isLocalSherpaASRProfile(profile string) bool {
 }
 
 func openAITextStreamProfileFromEnv(env []string, profile string) (ProviderProfile, bool) {
-	return routeEligibleTextStreamProfileFromEnv(env, profile, "openai_chat_completions")
+	return textStreamProfileFromEnv(env, profile, "openai_chat_completions")
 }
 
 func ollamaTextStreamProfileFromEnv(env []string, profile string) (ProviderProfile, bool) {
-	return routeEligibleTextStreamProfileFromEnv(env, profile, "ollama_chat")
+	return textStreamProfileFromEnv(env, profile, "ollama_chat")
 }
 
-func routeEligibleTextStreamProfileFromEnv(env []string, profile string, protocol string) (ProviderProfile, bool) {
+func textStreamProfileFromEnv(env []string, profile string, protocol string) (ProviderProfile, bool) {
 	profile = normalizePipelineProfile(profile)
 	if profile == "" || profile == "mock" || profile == "mock_text_stream" || profile == "mock-text-stream" {
 		return ProviderProfile{}, false
 	}
 	found, _, ok := ProviderProfileByNameFromEnv(env, profile)
-	return found, ok && found.RouteEligible && found.Family == ProviderFamilyTextStream && found.Protocol == protocol
+	return found, ok && found.Family == ProviderFamilyTextStream && found.Protocol == protocol
 }
 
 func isLocalTTSProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
-	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say", "voice_clone_cli":
+	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say", "voice_clone_cli", "iflytek_tts", "iflytek", "xfyun", "xfyun_tts":
+		return true
+	default:
+		return false
+	}
+}
+
+func isIflytekTTSProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "iflytek_tts", "iflytek", "xfyun", "xfyun_tts":
 		return true
 	default:
 		return false
@@ -797,5 +809,5 @@ func localTTSOptionsFromEnv(env []string, base audio.LocalTTSOptions) audio.Loca
 }
 
 func normalizePipelineProfile(profile string) string {
-	return strings.ToLower(strings.TrimSpace(profile))
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(profile)), "-", "_")
 }

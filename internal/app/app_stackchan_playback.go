@@ -64,7 +64,7 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say|voice_clone_cli] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--wav <a21-16k-mono-wav>] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say|voice_clone_cli|iflytek_tts] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--wav <a21-16k-mono-wav>] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {

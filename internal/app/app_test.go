@@ -7521,6 +7521,149 @@ func TestRunLocalTTSSmokeSupportsVoiceCloneCLIEngine(t *testing.T) {
 	}
 }
 
+func TestRunLocalTTSSmokeSupportsIflytekTTSEngineSelection(t *testing.T) {
+	original := synthesizeIflytekTTS
+	t.Cleanup(func() { synthesizeIflytekTTS = original })
+	synthesizeIflytekTTS = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		if options.Text != "不能进报告" {
+			t.Fatalf("iflytek options = %+v", options)
+		}
+		outputPath := filepath.Join(options.OutputDir, "a21-iflytek-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "iflytek_tts",
+			Engine:          "iflytek_tts",
+			EndpointHost:    "tts-api.xfyun.cn",
+			Voice:           "xiaoyan",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      16.5,
+			TTSFirstAudioMS: 16.5,
+		}, nil
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		env  string
+	}{
+		{
+			name: "flag",
+			args: []string{"local-tts-smoke", "--engine", "iflytek_tts", "--text", "不能进报告"},
+		},
+		{
+			name: "env",
+			args: []string{"local-tts-smoke", "--text", "不能进报告"},
+			env:  "iflytek_tts",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.env != "" {
+				t.Setenv("A21_LOCAL_TTS_ENGINE", tt.env)
+			}
+			dir := t.TempDir()
+			args := append([]string(nil), tt.args...)
+			args = append(args, "--output-dir", dir)
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := Run(args, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+			}
+			for _, want := range []string{
+				`"provider": "iflytek_tts"`,
+				`"engine": "iflytek_tts"`,
+				`"endpoint_host": "tts-api.xfyun.cn"`,
+				`"voice": "xiaoyan"`,
+			} {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("stdout missing %q: %s", want, stdout.String())
+				}
+			}
+			for _, forbidden := range []string{"不能进报告", dir, "Authorization", "Bearer", "data_base64", "raw_audio", "http://", "wss://"} {
+				if strings.Contains(stdout.String(), forbidden) {
+					t.Fatalf("iflytek smoke leaked %q: %s", forbidden, stdout.String())
+				}
+			}
+		})
+	}
+}
+
+func TestRunLocalTTSSmokeWritesIflytekFailureReport(t *testing.T) {
+	original := synthesizeIflytekTTS
+	t.Cleanup(func() { synthesizeIflytekTTS = original })
+	synthesizeIflytekTTS = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		return audio.LocalTTSReport{
+			SchemaVersion: "a21.audio.local_tts.v1",
+			GeneratedAtMS: time.Now().UnixMilli(),
+			Status:        "failed",
+			Provider:      "iflytek_tts",
+			Engine:        "iflytek_tts",
+			EndpointHost:  "tts-api.xfyun.cn",
+			NetworkMode:   "direct",
+			Voice:         "xiaoyan",
+			OutputFormat:  "wav_pcm_s16le_16000_mono",
+			TextBytes:     len([]byte(options.Text)),
+			Findings:      []string{"iflytek_tts_websocket_dial_failed_http_403"},
+		}, fmt.Errorf("iflytek TTS websocket dial failed")
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-tts-smoke", "--engine", "iflytek_tts", "--text", "不能进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1", code)
+	}
+	for _, want := range []string{
+		`"status": "failed"`,
+		`"provider": "iflytek_tts"`,
+		`"endpoint_host": "tts-api.xfyun.cn"`,
+		`"network_mode": "direct"`,
+		`"iflytek_tts_websocket_dial_failed_http_403"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-tts-smoke-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("reports = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"不能进报告", dir, "Authorization", "Bearer", "data_base64", "raw_audio", "http://", "wss://"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("iflytek failure report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestNormalizeLocalTTSEngineSupportsIflytekAliases(t *testing.T) {
+	for _, raw := range []string{"iflytek_tts", "iflytek-tts", "iflytek", "xfyun", "xfyun_tts"} {
+		got, err := normalizeLocalTTSEngine(raw)
+		if err != nil {
+			t.Fatalf("normalize %q: %v", raw, err)
+		}
+		if got != "iflytek_tts" {
+			t.Fatalf("normalize %q = %q, want iflytek_tts", raw, got)
+		}
+	}
+}
+
 func TestRunLocalTTSSmokeRejectsLegacyReportDir(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -7995,6 +8138,99 @@ func TestRunLocalVoiceLoopbackCanUseDeepSeekTextStreamWithoutLeakingContent(t *t
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat", "用户原文不要进报告", "收到我会帮你稳住", "先识别情绪", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent(t *testing.T) {
+	original := synthesizeMacOSSay
+	t.Cleanup(func() { synthesizeMacOSSay = original })
+	var ttsInput string
+	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInput = options.Text
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-stepfun-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "macos_say",
+			Voice:           "Tingting",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      12,
+			TTSFirstAudioMS: 12,
+		}, nil
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "step-1-8k" {
+			t.Fatalf("model = %q, want step-1-8k", body.Model)
+		}
+		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
+			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"收到我会帮你稳住"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("A21_LAB_STEPFUN_API_KEY", "sk-a21-stepfun-secret")
+	t.Setenv("A21_STEPFUN_MODEL", "step-1-8k")
+	t.Setenv("A21_STEPFUN_BASE_URL", server.URL)
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "stepfun", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if ttsInput != "收到我会帮你稳住" {
+		t.Fatalf("tts input = %q, want provider voice preview", ttsInput)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"text_stream_provider": "stepfun"`,
+		`"text_stream_executed": true`,
+		`"text_stream_content_delta_count": 1`,
+		`"tts_provider": "macos_say"`,
+		`local text provider is compatibility-only; product route eligibility is unchanged`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"sk-a21-stepfun-secret", "step-1-8k", "用户原文不要进报告", "收到我会帮你稳住", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}

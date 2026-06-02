@@ -2,11 +2,18 @@ package audio
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
 type fakeTTSCommandRunner struct {
@@ -349,6 +356,221 @@ func TestVoiceCloneCLILocalTTSAllowsRemoteWrapperCommandAndUTF8TempFiles(t *test
 	}
 }
 
+func TestIflytekTTSMissingEnvSkipsWithoutSecretLeak(t *testing.T) {
+	t.Setenv("A21_IFLYTEK_TTS_APP_ID", "")
+	t.Setenv("A21_IFLYTEK_TTS_API_KEY", "")
+	t.Setenv("A21_IFLYTEK_TTS_API_SECRET", "")
+
+	report, err := SynthesizeIflytekTTS(context.Background(), LocalTTSOptions{
+		Text:      "这段文本不能出现在报告里",
+		OutputDir: t.TempDir(),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "skipped" || report.Provider != "iflytek_tts" || report.Engine != "iflytek_tts" {
+		t.Fatalf("report identity/status = %+v", report)
+	}
+	for _, want := range []string{"missing A21_IFLYTEK_TTS_APP_ID", "missing A21_IFLYTEK_TTS_API_KEY", "missing A21_IFLYTEK_TTS_API_SECRET"} {
+		if !stringSliceContainsLocalTTS(report.Findings, want) {
+			t.Fatalf("findings missing %q: %+v", want, report.Findings)
+		}
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{"这段文本不能出现在报告里", "authorization", "Authorization", "Bearer", "http://", "wss://", "data_base64", "raw_audio"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("iflytek missing-env report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestIflytekTTSWebSocketClientIgnoresAmbientProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://proxy-secret@127.0.0.1:7891")
+	t.Setenv("HTTPS_PROXY", "http://proxy-secret@127.0.0.1:7891")
+
+	client := iflytekTTSWebSocketHTTPClient()
+
+	if client.Timeout != 15*time.Second {
+		t.Fatalf("timeout = %s, want 15s", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy != nil {
+		req, _ := http.NewRequest(http.MethodGet, "https://tts-api.xfyun.cn/v2/tts", nil)
+		proxyURL, _ := transport.Proxy(req)
+		t.Fatalf("iflytek TTS websocket transport inherited proxy %v", proxyURL)
+	}
+}
+
+func TestIflytekTTSAuthURLShapeWithoutRawSecret(t *testing.T) {
+	config := iflytekTTSConfig{
+		AppID:     "a21-test-app",
+		APIKey:    "a21-test-api-key",
+		APISecret: "a21-test-api-secret",
+		Endpoint:  "wss://tts-api.xfyun.cn/v2/tts",
+		Voice:     "xiaoyan",
+	}
+
+	signedURL, endpointHost, err := buildIflytekTTSAuthURL(config, time.Date(2026, 6, 3, 5, 4, 3, 0, time.UTC))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(signedURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	if parsed.Scheme != "wss" || parsed.Host != "tts-api.xfyun.cn" || parsed.Path != "/v2/tts" {
+		t.Fatalf("signed URL shape = %s", signedURL)
+	}
+	if endpointHost != "tts-api.xfyun.cn" || query.Get("host") != "tts-api.xfyun.cn" || !strings.Contains(query.Get("date"), "GMT") {
+		t.Fatalf("host/date = endpoint:%q query:%v", endpointHost, query)
+	}
+	authorization := query.Get("authorization")
+	if authorization == "" {
+		t.Fatal("authorization query is empty")
+	}
+	decodedAuthorization, err := base64.StdEncoding.DecodeString(authorization)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`api_key="a21-test-api-key"`, `algorithm="hmac-sha256"`, `headers="host date request-line"`, `signature="`} {
+		if !strings.Contains(string(decodedAuthorization), want) {
+			t.Fatalf("authorization missing %q: %s", want, decodedAuthorization)
+		}
+	}
+	for _, forbidden := range []string{config.APIKey, config.APISecret} {
+		if strings.Contains(signedURL, forbidden) {
+			t.Fatalf("signed URL leaked raw secret %q: %s", forbidden, signedURL)
+		}
+	}
+}
+
+func TestIflytekTTSSynthesizesPCMChunksToRedactedWAVReport(t *testing.T) {
+	const (
+		appID     = "a21-test-app-id"
+		apiKey    = "a21-test-api-key"
+		apiSecret = "a21-test-api-secret"
+		rawText   = "真实合成文本不能进入报告"
+	)
+	t.Setenv("A21_IFLYTEK_TTS_APP_ID", appID)
+	t.Setenv("A21_IFLYTEK_TTS_API_KEY", apiKey)
+	t.Setenv("A21_IFLYTEK_TTS_API_SECRET", apiSecret)
+	chunkOne := pcm16Bytes(0, 900, -900, 1200)
+	chunkTwo := pcm16Bytes(-1200, 1600, -1600, 0)
+	chunkOneBase64 := base64.StdEncoding.EncodeToString(chunkOne)
+	chunkTwoBase64 := base64.StdEncoding.EncodeToString(chunkTwo)
+	queryCh := make(chan url.Values, 1)
+	requestCh := make(chan iflytekTTSRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/tts" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		queryCh <- r.URL.Query()
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		messageType, payload, err := conn.Read(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if messageType != websocket.MessageText {
+			t.Fatalf("message type = %v, want text", messageType)
+		}
+		var request iflytekTTSRequest
+		if err := json.Unmarshal(payload, &request); err != nil {
+			t.Fatal(err)
+		}
+		requestCh <- request
+		if err := conn.Write(context.Background(), websocket.MessageText, []byte(`{"code":0,"message":"success","sid":"a21-test-sid","data":{"audio":"`+chunkOneBase64+`","status":1}}`)); err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.Write(context.Background(), websocket.MessageText, []byte(`{"code":0,"message":"success","sid":"a21-test-sid","data":{"audio":"`+chunkTwoBase64+`","status":2}}`)); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	originalEndpoint := iflytekTTSEndpoint
+	t.Cleanup(func() { iflytekTTSEndpoint = originalEndpoint })
+	iflytekTTSEndpoint = func() string {
+		return "ws" + strings.TrimPrefix(server.URL, "http") + "/v2/tts"
+	}
+	dir := t.TempDir()
+
+	report, err := SynthesizeIflytekTTS(context.Background(), LocalTTSOptions{
+		Text:      rawText,
+		Voice:     "x4_xiaoyan",
+		OutputDir: dir,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "passed" || report.Provider != "iflytek_tts" || report.Engine != "iflytek_tts" {
+		t.Fatalf("report identity/status = %+v", report)
+	}
+	if report.EndpointHost == "" || strings.Contains(report.EndpointHost, "/v2/tts") || strings.Contains(report.EndpointHost, "ws://") {
+		t.Fatalf("endpoint host = %q, want host label only", report.EndpointHost)
+	}
+	if report.Voice != "x4_xiaoyan" || report.OutputFormat != "wav_pcm_s16le_16000_mono" {
+		t.Fatalf("voice/output format = %q/%q", report.Voice, report.OutputFormat)
+	}
+	if report.OutputBytes <= 44 || report.TTSFirstAudioMS <= 0 || report.AudioQuality == nil {
+		t.Fatalf("output/timing/quality = %+v", report)
+	}
+	if report.AudioQuality.SampleRateHz != 16000 || report.AudioQuality.Codec != "pcm_s16le" {
+		t.Fatalf("audio quality = %+v", report.AudioQuality)
+	}
+	query := <-queryCh
+	if query.Get("authorization") == "" || query.Get("date") == "" || query.Get("host") == "" {
+		t.Fatalf("auth query missing fields: %v", query)
+	}
+	request := <-requestCh
+	if request.Common.AppID != appID ||
+		request.Business.AUE != "raw" ||
+		request.Business.AUF != "audio/L16;rate=16000" ||
+		request.Business.VCN != "x4_xiaoyan" ||
+		request.Business.TTE != "UTF8" ||
+		request.Data.Status != 2 {
+		t.Fatalf("iflytek request = %+v", request)
+	}
+	decodedText, err := base64.StdEncoding.DecodeString(request.Data.Text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decodedText) != rawText {
+		t.Fatalf("decoded text = %q", decodedText)
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{
+		rawText,
+		appID,
+		apiKey,
+		apiSecret,
+		query.Get("authorization"),
+		chunkOneBase64,
+		chunkTwoBase64,
+		server.URL,
+		"/v2/tts",
+		dir,
+		report.OutputPath,
+		"http://",
+		"wss://",
+		"data_base64",
+		"raw_audio",
+	} {
+		if forbidden != "" && strings.Contains(rendered, forbidden) {
+			t.Fatalf("iflytek report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestLocalTTSOutputPathsAreUniqueAcrossFastConsecutiveCalls(t *testing.T) {
 	dir := t.TempDir()
 	runner := &fakeTTSCommandRunner{}
@@ -394,4 +616,13 @@ func argValue(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func stringSliceContainsLocalTTS(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

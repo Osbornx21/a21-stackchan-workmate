@@ -59,6 +59,12 @@ Future HTTP-based provider adapters must build clients through `internal/provide
 
 The current HTTP provider proxy support accepts `http` and `https` proxy URLs. SOCKS and provider-specific WebSocket dialers need a separate adapter implementation and tests before use. Doctor reports only the env variable name and network mode; it never prints provider proxy values.
 
+The current Iflytek/Xfyun host TTS WebSocket adapter is direct-only: it uses an
+A21-owned HTTP client with ambient `HTTP_PROXY` / `HTTPS_PROXY` disabled and
+reports only `network_mode=direct`. `A21_PROVIDER_PROXY_URL` does not yet apply
+to WebSocket TTS. If explicit provider-proxy WebSocket support is needed, add a
+separate adapter transition with tests and redacted reporting.
+
 `agent-io-smoke --execute` is intentionally not a cloud provider egress client.
 It uses an HTTP transport with `Proxy: nil`, records only a coarse endpoint
 label, and refuses URL credentials or device-control paths.
