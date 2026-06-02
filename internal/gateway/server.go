@@ -30,6 +30,7 @@ import (
 
 const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
+const xiaozhiHostSayInputCooldownMS int64 = 1200
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
@@ -225,9 +226,46 @@ type XiaozhiDeviceControlResponse struct {
 	Value              string `json:"value"`
 }
 
+type XiaozhiSpeakerVolumeRequest struct {
+	DeviceID  string `json:"device_id"`
+	Volume    int    `json:"volume"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type XiaozhiSpeakerVolumeResponse struct {
+	TraceID            string `json:"trace_id"`
+	SessionID          string `json:"session_id"`
+	DeviceID           string `json:"device_id"`
+	Status             string `json:"status"`
+	DeliveredTransport string `json:"delivered_transport"`
+	ToolName           string `json:"tool_name"`
+	Volume             int    `json:"volume"`
+	MCPID              string `json:"mcp_id"`
+}
+
+type XiaozhiSayRequest struct {
+	DeviceID  string        `json:"device_id"`
+	Text      string        `json:"text"`
+	Mode      protocol.Mode `json:"mode,omitempty"`
+	TraceID   string        `json:"trace_id,omitempty"`
+	SessionID string        `json:"session_id,omitempty"`
+}
+
+type XiaozhiSayResponse struct {
+	TraceID            string `json:"trace_id"`
+	SessionID          string `json:"session_id"`
+	DeviceID           string `json:"device_id"`
+	Status             string `json:"status"`
+	DeliveredTransport string `json:"delivered_transport"`
+	TextChars          int    `json:"text_chars"`
+	AudioChunks        int    `json:"audio_chunks"`
+}
+
 type xiaozhiDeviceSocket struct {
 	conn      *websocket.Conn
 	writeMu   *sync.Mutex
+	session   *xiaozhiSession
 	features  xiaozhitransport.HelloFeatures
 	connected int64
 }
@@ -498,6 +536,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/mock-interrupt", s.handleMockInterrupt)
 	mux.HandleFunc("/v1/wake-word", s.handleWakeWordConfig)
 	mux.HandleFunc("/v1/xiaozhi/control", s.handleXiaozhiDeviceControl)
+	mux.HandleFunc("/v1/xiaozhi/say", s.handleXiaozhiSay)
+	mux.HandleFunc("/v1/xiaozhi/speaker-volume", s.handleXiaozhiSpeakerVolume)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/stackChan/ws", s.handleOfficialStackChanWS)
 	mux.HandleFunc("/v1/stackchan/official/control", s.handleOfficialStackChanControl)
@@ -784,6 +824,182 @@ func (s *Server) handleXiaozhiDeviceControl(w http.ResponseWriter, r *http.Reque
 		Event:              string(event.Kind),
 		Value:              event.Value,
 	})
+}
+
+const xiaozhiSpeakerVolumeToolName = "self.audio_speaker.set_volume"
+
+func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiSayRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		http.Error(w, "text is required", http.StatusBadRequest)
+		return
+	}
+	socket, ok := s.xiaozhiSocket(req.DeviceID)
+	if !ok || socket.session == nil {
+		http.Error(w, "xiaozhi websocket is not connected", http.StatusConflict)
+		return
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = protocol.ModeWorkmate
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	session := socket.session
+	session.deviceID = req.DeviceID
+	session.traceID = traceID
+	session.sessionID = sessionID
+	turn := session.startXiaozhiTurn(r.Context(), mode)
+	session.resetXiaozhiTTSStop()
+	task := xiaozhiTurnTask{
+		turn:      turn,
+		turnID:    xiaozhiTurnID(turn),
+		traceID:   traceID,
+		sessionID: sessionID,
+		deviceID:  req.DeviceID,
+		mode:      mode,
+	}
+	s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.say.start", s.now().UnixMilli())
+	if err := session.writeXiaozhiJSON(r.Context(), socket.conn, turn, map[string]any{
+		"type":       "tts",
+		"state":      "start",
+		"phase":      "host_say",
+		"turn_id":    task.turnID,
+		"trace_id":   traceID,
+		"session_id": sessionID,
+		"device_id":  req.DeviceID,
+	}); err != nil {
+		http.Error(w, "xiaozhi say start delivery failed", http.StatusBadGateway)
+		return
+	}
+	if err := session.writeXiaozhiJSON(r.Context(), socket.conn, turn, map[string]any{
+		"type":       "tts",
+		"state":      "sentence_start",
+		"phase":      "host_say",
+		"turn_id":    task.turnID,
+		"trace_id":   traceID,
+		"session_id": sessionID,
+		"device_id":  req.DeviceID,
+		"text":       "",
+	}); err != nil {
+		http.Error(w, "xiaozhi say sentence delivery failed", http.StatusBadGateway)
+		return
+	}
+	audioChunks, ok := s.writeXiaozhiTextAudioDownlink(r.Context(), socket.conn, session, task, text, mode, "xiaozhi.say")
+	if !ok {
+		s.writeXiaozhiTTSStop(r.Context(), socket.conn, session, turn, task, "host_say_unavailable")
+		http.Error(w, "xiaozhi say audio delivery failed", http.StatusBadGateway)
+		return
+	}
+	s.writeXiaozhiTTSStop(r.Context(), socket.conn, session, turn, task, "host_say_complete")
+	s.suppressXiaozhiInputAfterHostSay(session, task)
+	session.completeXiaozhiTurn(turn)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.say.delivered", s.now().UnixMilli())
+	writeJSON(w, http.StatusOK, XiaozhiSayResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_ws",
+		TextChars:          len([]rune(text)),
+		AudioChunks:        audioChunks,
+	})
+}
+
+func (s *Server) handleXiaozhiSpeakerVolume(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiSpeakerVolumeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	if req.Volume < 0 || req.Volume > 100 {
+		http.Error(w, "volume must be 0..100", http.StatusBadRequest)
+		return
+	}
+	socket, ok := s.xiaozhiSocket(req.DeviceID)
+	if !ok {
+		http.Error(w, "xiaozhi websocket is not connected", http.StatusConflict)
+		return
+	}
+	if !socket.features.MCP {
+		http.Error(w, "xiaozhi speaker volume requires stock MCP support", http.StatusConflict)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	mcpID := "a21-mcp-speaker-volume-" + safeGatewayFallbackToken(traceID, "trace")
+	payload, err := xiaozhitransport.BuildMCPToolsCallRequest(mcpID, xiaozhiSpeakerVolumeToolName, map[string]any{
+		"volume": req.Volume,
+	})
+	if err != nil {
+		http.Error(w, "invalid xiaozhi speaker volume mcp request", http.StatusBadRequest)
+		return
+	}
+	var payloadObject map[string]any
+	if err := json.Unmarshal(payload, &payloadObject); err != nil {
+		http.Error(w, "invalid xiaozhi speaker volume mcp request", http.StatusBadRequest)
+		return
+	}
+	message, err := json.Marshal(map[string]any{
+		"type":       "mcp",
+		"payload":    payloadObject,
+		"trace_id":   traceID,
+		"session_id": sessionID,
+		"device_id":  req.DeviceID,
+	})
+	if err != nil {
+		http.Error(w, "invalid xiaozhi speaker volume mcp message", http.StatusBadRequest)
+		return
+	}
+	socket.writeMu.Lock()
+	err = socket.conn.Write(r.Context(), websocket.MessageText, message)
+	socket.writeMu.Unlock()
+	if err != nil {
+		http.Error(w, "xiaozhi speaker volume delivery failed", http.StatusBadGateway)
+		return
+	}
+	s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.mcp.speaker_volume.sent", s.now().UnixMilli())
+	s.recordXiaozhiDeviceActivity(&xiaozhiSession{deviceID: req.DeviceID, traceID: traceID, sessionID: sessionID}, "xiaozhi.mcp.speaker_volume.sent", map[string]string{
+		"speaker_volume": strconv.Itoa(req.Volume),
+	})
+	writeJSON(w, http.StatusOK, XiaozhiSpeakerVolumeResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_mcp",
+		ToolName:           xiaozhiSpeakerVolumeToolName,
+		Volume:             req.Volume,
+		MCPID:              mcpID,
+	})
+}
+
+func (s *Server) suppressXiaozhiInputAfterHostSay(session *xiaozhiSession, task xiaozhiTurnTask) {
+	if session == nil || !hardwareMACDeviceID(session.deviceID) || xiaozhiClientProfile(session.features) == "debug" {
+		return
+	}
+	untilMS := s.now().UnixMilli() + xiaozhiHostSayInputCooldownMS
+	session.suppressXiaozhiInputUntil(untilMS)
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.say.input_suppression_armed", s.now().UnixMilli())
 }
 
 func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.Request) {
@@ -1204,8 +1420,16 @@ type xiaozhiTurn struct {
 	ctx          context.Context
 	cancel       context.CancelCauseFunc
 	pacer        *audio.AudioRateController
+	downlink     *xiaozhiTurnDownlinkCodec
 	mode         protocol.Mode
 	cancelReason string
+}
+
+type xiaozhiTurnDownlinkCodec struct {
+	sampleRateHz int
+	channels     int
+	durationMS   int
+	codec        *opuscodec.Codec
 }
 
 type xiaozhiVoicePipelineRunner interface {
@@ -1270,7 +1494,7 @@ func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context, mode pro
 		mode:   mode,
 		pacer: audio.NewAudioRateController(audio.AudioRateControllerConfig{
 			FrameDuration:   60 * time.Millisecond,
-			PrebufferFrames: 5,
+			PrebufferFrames: 1,
 		}),
 	}
 	session.currentTurn = turn
@@ -1606,7 +1830,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.resetXiaozhiTTSStop()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
-		s.registerXiaozhiSocket(session.deviceID, conn, &session.writeMu, session.features)
+		s.registerXiaozhiSocket(session.deviceID, conn, &session.writeMu, session, session.features)
 		s.recordXiaozhiDeviceSeen(frame)
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiHelloReply(session))
@@ -1623,8 +1847,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			if session.xiaozhiInputSuppressed(nowMS) {
 				session.listening = false
 				session.resetXiaozhiOpusIngress()
+				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_after_barge", nowMS)
-				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "ignored", ""))
+				s.writeXiaozhiListenReply(ctx, conn, session, "start", "ignored", "")
 				return true
 			}
 			bargeTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn("barge_in", nowMS, xiaozhiPlaybackInterruptWindowMS)
@@ -1642,14 +1867,14 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			if s.xiaozhiStockProfessionalRouteSelected(rawListenMode, session.features) {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.professional_route.stock_override", s.now().UnixMilli())
 			}
-			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "start", "accepted", xiaozhiTurnID(turn)))
+			s.writeXiaozhiListenReply(ctx, conn, session, "start", "accepted", xiaozhiTurnID(turn))
 		case "detect":
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
-			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "detect", "accepted", session.currentXiaozhiTurnID()))
+			s.writeXiaozhiListenReply(ctx, conn, session, "detect", "accepted", session.currentXiaozhiTurnID())
 		case "stop":
 			if !session.listening {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
-				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", "stop", "ignored", ""))
+				s.writeXiaozhiListenReply(ctx, conn, session, "stop", "ignored", "")
 				return true
 			}
 			session.listening = false
@@ -1681,6 +1906,24 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		}, "abort")
 	}
 	return true
+}
+
+func (s *Server) writeXiaozhiListenReply(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, state string, status string, turnID string) {
+	if !session.shouldSendXiaozhiListenReply() {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen."+state+".reply_suppressed_stock_physical", s.now().UnixMilli())
+		return
+	}
+	_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", state, status, turnID))
+}
+
+func (session *xiaozhiSession) shouldSendXiaozhiListenReply() bool {
+	if session == nil {
+		return false
+	}
+	if xiaozhiClientProfile(session.features) == "debug" {
+		return true
+	}
+	return !hardwareMACDeviceID(session.deviceID)
 }
 
 func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
@@ -2305,14 +2548,22 @@ func (s *Server) writeXiaozhiProfessionalFallback(ctx context.Context, conn *web
 }
 
 func (s *Server) writeXiaozhiProfessionalAudioDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, text string, marker string) bool {
+	chunks, ok := s.writeXiaozhiTextAudioDownlink(ctx, conn, session, task, text, protocol.ModeProfessional, marker)
+	return ok && chunks > 0
+}
+
+func (s *Server) writeXiaozhiTextAudioDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask, text string, mode protocol.Mode, marker string) (int, bool) {
 	turn := task.turn
 	if session.shouldAbortXiaozhiTurn(turn) {
-		return false
+		return 0, false
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
-		return false
+		return 0, false
+	}
+	if mode == "" {
+		mode = protocol.ModeWorkmate
 	}
 	tts := s.xiaozhiFastAckTTS
 	if tts == nil {
@@ -2324,18 +2575,19 @@ func (s *Server) writeXiaozhiProfessionalAudioDownlink(ctx context.Context, conn
 			SessionID: task.sessionID,
 			DeviceID:  task.deviceID,
 		},
-		Mode: string(protocol.ModeProfessional),
+		Mode: string(mode),
 		Text: text,
 	})
 	if err != nil {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
-		return false
+		return 0, false
 	}
 	firstAudio := true
 	wrote := false
+	audioChunks := 0
 	for chunk := range chunks {
 		if session.shouldAbortXiaozhiTurn(turn) {
-			return false
+			return audioChunks, false
 		}
 		if firstAudio {
 			firstAudio = false
@@ -2345,12 +2597,13 @@ func (s *Server) writeXiaozhiProfessionalAudioDownlink(ctx context.Context, conn
 		if err != nil {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_error", s.now().UnixMilli())
 			session.cancelXiaozhiTurnContext(turn, marker+"_downlink_error")
-			return false
+			return audioChunks, false
 		}
 		if !ok {
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".downlink_aborted", s.now().UnixMilli())
-			return false
+			return audioChunks, false
 		}
+		audioChunks++
 		if !wrote {
 			wrote = true
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "audio.downlink.first_frame", s.now().UnixMilli())
@@ -2360,7 +2613,7 @@ func (s *Server) writeXiaozhiProfessionalAudioDownlink(ctx context.Context, conn
 	if !wrote {
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, marker+".tts_unavailable", s.now().UnixMilli())
 	}
-	return wrote
+	return audioChunks, wrote
 }
 
 func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) bool {
@@ -2884,14 +3137,14 @@ func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.C
 	if turn.pacer == nil {
 		turn.pacer = audio.NewAudioRateController(audio.AudioRateControllerConfig{
 			FrameDuration:   60 * time.Millisecond,
-			PrebufferFrames: 5,
+			PrebufferFrames: 1,
 		})
 	}
 	pcm, err := xiaozhiDownlinkPCM16(chunk)
 	if err != nil {
 		return false, err
 	}
-	codec, err := opuscodec.New(chunk.SampleRateHz, chunk.Channels, chunk.DurationMS)
+	codec, err := turn.xiaozhiDownlinkCodec(chunk)
 	if err != nil {
 		return false, err
 	}
@@ -2927,14 +3180,41 @@ func (s *Server) recordXiaozhiStaleDownlinkSuppressed(session *xiaozhiSession) {
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.tts.stale_frame_suppressed", s.now().UnixMilli())
 }
 
+func (turn *xiaozhiTurn) xiaozhiDownlinkCodec(chunk providers.VoiceAudioChunk) (*opuscodec.Codec, error) {
+	if turn == nil {
+		return nil, fmt.Errorf("%w: nil xiaozhi turn", opuscodec.ErrUnsupportedConfig)
+	}
+	if turn.downlink != nil &&
+		turn.downlink.sampleRateHz == chunk.SampleRateHz &&
+		turn.downlink.channels == chunk.Channels &&
+		turn.downlink.durationMS == chunk.DurationMS &&
+		turn.downlink.codec != nil {
+		return turn.downlink.codec, nil
+	}
+	codec, err := opuscodec.New(chunk.SampleRateHz, chunk.Channels, chunk.DurationMS)
+	if err != nil {
+		return nil, err
+	}
+	turn.downlink = &xiaozhiTurnDownlinkCodec{
+		sampleRateHz: chunk.SampleRateHz,
+		channels:     chunk.Channels,
+		durationMS:   chunk.DurationMS,
+		codec:        codec,
+	}
+	return codec, nil
+}
+
 const xiaozhiDownlinkPCM16HeadroomPeak = 29490
+const xiaozhiDownlinkPCM16TargetPeak = 24576
+const xiaozhiDownlinkPCM16MaxGainMilli = 3000
+const xiaozhiDownlinkPCM16NoiseGatePeak = 512
 
 func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
 	if chunk.Codec != string(protocol.AudioCodecPCMS16LE) {
 		return nil, fmt.Errorf("xiaozhi downlink requires pcm_s16le provider audio")
 	}
-	if (chunk.SampleRateHz != 24000 && chunk.SampleRateHz != 48000) || chunk.Channels != 1 || chunk.DurationMS != 60 {
-		return nil, fmt.Errorf("xiaozhi downlink requires 24kHz or 48kHz mono 60ms audio")
+	if (chunk.SampleRateHz != 16000 && chunk.SampleRateHz != 24000 && chunk.SampleRateHz != 48000) || chunk.Channels != 1 || chunk.DurationMS != 60 {
+		return nil, fmt.Errorf("xiaozhi downlink requires 16kHz, 24kHz, or 48kHz mono 60ms audio")
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(chunk.DataBase64))
 	if err != nil {
@@ -2947,11 +3227,11 @@ func xiaozhiDownlinkPCM16(chunk providers.VoiceAudioChunk) ([]int16, error) {
 	for i := range pcm {
 		pcm[i] = int16(binary.LittleEndian.Uint16(data[i*2 : i*2+2]))
 	}
-	applyXiaozhiDownlinkHeadroom(pcm)
+	applyXiaozhiDownlinkLeveling(pcm)
 	return pcm, nil
 }
 
-func applyXiaozhiDownlinkHeadroom(pcm []int16) {
+func applyXiaozhiDownlinkLeveling(pcm []int16) {
 	maxAbs := 0
 	for _, sample := range pcm {
 		abs := int(sample)
@@ -2962,11 +3242,27 @@ func applyXiaozhiDownlinkHeadroom(pcm []int16) {
 			maxAbs = abs
 		}
 	}
-	if maxAbs <= xiaozhiDownlinkPCM16HeadroomPeak {
+	if maxAbs == 0 || maxAbs < xiaozhiDownlinkPCM16NoiseGatePeak {
+		return
+	}
+	targetPeak := maxAbs
+	if maxAbs > xiaozhiDownlinkPCM16HeadroomPeak {
+		targetPeak = xiaozhiDownlinkPCM16HeadroomPeak
+	} else if maxAbs < xiaozhiDownlinkPCM16TargetPeak {
+		targetPeak = xiaozhiDownlinkPCM16TargetPeak
+		maxBoostedPeak := maxAbs * xiaozhiDownlinkPCM16MaxGainMilli / 1000
+		if maxBoostedPeak < targetPeak {
+			targetPeak = maxBoostedPeak
+		}
+		if targetPeak > xiaozhiDownlinkPCM16HeadroomPeak {
+			targetPeak = xiaozhiDownlinkPCM16HeadroomPeak
+		}
+	}
+	if targetPeak == maxAbs {
 		return
 	}
 	for i, sample := range pcm {
-		pcm[i] = int16(int(sample) * xiaozhiDownlinkPCM16HeadroomPeak / maxAbs)
+		pcm[i] = int16(int(sample) * targetPeak / maxAbs)
 	}
 }
 
@@ -3888,8 +4184,8 @@ func (s *Server) audioSocket(deviceID string) (*deviceSocket, bool) {
 	return socket, socket != nil
 }
 
-func (s *Server) registerXiaozhiSocket(deviceID string, conn *websocket.Conn, writeMu *sync.Mutex, features xiaozhitransport.HelloFeatures) {
-	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil {
+func (s *Server) registerXiaozhiSocket(deviceID string, conn *websocket.Conn, writeMu *sync.Mutex, session *xiaozhiSession, features xiaozhitransport.HelloFeatures) {
+	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil || session == nil {
 		return
 	}
 	s.mu.Lock()
@@ -3897,6 +4193,7 @@ func (s *Server) registerXiaozhiSocket(deviceID string, conn *websocket.Conn, wr
 	s.xiaozhiSockets[deviceID] = &xiaozhiDeviceSocket{
 		conn:      conn,
 		writeMu:   writeMu,
+		session:   session,
 		features:  features,
 		connected: s.now().UnixMilli(),
 	}
@@ -4194,6 +4491,24 @@ func validA21DeviceID(deviceID string) bool {
 	}
 	lower := strings.ToLower(deviceID)
 	return !strings.Contains(lower, "x21") && !strings.Contains(lower, "v21")
+}
+
+func hardwareMACDeviceID(deviceID string) bool {
+	parts := strings.Split(strings.TrimSpace(deviceID), ":")
+	if len(parts) != 6 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) != 2 {
+			return false
+		}
+		for _, ch := range part {
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *Server) deviceControlEvents(req DeviceControlRequest) []protocol.Envelope {

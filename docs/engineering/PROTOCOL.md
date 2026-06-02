@@ -45,8 +45,9 @@ stock-style xiaozhi JSON control messages:
 - `listen` with `state=start|detect|stop`
 - `abort`
 
-The server hello includes stock `audio_params` and an `audio` alias for current
-local tests. The client `hello.features` object is parsed for `mcp`, `aec`,
+The server hello includes stock downlink `audio_params` (`opus`, `24000 Hz`,
+mono, `60 ms`) and an `audio` alias for current local tests. The client
+`hello.features` object is parsed for `mcp`, `aec`,
 `device_events`, and `debug_metrics`; `mcp` and `aec` remain stock xiaozhi
 capability hints, while `device_events` and `debug_metrics` mark an isolated
 debug profile in the device registry and are never echoed into the stock server
@@ -76,14 +77,16 @@ through the paced Opus downlink. When no speech or no usable decoded frame is
 available, it still emits the honest xiaozhi TTS lifecycle placeholder.
 
 Xiaozhi TTS binary downlink uses the Go `AudioRateController` primitive before
-writing frames: default 60 ms frame slots, five-frame prebuffer, per-frame
+writing frames: default 60 ms frame slots, one-frame prebuffer, per-frame
 abort checks, and reset on turn cancellation. Raw unpaced binary writes are
 not accepted as an A21 product path.
-The current downlink primitive accepts only validated 24 kHz or 48 kHz mono
-60 ms `pcm_s16le` provider audio, applies a conservative PCM peak headroom
-limit before Opus encode, and writes one xiaozhi binary frame through the
-current-turn pacer. This is a downlink building block, not ASR/LLM/TTS product
-acceptance.
+The current downlink primitive accepts validated 16 kHz, 24 kHz, or 48 kHz mono
+60 ms `pcm_s16le` provider audio, applies bounded PCM leveling before Opus
+encode, and writes one xiaozhi binary frame through the current-turn pacer. The
+leveling leaves tiny noise below the gate unchanged, lifts quiet non-silent TTS
+frames up to a target peak with a maximum gain cap, and still keeps hot frames
+below the headroom limit. This is a downlink building block, not ASR/LLM/TTS
+product acceptance.
 
 Host-side TTS and voice-pipeline reports now include an aggregate PCM quality
 guard for generated `pcm_s16le` audio. The guard records format, duration,
@@ -274,12 +277,29 @@ provider or V21 execution.
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future
-device-control integration:
+device-control integration and the Gateway exposes one stock-safe live control
+surface:
 
 - MCP JSON-RPC envelopes are limited to `initialize`, `tools/list`, and
-  `tools/call` request shapes. This package only builds and parses the
-  envelopes; it does not execute `tools/call`, discover live device tools, or
-  connect to Gateway.
+  `tools/call` request shapes. The transport package builds and parses the
+  envelopes; Gateway execution is explicitly limited to documented, whitelisted
+  live tools.
+- `POST /v1/xiaozhi/speaker-volume` sends the official stock firmware MCP
+  `tools/call` for `self.audio_speaker.set_volume` to the already connected
+  `/v1/xiaozhi` WebSocket. It requires a valid `device_id`, `volume` in
+  `0..100`, an online socket, and `hello.features.mcp=true`. Delivery proves the
+  MCP command was sent to the device socket; physical loudness acceptance still
+  requires operator or instrument evidence.
+- `POST /v1/xiaozhi/say` is an operator foreground test path for an already
+  connected stock Xiaozhi device. It validates `device_id` and `text`, starts a
+  Gateway turn on the live `/v1/xiaozhi` WebSocket, writes the stock TTS
+  lifecycle (`start`, `sentence_start`, binary Opus downlink, `stop`), and
+  returns only after the text audio has been delivered. This is for physical
+  speaker/TTS A/B tests and urgent operator playback; it does not replace
+  wake-word activation, normal listen/ASR flow, or physical PRD acceptance. For
+  stock physical devices it also arms a short post-`say` input suppression
+  window so speaker playback is less likely to be captured as a fresh
+  listen/voice-pipeline turn.
 - `tools/call` builders validate tool names, reject legacy-looking X21/V21
   names, and redact sensitive argument fields such as keys, tokens, prompt or
   transcript text, raw/base64 audio, provider output, URLs, proxies, and local

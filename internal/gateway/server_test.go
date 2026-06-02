@@ -2881,6 +2881,257 @@ func TestXiaozhiWebSocketAbortCancelsCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestXiaozhiListenReplySuppressedForStockPhysicalMACDevice(t *testing.T) {
+	if (&xiaozhiSession{deviceID: "44:1b:f6:e2:6a:60"}).shouldSendXiaozhiListenReply() {
+		t.Fatal("stock physical MAC device should not receive server listen replies")
+	}
+	if !(&xiaozhiSession{deviceID: "44:1b:f6:e2:6a:60", features: xiaozhitransport.HelloFeatures{DebugMetrics: true}}).shouldSendXiaozhiListenReply() {
+		t.Fatal("debug profile should keep listen replies for diagnostics")
+	}
+	if !(&xiaozhiSession{deviceID: "stackchan-001"}).shouldSendXiaozhiListenReply() {
+		t.Fatal("virtual/test device should keep listen replies")
+	}
+}
+
+func TestXiaozhiSpeakerVolumeUsesStockMCPToolCall(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-volume-mcp",
+		"session_id": "a21-session-volume-mcp",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(httpServer.URL+"/v1/xiaozhi/speaker-volume", "application/json", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","volume":100,"trace_id":"a21-trace-volume-mcp","session_id":"a21-session-volume-mcp"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("volume status = %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response XiaozhiSpeakerVolumeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.DeliveredTransport != "xiaozhi_mcp" || response.ToolName != xiaozhiSpeakerVolumeToolName || response.Volume != 100 {
+		t.Fatalf("volume response = %+v", response)
+	}
+
+	message := readXiaozhiJSON(t, ctx, conn)
+	if message["type"] != "mcp" {
+		t.Fatalf("mcp message type = %#v in %#v", message["type"], message)
+	}
+	payload, ok := message["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp payload = %#v", message["payload"])
+	}
+	params, ok := payload["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp params = %#v", payload["params"])
+	}
+	if params["name"] != xiaozhiSpeakerVolumeToolName {
+		t.Fatalf("mcp tool name = %#v", params["name"])
+	}
+	args, ok := params["arguments"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp arguments = %#v", params["arguments"])
+	}
+	if args["volume"] != float64(100) {
+		t.Fatalf("mcp volume = %#v", args["volume"])
+	}
+}
+
+func TestXiaozhiSayDeliversTextAsStockTTSDownlink(t *testing.T) {
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+		TTS:        segmentChunkTTSAdapter{},
+		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+	}
+	server := NewServerWithOptions(ServerOptions{XiaozhiVoicePipelineAdapters: &adapters})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-say-physical",
+		"session_id": "a21-session-say-physical",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 2 * time.Second}).Post(
+			httpServer.URL+"/v1/xiaozhi/say",
+			"application/json",
+			bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","text":"这是一段实体小智长文本播放测试。","trace_id":"a21-trace-say-physical","session_id":"a21-session-say-physical"}`),
+		)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	start := readXiaozhiJSON(t, ctx, conn)
+	if start["type"] != "tts" || start["state"] != "start" || start["phase"] != "host_say" {
+		t.Fatalf("say start = %#v", start)
+	}
+	sentence := readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["phase"] != "host_say" {
+		t.Fatalf("say sentence = %#v", sentence)
+	}
+	if packet := readXiaozhiBinary(t, ctx, conn); len(packet) == 0 {
+		t.Fatal("say binary packet is empty")
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "host_say_complete" {
+		t.Fatalf("say stop = %#v", stop)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("say status = %d: %s", resp.StatusCode, string(body))
+		}
+		var response XiaozhiSayResponse
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if response.DeliveredTransport != "xiaozhi_ws" || response.AudioChunks != 1 || response.TextChars == 0 {
+			t.Fatalf("say response = %+v", response)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical(t *testing.T) {
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+		TTS:        segmentChunkTTSAdapter{},
+		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+	}
+	server := NewServerWithOptions(ServerOptions{XiaozhiVoicePipelineAdapters: &adapters})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-say-suppress",
+		"session_id": "a21-session-say-suppress",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 2 * time.Second}).Post(
+			httpServer.URL+"/v1/xiaozhi/say",
+			"application/json",
+			bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","text":"短播放后抑制回声。","trace_id":"a21-trace-say-suppress","session_id":"a21-session-say-suppress"}`),
+		)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiBinary(t, ctx, conn)
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "host_say_complete" {
+		t.Fatalf("say stop = %#v", stop)
+	}
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("say status = %d: %s", resp.StatusCode, string(body))
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "listen",
+		"state":      "start",
+		"trace_id":   "a21-trace-say-suppress",
+		"session_id": "a21-session-say-suppress",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 120*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-say-suppress", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.say.input_suppression_armed", "xiaozhi.listen.start.input_suppressed", "xiaozhi.opus_frame.ignored_not_listening"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	for _, forbidden := range []string{"xiaozhi.turn.start", "audio.ingress.buffered", "xiaozhi.voice_pipeline.start"} {
+		if traceContains(traces.Events, forbidden) {
+			t.Fatalf("trace unexpectedly contains %q: %+v", forbidden, traces.Events)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketManualAbortCancelsTurnWithoutBargeInMarkers(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())
@@ -3067,6 +3318,42 @@ func TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames(t *testing.T) {
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-downlink-codec",
+		sessionID: "a21-session-xiaozhi-downlink-codec",
+	}
+	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
+	chunk := xiaozhiTestVoiceAudioChunk()
+
+	first, err := turn.xiaozhiDownlinkCodec(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := turn.xiaozhiDownlinkCodec(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("downlink encoder was rebuilt for a contiguous same-format turn")
+	}
+
+	next, err := turn.xiaozhiDownlinkCodec(providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 48000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(48000, 60, 6000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == first {
+		t.Fatal("downlink encoder should rebuild when the audio format changes")
+	}
+}
+
 func TestWriteXiaozhiOpusDownlinkAccepts48KMono60MS(t *testing.T) {
 	server := NewServer()
 	session := &xiaozhiSession{
@@ -3152,6 +3439,38 @@ func TestXiaozhiDownlinkPCM16AppliesHeadroomToHotTTSFrames(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestXiaozhiDownlinkPCM16BoostsQuietTTSFramesWithinHeadroom(t *testing.T) {
+	pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 6000),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := maxAbsPCM16(pcm); got != 18000 {
+		t.Fatalf("quiet TTS pcm peak = %d, want bounded 3x boost to 18000", got)
+	}
+}
+
+func TestXiaozhiDownlinkPCM16DoesNotBoostTinyNoise(t *testing.T) {
+	pcm, err := xiaozhiDownlinkPCM16(providers.VoiceAudioChunk{
+		Codec:        string(protocol.AudioCodecPCMS16LE),
+		SampleRateHz: 24000,
+		Channels:     1,
+		DurationMS:   60,
+		DataBase64:   xiaozhiTestPCM16Base64(24000, 60, 128),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := maxAbsPCM16(pcm); got != 128 {
+		t.Fatalf("tiny noise pcm peak = %d, want unchanged 128", got)
 	}
 }
 

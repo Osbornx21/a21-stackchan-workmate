@@ -6850,7 +6850,7 @@ func TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence(t *testing.T) {
 		`"binary_downlink_frames"`,
 		`"downlink_audio_quality"`,
 		`"codec": "opus_decoded_pcm_s16le"`,
-		`"sample_rate_hz": 16000`,
+		`"sample_rate_hz": 24000`,
 		`"status": "passed"`,
 		`"trace_summary"`,
 		`"xiaozhi_opus_decode_ms"`,

@@ -195,18 +195,18 @@ func TestOpenAICompatibleTextStreamAdapterEmitsContentDeltasWithFakeTransport(t 
 	}
 }
 
-func TestLocalTTSAdapterConvertsWAVToDownlinkReady48KChunks(t *testing.T) {
+func TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks(t *testing.T) {
 	adapter := NewLocalTTSAdapter(LocalTTSAdapterOptions{
 		Name: "local_sherpa_onnx",
 		Synthesizer: func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
-			if options.OutputSampleRateHz != 48000 {
-				t.Fatalf("output sample rate = %d, want 48000", options.OutputSampleRateHz)
+			if options.OutputSampleRateHz != 24000 {
+				t.Fatalf("output sample rate = %d, want 24000", options.OutputSampleRateHz)
 			}
 			if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(options.OutputDir, "a21-tts.wav")
-			if err := audio.WritePCM16MonoWAV(path, 48000, make([]byte, 6000)); err != nil {
+			if err := audio.WritePCM16MonoWAV(path, 24000, make([]byte, 4000)); err != nil {
 				t.Fatal(err)
 			}
 			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
@@ -222,15 +222,15 @@ func TestLocalTTSAdapterConvertsWAVToDownlinkReady48KChunks(t *testing.T) {
 		t.Fatalf("chunks = %d, want 2", len(collected))
 	}
 	for _, chunk := range collected {
-		if chunk.Codec != "pcm_s16le" || chunk.SampleRateHz != 48000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
-			t.Fatalf("chunk = %+v, want pcm_s16le 48k mono 60ms", chunk)
+		if chunk.Codec != "pcm_s16le" || chunk.SampleRateHz != 24000 || chunk.Channels != 1 || chunk.DurationMS != 60 {
+			t.Fatalf("chunk = %+v, want pcm_s16le 24k mono 60ms", chunk)
 		}
 		pcm, err := base64.StdEncoding.DecodeString(chunk.DataBase64)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(pcm) != 5760 {
-			t.Fatalf("chunk bytes = %d, want 5760", len(pcm))
+		if len(pcm) != 2880 {
+			t.Fatalf("chunk bytes = %d, want 2880", len(pcm))
 		}
 	}
 }
@@ -299,7 +299,7 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(options.OutputDir, "a21-voice-clone-adapter.wav")
-			if err := audio.WritePCM16MonoWAV(path, 48000, make([]byte, 5760)); err != nil {
+			if err := audio.WritePCM16MonoWAV(path, 24000, make([]byte, 2880)); err != nil {
 				t.Fatal(err)
 			}
 			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
@@ -314,11 +314,11 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 		t.Fatal(err)
 	}
 	collected := collectVoiceChunks(t, chunks)
-	if len(collected) != 1 || collected[0].SampleRateHz != 48000 || collected[0].DurationMS != 60 {
-		t.Fatalf("chunks = %+v, want one 48k 60ms chunk", collected)
+	if len(collected) != 1 || collected[0].SampleRateHz != 24000 || collected[0].DurationMS != 60 {
+		t.Fatalf("chunks = %+v, want one 24k 60ms chunk", collected)
 	}
 	if captured.Text != "用户原文不进报告" ||
-		captured.OutputSampleRateHz != 48000 ||
+		captured.OutputSampleRateHz != 24000 ||
 		captured.VoiceCloneCommand != command ||
 		captured.VoiceCloneModel != "Index-TTS2" ||
 		captured.VoiceCloneReferenceAudioPath != refAudio ||

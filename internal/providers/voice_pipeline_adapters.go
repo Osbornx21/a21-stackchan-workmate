@@ -569,7 +569,7 @@ func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest)
 	}
 	options := a.baseOptions
 	options.Text = req.Text
-	options.OutputSampleRateHz = 48000
+	options.OutputSampleRateHz = 24000
 	cleanupDir := ""
 	if strings.TrimSpace(options.OutputDir) == "" {
 		tempDir, err := os.MkdirTemp("", "a21-local-tts-adapter-*")
@@ -592,7 +592,7 @@ func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest)
 	if strings.TrimSpace(report.OutputPath) == "" {
 		return nil, fmt.Errorf("local TTS adapter output wav missing")
 	}
-	chunks, err := audio.ReadPCM16MonoWAVChunksForSampleRate(report.OutputPath, 60, 48000)
+	chunks, err := audio.ReadPCM16MonoWAVChunksForSampleRate(report.OutputPath, 60, 24000)
 	if err != nil {
 		return nil, fmt.Errorf("local TTS adapter output wav invalid")
 	}

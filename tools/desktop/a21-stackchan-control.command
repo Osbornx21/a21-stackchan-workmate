@@ -3,6 +3,7 @@ set -u
 
 GATEWAY_URL="${A21_GATEWAY_URL:-http://127.0.0.1:21081}"
 CURL_MAX_TIME="${A21_CONTROL_CURL_MAX_TIME:-3}"
+SAY_CURL_MAX_TIME="${A21_SAY_CURL_MAX_TIME:-120}"
 DEVICE_ID="${A21_DEVICE_ID:-}"
 
 print_line() {
@@ -14,9 +15,10 @@ usage() {
 A21 StackChan foreground control helper
 
 Usage:
-  a21-stackchan-control.command
-  a21-stackchan-control.command status
-  a21-stackchan-control.command volume
+	  a21-stackchan-control.command
+	  a21-stackchan-control.command status
+	  a21-stackchan-control.command volume 100
+	  a21-stackchan-control.command say "这是一段实体 StackChan 测试文本"
   a21-stackchan-control.command probe-action
   a21-stackchan-control.command face happy
   a21-stackchan-control.command motion nod
@@ -30,12 +32,13 @@ Environment:
   A21_DEVICE_ID=44:1b:f6:e2:6a:60
 
 Important:
-  - This is StackChan-focused. It does not change macOS system volume.
-  - Current stock Xiaozhi Gateway path has no runtime StackChan speaker-volume
-    setter. The volume command reports that boundary instead of pretending.
+	  - This is StackChan-focused. It does not change macOS system volume.
+	  - volume sends the stock Xiaozhi MCP tool self.audio_speaker.set_volume
+	    through the live /v1/xiaozhi WebSocket session.
   - diagnostic-tone uses the legacy A21 /v1/devices/control audio WebSocket
     path if connected. It is a speaker/tone diagnostic, not product TTS volume.
-  - This tool does not flash firmware, write NVS, call providers, or inject TTS.
+  - say injects host text through the live stock /v1/xiaozhi WebSocket for
+    foreground speaker tests. It does not flash firmware or write NVS.
 EOF
 }
 
@@ -132,10 +135,8 @@ print(device_id)
 }
 
 show_volume_boundary() {
-  print_line "[volume] StackChan runtime volume setter: not exposed on current stock /v1/xiaozhi Gateway path."
-  print_line "[volume] Current path can report speaker=available_xiaozhi_opus_downlink, but not set speaker gain."
-  print_line "[volume] Known firmware knobs are code-level: official codec SetOutputVolume(...) or old M5.Speaker.setVolume(...)."
-  print_line "[volume] To actually raise StackChan TTS loudness, use a planned firmware/protocol transition, then build/flash/record evidence."
+  print_line "[volume] StackChan runtime volume setter: /v1/xiaozhi/speaker-volume -> stock MCP self.audio_speaker.set_volume."
+  print_line "[volume] It requires an online stock Xiaozhi socket with hello.features.mcp=true."
 }
 
 show_action_boundary() {
@@ -144,9 +145,90 @@ show_action_boundary() {
 }
 
 volume_command() {
-  show_status || true
-  print_line "[volume] No StackChan volume change was sent."
-  return 2
+  local volume="${1:-100}"
+  if ! [[ "$volume" == <0-100> ]]; then
+    print_line "[volume] volume must be 0-100"
+    return 2
+  fi
+  local device
+  if ! device="$(detect_device)"; then
+    print_line "[volume] could not detect an online xiaozhi device. Set A21_DEVICE_ID explicitly."
+    return 1
+  fi
+  local stamp payload response code body
+  stamp="$(date +%s)"
+  payload="$(volume_payload "$device" "$volume" "$stamp")"
+  response="$(post_json "$GATEWAY_URL/v1/xiaozhi/speaker-volume" "$payload")"
+  code="${response##*HTTP_STATUS:}"
+  body="${response%$'\n'HTTP_STATUS:*}"
+  if [[ "$code" == 2* ]]; then
+    print_line "[volume] delivered StackChan speaker volume=$volume to device=$device"
+    print_line "$body"
+    return 0
+  fi
+  print_line "[volume] failed HTTP $code for device=$device volume=$volume"
+  print_line "$body"
+  return 1
+}
+
+volume_payload() {
+  local device="$1"
+  local volume="$2"
+  local stamp="$3"
+  /usr/bin/python3 - "$device" "$volume" "$stamp" <<'PY'
+import json, sys
+device, volume, stamp = sys.argv[1:4]
+payload = {
+    "device_id": device,
+    "volume": int(volume),
+    "trace_id": f"a21-trace-stackchan-volume-{stamp}",
+    "session_id": f"a21-session-stackchan-volume-{stamp}",
+}
+print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+PY
+}
+
+say_payload() {
+  local device="$1"
+  local text="$2"
+  local stamp="$3"
+  /usr/bin/python3 - "$device" "$text" "$stamp" <<'PY'
+import json, sys
+device, text, stamp = sys.argv[1:4]
+payload = {
+    "device_id": device,
+    "text": text,
+    "trace_id": f"a21-trace-stackchan-say-{stamp}",
+    "session_id": f"a21-session-stackchan-say-{stamp}",
+}
+print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+PY
+}
+
+say_command() {
+  local text="$*"
+  if [[ -z "$text" ]]; then
+    text="现在开始进行 A21 StackChan 实体扬声器测试。请听响度、清晰度、电流底噪和中途是否口吃。"
+  fi
+  local device
+  if ! device="$(detect_device)"; then
+    print_line "[say] could not detect an online xiaozhi device. Set A21_DEVICE_ID explicitly."
+    return 1
+  fi
+  local stamp payload response code body
+  stamp="$(date +%s)"
+  payload="$(say_payload "$device" "$text" "$stamp")"
+  response="$(curl -sS --noproxy "*" --max-time "$SAY_CURL_MAX_TIME" -X POST -H 'Content-Type: application/json' --data "$payload" -w $'\nHTTP_STATUS:%{http_code}' "$GATEWAY_URL/v1/xiaozhi/say" 2>&1)"
+  code="${response##*HTTP_STATUS:}"
+  body="${response%$'\n'HTTP_STATUS:*}"
+  if [[ "$code" == 2* ]]; then
+    print_line "[say] delivered host text to StackChan device=$device"
+    print_line "$body"
+    return 0
+  fi
+  print_line "[say] failed HTTP $code for device=$device"
+  print_line "$body"
+  return 1
 }
 
 validate_control() {
@@ -297,24 +379,26 @@ menu() {
     print_line "A21 StackChan foreground control helper"
     print_line "Gateway: $GATEWAY_URL"
     print_line "Device: ${DEVICE_ID:-auto-detect}"
-    print_line "1) Status and StackChan volume boundary"
-    print_line "2) Explain StackChan volume control"
-    print_line "3) Probe face happy"
-    print_line "4) Probe motion nod"
-    print_line "5) Motion look_up 120"
-    print_line "6) Try legacy diagnostic tone volume 255"
-    print_line "7) Help"
+    print_line "1) Status"
+    print_line "2) Set StackChan volume 100"
+    print_line "3) Say speaker test text"
+    print_line "4) Probe face happy"
+    print_line "5) Probe motion nod"
+    print_line "6) Motion look_up 120"
+    print_line "7) Try legacy diagnostic tone volume 255"
+    print_line "8) Help"
     print_line "0) Quit"
     local choice
     read "choice?Choose: "
     case "$choice" in
       1) show_status ;;
-      2) volume_command ;;
-      3) send_control face happy ;;
-      4) send_control motion nod ;;
-      5) send_control motion look_up 120 ;;
-      6) diagnostic_tone 255 ;;
-      7) usage ;;
+      2) volume_command 100 ;;
+      3) say_command ;;
+      4) send_control face happy ;;
+      5) send_control motion nod ;;
+      6) send_control motion look_up 120 ;;
+      7) diagnostic_tone 255 ;;
+      8) usage ;;
       0|q|quit|exit) return 0 ;;
       *) print_line "Unknown choice: $choice" ;;
     esac
@@ -326,7 +410,11 @@ case "$cmd" in
   -h|--help|help) usage ;;
   menu) menu ;;
   status) show_status ;;
-  volume) volume_command ;;
+  volume) volume_command "${2:-100}" ;;
+  say)
+    shift
+    say_command "$@"
+    ;;
   probe-action) probe_action ;;
   diagnostic-tone) diagnostic_tone "${2:-255}" ;;
   face|motion|state|display)

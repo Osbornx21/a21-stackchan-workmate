@@ -386,7 +386,7 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 		receipt.Findings = append(receipt.Findings, "listen_stop_send_failed")
 		return receipt
 	}
-	downlinkCodec, err := opuscodec.New(16000, 1, 60)
+	downlinkCodec, err := opuscodec.New(24000, 1, 60)
 	if err != nil {
 		receipt.Findings = append(receipt.Findings, "downlink_opus_decoder_unavailable")
 		return receipt
@@ -423,7 +423,7 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 				return receipt
 			}
 			downlinkPCM = appendPCM16LE(downlinkPCM, pcm)
-			if quality, err := audio.AnalyzePCM16LEQuality("pcm_s16le", 16000, 1, 0, downlinkPCM); err == nil {
+			if quality, err := audio.AnalyzePCM16LEQuality("pcm_s16le", 24000, 1, 0, downlinkPCM); err == nil {
 				quality.Codec = "opus_decoded_pcm_s16le"
 				receipt.DownlinkAudioQuality = &quality
 			}

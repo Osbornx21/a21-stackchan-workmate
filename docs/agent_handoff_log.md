@@ -1520,3 +1520,570 @@ Validation results:
 - Provider worker `019e88dd-3efa-78e2-a7d3-7063089cbf30`: `STATUS=DONE`,
   read-only.
 - No business code changed in this main-thread convergence step.
+
+## 2026-06-02 23:34 CST - T-AUDIO-002 Stock Xiaozhi Audio Parity Hotfix Integrated
+
+Round goal:
+
+- Stop treating the bad physical sound as only a volume issue.
+- Read official Xiaozhi/StackChan behavior in parallel worker threads and
+  integrate the smallest hotfix that moves the physical main flow forward.
+- Give the operator a real StackChan volume control path on the current stock
+  `/v1/xiaozhi` session.
+
+Actual completed work:
+
+- Spawned three read-only subagents:
+  - `019e88eb-7665-7f82-86d4-6e7e996e9839`: official `xiaozhi-esp32`
+    audio/protocol chain. It confirmed client/uplink `16000 Hz`, CoreS3/output
+    `24000 Hz`, official codec/NVS volume behavior, and official decode/playback
+    queue paths.
+  - `019e88eb-7e31-7930-84ea-834e3d91849b`: StackChan codec/I2S/volume control.
+    It confirmed official MCP tool `self.audio_speaker.set_volume` is the
+    fastest runtime volume path for the stock Xiaozhi session.
+  - `019e88eb-837b-78a1-a1b0-ce51b023d179`: A21 versus official protocol/audio
+    comparison. It identified the minimal urgent set: 16k/24k downlink split,
+    unsupported `listen` ack, per-frame Opus encoder rebuild, and prebuffer
+    burst risk.
+- Added plan
+  `docs/plans/2026-06-02-stackchan-audio-official-parity-hotfix.md`.
+- Restored stock-compatible server/downlink audio to `24000 Hz` while keeping
+  stock client/uplink at `16000 Hz`.
+- Changed local TTS adapter output/downlink chunking to `24000 Hz` mono
+  `60 ms`.
+- Suppressed server-to-device `listen` replies for stock physical MAC-address
+  devices while preserving debug/virtual test behavior.
+- Reused a turn-level downlink Opus encoder for contiguous same-format TTS
+  frames.
+- Reduced downlink prebuffer from five frames to one frame.
+- Added `POST /v1/xiaozhi/speaker-volume`, which sends a stock MCP
+  `tools/call` for `self.audio_speaker.set_volume` to an online
+  `/v1/xiaozhi` WebSocket when `hello.features.mcp=true`.
+- Updated repo and Desktop StackChan control helpers so `volume 100` calls the
+  new runtime volume endpoint.
+- Updated `docs/engineering/PROTOCOL.md` and `docs/project_state_machine.md`
+  to reflect the new active `T-AUDIO-002` transition.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-02-stackchan-audio-official-parity-hotfix.md`
+- `docs/project_state_machine.md`
+- `internal/app/app_test.go`
+- `internal/app/xiaozhi_voice_bench.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `tools/desktop/a21-stackchan-control.command`
+- `/Users/jiyurun/Desktop/A21-StackChan-Control.command`
+
+Current unfinished items:
+
+- The running Gateway on `21081`, if still active from before this hotfix, must
+  be restarted or relaunched from this working tree before the new endpoint and
+  audio behavior are live.
+- After Gateway restart, send StackChan volume `100` through
+  `/v1/xiaozhi/speaker-volume` or the Desktop helper.
+- Trigger a long real stock Xiaozhi TTS turn and collect a new physical
+  recording from the same phone position.
+- Analyze LUFS/peak/RMS/active ratio and compare against
+  `/Users/jiyurun/Downloads/军民公路259号 7.m4a` and the 22:19 reference.
+- If physical audio is still blurred/intermittent, continue with TTS model/profile
+  and device playback instrumentation rather than more blind loudness changes.
+
+Known risks and blockers:
+
+- MCP volume endpoint proves delivery to the live WebSocket, not device-side
+  application, until a device response or physical recording confirms it.
+- The current Go Opus wrapper still uses a 48 kHz frame-size interface
+  internally; this round reduces churn and aligns the downlink target but does
+  not replace the Opus library.
+- Stock action controls for face/motion/display still require debug
+  `device_events` negotiation; this round only fixes audio/volume path.
+- Full PRD acceptance remains blocked on physical audible evidence and custom
+  wake proof.
+
+Recommended next action:
+
+- Restart/relaunch the Gateway from this tree on the physical port, verify
+  `/healthz`, verify device registry, send `volume 100`, then run a long TTS
+  turn for a fresh recording.
+- If the live device does not advertise MCP or the endpoint returns 409, fall
+  back to the guarded firmware volume-100 candidate path without claiming
+  runtime volume success.
+
+Validation results:
+
+- `go test ./internal/gateway ./internal/providers ./internal/transport/xiaozhi ./internal/app -run 'TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestXiaozhiListenReplySuppressedForStockPhysicalMACDevice|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames|TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn|TestXiaozhiOpusDownlinkFansOutOfficialStackChanSpeaking|TestBuildServerHello|TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport|TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks|XiaozhiVoiceBench|TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence' -count=1`:
+  passed.
+- `go test ./internal/app ./internal/gateway ./internal/providers ./internal/audio/opuscodec ./internal/transport/xiaozhi -run 'Xiaozhi|StackChan|VoicePipeline|Opus|LocalTTS|Playback|Barge|Abort|ProviderLatencyFixture|FastCompanion' -count=1`:
+  passed.
+- `git diff --check`: passed before documentation/helper updates.
+- `zsh -n tools/desktop/a21-stackchan-control.command`: passed.
+- `zsh -n /Users/jiyurun/Desktop/A21-StackChan-Control.command`: passed.
+
+## 2026-06-02 23:51 CST - T-AUDIO-002 Live Say And Wake-Word Reality Check
+
+Round goal:
+
+- Respond to the operator's new recording
+  `/Users/jiyurun/Downloads/军民公路259号 8.m4a` from 3 seconds onward.
+- Stop relying on voice prompts or legacy controls for speaker tests by adding a
+  direct host-to-physical StackChan TTS path on the live stock `/v1/xiaozhi`
+  socket.
+- Verify whether custom wake-word firmware is actually active on the current
+  physical device.
+
+Actual completed work:
+
+- Analyzed `8.m4a` from 3 seconds onward with FFmpeg loudness/stats:
+  - `8.m4a`: `input_i=-31.78 LUFS`, `input_tp=-10.56 dBTP`,
+    `input_lra=18.50`, `input_thresh=-43.70`.
+  - Same 3-second window comparison for `7.m4a`: `input_i=-35.56 LUFS`,
+    `input_tp=-14.65 dBTP`, `input_lra=5.40`, `input_thresh=-46.97`.
+  - Interpretation: the hotfix improved sustained loudness by about `3.8 LUFS`
+    and peak by about `4.1 dB`, matching the operator's "current noise is much
+    better" observation, but there is still about `10 dB` of peak headroom, so
+    physical loudness is not accepted as "max".
+- Added `POST /v1/xiaozhi/say`, which sends a foreground host text prompt over
+  the already connected stock Xiaozhi WebSocket as TTS lifecycle plus binary
+  Opus downlink.
+- Stored the live `xiaozhiSession` pointer with each registered stock socket so
+  `/v1/xiaozhi/say` uses the same write lock, turn cancellation, downlink codec,
+  and trace path as normal voice turns.
+- Reduced `startXiaozhiTurn` prebuffer from five 60 ms frames to one 60 ms
+  frame; the old five-frame setting could create a 300 ms startup burst that
+  sounded like blur/stutter on the physical speaker.
+- Added `TestXiaozhiSayDeliversTextAsStockTTSDownlink` to prove that `/say`
+  writes `tts/start`, `tts/sentence_start`, binary Opus, and `tts/stop` to the
+  same stock socket.
+- Restarted the Gateway from this working tree on `0.0.0.0:21081`; health
+  returned ok.
+- Waited for physical device `44:1b:f6:e2:6a:60` to reconnect, then delivered
+  stock MCP volume `100`:
+  `trace_id=a21-trace-live-volume-100-hotfix`,
+  `status=delivered`, `delivered_transport=xiaozhi_mcp`,
+  `tool_name=self.audio_speaker.set_volume`.
+- Sent a long physical TTS through `/v1/xiaozhi/say`:
+  `trace_id=a21-trace-live-long-tts-hotfix`, `text_chars=189`,
+  `audio_chunks=676`, `status=delivered`, `delivered_transport=xiaozhi_ws`.
+- Verified current device registry still shows physical device online with
+  `speaker_volume=100`, `xiaozhi_feature_mcp=true`, and
+  `last_event=xiaozhi.tts.opus_frame.downlink`.
+- Confirmed custom wake word is not active in the currently flashed physical
+  app:
+  `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json`
+  is `status=packaged`, `package_written=true`, but `product_ready=false`,
+  `flash_allowed=false`, and `flash_executed=false`. The current physical
+  official-compatible firmware still depends on stock Xiaozhi WakeNet/touch.
+- Updated the repo and Desktop StackChan control helpers so `say` can play a
+  foreground physical TTS test from the helper.
+- Updated `docs/engineering/PROTOCOL.md` and
+  `docs/project_state_machine.md` with the new `/v1/xiaozhi/say` boundary,
+  live TTS evidence, and wake-word truth.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `tools/desktop/a21-stackchan-control.command`
+- `/Users/jiyurun/Desktop/A21-StackChan-Control.command`
+
+Current unfinished items:
+
+- The operator should provide the recording captured during
+  `a21-trace-live-long-tts-hotfix`; analyze it against `7.m4a` and `8.m4a`.
+- If the new recording is still not loud enough, move from protocol parity to
+  TTS source/gain staging: local TTS WAV amplitude, limiter/headroom before
+  Opus encode, and optional guarded firmware volume-100 persistence if MCP
+  volume does not persist across sessions.
+- The live trace shows device microphone ingress after speaker playback, which
+  can retrigger the voice pipeline; half-duplex/AEC/speaker-ducking remains a
+  next transition.
+- Custom wake-word product readiness remains blocked until the packaged
+  MultiNet firmware is flashed through a guarded hardware window and followed
+  by physical custom wake proof.
+
+Known risks and blockers:
+
+- `/v1/xiaozhi/say` is an operator foreground test path, not product dialogue
+  acceptance.
+- Runtime MCP volume delivery is proven at the WebSocket/Gateway layer; physical
+  loudness still needs the fresh recording analysis.
+- The current physical firmware does not contain the custom wake package, so
+  voice wake behavior remains stock and can be weak depending on phrase,
+  environment, and microphone/AEC state.
+
+Recommended next action:
+
+- Analyze the operator recording for `a21-trace-live-long-tts-hotfix`.
+- Dispatch a focused worker for `T-AUDIO-003: TTS Gain And Half-Duplex
+  Stabilization` if loudness or self-trigger remains bad.
+- Dispatch a separate firmware worker for `T-FW-004: Guarded Custom Wake Flash`
+  using the existing wake package if the contest flow requires voice wake rather
+  than touch.
+
+Validation results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames' -count=1`:
+  passed.
+- `go test ./internal/gateway ./internal/providers ./internal/transport/xiaozhi ./internal/app -run 'TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestXiaozhiListenReplySuppressedForStockPhysicalMACDevice|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames|TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn|TestXiaozhiOpusDownlinkFansOutOfficialStackChanSpeaking|TestBuildServerHello|TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport|TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks|XiaozhiVoiceBench|TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence' -count=1`:
+  passed.
+- `go test ./internal/app ./internal/gateway ./internal/providers ./internal/audio/opuscodec ./internal/transport/xiaozhi -run 'Xiaozhi|StackChan|VoicePipeline|Opus|LocalTTS|Playback|Barge|Abort|ProviderLatencyFixture|FastCompanion' -count=1`:
+  passed.
+- `zsh -n tools/desktop/a21-stackchan-control.command`: passed.
+- `zsh -n /Users/jiyurun/Desktop/A21-StackChan-Control.command`: passed.
+- `git diff --check`: passed.
+
+## 2026-06-03 00:29 CST - T-INTEGRATE-001 Accepted Audio Hotfix Review
+
+Round goal:
+
+- Review the T-AUDIO-002 and T-AUDIO-003 hotfixes after operator acceptance.
+- Record the final accepted recording evidence.
+- If no blocking findings are found, integrate the hotfix set into the current
+  branch with tests and state-machine updates.
+
+Actual completed work:
+
+- Analyzed accepted operator recording
+  `/Users/jiyurun/Downloads/军民公路259号 10.m4a`:
+  - duration `37.781333 s`, AAC 48 kHz stereo.
+  - from 3 seconds: `-26.5 LUFS`, `-8.6 dBFS` true peak, `LRA=4.3 LU`.
+  - This matches the final 3x gain lane and the operator explicitly marked the
+    audio acceptance as passed.
+- Reviewed hotfix diff boundaries:
+  - stock protocol remains clean: physical MAC stock devices no longer receive
+    unsupported `type=listen` replies; debug/virtual paths keep replies.
+  - runtime volume path uses stock MCP tool
+    `self.audio_speaker.set_volume`.
+  - `/v1/xiaozhi/say` is a Gateway/operator foreground path that sends stock
+    TTS lifecycle and Opus binary downlink over the live `/v1/xiaozhi` socket.
+  - downlink audio aligns to 24 kHz mono 60 ms; uplink remains stock 16 kHz.
+  - turn-level Opus encoder reuse and one-frame prebuffer remove avoidable
+    churn/startup burst.
+  - bounded PCM leveling now uses 3x max gain with a noise gate and headroom
+    cap after 4x was rejected by listening feedback.
+  - host-say input suppression is limited to stock physical MAC devices and
+    does not claim normal dialogue half-duplex acceptance.
+- Fixed an inaccurate earlier handoff file list that mentioned
+  `internal/transport/xiaozhi/*` even though those files are not in the final
+  diff.
+- Updated `docs/project_state_machine.md`:
+  - total state is now
+    `S-HW-PHYSICAL-XIAOZHI-AUDIO-ACCEPTED-WAKE-PENDING`;
+  - `T-AUDIO-002` and `T-AUDIO-003` are recorded as completed;
+  - stale audio/volume blockers were removed or narrowed;
+  - next candidates are custom wake flash/proof, normal-dialogue half-duplex,
+    and selected-provider readiness refresh.
+
+Files changed this round:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Current unfinished items:
+
+- Commit the reviewed integration set if verification remains green.
+- Full PRD physical acceptance remains false until custom wake proof, broader
+  normal-dialogue half-duplex, and selected-provider readiness refresh are
+  closed.
+
+Known risks and blockers:
+
+- `/v1/xiaozhi/say` is still an operator foreground path, not a replacement for
+  normal product dialogue acceptance.
+- Phone recordings remain room-path evidence, though the operator accepted the
+  latest result.
+- Custom wake package is still not flashed into the current physical app.
+
+Recommended next action:
+
+- Commit the accepted hotfix set.
+- Start `T-FW-003` guarded custom wake flash/proof or `T-HALF-DUPLEX-001`
+  normal-dialogue echo suppression depending on contest priority.
+
+Validation results:
+
+- `go test ./internal/gateway ./internal/providers ./internal/transport/xiaozhi ./internal/app -run 'TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestXiaozhiListenReplySuppressedForStockPhysicalMACDevice|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames|TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn|TestXiaozhiOpusDownlinkFansOutOfficialStackChanSpeaking|TestBuildServerHello|TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport|TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks|XiaozhiVoiceBench|TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence|TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical|TestXiaozhiDownlinkPCM16' -count=1`:
+  passed.
+- `go test ./internal/app ./internal/gateway ./internal/providers ./internal/audio/opuscodec ./internal/transport/xiaozhi -run 'Xiaozhi|StackChan|VoicePipeline|Opus|LocalTTS|Playback|Barge|Abort|ProviderLatencyFixture|FastCompanion' -count=1`:
+  passed.
+- `zsh -n tools/desktop/a21-stackchan-control.command`: passed.
+- `zsh -n /Users/jiyurun/Desktop/A21-StackChan-Control.command`: passed.
+- `git diff --check`: passed.
+- `make verify`: passed, including `go test ./...` and `git diff --check`.
+- `tools/desktop/a21-stackchan-control.command status`: Gateway health ok;
+  physical device record present but stale after the acceptance window.
+- `curl --noproxy '*' http://127.0.0.1:21081/healthz`: returned Gateway ok
+  after restart.
+- `POST /v1/xiaozhi/speaker-volume`: delivered volume `100` to
+  `44:1b:f6:e2:6a:60`.
+- `POST /v1/xiaozhi/say`: delivered `676` audio chunks to the live physical
+  stock socket.
+- After the foreground tool session was closed, Gateway was relaunched in tmux
+  session `a21-gateway-21081`; `curl --noproxy '*' http://127.0.0.1:21081/healthz`
+  returned ok.
+
+## 2026-06-03 00:07 CST - T-AUDIO-003 Bounded Gain And Host-Say Echo Suppression
+
+Round goal:
+
+- Continue from T-AUDIO-002 without changing principles or widening scope.
+- Analyze operator recording `/Users/jiyurun/Downloads/军民公路259号 9.m4a`.
+- Fix the remaining "not loud enough" path only after evidence.
+- Reduce immediate host-say speaker-to-mic self-trigger risk.
+
+Actual completed work:
+
+- Verified current repo state before edits: branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`, HEAD `ebc0db4`, dirty
+  with prior T-AUDIO-002 changes.
+- Verified Gateway tmux session `a21-gateway-21081` was healthy and the physical
+  device `44:1b:f6:e2:6a:60` was online.
+- Analyzed `9.m4a`:
+  - full file duration `48.618667 s`, AAC 48 kHz stereo.
+  - from 3 seconds: `-36.99 LUFS`, `-16.05 dBTP`,
+    `input_lra=5.80`, `input_thresh=-47.70`.
+  - best early 10-second window from 3 seconds:
+    `-34.79 LUFS`, `-16.05 dBTP`.
+  - no clear `-45 dB` long-silence splits were detected, so the weak integrated
+    loudness was not only a blank-tail artifact.
+- Spawned two read-only sidecar agents:
+  - `019e8910-7ecb-7e01-a468-9480df0ba61d`: confirmed Gateway downlink only
+    attenuated hot PCM and never lifted quiet TTS frames; recommended bounded
+    Gateway-level leveling as the smallest safe patch.
+  - `019e8910-b7b4-7f92-98c8-1eb21286b7c0`: confirmed `/v1/xiaozhi/say` did not
+    arm input suppression, allowing speaker playback to be accepted as new
+    listen/voice-pipeline input; recommended host-say-only stock physical input
+    suppression.
+- Added plan
+  `docs/plans/2026-06-02-stackchan-tts-gain-half-duplex-hotfix.md`.
+- Replaced pure `xiaozhiDownlinkPCM16` headroom limiting with bounded PCM
+  leveling:
+  - noise gate leaves tiny noise unchanged;
+  - quiet non-silent TTS frames can be lifted up to the target peak;
+  - max gain cap is `4000` milli (`4x`);
+  - headroom cap remains `29490`.
+- Added host-say-only input suppression:
+  - constant `xiaozhiHostSayInputCooldownMS=1200`;
+  - only stock physical MAC devices, not debug profile;
+  - records `xiaozhi.say.input_suppression_armed`;
+  - immediate `listen/start` during cooldown records
+    `xiaozhi.listen.start.input_suppressed` and remains ignored.
+- Sent one boosted physical `/v1/xiaozhi/say` turn after loading the first
+  4x gain build:
+  `trace_id=a21-trace-live-long-tts-gain`, `text_chars=226`,
+  `audio_chunks=669`.
+- Analyzed the operator's boosted recording
+  `/Users/jiyurun/Downloads/纳仕张江国际社区云庐B区.m4a`:
+  - duration `29.077333 s`, AAC 48 kHz stereo.
+  - from 3 seconds: `-21.65 LUFS`, `-4.72 dBTP`,
+    `input_lra=6.20`, `input_thresh=-32.61`.
+  - 3s/10s window: `-20.63 LUFS`, `-4.72 dBTP`.
+  - FFmpeg `astats` from 3 seconds: overall peak `-4.774703 dB`,
+    RMS `-27.138800 dB`, no NaNs/Infs/denormals and no obvious clipping.
+  - This materially improves 9.m4a and moves the issue from "too quiet" to
+    operator listening confirmation plus half-duplex stability.
+- Updated `docs/engineering/PROTOCOL.md` with bounded downlink leveling and
+  post-host-say input suppression.
+- Updated `docs/project_state_machine.md` to make `T-AUDIO-003` the active
+  child transition.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-02-stackchan-tts-gain-half-duplex-hotfix.md`
+- `docs/project_state_machine.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+
+Current unfinished items:
+
+- Restart tmux Gateway from the final tree after the latest host-say suppression
+  patch, then verify `/healthz`.
+- Run broader focused tests and `git diff --check`.
+- Operator should confirm whether the boosted recording sounds clear, not harsh,
+  and acceptable for contest demo use.
+- If boosted audio is too hot or harsh, reduce max gain from `4000` milli to the
+  sidecar's safer `3000` milli while preserving the same tests.
+- Normal dialogue half-duplex after non-host-say TTS still needs physical proof;
+  this round only guards the operator foreground `/v1/xiaozhi/say` path.
+
+Known risks and blockers:
+
+- Per-frame leveling can cause pumping on highly variable TTS; current physical
+  recording did not show obvious clipping, but operator listening judgement is
+  still required.
+- Phone recordings are room-path evidence, not exact SPL.
+- Custom wake word remains packaged but not flashed into the current physical
+  app.
+
+Recommended next action:
+
+- Restart Gateway from the final working tree.
+- Ask operator for subjective verdict on
+  `/Users/jiyurun/Downloads/纳仕张江国际社区云庐B区.m4a`.
+- If accepted, proceed to `T-FW-004` custom wake flash or `T-HALF-DUPLEX-001`
+  normal dialogue echo suppression, depending on contest-critical priority.
+
+Validation results so far:
+
+- `go test ./internal/gateway -run 'TestXiaozhiDownlinkPCM16|TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical|TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiWebSocketTouchAbortSuppressesImmediateListenRestart|TestXiaozhiSessionRecentDownlinkCanBeInterruptedAfterTurnCompletion|TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus|TestXiaozhiDownlinkPCM16' -count=1`:
+  passed.
+
+## 2026-06-03 00:22 CST - T-AUDIO-003 Roll Back Gain Cap To 3x
+
+Round goal:
+
+- Respond to operator feedback that the 4x Gateway gain candidate felt like a
+  slight regression with subtle electrical interruption and reduced clarity.
+- Roll the Xiaozhi downlink max-gain cap back from 4x to 3x without changing
+  stock protocol, firmware, provider routing, or V21 boundaries.
+- Keep the physical 3x candidate live for immediate listening retest.
+
+Actual completed work:
+
+- Analyzed the new operator recording
+  `/Users/jiyurun/Downloads/浦东新区第二中心小学(申江校区) 3.m4a`:
+  - duration `35.818667 s`, AAC 48 kHz stereo.
+  - from 3 seconds: `-26.4 LUFS`, `-9.0 dBFS` true peak, `LRA=3.8 LU`.
+  - FFmpeg `astats` from 3 seconds: overall peak `-9.086959 dB`, RMS
+    `-31.859961 dB`, no NaNs/Infs/denormals.
+- Used TDD for the gain rollback:
+  - first changed
+    `TestXiaozhiDownlinkPCM16BoostsQuietTTSFramesWithinHeadroom` to expect
+    bounded 3x boost from peak `6000` to `18000`;
+  - verified the test failed against the 4x code with
+    `quiet TTS pcm peak = 24000, want bounded 3x boost to 18000`;
+  - changed `xiaozhiDownlinkPCM16MaxGainMilli` from `4000` to `3000`.
+- Updated plan/state docs to record that 4x was rejected by listening feedback
+  and 3x is the current candidate.
+- Relaunched the Gateway from the 3x working tree in tmux session
+  `a21-gateway-21081`; `/healthz` returned ok.
+- Confirmed physical StackChan `44:1b:f6:e2:6a:60` re-registered online over
+  stock `/v1/xiaozhi`.
+- Delivered runtime volume `100` through stock MCP:
+  `trace_id=a21-trace-stackchan-volume-1780417211`.
+- Played a 3x long physical TTS through `/v1/xiaozhi/say`:
+  `trace_id=a21-trace-stackchan-say-1780417217`, `text_chars=176`,
+  `audio_chunks=579`.
+- Trace summary for `a21-trace-stackchan-say-1780417217`:
+  - `answer_first_audio_total_ms=1656`;
+  - `tts.first_audio` at offset `1772 ms`;
+  - `audio.downlink.first_frame` at offset `1773 ms`;
+  - `xiaozhi.say.input_suppression_armed=1`;
+  - `xiaozhi.listen.start.input_suppressed=1`;
+  - `xiaozhi.opus_frame.ignored_not_listening=259`.
+
+Files changed this round:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-02-stackchan-tts-gain-half-duplex-hotfix.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- Operator must listen to the just-played 3x physical TTS and decide whether
+  clarity is now acceptable.
+- If 3x is still unclear or electrically interrupted, stop tuning gain upward
+  and route the next transition to TTS source/profile quality, device codec
+  instrumentation, or guarded firmware playback gain rather than stacking more
+  Gateway amplification.
+- Normal dialogue half-duplex after non-host-say TTS still needs separate
+  physical acceptance.
+- Custom wake word remains packaged but not flashed into the current physical
+  app.
+
+Known risks and blockers:
+
+- Phone recordings are room-path evidence, not exact SPL.
+- 3x may be slightly less loud than 4x; this is intentional to preserve
+  clarity.
+- The physical device currently uses stock Xiaozhi WakeNet/touch activation;
+  custom wake proof remains blocked until a guarded flash/run is executed.
+
+Recommended next action:
+
+- If the operator accepts 3x listening quality, freeze Gateway gain at 3x and
+  move to `T-FW-004` custom wake flash or `T-HALF-DUPLEX-001` normal dialogue
+  echo suppression.
+- If the operator rejects 3x clarity, start a new small transition focused on
+  TTS voice/model/source quality and device-side playback instrumentation.
+
+Validation results:
+
+- `go test ./internal/gateway -run TestXiaozhiDownlinkPCM16BoostsQuietTTSFramesWithinHeadroom -count=1`:
+  failed before production-code rollback as expected.
+- `go test ./internal/gateway -run 'TestXiaozhiDownlinkPCM16BoostsQuietTTSFramesWithinHeadroom|TestXiaozhiDownlinkPCM16DoesNotBoostTinyNoise|TestXiaozhiDownlinkPCM16AppliesHeadroomToHotTTSFrames|TestXiaozhiDownlinkPCM16Accepts48KProviderFrames' -count=1`:
+  passed after rollback.
+- `go test ./internal/gateway ./internal/providers ./internal/transport/xiaozhi ./internal/app -run 'TestXiaozhiSayDeliversTextAsStockTTSDownlink|TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestXiaozhiListenReplySuppressedForStockPhysicalMACDevice|TestWriteXiaozhiOpusDownlinkReusesTurnEncoderForContiguousFrames|TestWriteXiaozhiOpusDownlinkUsesPacerAndCurrentTurn|TestXiaozhiOpusDownlinkFansOutOfficialStackChanSpeaking|TestBuildServerHello|TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport|TestLocalTTSAdapterConvertsWAVToDownlinkReady24KChunks|XiaozhiVoiceBench|TestRunXiaozhiVoiceBenchReportsHostOnlyCandidateEvidence|TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical|TestXiaozhiDownlinkPCM16' -count=1`:
+  passed.
+- `go test ./internal/app ./internal/gateway ./internal/providers ./internal/audio/opuscodec ./internal/transport/xiaozhi -run 'Xiaozhi|StackChan|VoicePipeline|Opus|LocalTTS|Playback|Barge|Abort|ProviderLatencyFixture|FastCompanion' -count=1`:
+  passed.
+- `zsh -n tools/desktop/a21-stackchan-control.command`: passed.
+- `zsh -n /Users/jiyurun/Desktop/A21-StackChan-Control.command`: passed.
+- `git diff --check`: passed.
+
+## 2026-06-03 00:32 CST - T-INTEGRATE-001 Tail Pointer After Commit
+
+Round goal:
+
+- Keep the latest handoff visible at the end of the log after integrating the
+  accepted audio hotfix set.
+
+Actual completed work:
+
+- Operator accepted the 3x physical audio result.
+- Accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured
+  `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds.
+- Review found no blocking issue in the two hotfix rounds:
+  - stock physical devices no longer receive unsupported `listen` replies;
+  - runtime volume uses stock MCP `self.audio_speaker.set_volume`;
+  - `/v1/xiaozhi/say` is an operator foreground path using stock TTS lifecycle
+    plus Opus binary downlink;
+  - downlink TTS uses 24 kHz mono 60 ms;
+  - bounded leveling is capped at 3x with noise gate and headroom;
+  - host-say input suppression is physical-observed but not overclaimed as
+    normal-dialogue half-duplex acceptance.
+- `docs/project_state_machine.md` now records
+  `S-HW-PHYSICAL-XIAOZHI-AUDIO-HOTFIX-INTEGRATED` with active
+  `T-NEXT-PENDING`.
+
+Files changed this tail-pointer update:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Current unfinished items:
+
+- Full PRD acceptance remains blocked by custom wake proof, broader normal
+  dialogue half-duplex, and selected-provider readiness refresh.
+
+Known risks and blockers:
+
+- Gateway health is ok; after the acceptance window the physical device registry
+  record was present but stale.
+- Phone recordings are accepted operator evidence but not exact SPL.
+
+Recommended next action:
+
+- Next transitions: `T-FW-003`, `T-HALF-DUPLEX-001`, `T-PROVIDER-001b`.
+
+Validation results:
+
+- Focused Gateway/provider/transport/app tests: passed.
+- Broader Xiaozhi/StackChan/voice/Opus focused tests: passed.
+- Desktop helper syntax checks: passed.
+- `git diff --check`: passed.
+- `make verify`: passed, including `go test ./...` and `git diff --check`.
