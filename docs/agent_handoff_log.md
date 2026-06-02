@@ -3182,3 +3182,127 @@ Validation results:
 - `make verify` passed.
 - No NVS write, global proxy change, provider secret output, or V21 execution
   occurred in this recovery round.
+
+## 2026-06-03 - T-WAKE-002 - Zi Yue Wake Built In StackChan-Compatible Lane
+
+Goal:
+
+- Continue the wake convergence without repeating the bare `xiaozhi.bin`
+  product regression.
+- Change the requested wake word to `紫悦`.
+- Build the custom wake into the official StackChan-compatible product app lane
+  and prepare a guarded product flash.
+- Launch a separate comparison thread for raw Xiaozhi/StackChan hardware and
+  audio-behavior parity research.
+
+Actual completed work before flash:
+
+- Created plan
+  `docs/plans/2026-06-03-zi-yue-wake-stackchan-compatible.md`.
+- Launched and received a separate read-only background comparison thread for:
+  - current A21 versus raw `xiaozhi.bin` protocol/audio handling;
+  - raw Xiaozhi whole-device behavior versus A21 StackChan behavior;
+  - official StackChan docs/source and StackChan-for-Xiaozhi implementation
+    cross-check.
+- Recorded the comparison result as state evidence: bare `xiaozhi.bin` being
+  louder/clearer is treated as an operator-confirmed fact, but the artifact
+  remains non-product incident evidence. The migration direction is official
+  CoreS3 codec/HAL parity, source TTS/mastering, runtime volume/NVS/MCP
+  evidence, downlink Opus/pacer parity, and official StackChan app/action
+  initialization inside the compatible product lane.
+- Added `紫悦` wake config to
+  `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+  without leaving the product lane:
+  - `CONFIG_USE_CUSTOM_WAKE_WORD=y`;
+  - `CONFIG_CUSTOM_WAKE_WORD="zi yue"`;
+  - `CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `CONFIG_SR_MN_CN_MULTINET7_QUANT=y`;
+  - `CONFIG_SEND_WAKE_WORD_DATA=n`;
+  - `# CONFIG_USE_AFE_WAKE_WORD is not set`;
+  - `# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`.
+- Fixed the compatible overlay autostart order after the sidecar audit flagged
+  a risk: the overlay now installs official StackChan apps first, sets codec
+  volume, then calls `GetHAL().requestXiaozhiStart()` so the official main loop
+  still reaches the preserved `GetHAL().startXiaozhi()` path.
+- Added a focused app test that asserts the official-compatible overlay keeps
+  the StackChan product identity and does not point to the bare Xiaozhi app
+  lane.
+- Updated `docs/project_state_machine.md` from bare-wake recovery toward the
+  `紫悦` product-lane flash-ready state.
+
+Files changed before flash:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/plans/2026-06-03-zi-yue-wake-stackchan-compatible.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- The `紫悦` build is not yet physical-wake accepted until the guarded flash is
+  executed and the operator confirms saying `紫悦` wakes the StackChan UI
+  without touching the screen.
+- The separate raw Xiaozhi/StackChan comparison thread returned evidence. Its
+  immediate follow-up should be a new plan for
+  `T-AUDIO-BARE-XIAOZHI-PARITY-001`, not an unplanned audio rewrite.
+- Touch/barge-in operator proof and final physical evidence regeneration remain
+  open for full PRD acceptance.
+
+Known risks and blockers:
+
+- `zi yue` is short; threshold `20` improves wake sensitivity but may false
+  wake. If false wakes appear, keep the product lane and tune only threshold,
+  first toward `35`.
+- First ESP-IDF build attempt failed at Python 3.13 `_csv` dynamic-library load
+  during `gen_crt_bundle.py`; manual replay and second build passed. Treat as a
+  local toolchain hiccup unless it repeats.
+- Do not flash `xiaozhi.bin` as product StackChan firmware. Product flash must
+  remain `a21-stackchan-official-xiaozhi-compatible-flash-*`.
+
+Recommended next action:
+
+- Commit the `紫悦` product-lane build change.
+- Execute the guarded official-compatible product flash on
+  `/dev/cu.usbmodem1101`.
+- After reboot, verify StackChan UI is still present and ask the operator to
+  try `紫悦`.
+
+Validation results before flash:
+
+- `go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|XiaozhiFirmwareFlash|OfficialXiaozhiCompatibleFlash' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+- First
+  `make a21-stackchan-official-xiaozhi-compatible-build`: failed at local
+  Python `_csv` dynamic-library system policy in `gen_crt_bundle.py`; overlay
+  had already applied and `sdkconfig.json` showed the expected wake config.
+- Second
+  `make a21-stackchan-official-xiaozhi-compatible-build`: passed but was
+  superseded by the autostart-order correction.
+- Final
+  `make a21-stackchan-official-xiaozhi-compatible-build` after the autostart
+  correction: passed.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-025420-1780426460868295000.json`.
+- Product app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- Product app SHA-256:
+  `092ff74686636ba6698926d73c03dd6a13903639031a2a0869670e1525b42961`.
+- Build config inspection passed for StackChan board identity, `紫悦` custom
+  wake, MultiNet7, disabled AFE WakeNet, and disabled HiStackChan WakeNet.
+- Patched `main.cpp` inspection passed: official apps are installed before A21
+  sets codec volume and requests Xiaozhi start.
+- No-write flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-025440-1780426480789692000.json`
+  is `status=ready`, `dry_run=true`, `flash_allowed=false`,
+  `flash_executed=false`, app `a21-stackchan-official-xiaozhi-compatible.bin`,
+  offset `0x20000`, port `/dev/cu.usbmodem1101`.
+
+Failure location and reason:
+
+- The only build failure in this round was local ESP-IDF Python 3.13 importing
+  `_csv` under ninja for certificate bundle generation. Manual command replay
+  and rerun succeeded, so no firmware code rollback was needed.

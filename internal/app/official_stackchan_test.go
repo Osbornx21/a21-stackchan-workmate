@@ -179,17 +179,67 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
-		`GetHAL().startXiaozhi();`,
+		`GetHAL().requestXiaozhiStart();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
 		}
 	}
-	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") {
+	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") || strings.Contains(overlay, "+    GetHAL().startXiaozhi();") {
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
-	if strings.Index(overlay, `codec->SetOutputVolume(92);`) > strings.Index(overlay, `GetHAL().startXiaozhi();`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec output volume before entering Xiaozhi runtime")
+	installDanceIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppDance>());`)
+	installSetupIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppSetup>());`)
+	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
+	requestStartIndex := strings.Index(overlay, `GetHAL().requestXiaozhiStart();`)
+	if installDanceIndex < 0 || installSetupIndex < 0 || volumeIndex < 0 || requestStartIndex < 0 {
+		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
+	}
+	if installDanceIndex > volumeIndex || installSetupIndex > volumeIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must install official StackChan apps before A21 autostart")
+	}
+	if volumeIndex > requestStartIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before requesting the official Xiaozhi start path")
+	}
+}
+
+func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`project(a21-stackchan-official-xiaozhi-compatible)`,
+		`CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y`,
+		`CONFIG_SEND_WAKE_WORD_DATA=n`,
+		`# CONFIG_USE_AFE_WAKE_WORD is not set`,
+		`CONFIG_USE_CUSTOM_WAKE_WORD=y`,
+		`CONFIG_CUSTOM_WAKE_WORD="zi yue"`,
+		`CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"`,
+		`CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20`,
+		`CONFIG_SR_MN_CN_MULTINET7_QUANT=y`,
+		`# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing custom wake contract %q", required)
+		}
+	}
+	for _, line := range strings.Split(overlay, "\n") {
+		if (strings.HasPrefix(line, "+") || strings.HasPrefix(line, " ")) &&
+			strings.Contains(line, `CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3=y`) {
+			t.Fatalf("official Xiaozhi-compatible overlay must not leave the stock HiStackChan WakeNet model active with custom Zi Yue wake: %q", line)
+		}
+	}
+	if strings.Contains(overlay, `project(xiaozhi)`) || strings.Contains(overlay, `xiaozhi.bin`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must not point to the bare Xiaozhi app lane")
 	}
 }
 
