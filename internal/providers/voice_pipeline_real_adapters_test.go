@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"a21.local/a21/internal/audio"
 )
@@ -268,6 +269,125 @@ func TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal(t *testing.
 	}
 	if host.ASR.Name() != "sherpa_onnx" || host.TextStream.Name() != "deepseek" || host.TTS.Name() != "sherpa_onnx" {
 		t.Fatalf("host adapters = %s/%s/%s", host.ASR.Name(), host.TextStream.Name(), host.TTS.Name())
+	}
+	if _, ok := host.ASR.(StreamingASRAdapter); ok {
+		t.Fatalf("batch sherpa_onnx adapter unexpectedly implements StreamingASRAdapter")
+	}
+}
+
+func TestLocalSherpaONNXStreamingASRAdapterStreamsInjectedSession(t *testing.T) {
+	factoryCalls := 0
+	adapter := NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{
+		LocalSherpaONNXASRAdapterOptions: LocalSherpaONNXASRAdapterOptions{
+			Name: "sherpa_onnx_streaming",
+		},
+		StreamingSessionFactory: func(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error) {
+			factoryCalls++
+			if req.Session.TraceID != "a21-trace-sherpa-streaming" || req.Mode != "workmate" {
+				t.Fatalf("streaming start request = %+v", req)
+			}
+			mock := NewMockStreamingASRAdapter("a21-injected-sherpa-session")
+			return mock.StartStreamingASR(ctx, req)
+		},
+	})
+	streaming, ok := adapter.(StreamingASRAdapter)
+	if !ok {
+		t.Fatalf("adapter %T does not implement StreamingASRAdapter", adapter)
+	}
+
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{
+		Session: VoiceSession{TraceID: "a21-trace-sherpa-streaming", SessionID: "a21-session-sherpa-streaming", DeviceID: "stackchan-001"},
+		Mode:    "workmate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if factoryCalls != 1 {
+		t.Fatalf("factory calls = %d, want 1", factoryCalls)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Seq:          1,
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    2,
+		RMS:          0.2,
+		PCM16LE:      []byte{1, 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	partial := receiveASREvent(t, session.Events())
+	if partial.Final || strings.TrimSpace(partial.Text) == "" {
+		t.Fatalf("partial = %+v, want non-final text", partial)
+	}
+	if err := session.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	final := receiveASREvent(t, session.Events())
+	if !final.Final || strings.TrimSpace(final.Text) == "" {
+		t.Fatalf("final = %+v, want final text", final)
+	}
+}
+
+func TestLocalSherpaONNXStreamingASRAdapterRequiresConfiguredSession(t *testing.T) {
+	adapter := NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{})
+	streaming, ok := adapter.(StreamingASRAdapter)
+	if !ok {
+		t.Fatalf("adapter %T does not implement StreamingASRAdapter", adapter)
+	}
+	_, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{})
+	if err == nil {
+		t.Fatal("StartStreamingASR succeeded without a configured session factory")
+	}
+	rendered := err.Error()
+	if !strings.Contains(rendered, "sherpa-onnx streaming ASR helper is not configured") {
+		t.Fatalf("error = %q, want stable not-configured error", rendered)
+	}
+	for _, forbidden := range []string{"/Users/", "raw_audio", "transcript", "fixture transcript"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("error leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestVoicePipelineAdaptersFromEnvSelectsSherpaONNXStreamingASR(t *testing.T) {
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming",
+	}, VoicePipelineAdapterOptions{
+		StreamingASRSessionFactory: func(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error) {
+			mock := NewMockStreamingASRAdapter("a21-injected-sherpa-session")
+			return mock.StartStreamingASR(ctx, req)
+		},
+	})
+
+	if adapters.ExecutionMode != "host_local" || adapters.ASR.Name() != "sherpa_onnx_streaming" {
+		t.Fatalf("adapters execution/ASR = %q/%q, want host_local/sherpa_onnx_streaming", adapters.ExecutionMode, adapters.ASR.Name())
+	}
+	streaming, ok := adapters.ASR.(StreamingASRAdapter)
+	if !ok {
+		t.Fatalf("selected ASR %T does not implement StreamingASRAdapter", adapters.ASR)
+	}
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{
+		Session: VoiceSession{TraceID: "a21-trace-selected-streaming", SessionID: "a21-session-selected-streaming", DeviceID: "stackchan-001"},
+		Mode:    "workmate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    2,
+		RMS:          0.2,
+		PCM16LE:      []byte{1, 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if event := receiveASREvent(t, session.Events()); event.Final || strings.TrimSpace(event.Text) == "" {
+		t.Fatalf("partial = %+v, want non-final text", event)
 	}
 }
 
@@ -703,6 +823,20 @@ func collectASREvents(t *testing.T, events <-chan ASRAdapterEvent) []ASRAdapterE
 		collected = append(collected, event)
 	}
 	return collected
+}
+
+func receiveASREvent(t *testing.T, events <-chan ASRAdapterEvent) ASRAdapterEvent {
+	t.Helper()
+	select {
+	case event, ok := <-events:
+		if !ok {
+			t.Fatal("ASR event channel closed before event")
+		}
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for ASR event")
+	}
+	return ASRAdapterEvent{}
 }
 
 func collectTextEvents(t *testing.T, events <-chan TextStreamEvent) []TextStreamEvent {

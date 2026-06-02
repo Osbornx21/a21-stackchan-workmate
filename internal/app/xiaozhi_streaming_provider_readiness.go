@@ -95,7 +95,7 @@ func runXiaozhiStreamingProviderReadiness(args []string, stdout io.Writer, stder
 
 func buildXiaozhiStreamingProviderReadinessReport(env []string) xiaozhiStreamingProviderReadinessReport {
 	selection := providers.VoicePipelineSelectionFromEnv(env)
-	asr := classifyXiaozhiStreamingASR(selection)
+	asr := classifyXiaozhiStreamingASR(env, selection)
 	llm := classifyXiaozhiStreamingLLM(env, selection)
 	tts := classifyXiaozhiStreamingTTS(selection)
 	findings := append([]string{}, asrFindings(asr)...)
@@ -136,7 +136,7 @@ func buildXiaozhiStreamingProviderReadinessReport(env []string) xiaozhiStreaming
 	}
 }
 
-func classifyXiaozhiStreamingASR(selection providers.VoicePipelineSelection) xiaozhiStreamingProviderReadinessStage {
+func classifyXiaozhiStreamingASR(env []string, selection providers.VoicePipelineSelection) xiaozhiStreamingProviderReadinessStage {
 	profile := normalizeXiaozhiStreamingProfile(selection.ASRProfile)
 	stage := xiaozhiStreamingProviderReadinessStage{
 		Profile:    profile,
@@ -150,6 +150,14 @@ func classifyXiaozhiStreamingASR(selection providers.VoicePipelineSelection) xia
 		stage.RealProvider = true
 		stage.Streaming = true
 		stage.ImplementedInGateway = true
+	case "sherpa_onnx_streaming", "local_sherpa_onnx_streaming", "streaming_zipformer":
+		stage.Adapter = "local_sherpa_onnx_streaming_asr"
+		stage.RealProvider = true
+		stage.Streaming = true
+		stage.ImplementedInGateway = true
+		if xiaozhiSherpaStreamingASRConfigured(env) {
+			stage.Ready = true
+		}
 	case "sherpa_onnx", "local_sherpa_onnx":
 		stage.Adapter = "local_sherpa_onnx_asr"
 		stage.UsesFileBoundary = true
@@ -244,6 +252,9 @@ func asrFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 	if stage.UsesWAVBoundary {
 		return []string{"asr_batch_wav_boundary_not_xiaozhi_streaming"}
 	}
+	if stage.Adapter == "local_sherpa_onnx_streaming_asr" {
+		return []string{"asr_sherpa_streaming_helper_or_model_missing"}
+	}
 	if strings.Contains(stage.Adapter, "iflytek") {
 		return []string{"asr_iflytek_iat_streaming_adapter_missing"}
 	}
@@ -297,6 +308,11 @@ func xiaozhiStreamingTextProfileConfigured(env []string, profile string) bool {
 	}
 }
 
+func xiaozhiSherpaStreamingASRConfigured(env []string) bool {
+	return strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")) != "" &&
+		strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")) != ""
+}
+
 func normalizeXiaozhiStreamingProfile(value string) string {
 	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), "-", "_")
 }
@@ -316,7 +332,8 @@ func uniqueXiaozhiStreamingFindings(values []string) []string {
 }
 
 func writeXiaozhiStreamingProviderReadinessReport(outputDir string, report xiaozhiStreamingProviderReadinessReport) (string, error) {
-	path := filepath.Join(outputDir, "a21-xiaozhi-streaming-provider-readiness-"+time.Now().Format("20060102-150405")+".json")
+	now := time.Now()
+	path := filepath.Join(outputDir, fmt.Sprintf("a21-xiaozhi-streaming-provider-readiness-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
 	file, err := os.Create(path)
 	if err != nil {
 		return "", err

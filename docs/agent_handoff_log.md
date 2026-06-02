@@ -4464,3 +4464,111 @@ Current validation request:
 
 - No implementation failure. The two CLI runs are intentionally non-zero
   because the current provider chain is not yet Xiaozhi-realtime compliant.
+
+## 2026-06-03 - T-XIAOZHI-SHERPA-STREAMING-ASR-ADAPTER-001 - Selectable Sherpa Streaming ASR Seam
+
+本轮目标:
+
+- Continue from the recovered control-tower state without reopening the already
+  fixed welcome/setup issue.
+- Implement the next strict provider transition for Xiaozhi realtime parity:
+  make Sherpa streaming ASR selectable as a `providers.StreamingASRAdapter`
+  without falsely promoting the existing batch/WAV `sherpa_onnx` adapter.
+- Keep the work inside provider/readiness/docs scope: no firmware, no flash, no
+  service restart, no real provider/ASR/V21 execution, and no audio playback.
+
+实际完成内容:
+
+- Confirmed current branch `codex/a21-hardware-window-20260602-stackchan-prd`,
+  HEAD `0cb5573`, clean at the start except new work from this round.
+- Added plan
+  `docs/plans/2026-06-03-sherpa-streaming-asr-adapter.md`.
+- Launched worker thread `019e8a5c-383d-7571-8b4b-14a5a885154f` in isolated
+  worktree `/Users/jiyurun/.codex/worktrees/be99/New project` for the same
+  scoped transition. It wrote red provider tests, then the control tower took
+  over the minimal implementation to avoid waiting; the worker was instructed
+  to stop further edits and not commit.
+- Added `StreamingASRSessionFactory` and a
+  `NewLocalSherpaONNXStreamingASRAdapter` wrapper. The wrapper keeps the old
+  batch Sherpa adapter as fallback for `Transcribe`, but only starts streaming
+  through a configured session factory.
+- Added selectable streaming ASR profiles:
+  `sherpa_onnx_streaming`, `local_sherpa_onnx_streaming`, and
+  `streaming_zipformer`.
+- Preserved existing behavior for `sherpa_onnx` and `local_sherpa_onnx`: they
+  remain batch/WAV and do not implement `StreamingASRAdapter`.
+- Updated the static provider readiness gate so streaming Sherpa is no longer
+  mislabeled as a WAV boundary. It blocks missing helper/model proof with
+  `asr_sherpa_streaming_helper_or_model_missing`.
+- Updated readiness report filenames to include `UnixNano` so concurrent gate
+  runs do not overwrite each other.
+- Updated `docs/project_state_machine.md` with the completed adapter seam and
+  the remaining TTS/runtime-helper blockers.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-sherpa-streaming-asr-adapter.md`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- The new Sherpa streaming profile is an adapter seam only; a real long-lived
+  helper/model runtime has not been executed or proven.
+- Streaming TTS is still not implemented. Iflytek TTS remains a WAV/file
+  boundary in the strict Xiaozhi provider gate.
+- Physical `xiaozhi-realtime-parity` is still blocked until real ASR helper
+  proof, streaming TTS, and an operator-triggered stock `/v1/xiaozhi` turn are
+  recorded.
+- Wake word physical proof remains separate and still not accepted.
+
+已知风险和阻塞点:
+
+- Do not treat `sherpa_onnx_streaming` selection as product readiness by itself.
+  It only proves Gateway can select a streaming ASR adapter when a session
+  factory/helper exists.
+- The readiness gate intentionally allows ASR stage readiness when helper/model
+  env are present, but that is still static/no-execute; runtime proof must come
+  from a future helper smoke/trace transition.
+- TTS remains the next hard blocker for Xiaozhi-style realtime voice.
+
+下一轮建议动作:
+
+1. Implement or connect a long-lived Sherpa streaming helper process/session
+   and prove `AppendFrame -> partial -> Commit -> final` without WAV.
+2. Implement streaming TTS chunk emission before complete WAV/file synthesis.
+3. After ASR helper and TTS streaming are both real, run physical
+   `xiaozhi-realtime-parity` from an operator-triggered `/v1/xiaozhi` turn.
+
+测试/构建/运行结果:
+
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa|TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal' -count=1`:
+  passed.
+- `go test ./internal/app -run TestXiaozhiStreamingProviderReadiness -count=1`:
+  passed.
+- `go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  intentionally exited non-zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-060836-1780438116871814000.json`
+  is blocked by mock ASR/LLM/TTS.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=iflytek_tts go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  intentionally exited non-zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-060837-1780438117185327000.json`
+  is blocked by missing Sherpa streaming helper/model and TTS WAV boundary, not
+  by ASR WAV boundary.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming A21_SHERPA_ONNX_STREAMING_HELPER=/redacted/a21-sherpa-streaming-helper A21_SHERPA_ONNX_ASR_MODEL_DIR=/redacted/a21-sherpa-model A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=iflytek_tts go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  intentionally exited non-zero; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-060837-1780438117326052000.json`
+  marks ASR+LLM ready but still blocks on
+  `tts_wav_file_boundary_not_xiaozhi_streaming`.
+- `git diff --check`: passed.
+- `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- Initial parallel CLI gate runs used the prior second-resolution filename and
+  wrote the same report path. The report writer was fixed to include
+  `UnixNano`; reruns produced unique report files.

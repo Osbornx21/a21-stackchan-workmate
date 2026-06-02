@@ -24,6 +24,8 @@ const (
 
 type LocalASRRunner func(context.Context, audio.LocalASROptions) (audio.LocalASRResult, error)
 
+type StreamingASRSessionFactory func(context.Context, StreamingASRStartRequest) (StreamingASRSession, error)
+
 type LocalSherpaONNXASRAdapterOptions struct {
 	Name       string
 	OutputDir  string
@@ -35,6 +37,11 @@ type LocalSherpaONNXASRAdapterOptions struct {
 	Runner     LocalASRRunner
 }
 
+type LocalSherpaONNXStreamingASRAdapterOptions struct {
+	LocalSherpaONNXASRAdapterOptions
+	StreamingSessionFactory StreamingASRSessionFactory
+}
+
 type localSherpaONNXASRAdapter struct {
 	name       string
 	outputDir  string
@@ -44,6 +51,12 @@ type localSherpaONNXASRAdapter struct {
 	family     string
 	tempDir    string
 	runner     LocalASRRunner
+}
+
+type localSherpaONNXStreamingASRAdapter struct {
+	batch                   ASRAdapter
+	name                    string
+	streamingSessionFactory StreamingASRSessionFactory
 }
 
 func NewLocalSherpaONNXASRAdapter(options LocalSherpaONNXASRAdapterOptions) ASRAdapter {
@@ -67,8 +80,44 @@ func NewLocalSherpaONNXASRAdapter(options LocalSherpaONNXASRAdapterOptions) ASRA
 	}
 }
 
+func NewLocalSherpaONNXStreamingASRAdapter(options LocalSherpaONNXStreamingASRAdapterOptions) ASRAdapter {
+	name := strings.TrimSpace(options.Name)
+	if name == "" {
+		name = "sherpa_onnx_streaming"
+	}
+	batchOptions := options.LocalSherpaONNXASRAdapterOptions
+	batchOptions.Name = name
+	return &localSherpaONNXStreamingASRAdapter{
+		batch:                   NewLocalSherpaONNXASRAdapter(batchOptions),
+		name:                    name,
+		streamingSessionFactory: options.StreamingSessionFactory,
+	}
+}
+
 func (a *localSherpaONNXASRAdapter) Name() string {
 	return a.name
+}
+
+func (a *localSherpaONNXStreamingASRAdapter) Name() string {
+	return a.name
+}
+
+func (a *localSherpaONNXStreamingASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
+	return a.batch.Transcribe(ctx, req)
+}
+
+func (a *localSherpaONNXStreamingASRAdapter) StartStreamingASR(ctx context.Context, req StreamingASRStartRequest) (StreamingASRSession, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if a.streamingSessionFactory == nil {
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper is not configured")
+	}
+	session, err := a.streamingSessionFactory(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("sherpa-onnx streaming ASR helper failed")
+	}
+	return session, nil
 }
 
 func (a *localSherpaONNXASRAdapter) Transcribe(ctx context.Context, req ASRAdapterRequest) (<-chan ASRAdapterEvent, error) {
@@ -614,13 +663,14 @@ func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest)
 }
 
 type VoicePipelineAdapterOptions struct {
-	ASRRunner      LocalASRRunner
-	ASRModelDir    string
-	ASRFamily      string
-	TextHTTPClient *http.Client
-	TextMaxTokens  int
-	TTSSynthesizer LocalTTSSynthesizer
-	TTSOptions     audio.LocalTTSOptions
+	ASRRunner                  LocalASRRunner
+	ASRModelDir                string
+	ASRFamily                  string
+	StreamingASRSessionFactory StreamingASRSessionFactory
+	TextHTTPClient             *http.Client
+	TextMaxTokens              int
+	TTSSynthesizer             LocalTTSSynthesizer
+	TTSOptions                 audio.LocalTTSOptions
 }
 
 func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapterOptions) VoicePipelineAdapters {
@@ -638,7 +688,18 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		Selection:     selection,
 		ExecutionMode: "fixture",
 	}
-	if isLocalSherpaASRProfile(selection.ASRProfile) {
+	if isLocalSherpaStreamingASRProfile(selection.ASRProfile) {
+		adapters.ASR = NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{
+			LocalSherpaONNXASRAdapterOptions: LocalSherpaONNXASRAdapterOptions{
+				Name:     selection.ASRProfile,
+				ModelDir: options.ASRModelDir,
+				Family:   options.ASRFamily,
+				Runner:   options.ASRRunner,
+			},
+			StreamingSessionFactory: options.StreamingASRSessionFactory,
+		})
+		adapters.ExecutionMode = "host_local"
+	} else if isLocalSherpaASRProfile(selection.ASRProfile) {
 		adapters.ASR = NewLocalSherpaONNXASRAdapter(LocalSherpaONNXASRAdapterOptions{
 			Name:     selection.ASRProfile,
 			ModelDir: options.ASRModelDir,
@@ -730,6 +791,15 @@ func clampVoiceTextMaxTokens(value int) int {
 func isLocalSherpaASRProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
 	case "sherpa_onnx", "local_sherpa_onnx":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLocalSherpaStreamingASRProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "sherpa_onnx_streaming", "local_sherpa_onnx_streaming", "streaming_zipformer":
 		return true
 	default:
 		return false

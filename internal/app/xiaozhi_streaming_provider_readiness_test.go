@@ -60,6 +60,63 @@ func TestXiaozhiStreamingProviderReadinessBlocksSherpaAndIflytekWAVBoundaries(t 
 	}
 }
 
+func TestXiaozhiStreamingProviderReadinessBlocksSherpaStreamingWhenHelperMissing(t *testing.T) {
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "iflytek_tts")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"blocked"`,
+		`"profile":"sherpa_onnx_streaming"`,
+		`"adapter":"local_sherpa_onnx_streaming_asr"`,
+		`"streaming":true`,
+		`"uses_file_boundary":false`,
+		`"uses_wav_boundary":false`,
+		`"asr_sherpa_streaming_helper_or_model_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "asr_batch_wav_boundary_not_xiaozhi_streaming") {
+		t.Fatalf("streaming sherpa profile was misclassified as batch WAV: %s", stdout.String())
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredSherpaStreamingASRStageOnly(t *testing.T) {
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_SHERPA_ONNX_STREAMING_HELPER", "/redacted/a21-sherpa-streaming-helper")
+	t.Setenv("A21_SHERPA_ONNX_ASR_MODEL_DIR", "/redacted/a21-sherpa-model")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "iflytek_tts")
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked by TTS stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"adapter":"local_sherpa_onnx_streaming_asr"`,
+		`"ready":true`,
+		`"real_provider":true`,
+		`"streaming":true`,
+		`"tts_wav_file_boundary_not_xiaozhi_streaming"`,
+		`"gate_status":"blocked"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"/redacted/", "/Users/", "a21-sherpa-streaming-helper", "a21-sherpa-model"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiStreamingProviderReadinessAcceptsOnlyAllStreamingFixture(t *testing.T) {
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "a21_fixture_streaming_asr")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "a21_fixture_text_stream")
