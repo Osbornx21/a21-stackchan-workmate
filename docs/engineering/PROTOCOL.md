@@ -298,6 +298,14 @@ device-control integration:
   used as physical screen/action acceptance.
 - Optional motion parameters clamp `y_angle` to the stock-safe 5-85 degree
   range before any later adapter may send them.
+- `internal/transport/stackchan` is the host-side official StackChan adapter
+  contract. It maps A21 semantic `state`/`face`/`motion` events into the
+  official StackChan WebSocket binary frame shape: `ControlAvatar` (`0x03`),
+  `ControlMotion` (`0x04`), or `DanceSequence` (`0x14`), with a 1-byte type,
+  4-byte big-endian payload length, and official JSON payload consumed by
+  `updateAvatarFromJson`, `updateMotionFromJson`, or `DanceModifier`.
+  `display`, `heartbeat`, and playback diagnostics remain outside this
+  avatar/action adapter.
 
 ### A21 StackChan Device Extension
 

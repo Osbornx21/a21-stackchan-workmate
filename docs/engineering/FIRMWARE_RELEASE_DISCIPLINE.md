@@ -145,6 +145,14 @@ Current architecture split:
   future OEM layers on top of the official avatar/action adapter. They are not
   allowed to mutate the Xiaozhi audio firmware into an A21 visual runtime.
 
+`internal/transport/stackchan` is the host-side frame contract for that official
+adapter path. It builds official StackChan WebSocket packets for
+`ControlAvatar` (`0x03`), `ControlMotion` (`0x04`), and `DanceSequence`
+(`0x14`) from A21 semantic events, using the same `[type][big-endian
+length][payload]` shape consumed by upstream `WebSocketAvatar`. This is
+compile-time/protocol evidence only until a guarded official StackChan overlay
+and physical acceptance prove the runtime path.
+
 `firmware-avatar-spike-build` compiles the isolated `a21_stackchan_cores3_avatar_spike` environment with `meganetaaan/M5Stack-Avatar @ 0.10.0`. It is a compatibility spike for a mature avatar engine only. It is not a production firmware lane, not a package source, and not a flashing command.
 
 `firmware-mic-probe-build` compiles only the isolated CoreS3 microphone diagnostic environment. It is for I2S/microphone bring-up evidence and must not be treated as a release package or production firmware unless a later ADR explicitly promotes the path.
