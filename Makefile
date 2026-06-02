@@ -1,5 +1,8 @@
 PLATFORMIO_CORE_DIR := $(CURDIR)/.a21-tools/platformio-core
 PIO := env PLATFORMIO_CORE_DIR="$(PLATFORMIO_CORE_DIR)" .a21-tools/platformio-venv/bin/pio
+A21_DIRECT_NO_PROXY ?= localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16
+export NO_PROXY := $(A21_DIRECT_NO_PROXY)
+export no_proxy := $(A21_DIRECT_NO_PROXY)
 A21_DEVICE_MAX_AGE_MS ?= 300000
 A21_GATEWAY_URL ?= http://127.0.0.1:21080
 A21_LAN_SAMPLES ?= 5

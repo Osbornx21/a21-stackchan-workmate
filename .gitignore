@@ -1,4 +1,5 @@
 reports/
+dist/
 .a21-run/
 .a21-tools/
 .pio/

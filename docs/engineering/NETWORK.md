@@ -44,6 +44,13 @@ MiMo bridges configured by `A21_HERMES_AGENT_URL` or
 
 Accepted bypass forms include exact hosts, host:port values, bracketed IPv6 host:port values, `.local`/`*.local`, and CIDR ranges. A broader CIDR may cover a narrower required range, so `10.0.0.0/8` covers the StackChan lab range `10.21.0.0/16`.
 
+The Makefile exports `A21_DIRECT_NO_PROXY` to `NO_PROXY` and `no_proxy` for
+standard A21 make targets so `make verify`, `make preflight`, and `make doctor`
+use the required direct-connect set even when the parent shell has an incomplete
+proxy bypass list. Direct `go run ./cmd/a21 ...` invocations still intentionally
+inherit the caller's environment and may block if the bypass coverage is
+incomplete.
+
 The report records env variable names only. It does not print proxy URLs, credentials, or provider proxy values. `A21_PROVIDER_PROXY_URL` is treated as an explicit provider egress setting, not as permission for LAN, localhost, `.local`, StackChan, or local V21 adapter traffic to inherit global proxy behavior.
 
 ## Provider Egress Policy

@@ -63,9 +63,13 @@ Default stance:
 
 ```bash
 make verify
-go run ./cmd/a21 preflight
-go run ./cmd/a21 doctor
+make preflight
+make doctor
 ```
+
+The Makefile exports the A21 direct-connect `NO_PROXY` / `no_proxy` set for
+these default targets. Direct `go run ./cmd/a21 ...` use is still allowed, but
+when a global proxy exists it must carry the same direct-connect coverage.
 
 Do not assume pnpm, Node services, PlatformIO, Docker, or firmware targets exist until their phase introduces them.
 
