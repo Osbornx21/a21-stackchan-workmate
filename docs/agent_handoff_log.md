@@ -4348,3 +4348,117 @@ Current validation request:
 - First focused test run failed because the new test looked for `+    // Main loop`;
   that line is patch context, not an added line. The test anchor was corrected
   to search the real patch context line.
+
+## 2026-06-03 - T-XIAOZHI-STREAMING-ASR-PROVIDER-001a - Static Streaming Provider Gate
+
+本轮目标:
+
+- Continue the user-requested Xiaozhi realtime parity work after the no-welcome
+  flash hotfix.
+- Dispatch independent read-only workers to re-audit official Xiaozhi protocol,
+  A21 Gateway `/v1/xiaozhi`, and real streaming provider candidates.
+- Add a machine-readable gate that prevents mock ASR, `streaming_zipformer`
+  name-only evidence, `/say`, or WAV/file TTS from being promoted to
+  Xiaozhi-style realtime voice parity.
+
+实际完成内容:
+
+- Confirmed current state: branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`, HEAD `4829a9b`, clean
+  worktree at start.
+- Dispatched three projectless read-only workers:
+  - `019e8a52-c184-7e53-ba3c-c3b9205950fb`: official Xiaozhi protocol/audio
+    source audit; still in progress at handoff time.
+  - `019e8a52-c5ee-73a2-a28b-40d5f6624fba`: A21 Gateway `/v1/xiaozhi`
+    realtime gap audit; completed and confirmed Gateway has the streaming ASR
+    seam but real provider/TTS streaming remains missing.
+  - `019e8a52-cb20-79f0-af7a-b70420ed848b`: streaming ASR/TTS provider
+    candidate audit; completed and recommended Sherpa streaming_zipformer as
+    the fastest real ASR session path, while confirming Iflytek IAT has no
+    runtime adapter and current Iflytek TTS still writes WAV.
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-streaming-provider-readiness.md`.
+- Added CLI `a21 xiaozhi-streaming-provider-readiness`.
+- Added Makefile target `xiaozhi-streaming-provider-readiness` for the same
+  static gate. It is expected to exit non-zero while the provider chain remains
+  blocked.
+- The new gate is static/no-execute: it reads selected voice pipeline profiles
+  and classifies whether ASR, LLM, and TTS satisfy strict Xiaozhi realtime
+  provider requirements. It stores no transcript, raw audio, provider output,
+  credential values, full URLs, or local absolute paths.
+- The gate explicitly blocks:
+  - mock ASR/LLM/TTS;
+  - Sherpa ASR because current adapter writes accumulated PCM to a WAV before
+    running the local ASR script;
+  - Iflytek TTS because current adapter receives provider chunks but writes a
+    WAV report and only then re-reads chunks for downlink;
+  - unknown or unconfigured ASR/TTS profiles.
+- Added tests for default mock blocking, Sherpa+StepFun+Iflytek blocking, and a
+  test-only all-streaming fixture that proves the gate can pass only when all
+  three provider stages are marked streaming.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-streaming-provider-readiness.md`
+- `Makefile`
+- `internal/app/app.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- No real streaming ASR provider is implemented yet.
+- No true streaming TTS adapter is implemented yet.
+- Worker threads were still in progress when this handoff entry was written;
+  their final reports should be read next and folded into the next provider
+  implementation transition.
+- Physical `xiaozhi-realtime-parity` remains unaccepted until a real
+  operator-triggered `/v1/xiaozhi` turn proves streaming ASR/LLM/TTS/downlink
+  ordering.
+
+已知风险和阻塞点:
+
+- This gate is a truthful blocker, not a voice-quality improvement by itself.
+- Static profile classification must be updated when a real streaming adapter
+  lands, otherwise it will continue to block correctly but conservatively.
+- Current StepFun+Iflytek candidate improves audio but still has ASR WAV/batch
+  and TTS WAV/file boundaries, so it cannot satisfy the user's Xiaozhi realtime
+  architecture requirement yet.
+
+下一轮建议动作:
+
+1. Read final W1/W2/W3 worker outputs.
+2. Implement the first real `providers.StreamingASRAdapter`: either a long-lived
+   Sherpa streaming subprocess/session or an Iflytek IAT streaming WebSocket
+   adapter.
+3. After real ASR streaming is green, implement true streaming TTS emission
+   that forwards provider audio chunks toward Gateway downlink before a full
+   WAV/file exists.
+4. Rerun:
+   `go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`.
+5. Then run a physical `/v1/xiaozhi` turn and evaluate
+   `xiaozhi-realtime-parity`.
+
+测试/构建/运行结果:
+
+- `go test ./internal/app -run 'TestXiaozhiStreamingProviderReadiness' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+- `go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  exited `1` by design; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-055502.json`
+  has `gate_status=blocked` with mock ASR/LLM/TTS findings.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx A21_TEXT_STREAM_PROFILE=stepfun A21_TTS_FAST_PROFILE=iflytek_tts go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`:
+  exited `1` by design; report
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-055512.json`
+  has `gate_status=blocked`,
+  `asr_batch_wav_boundary_not_xiaozhi_streaming`, and
+  `tts_wav_file_boundary_not_xiaozhi_streaming`.
+
+如果中途失败，记录失败位置和原因:
+
+- No implementation failure. The two CLI runs are intentionally non-zero
+  because the current provider chain is not yet Xiaozhi-realtime compliant.
