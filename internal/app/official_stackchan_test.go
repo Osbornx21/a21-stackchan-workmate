@@ -545,6 +545,145 @@ func TestRunStackChanOfficialPCMBridgeFlashExecuteRunsGuardedCommand(t *testing.
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanBuildsNoFlashReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_plan.v1"`,
+		`"dry_run": true`,
+		`"flash_allowed": false`,
+		`"flash_executed": false`,
+		`"build_dir_name": "a21-stackchan-official-build"`,
+		`"app"`,
+		`"file": "a21-stackchan-official-xiaozhi-compatible.bin"`,
+		`"offset": "0x20000"`,
+		`"next_required_confirmation": "a21-stackchan-official-xiaozhi-compatible-flash-execute_with_confirmation_token"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("plan missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) {
+		t.Fatalf("plan leaked full build dir: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsWrongAppCandidateWithoutPathLeaks(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialPCMBridgeBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("wrong app candidate unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "a21-stackchan-official-xiaozhi-compatible.bin") {
+		t.Fatalf("stderr missing required candidate name: %s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("wrong-app rejection leaked full build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-execute",
+		"--port", "/dev/cu.usbmodemA21",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP") {
+		t.Fatalf("stderr missing confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialXiaozhiCompatibleFlashCommand
+	var ranScript string
+	runStackChanOfficialXiaozhiCompatibleFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		ranScript = script
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialXiaozhiCompatibleFlashCommand = originalRunner
+	}()
+
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	idfExport := filepath.Join(t.TempDir(), "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", idfExport,
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"python -m esptool", "--chip esp32s3", "--port '/dev/cu.usbmodemA21'", "write_flash @flash_args"} {
+		if !strings.Contains(ranScript, want) {
+			t.Fatalf("flash script missing %q: %s", want, ranScript)
+		}
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1"`,
+		`"flash_executed": true`,
+		`"control_guard"`,
+		`"file": "a21-stackchan-official-xiaozhi-compatible.bin"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("execution receipt missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) {
+		t.Fatalf("execution receipt leaked full build dir: %s", stdout.String())
+	}
+}
+
 func TestRunXiaozhiFirmwareFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
@@ -1120,6 +1259,25 @@ func writeTestOfficialPCMBridgeBuild(t *testing.T) string {
 		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
 		"0x0 bootloader/bootloader.bin",
 		"0x20000 a21-stackchan-official-pcm-bridge.bin",
+		"0x8000 partition_table/partition-table.bin",
+		"0xd000 ota_data_initial.bin",
+		"0xa00000 generated_assets.bin",
+	}, "\n")+"\n")
+	return buildDir
+}
+
+func writeTestOfficialXiaozhiCompatibleBuild(t *testing.T) string {
+	t.Helper()
+	buildDir := filepath.Join(t.TempDir(), "a21-stackchan-official-build")
+	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
+	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
+	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
+	writeTestFile(t, filepath.Join(buildDir, "generated_assets.bin"), "assets")
+	writeTestFile(t, filepath.Join(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin"), "app")
+	writeTestFile(t, filepath.Join(buildDir, "flash_args"), strings.Join([]string{
+		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
+		"0x0 bootloader/bootloader.bin",
+		"0x20000 a21-stackchan-official-xiaozhi-compatible.bin",
 		"0x8000 partition_table/partition-table.bin",
 		"0xd000 ota_data_initial.bin",
 		"0xa00000 generated_assets.bin",

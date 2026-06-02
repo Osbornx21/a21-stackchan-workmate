@@ -32,6 +32,11 @@ func runStackChanOfficialPCMBridgeFlashCLI(args []string, stdout io.Writer, stde
 	return runStackChanOfficialPCMBridgeFlash(clean, execute, stdout, stderr)
 }
 
+func runStackChanOfficialXiaozhiCompatibleFlashCLI(args []string, stdout io.Writer, stderr io.Writer) int {
+	clean, execute := splitExecuteFlag(args)
+	return runStackChanOfficialXiaozhiCompatibleFlash(clean, execute, stdout, stderr)
+}
+
 func runStackChanOfficialPCMBridgeNVSCLI(args []string, stdout io.Writer, stderr io.Writer) int {
 	clean, execute := splitExecuteFlag(args)
 	return runStackChanOfficialPCMBridgeNVS(clean, execute, stdout, stderr)
@@ -82,6 +87,10 @@ func runDeprecatedPlanExecuteAlias(args []string, stdout io.Writer, stderr io.Wr
 		return runStackChanOfficialPCMBridgeFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-flash-execute":
 		return runStackChanOfficialPCMBridgeFlashCLI(withExecuteFlag(args[1:]), stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-flash-plan":
+		return runStackChanOfficialXiaozhiCompatibleFlashCLI(args[1:], stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-flash-execute":
+		return runStackChanOfficialXiaozhiCompatibleFlashCLI(withExecuteFlag(args[1:]), stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs-plan":
 		return runStackChanOfficialPCMBridgeNVSCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs-execute":
@@ -156,6 +165,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runStackChanOfficialAudioSmokeFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-flash":
 		return runStackChanOfficialPCMBridgeFlashCLI(args[1:], stdout, stderr), true
+	case "a21-stackchan-official-xiaozhi-compatible-flash":
+		return runStackChanOfficialXiaozhiCompatibleFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-nvs":
 		return runStackChanOfficialPCMBridgeNVSCLI(args[1:], stdout, stderr), true
 	case "serial-list":

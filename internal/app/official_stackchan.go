@@ -23,17 +23,21 @@ const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
 const stackChanOfficialAudioSmokeFlashSchema = "a21.stackchan.official_audio_smoke_flash.v1"
 const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_bridge_flash_plan.v1"
 const stackChanOfficialPCMBridgeFlashExecutionSchema = "a21.stackchan.official_pcm_bridge_flash_execution.v1"
+const stackChanOfficialXiaozhiCompatibleFlashPlanSchema = "a21.stackchan.official_xiaozhi_compatible_flash_plan.v1"
+const stackChanOfficialXiaozhiCompatibleFlashExecutionSchema = "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1"
 const stackChanOfficialPCMBridgeNVSPlanSchema = "a21.stackchan.official_pcm_bridge_nvs_plan.v1"
 const stackChanOfficialPCMBridgeNVSExecutionSchema = "a21.stackchan.official_pcm_bridge_nvs_execution.v1"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
 const stackChanOfficialPCMBridgeNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS"
 const stackChanOfficialPCMBridgeAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP"
+const stackChanOfficialXiaozhiCompatibleAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP"
 const stackChanOfficialPCMBridgeNVSOffset = "0x9000"
 const stackChanOfficialPCMBridgeNVSSizeHex = "0x4000"
 const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
+var runStackChanOfficialXiaozhiCompatibleFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeNVSCommand = runStackChanOfficialSmokeFlashCommandExec
 
 type stackChanOfficialBaselineOptions struct {
@@ -128,6 +132,15 @@ type stackChanOfficialPCMBridgeFlashPlanOptions struct {
 	Execute    bool
 }
 
+type stackChanOfficialXiaozhiCompatibleFlashOptions struct {
+	BuildDir  string
+	IDFExport string
+	Port      string
+	OutputDir string
+	Confirm   string
+	Execute   bool
+}
+
 type stackChanOfficialPCMBridgeNVSOptions struct {
 	IDFExport  string
 	Port       string
@@ -175,6 +188,26 @@ type stackChanOfficialPCMBridgeFlashPlanReport struct {
 	Parts                    []stackChanOfficialSmokeFlashPart  `json:"parts"`
 	Findings                 []stackChanOfficialBaselineFinding `json:"findings,omitempty"`
 	ReportPath               string                             `json:"report_path,omitempty"`
+}
+
+type stackChanOfficialXiaozhiCompatibleFlashReport struct {
+	SchemaVersion            string                              `json:"schema_version"`
+	GeneratedAtMS            int64                               `json:"generated_at_ms"`
+	Status                   string                              `json:"status"`
+	FirmwareCandidate        string                              `json:"firmware_candidate"`
+	BuildLaneRole            string                              `json:"build_lane_role"`
+	DryRun                   bool                                `json:"dry_run"`
+	FlashAllowed             bool                                `json:"flash_allowed"`
+	FlashExecuted            bool                                `json:"flash_executed"`
+	ControlGuard             *runtimeguard.ControlGuardReport    `json:"control_guard,omitempty"`
+	Port                     string                              `json:"port"`
+	BuildDirName             string                              `json:"build_dir_name"`
+	IDFExportName            string                              `json:"idf_export_name,omitempty"`
+	FlashLogFile             string                              `json:"flash_log_file,omitempty"`
+	NextRequiredConfirmation string                              `json:"next_required_confirmation,omitempty"`
+	Parts                    []stackChanOfficialXiaozhiFlashPart `json:"parts"`
+	Findings                 []stackChanOfficialBaselineFinding  `json:"findings,omitempty"`
+	ReportPath               string                              `json:"report_path,omitempty"`
 }
 
 type stackChanOfficialPCMBridgeNVSReport struct {
@@ -246,6 +279,14 @@ type stackChanOfficialSmokeFlashPart struct {
 	Name      string `json:"name"`
 	Offset    string `json:"offset"`
 	Path      string `json:"path"`
+	SHA256    string `json:"sha256"`
+	SizeBytes int64  `json:"size_bytes"`
+}
+
+type stackChanOfficialXiaozhiFlashPart struct {
+	Name      string `json:"name"`
+	Offset    string `json:"offset"`
+	File      string `json:"file"`
 	SHA256    string `json:"sha256"`
 	SizeBytes int64  `json:"size_bytes"`
 }
@@ -585,6 +626,113 @@ func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.W
 	return 0
 }
 
+func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
+	options := stackChanOfficialXiaozhiCompatibleFlashOptions{
+		BuildDir:  firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport: firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:      strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		OutputDir: "",
+		Confirm:   "",
+		Execute:   execute,
+	}
+	if execute {
+		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM"))
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP] [--idf-export /path/to/export.sh] [--output-dir reports]")
+			return 0
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan official xiaozhi compatible flash option %q\n", args[i])
+			return 2
+		}
+	}
+
+	var controlGuard runtimeguard.ControlGuardReport
+	if execute {
+		if options.Confirm != stackChanOfficialXiaozhiCompatibleAppFlashConfirm {
+			fmt.Fprintf(stderr, "stackchan official xiaozhi compatible app flash requires --confirm %s\n", stackChanOfficialXiaozhiCompatibleAppFlashConfirm)
+			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("a21-stackchan-official-xiaozhi-compatible-flash --execute", stderr)
+		if code != 0 {
+			return code
+		}
+	}
+	report, err := buildStackChanOfficialXiaozhiCompatibleFlashReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan official xiaozhi compatible flash: %v\n", err)
+		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
+		if err := executeStackChanOfficialXiaozhiCompatibleFlash(context.Background(), options, &report); err != nil {
+			report.Status = "failed"
+			report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
+				Code:    "flash_execute_failed",
+				Message: err.Error(),
+			})
+		}
+	}
+	if options.OutputDir != "" {
+		if err := validateA21ReportDir(options.OutputDir); err != nil {
+			fmt.Fprintf(stderr, "official xiaozhi compatible flash report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeStackChanOfficialXiaozhiCompatibleFlashReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write official xiaozhi compatible flash report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanOfficialXiaozhiCompatibleFlash(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode official xiaozhi compatible flash report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	return 0
+}
+
 func runStackChanOfficialPCMBridgeNVS(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialPCMBridgeNVSOptions{
 		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
@@ -894,6 +1042,52 @@ func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCM
 	}, nil
 }
 
+func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficialXiaozhiCompatibleFlashOptions) (stackChanOfficialXiaozhiCompatibleFlashReport, error) {
+	buildDir := filepath.Clean(options.BuildDir)
+	if err := validateA21OfficialScratchDir(buildDir); err != nil {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("build dir invalid: %w", err)
+	}
+	if containsLegacyIdentityPathToken(buildDir) {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
+	}
+	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, err
+	}
+	usage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("inspect upload port: %w", err)
+	}
+	if !usage.Exists {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("upload port %s does not exist", options.Port)
+	}
+	if usage.InUse {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("upload port %s is already in use: %s", options.Port, usage.Detail)
+	}
+	parts, err := collectOfficialXiaozhiCompatibleFlashParts(buildDir)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, err
+	}
+	schema := stackChanOfficialXiaozhiCompatibleFlashPlanSchema
+	if options.Execute {
+		schema = stackChanOfficialXiaozhiCompatibleFlashExecutionSchema
+	}
+	return stackChanOfficialXiaozhiCompatibleFlashReport{
+		SchemaVersion:            schema,
+		GeneratedAtMS:            time.Now().UnixMilli(),
+		Status:                   "ready",
+		FirmwareCandidate:        "a21-stackchan-official-xiaozhi-compatible",
+		BuildLaneRole:            "product_candidate",
+		DryRun:                   !options.Execute,
+		FlashAllowed:             false,
+		FlashExecuted:            false,
+		Port:                     options.Port,
+		BuildDirName:             filepath.Base(buildDir),
+		IDFExportName:            filepath.Base(filepath.Clean(options.IDFExport)),
+		NextRequiredConfirmation: "a21-stackchan-official-xiaozhi-compatible-flash-execute_with_confirmation_token",
+		Parts:                    parts,
+	}, nil
+}
+
 func buildStackChanOfficialPCMBridgeNVSReport(options stackChanOfficialPCMBridgeNVSOptions) (stackChanOfficialPCMBridgeNVSReport, error) {
 	runDir := filepath.Clean(options.RunDir)
 	if err := validateA21OfficialRunDir(runDir); err != nil {
@@ -963,6 +1157,24 @@ func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFl
 
 func collectOfficialPCMBridgeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
 	return collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-pcm-bridge.bin")
+}
+
+func collectOfficialXiaozhiCompatibleFlashParts(buildDir string) ([]stackChanOfficialXiaozhiFlashPart, error) {
+	fullParts, err := collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin")
+	if err != nil {
+		return nil, err
+	}
+	parts := make([]stackChanOfficialXiaozhiFlashPart, 0, len(fullParts))
+	for _, part := range fullParts {
+		parts = append(parts, stackChanOfficialXiaozhiFlashPart{
+			Name:      part.Name,
+			Offset:    part.Offset,
+			File:      filepath.Base(part.Path),
+			SHA256:    part.SHA256,
+			SizeBytes: part.SizeBytes,
+		})
+	}
+	return parts, nil
 }
 
 func collectOfficialFlashPartsForApp(buildDir string, expectedAppName string) ([]stackChanOfficialSmokeFlashPart, error) {
@@ -1282,6 +1494,30 @@ func executeStackChanOfficialPCMBridgeFlash(ctx context.Context, options stackCh
 		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
 	}, "\n")
 	if err := runStackChanOfficialPCMBridgeFlashCommand(ctx, report.FlashLogPath, script); err != nil {
+		return err
+	}
+	report.FlashExecuted = true
+	report.Status = "passed"
+	return nil
+}
+
+func executeStackChanOfficialXiaozhiCompatibleFlash(ctx context.Context, options stackChanOfficialXiaozhiCompatibleFlashOptions, report *stackChanOfficialXiaozhiCompatibleFlashReport) error {
+	if _, err := os.Stat(options.IDFExport); err != nil {
+		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
+	}
+	report.DryRun = false
+	report.FlashAllowed = true
+	report.NextRequiredConfirmation = ""
+	flashLogFile := fmt.Sprintf("a21-official-xiaozhi-compatible-flash-%s.log", time.Now().Format("20060102-150405"))
+	flashLogPath := filepath.Join(options.BuildDir, flashLogFile)
+	report.FlashLogFile = flashLogFile
+	script := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
+	}, "\n")
+	if err := runStackChanOfficialXiaozhiCompatibleFlashCommand(ctx, flashLogPath, script); err != nil {
 		return err
 	}
 	report.FlashExecuted = true
@@ -1924,6 +2160,23 @@ func writeStackChanOfficialPCMBridgeFlashPlanReport(outputDir string, report sta
 	return reportPath, nil
 }
 
+func writeStackChanOfficialXiaozhiCompatibleFlashReport(outputDir string, report stackChanOfficialXiaozhiCompatibleFlashReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-xiaozhi-compatible-flash-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := writeJSONStackChanOfficialXiaozhiCompatibleFlash(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeStackChanOfficialPCMBridgeNVSReport(outputDir string, report stackChanOfficialPCMBridgeNVSReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err
@@ -1954,6 +2207,12 @@ func writeJSONStackChanOfficialSmokeFlash(writer io.Writer, report stackChanOffi
 }
 
 func writeJSONStackChanOfficialPCMBridgeFlashPlan(writer io.Writer, report stackChanOfficialPCMBridgeFlashPlanReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanOfficialXiaozhiCompatibleFlash(writer io.Writer, report stackChanOfficialXiaozhiCompatibleFlashReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
