@@ -60,6 +60,7 @@ Current notable baseline:
 | Physical StackChan acceptance | `S2-CANDIDATE-GATEWAY-DOWNLINK` | `reports/a21-xiaozhi-physical-evidence-20260602-213147.097784000.json` reports physical device online, stock profile, mic delivery ratio 1, answer first downlink 555 ms, and barge-in metrics; PRD accepted remains false | `S3-AUDIBLE-PLAYBACK-AND-PRD-ACCEPTED` |
 | Xiaozhi audio/protocol | `S2-STOCK-OPUS-A21-GATEWAY-COMPAT-WARNING` | Physical path uses stock Xiaozhi profile and Opus uplink/downlink, but serial log `reports/a21-stackchan-physical-wake-serial-20260602-2130.log` shows repeated stock-firmware `Unknown message type: listen` warnings | `S3-STOCK-CLEAN-AUDIO-ISOLATED` |
 | TTS/audio quality | `S1C-STOCK-XIAOZHI-OPERATOR-RECORDING-PENDING` | `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed host product-chain bench on `21080` with `sherpa_onnx_tts`, answer p95 397 ms, and decoded Opus `downlink_audio_quality=passed`; `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a one-round host check on the physical LAN Gateway `21081`; on 2026-06-02 22:16 CST the foreground attempt to push long TTS through `stackchan-local-tts-playback` failed with Gateway `409 device audio websocket is not connected`, proving the old PCM control surface is not connected to the current stock Xiaozhi physical session; current physical evidence still lacks operator/instrument audible observation | `S2-TTS-VS-DOWNLINK-ROOT-CAUSE-ISOLATED` |
+| StackChan volume/action control | `S0-STOCK-RUNTIME-CONTROL-BLOCKED` | Desktop helper `tools/desktop/a21-stackchan-control.command` and `/Users/jiyurun/Desktop/A21-StackChan-Control.command` report Gateway/device health but no current stock `/v1/xiaozhi` runtime speaker-volume setter; `face happy` and `motion nod` were rejected with HTTP 409 `xiaozhi device events require debug profile negotiation`; legacy diagnostic tone was rejected with HTTP 409 `device audio websocket is not connected` | `S1-FIRMWARE-OR-PROTOCOL-VOLUME-CONTROL-PLANNED` |
 
 ## Active Transition
 
@@ -212,6 +213,7 @@ Next state:
 | T-AUDIO-001a: Host downlink objective isolation | Completed | Worker thread `019e8895-43a6-7e23-a4f3-601f0451ab50`; `xiaozhi-voice-bench` now decodes captured binary downlink Opus frames and reports redacted aggregate `downlink_audio_quality` while preserving host-only candidate semantics. |
 | T-AUDIO-001b: Host/Gateway post-Opus quality run | Completed host-only candidate | `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed 3-repeat host product-chain bench with `sherpa_onnx_tts`, answer p95 397 ms, and post-Opus quality passed; `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a one-round check on the physical LAN Gateway; readiness `reports/a21-product-readiness-20260602-220447.json` and bundle `reports/a21-server-side-readiness-bundle-20260602-220501.json` still correctly block launch. |
 | T-AUDIO-001c: Foreground long-TTS push attempt | Blocked, evidence-preserving | macOS output volume was set to 100 after explicit operator request; physical device `44:1b:f6:e2:6a:60` was online on stock Xiaozhi Opus via Gateway `21081`; `go run ./cmd/a21 stackchan-local-tts-playback --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --engine sherpa_onnx ...` returned `409 device audio websocket is not connected`, so no valid physical StackChan playback was claimed. |
+| T-OPS-001: Desktop StackChan control boundary helper | Completed | Added `tools/desktop/a21-stackchan-control.command` and copied it to `/Users/jiyurun/Desktop/A21-StackChan-Control.command`; status check passed against Gateway `21081`; action probes and diagnostic tone correctly reported current stock-session 409 blockers instead of claiming control. |
 
 ## Blocked Transitions
 
@@ -222,6 +224,7 @@ Next state:
 | T-PROVIDER-001: Real provider smoke on hardware path | Latest readiness still selects `mock`; `real_provider_smoke` missing | Run approved host-side provider smoke/rotation with keys outside firmware and redacted reports. |
 | T-PRD-001: Declare full PRD physical acceptance | Candidate physical Gateway evidence exists but PRD accepted remains false | Close `T-HW-002b`, `T-PROVIDER-001`, and custom wake proof, then rerun product readiness. |
 | T-FW-003: Custom wake-word product acceptance | Needs guarded flash and physical proof | Wake package review, false-wake rejection, operator wake proof. |
+| T-HW-VOLUME-001: StackChan physical speaker volume control | Current stock Xiaozhi runtime has no Gateway volume setter; action control also rejected without debug profile negotiation | Use `docs/plans/2026-06-02-stackchan-volume-action-control.md` to choose fixed firmware codec volume or a stock-safe runtime control seam, then build/flash/test only in a foreground hardware window. |
 
 ## Next Candidate Transitions
 
@@ -244,3 +247,9 @@ Next state:
    - Keep provider keys host-side only and reports redacted.
    - Record latency and quality evidence without changing firmware provider
      storage.
+
+4. `T-HW-VOLUME-001: StackChan Physical Speaker Volume Control`
+   - Use `docs/plans/2026-06-02-stackchan-volume-action-control.md`.
+   - Prefer the smallest fixed official codec volume patch first unless a
+     mature runtime StackChan volume setter is verified in the official stack.
+   - Acceptance requires before/after phone recordings and no PRD overclaim.

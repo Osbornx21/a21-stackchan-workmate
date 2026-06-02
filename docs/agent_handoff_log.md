@@ -1001,3 +1001,119 @@ Recommended next action:
 - If a deterministic host-pushed long TTS is required, first open
   `T-AUDIO-003: Stock-safe physical TTS injection plan` rather than reusing
   the legacy PCM control path.
+
+## 2026-06-02 22:31 CST - T-AUDIO-001d Recording Analysis And StackChan Volume Boundary
+
+Round goal:
+
+- Analyze the operator recording
+  `/Users/jiyurun/Downloads/浦东新区第二中心小学(申江校区) 2.m4a`.
+- Correct the previous mistaken macOS-volume interpretation and build a
+  desktop helper focused on StackChan/Gateway/device control truth.
+- Do not modify firmware, write NVS, flash hardware, or claim volume/action
+  control where the current stock session rejects it.
+
+Actual completed work:
+
+- Analyzed the new 13.03 s AAC recording from 2026-06-02 22:19:34 CST.
+- Built `tools/desktop/a21-stackchan-control.command` and copied it to
+  `/Users/jiyurun/Desktop/A21-StackChan-Control.command`.
+- Added `docs/plans/2026-06-02-stackchan-volume-action-control.md` because
+  true StackChan speaker-volume control is a firmware/protocol/device-behavior
+  transition.
+- Updated `docs/project_state_machine.md` with the current volume/action
+  control state and next transition.
+- Removed the earlier untracked macOS-volume helper before completion so the
+  repository keeps only the StackChan-focused tool.
+
+Files changed:
+
+- `tools/desktop/a21-stackchan-control.command`
+- `docs/plans/2026-06-02-stackchan-volume-action-control.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current audio findings:
+
+- Container/codec: M4A AAC-LC, 48 kHz, stereo, 13.034667 s, about 132 kb/s.
+- `volumedetect`: mean volume `-32.3 dB`, max volume `-4.3 dB`.
+- EBU R128: integrated loudness `-25.8 LUFS`, true peak `-4.2 dBFS`,
+  loudness range `7.8 LU`.
+- `astats`: overall peak `-4.278839 dB`, RMS `-32.344824 dB`, noise floor
+  about `-47.029328 dB`; no clipping/NaN/Inf evidence.
+- Frame analysis: only about `2.16%` of 20 ms frames exceeded `-25 dBFS` RMS,
+  `7.24%` exceeded `-30 dBFS`, and `17.26%` exceeded `-35 dBFS`; p50 20 ms
+  RMS was `-48.41 dBFS`.
+- Active-frame spectrum above `-35 dBFS` was concentrated around speech
+  presence bands: about `77.7%` energy in `800-2000 Hz`, `21.8%` in
+  `2000-4000 Hz`, almost no low band and almost no `>4 kHz`.
+
+Current conclusion:
+
+- This recording is much stronger than the prior phone sample: peak level is
+  close to full scale and therefore the phone recording path is not simply
+  "too quiet".
+- Average loudness and active-frame ratio are still low, and the spectrum is
+  narrow. This supports the operator observation that physical output may not
+  be at desired loudness, but it does not by itself prove TTS generation,
+  Opus downlink, or speaker gain as the sole cause.
+- The next meaningful fix is StackChan-side output gain/volume control or a
+  controlled A/B volume trial, not macOS system volume.
+
+StackChan control findings:
+
+- `tools/desktop/a21-stackchan-control.command status` passed when run outside
+  the Codex sandbox against Gateway `21081`.
+- The physical device was online as stock Xiaozhi:
+  `speaker=available_xiaozhi_opus_downlink`,
+  `xiaozhi_audio=opus_16000hz_mono_60ms`.
+- Runtime StackChan speaker-volume setter is not exposed on current stock
+  `/v1/xiaozhi` Gateway path.
+- `face happy` and `motion nod` through `/v1/xiaozhi/control` both returned
+  HTTP 409: `xiaozhi device events require debug profile negotiation`.
+- `diagnostic-tone 255` through `/v1/devices/control` returned HTTP 409:
+  `device audio websocket is not connected`.
+- Known code-level volume knobs are firmware-side, such as official codec
+  `SetOutputVolume(...)` overlays or old A21 `M5.Speaker.setVolume(96)`;
+  those require a planned firmware/protocol transition before use.
+
+Validation results:
+
+- `zsh -n tools/desktop/a21-stackchan-control.command`: passed.
+- `tools/desktop/a21-stackchan-control.command status` outside sandbox:
+  passed and printed current volume/action boundaries.
+- `tools/desktop/a21-stackchan-control.command face happy` outside sandbox:
+  failed honestly with HTTP 409 debug-profile negotiation block.
+- `tools/desktop/a21-stackchan-control.command motion nod` outside sandbox:
+  failed honestly with HTTP 409 debug-profile negotiation block.
+- `tools/desktop/a21-stackchan-control.command diagnostic-tone 255` outside
+  sandbox: failed honestly with HTTP 409 audio WebSocket block.
+- `/Users/jiyurun/Desktop/A21-StackChan-Control.command` exists and is
+  executable.
+
+Current unfinished items:
+
+- Decide and execute `T-HW-VOLUME-001`: fixed official codec output volume
+  patch vs stock-safe runtime volume control seam.
+- If fixed firmware volume is chosen, patch the official Xiaozhi-compatible
+  overlay, rebuild, flash only through guarded foreground hardware commands,
+  and record before/after phone samples.
+- If runtime action/volume control is desired, add a debug-profile negotiation
+  or MCP/device-tool path deliberately; do not rely on the current stock socket.
+
+Known risks and blockers:
+
+- Current desktop helper cannot set StackChan TTS loudness because no runtime
+  setter exists on the active path.
+- Raising firmware output volume can introduce clipping, resonance, or worse
+  perceived TTS quality; it needs A/B recordings.
+- Device registry capability strings can show feature hints while the live
+  socket still rejects host-pushed events.
+- Diagnostic tone volume is not product TTS volume.
+
+Recommended next action:
+
+- Start `T-HW-VOLUME-001` with the fixed firmware codec volume path unless a
+  live official runtime volume setter is verified first.
+- Use the new plan:
+  `docs/plans/2026-06-02-stackchan-volume-action-control.md`.
