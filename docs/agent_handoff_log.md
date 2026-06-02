@@ -5845,3 +5845,76 @@ Current validation request:
 
 - No unresolved failure. The Make target failure is expected default blocker
   behavior because `--execute` was not supplied.
+
+## 2026-06-03 07:56 CST - Control Integrates Streaming TTS Runtime Smoke
+
+本轮目标:
+
+- Review and integrate worker branch `codex/a21-streaming-tts-runtime-proof-001`.
+- Keep the result below real provider/runtime and physical StackChan PRD
+  acceptance unless explicit executed evidence exists.
+- Fold read-only Xiaozhi parity audits back into the next-transition queue.
+
+实际完成内容:
+
+- Cherry-picked worker commit `37ffcca feat(a21): add streaming tts runtime
+  smoke` into control branch as `0d2fc73`.
+- Reviewed the implementation boundary: default path requires no provider call,
+  `--execute` is the only real runtime path, reports use stable findings and
+  do not record credentials, user text, provider output text, raw/base64 audio,
+  full URLs, proxy values, or absolute paths.
+- Confirmed read-only protocol audit `019e8ab7-3467-7d13-8541-a45abb062a6d`
+  found A21 now has stock-shaped `/v1/xiaozhi` websocket/Opus and streaming ASR
+  hooks, but real Sherpa ASR remains blocked on `model_dir_missing`, TTS runtime
+  was only static before this worker, and physical stock turn ordering remains
+  unaccepted.
+- Confirmed read-only endpoint audit `019e8ab7-7795-7252-901e-b46aab40ce8e`
+  recommended incremental migration inside the official-compatible product lane,
+  not a wholesale rewrite. Highest-risk endpoint gap remains wake parity because
+  A21 disables the stock AFE/HiStackChan WakeNet path and relies on custom
+  MultiNet phrases that still need physical proof.
+
+修改过的文件:
+
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Real Doubao realtime TTS runtime proof requires explicit operator
+  authorization to run `a21 streaming-tts-runtime-smoke --execute --output-dir
+  reports` with complete env.
+- Full target chain remains incomplete: real ASR runtime, streaming LLM turn,
+  stock `/v1/xiaozhi` physical ordering, wake from idle, touch/barge-in, and
+  physical Opus playback evidence are still open.
+
+下一轮建议动作:
+
+1. If provider execution is authorized, run the TTS runtime smoke with
+   `--execute` and complete env, still host-only and below physical acceptance.
+2. Dispatch `T-WAKE-004-AFE-VS-CUSTOM-PARITY` as a bounded product-lane worker
+   or physical operator checklist: no provider/V21, no bare `xiaozhi.bin`, no
+   gain/TTS changes, acceptance by idle wake logs and false-wake rejection.
+3. Keep `/v1/xiaozhi/say`, host loopback, static provider-shape gates, and fake
+   realtime tests out of PRD/full-realtime acceptance.
+
+测试/构建/运行结果:
+
+- Main control review:
+  `git show --stat --oneline 37ffcca`, `git show --name-only 37ffcca`, and
+  `git diff --check 02cbb21..37ffcca` passed/clean in the worker worktree.
+- Main branch focused tests after cherry-pick:
+  `go test ./internal/app -run 'TestRunStreamingTTSRuntimeSmoke|TestRunXiaozhiStreamingProviderReadiness|TestRunLocalASRStreamingSmoke' -count=1`
+  passed.
+- Main branch provider focused tests after cherry-pick:
+  `go test ./internal/providers -run 'TestDoubaoRealtimeTTS|TestVoicePipeline|TestStreamingTTS' -count=1`
+  passed.
+- Main branch `git diff --check HEAD~1..HEAD`: passed.
+- Main branch `make verify`: passed.
+- No provider execution, Gateway start/stop, ASR/LLM/V21 execution,
+  `/v1/xiaozhi/say`, physical device path, firmware build, flash, NVS write,
+  serial access, or audio playback was performed by control integration.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved integration failure. `T-STREAMING-TTS-RUNTIME-PROOF-001` is
+  integrated as a truthful blocker, not runtime/physical acceptance.
