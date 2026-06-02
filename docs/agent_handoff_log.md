@@ -4991,3 +4991,91 @@ Current validation request:
   `cmd.Wait()` could close the event channel before the stdout reader completed.
   The fix moved close ownership to the stdout reader; rerun `make verify`
   passed.
+
+## 2026-06-03 - T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001 - Mainline Integration Verification
+
+本轮目标:
+
+- Resume from the interrupted control-thread state without restarting design.
+- Integrate the scoped Sherpa streaming ASR worker branch into the main
+  hardware branch.
+- Verify the integrated mainline while preserving the already repaired
+  StackChan setup/no-welcome state and avoiding hardware/provider/V21 side
+  effects.
+
+实际完成内容:
+
+- Fast-forward merged branch
+  `codex/a21-sherpa-streaming-asr-runtime-manual-20260603` into
+  `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Mainline HEAD after merge: `041ad69`.
+- Re-ran focused mainline verification for the new ASR helper and the existing
+  Xiaozhi streaming provider readiness guard.
+- Found a mainline `make verify` flake in the new subprocess-helper test:
+  `TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper` timed out after
+  one second waiting for the fake helper event under full `go test ./...`
+  package parallelism.
+- Reproduced the subprocess-helper test directly with
+  `go test ./internal/providers -run TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper -count=20 -failfast -v`:
+  passed.
+- Reproduced the full provider package with
+  `go test ./internal/providers -count=20 -failfast -v`: passed.
+- Root-cause judgment: production helper path did not fail; the test's
+  one-second ASR event timeout was too tight for subprocess startup/stdout
+  scheduling during full-repo parallel verification.
+- Hardened the provider test helper wait window from one second to five seconds.
+
+修改过的文件:
+
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Need rerun `make verify` after the timeout hardening patch.
+- Need commit the hardening patch if verification passes.
+- No real sherpa-onnx model, live Gateway turn, provider call, V21 call,
+  firmware build, flash, NVS write, or audio playback occurred in this
+  integration verification step.
+
+已知风险和阻塞点:
+
+- Static tests still do not prove physical wake, realtime provider quality, or
+  end-to-end Xiaozhi turn acceptance.
+- Process-per-ASR-session helper remains a candidate path pending real model
+  smoke and live Gateway integration.
+
+下一轮建议动作:
+
+1. Rerun `make verify` on mainline.
+2. If green, commit the test hardening and this handoff update.
+3. Continue with real-model no-audio Sherpa smoke, streaming TTS runtime proof,
+   and physical `/v1/xiaozhi` realtime parity only under explicit hardware
+   window rules.
+
+测试/构建/运行结果:
+
+- `go test ./internal/providers -run 'TestLocalSherpaONNX.*ASR|TestVoicePipelineAdaptersFromEnv.*Sherpa|TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal' -count=1`:
+  passed on mainline.
+- `go test ./internal/app -run TestXiaozhiStreamingProviderReadiness -count=1`:
+  passed on mainline.
+- `python3 -m py_compile scripts/a21_sherpa_onnx_streaming_asr_session.py`:
+  passed; generated `scripts/__pycache__` was removed.
+- Fake helper dry check with `A21_SHERPA_STREAMING_ASR_FAKE=1`: passed with
+  `ready`, `partial`, `final`.
+- First mainline `make verify`: failed in
+  `TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper` due to the
+  one-second test timeout described above.
+- Direct subprocess-helper stress:
+  `go test ./internal/providers -run TestLocalSherpaONNXStreamingASRAdapterRunsSubprocessHelper -count=20 -failfast -v`:
+  passed.
+- Full provider package stress:
+  `go test ./internal/providers -count=20 -failfast -v`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- Failure location: `internal/providers/voice_pipeline_real_adapters_test.go`
+  ASR event receive helper.
+- Failure reason: brittle one-second test timeout under full-repo parallel
+  verification load, not observed as a helper protocol or runtime failure in
+  direct repeated tests.

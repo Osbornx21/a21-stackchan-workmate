@@ -1063,7 +1063,7 @@ func receiveASREvent(t *testing.T, events <-chan ASRAdapterEvent) ASRAdapterEven
 			t.Fatal("ASR event channel closed before event")
 		}
 		return event
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for ASR event")
 	}
 	return ASRAdapterEvent{}
