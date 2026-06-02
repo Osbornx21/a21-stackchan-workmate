@@ -179,8 +179,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
-		`A21 auto-starting Xiaozhi mode after official apps preload`,
-		`GetHAL().requestXiaozhiStart();`,
+		`A21 starting Xiaozhi mode directly after official apps preload`,
+		`GetHAL().startXiaozhi();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
@@ -190,17 +190,15 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	requestStartIndex := strings.Index(overlay, `GetHAL().requestXiaozhiStart();`)
-	if volumeIndex < 0 || requestStartIndex < 0 {
+	startRuntimeIndex := strings.Index(overlay, `+    GetHAL().startXiaozhi();`)
+	if volumeIndex < 0 || startRuntimeIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if volumeIndex > requestStartIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before requesting Xiaozhi")
+	if volumeIndex > startRuntimeIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before starting Xiaozhi")
 	}
-	for _, line := range strings.Split(overlay, "\n") {
-		if strings.HasPrefix(line, "+") && strings.Contains(line, `GetHAL().startXiaozhi();`) {
-			t.Fatalf("official Xiaozhi-compatible overlay must not directly start Xiaozhi before official apps preload: %q", line)
-		}
+	if strings.Contains(overlay, `+    GetHAL().requestXiaozhiStart();`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must not request through the welcome/setup loop")
 	}
 }
 

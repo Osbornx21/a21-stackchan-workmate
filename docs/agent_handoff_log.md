@@ -3602,3 +3602,19 @@ Test/build/run results so far:
   - `SR_WN_WN9_HISTACKCHAN_TTS3=false`;
   - `SEND_WAKE_WORD_DATA=false`;
   - `OTA_URL="http://101.132.117.182/xiaozhi/ota/"`.
+
+Physical regression and immediate hotfix:
+
+- The `requestXiaozhiStart()` after app preload package was flashed by report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-040909-1780430949793206000.json`
+  and then physically rejected by the operator: the device again showed
+  "Welcome! Let's get started".
+- Root cause candidate: even a single Mooncake/app setup frame before Xiaozhi
+  start can render the setup trap.
+- Hotfix changed the overlay to install official apps, set volume `92`, and
+  call `GetHAL().startXiaozhi()` directly before any Mooncake update loop.
+- Focused app tests and `git diff --check` passed for this hotfix.
+- Rebuild passed:
+  `reports/a21-stackchan-official-baseline-20260603-041402-1780431242345821000.json`.
+- Hotfix product app SHA-256:
+  `7ff81bb0e564e020128e02068bc7d83b36f90c21de8cbd3d4b89b1dd1d6e9cf3`.

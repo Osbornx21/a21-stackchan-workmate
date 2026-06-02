@@ -44,8 +44,8 @@ index 164a751..c94a8b0 100644
 +    if (codec != nullptr) {
 +        codec->SetOutputVolume(92);
 +    }
-+    mclog::tagInfo("main", "A21 auto-starting Xiaozhi mode after official apps preload");
-+    GetHAL().requestXiaozhiStart();
++    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
++    GetHAL().startXiaozhi();
 +#endif
 +
      // Main loop
