@@ -3061,6 +3061,57 @@ func TestProductVoiceReadinessDoesNotOverclaimEnvOnlyPipeline(t *testing.T) {
 	}
 }
 
+func TestProductVoiceReadinessAcceptsConfiguredVoiceCloneTTS(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-voice-clone-wrapper")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	refAudio := filepath.Join(dir, "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	voice := buildProductVoiceReadiness([]string{
+		"A21_TTS_FAST_PROFILE=voice_clone_cli",
+		"A21_VOICE_CLONE_COMMAND=" + commandPath,
+		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
+	}, productProviderReadiness{}, productStackChanReadiness{})
+
+	if !voice.LocalTTSReady || voice.LocalTTSEngine != "voice_clone_cli" || !voice.VoicePipeline.HostLocalTTSReady {
+		t.Fatalf("voice readiness = %+v, want configured clone TTS host-local ready", voice)
+	}
+	if voice.ContinuousVoiceReady {
+		t.Fatalf("continuous voice ready = true, want clone TTS readiness not to overclaim full pipeline")
+	}
+}
+
+func TestProductVoiceReadinessRejectsLegacyVoiceClonePaths(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, "x21-voice")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	commandPath := filepath.Join(legacyDir, "a21-voice-clone-wrapper")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	refAudio := filepath.Join(dir, "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	voice := buildProductVoiceReadiness([]string{
+		"A21_TTS_FAST_PROFILE=voice_clone_cli",
+		"A21_VOICE_CLONE_COMMAND=" + commandPath,
+		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
+	}, productProviderReadiness{}, productStackChanReadiness{})
+
+	if voice.LocalTTSReady || voice.VoicePipeline.HostLocalTTSReady {
+		t.Fatalf("voice readiness = %+v, want legacy clone path blocked", voice)
+	}
+}
+
 func TestRunProductReadinessCommandWritesReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
@@ -7102,6 +7153,86 @@ func TestRunLocalTTSSmokeSupportsSherpaONNXEngine(t *testing.T) {
 	}
 }
 
+func TestRunLocalTTSSmokeSupportsVoiceCloneCLIEngine(t *testing.T) {
+	original := synthesizeVoiceCloneCLI
+	t.Cleanup(func() { synthesizeVoiceCloneCLI = original })
+	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	synthesizeVoiceCloneCLI = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		if options.Text != "不能进报告" ||
+			options.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+			options.VoiceCloneModel != "Index-TTS2" ||
+			options.VoiceCloneReferenceAudioPath != refAudio ||
+			options.VoiceCloneReferenceText != "参考文本不能进报告" ||
+			options.VoiceClonePersona != "A21 Workmate" ||
+			options.VoiceCloneStyle != "Warm-Pro" {
+			t.Fatalf("clone options = %+v", options)
+		}
+		outputPath := filepath.Join(options.OutputDir, "a21-voice-clone-test.wav")
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "voice_clone_cli",
+			Engine:          "voice_clone_cli",
+			Voice:           "a21_workmate",
+			Model:           "index_tts2",
+			VoicePersona:    "a21_workmate",
+			StyleProfile:    "warm_pro",
+			ReferenceAudio:  "a21-persona-reference.wav",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      18.5,
+			TTSFirstAudioMS: 18.5,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"local-tts-smoke",
+		"--engine", "voice_clone_cli",
+		"--text", "不能进报告",
+		"--clone-command", "/a21/bin/a21-index-tts2-wrapper",
+		"--clone-model", "Index-TTS2",
+		"--clone-ref-audio", refAudio,
+		"--clone-ref-text", "参考文本不能进报告",
+		"--voice-persona", "A21 Workmate",
+		"--voice-style", "Warm-Pro",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"provider": "voice_clone_cli"`,
+		`"engine": "voice_clone_cli"`,
+		`"voice": "a21_workmate"`,
+		`"model": "index_tts2"`,
+		`"voice_persona": "a21_workmate"`,
+		`"style_profile": "warm_pro"`,
+		`"reference_audio": "a21-persona-reference.wav"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"不能进报告", "参考文本不能进报告", refAudio, "Authorization", "Bearer", "raw_audio", "data_base64"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("voice clone smoke leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunLocalTTSSmokeRejectsLegacyReportDir(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -7368,6 +7499,102 @@ func TestRunLocalVoiceLoopbackWritesRedactedReport(t *testing.T) {
 	for _, forbidden := range []string{"真实输入不要进报告", "A21 loopback response", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
+		}
+	}
+}
+
+func TestRunLocalVoiceLoopbackSupportsVoiceClonePersonaReport(t *testing.T) {
+	original := synthesizeVoiceCloneCLI
+	t.Cleanup(func() { synthesizeVoiceCloneCLI = original })
+	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var ttsInputs []string
+	synthesizeVoiceCloneCLI = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		ttsInputs = append(ttsInputs, options.Text)
+		if options.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+			options.VoiceCloneModel != "Index-TTS2" ||
+			options.VoiceCloneReferenceAudioPath != refAudio ||
+			options.VoiceCloneReferenceText != "参考文本不能进报告" ||
+			options.VoiceClonePersona != "A21 Workmate" ||
+			options.VoiceCloneStyle != "Warm-Pro" {
+			t.Fatalf("clone options = %+v", options)
+		}
+		outputPath := filepath.Join(options.OutputDir, fmt.Sprintf("a21-voice-clone-loopback-%d.wav", len(ttsInputs)))
+		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
+			return audio.LocalTTSReport{}, err
+		}
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "voice_clone_cli",
+			Engine:          "voice_clone_cli",
+			Voice:           "a21_workmate",
+			Model:           "index_tts2",
+			VoicePersona:    "a21_workmate",
+			StyleProfile:    "warm_pro",
+			ReferenceAudio:  "a21-persona-reference.wav",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     8,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      14,
+			TTSFirstAudioMS: 14,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"local-voice-loopback",
+		"--engine", "voice_clone_cli",
+		"--text", "用户原文不要进报告",
+		"--clone-command", "/a21/bin/a21-index-tts2-wrapper",
+		"--clone-model", "Index-TTS2",
+		"--clone-ref-audio", refAudio,
+		"--clone-ref-text", "参考文本不能进报告",
+		"--voice-persona", "A21 Workmate",
+		"--voice-style", "Warm-Pro",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if len(ttsInputs) != 2 || ttsInputs[0] != "嗯，我在。" || ttsInputs[1] != "A21 loopback response" {
+		t.Fatalf("tts inputs = %#v, want local ack and answer preview", ttsInputs)
+	}
+	for _, want := range []string{
+		`"tts_provider": "voice_clone_cli"`,
+		`"tts_model": "index_tts2"`,
+		`"tts_voice": "a21_workmate"`,
+		`"tts_voice_persona": "a21_workmate"`,
+		`"tts_style_profile": "warm_pro"`,
+		`"tts_reference_audio": "a21-persona-reference.wav"`,
+		`"local_ack_tts_provider": "voice_clone_cli"`,
+		`"local_ack_tts_model": "index_tts2"`,
+		`"local_ack_tts_voice_persona": "a21_workmate"`,
+		`"local_ack_tts_style_profile": "warm_pro"`,
+		`"local_ack_tts_reference_audio": "a21-persona-reference.wav"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "a21-local-voice-loopback-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("reports = %v, %v", matches, err)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"用户原文不要进报告", "A21 loopback response", "嗯，我在", "参考文本不能进报告", refAudio, "Authorization", "Bearer", "raw_audio", "data_base64"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
+			t.Fatalf("voice clone loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
 	}
 }
@@ -8032,6 +8259,114 @@ func TestRunStackChanLocalTTSPlaybackSendsRedactedAudioChunks(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "不要写进报告") {
 		t.Fatalf("playback report leaked text: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanLocalTTSPlaybackSupportsVoiceClonePersonaReport(t *testing.T) {
+	original := synthesizeVoiceCloneCLI
+	t.Cleanup(func() { synthesizeVoiceCloneCLI = original })
+	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var receivedChunks int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/devices/control" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		var request struct {
+			DeviceID    string `json:"device_id"`
+			Text        string `json:"text"`
+			AudioChunks []struct {
+				DataBase64 string `json:"data_base64"`
+			} `json:"audio_chunks"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if request.DeviceID != "stackchan-001" {
+			t.Fatalf("request = %+v", request)
+		}
+		if len(request.AudioChunks) > 0 && request.Text != "A21 LOCAL TTS" {
+			t.Fatalf("audio request text = %q", request.Text)
+		}
+		receivedChunks += len(request.AudioChunks)
+		fmt.Fprint(w, `{"trace_id":"a21-trace-local","session_id":"a21-session-local","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	synthesizeVoiceCloneCLI = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+		if options.Text != "不要写进报告" ||
+			options.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+			options.VoiceCloneModel != "Index-TTS2" ||
+			options.VoiceCloneReferenceAudioPath != refAudio ||
+			options.VoiceCloneReferenceText != "参考文本不能进报告" ||
+			options.VoiceClonePersona != "A21 Workmate" ||
+			options.VoiceCloneStyle != "Warm-Pro" {
+			t.Fatalf("clone options = %+v", options)
+		}
+		outputPath := filepath.Join(options.OutputDir, "a21-voice-clone-playback-test.wav")
+		writeAppTestWAV(t, outputPath, 16000, bytes.Repeat([]byte{1, 0}, 640))
+		return audio.LocalTTSReport{
+			SchemaVersion:   "a21.audio.local_tts.v1",
+			GeneratedAtMS:   time.Now().UnixMilli(),
+			Status:          "passed",
+			Provider:        "voice_clone_cli",
+			Engine:          "voice_clone_cli",
+			Voice:           "a21_workmate",
+			Model:           "index_tts2",
+			VoicePersona:    "a21_workmate",
+			StyleProfile:    "warm_pro",
+			ReferenceAudio:  "a21-persona-reference.wav",
+			OutputFormat:    "wav_pcm_s16le_16000_mono",
+			OutputPath:      outputPath,
+			OutputBytes:     1280,
+			TextBytes:       len([]byte(options.Text)),
+			DurationMS:      29,
+			TTSFirstAudioMS: 29,
+		}, nil
+	}
+	dir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"stackchan-local-tts-playback",
+		"--gateway-url", server.URL,
+		"--device-id", "stackchan-001",
+		"--engine", "voice_clone_cli",
+		"--text", "不要写进报告",
+		"--clone-command", "/a21/bin/a21-index-tts2-wrapper",
+		"--clone-model", "Index-TTS2",
+		"--clone-ref-audio", refAudio,
+		"--clone-ref-text", "参考文本不能进报告",
+		"--voice-persona", "A21 Workmate",
+		"--voice-style", "Warm-Pro",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	if receivedChunks != 8 {
+		t.Fatalf("received chunks = %d, want 8 padded speaker-batch chunks", receivedChunks)
+	}
+	for _, want := range []string{
+		`"tts_provider": "voice_clone_cli"`,
+		`"tts_engine": "voice_clone_cli"`,
+		`"tts_model": "index_tts2"`,
+		`"tts_voice": "a21_workmate"`,
+		`"tts_voice_persona": "a21_workmate"`,
+		`"tts_style_profile": "warm_pro"`,
+		`"tts_reference_audio": "a21-persona-reference.wav"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "不要写进报告", "参考文本不能进报告", refAudio, "Authorization", "Bearer", "raw_audio", "data_base64"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("voice clone playback report leaked %q: %s", forbidden, stdout.String())
+		}
 	}
 }
 

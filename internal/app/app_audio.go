@@ -15,6 +15,7 @@ import (
 
 var synthesizeMacOSSay = audio.SynthesizeMacOSSay
 var synthesizeSherpaONNX = audio.SynthesizeSherpaONNX
+var synthesizeVoiceCloneCLI = audio.SynthesizeVoiceCloneCLI
 var runSherpaONNXASR = audio.RunSherpaONNXASR
 var runSherpaONNXASRSmoke = audio.RunSherpaONNXASRSmoke
 
@@ -130,11 +131,12 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
 	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	clone := voiceCloneRuntimeOptionsFromEnv(os.Environ())
 	outputDir := "reports"
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-tts-smoke [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-tts-smoke [--engine sherpa_onnx|macos_say|voice_clone_cli] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -176,6 +178,55 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 				return 2
 			}
 			speakerID = value
+		case "--clone-command":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-command requires a value")
+				return 2
+			}
+			i++
+			clone.Command = args[i]
+		case "--clone-model":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-model requires a value")
+				return 2
+			}
+			i++
+			clone.Model = args[i]
+		case "--clone-ref-audio":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-audio requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceAudioPath = args[i]
+		case "--clone-ref-text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceText = args[i]
+		case "--clone-ref-text-file":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text-file requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceTextPath = args[i]
+		case "--voice-persona":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-persona requires a value")
+				return 2
+			}
+			i++
+			clone.Persona = args[i]
+		case "--voice-style":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-style requires a value")
+				return 2
+			}
+			i++
+			clone.Style = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -193,12 +244,13 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	report, err := synthesizeLocalTTS(context.Background(), localTTSRuntimeOptions{
-		Engine:    engine,
-		Text:      text,
-		Voice:     voice,
-		ModelDir:  modelDir,
-		SpeakerID: speakerID,
-		OutputDir: outputDir,
+		Engine:     engine,
+		Text:       text,
+		Voice:      voice,
+		ModelDir:   modelDir,
+		SpeakerID:  speakerID,
+		OutputDir:  outputDir,
+		VoiceClone: clone,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "local TTS smoke failed: %v\n", err)
@@ -221,12 +273,23 @@ func runLocalTTSSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 type localTTSRuntimeOptions struct {
-	Engine    string
-	Text      string
-	Voice     string
-	ModelDir  string
-	SpeakerID int
-	OutputDir string
+	Engine     string
+	Text       string
+	Voice      string
+	ModelDir   string
+	SpeakerID  int
+	OutputDir  string
+	VoiceClone voiceCloneRuntimeOptions
+}
+
+type voiceCloneRuntimeOptions struct {
+	Command            string
+	Model              string
+	ReferenceAudioPath string
+	ReferenceText      string
+	ReferenceTextPath  string
+	Persona            string
+	Style              string
 }
 
 func synthesizeLocalTTS(ctx context.Context, options localTTSRuntimeOptions) (audio.LocalTTSReport, error) {
@@ -235,17 +298,26 @@ func synthesizeLocalTTS(ctx context.Context, options localTTSRuntimeOptions) (au
 		return audio.LocalTTSReport{}, err
 	}
 	ttsOptions := audio.LocalTTSOptions{
-		Text:      options.Text,
-		Voice:     options.Voice,
-		OutputDir: options.OutputDir,
-		ModelDir:  options.ModelDir,
-		SpeakerID: options.SpeakerID,
+		Text:                         options.Text,
+		Voice:                        options.Voice,
+		OutputDir:                    options.OutputDir,
+		ModelDir:                     options.ModelDir,
+		SpeakerID:                    options.SpeakerID,
+		VoiceCloneCommand:            options.VoiceClone.Command,
+		VoiceCloneModel:              options.VoiceClone.Model,
+		VoiceCloneReferenceAudioPath: options.VoiceClone.ReferenceAudioPath,
+		VoiceCloneReferenceText:      options.VoiceClone.ReferenceText,
+		VoiceCloneReferenceTextPath:  options.VoiceClone.ReferenceTextPath,
+		VoiceClonePersona:            options.VoiceClone.Persona,
+		VoiceCloneStyle:              options.VoiceClone.Style,
 	}
 	switch engine {
 	case "macos_say":
 		return synthesizeMacOSSay(ctx, ttsOptions)
 	case "sherpa_onnx":
 		return synthesizeSherpaONNX(ctx, ttsOptions)
+	case "voice_clone_cli":
+		return synthesizeVoiceCloneCLI(ctx, ttsOptions)
 	default:
 		return audio.LocalTTSReport{}, fmt.Errorf("unsupported local TTS engine")
 	}
@@ -258,8 +330,22 @@ func normalizeLocalTTSEngine(raw string) (string, error) {
 		return "sherpa_onnx", nil
 	case "macos", "macos_say", "say":
 		return "macos_say", nil
+	case "clone", "voice_clone", "voice_clone_cli", "a21_voice_clone":
+		return "voice_clone_cli", nil
 	default:
 		return "", fmt.Errorf("unsupported local TTS engine")
+	}
+}
+
+func voiceCloneRuntimeOptionsFromEnv(env []string) voiceCloneRuntimeOptions {
+	return voiceCloneRuntimeOptions{
+		Command:            strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_COMMAND")),
+		Model:              strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_CLONE_MODEL"), "index_tts2")),
+		ReferenceAudioPath: strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_AUDIO")),
+		ReferenceText:      strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_TEXT")),
+		ReferenceTextPath:  strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_TEXT_FILE")),
+		Persona:            strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_PERSONA"), "a21_workmate")),
+		Style:              strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_STYLE"), "workmate_warm")),
 	}
 }
 func runLocalASRSmoke(args []string, stdout io.Writer, stderr io.Writer) int {

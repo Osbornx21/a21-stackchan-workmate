@@ -271,6 +271,59 @@ func TestVoicePipelineAdaptersFromEnvDefaultsMockAndSelectsHostLocal(t *testing.
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
+	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var captured audio.LocalTTSOptions
+	outputDir := t.TempDir()
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_TTS_FAST_PROFILE=voice_clone_cli",
+		"A21_VOICE_CLONE_COMMAND=/a21/bin/a21-index-tts2-wrapper",
+		"A21_VOICE_CLONE_MODEL=Index-TTS2",
+		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
+		"A21_VOICE_CLONE_REF_TEXT=参考文本不能进报告",
+		"A21_VOICE_PERSONA=A21 Workmate",
+		"A21_VOICE_STYLE=Warm-Pro",
+	}, VoicePipelineAdapterOptions{
+		TTSOptions: audio.LocalTTSOptions{OutputDir: outputDir},
+		TTSSynthesizer: func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+			captured = options
+			if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(options.OutputDir, "a21-voice-clone-adapter.wav")
+			if err := audio.WritePCM16MonoWAV(path, 48000, make([]byte, 5760)); err != nil {
+				t.Fatal(err)
+			}
+			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
+		},
+	})
+
+	if adapters.ExecutionMode != "host_local" || adapters.TTS.Name() != "voice_clone_cli" {
+		t.Fatalf("adapters execution/TTS = %q/%q", adapters.ExecutionMode, adapters.TTS.Name())
+	}
+	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "用户原文不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collected := collectVoiceChunks(t, chunks)
+	if len(collected) != 1 || collected[0].SampleRateHz != 48000 || collected[0].DurationMS != 60 {
+		t.Fatalf("chunks = %+v, want one 48k 60ms chunk", collected)
+	}
+	if captured.Text != "用户原文不进报告" ||
+		captured.OutputSampleRateHz != 48000 ||
+		captured.VoiceCloneCommand != "/a21/bin/a21-index-tts2-wrapper" ||
+		captured.VoiceCloneModel != "Index-TTS2" ||
+		captured.VoiceCloneReferenceAudioPath != refAudio ||
+		captured.VoiceCloneReferenceText != "参考文本不能进报告" ||
+		captured.VoiceClonePersona != "A21 Workmate" ||
+		captured.VoiceCloneStyle != "Warm-Pro" {
+		t.Fatalf("captured TTS options = %+v", captured)
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvSelectsLocalOllama(t *testing.T) {
 	adapters := VoicePipelineAdaptersFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=local_ollama",

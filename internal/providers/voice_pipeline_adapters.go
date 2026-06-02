@@ -628,6 +628,7 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 	if len(optionList) > 0 {
 		options = optionList[0]
 	}
+	ttsOptions := localTTSOptionsFromEnv(env, options.TTSOptions)
 	selection := VoicePipelineSelectionFromEnv(env)
 	textMaxTokens := voiceTextMaxTokensFromEnv(env, options.TextMaxTokens)
 	adapters := VoicePipelineAdapters{
@@ -663,9 +664,12 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "macos_say" {
 			synthesizer = audio.SynthesizeMacOSSay
 		}
+		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "voice_clone_cli" {
+			synthesizer = audio.SynthesizeVoiceCloneCLI
+		}
 		adapters.TTS = NewLocalTTSAdapter(LocalTTSAdapterOptions{
 			Name:        selection.TTSProfile,
-			BaseOptions: options.TTSOptions,
+			BaseOptions: ttsOptions,
 			Synthesizer: synthesizer,
 		})
 		adapters.ExecutionMode = "host_local"
@@ -748,11 +752,48 @@ func routeEligibleTextStreamProfileFromEnv(env []string, profile string, protoco
 
 func isLocalTTSProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
-	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say":
+	case "sherpa_onnx", "sherpa_onnx_tts", "local_sherpa_onnx", "local_sherpa_onnx_tts", "macos_say", "voice_clone_cli":
 		return true
 	default:
 		return false
 	}
+}
+
+func localTTSOptionsFromEnv(env []string, base audio.LocalTTSOptions) audio.LocalTTSOptions {
+	out := base
+	if strings.TrimSpace(out.Voice) == "" {
+		out.Voice = strings.TrimSpace(envValue(env, "A21_LOCAL_TTS_VOICE"))
+	}
+	if strings.TrimSpace(out.ModelDir) == "" {
+		out.ModelDir = strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_MODEL_DIR"))
+	}
+	if out.SpeakerID <= 0 {
+		if value, err := strconv.Atoi(strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_SPEAKER_ID"))); err == nil && value > 0 {
+			out.SpeakerID = value
+		}
+	}
+	if strings.TrimSpace(out.VoiceCloneCommand) == "" {
+		out.VoiceCloneCommand = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_COMMAND"))
+	}
+	if strings.TrimSpace(out.VoiceCloneModel) == "" {
+		out.VoiceCloneModel = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_MODEL"))
+	}
+	if strings.TrimSpace(out.VoiceCloneReferenceAudioPath) == "" {
+		out.VoiceCloneReferenceAudioPath = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_REF_AUDIO"))
+	}
+	if strings.TrimSpace(out.VoiceCloneReferenceText) == "" {
+		out.VoiceCloneReferenceText = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_REF_TEXT"))
+	}
+	if strings.TrimSpace(out.VoiceCloneReferenceTextPath) == "" {
+		out.VoiceCloneReferenceTextPath = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_REF_TEXT_FILE"))
+	}
+	if strings.TrimSpace(out.VoiceClonePersona) == "" {
+		out.VoiceClonePersona = strings.TrimSpace(envValue(env, "A21_VOICE_PERSONA"))
+	}
+	if strings.TrimSpace(out.VoiceCloneStyle) == "" {
+		out.VoiceCloneStyle = strings.TrimSpace(envValue(env, "A21_VOICE_STYLE"))
+	}
+	return out
 }
 
 func normalizePipelineProfile(profile string) string {

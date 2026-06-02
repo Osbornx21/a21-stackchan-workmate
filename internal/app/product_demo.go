@@ -2472,6 +2472,9 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 	engine := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_TTS_ENGINE")), "macos_say")
 	asrProvider := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_LOCAL_ASR_PROVIDER")), defaultProductASRProvider(env))
 	selection := providers.VoicePipelineSelectionFromEnv(env)
+	if strings.TrimSpace(appEnvValue(env, "A21_LOCAL_TTS_ENGINE")) == "" && selection.TTSProfile == "voice_clone_cli" {
+		engine = "voice_clone_cli"
+	}
 	voicePipeline := productVoicePipelineReadiness{
 		ASRProfile:                   selection.ASRProfile,
 		ASRProfileEnv:                selection.ASRProfileEnv,
@@ -2534,7 +2537,9 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 			voicePipeline.HostLocalASRReady = productSherpaASRReady(env)
 		}
 		voicePipeline.HostLocalTextReady = provider.TextStreamReady
-		voicePipeline.HostLocalTTSReady = (selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx") && productSherpaTTSReady(env)
+		voicePipeline.HostLocalTTSReady =
+			((selection.TTSProfile == "sherpa_onnx_tts" || selection.TTSProfile == "sherpa_onnx") && productSherpaTTSReady(env)) ||
+				(selection.TTSProfile == "voice_clone_cli" && productVoiceCloneTTSReady(env))
 	}
 	readiness := productVoiceReadiness{
 		LocalTTSEngine: engine,
@@ -2547,6 +2552,8 @@ func buildProductVoiceReadiness(env []string, provider productProviderReadiness,
 		readiness.LocalTTSReady = err == nil
 	case "sherpa_onnx":
 		readiness.LocalTTSReady = productSherpaTTSReady(env)
+	case "voice_clone_cli":
+		readiness.LocalTTSReady = productVoiceCloneTTSReady(env)
 	default:
 		readiness.LocalTTSReady = false
 	}
@@ -3620,6 +3627,24 @@ func invalidProductV21AdapterSmokeReportFinding() productReadinessFinding {
 func productSherpaTTSReady(env []string) bool {
 	modelDir := firstNonEmpty(strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_MODEL_DIR")), audio.DefaultSherpaONNXTTSModelDir())
 	return audio.SherpaONNXTTSModelDirReady(modelDir)
+}
+
+func productVoiceCloneTTSReady(env []string) bool {
+	command := strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_COMMAND"))
+	refAudio := strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_AUDIO"))
+	if command == "" || refAudio == "" {
+		return false
+	}
+	if containsLegacyIdentityPathToken(command) || containsLegacyIdentityPathToken(refAudio) {
+		return false
+	}
+	if _, err := os.Stat(command); err != nil {
+		if _, lookErr := exec.LookPath(command); lookErr != nil {
+			return false
+		}
+	}
+	info, err := os.Stat(refAudio)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func productSherpaASRReady(env []string) bool {

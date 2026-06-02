@@ -34,7 +34,11 @@ type stackChanLocalTTSPlaybackReport struct {
 	InputTextBytes          int                  `json:"input_text_bytes"`
 	TTSProvider             string               `json:"tts_provider"`
 	TTSEngine               string               `json:"tts_engine,omitempty"`
+	TTSModel                string               `json:"tts_model,omitempty"`
 	TTSVoice                string               `json:"tts_voice"`
+	TTSVoicePersona         string               `json:"tts_voice_persona,omitempty"`
+	TTSStyleProfile         string               `json:"tts_style_profile,omitempty"`
+	TTSReferenceAudio       string               `json:"tts_reference_audio,omitempty"`
 	TTSOutputFormat         string               `json:"tts_output_format"`
 	TTSAudioPath            string               `json:"tts_audio_path,omitempty"`
 	TTSFirstAudioMS         float64              `json:"tts_first_audio_ms"`
@@ -52,6 +56,7 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
 	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	clone := voiceCloneRuntimeOptionsFromEnv(os.Environ())
 	gatewayURL := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080")
 	deviceID := firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001")
 	wavPath := ""
@@ -59,7 +64,7 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--wav <a21-16k-mono-wav>] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-local-tts-playback [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say|voice_clone_cli] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--wav <a21-16k-mono-wav>] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -109,6 +114,55 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 				return 2
 			}
 			speakerID = value
+		case "--clone-command":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-command requires a value")
+				return 2
+			}
+			i++
+			clone.Command = args[i]
+		case "--clone-model":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-model requires a value")
+				return 2
+			}
+			i++
+			clone.Model = args[i]
+		case "--clone-ref-audio":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-audio requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceAudioPath = args[i]
+		case "--clone-ref-text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceText = args[i]
+		case "--clone-ref-text-file":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text-file requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceTextPath = args[i]
+		case "--voice-persona":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-persona requires a value")
+				return 2
+			}
+			i++
+			clone.Persona = args[i]
+		case "--voice-style":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-style requires a value")
+				return 2
+			}
+			i++
+			clone.Style = args[i]
 		case "--wav":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--wav requires a value")
@@ -133,12 +187,13 @@ func runStackChanLocalTTSPlayback(args []string, stdout io.Writer, stderr io.Wri
 		return 1
 	}
 	report, err := buildStackChanLocalTTSPlaybackReport(context.Background(), localTTSRuntimeOptions{
-		Engine:    engine,
-		Text:      inputText,
-		Voice:     voice,
-		ModelDir:  modelDir,
-		SpeakerID: speakerID,
-		OutputDir: outputDir,
+		Engine:     engine,
+		Text:       inputText,
+		Voice:      voice,
+		ModelDir:   modelDir,
+		SpeakerID:  speakerID,
+		OutputDir:  outputDir,
+		VoiceClone: clone,
 	}, gatewayURL, deviceID, wavPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "stackchan local TTS playback failed: %v\n", err)
@@ -169,7 +224,7 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 		GeneratedAtMS:         generatedAtMS,
 		Metadata:              buildLatencyBenchMetadata(),
 		Status:                "failed",
-		GatewayURL:            sanitizedOfficeGatewayURL(gatewayURL),
+		GatewayURL:            productSurfaceLabel(gatewayURL, "/v1/devices/control"),
 		DeviceID:              deviceID,
 		TraceID:               traceID,
 		SessionID:             sessionID,
@@ -190,9 +245,13 @@ func buildStackChanLocalTTSPlaybackReport(ctx context.Context, ttsOptions localT
 		}
 		report.TTSProvider = ttsReport.Provider
 		report.TTSEngine = ttsReport.Engine
+		report.TTSModel = ttsReport.Model
 		report.TTSVoice = ttsReport.Voice
+		report.TTSVoicePersona = ttsReport.VoicePersona
+		report.TTSStyleProfile = ttsReport.StyleProfile
+		report.TTSReferenceAudio = ttsReport.ReferenceAudio
 		report.TTSOutputFormat = ttsReport.OutputFormat
-		report.TTSAudioPath = ttsReport.OutputPath
+		report.TTSAudioPath = filepath.Base(ttsReport.OutputPath)
 		report.TTSFirstAudioMS = ttsReport.TTSFirstAudioMS
 		if ttsReport.Status != "passed" {
 			report.Findings = append(report.Findings, "local TTS did not pass")

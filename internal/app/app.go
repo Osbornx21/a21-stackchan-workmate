@@ -1027,7 +1027,12 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 	if strings.TrimSpace(appEnvValue(out, "A21_TTS_FAST_PROFILE")) == "" &&
 		strings.TrimSpace(appEnvValue(out, "A21_TTS_BALANCED_PROFILE")) == "" &&
 		strings.TrimSpace(appEnvValue(out, "A21_TTS_QUALITY_PROFILE")) == "" {
-		out = append(out, "A21_TTS_FAST_PROFILE=sherpa_onnx_tts")
+		if strings.TrimSpace(appEnvValue(out, "A21_VOICE_CLONE_COMMAND")) != "" &&
+			strings.TrimSpace(appEnvValue(out, "A21_VOICE_CLONE_REF_AUDIO")) != "" {
+			out = append(out, "A21_TTS_FAST_PROFILE=voice_clone_cli")
+		} else {
+			out = append(out, "A21_TTS_FAST_PROFILE=sherpa_onnx_tts")
+		}
 	}
 	if strings.TrimSpace(appEnvValue(out, "A21_TEXT_STREAM_PROFILE")) == "" &&
 		strings.TrimSpace(appEnvValue(out, "A21_PROVIDER_PRIMARY")) == "" &&
@@ -1084,6 +1089,28 @@ func warmGatewayProductChain(ctx context.Context, env []string) error {
 		}
 		if report.Status != "passed" {
 			return fmt.Errorf("TTS warmup did not pass")
+		}
+	} else if strings.ToLower(strings.TrimSpace(ttsProfile)) == "voice_clone_cli" {
+		outputDir := filepath.Join(os.TempDir(), "a21-product-chain-warmup")
+		_ = os.RemoveAll(outputDir)
+		defer os.RemoveAll(outputDir)
+		clone := voiceCloneRuntimeOptionsFromEnv(env)
+		report, err := audio.SynthesizeVoiceCloneCLI(warmCtx, audio.LocalTTSOptions{
+			Text:                         "A21 warmup",
+			OutputDir:                    outputDir,
+			VoiceCloneCommand:            clone.Command,
+			VoiceCloneModel:              clone.Model,
+			VoiceCloneReferenceAudioPath: clone.ReferenceAudioPath,
+			VoiceCloneReferenceText:      clone.ReferenceText,
+			VoiceCloneReferenceTextPath:  clone.ReferenceTextPath,
+			VoiceClonePersona:            clone.Persona,
+			VoiceCloneStyle:              clone.Style,
+		})
+		if err != nil {
+			return fmt.Errorf("voice clone TTS warmup failed")
+		}
+		if report.Status != "passed" {
+			return fmt.Errorf("voice clone TTS warmup did not pass")
 		}
 	}
 	return nil

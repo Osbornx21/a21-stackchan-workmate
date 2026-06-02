@@ -53,12 +53,20 @@ type localVoiceLoopbackReport struct {
 	LocalAckEnabled            bool                    `json:"local_ack_enabled"`
 	LocalAckStatus             string                  `json:"local_ack_status,omitempty"`
 	LocalAckTTSProvider        string                  `json:"local_ack_tts_provider,omitempty"`
+	LocalAckTTSModel           string                  `json:"local_ack_tts_model,omitempty"`
+	LocalAckTTSVoicePersona    string                  `json:"local_ack_tts_voice_persona,omitempty"`
+	LocalAckTTSStyleProfile    string                  `json:"local_ack_tts_style_profile,omitempty"`
+	LocalAckTTSReferenceAudio  string                  `json:"local_ack_tts_reference_audio,omitempty"`
 	LocalAckTTSFirstAudioMS    float64                 `json:"local_ack_tts_first_audio_ms,omitempty"`
 	LocalAckFirstAudioTotalMS  float64                 `json:"local_ack_first_audio_total_ms,omitempty"`
 	LocalAckAudioPath          string                  `json:"local_ack_audio_path,omitempty"`
 	LocalAckAudioQuality       *audio.PCMQualityReport `json:"local_ack_audio_quality,omitempty"`
 	TTSProvider                string                  `json:"tts_provider"`
+	TTSModel                   string                  `json:"tts_model,omitempty"`
 	TTSVoice                   string                  `json:"tts_voice"`
+	TTSVoicePersona            string                  `json:"tts_voice_persona,omitempty"`
+	TTSStyleProfile            string                  `json:"tts_style_profile,omitempty"`
+	TTSReferenceAudio          string                  `json:"tts_reference_audio,omitempty"`
 	TTSOutputFormat            string                  `json:"tts_output_format"`
 	TTSAudioPath               string                  `json:"tts_audio_path,omitempty"`
 	TTSAudioQuality            *audio.PCMQualityReport `json:"tts_audio_quality,omitempty"`
@@ -87,6 +95,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	voice := strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE"))
 	modelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR"))
 	speakerID := parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21)
+	clone := voiceCloneRuntimeOptionsFromEnv(os.Environ())
 	asrProvider := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_PROVIDER"), "mock_asr"))
 	asrFamily := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_FAMILY"))
 	asrModelDir := strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_MODEL_DIR"))
@@ -99,7 +108,7 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama|<A21_PROVIDER_PROFILES_PATH route-eligible profile>] [--fallback-text-provider local_ollama|<route-eligible profile>] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 local-voice-loopback [--engine sherpa_onnx|macos_say|voice_clone_cli] [--asr-provider mock_asr|sherpa_onnx] [--asr-family paraformer|sense_voice|streaming_zipformer] [--asr-model-dir <dir>] [--asr-wav <path>] [--text-provider mock_text_stream|deepseek|local_ollama|<A21_PROVIDER_PROFILES_PATH route-eligible profile>] [--fallback-text-provider local_ollama|<route-eligible profile>] [--execute-text-provider] [--text <text>] [--voice Tingting] [--model-dir <dir>] [--speaker-id 21] [--clone-command <path>] [--clone-model index_tts2|cosyvoice3|f5_tts|gpt_sovits] [--clone-ref-audio <wav>] [--clone-ref-text <text>] [--clone-ref-text-file <txt>] [--voice-persona a21_workmate] [--voice-style workmate_warm] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--engine":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -141,6 +150,55 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 				return 2
 			}
 			speakerID = value
+		case "--clone-command":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-command requires a value")
+				return 2
+			}
+			i++
+			clone.Command = args[i]
+		case "--clone-model":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-model requires a value")
+				return 2
+			}
+			i++
+			clone.Model = args[i]
+		case "--clone-ref-audio":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-audio requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceAudioPath = args[i]
+		case "--clone-ref-text":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceText = args[i]
+		case "--clone-ref-text-file":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--clone-ref-text-file requires a value")
+				return 2
+			}
+			i++
+			clone.ReferenceTextPath = args[i]
+		case "--voice-persona":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-persona requires a value")
+				return 2
+			}
+			i++
+			clone.Persona = args[i]
+		case "--voice-style":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--voice-style requires a value")
+				return 2
+			}
+			i++
+			clone.Style = args[i]
 		case "--text-provider":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--text-provider requires a value")
@@ -214,12 +272,13 @@ func runLocalVoiceLoopback(args []string, stdout io.Writer, stderr io.Writer) in
 		return 1
 	}
 	report, err := buildLocalVoiceLoopbackReport(context.Background(), localTTSRuntimeOptions{
-		Engine:    engine,
-		Text:      inputText,
-		Voice:     voice,
-		ModelDir:  modelDir,
-		SpeakerID: speakerID,
-		OutputDir: outputDir,
+		Engine:     engine,
+		Text:       inputText,
+		Voice:      voice,
+		ModelDir:   modelDir,
+		SpeakerID:  speakerID,
+		OutputDir:  outputDir,
+		VoiceClone: clone,
 	}, repeat, localVoiceLoopbackTextStreamOptions{
 		Provider:         textProvider,
 		FallbackProvider: fallbackTextProvider,
@@ -330,7 +389,11 @@ func buildLocalVoiceLoopbackReport(ctx context.Context, ttsOptions localTTSRunti
 			return report, err
 		}
 		report.TTSProvider = ttsReport.Provider
+		report.TTSModel = ttsReport.Model
 		report.TTSVoice = ttsReport.Voice
+		report.TTSVoicePersona = ttsReport.VoicePersona
+		report.TTSStyleProfile = ttsReport.StyleProfile
+		report.TTSReferenceAudio = ttsReport.ReferenceAudio
 		report.TTSOutputFormat = ttsReport.OutputFormat
 		report.TTSAudioPath = ttsReport.OutputPath
 		report.TTSAudioQuality = ttsReport.AudioQuality
@@ -379,6 +442,10 @@ func runLocalVoiceLoopbackLocalAck(ctx context.Context, options localTTSRuntimeO
 		return err
 	}
 	report.LocalAckTTSProvider = ackReport.Provider
+	report.LocalAckTTSModel = ackReport.Model
+	report.LocalAckTTSVoicePersona = ackReport.VoicePersona
+	report.LocalAckTTSStyleProfile = ackReport.StyleProfile
+	report.LocalAckTTSReferenceAudio = ackReport.ReferenceAudio
 	report.LocalAckTTSFirstAudioMS = ackReport.TTSFirstAudioMS
 	report.LocalAckAudioPath = ackReport.OutputPath
 	report.LocalAckAudioQuality = ackReport.AudioQuality

@@ -32,12 +32,33 @@ func (r *fakeTTSCommandRunner) Run(ctx context.Context, name string, args ...str
 type validWAVTTSCommandRunner struct{}
 
 func (validWAVTTSCommandRunner) Run(ctx context.Context, name string, args ...string) error {
+	for i, arg := range args {
+		if arg == "--output" && i+1 < len(args) {
+			return WritePCM16MonoWAV(args[i+1], 16000, pcm16Bytes(0, 900, -900, 1600, -1600))
+		}
+	}
 	if strings.Contains(name, "afconvert") && len(args) >= 1 {
 		return WritePCM16MonoWAV(args[len(args)-1], 16000, pcm16Bytes(0, 900, -900, 1600, -1600))
 	}
 	for i, arg := range args {
 		if arg == "-o" && i+1 < len(args) {
 			return os.WriteFile(args[i+1], []byte("a21-aiff"), 0o644)
+		}
+	}
+	return nil
+}
+
+type recordingVoiceCloneRunner struct {
+	name string
+	args []string
+}
+
+func (r *recordingVoiceCloneRunner) Run(ctx context.Context, name string, args ...string) error {
+	r.name = name
+	r.args = append([]string(nil), args...)
+	for i, arg := range args {
+		if arg == "--output" && i+1 < len(args) {
+			return WritePCM16MonoWAV(args[i+1], 16000, pcm16Bytes(0, 900, -900, 1600, -1600))
 		}
 	}
 	return nil
@@ -176,6 +197,55 @@ func TestSherpaONNXLocalTTSSynthesizesRedactedWAVReport(t *testing.T) {
 	for _, forbidden := range []string{"这句话也不能出现在报告里", modelDir, "Authorization", "Bearer"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
+func TestVoiceCloneCLILocalTTSSynthesizesRedactedPersonaReport(t *testing.T) {
+	dir := t.TempDir()
+	refAudio := filepath.Join(t.TempDir(), "a21-reference.wav")
+	if err := WritePCM16MonoWAV(refAudio, 16000, pcm16Bytes(0, 300, -300)); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingVoiceCloneRunner{}
+
+	report, err := SynthesizeVoiceCloneCLI(context.Background(), LocalTTSOptions{
+		Text:                         "用户说的原文不许进报告",
+		OutputDir:                    dir,
+		CommandRunner:                runner,
+		VoiceCloneCommand:            "/a21/bin/a21-index-tts2-wrapper",
+		VoiceCloneModel:              "Index-TTS2",
+		VoiceCloneReferenceAudioPath: refAudio,
+		VoiceCloneReferenceText:      "参考音频文本不许进报告",
+		VoiceClonePersona:            "A21 Workmate",
+		VoiceCloneStyle:              "Warm-Pro",
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Provider != "voice_clone_cli" || report.Engine != "voice_clone_cli" || report.Model != "index_tts2" {
+		t.Fatalf("voice clone identity = %+v", report)
+	}
+	if report.VoicePersona != "a21_workmate" || report.StyleProfile != "warm_pro" || report.ReferenceAudio != "a21-reference.wav" {
+		t.Fatalf("persona/style/reference = %+v", report)
+	}
+	if report.Status != "passed" || report.AudioQuality == nil || report.AudioQuality.Status != "passed" {
+		t.Fatalf("status/quality = %+v", report)
+	}
+	if runner.name != "/a21/bin/a21-index-tts2-wrapper" {
+		t.Fatalf("runner name = %q", runner.name)
+	}
+	commandLine := strings.Join(runner.args, " ")
+	for _, want := range []string{"--text-file", "--output", "--sample-rate 16000", "--ref-audio " + refAudio, "--ref-text-file", "--model index_tts2", "--persona a21_workmate", "--style warm_pro"} {
+		if !strings.Contains(commandLine, want) {
+			t.Fatalf("clone command missing %q: %s", want, commandLine)
+		}
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{"用户说的原文", "参考音频文本", refAudio, "Authorization", "Bearer", "raw_audio", "data_base64"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("voice clone report leaked %q: %s", forbidden, rendered)
 		}
 	}
 }
