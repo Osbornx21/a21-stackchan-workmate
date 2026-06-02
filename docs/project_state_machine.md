@@ -20,6 +20,7 @@ Active child transitions:
 - `T-AUDIO-BARE-XIAOZHI-PARITY-001`
 - `T-XIAOZHI-REALTIME-VOICE-PARITY-001`
 - `T-XIAOZHI-STREAMING-ASR-001`
+- `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
@@ -615,6 +616,65 @@ Next state:
 - `S-XIAOZHI-STREAMING-ASR-PROVIDER-READY`
 - Next transition:
   `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`.
+
+### Active T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001: Sherpa Streaming ASR Runtime Helper
+
+Current state:
+
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-ADAPTER-SEAM-COMMITTED`
+
+Trigger:
+
+- The full Xiaozhi parity objective requires real streaming ASR, not a batch
+  WAV runner or a selectable profile name.
+- `T-XIAOZHI-SHERPA-STREAMING-ASR-ADAPTER-001` added profile selection and an
+  injected factory seam, but no default runtime helper/session process.
+
+Target state:
+
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
+
+Action:
+
+- Use `docs/plans/2026-06-03-sherpa-streaming-asr-runtime-helper.md`.
+- Add a JSONL subprocess helper script for Sherpa streaming ASR sessions.
+- Add a Go subprocess-backed `StreamingASRSessionFactory` for
+  `sherpa_onnx_streaming` when helper path and model dir are configured.
+- Prove with fake helper tests that `AppendFrame` can produce partial ASR
+  before `Commit`, and `Commit` can produce final ASR without writing WAV.
+- Preserve batch `sherpa_onnx` and keep readiness/PRD acceptance red until real
+  model/provider/physical evidence exists.
+
+Acceptance conditions:
+
+- Plan exists and is committed: `13e9e82`.
+- Worker runs in a scoped worktree with explicit no-firmware/no-provider/no-audio
+  boundaries.
+- Focused provider/app tests, `git diff --check`, and `make verify` pass before
+  integration.
+- Handoff logs state that this is runtime-helper candidate evidence only, not
+  full Xiaozhi realtime acceptance.
+
+Failure states:
+
+- `F-SHERPA-STREAMING-HELPER-WAV-REGRESSION` if the streaming path writes WAV.
+- `F-SHERPA-STREAMING-HELPER-SECRET-LEAK` if helper errors expose local paths,
+  transcripts, provider output, URLs, proxy values, or credentials.
+- `F-SHERPA-STREAMING-HELPER-HANG` if subprocess cancellation leaves pipes or
+  child processes alive.
+- `F-SHERPA-STREAMING-ASR-FALSE-GREEN` if static helper env is recorded as real
+  model/physical PRD acceptance.
+
+Rollback path:
+
+- Revert helper script, subprocess factory, env wiring, tests, and docs. The
+  adapter seam and batch Sherpa path remain available.
+
+Next state:
+
+- `S-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-HELPER-CANDIDATE`
+- Next transition: real no-audio model smoke, then stock `/v1/xiaozhi`
+  operator-triggered physical realtime parity.
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 

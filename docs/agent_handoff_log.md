@@ -4790,3 +4790,92 @@ Current validation request:
 - No code fix failed in this round. The key recovery action was re-building and
   re-flashing the current HEAD product app to eliminate stale artifact or stale
   flash-state ambiguity.
+
+## 2026-06-03 - T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001 - Plan And Worker Dispatch
+
+本轮目标:
+
+- Continue the user's full Xiaozhi realtime voice objective:
+  local wake/VAD, long stock Xiaozhi socket, Opus 60 ms frames, streaming ASR,
+  streaming LLM, streaming TTS, paced Opus playback, and clean device states.
+- Move the ASR provider side from a profile/factory seam toward a real
+  long-lived streaming helper session.
+- Preserve control-tower discipline: plan first, worker execution in scoped
+  worktree, no broad business-code edits in the main thread.
+
+实际完成内容:
+
+- Confirmed main branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`, starting HEAD
+  `0dd575c3dc46758398f1fe544a2c96cc36d1a992`, and clean worktree.
+- Re-read current state around `T-XIAOZHI-STREAMING-ASR-001`, existing Sherpa
+  streaming adapter seam, Doubao realtime TTS seam, and strict provider
+  readiness gate.
+- Used memory only as a cautionary guardrail: wake/voice false-green, stock
+  Xiaozhi profile cleanliness, and host-only evidence not being PRD acceptance.
+- Dispatched three read-only background review threads:
+  - `W-XIAOZHI-OFFICIAL-STREAMING-PARITY`: official Xiaozhi / StackChan
+    realtime protocol, AudioService, state-machine, wake/listen/speak parity.
+  - `W-A21-XIAOZHI-GATEWAY-GAP`: A21 Gateway/provider gap against
+    local wake + long socket + Opus frames + streaming ASR/LLM/TTS.
+  - `W-SHERPA-STREAMING-RUNTIME-SPEC`: JSONL helper protocol and Go session
+    design for Sherpa streaming ASR.
+- Added plan
+  `docs/plans/2026-06-03-sherpa-streaming-asr-runtime-helper.md`.
+- Committed the plan as
+  `13e9e82 docs(plans): define sherpa streaming asr runtime helper`.
+- Dispatched implementation worker
+  `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001` in a scoped worktree, using the
+  new plan and strict boundaries.
+- Updated `docs/project_state_machine.md` so the active transition is visible
+  even before the worker returns.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-sherpa-streaming-asr-runtime-helper.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Implementation worker has not yet returned in the main thread.
+- No subprocess helper code has been integrated in the main worktree yet.
+- No real Sherpa model/runtime execution has been run.
+- No Gateway restart, firmware flash, NVS write, provider/V21 execution, or
+  audio playback occurred in this dispatch round.
+- Full Xiaozhi realtime parity remains incomplete: ASR runtime helper,
+  streaming TTS runtime proof, wake proof, and physical `/v1/xiaozhi` realtime
+  turn evidence are still open.
+
+已知风险和阻塞点:
+
+- The plan intentionally keeps static helper env separate from real runtime
+  proof. Do not mark ASR PRD-ready merely because
+  `A21_SHERPA_ONNX_STREAMING_HELPER` and model dir env exist.
+- The helper must not write WAV in the streaming path.
+- Helper errors must not leak transcripts, local paths, provider output, URLs,
+  proxy values, or credentials.
+- If the worker cannot be read through Codex thread tools, continue from the
+  committed plan and inspect any new worktree/branch before duplicating work.
+
+下一轮建议动作:
+
+1. Read the implementation worker result when available.
+2. If worker completed, review its branch/diff, run the focused tests,
+   `git diff --check`, and `make verify` in the main integration context.
+3. If worker did not start or cannot be recovered, implement the committed plan
+   in a new scoped worktree rather than improvising in the main thread.
+
+测试/构建/运行结果:
+
+- `git diff --check -- docs/plans/2026-06-03-sherpa-streaming-asr-runtime-helper.md`:
+  passed before committing the plan.
+- No full test run yet after the state/log update; it should be run after
+  worker integration or before the next commit.
+
+如果中途失败，记录失败位置和原因:
+
+- Background thread discovery returned pending worktree ids but did not
+  immediately list readable thread ids. The main thread therefore recorded the
+  dispatch and continued with repo-carried plan/state instead of waiting on UI
+  state.
