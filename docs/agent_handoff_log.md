@@ -1117,3 +1117,76 @@ Recommended next action:
   live official runtime volume setter is verified first.
 - Use the new plan:
   `docs/plans/2026-06-02-stackchan-volume-action-control.md`.
+
+## 2026-06-02 22:36 CST - T-HW-VOLUME-001 Worker Dispatch And State Control
+
+Round goal:
+
+- Continue under the control-tower workflow after the user asked to keep
+  pushing quickly with branch/thread tools.
+- Turn the StackChan device-volume problem into an active, scoped transition.
+- Keep the main thread as architecture/control only and move implementation
+  into a worker worktree.
+
+Actual completed work:
+
+- Re-read the active state machine, handoff log, and StackChan volume/action
+  plan.
+- Confirmed the main checkout was clean at `f49abdee54bc` on branch
+  `codex/a21-hardware-window-20260602-stackchan-prd` before this docs update.
+- Created and pinned worker thread
+  `019e88c3-8fa7-7e53-8e46-ab3ff6e637b9`, titled
+  `A21 T-HW-VOLUME-001 fixed codec volume worker`.
+- Worker worktree:
+  `/Users/jiyurun/.codex/worktrees/bb16/New project`.
+- Worker assignment: implement only the fixed official codec output-volume path
+  for the official Xiaozhi-compatible firmware overlay, with minimal guard/test
+  and handoff/state docs.
+- Updated `docs/project_state_machine.md` so the active child transition is
+  now `T-HW-VOLUME-001` rather than the already host-isolated `T-AUDIO-001`.
+- Recorded explicit transition current state, target state, trigger, actions,
+  acceptance, failure states, rollback path, and next state.
+
+Files changed:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- Wait for worker `019e88c3-8fa7-7e53-8e46-ab3ff6e637b9` to return one of:
+  `DONE`, `DONE_WITH_CONCERNS`, or `BLOCKED`.
+- Review the worker diff before integration. Expected write set is limited to
+  the official Xiaozhi-compatible overlay, focused guard/test files, and state
+  docs.
+- If the worker produces a fixed-volume candidate, run no-write build/report
+  checks before asking for any foreground flash.
+- Physical loudness remains unaccepted until the operator approves a hardware
+  window, the candidate is flashed through guarded commands, and before/after
+  recordings are analyzed.
+
+Known risks and blockers:
+
+- Current stock `/v1/xiaozhi` session still has no runtime StackChan
+  speaker-volume setter.
+- `/v1/xiaozhi/control` action probes still require debug profile negotiation
+  and must not be treated as product stock control.
+- Firmware output gain may make loudness better while worsening clipping,
+  resonance, or TTS intelligibility; it needs A/B evidence.
+- No PRD physical acceptance may be claimed from this worker alone.
+
+Recommended next action:
+
+- Read the worker result from thread
+  `019e88c3-8fa7-7e53-8e46-ab3ff6e637b9`.
+- If `DONE`, inspect diff, run the focused tests it reports, merge/cherry-pick
+  only if boundaries held, then run the official-compatible build/report path.
+- If build/report passes, open a foreground hardware window for guarded flash
+  and phone-recorded before/after loudness comparison.
+
+Validation results:
+
+- `git status --short --branch`: clean before this docs update.
+- `git log --oneline -5`: latest commit before this round was
+  `f49abde docs(audio): plan stackchan volume control`.
+- `git diff --check`: passed after this handoff entry was written.
