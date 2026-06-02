@@ -806,6 +806,10 @@ func attachXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string,
 	}
 	receipt.TraceSummary = &summary
 	if receipt.Kind == "barge_in" {
+		if summary.BargeInStopMS == nil && receipt.AbortStopMS != nil {
+			summary.BargeInStopMS = receipt.AbortStopMS
+			receipt.TraceSummary = &summary
+		}
 		if !xiaozhiVoiceBenchBargeInTraceMetricsPresent(summary) {
 			receipt.Findings = append(receipt.Findings, "trace_barge_in_metrics_missing")
 		}
