@@ -163,6 +163,36 @@ func TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecu
 	}
 }
 
+func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`Board::GetInstance().GetAudioCodec()`,
+		`codec->SetOutputVolume(92);`,
+		`GetHAL().startXiaozhi();`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
+		}
+	}
+	if strings.Contains(overlay, "-    GetHAL().startXiaozhi()") {
+		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
+	}
+	if strings.Index(overlay, `codec->SetOutputVolume(92);`) > strings.Index(overlay, `GetHAL().startXiaozhi();`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must set codec output volume before entering Xiaozhi runtime")
+	}
+}
+
 func TestRunStackChanOfficialPCMBridgePlanReportsDiagnosticContract(t *testing.T) {
 	source := writeTestOfficialStackChanRepo(t, true)
 	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-pcm-bridge.patch")

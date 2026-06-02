@@ -29,17 +29,32 @@ index 3c97e48..8707988 100644
  CONFIG_COMPILER_OPTIMIZATION_SIZE=y
  CONFIG_COMPILER_CXX_EXCEPTIONS=y
 diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
-index 83314f7..d9d96d8 100644
+index 83314f7..3d5a248 100644
 --- a/firmware/main/main.cpp
 +++ b/firmware/main/main.cpp
-@@ -23,7 +23,10 @@ extern "C" void app_main(void)
+@@ -3,6 +3,8 @@
+  *
+  * SPDX-License-Identifier: MIT
+  */
++#include <audio/audio_codec.h>
++#include <board.h>
+ #include <smooth_ui_toolkit.hpp>
+ #include <uitk/short_namespace.hpp>
+ #include <mooncake_log.h>
+@@ -26,7 +28,15 @@ extern "C" void app_main(void)
      ui_hal::on_delay([](uint32_t ms) { GetHAL().delay(ms); });
      ui_hal::on_get_tick([]() { return GetHAL().millis(); });
 -
 +#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++    auto* codec = Board::GetInstance().GetAudioCodec();
++    if (codec != nullptr) {
++        codec->SetOutputVolume(92);
++    }
++
 +    GetHAL().startXiaozhi();
 +#endif
 +
      // Install apps
      GetMooncake().installApp(std::make_unique<AppLauncher>());
      GetMooncake().installApp(std::make_unique<AppAiAgent>());
+     GetMooncake().installApp(std::make_unique<AppAvatar>());

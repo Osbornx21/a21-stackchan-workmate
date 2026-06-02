@@ -1190,3 +1190,98 @@ Validation results:
 - `git log --oneline -5`: latest commit before this round was
   `f49abde docs(audio): plan stackchan volume control`.
 - `git diff --check`: passed after this handoff entry was written.
+
+## 2026-06-02 22:47 CST - T-HW-VOLUME-001a Main Integration And No-Write Build
+
+Round goal:
+
+- Continue under the control-tower workflow after the user asked to push quickly
+  with branch/thread tools.
+- Review the worker result for StackChan device loudness, integrate only the
+  fixed official codec volume candidate, and advance toward hardware A/B
+  without touching flash/NVS/provider/V21/Mac audio.
+
+Actual completed work:
+
+- Read worker thread/worktree result from
+  `/Users/jiyurun/.codex/worktrees/bb16/New project` on branch
+  `codex/t-hw-volume-001-official-codec-volume`.
+- Integrated the worker's code-only patch into the main branch:
+  the official Xiaozhi-compatible overlay now includes official
+  `audio_codec`/`board` headers and calls
+  `Board::GetInstance().GetAudioCodec()->SetOutputVolume(92)` immediately
+  before `GetHAL().startXiaozhi()`.
+- Added a focused Go guard test requiring the official codec volume setter,
+  preserved `GetHAL().startXiaozhi()`, and volume setting before Xiaozhi
+  runtime entry.
+- Updated `docs/project_state_machine.md` from worker-dispatched to
+  no-write-build-passed state.
+- Ran the official Xiaozhi-compatible no-write build/report. Initial sandboxed
+  attempts failed in `fetch_repos.py` due to stale local Git/proxy settings
+  (`127.0.0.1:7897`) and then DNS/network sandboxing. The approved escalated
+  no-flash build passed after clearing proxy env/config for that command only.
+
+Files changed:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current repository state:
+
+- Main branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Worker branch remains dirty with the same intended four-file patch; main
+  branch manually integrated the code and state instead of blindly applying the
+  worker's stale-baseline docs diff.
+- Build reports are under ignored `reports/`; record paths below because they
+  are evidence but not committed.
+
+Current unfinished items:
+
+- Commit this integration after final `git diff --check`/status review.
+- Open a foreground hardware window for guarded official-compatible flash only
+  if the operator approves hardware execution.
+- After flash, collect before/after phone or instrument recordings and
+  regenerate physical/readiness evidence.
+- Runtime StackChan volume control is still not exposed on the current stock
+  `/v1/xiaozhi` path; any `self.audio_speaker.set_volume`-style runtime path is
+  a separate planned stock-safe protocol transition.
+
+Known risks and blockers:
+
+- `SetOutputVolume(92)` may improve loudness but can introduce clipping,
+  enclosure resonance, or worse perceived TTS. Physical A/B is required before
+  product acceptance.
+- The current stock session still rejects host-pushed action/device events
+  without debug-profile negotiation and rejects legacy diagnostic tone because
+  the old PCM audio WebSocket is not connected.
+- Source checkout
+  `/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan` is dirty, but
+  the build tool exported from git `HEAD` only and reported
+  `source_worktree_dirty` honestly.
+- No PRD physical acceptance may be claimed from code/build evidence alone.
+
+Validation results:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime|TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract|TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecute' -count=1`:
+  passed.
+- `go test ./internal/app -run 'StackChanOfficial|Official|Firmware|Xiaozhi' -count=1`:
+  passed.
+- Clean official `HEAD` patch apply check against
+  `/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan`: passed.
+- `git diff --check`: passed before the no-write build.
+- `make a21-stackchan-official-xiaozhi-compatible-build`:
+  passed with no flash/NVS/serial writes after approved network escalation and
+  command-local proxy clearing.
+- Passing build report:
+  `reports/a21-stackchan-official-baseline-20260602-225207-1780411927040145000.json`.
+- Built app SHA-256:
+  `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`.
+
+Recommended next action:
+
+- Commit this integration as the code/build candidate.
+- Next transition: `T-HW-VOLUME-001b` foreground StackChan volume A/B
+  acceptance. Use guarded flash only in an operator-approved hardware window,
+  then record before/after audio and rerun physical/readiness evidence.
