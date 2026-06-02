@@ -224,6 +224,9 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 		`CONFIG_CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`,
 		`CONFIG_CUSTOM_WAKE_WORD_DISPLAY="紫悦"`,
 		`CONFIG_CUSTOM_WAKE_WORD_THRESHOLD=20`,
+		`command_list.find('|', start)`,
+		`commands_.push_back({command, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});`,
+		`Loaded %d A21 custom wake command(s) for %s`,
 		`CONFIG_SR_MN_CN_MULTINET7_QUANT=y`,
 		`# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`,
 	} {

@@ -327,6 +327,36 @@ index 3b6f07e..396b23a 100644
 +        esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);
 +    }
      SetDeviceState(kDeviceStateListening);
+diff --git a/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc b/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc
+index 5ca6a37..fe49f98 100644
+--- a/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc
++++ b/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc
+@@ -91,3 +91,21 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list)
+ #ifdef CONFIG_CUSTOM_WAKE_WORD
+         threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
+-        commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
++        std::string command_list = CONFIG_CUSTOM_WAKE_WORD;
++        size_t start = 0;
++        int command_count = 0;
++        while (start <= command_list.size()) {
++            size_t end = command_list.find('|', start);
++            std::string command = command_list.substr(start,
++                end == std::string::npos ? std::string::npos : end - start);
++            size_t first = command.find_first_not_of(" \t\r\n");
++            size_t last = command.find_last_not_of(" \t\r\n");
++            if (first != std::string::npos && last != std::string::npos) {
++                command = command.substr(first, last - first + 1);
++                commands_.push_back({command, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
++                command_count++;
++            }
++            if (end == std::string::npos) {
++                break;
++            }
++            start = end + 1;
++        }
++        ESP_LOGI(TAG, "Loaded %d A21 custom wake command(s) for %s", command_count, CONFIG_CUSTOM_WAKE_WORD_DISPLAY);
+ #endif
+     } else {
 diff --git a/firmware/xiaozhi-esp32/main/application.h b/firmware/xiaozhi-esp32/main/application.h
 index 7ca7af4..46cfdac 100644
 --- a/firmware/xiaozhi-esp32/main/application.h

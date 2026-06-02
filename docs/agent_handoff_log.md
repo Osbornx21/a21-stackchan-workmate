@@ -3781,3 +3781,90 @@ Updated validation request:
   `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
 - If wake still fails from idle, keep `T-WAKE-003` open and tune the wake
   phrase/threshold next; do not revert to bare `xiaozhi.bin`.
+
+## 2026-06-03 04:39 CST - T-WAKE-003b Zi Yue MultiNet command splitter candidate
+
+Round goal:
+
+- Continue from the listen-bound flashed package.
+- Investigate wake from idle as a separate issue now that post-flash Gateway
+  evidence shows no automatic `listen.start`.
+- Keep product lane as `a21-stackchan-official-xiaozhi-compatible`; do not
+  flash bare `xiaozhi.bin`.
+
+Actual completed:
+
+- Rechecked current Gateway state:
+  - device `44:1b:f6:e2:6a:60` online;
+  - speaker volume capability `100`;
+  - last event before this slice was `xiaozhi.mcp.speaker_volume.sent`;
+  - post-flash trace still showed only `xiaozhi.hello.received=1` after the
+    listen-bound flash window, so the old infinite-ASR trace is pre-fix data.
+- Inspected official `CustomWakeWord` implementation:
+  - `Kconfig.projbuild` documents `CUSTOM_WAKE_WORD` as a single pinyin command
+    separated by spaces;
+  - `CustomWakeWord::Initialize()` previously pushed
+    `CONFIG_CUSTOM_WAKE_WORD` as one command and later called
+    `esp_mn_commands_add` once for that entry;
+  - therefore the previous config
+    `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue` was likely registered as
+    one invalid/overlong MultiNet command, not four alternatives.
+- Updated the official-compatible overlay to split
+  `CONFIG_CUSTOM_WAKE_WORD` on `|`, trim each segment, and register each phrase
+  as a separate MultiNet wake command with display/greeting `紫悦`.
+- Added focused guard test strings so the overlay must contain the splitter and
+  multi-command push.
+- Rebuilt the official-compatible product app successfully.
+
+Modified files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Test/build/run results:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake|TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady' -count=1`: passed.
+- `git diff --check`: passed.
+- `make a21-stackchan-official-xiaozhi-compatible-build`: passed.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-043851-1780432731137364000.json`.
+- Product app SHA-256:
+  `a0638a3b9872c98456c4dee9c8503dfa6d6d27f2374b499fe7c36033aeccb575`.
+- Generated `sdkconfig.json` confirms:
+  - `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`;
+  - `USE_CUSTOM_WAKE_WORD=true`;
+  - `CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`;
+  - `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `WAKE_WORD_DETECTION_IN_LISTENING=false`.
+- Binary strings confirm:
+  - `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue`;
+  - `Loaded %d A21 custom wake command(s) for %s`.
+
+Current unfinished items:
+
+- Commit the focused splitter candidate.
+- Run no-write flash plan and guarded flash execute.
+- Deliver runtime speaker volume `100` after flash.
+- Physical validation still required for:
+  - no welcome/setup regression;
+  - no automatic `listen.start` after boot;
+  - touch/no-speech green exits;
+  - wake variants from idle: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
+
+Known risks and blockers:
+
+- This fixes the strongest source-level wake config bug, but physical wake is
+  still unproven.
+- If all four phrases fail after this package, next likely causes are ESP-SR
+  threshold/sensitivity, microphone input to MultiNet while idle, or direct
+  Xiaozhi startup not enabling wake detection as expected.
+- Do not mark wake product-ready without operator proof.
+
+Next recommended actions:
+
+1. Commit this focused candidate.
+2. Flash the new app on `/dev/cu.usbmodem1101`.
+3. Capture post-flash trace and operator wake result for all four phrases.
