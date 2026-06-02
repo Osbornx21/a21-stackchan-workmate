@@ -415,7 +415,7 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 
 func serverSideWakeWordCollectionCommand(report productReadinessReport) string {
 	if report.WakeWord.FirmwarePackageSource != "" {
-		return "go run ./cmd/a21 wake-word-physical-acceptance --package-report reports/" + report.WakeWord.FirmwarePackageSource + " --proof-report reports/a21-wake-word-physical-proof-*.json --output-dir reports"
+		return "go run ./cmd/a21 wake-word-physical-proof --physical-device-online --firmware-flash-executed --guarded-flash-report <guarded-flash-report.json> --operator-observed --wake-phrase-matched --false-wake-rejected --stock-wake-rejected --output-dir reports && go run ./cmd/a21 wake-word-physical-acceptance --package-report reports/" + report.WakeWord.FirmwarePackageSource + " --proof-report reports/a21-wake-word-physical-proof-*.json --output-dir reports"
 	}
 	return "go run ./cmd/a21 product-readiness --use-latest-reports --output-dir reports"
 }

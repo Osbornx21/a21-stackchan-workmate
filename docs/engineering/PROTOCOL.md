@@ -228,6 +228,18 @@ and writes a structured diagnostic package report with
 `wake_word_firmware_build_dir_missing|wake_word_firmware_build_receipt_missing`,
 `package_written=false`, `flash_allowed=false`, and `product_ready=false`.
 
+`a21 wake-word-physical-proof --physical-device-online
+--firmware-flash-executed --guarded-flash-report <guarded-flash.json>
+--operator-observed --wake-phrase-matched --false-wake-rejected
+--stock-wake-rejected [--output-dir reports]` records the operator/hardware
+proof after a guarded flash has already happened. It writes
+`a21.wake_word_physical_proof.v1` with basename-only
+`guarded_flash_report_source`, observed booleans, explicit false/stock wake
+rejections, `redaction_ok=true`, and basename-only `report_path`. The command
+does not touch serial, flash firmware, start Gateway, run providers, or play
+audio; missing affirmative flags or unsafe report names reject without writing
+an observed proof report.
+
 `a21 wake-word-physical-acceptance --package-report <package.json>
 --proof-report <physical-proof.json> [--output-dir reports]` is the post-flash
 custom wake-word acceptance boundary. It consumes a matching

@@ -21,6 +21,32 @@ type wakeWordPhysicalAcceptanceOptions struct {
 	OutputDir     string
 }
 
+type wakeWordPhysicalProofOptions struct {
+	PhysicalDeviceOnline  bool
+	FirmwareFlashExecuted bool
+	GuardedFlashReport    string
+	OperatorObserved      bool
+	WakePhraseMatched     bool
+	FalseWakeRejected     bool
+	StockWakeRejected     bool
+	OutputDir             string
+}
+
+type wakeWordPhysicalProofReport struct {
+	SchemaVersion                        string `json:"schema_version"`
+	GeneratedAtMS                        int64  `json:"generated_at_ms"`
+	Status                               string `json:"status"`
+	PhysicalDeviceOnline                 bool   `json:"physical_device_online"`
+	FirmwareFlashExecuted                bool   `json:"firmware_flash_executed"`
+	GuardedFlashReportSource             string `json:"guarded_flash_report_source"`
+	OperatorCustomWakeObservationPresent bool   `json:"operator_custom_wake_observation_present"`
+	WakePhraseMatched                    bool   `json:"wake_phrase_matched"`
+	FalseWakeAccepted                    bool   `json:"false_wake_accepted"`
+	StockWakeAccepted                    bool   `json:"stock_wake_accepted"`
+	RedactionOK                          bool   `json:"redaction_ok"`
+	ReportPath                           string `json:"report_path,omitempty"`
+}
+
 type wakeWordPhysicalAcceptanceReport struct {
 	SchemaVersion                        string `json:"schema_version"`
 	GeneratedAtMS                        int64  `json:"generated_at_ms"`
@@ -68,6 +94,91 @@ type wakeWordPhysicalProofFixture struct {
 	StockWakeAccepted                    *bool  `json:"stock_wake_accepted"`
 	RedactionOK                          *bool  `json:"redaction_ok"`
 	ReportPath                           string `json:"report_path"`
+}
+
+func runWakeWordPhysicalProof(args []string, stdout io.Writer, stderr io.Writer) int {
+	options := wakeWordPhysicalProofOptions{OutputDir: "reports"}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 wake-word-physical-proof --physical-device-online --firmware-flash-executed --guarded-flash-report a21-wake-word-guarded-flash-*.json --operator-observed --wake-phrase-matched --false-wake-rejected --stock-wake-rejected [--output-dir reports]")
+			return 0
+		case "--physical-device-online":
+			options.PhysicalDeviceOnline = true
+		case "--firmware-flash-executed":
+			options.FirmwareFlashExecuted = true
+		case "--guarded-flash-report":
+			if !readStringOption(args, &i, stderr, "--guarded-flash-report", &options.GuardedFlashReport) {
+				return 2
+			}
+		case "--operator-observed":
+			options.OperatorObserved = true
+		case "--wake-phrase-matched":
+			options.WakePhraseMatched = true
+		case "--false-wake-rejected":
+			options.FalseWakeRejected = true
+		case "--stock-wake-rejected":
+			options.StockWakeRejected = true
+		case "--output-dir":
+			if !readStringOption(args, &i, stderr, "--output-dir", &options.OutputDir) {
+				return 2
+			}
+		default:
+			fmt.Fprintf(stderr, "unknown wake-word-physical-proof option %q\n", args[i])
+			return 2
+		}
+	}
+	report, err := buildWakeWordPhysicalProofReport(options)
+	if err != nil {
+		fmt.Fprintln(stderr, "wake word physical proof rejected: see structured input contract")
+		return 1
+	}
+	if err := writeJSONWakeWordPhysicalProof(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode wake word physical proof report: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func buildWakeWordPhysicalProofReport(options wakeWordPhysicalProofOptions) (wakeWordPhysicalProofReport, error) {
+	if strings.TrimSpace(options.OutputDir) == "" {
+		return wakeWordPhysicalProofReport{}, fmt.Errorf("output dir is required")
+	}
+	if err := validateA21ReportDir(options.OutputDir); err != nil {
+		return wakeWordPhysicalProofReport{}, err
+	}
+	guardedFlashReport := strings.TrimSpace(options.GuardedFlashReport)
+	if !options.PhysicalDeviceOnline ||
+		!options.FirmwareFlashExecuted ||
+		!options.OperatorObserved ||
+		!options.WakePhraseMatched ||
+		!options.FalseWakeRejected ||
+		!options.StockWakeRejected ||
+		!productWakeWordFirmwarePackageBasenameOK(guardedFlashReport, ".json") {
+		return wakeWordPhysicalProofReport{}, fmt.Errorf("wake word physical proof is incomplete")
+	}
+	report := wakeWordPhysicalProofReport{
+		SchemaVersion:                        wakeWordPhysicalProofSchema,
+		GeneratedAtMS:                        time.Now().UnixMilli(),
+		Status:                               "observed",
+		PhysicalDeviceOnline:                 true,
+		FirmwareFlashExecuted:                true,
+		GuardedFlashReportSource:             guardedFlashReport,
+		OperatorCustomWakeObservationPresent: true,
+		WakePhraseMatched:                    true,
+		FalseWakeAccepted:                    false,
+		StockWakeAccepted:                    false,
+		RedactionOK:                          true,
+	}
+	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+		return wakeWordPhysicalProofReport{}, err
+	}
+	reportPath := filepath.Join(options.OutputDir, fmt.Sprintf("a21-wake-word-physical-proof-%s-%d.json", time.Now().Format("20060102-150405"), time.Now().UnixNano()))
+	report.ReportPath = filepath.Base(reportPath)
+	if err := writeWakeWordPhysicalProofReport(reportPath, report); err != nil {
+		return wakeWordPhysicalProofReport{}, err
+	}
+	return report, nil
 }
 
 func runWakeWordPhysicalAcceptance(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -232,7 +343,22 @@ func writeWakeWordPhysicalAcceptanceReport(path string, report wakeWordPhysicalA
 	return writeJSONWakeWordPhysicalAcceptance(file, report)
 }
 
+func writeWakeWordPhysicalProofReport(path string, report wakeWordPhysicalProofReport) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return writeJSONWakeWordPhysicalProof(file, report)
+}
+
 func writeJSONWakeWordPhysicalAcceptance(writer io.Writer, report wakeWordPhysicalAcceptanceReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONWakeWordPhysicalProof(writer io.Writer, report wakeWordPhysicalProofReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)
