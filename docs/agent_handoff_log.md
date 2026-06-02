@@ -220,3 +220,55 @@ Recommended next action:
   control thread.
 - If the command is missing, route a narrow implementation transition for the
   missing official-candidate flash-plan target before any hardware write.
+
+## 2026-06-02 - T-FW-004 - Dispatch Official Compatible Candidate Flash Seam
+
+Goal:
+
+- Convert the no-write hardware-prep finding into the smallest implementation
+  transition needed before physical flash.
+- Keep the main conversation in control-tower mode instead of implementing the
+  firmware flash seam directly.
+
+Actual completed work:
+
+- Reviewed the existing flash-plan surfaces enough to confirm the worker
+  finding: `xiaozhi-firmware-flash-plan` is not valid for the official
+  Xiaozhi-compatible A21 product candidate because it expects an app named
+  `xiaozhi.bin`, while the correct candidate flash args reference
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+- Launched implementation worker thread
+  `019e8821-5dd0-74b1-8671-58e4fafabdcc` titled
+  `A21 T-FW-004 official candidate flash seam`.
+- Worker branch/worktree: `codex/a21-official-compatible-flash-plan-20260602`
+  in a separate Codex worktree.
+
+Files changed:
+
+- `docs/agent_handoff_log.md`
+
+Worker boundary:
+
+- Add dedicated no-write plan and guarded execute commands for
+  `a21-stackchan-official-xiaozhi-compatible`.
+- Expected command names:
+  `a21-stackchan-official-xiaozhi-compatible-flash-plan` and
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Use TDD in `internal/app/official_stackchan_test.go`.
+- Wire only the necessary CLI/Makefile/report/docs surfaces.
+- Forbidden: real flash, NVS write, serial monitor/upload, provider execute,
+  V21 execute, Gateway long-running runtime, and Mac audio.
+
+Current status:
+
+- Control branch is clean at `796c9a3` before this handoff-log update.
+- Implementation worker is active.
+- No hardware write has been executed.
+
+Recommended next action:
+
+- Read the worker handoff.
+- If tests and commit pass, cherry-pick the focused implementation commit to
+  the control branch.
+- Run the new no-write flash-plan command on the foreground control thread for
+  `/dev/cu.usbmodem1101`.
