@@ -247,6 +247,32 @@ func TestProductReadinessAcceptsExecutedProviderSmokeEvidence(t *testing.T) {
 	}
 }
 
+func TestProductReadinessAcceptsExecutedProviderSmokeEvidenceWithoutLocalKey(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessProviderSmokeReportFixture(t)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:          server.URL,
+		DeviceID:            "stackchan-001",
+		ProviderSmokeReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+	})
+
+	if !report.Provider.RealProviderReady || !report.Provider.TextStreamReady || !report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, want executed 5080lab provider smoke to satisfy real provider gate without local key", report.Provider)
+	}
+	if report.Provider.Selected != "deepseek" || !report.Provider.SelectedConfigured || len(report.Provider.MissingEnv) != 0 {
+		t.Fatalf("provider selection = %+v, want imported smoke evidence to promote selected provider without local env gap", report.Provider)
+	}
+	if report.Provider.SmokeSourceReport != "a21-provider-smoke-real.json" || !report.Provider.SmokeExecuted {
+		t.Fatalf("provider smoke source = %+v, want basename source and executed=true", report.Provider)
+	}
+	if containsProductAction(report.NextActions, "provider-smoke") || containsProductAction(report.NextActions, "configure a real A21 provider") {
+		t.Fatalf("next actions = %#v, should not keep provider gap after valid external smoke evidence", report.NextActions)
+	}
+}
+
 func TestProductReadinessIngestsRealtimeFixtureWithoutPromotingRealLaunch(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessRealtimeFixtureReportFixture(t)

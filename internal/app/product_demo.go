@@ -990,7 +990,6 @@ func attachProductProviderSmokeEvidence(readiness *productProviderReadiness, evi
 func productProviderReadinessRequiresSmokeMatch(readiness productProviderReadiness) bool {
 	return readiness.Selected != "" &&
 		readiness.Selected != "mock" &&
-		readiness.SelectedConfigured &&
 		readiness.SelectedRouteEligible &&
 		readiness.SelectedFamily == string(providers.ProviderFamilyTextStream)
 }
