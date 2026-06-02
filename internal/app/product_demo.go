@@ -824,17 +824,30 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	for _, action := range report.NextActions {
 		report.Findings = append(report.Findings, productReadinessFinding{Code: "launch_gap", Message: action})
 	}
-	if report.LaunchReady {
-		report.Status = "real_launch_ready"
-	} else if report.ServerSide.CandidateReady {
-		report.Status = "server_side_candidate_ready"
-	} else if report.DemoReady {
-		report.Status = "mock_demo_ready"
-	} else {
-		report.Status = "blocked"
-	}
+	report.Status = productReadinessStatus(report)
 	report.CanonicalDecision = buildProductCanonicalReadinessDecision(report)
 	return report
+}
+
+func productReadinessStatus(report productReadinessReport) string {
+	switch {
+	case report.LaunchReady:
+		return "real_launch_ready"
+	case report.ServerSide.CandidateReady:
+		return "server_side_candidate_ready"
+	case productReadinessHasExecutedServerSideEvidence(report):
+		return "server_side_blocked"
+	case report.DemoReady:
+		return "mock_demo_ready"
+	default:
+		return "blocked"
+	}
+}
+
+func productReadinessHasExecutedServerSideEvidence(report productReadinessReport) bool {
+	return report.Provider.RealProviderReady ||
+		productV21ProfessionalReady(report.V21) ||
+		report.Voice.VoicePipeline.HostProductChainReady
 }
 
 func buildProductProviderReadiness(env []string) productProviderReadiness {

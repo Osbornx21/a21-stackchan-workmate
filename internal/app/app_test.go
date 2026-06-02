@@ -855,6 +855,55 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 	}
 }
 
+func TestProductReadinessReportsServerSideBlockedWhenWakeWordBlocksRealSlices(t *testing.T) {
+	server := newProductReadinessCustomWakeTestServer(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
+		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Status != "server_side_blocked" || report.LaunchReady || report.ServerSide.CandidateReady {
+		t.Fatalf("status/launch/server-side = %q/%v/%+v, want server_side_blocked without launch/candidate", report.Status, report.LaunchReady, report.ServerSide)
+	}
+	if !report.Provider.RealProviderReady ||
+		!report.ServerSide.ProviderEvidenceReady ||
+		!report.ServerSide.V21ProfessionalEvidenceReady ||
+		!report.ServerSide.HostVoiceLoopbackReady ||
+		report.ServerSide.WakeWordReady {
+		t.Fatalf("server-side evidence = provider:%+v server:%+v, want real slices ready and wake blocked", report.Provider, report.ServerSide)
+	}
+	if len(report.ServerSide.MissingEvidence) != 1 || report.ServerSide.MissingEvidence[0] != "wake_word" {
+		t.Fatalf("missing server-side evidence = %#v, want wake_word only", report.ServerSide.MissingEvidence)
+	}
+	for _, blocked := range []string{"real_provider_smoke", "v21_professional_execution", "continuous_voice_pipeline"} {
+		if containsExactProductString(report.CanonicalDecision.MissingRealEvidence, blocked) {
+			t.Fatalf("missing real evidence = %#v, should not keep closed server-side gap %q", report.CanonicalDecision.MissingRealEvidence, blocked)
+		}
+	}
+	for _, want := range []string{"physical_stackchan_online", "physical_stackchan_prd_acceptance", "wake_word_product_ready"} {
+		if !containsExactProductString(report.CanonicalDecision.MissingRealEvidence, want) {
+			t.Fatalf("missing real evidence = %#v, want remaining launch gate %q", report.CanonicalDecision.MissingRealEvidence, want)
+		}
+	}
+}
+
 func TestRunProviderEvidenceImportMakes5080labProviderSmokeUsable(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()

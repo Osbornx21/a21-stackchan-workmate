@@ -140,6 +140,9 @@ physical StackChan PRD acceptance.
 remove server-side gaps but cannot make `prd_accepted=true`; missing required
 fields from child reports remain explicit `missing_report_fields` entries
 instead of being encoded as false readiness.
+When any executed server-side evidence has closed a real provider, V21, or
+host voice gap but another server-side gate is still missing, the top-level
+status is `server_side_blocked` instead of `mock_demo_ready`.
 
 `server-side-readiness-bundle` packages that same no-hardware chain into a
 single redacted report artifact, `a21.server_side_readiness_bundle.v1`. It
