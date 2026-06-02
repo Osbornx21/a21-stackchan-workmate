@@ -482,6 +482,9 @@ func xiaozhiVoiceBenchExecutionFromPipeline(pipeline map[string]any) xiaozhiVoic
 		execution.TTSProfile = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "tts_profile"), false)
 		execution.TTSProfileEnv = xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(selection, "tts_profile_env"), true)
 	}
+	if stage := xiaozhiVoiceBenchSafeIdentifier(xiaozhiVoiceBenchStringField(pipeline, "stage"), false); stage != "" && stage != "answer" {
+		return execution
+	}
 	if execution.VoicePipelineExecutionMode == "host_local" {
 		execution.HostLocalASRExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.ASRProfile)
 		execution.HostLocalTextExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.LLMProfile)

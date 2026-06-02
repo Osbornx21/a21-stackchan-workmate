@@ -6916,6 +6916,30 @@ func TestXiaozhiVoiceBenchExecutionFromPipelineRequiresNonMockProductStages(t *t
 	}
 }
 
+func TestXiaozhiVoiceBenchExecutionFromPipelineIgnoresFastAckConfiguredSummary(t *testing.T) {
+	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
+		"schema_version": "a21.voice_pipeline.fast_ack.v1",
+		"status":         "running",
+		"stage":          "fast_ack",
+		"execution_mode": "host_local",
+		"selection": map[string]any{
+			"asr_profile":     "sherpa_onnx",
+			"asr_profile_env": "A21_ASR_LOCAL_PROFILE",
+			"llm_profile":     "local_ollama",
+			"llm_profile_env": "A21_TEXT_STREAM_PROFILE",
+			"tts_profile":     "sherpa_onnx_tts",
+			"tts_profile_env": "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	if execution.HostLocalASRExecuted || execution.HostLocalTextExecuted || execution.HostLocalTTSExecuted || execution.ProviderExecuted || execution.HostProductChainReady {
+		t.Fatalf("execution = %+v, want fast-ack configuration not counted as executed product chain", execution)
+	}
+	if execution.VoicePipelineExecutionMode != "host_local" {
+		t.Fatalf("execution mode = %q, want host_local preserved for diagnostics", execution.VoicePipelineExecutionMode)
+	}
+}
+
 func TestXiaozhiVoiceBenchExecutionFromPipelineMarksNonMockTextProviderExecuted(t *testing.T) {
 	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
 		"execution_mode": "host_local",
