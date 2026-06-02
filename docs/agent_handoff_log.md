@@ -787,3 +787,132 @@ Recommended next action:
 - Use the new `downlink_audio_quality` evidence to decide whether the next fix
   belongs to TTS/model selection, Opus/downlink pacing/quality, firmware
   playback, or protocol cleanup.
+
+## 2026-06-02 - T-AUDIO-001b - Run Host/Gateway Post-Opus Quality Evidence
+
+Goal:
+
+- Continue converging `T-AUDIO-001` after Phase 1 integration.
+- Generate fresh host-only product-chain evidence with `downlink_audio_quality`
+  so the bad physical sound can be separated from basic Gateway post-Opus
+  waveform quality.
+- Keep launch readiness honest and avoid firmware, NVS, serial, provider/V21,
+  and Mac audio side effects.
+
+Actual completed work:
+
+- Confirmed control branch `codex/a21-hardware-window-20260602-stackchan-prd`
+  at `2fe4947` with a clean worktree before this round.
+- Verified Gateway `21081` health, device registry, and provider health:
+  physical device `44:1b:f6:e2:6a:60` was online with stock Xiaozhi Opus
+  ingress/downlink capabilities; provider health surface was still mock.
+- Attempted `xiaozhi-voice-bench` in the sandbox and found Go WebSocket dial
+  failed with `operation not permitted` even though curl could perform a raw
+  WebSocket upgrade.
+- Added a redacted WebSocket dial failure classifier so future reports expose
+  low-information categories such as
+  `gateway_websocket_unavailable_operation_not_permitted` instead of only
+  `gateway_websocket_unavailable`.
+- Ran the bench outside the sandbox as required for local Go WebSocket access:
+  - `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json`:
+    `21080`, repeat 3, `candidate_host_only`, `host_product_chain_ready=true`,
+    `sherpa_onnx_tts`, answer p95 397 ms, answer `downlink_audio_quality`
+    passed.
+  - `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json`:
+    `21081`, repeat 1, `candidate_host_only`, answer
+    `downlink_audio_quality` passed. This is a physical-LAN-Gateway precheck,
+    not a product-readiness voice evidence candidate because repeat count is
+    one.
+- Ran product readiness with the real physical device id:
+  `reports/a21-product-readiness-20260602-220447.json`.
+- Ran server-side readiness bundle:
+  `reports/a21-server-side-readiness-bundle-20260602-220501.json`.
+- Updated `docs/project_state_machine.md` and
+  `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md`.
+
+Files changed:
+
+- `internal/app/xiaozhi_voice_bench.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-02-a21-xiaozhi-tts-audio-quality-rca.md`
+
+Current repository state:
+
+- Control branch: `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Starting HEAD for this handoff entry: `2fe4947`.
+- Active transition remains `T-AUDIO-001`.
+- Completed host-only sub-transition: `T-AUDIO-001b`.
+- Current module state:
+  `S1B-HOST-POST-OPUS-PASS-PHYSICAL-AUDIBLE-PENDING`.
+
+Current conclusions:
+
+- The active A21 host product chain can produce valid post-Opus downlink
+  quality with `sherpa_onnx_tts`; the basic Gateway post-Opus waveform path is
+  not the leading suspect after this evidence.
+- The remaining bad-sound root cause is more likely one of:
+  physical firmware decode/playback/speaker path, physical volume/gain, user
+  perceived TTS voice/model quality, or protocol/control noise around the stock
+  client.
+- This still does not prove physical audible quality. The host reports remain
+  `candidate_host_only` and `prd_accepted=false`.
+- Readiness remains correctly blocked: real provider smoke is missing, physical
+  StackChan PRD acceptance is missing, and custom wake word product proof is
+  missing.
+
+Unfinished items:
+
+- Run foreground physical audible A/B on the same stock Xiaozhi route.
+- Collect operator/instrument audible observation or trusted playback ack
+  tied to a fresh physical trace.
+- Capture device playback start/downlink first-frame timing and barge-in
+  playback stop_done if available.
+- Regenerate `xiaozhi-physical-evidence`, `product-readiness`, and
+  `server-side-readiness-bundle` after physical A/B.
+- Clean/gate stock-incompatible `listen` ack warnings if they remain visible in
+  a fresh physical turn.
+- Close real provider smoke and custom wake proof in separate transitions.
+
+Known risks and blockers:
+
+- Host post-Opus quality metrics do not judge subjective voice naturalness or
+  physical speaker quality.
+- `product-readiness` skips the latest one-round `21081` voice bench as a
+  contract candidate, which is expected; the repeat-3 `21080` report is the
+  current host voice evidence source.
+- Running Go WebSocket bench inside the sandbox can fail with
+  `operation not permitted`; use sandbox escalation for localhost Gateway bench
+  runs.
+- Do not claim PRD acceptance from host-only evidence.
+
+Validation results:
+
+- Sandbox `xiaozhi-voice-bench` attempts failed with Go WebSocket
+  `operation not permitted`; this was recorded as an execution-environment
+  failure, not a Gateway failure.
+- `curl` raw WebSocket upgrade to `127.0.0.1:21081/v1/xiaozhi`: returned
+  `101 Switching Protocols`.
+- Sandbox-external `xiaozhi-voice-bench --gateway-url http://127.0.0.1:21080 --repeat 3 --require-product-chain --output-dir reports`:
+  passed.
+- Sandbox-external `xiaozhi-voice-bench --gateway-url http://127.0.0.1:21081 --repeat 1 --require-product-chain --output-dir reports`:
+  passed.
+- Sandbox-external `product-readiness --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --use-latest-reports --output-dir reports`:
+  passed with `launch_ready=false`.
+- Sandbox-external `server-side-readiness-bundle --gateway-url http://127.0.0.1:21081 --device-id 44:1b:f6:e2:6a:60 --use-latest-reports --output-dir reports`:
+  passed with `server_side_blocked`.
+- `go test ./internal/app -run 'XiaozhiVoiceBench' -count=1`: passed.
+- `go test ./internal/audio ./internal/providers ./internal/gateway ./internal/app -run 'PCMQuality|LocalTTS|VoicePipeline|Xiaozhi.*Opus|Xiaozhi.*Stock|XiaozhiWebSocketListen|XiaozhiPhysicalEvidence|XiaozhiVoiceBench' -count=1`:
+  passed.
+- Sandbox `make verify` failed because `httptest` could not bind `[::1]:0`
+  (`operation not permitted`).
+- Sandbox-external `make verify`: passed.
+
+Recommended next action:
+
+- Execute `T-AUDIO-001` Phase 2 foreground physical audible A/B.
+- Keep firmware, NVS route, Gateway port, and stock Xiaozhi path stable.
+- Change only the approved TTS candidate/profile or fixture source, and require
+  operator/instrument audible observation plus fresh trace linkage before
+  updating physical acceptance.

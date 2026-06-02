@@ -355,9 +355,9 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 	}
 	turnCtx, cancel := context.WithTimeout(ctx, time.Duration(options.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	conn, _, err := websocket.Dial(turnCtx, wsURL, nil)
+	conn, resp, err := websocket.Dial(turnCtx, wsURL, nil)
 	if err != nil {
-		receipt.Findings = append(receipt.Findings, "gateway_websocket_unavailable")
+		receipt.Findings = append(receipt.Findings, xiaozhiVoiceBenchWebSocketFailureFinding(resp, err))
 		return receipt
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
@@ -781,6 +781,35 @@ func summarizeXiaozhiVoiceBench(answerTurns []xiaozhiVoiceBenchTurn, bargeInTurn
 		AnswerFirstAudioP95MS: percentileMS(answerDurations, 0.95),
 		BargeInStopP50MS:      percentileMS(bargeDurations, 0.50),
 		BargeInStopP95MS:      percentileMS(bargeDurations, 0.95),
+	}
+}
+
+func xiaozhiVoiceBenchWebSocketFailureFinding(resp *http.Response, err error) string {
+	const base = "gateway_websocket_unavailable"
+	if resp != nil && resp.StatusCode > 0 {
+		return fmt.Sprintf("%s_http_%d", base, resp.StatusCode)
+	}
+	if err == nil {
+		return base
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "proxy") || strings.Contains(message, "tunnel"):
+		return base + "_proxy_or_tunnel"
+	case strings.Contains(message, "connection refused"):
+		return base + "_connection_refused"
+	case strings.Contains(message, "operation not permitted"):
+		return base + "_operation_not_permitted"
+	case strings.Contains(message, "deadline exceeded") || strings.Contains(message, "i/o timeout"):
+		return base + "_timeout"
+	case strings.Contains(message, "no such host") || strings.Contains(message, "lookup"):
+		return base + "_dns"
+	case strings.Contains(message, "expected handshake response status code"):
+		return base + "_bad_status"
+	case strings.Contains(message, "sec-websocket"):
+		return base + "_bad_handshake"
+	default:
+		return base + "_dial_error"
 	}
 }
 

@@ -1,7 +1,7 @@
 # A21 Xiaozhi TTS Audio Quality RCA Plan
 
-Status: active; Phase 1 host downlink isolation integrated, Phase 2 physical
-A/B pending.
+Status: active; Phase 1 host downlink isolation integrated, host/Gateway
+post-Opus quality passed, Phase 2 physical A/B pending.
 Transition: `T-AUDIO-001`.
 Date: 2026-06-02.
 
@@ -166,6 +166,23 @@ Acceptance:
   Opus/downlink/device playback.
 - If both are clean after cleanup, proceed to playback ack and launch-readiness
   closure.
+
+Current precheck status:
+
+- `reports/a21-xiaozhi-voice-bench-20260602-220325.719331000.json` passed a
+  3-repeat host product-chain bench on `21080`.
+- The selected host route was `sherpa_onnx_tts` through
+  `A21_TTS_FAST_PROFILE`; answer p95 first audio was 397 ms; decoded Opus
+  `downlink_audio_quality` passed for answer turns.
+- `reports/a21-xiaozhi-voice-bench-20260602-220344.175240000.json` passed a
+  one-round host-only check against the physical LAN Gateway `21081`; it is not
+  sufficient for product-readiness voice evidence because repeat count is one.
+- `reports/a21-product-readiness-20260602-220447.json` and
+  `reports/a21-server-side-readiness-bundle-20260602-220501.json` keep launch
+  blocked and PRD accepted false.
+- Next physical A/B should focus on physical speaker/playback/subjective voice
+  quality and trusted playback ack, not basic Gateway post-Opus waveform
+  integrity.
 
 ### Phase 3 - Narrow Fix Or Route Decision
 

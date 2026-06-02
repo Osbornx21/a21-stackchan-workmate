@@ -6948,6 +6948,25 @@ func TestRunXiaozhiVoiceBenchRequireProductChainRejectsFixture(t *testing.T) {
 	}
 }
 
+func TestXiaozhiVoiceBenchWebSocketFailureFindingIsRedacted(t *testing.T) {
+	if got := xiaozhiVoiceBenchWebSocketFailureFinding(&http.Response{StatusCode: http.StatusForbidden}, fmt.Errorf("http://user:pass@example.invalid/secret")); got != "gateway_websocket_unavailable_http_403" {
+		t.Fatalf("http finding = %q, want gateway_websocket_unavailable_http_403", got)
+	}
+	proxyErr := fmt.Errorf("proxy http://user:pass@127.0.0.1:7897 failed for /Users/me/a21-secret.txt with token")
+	if got := xiaozhiVoiceBenchWebSocketFailureFinding(nil, proxyErr); got != "gateway_websocket_unavailable_proxy_or_tunnel" {
+		t.Fatalf("proxy finding = %q, want gateway_websocket_unavailable_proxy_or_tunnel", got)
+	} else {
+		for _, forbidden := range []string{"http://", "user:pass", "/Users/", "token", "secret"} {
+			if strings.Contains(got, forbidden) {
+				t.Fatalf("finding leaked %q: %q", forbidden, got)
+			}
+		}
+	}
+	if got := xiaozhiVoiceBenchWebSocketFailureFinding(nil, fmt.Errorf("dial tcp 127.0.0.1:21080: connect: operation not permitted")); got != "gateway_websocket_unavailable_operation_not_permitted" {
+		t.Fatalf("permission finding = %q, want gateway_websocket_unavailable_operation_not_permitted", got)
+	}
+}
+
 func TestXiaozhiVoiceBenchExecutionFromPipelineRequiresNonMockProductStages(t *testing.T) {
 	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
 		"execution_mode": "host_local",
