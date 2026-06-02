@@ -133,6 +133,9 @@ launch evidence.
 `provider-compat-matrix` rolls ASR, LLM, and TTS evidence into one redacted
 local/cloud matrix:
 
+For the current pinned 5080lab provider closure, use
+`docs/engineering/A21_PROVIDER_5080LAB_TEST_PLAN_20260602.md`.
+
 ```bash
 go run ./cmd/a21 provider-compat-matrix --use-latest-reports --output-dir reports
 go run ./cmd/a21 provider-compat-matrix --provider-full-summary reports/a21-provider-full-YYYYMMDD-HHMMSS/a21-provider-full-summary.json --output-dir reports

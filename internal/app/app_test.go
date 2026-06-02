@@ -852,6 +852,32 @@ func TestRunProviderEvidencePackageCreatesImportable5080labBundle(t *testing.T) 
 	inputDir := t.TempDir()
 	outputDir := t.TempDir()
 	writeProductReadinessReportFixtureFile(t, inputDir, "a21-provider-smoke-20260602-120000.json", productReadinessProviderSmokeReportFixtureJSON())
+	writeProductReadinessReportFixtureFile(t, inputDir, "a21-provider-audio-smoke-cloud-asr.json", `{
+  "schema_version": "a21.provider_audio_smoke.v1",
+  "generated_at_ms": 1780368200000,
+  "stage": "asr",
+  "placement": "cloud",
+  "provider": "iflytek",
+  "status": "passed",
+  "executed": true,
+  "configured": true,
+  "endpoint_host": "iat-api.xfyun.cn",
+  "asr_final_p95_ms": 354,
+  "report_path": "D:\\a21-mainland-latency-lab\\outbox\\a21-provider-audio-smoke-cloud-asr.json"
+}`)
+	writeProductReadinessReportFixtureFile(t, inputDir, "a21-provider-audio-smoke-cloud-tts.json", `{
+  "schema_version": "a21.provider_audio_smoke.v1",
+  "generated_at_ms": 1780368200001,
+  "stage": "tts",
+  "placement": "cloud",
+  "provider": "iflytek",
+  "status": "passed",
+  "executed": true,
+  "configured": true,
+  "endpoint_host": "tts-api.xfyun.cn",
+  "tts_first_audio_p95_ms": 90,
+  "report_path": "D:\\a21-mainland-latency-lab\\outbox\\a21-provider-audio-smoke-cloud-tts.json"
+}`)
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
 	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
 	var stdout bytes.Buffer
@@ -868,6 +894,8 @@ func TestRunProviderEvidencePackageCreatesImportable5080labBundle(t *testing.T) 
 		`"status": "accepted"`,
 		`"provider_smoke_ready": true`,
 		`"source_report": "a21-provider-smoke-20260602-120000.json"`,
+		`"a21-provider-audio-smoke-cloud-asr.json"`,
+		`"a21-provider-audio-smoke-cloud-tts.json"`,
 		`"bundle_path": "a21-5080lab-provider-evidence-`,
 	} {
 		if !strings.Contains(rendered, want) {
@@ -893,6 +921,33 @@ func TestRunProviderEvidencePackageCreatesImportable5080labBundle(t *testing.T) 
 	code = Run([]string{"provider-evidence-import", "--bundle", bundles[0], "--output-dir", importDir}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("import code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"a21-provider-audio-smoke-cloud-asr.json"`,
+		`"a21-provider-audio-smoke-cloud-tts.json"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("import stdout missing %q: %s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"provider-compat-matrix", "--use-latest-reports", "--reports-dir", importDir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("provider-compat-matrix code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var matrix providerCompatMatrixReport
+	if err := json.Unmarshal(stdout.Bytes(), &matrix); err != nil {
+		t.Fatalf("decode provider compat matrix: %v\n%s", err, stdout.String())
+	}
+	if !matrix.Coverage.CloudASR || !matrix.Coverage.CloudTTS {
+		t.Fatalf("coverage = %+v, want imported cloud ASR/TTS audio smoke coverage", matrix.Coverage)
+	}
+	for _, forbidden := range []string{inputDir, outputDir, importDir, "D:\\", "D:/", "outbox", "secret-value"} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("provider compat matrix leaked %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+		}
 	}
 
 	stdout.Reset()

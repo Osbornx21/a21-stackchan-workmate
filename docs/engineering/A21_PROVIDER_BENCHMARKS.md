@@ -104,6 +104,11 @@ launch closure, and promotion still requires an explicit A21 route decision.
 
 `provider-compat-matrix` is the ASR / LLM / TTS provider burn-down command:
 
+The pinned 5080lab closure plan is
+`docs/engineering/A21_PROVIDER_5080LAB_TEST_PLAN_20260602.md`. Use that plan as
+the authority for cloud ASR/TTS evidence, bundle import, and final
+`provider-compat-matrix.status=ready` acceptance.
+
 ```bash
 go run ./cmd/a21 provider-compat-matrix \
   --provider-full-summary reports/a21-provider-full-YYYYMMDD-HHMMSS/a21-provider-full-summary.json \

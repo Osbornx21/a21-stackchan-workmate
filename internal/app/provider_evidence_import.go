@@ -273,6 +273,7 @@ func providerEvidenceImportEntryName(name string) (string, bool) {
 func providerEvidenceImportAllowedReportName(name string) bool {
 	for _, pattern := range []string{
 		"a21-provider-smoke-*.json",
+		"a21-provider-audio-smoke-*.json",
 		"a21-doctor-*.json",
 		"a21-product-readiness-*.json",
 		"a21-server-side-readiness-bundle-*.json",
