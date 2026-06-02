@@ -4950,6 +4950,248 @@ func TestRunProviderSmokeAcceptsStreamRepeatFlags(t *testing.T) {
 	}
 }
 
+func TestRunProviderCompatMatrixIngests5080FullSummary(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "a21-provider-full-summary.json")
+	summary := `{
+  "schema_version": "a21.provider_full_validation.v1",
+  "lab_llm_stream_summary": [
+    {
+      "provider": "siliconflow",
+      "attempts": 5,
+      "ok": 5,
+      "failures": 0,
+      "first_content_p50_ms": 320.5,
+      "first_content_p95_ms": 360.5,
+      "total_p95_ms": 900.25,
+      "last_error": null
+    }
+  ],
+  "a21_deepseek_execute": {
+    "schema_version": "a21.provider_smoke.v1",
+    "generated_at_ms": 1780226954489,
+    "provider": "deepseek",
+    "family": "text_stream",
+    "protocol": "openai_chat_completions",
+    "status": "passed",
+    "configured": true,
+    "executed": true,
+    "route_eligible": true,
+    "stream": true,
+    "repeat": 5,
+    "http_status": 200,
+    "timing_summary": {
+      "repeat": 5,
+      "first_byte_p95_ms": 2542.379,
+      "first_content_p95_ms": 3000.25,
+      "total_duration_p95_ms": 4323.647
+    },
+    "network_mode": "direct",
+    "endpoint_host": "api.deepseek.com",
+    "base_url_env": "A21_DEEPSEEK_BASE_URL",
+    "api_key_env": "A21_LAB_DEEPSEEK_API_KEY",
+    "model_env": "A21_DEEPSEEK_MODEL",
+    "report_path": "reports/a21-provider-full-20260531-192912/a21-provider-smoke-20260531-192923-493856000.json",
+    "detail": "provider streaming smoke request succeeded"
+  },
+  "local_asr": [
+    {
+      "schema_version": "a21.audio.local_asr.v1",
+      "status": "passed",
+      "provider": "sherpa_onnx",
+      "engine": "paraformer",
+      "model_dir": "sherpa-onnx-paraformer-zh-small-2024-03-09",
+      "decode_duration_ms": 492.076,
+      "real_time_factor": 0.181369,
+      "report_path": "reports/a21-provider-full-20260531-192912/a21-local-asr-smoke-20260531-193314.json",
+      "matrix_model": "sherpa-onnx-paraformer-zh-small-2024-03-09",
+      "matrix_stage": "local_asr",
+      "exit_code": 0
+    }
+  ],
+  "local_tts": [
+    {
+      "schema_version": "a21.audio.local_tts.v1",
+      "status": "passed",
+      "provider": "sherpa_onnx",
+      "engine": "vits_icefall_zh_aishell3",
+      "model_dir": "vits-icefall-zh-aishell3",
+      "duration_ms": 439.041,
+      "tts_first_audio_ms": 439.041,
+      "report_path": "reports/a21-provider-full-20260531-192912/a21-local-tts-smoke-20260531-193309.json",
+      "matrix_model": "vits-icefall-zh-aishell3",
+      "matrix_stage": "local_tts",
+      "exit_code": 0
+    }
+  ]
+}`
+	if err := os.WriteFile(summaryPath, []byte(summary), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outputDir := filepath.Join(dir, "reports")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-compat-matrix", "--provider-full-summary", summaryPath, "--output-dir", outputDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerCompatMatrixReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider compat matrix: %v\n%s", err, stdout.String())
+	}
+	if report.SchemaVersion != providerCompatMatrixSchemaVersion || report.SourceSummaryReport != "a21-provider-full-summary.json" {
+		t.Fatalf("schema/source = %q/%q", report.SchemaVersion, report.SourceSummaryReport)
+	}
+	if !report.Coverage.LocalASR || !report.Coverage.CloudLLM || !report.Coverage.LocalTTS {
+		t.Fatalf("coverage = %+v, want local ASR/cloud LLM/local TTS covered", report.Coverage)
+	}
+	for _, want := range []string{"cloud_asr", "local_llm", "cloud_tts"} {
+		if !containsExactProductString(report.MissingCapabilities, want) {
+			t.Fatalf("missing capabilities lacks %q: %#v", want, report.MissingCapabilities)
+		}
+	}
+	if len(report.Rows) < 4 || report.ReportPath == "" {
+		t.Fatalf("rows/report_path = %d/%q, want rows and written report", len(report.Rows), report.ReportPath)
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-provider-compat-matrix-*.json"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("matrix report matches = %v, %v", matches, err)
+	}
+	for _, forbidden := range []string{dir, filepath.ToSlash(dir), summaryPath} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("provider compat matrix leaked path %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderCompatMatrixUseLatestReportsIncludesLocalLLM(t *testing.T) {
+	reportDir := t.TempDir()
+	providerFullDir := filepath.Join(reportDir, "a21-provider-full-20260531-192912")
+	if err := os.MkdirAll(providerFullDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(providerFullDir, "a21-provider-full-summary.json"), []byte(`{
+  "schema_version": "a21.provider_full_validation.v1",
+  "lab_llm_stream_summary": [],
+  "local_asr": [],
+  "local_tts": []
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localLLM := providers.ProviderSmokeReport{
+		SchemaVersion: providers.ProviderSmokeSchemaVersion,
+		GeneratedAtMS: time.Now().UnixMilli(),
+		Provider:      "local_ollama",
+		Family:        string(providers.ProviderFamilyTextStream),
+		Protocol:      "ollama_chat",
+		Status:        providers.ProviderSmokePassed,
+		Configured:    true,
+		Executed:      true,
+		RouteEligible: true,
+		Stream:        true,
+		Repeat:        3,
+		ReportPath:    "a21-provider-smoke-local-ollama.json",
+		Detail:        "provider streaming smoke request succeeded",
+	}
+	data, err := json.Marshal(localLLM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reportDir, "a21-provider-smoke-20260602-120000.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"provider-compat-matrix", "--use-latest-reports", "--reports-dir", reportDir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerCompatMatrixReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider compat matrix: %v\n%s", err, stdout.String())
+	}
+	if !report.Coverage.LocalLLM {
+		t.Fatalf("coverage = %+v, want local LLM covered", report.Coverage)
+	}
+	if report.SourceSummaryReport != "a21-provider-full-summary.json" {
+		t.Fatalf("source summary = %q", report.SourceSummaryReport)
+	}
+	for _, forbidden := range []string{reportDir, filepath.ToSlash(reportDir)} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("provider compat matrix leaked path %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunProviderCompatMatrixIngestsCloudAudioSmokeReports(t *testing.T) {
+	dir := t.TempDir()
+	asrPath := filepath.Join(dir, "a21-provider-audio-smoke-asr.json")
+	ttsPath := filepath.Join(dir, "a21-provider-audio-smoke-tts.json")
+	if err := os.WriteFile(asrPath, []byte(`{
+  "schema_version": "a21.provider_audio_smoke.v1",
+  "generated_at_ms": 1780368200000,
+  "stage": "asr",
+  "placement": "cloud",
+  "provider": "iflytek",
+  "status": "passed",
+  "executed": true,
+  "configured": true,
+  "endpoint_host": "iat-api.xfyun.cn",
+  "asr_final_p95_ms": 354,
+  "report_path": "D:\\a21-mainland-latency-lab\\outbox\\a21-provider-audio-smoke-asr.json"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ttsPath, []byte(`{
+  "schema_version": "a21.provider_audio_smoke.v1",
+  "generated_at_ms": 1780368200001,
+  "stage": "tts",
+  "placement": "cloud",
+  "provider": "iflytek",
+  "status": "passed",
+  "executed": true,
+  "configured": true,
+  "endpoint_host": "tts-api.xfyun.cn",
+  "tts_first_audio_p95_ms": 90,
+  "report_path": "D:\\a21-mainland-latency-lab\\outbox\\a21-provider-audio-smoke-tts.json"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"provider-compat-matrix",
+		"--provider-audio-smoke-report", asrPath,
+		"--provider-audio-smoke-report", ttsPath,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
+	}
+	var report providerCompatMatrixReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode provider compat matrix: %v\n%s", err, stdout.String())
+	}
+	if !report.Coverage.CloudASR || !report.Coverage.CloudTTS {
+		t.Fatalf("coverage = %+v, want cloud ASR and cloud TTS covered", report.Coverage)
+	}
+	for _, want := range []string{`"asr_final_p95_ms": 354`, `"tts_first_audio_ms": 90`, `"source_report": "a21-provider-audio-smoke-asr.json"`, `"source_report": "a21-provider-audio-smoke-tts.json"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{dir, filepath.ToSlash(dir), "D:\\", "D:/", "outbox"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("provider compat matrix leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunProviderSmokeRejectsLegacyProviderWithoutEchoingValue(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

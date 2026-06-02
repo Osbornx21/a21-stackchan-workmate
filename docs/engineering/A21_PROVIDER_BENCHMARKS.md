@@ -97,6 +97,29 @@ no-prompt/no-transcript/no-output/no-reasoning/no-secret/no-full-URL redaction
 checks. It does not prove ASR, TTS, V21, physical playback, barge-in stop, or
 PRD launch acceptance by itself.
 
+`provider-smoke` can also execute configured OpenAI-compatible text-stream
+candidates that are not route-eligible. This is compatibility testing only:
+the report keeps `route_eligible=false`, `product-readiness` rejects it for
+launch closure, and promotion still requires an explicit A21 route decision.
+
+`provider-compat-matrix` is the ASR / LLM / TTS provider burn-down command:
+
+```bash
+go run ./cmd/a21 provider-compat-matrix \
+  --provider-full-summary reports/a21-provider-full-YYYYMMDD-HHMMSS/a21-provider-full-summary.json \
+  --output-dir reports
+
+go run ./cmd/a21 provider-compat-matrix --use-latest-reports --output-dir reports
+```
+
+It emits `a21.provider_compat_matrix.v1` with rows for
+`asr|llm|tts` x `local|cloud`, basename-only source reports, coverage booleans,
+missing capabilities, and next actions. It can also ingest redacted cloud audio
+reports through repeated `--provider-audio-smoke-report <report.json>` options
+or latest-report scanning of `a21-provider-audio-smoke-*.json` using schema
+`a21.provider_audio_smoke.v1`. Offline realtime fixture reports are visible in
+the matrix but do not count as real cloud ASR/TTS coverage.
+
 ## 5080lab Selected Provider Execution Package
 
 Run selected-provider closure on `5080lab` or another approved clean mainland

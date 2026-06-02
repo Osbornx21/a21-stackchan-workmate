@@ -250,7 +250,7 @@ func providerSmokeSpecFromProfile(profile ProviderProfile) providerSmokeSpec {
 		DefaultBaseURL: profile.DefaultBaseURL,
 		EndpointPath:   profile.EndpointPath,
 		RouteEligible:  profile.RouteEligible,
-		Executable: profile.RouteEligible && profile.Family == ProviderFamilyTextStream &&
+		Executable: profile.Family == ProviderFamilyTextStream &&
 			(profile.Protocol == "openai_chat_completions" || profile.Protocol == "ollama_chat"),
 	}
 }

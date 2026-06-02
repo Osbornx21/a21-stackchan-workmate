@@ -125,6 +125,26 @@ go run ./cmd/a21 provider-smoke --provider deepseek --output-dir reports
 
 The provider catalog includes the PRD reference profiles for mainland text-stream candidates, local text providers, existing realtime references, and future agent-task bridges. Catalog visibility is not execution authorization: only `mock`, `deepseek`, and `local_ollama` are route-eligible in the built-in P0 provider-smoke path. `A21_PROVIDER_PROFILES_PATH` may point at a local JSON file containing additional A21-namespaced OpenAI-compatible text-stream profiles. A loaded profile can become route-eligible only when the profile is valid and explicitly sets `route_eligible=true`; invalid files produce redacted findings keyed to the env var name, not the file path or raw provider values. `local_ollama` is a direct local-fallback text-stream lane and still requires explicit `A21_LOCAL_OLLAMA_BASE_URL` plus `A21_LOCAL_OLLAMA_MODEL`. Realtime WebSocket providers such as OpenAI Realtime, Doubao realtime TTS, and Doubao end-to-end realtime voice remain redacted plan or fake-connection boundaries only until a dedicated explicit smoke command exists.
 
+OpenAI-compatible text-stream providers that are not route-eligible can still
+run `provider-smoke --execute --stream` for compatibility testing. These
+reports keep `route_eligible=false`, so product readiness cannot absorb them as
+launch evidence.
+
+`provider-compat-matrix` rolls ASR, LLM, and TTS evidence into one redacted
+local/cloud matrix:
+
+```bash
+go run ./cmd/a21 provider-compat-matrix --use-latest-reports --output-dir reports
+go run ./cmd/a21 provider-compat-matrix --provider-full-summary reports/a21-provider-full-YYYYMMDD-HHMMSS/a21-provider-full-summary.json --output-dir reports
+go run ./cmd/a21 provider-compat-matrix --provider-audio-smoke-report reports/a21-provider-audio-smoke-cloud-asr.json --provider-audio-smoke-report reports/a21-provider-audio-smoke-cloud-tts.json --output-dir reports
+```
+
+Cloud ASR/TTS lab results should use schema `a21.provider_audio_smoke.v1` with
+only low-information timing fields such as `asr_final_p95_ms` or
+`tts_first_audio_p95_ms`, provider name, endpoint host, booleans, and a
+basename report path. Do not include transcript text, provider output, raw
+audio, prompt text, full URLs, proxy values, model values, or secrets.
+
 Agent-task profiles are reported as readiness visibility only. `hermes_agent`
 and `mimo_agent` stay in the `agent_task` family, are not route-eligible, and
 are not realtime-capable. The lane is disabled by default and becomes locally

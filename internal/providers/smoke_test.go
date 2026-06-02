@@ -182,6 +182,86 @@ func TestProviderSmokeExecutesOpenAICompatibleStreamingRequest(t *testing.T) {
 	}
 }
 
+func TestProviderSmokeExecutesBuiltinOpenAICompatibleCandidateWithoutRoutePromotion(t *testing.T) {
+	var sawAuth bool
+	var sawModel bool
+	var sawStream bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q, want /chat/completions", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("Authorization") == "Bearer sk-a21-siliconflow-secret"
+		var body struct {
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		sawModel = body.Model == "Qwen/Qwen3.5-9B"
+		sawStream = body.Stream
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"OK"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n")))
+	}))
+	defer server.Close()
+
+	report := ProviderSmokeFromEnvWithOptions(context.Background(), []string{
+		"A21_PROVIDER_PRIMARY=siliconflow",
+		"A21_LAB_SILICONFLOW_API_KEY=sk-a21-siliconflow-secret",
+		"A21_SILICONFLOW_MODEL=Qwen/Qwen3.5-9B",
+		"A21_SILICONFLOW_BASE_URL=" + server.URL,
+	}, ProviderSmokeOptions{
+		ProviderName: "siliconflow",
+		Execute:      true,
+		Stream:       true,
+		Repeat:       1,
+		Client:       server.Client(),
+	})
+
+	if report.Status != ProviderSmokePassed {
+		t.Fatalf("status = %q, detail = %q", report.Status, report.Detail)
+	}
+	if !sawAuth || !sawModel || !sawStream {
+		t.Fatalf("server saw auth/model/stream = %v/%v/%v, want true/true/true", sawAuth, sawModel, sawStream)
+	}
+	if !report.Configured || !report.Executed || !report.Stream {
+		t.Fatalf("configured/executed/stream = %v/%v/%v, want true/true/true", report.Configured, report.Executed, report.Stream)
+	}
+	if report.RouteEligible {
+		t.Fatal("route_eligible = true, want false for compatibility-only builtin candidate")
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, want := range []string{
+		`"provider":"siliconflow"`,
+		`"status":"passed"`,
+		`"route_eligible":false`,
+		`"endpoint_host":"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("smoke report missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		"sk-a21-siliconflow-secret",
+		"Qwen/Qwen3.5-9B",
+		server.URL,
+		"OK",
+		"A21 provider smoke check",
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("compat smoke report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestProviderSmokeExecutesHotPlugOpenAICompatibleStreamingProfile(t *testing.T) {
 	profilePath := writeProviderSmokeProfileFile(t, `{
 		"name": "a21_ws7a_vendor",

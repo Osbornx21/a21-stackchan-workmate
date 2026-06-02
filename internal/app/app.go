@@ -51,6 +51,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "provider-smoke":
 		return runProviderSmoke(args[1:], stdout, stderr)
+	case "provider-compat-matrix":
+		return runProviderCompatMatrix(args[1:], stdout, stderr)
 	case "provider-evidence-package":
 		return runProviderEvidencePackage(args[1:], stdout, stderr)
 	case "provider-evidence-import":
