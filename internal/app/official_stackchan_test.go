@@ -179,7 +179,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
-		`GetHAL().startXiaozhi();`,
+		`A21 auto-starting Xiaozhi mode after official apps preload`,
+		`GetHAL().requestXiaozhiStart();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
@@ -189,16 +190,17 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	startRuntimeIndex := strings.Index(overlay, `GetHAL().startXiaozhi();`)
-	installLauncherIndex := strings.Index(overlay, `GetMooncake().installApp(std::make_unique<AppLauncher>());`)
-	if volumeIndex < 0 || startRuntimeIndex < 0 || installLauncherIndex < 0 {
+	requestStartIndex := strings.Index(overlay, `GetHAL().requestXiaozhiStart();`)
+	if volumeIndex < 0 || requestStartIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if volumeIndex > startRuntimeIndex || startRuntimeIndex > installLauncherIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume and enter Xiaozhi before setup apps can trap the device")
+	if volumeIndex > requestStartIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before requesting Xiaozhi")
 	}
-	if strings.Contains(overlay, `GetHAL().requestXiaozhiStart();`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must not request Xiaozhi through setup flow after the welcome-screen regression")
+	for _, line := range strings.Split(overlay, "\n") {
+		if strings.HasPrefix(line, "+") && strings.Contains(line, `GetHAL().startXiaozhi();`) {
+			t.Fatalf("official Xiaozhi-compatible overlay must not directly start Xiaozhi before official apps preload: %q", line)
+		}
 	}
 }
 
@@ -239,6 +241,59 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 	}
 	if strings.Contains(overlay, `project(xiaozhi)`) || strings.Contains(overlay, `xiaozhi.bin`) {
 		t.Fatalf("official Xiaozhi-compatible overlay must not point to the bare Xiaozhi app lane")
+	}
+}
+
+func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`,
+		`config A21_STACKCHAN_KEEP_CONTROL_CHANNEL`,
+		`a21_ready_notified_`,
+		`a21_control_retry_notified_`,
+		`EnsureA21ControlChannel`,
+		`A21_NO_SPEECH_LISTENING_TIMEOUT_MS = 7000`,
+		`A21 no-speech timeout, stop listening`,
+		`A21 keeping quiet control websocket open`,
+		`正在连接紫悦服务`,
+		`紫悦服务连接中，请稍等`,
+		`紫悦已就绪，可以叫我`,
+		`MAIN_EVENT_VAD_STOP_TIMEOUT`,
+		`HandleVadChange`,
+		`HandleVadStopTimeoutEvent`,
+		`protocol_->OpenAudioChannel()`,
+		`esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing A21 idle socket contract %q", required)
+		}
+	}
+	for _, line := range strings.Split(overlay, "\n") {
+		if !strings.HasPrefix(line, "+") {
+			continue
+		}
+		for _, forbidden := range []string{
+			`CONFIG_X21_STACKCHAN_KEEP_CONTROL_CHANNEL`,
+			`EnsureX21ControlChannel`,
+			`x21_ready_notified_`,
+			`x21_control_retry_notified_`,
+			`大头`,
+		} {
+			if strings.Contains(line, forbidden) {
+				t.Fatalf("A21 overlay added forbidden legacy/control copy %q in line %q", forbidden, line)
+			}
+		}
 	}
 }
 

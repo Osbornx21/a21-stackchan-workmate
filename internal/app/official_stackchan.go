@@ -2405,6 +2405,17 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 		report.fail("export_head_failed", "failed to export official source HEAD")
 		return
 	}
+
+	fetchLog := filepath.Join(options.BuildDir, "a21-official-fetch.log")
+	buildLog := filepath.Join(options.BuildDir, "a21-official-build.log")
+	_ = os.MkdirAll(options.BuildDir, 0o755)
+
+	report.Build.FetchExecuted = true
+	report.Build.FetchLogPath = fetchLog
+	if err := runLoggedCommand(ctx, filepath.Join(options.WorkDir, "firmware"), fetchLog, "python3", "./fetch_repos.py"); err != nil {
+		report.fail("fetch_repos_failed", "official fetch_repos.py failed")
+		return
+	}
 	for index, overlay := range options.Overlays {
 		cleanOverlay := filepath.Clean(overlay)
 		if containsLegacyIdentityPathToken(cleanOverlay) {
@@ -2418,17 +2429,6 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 		if index < len(report.Overlays) {
 			report.Overlays[index].Applied = true
 		}
-	}
-
-	fetchLog := filepath.Join(options.BuildDir, "a21-official-fetch.log")
-	buildLog := filepath.Join(options.BuildDir, "a21-official-build.log")
-	_ = os.MkdirAll(options.BuildDir, 0o755)
-
-	report.Build.FetchExecuted = true
-	report.Build.FetchLogPath = fetchLog
-	if err := runLoggedCommand(ctx, filepath.Join(options.WorkDir, "firmware"), fetchLog, "python3", "./fetch_repos.py"); err != nil {
-		report.fail("fetch_repos_failed", "official fetch_repos.py failed")
-		return
 	}
 
 	report.Evidence = inspectStackChanOfficialEvidence(options.WorkDir)

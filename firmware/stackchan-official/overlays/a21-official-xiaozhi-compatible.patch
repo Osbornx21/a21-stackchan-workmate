@@ -1,30 +1,63 @@
 diff --git a/firmware/CMakeLists.txt b/firmware/CMakeLists.txt
-index 6f0c64a..f82b55f 100644
+index dbe9da5..ee4d492 100644
 --- a/firmware/CMakeLists.txt
 +++ b/firmware/CMakeLists.txt
-@@ -3,10 +3,8 @@
- cmake_minimum_required(VERSION 3.16)
--
+@@ -4,4 +4,5 @@ cmake_minimum_required(VERSION 3.16)
+
 -set(PROJECT_VER "1.4.1")
 +set(PROJECT_VER "0.1.0-a21-official-xiaozhi-compatible")
  add_definitions(-DFIRMWARE_VERSION=\"${PROJECT_VER}\")
 +add_definitions(-DA21_OEM_AUTOSTART_XIAOZHI=1)
--
- # Add this line to disable the specific warning
- add_compile_options(-Wno-missing-field-initializers)
--
+
+@@ -11,2 +12,2 @@ add_compile_options(-Wno-missing-field-initializers)
  include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 -project(stack-chan)
 +project(a21-stackchan-official-xiaozhi-compatible)
+diff --git a/firmware/main/Kconfig.projbuild b/firmware/main/Kconfig.projbuild
+index 304e48d..f8b985e 100644
+--- a/firmware/main/Kconfig.projbuild
++++ b/firmware/main/Kconfig.projbuild
+@@ -35,2 +35,10 @@ config CUSTOM_ASSETS_FILE
+
++config A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++    bool "A21 keep quiet control websocket open"
++    depends on BOARD_TYPE_M5STACK_STACK_CHAN
++    default n
++    help
++        Keep a websocket channel open while idle so A21 can keep the device
++        online without starting listening audio.
++
+ choice
+diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
+index 164a751..c94a8b0 100644
+--- a/firmware/main/main.cpp
++++ b/firmware/main/main.cpp
+@@ -5,2 +5,4 @@
+  */
++#include <audio/audio_codec.h>
++#include <board.h>
+ #include <smooth_ui_toolkit.hpp>
+@@ -38,2 +40,11 @@ extern "C" void app_main(void)
+
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++    auto* codec = Board::GetInstance().GetAudioCodec();
++    if (codec != nullptr) {
++        codec->SetOutputVolume(92);
++    }
++    mclog::tagInfo("main", "A21 auto-starting Xiaozhi mode after official apps preload");
++    GetHAL().requestXiaozhiStart();
++#endif
++
+     // Main loop
 diff --git a/firmware/sdkconfig.defaults b/firmware/sdkconfig.defaults
-index 3c97e48..8707988 100644
+index 4db623a..aa977b5 100644
 --- a/firmware/sdkconfig.defaults
 +++ b/firmware/sdkconfig.defaults
-@@ -9,7 +9,18 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
- CONFIG_LANGUAGE_EN_US=y
- CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y
+@@ -12,3 +12,16 @@ CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y
  CONFIG_SEND_WAKE_WORD_DATA=n
+-CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3=y
 +CONFIG_OTA_URL="http://101.132.117.182/xiaozhi/ota/"
++CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y
 +# CONFIG_WAKE_WORD_DISABLED is not set
 +# CONFIG_USE_ESP_WAKE_WORD is not set
 +# CONFIG_USE_AFE_WAKE_WORD is not set
@@ -35,37 +68,265 @@ index 3c97e48..8707988 100644
 +# CONFIG_WAKE_WORD_DETECTION_IN_LISTENING is not set
 +# CONFIG_SR_MN_CN_NONE is not set
 +CONFIG_SR_MN_CN_MULTINET7_QUANT=y
--CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3=y
 +# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set
  CONFIG_COMPILER_OPTIMIZATION_SIZE=y
- CONFIG_COMPILER_CXX_EXCEPTIONS=y
-diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
-index 83314f7..3d5a248 100644
---- a/firmware/main/main.cpp
-+++ b/firmware/main/main.cpp
-@@ -3,6 +3,8 @@
-  *
-  * SPDX-License-Identifier: MIT
-  */
-+#include <audio/audio_codec.h>
-+#include <board.h>
- #include <smooth_ui_toolkit.hpp>
- #include <uitk/short_namespace.hpp>
- #include <mooncake_log.h>
-@@ -26,7 +28,15 @@ extern "C" void app_main(void)
-     ui_hal::on_delay([](uint32_t ms) { GetHAL().delay(ms); });
-     ui_hal::on_get_tick([]() { return GetHAL().millis(); });
+diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32/main/application.cc
+index 3b6f07e..396b23a 100644
+--- a/firmware/xiaozhi-esp32/main/application.cc
++++ b/firmware/xiaozhi-esp32/main/application.cc
+@@ -21,2 +21,6 @@
 
-+#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
-+    auto* codec = Board::GetInstance().GetAudioCodec();
-+    if (codec != nullptr) {
-+        codec->SetOutputVolume(92);
++static constexpr int64_t A21_VAD_STOP_DEBOUNCE_MS = 520;
++static constexpr int64_t A21_VAD_MIN_LISTENING_MS = 1200;
++static constexpr int64_t A21_NO_SPEECH_LISTENING_TIMEOUT_MS = 7000;
++
+
+@@ -46,2 +50,14 @@ Application::Application() {
+     esp_timer_create(&clock_timer_args, &clock_timer_handle_);
++
++    esp_timer_create_args_t vad_stop_timer_args = {
++        .callback = [](void* arg) {
++            Application* app = (Application*)arg;
++            xEventGroupSetBits(app->event_group_, MAIN_EVENT_VAD_STOP_TIMEOUT);
++        },
++        .arg = this,
++        .dispatch_method = ESP_TIMER_TASK,
++        .name = "a21_vad_stop_timer",
++        .skip_unhandled_events = true
++    };
++    esp_timer_create(&vad_stop_timer_args, &vad_stop_timer_handle_);
+ }
+@@ -53,2 +69,6 @@ Application::~Application() {
+     }
++    if (vad_stop_timer_handle_ != nullptr) {
++        esp_timer_stop(vad_stop_timer_handle_);
++        esp_timer_delete(vad_stop_timer_handle_);
++    }
+     vEventGroupDelete(event_group_);
+@@ -83,2 +103,6 @@ void Application::Initialize() {
+     callbacks.on_vad_change = [this](bool speaking) {
++        vad_speaking_ = speaking;
++        if (speaking) {
++            vad_speech_seen_ = true;
++        }
+         xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
+@@ -181,3 +205,4 @@ void Application::Run() {
+         MAIN_EVENT_ACTIVATION_DONE |
+-        MAIN_EVENT_STATE_CHANGED;
++        MAIN_EVENT_STATE_CHANGED |
++        MAIN_EVENT_VAD_STOP_TIMEOUT;
+
+@@ -232,2 +257,3 @@ void Application::Run() {
+         if (bits & MAIN_EVENT_VAD_CHANGE) {
++            HandleVadChange(vad_speaking_);
+             if (GetDeviceState() == kDeviceStateListening) {
+@@ -238,2 +264,6 @@ void Application::Run() {
+
++        if (bits & MAIN_EVENT_VAD_STOP_TIMEOUT) {
++            HandleVadStopTimeoutEvent();
++        }
++
+         if (bits & MAIN_EVENT_SCHEDULE) {
+@@ -256,2 +286,7 @@ void Application::Run() {
+             }
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++            if (clock_ticks_ % 10 == 3) {
++                EnsureA21ControlChannel();
++            }
++#endif
+         }
+@@ -263,2 +298,6 @@ void Application::HandleNetworkConnectedEvent() {
+     auto state = GetDeviceState();
++    auto display = Board::GetInstance().GetDisplay();
++    a21_ready_notified_ = false;
++    a21_control_retry_notified_ = false;
++    display->SetChatMessage("system", "正在连接紫悦服务...");
+
+@@ -281,3 +320,2 @@ void Application::HandleNetworkConnectedEvent() {
+     // Update the status bar immediately to show the network state
+-    auto display = Board::GetInstance().GetDisplay();
+     display->UpdateStatusBar(true);
+@@ -288,2 +326,4 @@ void Application::HandleNetworkDisconnectedEvent() {
+     auto state = GetDeviceState();
++    auto display = Board::GetInstance().GetDisplay();
++    a21_ready_notified_ = false;
++    a21_control_retry_notified_ = false;
+     if (state == kDeviceStateConnecting || state == kDeviceStateListening || state == kDeviceStateSpeaking) {
+@@ -294,3 +335,3 @@ void Application::HandleNetworkDisconnectedEvent() {
+     // Update the status bar immediately to show the network state
+-    auto display = Board::GetInstance().GetDisplay();
++    display->SetChatMessage("system", "网络断开，正在重连...");
+     display->UpdateStatusBar(true);
+@@ -309,3 +348,3 @@ void Application::HandleActivationDoneEvent() {
+     display->ShowNotification(message.c_str());
+-    display->SetChatMessage("system", "");
++    display->SetChatMessage("system", "正在连接紫悦服务...");
+
+@@ -319,2 +358,5 @@ void Application::HandleActivationDoneEvent() {
+         audio_service_.PlaySound(Lang::Sounds::OGG_SUCCESS);
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++        EnsureA21ControlChannel();
++#endif
+     });
+@@ -322,2 +364,38 @@ void Application::HandleActivationDoneEvent() {
+
++void Application::EnsureA21ControlChannel() {
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++    if (!protocol_) {
++        return;
++    }
++    if (GetDeviceState() != kDeviceStateIdle) {
++        return;
++    }
++    if (protocol_->IsAudioChannelOpened()) {
++        return;
 +    }
 +
-+    GetHAL().startXiaozhi();
++    auto display = Board::GetInstance().GetDisplay();
++    if (!a21_ready_notified_) {
++        display->SetChatMessage("system", "正在连接紫悦服务...");
++    }
++    ESP_LOGI(TAG, "A21 keeping quiet control websocket open");
++    if (!protocol_->OpenAudioChannel()) {
++        ESP_LOGW(TAG, "A21 quiet control websocket open failed");
++        if (!a21_control_retry_notified_) {
++            display->ShowNotification("紫悦服务连接中，请稍等", 30000);
++            display->SetChatMessage("system", "正在连接紫悦服务...");
++            a21_control_retry_notified_ = true;
++        }
++        return;
++    }
++    a21_control_retry_notified_ = false;
++    if (!a21_ready_notified_) {
++        display->ShowNotification("紫悦已就绪", 5000);
++        display->SetChatMessage("system", "紫悦已就绪，可以叫我");
++        a21_ready_notified_ = true;
++    }
++    SetDeviceState(kDeviceStateIdle);
 +#endif
++}
 +
-     // Install apps
-     GetMooncake().installApp(std::make_unique<AppLauncher>());
-     GetMooncake().installApp(std::make_unique<AppAiAgent>());
-     GetMooncake().installApp(std::make_unique<AppAvatar>());
+ void Application::ActivationTask() {
+@@ -780,2 +858,6 @@ void Application::HandleWakeWordDetectedEvent() {
+     if (!protocol_) {
++        auto display = Board::GetInstance().GetDisplay();
++        display->ShowNotification("紫悦正在启动，稍等一下", 3000);
++        display->SetChatMessage("system", "正在连接紫悦服务...");
++        audio_service_.EnableWakeWordDetection(true);
+         return;
+@@ -833,2 +915,5 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
+             audio_service_.EnableWakeWordDetection(true);
++            auto display = Board::GetInstance().GetDisplay();
++            display->ShowNotification("紫悦服务连接失败，正在重试", 5000);
++            display->SetChatMessage("system", "正在连接紫悦服务...");
+             return;
+@@ -872,2 +957,7 @@ void Application::HandleStateChangedEvent() {
+             display->SetEmotion("neutral"); // Then set emotion (wechat mode checks child count)
++            if (vad_stop_timer_handle_ != nullptr) {
++                esp_timer_stop(vad_stop_timer_handle_);
++            }
++            vad_speaking_ = false;
++            vad_speech_seen_ = false;
+             audio_service_.EnableVoiceProcessing(false);
+@@ -913,2 +1003,7 @@ void Application::HandleStateChangedEvent() {
+             display->SetStatus(Lang::Strings::SPEAKING);
++            if (vad_stop_timer_handle_ != nullptr) {
++                esp_timer_stop(vad_stop_timer_handle_);
++            }
++            vad_speaking_ = false;
++            vad_speech_seen_ = false;
+
+@@ -947,4 +1042,64 @@ void Application::AbortSpeaking(AbortReason reason) {
+
++void Application::HandleVadChange(bool speaking) {
++    if (GetDeviceState() != kDeviceStateListening || listening_mode_ != kListeningModeAutoStop) {
++        return;
++    }
++
++    if (speaking) {
++        vad_speech_seen_ = true;
++        if (vad_stop_timer_handle_ != nullptr) {
++            esp_timer_stop(vad_stop_timer_handle_);
++        }
++        return;
++    }
++
++    if (!vad_speech_seen_ || vad_stop_timer_handle_ == nullptr) {
++        return;
++    }
++
++    int64_t elapsed_ms = (esp_timer_get_time() - listening_started_at_us_) / 1000;
++    int64_t delay_ms = A21_VAD_STOP_DEBOUNCE_MS;
++    if (elapsed_ms < A21_VAD_MIN_LISTENING_MS) {
++        delay_ms += A21_VAD_MIN_LISTENING_MS - elapsed_ms;
++    }
++    esp_timer_stop(vad_stop_timer_handle_);
++    esp_timer_start_once(vad_stop_timer_handle_, delay_ms * 1000);
++    ESP_LOGI(TAG, "A21 device VAD silence detected, stop in %lld ms", (long long)delay_ms);
++}
++
++void Application::HandleVadStopTimeoutEvent() {
++    if (GetDeviceState() != kDeviceStateListening ||
++            listening_mode_ != kListeningModeAutoStop ||
++            vad_speaking_) {
++        return;
++    }
++
++    int64_t elapsed_ms = (esp_timer_get_time() - listening_started_at_us_) / 1000;
++    if (!vad_speech_seen_) {
++        ESP_LOGI(TAG, "A21 no-speech timeout, stop listening elapsed=%lld ms", (long long)elapsed_ms);
++        StopListening();
++        return;
++    }
++
++    if (elapsed_ms < A21_VAD_MIN_LISTENING_MS && vad_stop_timer_handle_ != nullptr) {
++        int64_t delay_ms = A21_VAD_MIN_LISTENING_MS - elapsed_ms + A21_VAD_STOP_DEBOUNCE_MS;
++        esp_timer_start_once(vad_stop_timer_handle_, delay_ms * 1000);
++        return;
++    }
++
++    ESP_LOGI(TAG, "A21 device VAD stop listening elapsed=%lld ms", (long long)elapsed_ms);
++    StopListening();
++}
++
+ void Application::SetListeningMode(ListeningMode mode) {
+     listening_mode_ = mode;
++    listening_started_at_us_ = esp_timer_get_time();
++    vad_speaking_ = false;
++    vad_speech_seen_ = false;
++    if (vad_stop_timer_handle_ != nullptr) {
++        esp_timer_stop(vad_stop_timer_handle_);
++    }
++    if (mode == kListeningModeAutoStop && vad_stop_timer_handle_ != nullptr) {
++        esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);
++    }
+     SetDeviceState(kDeviceStateListening);
+diff --git a/firmware/xiaozhi-esp32/main/application.h b/firmware/xiaozhi-esp32/main/application.h
+index 7ca7af4..46cfdac 100644
+--- a/firmware/xiaozhi-esp32/main/application.h
++++ b/firmware/xiaozhi-esp32/main/application.h
+@@ -33,2 +33,3 @@
+ #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
++#define MAIN_EVENT_VAD_STOP_TIMEOUT     (1 << 13)
+
+@@ -131,2 +132,3 @@ private:
+     esp_timer_handle_t clock_timer_handle_ = nullptr;
++    esp_timer_handle_t vad_stop_timer_handle_ = nullptr;
+     DeviceStateMachine state_machine_;
+@@ -142,2 +144,7 @@ private:
+     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
++    bool vad_speaking_ = false;
++    bool vad_speech_seen_ = false;
++    bool a21_ready_notified_ = false;
++    bool a21_control_retry_notified_ = false;
++    int64_t listening_started_at_us_ = 0;
+     int clock_ticks_ = 0;
+@@ -155,5 +162,8 @@ private:
+     void HandleWakeWordDetectedEvent();
++    void HandleVadChange(bool speaking);
++    void HandleVadStopTimeoutEvent();
+     void ContinueOpenAudioChannel(ListeningMode mode);
+     void ContinueWakeWordInvoke(const std::string& wake_word);
++    void EnsureA21ControlChannel();
+
+     // Activation task (runs in background)

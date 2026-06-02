@@ -3485,3 +3485,120 @@ Current operator validation needed:
 - Try wake phrases: `紫悦`, `紫悦紫悦`, `你好紫悦`, `小紫悦`.
 - Verify whether the green ASR wait now stops within roughly 7 seconds after
   speech is detected.
+
+## 2026-06-03 - T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001 / T-AUDIO-BARE-XIAOZHI-PARITY-001 - Quiet Socket Candidate
+
+Goal:
+
+- Continue from the operator clarification that wake cannot be physically
+  validated before the stock Xiaozhi socket is connected.
+- Keep the official StackChan app/hardware preload surface, but bypass the
+  visible welcome/setup flow.
+- Add graceful not-connected feedback and prevent touch from leaving the device
+  stuck in infinite green listening when no speech is detected.
+- Keep `T-AUDIO-BARE-XIAOZHI-PARITY-001` moving in a separate bounded worker
+  without flashing bare `xiaozhi.bin` or changing accepted audio gain.
+
+Actual completed work:
+
+- Created plan
+  `docs/plans/2026-06-03-boot-idle-socket-and-not-connected-ux.md`, with main
+  transition `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001` and sub-transition
+  `T-BOOT-IDLE-SOCKET-001`.
+- Pulled read-only worker result from thread
+  `019e89d6-2cde-73d1-8865-5073d46baf66` and integrated its non-conflicting
+  operator checklist as
+  `docs/testing/stackchan-boot-idle-socket-ux-runbook.md`.
+- Rebuilt the official-compatible overlay patch so ordinary `git apply` works
+  against the full official StackChan source tree, including the ignored nested
+  `firmware/xiaozhi-esp32` source.
+- Updated the overlay candidate:
+  - install official StackChan apps before the immediate Xiaozhi request;
+  - set codec volume `92`;
+  - request Xiaozhi immediately with A21 autostart copy instead of direct
+    `startXiaozhi()` before app install;
+  - add `CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`;
+  - explicitly disable `CONFIG_X21_STACKCHAN_DEVICE_EVENTS`;
+  - use A21 names for quiet idle socket state;
+  - show `紫悦` connecting/ready copy;
+  - keep `protocol_->OpenAudioChannel()` as quiet idle preconnect;
+  - add `A21_NO_SPEECH_LISTENING_TIMEOUT_MS=7000` so touch-started no-speech
+    listening stops.
+- Updated focused app tests for the new app-preload/no-welcome contract, A21
+  idle socket contract, and Zi Yue custom wake contract.
+- Updated `docs/project_state_machine.md`:
+  - firmware candidate state is now
+    `S5H-STACKCHAN-COMPATIBLE-APP-PRELOAD-QUIET-SOCKET-CANDIDATE`;
+  - `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001` is active;
+  - `T-AUDIO-BARE-XIAOZHI-PARITY-001` is active and worker-dispatched.
+- Dispatched a bounded worktree worker for
+  `T-AUDIO-BARE-XIAOZHI-PARITY-001`; worker is read-only/docs-only, no flash,
+  no provider/V21 execution, no audio playback.
+
+Modified files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/plans/2026-06-03-boot-idle-socket-and-not-connected-ux.md`
+- `docs/testing/stackchan-boot-idle-socket-ux-runbook.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Current unfinished items:
+
+- No-write flash plan and guarded flash execute are still pending.
+- Physical proof is still pending for:
+  - boot connects without touch;
+  - screen shows connecting/ready feedback;
+  - boot preconnect does not send `listen.start`;
+  - touch/no-speech exits green within about 7 seconds;
+  - `紫悦` wake variants work once socket is ready.
+- Audio parity worker has not yet returned.
+
+Known risks and blockers:
+
+- The direct-start package recovered from welcome/setup but skipped app preload;
+  this candidate intentionally changes that behavior, so physical boot must be
+  watched carefully for a welcome-screen regression.
+- A quiet idle Xiaozhi WebSocket may time out if the server expects active
+  traffic; trace reconnection behavior after boot.
+- The patch file needed whitespace-safe unified-diff handling because patch
+  context lines can look like trailing whitespace to `git diff --check`.
+
+Next recommended actions:
+
+1. Run focused tests, ordinary `git apply --check`, and `make verify`.
+2. Build `a21-stackchan-official-xiaozhi-compatible` and inspect
+   `sdkconfig.json` for A21 quiet socket, Zi Yue custom wake, and no X21 device
+   events.
+3. Commit from a clean verified worktree, then run no-write flash plan and
+   guarded product flash on `/dev/cu.usbmodem1101`.
+4. Ask the operator to validate boot/no-touch connection, not-connected UI,
+   no-speech green timeout, and Zi Yue wake variants.
+
+Test/build/run results so far:
+
+- `git -C /Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan apply --check firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`: passed.
+- `git diff --check`: passed.
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake|TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime|TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract|TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecute' -count=1`: passed.
+- `make verify`: passed.
+- `make a21-stackchan-official-xiaozhi-compatible-build`: passed after moving
+  official overlay application to after `fetch_repos.py`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-040613-1780430773893634000.json`.
+- Product app:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- Product app SHA-256:
+  `10fb2896d6096ab12beb81519166f0cb790226894e6d9451222904d2ff9f65f0`.
+- Generated `sdkconfig.json` proves:
+  - `BOARD_TYPE_M5STACK_STACK_CHAN=true`;
+  - `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`;
+  - `USE_CUSTOM_WAKE_WORD=true`;
+  - `CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`;
+  - `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `SR_MN_CN_MULTINET7_QUANT=true`;
+  - `USE_AFE_WAKE_WORD=false`;
+  - `SR_WN_WN9_HISTACKCHAN_TTS3=false`;
+  - `SEND_WAKE_WORD_DATA=false`;
+  - `OTA_URL="http://101.132.117.182/xiaozhi/ota/"`.

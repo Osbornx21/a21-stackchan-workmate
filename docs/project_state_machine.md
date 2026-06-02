@@ -15,6 +15,8 @@ Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`
 - `T-ASR-GREEN-LATENCY-001-XIAOZHI-LISTEN-AUTO-STOP`
+- `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001`
+- `T-AUDIO-BARE-XIAOZHI-PARITY-001`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
 
@@ -192,7 +194,7 @@ Current notable baseline:
 | Control workflow | `S1-REPO-CARRIED-CONTROL` | Commit `69c4bbe`; `docs/agent_handoff_log.md`, `docs/project_state_machine.md`, and `docs/plans/` exist | `S2-WORKER-TRANSITION-OPERATING` |
 | Gateway `/v1/xiaozhi` | `S3-PHYSICAL-DEVICE-CONNECTED` | Gateway on `127.0.0.1:21081` / LAN port `21081` accepted the physical device via stock Xiaozhi WebSocket; trace `a21-trace-44-1b-f6-e2-6a-60` has Opus uplink, VAD, ASR final, provider first content, TTS first audio, and Opus downlink | `S4-AUDIBLE-PLAYBACK-ACCEPTED` |
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
-| Firmware candidate | `S5E-STACKCHAN-COMPATIBLE-ZI-YUE-DIRECT-START-FLASHED` | Commit `7f3225e`; accepted volume product-candidate app SHA-256 `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`; accidental bare wake/Xiaozhi flash report `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json` restored the wrong UI surface and is incident evidence only; corrective StackChan-compatible execute report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-021849-1780424329771759000.json` restored the app; `紫悦` recovery product-candidate build report `reports/a21-stackchan-official-baseline-20260603-030428-1780427068064697000.json` passed with app SHA-256 `3f7dcd291a2efb586f11aa3b6c6ca3003cae0d53be45225854502ccd0e6fa4cf`, custom wake `zi yue` / `紫悦`, threshold `20`, MultiNet7, disabled AFE/HiStackChan WakeNet, direct Xiaozhi autostart before the welcome/setup flow, and official avatar/Xiaozhi runtime preserved; guarded flash execute `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-030818-1780427298506934000.json` passed on `/dev/cu.usbmodem1101`; device reconnected online afterward | `S5F-ZI-YUE-PHYSICAL-WAKE-VERIFIED` |
+| Firmware candidate | `S5H-STACKCHAN-COMPATIBLE-APP-PRELOAD-QUIET-SOCKET-CANDIDATE` | Previous direct-start product flash recovered from the welcome/setup trap but skipped official app preload. Current unbuilt overlay candidate changes the product lane to install official StackChan apps first, set codec volume `92`, immediately `requestXiaozhiStart()`, add `A21_STACKCHAN_KEEP_CONTROL_CHANNEL`, open the stock Xiaozhi WebSocket quietly while idle, show `紫悦` connecting/ready copy, and add a 7s no-speech device-side listen timeout. Focused app tests and ordinary `git apply --check` pass; build/flash/physical proof are still pending. | `S5I-APP-PRELOAD-NO-WELCOME-FLASHED-WAKE-READY` |
 | Device connection/NVS | `S3-LAN-GATEWAY-CONNECTED` | Latest guarded NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json` pointed OTA/WS to the LAN-bound A21 Gateway; reset serial log shows OTA connection to `21081` and activation | `S4-STABLE-RECONNECT-EVIDENCE` |
 | Provider hot-plug | `S4A-SELECTED-PROVIDER-READY-VOICE-CHAIN-CANDIDATE` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` unblocked the host chain through 5080 relay: Iflytek TTS report `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json` passed with first audio `100.299 ms`, and StepFun+Iflytek chain report `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json` passed with text first content `229.077 ms` and TTS first audio `87.947 ms`. After deploying the new Gateway handler, relay WAV playback through stock `/v1/xiaozhi/say` delivered `audio_chunks=40` on trace `a21-trace-provider-playback-wav-1780450901`; operator feedback was positive: "好多了". Worker `019e8974-346e-7912-93b2-77cdbb9f3acf` then refreshed selected-provider readiness with route-eligible DeepSeek evidence: `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json` has `provider.selected=deepseek`, `provider.real_provider_ready=true`, and `provider.smoke_status=passed`; `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json` has `provider.ready=true`. StepFun/Iflytek remains voice-chain candidate evidence rather than being forced into the product provider slot. | `S5-VOICE-CHAIN-EVIDENCE-INGRESS-OR-LONG-DIALOGUE` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
@@ -322,6 +324,144 @@ Rollback path:
 Next state:
 
 - `S-GREEN-ASR-LISTEN-BOUNDED`
+
+### Active T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001: Official Frontend Without Setup Trap
+
+Current state:
+
+- `S-DIRECT-XIAOZHI-START-FLASHED-WAKE-SOCKET-COUPLED`
+
+Target state:
+
+- `S-APP-PRELOAD-NO-WELCOME-IDLE-SOCKET-READY`
+
+Trigger:
+
+- The operator confirmed the request/start variant trapped the physical device
+  on "Welcome! Let's get started", but also asked to preserve official app
+  loading so the full StackChan hardware experience is not lost.
+- The operator also clarified wake cannot be verified before socket connection:
+  before the Xiaozhi socket is established, saying the wake word does nothing;
+  tapping the screen opens the socket by entering an unbounded green listening
+  state.
+
+Actions:
+
+- Use
+  `docs/plans/2026-06-03-boot-idle-socket-and-not-connected-ux.md`.
+- Treat `T-BOOT-IDLE-SOCKET-001` as the sub-transition for quiet socket
+  preconnect and not-connected feedback.
+- Patch the official-compatible product overlay to install official StackChan
+  apps first, then set codec volume and request Xiaozhi immediately without
+  showing the welcome/setup trap.
+- Add A21-named idle control-channel preconnect and `紫悦` connecting/ready
+  feedback.
+- Add device-side no-speech timeout so a touch-started listen without speech
+  exits instead of staying green indefinitely.
+
+Current result:
+
+- Focused overlay tests pass for app-preload autostart, tuned `紫悦` custom
+  wake, A21 quiet idle socket contract, and product-candidate reporting.
+- The overlay patch passes ordinary `git apply --check` against the official
+  source tree and `git diff --check`.
+- `make verify` passed after the build-tool change that applies overlays after
+  `fetch_repos.py`.
+- Official-compatible build passed:
+  `reports/a21-stackchan-official-baseline-20260603-040613-1780430773893634000.json`.
+- Product app SHA-256:
+  `10fb2896d6096ab12beb81519166f0cb790226894e6d9451222904d2ff9f65f0`.
+- Generated `sdkconfig.json` proves
+  `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`,
+  `USE_CUSTOM_WAKE_WORD=true`,
+  `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`,
+  `CUSTOM_WAKE_WORD_THRESHOLD=20`,
+  `SR_MN_CN_MULTINET7_QUANT=true`,
+  `USE_AFE_WAKE_WORD=false`,
+  `SR_WN_WN9_HISTACKCHAN_TTS3=false`, and
+  `SEND_WAKE_WORD_DATA=false`.
+- Flash and physical operator validation are still pending.
+
+Acceptance conditions:
+
+- `make verify` passes.
+- Official-compatible build config proves
+  `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`.
+- Product flash uses only
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+- On boot, the device opens the stock Xiaozhi socket without requiring touch
+  and without sending `listen.start`.
+- The screen shows connecting/ready feedback while the socket is not ready.
+- Touch without speech returns from green listening within the device timeout.
+
+Failure state:
+
+- `F-APP-PRELOAD-WELCOME-TRAP` if the welcome/setup screen appears again.
+- `F-IDLE-SOCKET-STARTS-LISTENING` if boot preconnect sends `listen.start`.
+- `F-TOUCH-GREEN-STILL-INFINITE` if touch still strands the device in green.
+
+Rollback path:
+
+- Revert only this overlay/test/doc transition and reflash the last known
+  official-compatible product app if physical boot, audio, or wake behavior
+  regresses.
+
+Next state:
+
+- `S-APP-PRELOAD-NO-WELCOME-IDLE-SOCKET-READY`
+
+### Active T-AUDIO-BARE-XIAOZHI-PARITY-001: Migrate Bare-Package Audio Advantages
+
+Current state:
+
+- `S-BARE-XIAOZHI-PARITY-FACT-RECORDED`
+
+Target state:
+
+- `S-COMPATIBLE-PRODUCT-AUDIO-PARITY-CHECKLIST-ACTIONABLE`
+
+Trigger:
+
+- The operator-confirmed fact is that the bare `xiaozhi.bin` sounded louder and
+  clearer, but it is a non-product incident artifact because it regressed the
+  StackChan avatar/product UI.
+
+Actions:
+
+- Keep product lane `a21-stackchan-official-xiaozhi-compatible.bin`; do not
+  flash bare `xiaozhi.bin`.
+- Split parity into volume/NVS/MCP proof, TTS source mastering, downlink
+  PCM/Opus/pacer metrics, and official StackChan app/action initialization.
+- Use an independent worker thread for read-only or docs-only parity checklist
+  generation.
+
+Current result:
+
+- Worker dispatch is active for this transition.
+- No new audio/gain/provider behavior has been claimed in the main thread.
+
+Acceptance conditions:
+
+- A parity checklist identifies which differences are already closed, which are
+  host-configurable, and which require physical A/B.
+- The checklist preserves the accepted 3x contest path and does not promote
+  additional Gateway gain without evidence.
+
+Failure state:
+
+- `F-AUDIO-PARITY-BARE-FLASH-REGRESSION` if a worker or main thread attempts to
+  use bare `xiaozhi.bin` as product firmware.
+- `F-AUDIO-PARITY-UNVERIFIED-TUNING` if a change claims louder/clearer physical
+  output without operator recording or trace evidence.
+
+Rollback path:
+
+- Keep current accepted 3x audio path and runtime volume `100`; defer parity
+  tuning until a bounded A/B plan exists.
+
+Next state:
+
+- `S-COMPATIBLE-PRODUCT-AUDIO-PARITY-CHECKLIST-ACTIONABLE`
 
 ### Active T-PROVIDER-002b: Iflytek/Real-TTS Live Chain Unblock
 
@@ -1195,19 +1335,17 @@ Next state:
      resulting trace.
 
 3. `T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001: Official Frontend Without Setup Trap`
-   - Current phase: official request/start flow trapped the device on
-     "Welcome! Let's get started", so the recovery package uses direct Xiaozhi
-     start before setup apps can run.
-   - Next action: plan a no-welcome app preload/professional-mode frontend
-     shape that retains official StackChan hardware affordances without
-     blocking boot or entering setup.
+   - Current phase: active overlay/test candidate preloads official apps,
+     requests Xiaozhi immediately, adds quiet idle socket readiness, and adds
+     `紫悦` not-connected feedback plus no-speech listen timeout.
+   - Next action: run `make verify`, build the official-compatible product app,
+     inspect `sdkconfig.json`, then guarded-flash from a clean worktree.
 
 4. `T-AUDIO-BARE-XIAOZHI-PARITY-001: Migrate Bare-Package Audio Advantages`
-   - Current phase: read-only audit confirmed bare `xiaozhi.bin` was louder and
-     clearer, but remains non-product incident evidence only.
-   - Next action: write a plan, then compare volume/NVS/MCP, source TTS
-     mastering, downlink PCM/Opus metrics, pacer/encoder behavior, and official
-     StackChan app/action initialization in the compatible product lane.
+   - Current phase: active worker dispatched for a bounded parity checklist;
+     no product audio behavior has been changed in this main-thread slice.
+   - Next action: integrate the worker checklist only if it is read-only/docs
+     safe, then plan any A/B before changing provider, gain, or codec behavior.
 
 5. `T-VOICE-CHAIN-EVIDENCE-001: Selected Voice-Chain Readiness Ingress`
    - Current phase: StepFun+Iflytek relay evidence is the best operator
