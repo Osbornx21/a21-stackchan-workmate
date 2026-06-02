@@ -181,6 +181,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 		`codec->SetOutputVolume(92);`,
 		`A21 starting Xiaozhi mode directly after official apps preload`,
 		`GetHAL().startXiaozhi();`,
+		`GetHAL().feedTheDog();`,
+		`GetHAL().delay(1000);`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
@@ -196,6 +198,11 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	}
 	if volumeIndex > startRuntimeIndex {
 		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before starting Xiaozhi")
+	}
+	mainLoopIndex := strings.Index(overlay, `     // Main loop`)
+	feedIndex := strings.Index(overlay, `+        GetHAL().feedTheDog();`)
+	if mainLoopIndex < 0 || feedIndex < 0 || feedIndex > mainLoopIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must park app_main after direct Xiaozhi start before Mooncake main loop")
 	}
 	if strings.Contains(overlay, `+    GetHAL().requestXiaozhiStart();`) {
 		t.Fatalf("official Xiaozhi-compatible overlay must not request through the welcome/setup loop")

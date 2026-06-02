@@ -46,6 +46,10 @@ index 164a751..c94a8b0 100644
 +    }
 +    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
 +    GetHAL().startXiaozhi();
++    while (1) {
++        GetHAL().feedTheDog();
++        GetHAL().delay(1000);
++    }
 +#endif
 +
      // Main loop

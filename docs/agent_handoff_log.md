@@ -4247,3 +4247,86 @@ Current validation request:
 
 - No failure. Scope is intentionally Phase 1: streaming ASR session seam and
   trace-order proof with a mock adapter, not real provider acceptance.
+
+## 2026-06-03 - T-STACKCHAN-APP-PRELOAD-NO-WELCOME-001b - Park After Direct Xiaozhi Start
+
+本轮目标:
+
+- Recover from the operator report that the physical device returned to the
+  first-run "Welcome! Let's get started" page after the multi-wake flash.
+- Preserve the official-compatible product lane and avoid bare `xiaozhi.bin`.
+- Find the root cause before changing firmware again.
+
+实际完成内容:
+
+- Recovered current control state from `AGENTS.md`, `docs/project_state_machine.md`,
+  recent handoff log entries, recent build/flash reports, and current git
+  status.
+- Confirmed the latest product flash was not the bare Xiaozhi lane:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-044234-1780432954645477000.json`
+  flashed `a21-stackchan-official-xiaozhi-compatible.bin` with app SHA-256
+  `a0638a3b9872c98456c4dee9c8503dfa6d6d27f2374b499fe7c36033aeccb575`.
+- Inspected the built binary strings and source export. The binary contains
+  both the A21 direct-start log and the upstream welcome strings, proving the
+  app includes both code paths.
+- Identified the actual root cause: official `Hal::startXiaozhi()` starts
+  Xiaozhi/StackChan tasks and returns. The previous A21 direct-start overlay
+  then fell through into the Mooncake main loop, allowing `AppLauncher` to
+  create `StartupWorker` and render the welcome/setup page.
+- Updated the official-compatible overlay so after direct
+  `GetHAL().startXiaozhi()` it parks `app_main` in a watchdog-feeding sleep
+  loop before the Mooncake main loop can run.
+- Added a focused app test guard requiring the watchdog/delay parking before
+  the Mooncake main loop anchor.
+- Read-only worker notifications also confirmed the streaming ASR provider
+  work is not ready for real acceptance and should not distract from this
+  firmware welcome regression.
+
+修改过的文件:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Official-compatible product build, no-write flash plan, guarded flash
+  execute, and physical no-welcome validation are pending.
+- Wake remains physically unaccepted; do not mark
+  `wake_word.product_ready=true`.
+- Streaming ASR provider is still not real-provider accepted; workers confirmed
+  existing Iflytek/cloud ASR evidence is final-only and Sherpa
+  `streaming_zipformer` is currently WAV/file based.
+
+已知风险和阻塞点:
+
+- Parking `app_main` preserves the Xiaozhi runtime path but bypasses Mooncake
+  app running lifecycle after install. This is intentional for the contest
+  recovery path; full official-app lifecycle parity remains a later transition.
+- If physical device still shows welcome after this build/flash, the next
+  suspect is stale artifact/partition flash mismatch, not this control-flow
+  path.
+
+下一轮建议动作:
+
+1. Run `make verify`.
+2. Commit this hotfix from a clean worktree.
+3. Build and guarded-flash only
+   `a21-stackchan-official-xiaozhi-compatible.bin`, then ask the operator to
+   confirm the welcome/setup page is gone.
+4. After no-welcome is physically clean, validate idle socket, touch no-speech
+   exit, and wake variants `小紫悦`, `你好紫悦`, `紫悦紫悦`, `紫悦`.
+
+测试/构建/运行结果:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime|TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+
+如果中途失败，记录失败位置和原因:
+
+- First focused test run failed because the new test looked for `+    // Main loop`;
+  that line is patch context, not an added line. The test anchor was corrected
+  to search the real patch context line.
