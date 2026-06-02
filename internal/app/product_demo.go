@@ -21,23 +21,24 @@ import (
 )
 
 type productReadinessOptions struct {
-	GatewayURL              string
-	Addr                    string
-	DeviceID                string
-	OutputDir               string
-	ProviderSmokeReport     string
-	ProviderRealtimeReport  string
-	XiaozhiReport           string
-	V21ProfessionalReport   string
-	V21AdapterSmokeReport   string
-	PhysicalStackChanReport string
-	WakeWordFirmwarePlan    string
-	WakeWordFirmwarePackage string
-	UseLatestReports        bool
-	RequireReal             bool
-	OpenBrowser             bool
-	StatusOnly              bool
-	LatestReportFindings    []productReadinessFinding
+	GatewayURL                 string
+	Addr                       string
+	DeviceID                   string
+	OutputDir                  string
+	ProviderSmokeReport        string
+	ProviderRealtimeReport     string
+	XiaozhiReport              string
+	V21ProfessionalReport      string
+	V21AdapterSmokeReport      string
+	PhysicalStackChanReport    string
+	WakeWordFirmwarePlan       string
+	WakeWordFirmwarePackage    string
+	WakeWordPhysicalAcceptance string
+	UseLatestReports           bool
+	RequireReal                bool
+	OpenBrowser                bool
+	StatusOnly                 bool
+	LatestReportFindings       []productReadinessFinding
 }
 
 type productReadinessReport struct {
@@ -190,33 +191,41 @@ type productVoiceReadiness struct {
 }
 
 type productWakeWordReadiness struct {
-	Available                bool   `json:"available"`
-	ProductReady             bool   `json:"product_ready"`
-	SchemaVersion            string `json:"schema_version,omitempty"`
-	Mode                     string `json:"mode"`
-	ActivePhrase             string `json:"active_phrase,omitempty"`
-	ActivePinyin             string `json:"active_pinyin,omitempty"`
-	DesiredPhrase            string `json:"desired_phrase,omitempty"`
-	DesiredPinyin            string `json:"desired_pinyin,omitempty"`
-	Threshold                int    `json:"threshold,omitempty"`
-	RuntimeStatus            string `json:"runtime_status"`
-	RuntimeConfigurable      bool   `json:"runtime_configurable"`
-	FirmwareBuildRequired    bool   `json:"firmware_build_required"`
-	Code                     string `json:"code,omitempty"`
-	FirmwarePlanAvailable    bool   `json:"firmware_plan_available"`
-	FirmwarePlanStatus       string `json:"firmware_plan_status,omitempty"`
-	FirmwarePlanSource       string `json:"firmware_plan_source_report,omitempty"`
-	FirmwarePlanDryRun       bool   `json:"firmware_plan_dry_run"`
-	FirmwarePlanBuild        bool   `json:"firmware_plan_build_allowed"`
-	FirmwarePlanFlash        bool   `json:"firmware_plan_flash_allowed"`
-	FirmwarePackageAvailable bool   `json:"firmware_package_available"`
-	FirmwarePackageStatus    string `json:"firmware_package_status,omitempty"`
-	FirmwarePackageSource    string `json:"firmware_package_source_report,omitempty"`
-	FirmwarePackageArtifact  string `json:"firmware_package_artifact_name,omitempty"`
-	FirmwarePackageManifest  string `json:"firmware_package_manifest_name,omitempty"`
-	FirmwarePackageWritten   bool   `json:"firmware_package_written"`
-	FirmwarePackageFlash     bool   `json:"firmware_package_flash_allowed"`
-	FirmwarePackageExecuted  bool   `json:"firmware_package_flash_executed"`
+	Available                     bool   `json:"available"`
+	ProductReady                  bool   `json:"product_ready"`
+	SchemaVersion                 string `json:"schema_version,omitempty"`
+	Mode                          string `json:"mode"`
+	ActivePhrase                  string `json:"active_phrase,omitempty"`
+	ActivePinyin                  string `json:"active_pinyin,omitempty"`
+	DesiredPhrase                 string `json:"desired_phrase,omitempty"`
+	DesiredPinyin                 string `json:"desired_pinyin,omitempty"`
+	Threshold                     int    `json:"threshold,omitempty"`
+	RuntimeStatus                 string `json:"runtime_status"`
+	RuntimeConfigurable           bool   `json:"runtime_configurable"`
+	FirmwareBuildRequired         bool   `json:"firmware_build_required"`
+	Code                          string `json:"code,omitempty"`
+	FirmwarePlanAvailable         bool   `json:"firmware_plan_available"`
+	FirmwarePlanStatus            string `json:"firmware_plan_status,omitempty"`
+	FirmwarePlanSource            string `json:"firmware_plan_source_report,omitempty"`
+	FirmwarePlanDryRun            bool   `json:"firmware_plan_dry_run"`
+	FirmwarePlanBuild             bool   `json:"firmware_plan_build_allowed"`
+	FirmwarePlanFlash             bool   `json:"firmware_plan_flash_allowed"`
+	FirmwarePackageAvailable      bool   `json:"firmware_package_available"`
+	FirmwarePackageStatus         string `json:"firmware_package_status,omitempty"`
+	FirmwarePackageSource         string `json:"firmware_package_source_report,omitempty"`
+	FirmwarePackageArtifact       string `json:"firmware_package_artifact_name,omitempty"`
+	FirmwarePackageManifest       string `json:"firmware_package_manifest_name,omitempty"`
+	FirmwarePackageWritten        bool   `json:"firmware_package_written"`
+	FirmwarePackageFlash          bool   `json:"firmware_package_flash_allowed"`
+	FirmwarePackageExecuted       bool   `json:"firmware_package_flash_executed"`
+	PhysicalAcceptanceAvailable   bool   `json:"physical_acceptance_available"`
+	PhysicalAcceptanceStatus      string `json:"physical_acceptance_status,omitempty"`
+	PhysicalAcceptanceSource      string `json:"physical_acceptance_source_report,omitempty"`
+	PhysicalAcceptanceFlashReport string `json:"physical_acceptance_flash_report,omitempty"`
+	PhysicalDeviceOnline          bool   `json:"physical_device_online"`
+	PhysicalFirmwareFlashed       bool   `json:"physical_firmware_flash_executed"`
+	PhysicalOperatorObserved      bool   `json:"physical_operator_custom_wake_observation_present"`
+	PhysicalWakePhraseMatched     bool   `json:"physical_wake_phrase_matched"`
 }
 
 type productServerSideReadiness struct {
@@ -287,7 +296,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -331,6 +340,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--wake-word-firmware-package-report":
 			if !readStringOption(args, &i, stderr, "--wake-word-firmware-package-report", &options.WakeWordFirmwarePackage) {
+				return 2
+			}
+		case "--wake-word-physical-acceptance-report":
+			if !readStringOption(args, &i, stderr, "--wake-word-physical-acceptance-report", &options.WakeWordPhysicalAcceptance) {
 				return 2
 			}
 		case "--use-latest-reports":
@@ -635,6 +648,21 @@ func resolveLatestProductWakeWordFirmwarePackage(options *productReadinessOption
 	return findings
 }
 
+func resolveLatestProductWakeWordPhysicalAcceptance(options *productReadinessOptions, wakeWord productWakeWordReadiness, packageEvidence productWakeWordFirmwarePackageEvidence) []productReadinessFinding {
+	if options == nil || !options.UseLatestReports || strings.TrimSpace(options.WakeWordPhysicalAcceptance) != "" {
+		return nil
+	}
+	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
+	selected, findings := latestAcceptedProductReadinessReportPath(reportDir, "wake_word_physical_acceptance", []string{
+		"a21-wake-word-physical-acceptance-*.json",
+	}, func(path string) bool {
+		evidence, _ := loadProductWakeWordPhysicalAcceptanceEvidence(path)
+		return evidence.Valid && matchingProductWakeWordPhysicalAcceptance(wakeWord, packageEvidence, evidence)
+	})
+	options.WakeWordPhysicalAcceptance = selected
+	return findings
+}
+
 type productLatestReadinessReportKind struct {
 	Kind     string
 	Patterns []string
@@ -748,6 +776,12 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.Findings = append(report.Findings, wakeWordPackageFindings...)
 	if wakeWordPackage.Valid {
 		report.Findings = append(report.Findings, attachProductWakeWordFirmwarePackage(&report.WakeWord, wakeWordPackage)...)
+	}
+	report.Findings = append(report.Findings, resolveLatestProductWakeWordPhysicalAcceptance(&options, report.WakeWord, wakeWordPackage)...)
+	wakeWordPhysicalAcceptance, wakeWordPhysicalAcceptanceFindings := loadProductWakeWordPhysicalAcceptanceEvidence(options.WakeWordPhysicalAcceptance)
+	report.Findings = append(report.Findings, wakeWordPhysicalAcceptanceFindings...)
+	if wakeWordPhysicalAcceptance.Valid {
+		report.Findings = append(report.Findings, attachProductWakeWordPhysicalAcceptance(&report.WakeWord, wakeWordPackage, wakeWordPhysicalAcceptance)...)
 	}
 	report.Findings = append(report.Findings, resolveLatestProductV21Reports(&options, report.V21)...)
 	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
@@ -1963,6 +1997,251 @@ func productWakeWordFirmwarePackageContainsForbiddenValue(value any) bool {
 	return false
 }
 
+type productWakeWordPhysicalAcceptanceEvidence struct {
+	Valid                                bool
+	Status                               string
+	ProductReady                         bool
+	SourceReport                         string
+	Mode                                 string
+	DesiredPhrase                        string
+	DesiredPinyin                        string
+	Threshold                            int
+	PackageSourceReport                  string
+	PackageArtifactName                  string
+	PackageManifestName                  string
+	PhysicalDeviceOnline                 bool
+	FirmwareFlashExecuted                bool
+	GuardedFlashReportSource             string
+	OperatorCustomWakeObservationPresent bool
+	WakePhraseMatched                    bool
+	FalseWakeAccepted                    bool
+	StockWakeAccepted                    bool
+	RedactionOK                          bool
+}
+
+type productWakeWordPhysicalAcceptanceFixture struct {
+	SchemaVersion                        string `json:"schema_version"`
+	GeneratedAtMS                        *int64 `json:"generated_at_ms"`
+	Status                               string `json:"status"`
+	ProductReady                         *bool  `json:"product_ready"`
+	Mode                                 string `json:"mode"`
+	DesiredPhrase                        string `json:"desired_phrase"`
+	DesiredPinyin                        string `json:"desired_pinyin"`
+	Threshold                            *int   `json:"threshold"`
+	PackageSourceReport                  string `json:"package_source_report"`
+	PackageArtifactName                  string `json:"package_artifact_name"`
+	PackageManifestName                  string `json:"package_manifest_name"`
+	PhysicalDeviceOnline                 *bool  `json:"physical_device_online"`
+	FirmwareFlashExecuted                *bool  `json:"firmware_flash_executed"`
+	GuardedFlashReportSource             string `json:"guarded_flash_report_source"`
+	OperatorCustomWakeObservationPresent *bool  `json:"operator_custom_wake_observation_present"`
+	WakePhraseMatched                    *bool  `json:"wake_phrase_matched"`
+	FalseWakeAccepted                    *bool  `json:"false_wake_accepted"`
+	StockWakeAccepted                    *bool  `json:"stock_wake_accepted"`
+	RedactionOK                          *bool  `json:"redaction_ok"`
+	ReportPath                           string `json:"report_path"`
+}
+
+func loadProductWakeWordPhysicalAcceptanceEvidence(path string) (productWakeWordPhysicalAcceptanceEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productWakeWordPhysicalAcceptanceEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productWakeWordPhysicalAcceptanceContainsForbiddenValue(raw) {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	var fixture productWakeWordPhysicalAcceptanceFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	if missingField := missingProductWakeWordPhysicalAcceptanceField(fixture); missingField != "" {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{missingProductWakeWordPhysicalAcceptanceFieldFinding(missingField)}
+	}
+	if !validProductWakeWordPhysicalAcceptanceFixture(fixture) {
+		return productWakeWordPhysicalAcceptanceEvidence{}, []productReadinessFinding{invalidProductWakeWordPhysicalAcceptanceFinding()}
+	}
+	return productWakeWordPhysicalAcceptanceEvidence{
+		Valid:                                true,
+		Status:                               strings.TrimSpace(fixture.Status),
+		ProductReady:                         *fixture.ProductReady,
+		SourceReport:                         filepath.Base(filepath.Clean(path)),
+		Mode:                                 strings.TrimSpace(fixture.Mode),
+		DesiredPhrase:                        strings.TrimSpace(fixture.DesiredPhrase),
+		DesiredPinyin:                        strings.TrimSpace(fixture.DesiredPinyin),
+		Threshold:                            *fixture.Threshold,
+		PackageSourceReport:                  strings.TrimSpace(fixture.PackageSourceReport),
+		PackageArtifactName:                  strings.TrimSpace(fixture.PackageArtifactName),
+		PackageManifestName:                  strings.TrimSpace(fixture.PackageManifestName),
+		PhysicalDeviceOnline:                 *fixture.PhysicalDeviceOnline,
+		FirmwareFlashExecuted:                *fixture.FirmwareFlashExecuted,
+		GuardedFlashReportSource:             strings.TrimSpace(fixture.GuardedFlashReportSource),
+		OperatorCustomWakeObservationPresent: *fixture.OperatorCustomWakeObservationPresent,
+		WakePhraseMatched:                    *fixture.WakePhraseMatched,
+		FalseWakeAccepted:                    *fixture.FalseWakeAccepted,
+		StockWakeAccepted:                    *fixture.StockWakeAccepted,
+		RedactionOK:                          *fixture.RedactionOK,
+	}, nil
+}
+
+func attachProductWakeWordPhysicalAcceptance(readiness *productWakeWordReadiness, packageEvidence productWakeWordFirmwarePackageEvidence, evidence productWakeWordPhysicalAcceptanceEvidence) []productReadinessFinding {
+	if !matchingProductWakeWordPhysicalAcceptance(*readiness, packageEvidence, evidence) {
+		return []productReadinessFinding{{
+			Code:    "wake_word_physical_acceptance_mismatch",
+			Message: "Wake word physical acceptance report does not match the current Gateway wake-word intent and firmware package",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	readiness.ProductReady = true
+	readiness.PhysicalAcceptanceAvailable = true
+	readiness.PhysicalAcceptanceStatus = evidence.Status
+	readiness.PhysicalAcceptanceSource = evidence.SourceReport
+	readiness.PhysicalAcceptanceFlashReport = evidence.GuardedFlashReportSource
+	readiness.PhysicalDeviceOnline = evidence.PhysicalDeviceOnline
+	readiness.PhysicalFirmwareFlashed = evidence.FirmwareFlashExecuted
+	readiness.PhysicalOperatorObserved = evidence.OperatorCustomWakeObservationPresent
+	readiness.PhysicalWakePhraseMatched = evidence.WakePhraseMatched
+	return []productReadinessFinding{{
+		Code:    "wake_word_physical_acceptance_available",
+		Message: "Wake word physical acceptance evidence is available for the current custom MultiNet package",
+		Detail:  evidence.SourceReport,
+	}}
+}
+
+func matchingProductWakeWordPhysicalAcceptance(readiness productWakeWordReadiness, packageEvidence productWakeWordFirmwarePackageEvidence, evidence productWakeWordPhysicalAcceptanceEvidence) bool {
+	return readiness.Available &&
+		packageEvidence.Valid &&
+		matchingProductWakeWordFirmwarePackage(readiness, packageEvidence) &&
+		evidence.Valid &&
+		evidence.ProductReady &&
+		strings.TrimSpace(readiness.Mode) == evidence.Mode &&
+		strings.TrimSpace(readiness.DesiredPhrase) == evidence.DesiredPhrase &&
+		strings.TrimSpace(readiness.DesiredPinyin) == evidence.DesiredPinyin &&
+		readiness.Threshold == evidence.Threshold &&
+		evidence.PackageSourceReport == packageEvidence.SourceReport &&
+		evidence.PackageArtifactName == packageEvidence.ArtifactName &&
+		evidence.PackageManifestName == packageEvidence.ManifestName &&
+		evidence.PhysicalDeviceOnline &&
+		evidence.FirmwareFlashExecuted &&
+		evidence.OperatorCustomWakeObservationPresent &&
+		evidence.WakePhraseMatched &&
+		!evidence.FalseWakeAccepted &&
+		!evidence.StockWakeAccepted &&
+		evidence.RedactionOK
+}
+
+func validProductWakeWordPhysicalAcceptanceFixture(fixture productWakeWordPhysicalAcceptanceFixture) bool {
+	if fixture.SchemaVersion != wakeWordPhysicalAcceptanceSchema ||
+		*fixture.GeneratedAtMS <= 0 ||
+		strings.TrimSpace(fixture.Status) != "accepted" ||
+		!*fixture.ProductReady ||
+		strings.TrimSpace(fixture.Mode) != wakeWordFirmwareCustomMode ||
+		strings.TrimSpace(fixture.DesiredPhrase) == "" ||
+		strings.TrimSpace(fixture.DesiredPinyin) == "" ||
+		*fixture.Threshold < 1 ||
+		*fixture.Threshold > 100 ||
+		!productWakeWordFirmwarePackageBasenameOK(fixture.PackageSourceReport, ".json") ||
+		!productWakeWordFirmwarePackageBasenameOK(fixture.PackageArtifactName, ".bin") ||
+		!productWakeWordFirmwarePackageBasenameOK(fixture.PackageManifestName, ".json") ||
+		!*fixture.PhysicalDeviceOnline ||
+		!*fixture.FirmwareFlashExecuted ||
+		!productWakeWordFirmwarePackageBasenameOK(fixture.GuardedFlashReportSource, ".json") ||
+		!*fixture.OperatorCustomWakeObservationPresent ||
+		!*fixture.WakePhraseMatched ||
+		*fixture.FalseWakeAccepted ||
+		*fixture.StockWakeAccepted ||
+		!*fixture.RedactionOK ||
+		!productWakeWordFirmwarePackageBasenameOK(fixture.ReportPath, ".json") {
+		return false
+	}
+	return true
+}
+
+func missingProductWakeWordPhysicalAcceptanceField(fixture productWakeWordPhysicalAcceptanceFixture) string {
+	switch {
+	case fixture.GeneratedAtMS == nil:
+		return "generated_at_ms"
+	case fixture.ProductReady == nil:
+		return "product_ready"
+	case fixture.Threshold == nil:
+		return "threshold"
+	case fixture.PhysicalDeviceOnline == nil:
+		return "physical_device_online"
+	case fixture.FirmwareFlashExecuted == nil:
+		return "firmware_flash_executed"
+	case fixture.OperatorCustomWakeObservationPresent == nil:
+		return "operator_custom_wake_observation_present"
+	case fixture.WakePhraseMatched == nil:
+		return "wake_phrase_matched"
+	case fixture.FalseWakeAccepted == nil:
+		return "false_wake_accepted"
+	case fixture.StockWakeAccepted == nil:
+		return "stock_wake_accepted"
+	case fixture.RedactionOK == nil:
+		return "redaction_ok"
+	default:
+		return ""
+	}
+}
+
+func missingProductWakeWordPhysicalAcceptanceFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "wake_word_physical_acceptance_missing_field",
+		Message: "Wake word physical acceptance report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductWakeWordPhysicalAcceptanceFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "wake_word_physical_acceptance_invalid",
+		Message: "Wake word physical acceptance report is invalid or unsafe",
+	}
+}
+
+func productWakeWordPhysicalAcceptanceContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productWakeWordPhysicalAcceptanceContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productWakeWordPhysicalAcceptanceContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		lower := strings.ToLower(typed)
+		if containsLegacyIdentity(typed) {
+			return true
+		}
+		for _, forbidden := range []string{"http://", "https://", "/users/", "secret", "token", "proxy", "transcript", "provider output", "raw audio", "base64"} {
+			if strings.Contains(lower, forbidden) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func buildProductStackChanReadiness(deviceReport firmwareDeviceReport, deviceID string) productStackChanReadiness {
 	readiness := productStackChanReadiness{
 		DeviceID:               deviceID,
@@ -2173,6 +2452,8 @@ func productMissingReportFieldPrefix(code string) string {
 		return "wake_word_firmware_plan"
 	case "wake_word_firmware_package_missing_field":
 		return "wake_word_firmware_package"
+	case "wake_word_physical_acceptance_missing_field":
+		return "wake_word_physical_acceptance"
 	case "v21_professional_report_missing_field":
 		return "v21_professional_report"
 	case "v21_adapter_smoke_report_missing_field":

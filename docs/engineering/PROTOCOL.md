@@ -228,6 +228,22 @@ and writes a structured diagnostic package report with
 `wake_word_firmware_build_dir_missing|wake_word_firmware_build_receipt_missing`,
 `package_written=false`, `flash_allowed=false`, and `product_ready=false`.
 
+`a21 wake-word-physical-acceptance --package-report <package.json>
+--proof-report <physical-proof.json> [--output-dir reports]` is the post-flash
+custom wake-word acceptance boundary. It consumes a matching
+`a21.wake_word_firmware_package.v1` package report plus a redacted
+`a21.wake_word_physical_proof.v1` operator/hardware proof and writes
+`a21.wake_word_physical_acceptance.v1`. The acceptance report stores only
+basename package/proof pointers and booleans for physical device online,
+guarded flash executed, operator custom-wake observation, phrase match,
+false-wake rejection, stock-wake rejection, and redaction. It does not flash,
+touch serial, start Gateway, run providers, store audio, or store paths/URLs.
+`product-readiness --wake-word-physical-acceptance-report <report.json>` closes
+only `wake_word.product_ready` and server-side `wake_word_ready` when the
+acceptance report matches the current Gateway custom MultiNet intent and the
+same firmware package evidence. Full launch still requires the separate
+physical StackChan PRD acceptance report.
+
 ### Fast Companion Runtime
 
 `POST /v1/fast-companion/turn` remains a Gateway-owned fast companion seam.
