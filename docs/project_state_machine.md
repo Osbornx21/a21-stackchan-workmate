@@ -9,14 +9,13 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-PHYSICAL-XIAOZHI-AUDIO-HOTFIX-INTEGRATED`
+Current total state: `S-HW-PHYSICAL-XIAOZHI-VOICE-CHAIN-CANDIDATE-POSITIVE`
 
 Active child transitions:
 
-- `T-PROVIDER-002b-IFLYTEK-REAL-TTS-LIVE-CHAIN-UNBLOCK`
-- `T-PROVIDER-PLAYBACK-001-STOCK-XIAOZHI-RELAY-WAV-PLAYBACK`
-- `T-HALF-DUPLEX-001-NORMAL-DIALOGUE-ECHO-SUPPRESSION-ACCEPTANCE`
-- `T-FW-003-GUARDED-CUSTOM-WAKE-FLASH-AND-PHYSICAL-PROOF`
+- `T-HALF-DUPLEX-002-NORMAL-DIALOGUE-OBSERVATION-OR-DIAGNOSTIC-CAPABILITY`
+- `T-WAKE-FLASH-GATE-001-RESTORE-REVIEWED-A21-WAKE-BUILD-DIR`
+- `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -37,9 +36,11 @@ boundaries; commit `b5a405e` is the current integration baseline. The old
 `sherpa_onnx` local voice is now only an emergency/diagnostic fallback for this
 contest path; `voice_clone_cli` remains the retained A21 voice-clone seam for
 IndexTTS2/CosyVoice/F5-TTS/GPT-SoVITS and must not be removed just because the
-immediate fast-dialogue path selects Iflytek. The current control focus is now
-three parallel transitions: unblock the live real-TTS chain, collect normal
-dialogue half-duplex evidence, and prepare guarded custom wake flash/proof.
+immediate fast-dialogue path selects Iflytek. The 2026-06-03 control-tower
+worker fan-out refreshed selected-provider readiness without falling back to
+`mock`, confirmed the StepFun+Iflytek relay chain remains voice-chain candidate
+evidence, and left half-duplex plus wake in explicit blocked states instead of
+pretending the contest path is fully green.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -130,15 +131,15 @@ Current notable baseline:
 | Official StackChan avatar/action relay | `S2-HOST-READY` | Gateway/transport mapping exists for official StackChan packets | `S3-FLASHED-OFFICIAL-CANDIDATE` |
 | Firmware candidate | `S5B-VOLUME-CANDIDATE-FLASHED` | Commit `f0603f5`; foreground flash report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-230350-1780412630917666000.json`; app SHA-256 `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`; rollback baseline remains report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-204606-1780404366296223000.json`, app SHA-256 `8a759546961f5244622d8a1ebd9cbfc92274893bbe0ce0bc460922eb2490dd6d` | `S6-PRD-PHYSICAL-ACCEPTED` |
 | Device connection/NVS | `S3-LAN-GATEWAY-CONNECTED` | Latest guarded NVS execution `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260602-212542-1780406742553040000.json` pointed OTA/WS to the LAN-bound A21 Gateway; reset serial log shows OTA connection to `21081` and activation | `S4-STABLE-RECONNECT-EVIDENCE` |
-| Provider hot-plug | `S3F-5080-RELAY-WAV-PHYSICAL-OPERATOR-POSITIVE` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` unblocked the host chain through 5080 relay: Iflytek TTS report `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json` passed with first audio `100.299 ms`, and StepFun+Iflytek chain report `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json` passed with text first content `229.077 ms` and TTS first audio `87.947 ms`. After deploying the new Gateway handler, relay WAV playback through stock `/v1/xiaozhi/say` delivered `audio_chunks=40` on trace `a21-trace-provider-playback-wav-1780450901`; operator feedback was positive: "好多了". | `S4-STEPFUN-IFLYTEK-CANDIDATE-RUNNING` |
+| Provider hot-plug | `S4A-SELECTED-PROVIDER-READY-VOICE-CHAIN-CANDIDATE` | Read-only worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` confirmed usable explicit provider evidence: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json` passed with `executed=true`, `stream=true`, `repeat=5`, `route_eligible=true`, and `first_content_p95_ms=745.516`; local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json` passed when selected explicitly; readiness `reports/a21-product-readiness-20260602-160841.json` has `provider.real_provider_ready=true` and `server_side.provider_evidence_ready=true`. 5080 report `outbox/A21-VOICE-FULL-REPORT.md` was read through the established `5080lab` outbox lane and recommends StepFun `step-1-8k` for real-time text stream plus Iflytek TTS for real-time 16 kHz PCM synthesis. The source report contained plaintext credentials, so repo docs/logs record only env names and redacted provider identity. Current code lets explicit StepFun/compatibility text-stream profiles run without promoting product route eligibility, exposes `iflytek_tts` through CLI and voice-pipeline TTS selection, and preserves `voice_clone_cli` as the voice-clone path. Worker `019e8954-e65c-72a2-9847-a17a59a0ad6b` unblocked the host chain through 5080 relay: Iflytek TTS report `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json` passed with first audio `100.299 ms`, and StepFun+Iflytek chain report `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json` passed with text first content `229.077 ms` and TTS first audio `87.947 ms`. After deploying the new Gateway handler, relay WAV playback through stock `/v1/xiaozhi/say` delivered `audio_chunks=40` on trace `a21-trace-provider-playback-wav-1780450901`; operator feedback was positive: "好多了". Worker `019e8974-346e-7912-93b2-77cdbb9f3acf` then refreshed selected-provider readiness with route-eligible DeepSeek evidence: `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json` has `provider.selected=deepseek`, `provider.real_provider_ready=true`, and `provider.smoke_status=passed`; `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json` has `provider.ready=true`. StepFun/Iflytek remains voice-chain candidate evidence rather than being forced into the product provider slot. | `S5-VOICE-CHAIN-EVIDENCE-INGRESS-OR-LONG-DIALOGUE` |
 | V21 adapter | `S2-HOST-READY` | Adapter contract exists; no firmware key or V21 internals should leak into A21 | `S3-PROFESSIONAL-EVIDENCE-RUN` |
 | Memory/personality | `S1-IMPLEMENTED-HOST` | Host-side memory/personality work exists but needs current PRD burn-down refresh | `S2-READINESS-REVIEWED` |
 | Physical StackChan acceptance | `S3C-RELAY-WAV-PLAYBACK-OPERATOR-POSITIVE-HALF-DUPLEX-BLOCKED` | Physical stock Xiaozhi path was online; runtime volume `100` and 3x `/v1/xiaozhi/say` were delivered to `44:1b:f6:e2:6a:60`; accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. On 2026-06-03 the Gateway was restarted from this branch, device `44:1b:f6:e2:6a:60` reconnected online, runtime volume `100` was delivered via stock MCP trace `a21-trace-relay-playback-volume-1780450901`, and relay WAV playback trace `a21-trace-provider-playback-wav-1780450901` delivered `40` stock Xiaozhi Opus downlink chunks. Operator feedback was "好多了". Full PRD accepted remains false because custom wake and broader dialogue half-duplex evidence are still pending. | `S4-PRD-PHYSICAL-ACCEPTED` |
 | Xiaozhi audio/protocol | `S3D-LIVE-SAY-HOTFIX-RUNNING` | Plan `docs/plans/2026-06-02-stackchan-audio-official-parity-hotfix.md`; server/downlink hello restored to stock-compatible 24 kHz while client/uplink remains 16 kHz; stock physical MAC devices no longer receive unsupported server `type=listen` replies; `/v1/xiaozhi/say` delivers TTS lifecycle and Opus binary to the live stock socket for text and now accepts a local 16 kHz mono WAV through `wav_path` with basename-only response metadata; focused Gateway/transport/app tests pass | `S4-PHYSICAL-STOCK-AUDIO-RETESTED` |
 | TTS/audio quality | `S7A-RELAY-VOICE-PHYSICAL-OPERATOR-POSITIVE` | Recording `9.m4a` from 3 seconds stayed weak at `-36.99 LUFS` and `-16.05 dBTP`; bounded Gateway PCM leveling at 4x produced `/Users/jiyurun/Downloads/纳仕张江国际社区云庐B区.m4a` at `-21.65 LUFS` and `-4.72 dBTP`, but the operator reported subtle electrical interruption and reduced clarity. Follow-up recording `/Users/jiyurun/Downloads/浦东新区第二中心小学(申江校区) 3.m4a` measured `-26.4 LUFS` and `-9.0 dBFS` true peak from 3 seconds. Current code uses bounded 3x gain, noise gate, and headroom; live 3x trace `a21-trace-stackchan-say-1780417217` delivered `579` chunks. Operator accepted final recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a`, measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds. Iflytek TTS is now coded as the immediate clearer TTS source; `voice_clone_cli` remains the voice-clone/persona seam; old `sherpa_onnx` is emergency/diagnostic only. Live Mac direct Iflytek smoke extracted the 5080 report credentials in memory without printing them, then failed at WebSocket dial; redacted report `reports/provider-tts-candidate/a21-local-tts-smoke-20260603-010638.json` has `status=failed`, `network_mode=direct`, finding `iflytek_tts_websocket_dial_failed`. 5080 relay host-chain WAV `reports/provider-tts-candidate/a21-stepfun-iflytek-chain-5080-relay-20260603-0128.wav` was delivered physically through stock `/v1/xiaozhi/say`; operator reported it was much better. Next improvement is selected-provider/readiness evidence and longer normal dialogue acceptance, not additional Gateway gain. | `S7-IFLYTEK-TTS-PHYSICAL-ACCEPTED` |
 | StackChan volume/action control | `S5-RUNTIME-VOLUME100-PHYSICAL-ACCEPTED` | `POST /v1/xiaozhi/speaker-volume` delivered official MCP `self.audio_speaker.set_volume` with `volume=100` to live device `44:1b:f6:e2:6a:60`; latest 3x trace is `a21-trace-stackchan-volume-1780417211`. Desktop helper supports both `volume` and `say`; physical loudness is accepted through final operator recording `10.m4a`. | `S6-FROZEN-FOR-CONTEST-FLOW` |
-| Half-duplex / echo control | `S2D-INSTRUMENTED-HALF-DUPLEX-BLOCKED-NONDIAGNOSTIC-FIRMWARE` | `/v1/xiaozhi/say` now arms a short input-suppression window for stock physical devices after host-say completion; focused test proves immediate listen restart and Opus echo are ignored without starting a new voice pipeline. Physical 3x trace `a21-trace-stackchan-say-1780417217` recorded `xiaozhi.say.input_suppression_armed=1` and `xiaozhi.listen.start.input_suppressed=1`. After relay WAV playback, `make stackchan-half-duplex-acceptance` produced `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json` with `half_duplex_acceptance_status=blocked`: current stock firmware lacks A21 identity, diagnostic mic-probe capability, and runtime echo counters. Normal dialogue half-duplex is not yet physically accepted. | `S3-PHYSICAL-NO-SELF-TRIGGER-AFTER-TTS` |
-| Wake word | `S2C-CUSTOM-WAKE-PACKAGE-INTEGRITY-PASSED-BUILD-DIR-MISSING` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` is `status=packaged`, `package_written=true`, but `product_ready=false`, `flash_allowed=false`, and `flash_executed=false`. Current official-compatible physical firmware has not merged/flashed this package, so the live device still relies on stock Xiaozhi WakeNet/touch. Worker `019e8956-9692-7ae1-bc14-99a311b1c080` verified artifact SHA-256 `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`, size `2853680`, and matching manifest; readiness report `reports/a21-product-readiness-20260603-011911.json` stayed blocked as expected. No exact guarded flash command is ready because the reviewed A21 ESP-IDF build directory with full flash inputs is missing. | `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF` |
+| Half-duplex / echo control | `S2F-HALF-DUPLEX-BLOCKED-NONDIAGNOSTIC-STOCK-FIRMWARE` | `/v1/xiaozhi/say` now arms a short input-suppression window for stock physical devices after host-say completion; focused test proves immediate listen restart and Opus echo are ignored without starting a new voice pipeline. Physical 3x trace `a21-trace-stackchan-say-1780417217` recorded `xiaozhi.say.input_suppression_armed=1` and `xiaozhi.listen.start.input_suppressed=1`. After relay WAV playback, `make stackchan-half-duplex-acceptance` produced `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json` with `half_duplex_acceptance_status=blocked`: current stock firmware lacks A21 identity, diagnostic mic-probe capability, and runtime echo counters. Worker `019e8974-6474-7333-8a78-3e9cf2ea1884` first found Gateway `21081` healthy but device stale; the main thread later caught device `44:1b:f6:e2:6a:60` online and reran no-flash acceptance, producing `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json`, also blocked with `microphone=available_xiaozhi_opus_ingress`, `speaker=available_xiaozhi_opus_downlink`, zero diagnostic deltas, and missing runtime echo counters. Normal dialogue half-duplex is not yet physically accepted. | `S3-PHYSICAL-NO-SELF-TRIGGER-AFTER-TTS` |
+| Wake word | `S2C-CUSTOM-WAKE-PACKAGE-INTEGRITY-PASSED-BUILD-DIR-MISSING` | Custom MultiNet package `reports/a21-wake-word-firmware-package-20260602-075112-1780357872711914000.json` is `status=packaged`, `package_written=true`, but `product_ready=false`, `flash_allowed=false`, and `flash_executed=false`. Current official-compatible physical firmware has not merged/flashed this package, so the live device still relies on stock Xiaozhi WakeNet/touch. Worker `019e8956-9692-7ae1-bc14-99a311b1c080` verified artifact SHA-256 `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`, size `2853680`, and matching manifest; readiness report `reports/a21-product-readiness-20260603-011911.json` stayed blocked as expected. Worker `019e8974-9784-7c11-be91-cbc234a0a6dd` rechecked package/report/artifact/manifest/sha integrity and confirmed the blocker remains `wake_word_reviewed_a21_owned_full_build_dir_missing`: no A21-owned reviewed full ESP-IDF build directory with `flasher_args.json`, `flash_args`, `xiaozhi.bin`, bootloader, partition table, OTA data, generated assets, and matching review report was found. No exact guarded flash command is ready. | `S3-GUARDED-WAKE-FLASH-AND-PHYSICAL-PROOF` |
 
 ## Active Transitions
 
@@ -146,8 +147,8 @@ Current notable baseline:
 
 Current state:
 
-- `S3E-5080-RELAY-CHAIN-PASSED-PHYSICAL-STALE-BLOCKED`
-- `S6E-RELAY-TTS-CANDIDATE-READY-FOR-PHYSICAL-PLAYBACK`
+- `S4A-SELECTED-PROVIDER-READY-VOICE-CHAIN-CANDIDATE`
+- `S7A-RELAY-VOICE-PHYSICAL-OPERATOR-POSITIVE`
 
 Target state:
 
@@ -177,8 +178,17 @@ Current result:
   `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json`,
   text first content `229.077 ms`, TTS first audio `87.947 ms`.
 - Candidate WAVs were imported under `reports/provider-tts-candidate/`.
-- Physical playback was not attempted because Gateway `21081` showed device
-  `44:1b:f6:e2:6a:60` as `connection_status=stale`.
+- Physical relay WAV playback was later completed through stock
+  `/v1/xiaozhi/say` on trace
+  `a21-trace-provider-playback-wav-1780450901`; operator feedback was
+  positive: "好多了".
+- Selected-provider readiness was refreshed without falling back to `mock`:
+  `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json`
+  selects route-eligible `deepseek` with `real_provider_ready=true`; bundle
+  `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json`
+  has `provider.ready=true`.
+- StepFun remains an explicit compatibility voice-chain candidate, not product
+  route-eligible provider readiness evidence.
 
 Acceptance conditions:
 
@@ -187,6 +197,8 @@ Acceptance conditions:
 - Operator accepts or rejects the new voice with a concrete listening reason.
 - StepFun remains an explicit compatibility candidate until a separate
   readiness promotion.
+- Product selected-provider readiness remains pinned to a route-eligible real
+  provider report unless an explicit ADR/transition promotes StepFun.
 
 Failure state:
 
@@ -861,6 +873,7 @@ Next state:
 | T-HW-VOLUME-001c: Foreground fixed codec volume flash | Completed hardware write, A/B pending | Operator supplied guarded execute command; flash report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260602-230350-1780412630917666000.json` is `status=passed`, `port=/dev/cu.usbmodem1101`, `dry_run=false`, `flash_allowed=true`, `flash_executed=true`, app SHA-256 `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`. Post-flash Gateway `127.0.0.1:21081` health returned ok and device `44:1b:f6:e2:6a:60` remained registered online. This is not physical loudness acceptance. |
 | T-PROTOCOL-001a: Stock Xiaozhi listen warning plan-first audit | Completed plan | Worker `019e88dd-1517-77c2-a002-7db771ec016a` created `docs/plans/2026-06-02-stock-xiaozhi-protocol-cleanup.md`; strongest hypothesis is Gateway sends server-to-device `type=listen` ack frames that stock firmware does not accept, while binary Opus/TTS downlink still reaches `speaking`. |
 | T-PROVIDER-001a: Provider readiness truth audit | Completed read-only audit | Worker `019e88dd-3efa-78e2-a7d3-7063089cbf30` found `T-PROVIDER-001` stale as a missing-smoke blocker. Usable explicit provider evidence exists: DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json`, local Ollama smoke `reports/a21-provider-smoke-20260602-075644-199710000.json`, provider-ready readiness `reports/a21-product-readiness-20260602-160841.json`, and server-side bundle `reports/a21-server-side-readiness-bundle-20260602-160841.json`. Newer generic readiness reports that selected `mock` are invocation/context regressions, not absence of provider evidence. |
+| T-PROVIDER-001b: Selected provider readiness refresh | Completed, server-side still blocked by non-provider gates | Worker `019e8974-346e-7912-93b2-77cdbb9f3acf` pinned readiness to route-eligible DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json`; generated `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json` with `provider.selected=deepseek`, `real_provider_ready=true`, and `smoke_status=passed`; generated `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json` with `provider.ready=true`. Reports remain `server_side_blocked` because V21, host voice/continuous pipeline, physical StackChan, and wake-word gates are still open. |
 | T-AUDIO-002: Stock Xiaozhi audio parity and runtime volume hotfix | Completed physical candidate | Restored 24 kHz downlink while keeping 16 kHz uplink, suppressed unsupported stock physical `listen` replies, reused turn-level Opus encoder, reduced prebuffer to one frame, added stock MCP speaker volume endpoint, and added foreground `/v1/xiaozhi/say`; focused Gateway/provider/transport/app tests passed. |
 | T-AUDIO-003: Bounded 3x TTS gain and host-say suppression | Completed accepted | 4x gain was rejected by operator listening feedback; final 3x gain delivered `a21-trace-stackchan-say-1780417217`, final accepted recording `/Users/jiyurun/Downloads/军民公路259号 10.m4a` measured `-26.5 LUFS` and `-8.6 dBFS` true peak from 3 seconds, and host-say suppression markers were observed. |
 
@@ -869,30 +882,30 @@ Next state:
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
 | T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Audible playback is accepted for the 3x foreground path and relay WAV playback received positive operator feedback, but broader normal-dialogue half-duplex and custom wake evidence are still missing | Collect normal dialogue half-duplex proof, custom wake proof, device playback timing, and barge-in playback stop_done, then regenerate `xiaozhi-physical-evidence`. |
-| T-PROVIDER-001b: Selected provider readiness refresh | Explicit real/local provider evidence exists, but newest generic readiness selected `mock` because it omitted explicit provider env/report | Rerun readiness and server-side bundle with the chosen provider report/env pinned, preserving redacted evidence and avoiding firmware key storage. |
-| T-PRD-001: Declare full PRD physical acceptance | Audio path is accepted, but PRD accepted remains false because custom wake, broader half-duplex, and selected-provider readiness refresh are still pending | Close `T-HW-002b` and custom wake proof, refresh selected-provider readiness without falling back to `mock`, then rerun product readiness. |
+| T-PRD-001: Declare full PRD physical acceptance | Audio path is accepted and selected-provider readiness is refreshed, but PRD accepted remains false because custom wake, broader half-duplex, continuous voice pipeline, V21 professional execution, and current physical-online evidence are still pending | Close `T-HW-002b` and custom wake proof, collect continuous voice/host voice evidence, refresh physical online evidence, and rerun product readiness. |
 | T-FW-003: Custom wake-word product acceptance | Wake package integrity passed, but no package-level guarded flash command exists and the reviewed A21 ESP-IDF flash build directory is missing | Restore/provide the reviewed A21 build directory for SHA `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`, run no-write flash plan, then request explicit foreground flash and physical wake proof. |
-| T-HALF-DUPLEX-001: Normal dialogue half-duplex acceptance | Device is online and stock playback works, but current firmware lacks A21 identity, diagnostic mic-probe capability, and runtime echo counters; report `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json` is blocked | Either collect normal dialogue observation evidence without diagnostic counters, or create a separate guarded diagnostic-capability firmware plan before rerunning instrumented half-duplex acceptance. |
+| T-HALF-DUPLEX-001: Normal dialogue half-duplex acceptance | Latest online no-flash run `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json` is blocked because current stock firmware lacks A21 identity, diagnostic mic-probe capability, available speaker echo fields, and runtime echo counters; this is an instrumented-gate blocker, not proof that normal dialogue self-trigger failed | Collect normal dialogue observation evidence without diagnostic counters, or create a separate guarded diagnostic-capability firmware plan before rerunning instrumented half-duplex acceptance. |
 
 ## Next Candidate Transitions
 
-1. `T-PROVIDER-001b: Selected Provider Readiness Refresh`
-   - Current phase: relay voice path has host reports and a positive physical
-     playback result, but readiness still needs a selected-provider refresh
-     that does not fall back to `mock`.
-   - Next action: pin readiness/bundle to the chosen StepFun/Iflytek relay
-     evidence and preserve explicit candidate semantics without leaking keys.
-
-2. `T-HALF-DUPLEX-002: Normal Dialogue Observation Or Diagnostic Capability`
+1. `T-HALF-DUPLEX-002: Normal Dialogue Observation Or Diagnostic Capability`
    - Current phase: instrumented acceptance is blocked by non-diagnostic stock
-     firmware.
-   - Next action: choose between a no-flash normal-dialogue observation report
-     or a separate guarded diagnostic firmware/capability plan.
+     firmware even when the device is online.
+   - Next action: collect no-flash normal dialogue observation for self-trigger
+     behavior; only plan diagnostic firmware if machine counters are required.
 
-3. `T-WAKE-FLASH-GATE-001: Restore Reviewed A21 Wake Build Directory`
+2. `T-WAKE-FLASH-GATE-001: Restore Reviewed A21 Wake Build Directory`
    - Current phase: wake package/hash/manifest are valid, but full flash inputs
      are missing.
    - Next action: restore/provide the reviewed A21 ESP-IDF build dir for SHA
      `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`,
      run no-write flash plan, then request operator foreground flash only if
      the plan is ready.
+
+3. `T-VOICE-CHAIN-EVIDENCE-001: Selected Voice-Chain Readiness Ingress`
+   - Current phase: StepFun+Iflytek relay evidence is the best operator
+     accepted voice-chain candidate, but existing product readiness provider
+     slots correctly accept only route-eligible provider-smoke evidence.
+   - Next action: either add a narrow redacted voice-chain evidence ingestion
+     surface, or run the existing host voice/continuous pipeline report shape
+     with the selected relay chain without changing provider route eligibility.

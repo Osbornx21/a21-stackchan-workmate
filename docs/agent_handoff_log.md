@@ -2789,3 +2789,124 @@ Validation results:
 - Live relay WAV playback: delivered as above.
 - Half-duplex acceptance command: exited nonzero with blocked report as
   expected; no flash or NVS write occurred.
+
+## 2026-06-03 01:52 CST - T-PROVIDER-001b Closed, Half-Duplex/Wake Gates Preserved
+
+Round goal:
+
+- Continue the three active control-tower transitions quickly but safely:
+  selected provider readiness refresh, normal dialogue half-duplex, and custom
+  wake flash gate.
+
+Actual completed work:
+
+- Spawned three scoped workers with disjoint responsibilities and explicit
+  no-flash/no-NVS/no-secret/no-global-proxy boundaries:
+  - provider worker `019e8974-346e-7912-93b2-77cdbb9f3acf`;
+  - half-duplex worker `019e8974-6474-7333-8a78-3e9cf2ea1884`;
+  - wake gate worker `019e8974-9784-7c11-be91-cbc234a0a6dd`.
+- Provider worker found the best current voice-chain candidate evidence:
+  - Iflytek TTS relay report
+    `reports/provider-tts-candidate/a21-local-tts-smoke-5080-relay-20260603-0125.json`
+    passed with first audio `100.299 ms`;
+  - StepFun+Iflytek relay chain
+    `reports/provider-tts-candidate/a21-local-voice-loopback-5080-relay-20260603-0128.json`
+    passed with text first content `229.077 ms` and TTS first audio
+    `87.947 ms`;
+  - StepFun direct smoke
+    `reports/provider-tts-candidate/a21-provider-smoke-20260603-010652-957877000.json`
+    passed but remains `route_eligible=false`, so it was not promoted into
+    product provider readiness.
+- Provider worker refreshed selected-provider readiness using route-eligible
+  DeepSeek smoke `reports/a21-provider-smoke-20260602-112710-368364000.json`
+  instead of letting the latest selector fall back to `mock`.
+- New ignored provider reports:
+  - `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json`
+    has `provider.selected=deepseek`, `provider.real_provider_ready=true`,
+    `provider.smoke_status=passed`, and `status=server_side_blocked`;
+  - `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json`
+    has `provider.ready=true` and `status=server_side_blocked`.
+- Provider redaction check found no API key, secret, auth query, raw
+  transcript, base64 audio, or full local path in JSON string values.
+- Half-duplex worker checked Gateway and device state:
+  - `http://127.0.0.1:21081/healthz` is healthy;
+  - device `44:1b:f6:e2:6a:60` was `connection_status=stale`, so no new
+    no-flash half-duplex command was forced.
+- Final main-thread status check later found device `44:1b:f6:e2:6a:60`
+  `connection_status=online`, so the main thread immediately ran the no-flash
+  half-duplex command.
+- New ignored half-duplex report:
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json` is
+  `half_duplex_acceptance_status=blocked`, `dry_run=true`,
+  `flash_allowed=false`, and `physical_sound_observed=false`.
+- Half-duplex remains blocked by the prior report
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-014233.json`, the new
+  online report above, and current stock firmware lacking diagnostic identity,
+  mic-probe capability, available speaker echo fields, and runtime echo
+  counters.
+- Wake gate worker rechecked package integrity:
+  - package/report/artifact/manifest/sha agree;
+  - SHA-256 remains
+    `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`;
+  - intent is `小阿二一` / `xiao a er yi`, threshold `35`;
+  - package remains below activation with `product_ready=false`,
+    `flash_allowed=false`, and `flash_executed=false`.
+- Wake gate remains blocked because no A21-owned reviewed full ESP-IDF build
+  directory with full flash inputs was found; no no-write flash plan was run.
+- Updated `docs/project_state_machine.md` to move `T-PROVIDER-001b` to
+  completed and keep half-duplex/wake as explicit blocked transitions.
+
+Files changed this round:
+
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- Ignored/generated provider reports:
+  - `reports/provider-tts-candidate/a21-product-readiness-20260603-015100.json`
+  - `reports/provider-tts-candidate/a21-server-side-readiness-bundle-20260603-015102.json`
+- Ignored/generated half-duplex report:
+  - `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json`
+
+Current unfinished items:
+
+- Normal dialogue half-duplex still needs an operator-observed no-flash
+  dialogue run; the instrumented counter gate is blocked even when the device
+  is online because stock firmware lacks the required diagnostic fields.
+- If machine-verifiable mic/playback counters are required, diagnostic
+  capability firmware needs its own guarded plan.
+- Custom wake still needs an A21-owned reviewed full wake build directory
+  before any no-write flash plan.
+- StepFun+Iflytek relay is the current best voice-chain candidate, but product
+  readiness does not yet ingest it as a selected voice-chain evidence surface.
+
+Known risks and blockers:
+
+- Full PRD remains blocked; do not treat selected-provider readiness as launch
+  acceptance.
+- StepFun is still a compatibility candidate, not route-eligible product
+  provider readiness evidence.
+- The physical device was stale during the worker check but came online during
+  final main-thread status; the online no-flash run still blocked on
+  non-diagnostic stock firmware fields.
+- Wake package integrity alone is not flash or product readiness.
+
+Recommended next action:
+
+- `T-HALF-DUPLEX-002`: collect no-flash normal dialogue observation first;
+  only open diagnostic firmware if machine-verifiable counters are required.
+- `T-WAKE-FLASH-GATE-001`: restore or rebuild the reviewed A21-owned wake
+  ESP-IDF build dir, then run no-write flash plan only.
+- `T-VOICE-CHAIN-EVIDENCE-001`: add or reuse a redacted selected voice-chain
+  evidence ingress so StepFun+Iflytek relay evidence can close the correct
+  server-side gap without changing provider route eligibility.
+
+Validation results:
+
+- `git status --short --branch` was clean before doc edits.
+- Worker checks were read-only except for ignored readiness report generation.
+- `A21_GATEWAY_URL=http://127.0.0.1:21081 A21_DEVICE_ID=44:1b:f6:e2:6a:60 make stackchan-half-duplex-acceptance`:
+  exited nonzero with blocked report
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json`, as
+  expected for non-diagnostic stock firmware; no flash was performed.
+- No tracked code was modified.
+- No flash, NVS write, global proxy change, provider secret output, or V21
+  execution occurred.
