@@ -8,6 +8,8 @@ X21 contains hard-won real-device evidence around StackChan voice latency, ASR, 
 
 This is a one-way gate. X21 is read-only. A21 must not modify X21, import X21 runtime identity, or recreate X21 architecture.
 
+The external X21 `xiaozhi-esp32` firmware checkout is frozen historical reference. A21 firmware build, flash, and package commands must reject build directories from that source; they may be read only for analysis, never used as A21 flash or package input.
+
 X21 is also not a mature-wheel source by default. Much of X21's successful behavior came from pragmatic hand-written fixes under delivery pressure. A21 may preserve the lesson, measurement, ordering rule, or failure taxonomy, but the replacement should first look for mature protocols, SDKs, libraries, or framework patterns according to `docs/engineering/A21_MATURE_VOICE_REUSE.md`.
 
 ## Allowed

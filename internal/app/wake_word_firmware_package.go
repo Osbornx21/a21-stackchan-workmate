@@ -397,6 +397,12 @@ func validateWakeWordFirmwarePackageOptions(options wakeWordFirmwarePackageOptio
 			Message: "Wake word firmware package requires the reviewed xiaozhi/ESP-SR build directory.",
 		}
 	}
+	if err := validateNotFrozenExternalXiaozhiFirmwareBuildDir(options.BuildDir); err != nil {
+		return wakeWordFirmwarePackageInputError{
+			Code:    "wake_word_firmware_frozen_external_source",
+			Message: err.Error(),
+		}
+	}
 	if strings.TrimSpace(options.OutputDir) == "" {
 		return wakeWordFirmwarePackageInputError{
 			Code:    "wake_word_firmware_output_dir_required",
@@ -545,6 +551,9 @@ func validateWakeWordFirmwareBuildReceiptOptions(options wakeWordFirmwareBuildRe
 	}
 	if strings.TrimSpace(options.BuildDir) == "" {
 		return fmt.Errorf("--build-dir is required")
+	}
+	if err := validateNotFrozenExternalXiaozhiFirmwareBuildDir(options.BuildDir); err != nil {
+		return err
 	}
 	if strings.TrimSpace(options.ReviewReportPath) == "" {
 		return fmt.Errorf("--review-report is required")

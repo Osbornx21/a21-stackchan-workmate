@@ -214,6 +214,9 @@ reviewed-build report by basename. Then pass the receipt to
 `wake-word-firmware-package --build-receipt`; both remain no-flash,
 below-activation evidence until a guarded hardware-window flash and physical
 wake proof pass.
+A21 must not package or flash from the frozen external X21 `xiaozhi-esp32`
+checkout; the firmware flash, wake-word receipt, and wake-word package commands
+reject build directories from that source.
 For V21, it treats
 `A21_V21_ADAPTER_URL` health as adapter availability only; launch readiness also
 requires an executed `v21-adapter-smoke --execute` report passed with

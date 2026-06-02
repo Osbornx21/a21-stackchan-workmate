@@ -175,6 +175,9 @@ func buildXiaozhiFirmwareFlashReport(options xiaozhiFirmwareFlashOptions) (xiaoz
 	if buildDir == "." || buildDir == "" {
 		return xiaozhiFirmwareFlashReport{}, fmt.Errorf("--build-dir is required")
 	}
+	if err := validateNotFrozenExternalXiaozhiFirmwareBuildDir(buildDir); err != nil {
+		return xiaozhiFirmwareFlashReport{}, err
+	}
 	if containsLegacyIdentityPathToken(buildDir) {
 		return xiaozhiFirmwareFlashReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
 	}

@@ -509,6 +509,35 @@ func TestRunXiaozhiFirmwareFlashPlanRejectsLegacyDeviceEvents(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiFirmwareFlashPlanRejectsFrozenLegacyFirmwareSourceWithoutPathLeaks(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestXiaozhiFirmwareBuildAt(t, frozenLegacyXiaozhiFirmwareBuildDirFixture(t))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-firmware-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("frozen legacy source unexpectedly passed: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "" {
+		t.Fatalf("stdout = %q, want empty frozen-source rejection", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "build dir belongs to frozen external firmware source") {
+		t.Fatalf("stderr missing frozen-source rejection: %s", stderr.String())
+	}
+	assertNoFrozenLegacyXiaozhiFirmwareSourceLeak(t, buildDir, stdout.String(), stderr.String())
+}
+
 func TestRunXiaozhiFirmwareFlashExecuteRunsGuardedCommand(t *testing.T) {
 	allowA21ControlGuardForTest(t)
 	originalDetector := detectFirmwareUploadPortUsage
@@ -951,6 +980,11 @@ func writeTestOfficialPCMBridgeBuild(t *testing.T) string {
 func writeTestXiaozhiFirmwareBuild(t *testing.T) string {
 	t.Helper()
 	buildDir := filepath.Join(t.TempDir(), "a21-xiaozhi-firmware-build")
+	return writeTestXiaozhiFirmwareBuildAt(t, buildDir)
+}
+
+func writeTestXiaozhiFirmwareBuildAt(t *testing.T, buildDir string) string {
+	t.Helper()
 	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
 	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
 	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
@@ -970,6 +1004,28 @@ func writeTestXiaozhiFirmwareBuild(t *testing.T) string {
 		"0x800000 generated_assets.bin",
 	}, "\n")+"\n")
 	return buildDir
+}
+
+func frozenLegacyXiaozhiFirmwareBuildDirFixture(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "小马暴力", "sources", "xiaozhi-esp32", "build-m5stack-core-s3")
+}
+
+func assertNoFrozenLegacyXiaozhiFirmwareSourceLeak(t *testing.T, buildDir string, outputs ...string) {
+	t.Helper()
+	for _, output := range outputs {
+		for _, forbidden := range []string{
+			buildDir,
+			filepath.Dir(buildDir),
+			filepath.Dir(filepath.Dir(buildDir)),
+			"小马暴力",
+			"xiaozhi-esp32",
+		} {
+			if forbidden != "" && strings.Contains(output, forbidden) {
+				t.Fatalf("frozen firmware source rejection leaked %q: %s", forbidden, output)
+			}
+		}
+	}
 }
 
 func writeTestFile(t *testing.T, path string, content string) {

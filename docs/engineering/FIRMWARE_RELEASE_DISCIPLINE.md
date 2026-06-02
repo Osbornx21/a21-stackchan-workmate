@@ -131,6 +131,10 @@ custom wake-word launch readiness requires a later guarded flash plan plus
 physical StackChan proof.
 If the build directory or receipt is missing, the command writes only a
 redacted diagnostic report and remains below package availability.
+The external X21 `xiaozhi-esp32` checkout is frozen read-only reference; A21
+`xiaozhi-firmware-flash`, `wake-word-firmware-build-receipt`, and
+`wake-word-firmware-package` reject build directories from that frozen source
+before inspecting or packaging artifacts.
 
 Firmware expression changes must keep the avatar contract testable without hardware. `a21_firmware_display.h` maps render states into an `A21FaceFrame` with avatar-engine concepts such as expression, gaze, eye-open ratio, breath, and mouth-open ratio. This contract is intentionally compatible with a future pinned `m5stack-avatar` adapter and prevents the product expression layer from being buried as one-off drawing logic.
 

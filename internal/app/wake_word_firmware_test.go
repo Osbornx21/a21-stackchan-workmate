@@ -229,6 +229,36 @@ func TestRunWakeWordFirmwareBuildReceiptRejectsMissingReviewEvidenceWithoutPathL
 	}
 }
 
+func TestRunWakeWordFirmwareBuildReceiptRejectsFrozenLegacyFirmwareSourceWithoutPathLeaks(t *testing.T) {
+	dir := t.TempDir()
+	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
+	buildDir := writeWakeWordFirmwareBuildFixtureAt(t, frozenLegacyXiaozhiFirmwareBuildDirFixture(t), "小阿二一", "xiao a er yi", 35)
+	reviewPath := writeWakeWordFirmwareBuildReviewFixture(t, dir, "a21-wake-word-build-review.json", "小阿二一", "xiao a er yi", 35)
+	receiptDir := filepath.Join(dir, "receipts")
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"wake-word-firmware-build-receipt",
+		"--plan", planPath,
+		"--build-dir", buildDir,
+		"--review-report", reviewPath,
+		"--output-dir", receiptDir,
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("frozen legacy source unexpectedly wrote receipt: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+	if strings.TrimSpace(stdout.String()) != "" {
+		t.Fatalf("stdout = %q, want empty frozen-source rejection", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(receiptDir, "a21-wake-word-build.json")); !os.IsNotExist(err) {
+		t.Fatalf("receipt write err = %v, want no receipt from frozen source", err)
+	}
+	if !strings.Contains(stderr.String(), "wake word firmware build receipt failed") {
+		t.Fatalf("stderr missing receipt rejection: %s", stderr.String())
+	}
+	assertNoFrozenLegacyXiaozhiFirmwareSourceLeak(t, buildDir, stdout.String(), stderr.String())
+}
+
 func TestRunWakeWordFirmwareBuildReceiptStdoutOnlyByDefault(t *testing.T) {
 	dir := t.TempDir()
 	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
@@ -262,6 +292,42 @@ func TestRunWakeWordFirmwareBuildReceiptStdoutOnlyByDefault(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(buildDir, "a21-wake-word-build.json")); !os.IsNotExist(err) {
 		t.Fatalf("build-dir-local receipt err = %v, want stdout-only default", err)
 	}
+}
+
+func TestRunWakeWordFirmwarePackageRejectsFrozenLegacyFirmwareSourceWithoutPathLeaks(t *testing.T) {
+	dir := t.TempDir()
+	planPath := writeWakeWordFirmwarePlanFixture(t, dir, "a21-wake-word-firmware-plan-20260602-010000.json", "小阿二一", "xiao a er yi", 35)
+	buildDir := writeWakeWordFirmwareBuildFixtureAt(t, frozenLegacyXiaozhiFirmwareBuildDirFixture(t), "小阿二一", "xiao a er yi", 35)
+	outputDir := filepath.Join(dir, "wake-artifacts")
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"wake-word-firmware-package",
+		"--plan", planPath,
+		"--build-dir", buildDir,
+		"--output-dir", outputDir,
+		"--commit", "abcdef123456",
+		"--timestamp", "20260602-060000",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("frozen legacy source unexpectedly packaged: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+
+	var report wakeWordFirmwarePackageReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode frozen-source rejection: %v\nstdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
+	if report.Status != "rejected" || report.PackageWritten || report.FlashAllowed || report.FlashExecuted || report.ProductReady {
+		t.Fatalf("report = %+v, want rejected/no package/no flash/not product-ready", report)
+	}
+	if !hasWakeWordFirmwarePackageFinding(report.Findings, "wake_word_firmware_frozen_external_source") {
+		t.Fatalf("findings = %#v, want frozen external source finding", report.Findings)
+	}
+	reportBytes, err := os.ReadFile(filepath.Join(outputDir, report.ReportPath))
+	if err != nil {
+		t.Fatalf("read rejection report: %v", err)
+	}
+	assertNoFrozenLegacyXiaozhiFirmwareSourceLeak(t, buildDir, stdout.String(), stderr.String(), string(reportBytes))
 }
 
 func TestRunWakeWordFirmwarePackageAcceptsExplicitBuildReceipt(t *testing.T) {
@@ -558,6 +624,11 @@ func writeWakeWordFirmwarePlanFixture(t *testing.T, dir, name, phrase, pinyin st
 func writeWakeWordFirmwareBuildFixture(t *testing.T, dir, phrase, pinyin string, threshold int) string {
 	t.Helper()
 	buildDir := filepath.Join(dir, "xiaozhi-build")
+	return writeWakeWordFirmwareBuildFixtureAt(t, buildDir, phrase, pinyin, threshold)
+}
+
+func writeWakeWordFirmwareBuildFixtureAt(t *testing.T, buildDir, phrase, pinyin string, threshold int) string {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(buildDir, "config"), 0o755); err != nil {
 		t.Fatal(err)
 	}
