@@ -34,6 +34,7 @@ const xiaozhiPlaybackInterruptWindowMS int64 = 3000
 const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
 const xiaozhiNoSpeechInputCooldownMS int64 = 1200
+const xiaozhiPostTTSInputCooldownMS int64 = 900
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
 const maxXiaozhiOpusIngressQueueFrames = 16
@@ -4279,6 +4280,13 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
 			return true
 		}
+		if answerStarted {
+			s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
+			s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report, finalResult, err)
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed_degraded_after_audio", s.now().UnixMilli())
+			s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed_degraded")
+			return true
+		}
 		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
 		s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report, finalResult, err)
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
@@ -4784,7 +4792,26 @@ func (s *Server) writeXiaozhiTTSStopWithOptions(ctx context.Context, conn *webso
 	}
 	session.writeMu.Unlock()
 	s.writeXiaozhiOfficialStackChanState(ctx, session, xiaozhiOfficialStateForTTSStop(reason), "tts_stop_"+safeGatewayFallbackToken(reason, "unknown"), true)
+	if xiaozhiShouldSuppressInputAfterTTSStop(reason) {
+		untilMS := s.now().UnixMilli() + xiaozhiPostTTSInputCooldownMS
+		session.suppressXiaozhiInputUntil(untilMS, "post_tts_drain")
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.tts.stop.input_suppression_armed", s.now().UnixMilli())
+	}
 	return true
+}
+
+func xiaozhiShouldSuppressInputAfterTTSStop(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return false
+	}
+	if strings.Contains(reason, "abort") || strings.Contains(reason, "barge") || strings.Contains(reason, "wake") {
+		return false
+	}
+	return strings.Contains(reason, "completed") ||
+		strings.Contains(reason, "local_fallback") ||
+		strings.Contains(reason, "placeholder") ||
+		strings.Contains(reason, "host_say_complete")
 }
 
 func (s *Server) writeXiaozhiOpusDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, chunk providers.VoiceAudioChunk) (bool, error) {

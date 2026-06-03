@@ -8498,3 +8498,63 @@ Recommended next action:
 2. Re-run physical long utterance plus interruption and require:
    `asr.final -> xiaozhi.voice_pipeline.start -> tts.first_audio/downlink`
    even when `vad.speech.start` is absent for that segment.
+
+## 2026-06-03 22:1x CST - Xiaozhi Speaking Drain / Self-Loop Guard
+
+Round goal:
+
+- Investigate the user's report that the device began looping into repeated
+  self-triggered turns after replies, and compare the A21 Gateway behavior
+  against the Xiaozhi-style listen/think/speak/drain state machine.
+
+Actual completed work:
+
+- Captured a fresh physical trace for product device `44:1b:f6:e2:6a:60`
+  against main public Gateway `47.103.57.217`.
+- The trace proved the main answer path was no longer silent: repeated physical
+  turns had `listen.start`, Opus ingress, `listen.stop`, `asr.final`,
+  `xiaozhi.voice_pipeline.start`, `provider.first_content`,
+  `tts.first_audio`, and binary Opus downlink.
+- The trace also exposed the self-loop path: after an answer had already sent
+  many downlink frames, `RunStream` ended with a failed final result and A21
+  treated the whole turn as `xiaozhi.voice_pipeline.unavailable`, entered
+  `local_fallback`, sent `tts.stop`, and then accepted a new `listen.start`
+  about 200 ms later. That differs from the intended Xiaozhi-style state
+  machine, where audio already played means the speaking turn is degraded or
+  complete, not a fresh fallback prompt, and post-stop tail audio must be
+  drained before new input is accepted.
+- Fixed streaming answer finalization so an error after answer audio has already
+  been emitted records `xiaozhi.voice_pipeline.completed_degraded_after_audio`
+  and sends one degraded `tts.stop`, without `local_fallback` and without
+  `xiaozhi.voice_pipeline.unavailable`.
+- Added a short post-TTS input suppression window for non-barge stop reasons
+  (`completed`, `local_fallback`, `placeholder`, `host_say_complete`) so
+  physical playback tail/echo does not immediately re-enter `listen.start`.
+  Barge-in/abort/wake stops are not suppressed, preserving interrupt behavior
+  while the device is actually speaking.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Added regression:
+  `TestXiaozhiWebSocketStreamingAnswerErrorAfterAudioDoesNotFallbackLoop`.
+- Focused Xiaozhi streaming/no-reply/barge tests passed.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Related packages passed:
+  `go test ./internal/app ./internal/providers -count=1`.
+- `git diff --check` passed.
+
+Recommended next action:
+
+1. Run `make verify`.
+2. Commit and deploy to `47.103.57.217`.
+3. Re-run a physical long reply plus repeated interruption test and require:
+   no `xiaozhi.local_fallback.sent` after answer downlink has begun, no
+   `xiaozhi.voice_pipeline.unavailable` after answer downlink has begun, and
+   no accepted `listen.start` inside the post-TTS drain window.

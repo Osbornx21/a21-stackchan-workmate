@@ -6901,6 +6901,94 @@ func TestXiaozhiWebSocketStreamsFirstAnswerSegmentBeforeTextStreamDone(t *testin
 	}
 }
 
+func TestXiaozhiWebSocketStreamingAnswerErrorAfterAudioDoesNotFallbackLoop(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        gatewayFinalASRAdapter{},
+			TextStream: singleSentenceTextStreamAdapter{},
+			TTS:        chunkThenErrorTTSAdapter{},
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stream-degraded",
+		"session_id": "a21-session-xiaozhi-stream-degraded",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readXiaozhiJSON(t, ctx, conn)
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed_degraded" {
+		t.Fatalf("tts stop after degraded streaming audio = %#v", ttsStop)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-stream-degraded", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.voice_pipeline.completed_degraded_after_audio") {
+		t.Fatalf("trace missing degraded-after-audio marker: %+v", traces.Events)
+	}
+	if traceContains(traces.Events, "xiaozhi.voice_pipeline.unavailable") || traceContains(traces.Events, "xiaozhi.local_fallback.sent") {
+		t.Fatalf("streaming audio already played; must not local fallback loop: %+v", traces.Events)
+	}
+	if !traceContains(traces.Events, "xiaozhi.tts.stop.input_suppression_armed") {
+		t.Fatalf("trace missing post-tts input suppression: %+v", traces.Events)
+	}
+}
+
 func TestXiaozhiWebSocketAbortDuringStreamingAnswerSuppressesStaleSegments(t *testing.T) {
 	textStream := newBlockingSegmentTextStreamAdapter()
 	server := NewServerWithOptions(ServerOptions{
@@ -10323,6 +10411,52 @@ func (segmentChunkTTSAdapter) Synthesize(ctx context.Context, req providers.TTSA
 		select {
 		case <-ctx.Done():
 		case out <- xiaozhiTestVoiceAudioChunk():
+		}
+	}()
+	return out, nil
+}
+
+type singleSentenceTextStreamAdapter struct{}
+
+func (singleSentenceTextStreamAdapter) Name() string {
+	return "a21-single-sentence-text-stream"
+}
+
+func (singleSentenceTextStreamAdapter) StreamText(ctx context.Context, req providers.TextStreamAdapterRequest) (<-chan providers.TextStreamEvent, error) {
+	out := make(chan providers.TextStreamEvent, 2)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaContent, Text: "第一句。"}:
+		}
+		select {
+		case <-ctx.Done():
+		case out <- providers.TextStreamEvent{Kind: providers.TextStreamDeltaDone}:
+		}
+	}()
+	return out, nil
+}
+
+type chunkThenErrorTTSAdapter struct{}
+
+func (chunkThenErrorTTSAdapter) Name() string {
+	return "a21-chunk-then-error-tts"
+}
+
+func (chunkThenErrorTTSAdapter) Synthesize(ctx context.Context, req providers.TTSAdapterRequest) (<-chan providers.VoiceAudioChunk, error) {
+	out := make(chan providers.VoiceAudioChunk, 2)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case out <- xiaozhiTestVoiceAudioChunk():
+		}
+		select {
+		case <-ctx.Done():
+		case out <- providers.VoiceAudioChunk{Err: errors.New("provider closed after first audio")}:
 		}
 	}()
 	return out, nil
