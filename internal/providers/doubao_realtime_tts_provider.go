@@ -33,13 +33,20 @@ func NewDoubaoRealtimeTTSProvider(config DoubaoRealtimeTTSProviderConfig, dialer
 func NewDoubaoRealtimeTTSProviderFromEnv(env []string, dialer RealtimeDialer) *DoubaoRealtimeTTSProvider {
 	policy, _ := NetworkPolicyFromEnv(env)
 	return NewDoubaoRealtimeTTSProvider(DoubaoRealtimeTTSProviderConfig{
-		APIKey:                strings.TrimSpace(envValue(env, "A21_DOUBAO_API_KEY")),
+		APIKey:                doubaoRealtimeTTSAPIKeyFromEnv(env),
 		Model:                 strings.TrimSpace(envValue(env, "A21_DOUBAO_TTS_MODEL")),
 		Voice:                 strings.TrimSpace(envValue(env, "A21_DOUBAO_TTS_VOICE")),
 		OutputAudioFormat:     strings.TrimSpace(envValue(env, "A21_DOUBAO_TTS_OUTPUT_FORMAT")),
 		OutputAudioSampleRate: doubaoTTSOutputSampleRateFromEnv(env),
 		NetworkPolicy:         policy,
 	}, dialer)
+}
+
+func doubaoRealtimeTTSAPIKeyFromEnv(env []string) string {
+	if value := strings.TrimSpace(envValue(env, "A21_DOUBAO_API_KEY")); value != "" {
+		return value
+	}
+	return strings.TrimSpace(envValue(env, "A21_DOUBAO_ACCESS_TOKEN"))
 }
 
 func (p *DoubaoRealtimeTTSProvider) Name() string {

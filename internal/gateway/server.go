@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -71,6 +72,9 @@ type Server struct {
 	xiaozhiListenMaxDurationMS int64
 	wakeWordConfigPath         string
 	voiceModeConfig            string
+	gatewayProfileConfig       string
+	macLocalGatewayURL         string
+	publicGatewayURL           string
 }
 
 type ServerOptions struct {
@@ -82,6 +86,9 @@ type ServerOptions struct {
 	XiaozhiStockProfessional     bool
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
+	GatewayProfile               string
+	MacLocalGatewayURL           string
+	PublicGatewayURL             string
 }
 
 type xiaozhiVoicePipelineMeta struct {
@@ -340,6 +347,26 @@ type VoiceModeSelectionRequest struct {
 	VoiceMode string `json:"voice_mode"`
 }
 
+type GatewayProfileOption struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Status       string `json:"status"`
+	Default      bool   `json:"default,omitempty"`
+	WebSocketURL string `json:"websocket_url,omitempty"`
+	Description  string `json:"description,omitempty"`
+}
+
+type GatewayProfileCatalogResponse struct {
+	SchemaVersion          string                 `json:"schema_version"`
+	Service                string                 `json:"service"`
+	SelectedGatewayProfile string                 `json:"selected_gateway_profile"`
+	Profiles               []GatewayProfileOption `json:"profiles"`
+}
+
+type GatewayProfileSelectionRequest struct {
+	GatewayProfile string `json:"gateway_profile"`
+}
+
 type XiaozhiOTAResponse struct {
 	ServerTime XiaozhiOTAServerTime      `json:"server_time"`
 	WebSocket  XiaozhiOTAWebSocketConfig `json:"websocket"`
@@ -362,8 +389,11 @@ const (
 	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName   = "a21-gateway"
 	VoiceModeSchemaVersion      = "a21.gateway.voice_modes.v1"
-	VoiceModeEdgeCloud          = "edge_cloud"
-	VoiceModePureCloud          = "pure_cloud"
+	VoiceModeDialogue           = "dialogue"
+	VoiceModeProfessional       = "professional"
+	GatewayProfileSchemaVersion = "a21.gateway.profiles.v1"
+	GatewayProfileMacLocal      = "mac_local"
+	GatewayProfilePublicWSS     = "public_wss"
 	AudioRecentSchemaVersion    = "a21.gateway.audio_recent.v1"
 	maxAudioCaptureFrames       = 512
 	xiaozhiOTAWebSocketVersion  = 1
@@ -523,6 +553,9 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
 		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
+		gatewayProfileConfig:       defaultGatewayProfile(options.GatewayProfile, options.PublicGatewayURL),
+		macLocalGatewayURL:         strings.TrimSpace(options.MacLocalGatewayURL),
+		publicGatewayURL:           strings.TrimSpace(options.PublicGatewayURL),
 	}
 }
 
@@ -545,6 +578,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
+	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/audio/recent", s.handleAudioRecent)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
@@ -590,11 +624,36 @@ func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !validVoiceMode(req.VoiceMode) {
-			http.Error(w, "voice_mode must be edge_cloud or pure_cloud", http.StatusBadRequest)
+			http.Error(w, "voice_mode must be dialogue or professional", http.StatusBadRequest)
 			return
 		}
 		s.setVoiceMode(req.VoiceMode)
 		writeJSON(w, http.StatusOK, s.voiceModeCatalog())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleGatewayProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.gatewayProfileCatalog(r))
+	case http.MethodPost, http.MethodPut:
+		var req GatewayProfileSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if !validGatewayProfile(req.GatewayProfile) {
+			http.Error(w, "gateway_profile must be mac_local or public_wss", http.StatusBadRequest)
+			return
+		}
+		if req.GatewayProfile == GatewayProfilePublicWSS && s.publicGatewayWebSocketURL() == "" {
+			http.Error(w, "gateway_profile public_wss requires A21_PUBLIC_GATEWAY_URL", http.StatusConflict)
+			return
+		}
+		s.setGatewayProfile(req.GatewayProfile)
+		writeJSON(w, http.StatusOK, s.gatewayProfileCatalog(r))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -607,17 +666,17 @@ func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
 		SelectedVoiceMode: s.selectedVoiceMode(),
 		Modes: []VoiceModeOption{
 			{
-				ID:          VoiceModeEdgeCloud,
-				Label:       "Edge + Cloud",
+				ID:          VoiceModeDialogue,
+				Label:       "Dialogue",
 				Status:      "available",
 				Default:     true,
-				Description: "local audio front end with explicit A21 provider seams",
+				Description: "low-latency local ASR, streaming text, streaming TTS, and stock Xiaozhi playback",
 			},
 			{
-				ID:          VoiceModePureCloud,
-				Label:       "Pure Cloud",
-				Status:      "planned",
-				Description: "visible spike option; selection is persisted but not routed into provider execution",
+				ID:          VoiceModeProfessional,
+				Label:       "Professional",
+				Status:      "available",
+				Description: "explicit evidence-first V21 adapter path; not routed through dialogue endpoints",
 			},
 		},
 	}
@@ -625,7 +684,7 @@ func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
 
 func validVoiceMode(mode string) bool {
 	switch mode {
-	case VoiceModeEdgeCloud, VoiceModePureCloud:
+	case VoiceModeDialogue, VoiceModeProfessional:
 		return true
 	default:
 		return false
@@ -651,15 +710,155 @@ func defaultVoiceMode(mode string) string {
 	if validVoiceMode(mode) {
 		return mode
 	}
-	return VoiceModeEdgeCloud
+	return VoiceModeDialogue
 }
 
 func voiceModeAvailableForFastCompanion(mode string) bool {
-	return defaultVoiceMode(mode) == VoiceModeEdgeCloud
+	return defaultVoiceMode(mode) == VoiceModeDialogue
 }
 
 func plannedVoiceModeError(mode string) string {
-	return "voice_mode " + defaultVoiceMode(mode) + " is planned and cannot execute fast companion turns"
+	return "voice_mode " + defaultVoiceMode(mode) + " must use the professional path and cannot execute dialogue turns"
+}
+
+func (s *Server) gatewayProfileCatalog(r *http.Request) GatewayProfileCatalogResponse {
+	publicURL := s.publicGatewayWebSocketURL()
+	publicStatus := "needs_config"
+	if publicURL != "" {
+		publicStatus = "available"
+	}
+	selected := s.selectedGatewayProfile()
+	return GatewayProfileCatalogResponse{
+		SchemaVersion:          GatewayProfileSchemaVersion,
+		Service:                DeviceRegistryServiceName,
+		SelectedGatewayProfile: selected,
+		Profiles: []GatewayProfileOption{
+			{
+				ID:           GatewayProfileMacLocal,
+				Label:        "Mac Local Gateway",
+				Status:       "available",
+				Default:      selected == GatewayProfileMacLocal,
+				WebSocketURL: s.localGatewayWebSocketURL(r),
+				Description:  "selectable low-latency Mac Gateway for local models and local processing",
+			},
+			{
+				ID:           GatewayProfilePublicWSS,
+				Label:        "Public WSS Gateway",
+				Status:       publicStatus,
+				Default:      selected == GatewayProfilePublicWSS,
+				WebSocketURL: publicURL,
+				Description:  "main product Gateway for public 443/wss StackChan relay",
+			},
+		},
+	}
+}
+
+func validGatewayProfile(profile string) bool {
+	switch profile {
+	case GatewayProfileMacLocal, GatewayProfilePublicWSS:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) selectedGatewayProfile() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return defaultGatewayProfile(s.gatewayProfileConfig, s.publicGatewayURL)
+}
+
+func (s *Server) setGatewayProfile(profile string) {
+	if !validGatewayProfile(profile) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gatewayProfileConfig = profile
+}
+
+func defaultGatewayProfile(profile string, publicGatewayURL string) string {
+	if profile == GatewayProfileMacLocal {
+		return GatewayProfileMacLocal
+	}
+	if profile == GatewayProfilePublicWSS && gatewayPublicWebSocketURL(publicGatewayURL) != "" {
+		return GatewayProfilePublicWSS
+	}
+	if gatewayPublicWebSocketURL(publicGatewayURL) != "" {
+		return GatewayProfilePublicWSS
+	}
+	return GatewayProfileMacLocal
+}
+
+func (s *Server) localGatewayWebSocketURL(r *http.Request) string {
+	s.mu.Lock()
+	configured := s.macLocalGatewayURL
+	s.mu.Unlock()
+	if configuredURL := gatewayConfiguredWebSocketURL(configured); configuredURL != "" {
+		return configuredURL
+	}
+	host := sanitizedXiaozhiOTAHost(r.Host)
+	if host == "" {
+		return ""
+	}
+	return xiaozhiOTAWebSocketScheme(r) + "://" + host + "/v1/xiaozhi"
+}
+
+func (s *Server) selectedGatewayWebSocketURL(r *http.Request) string {
+	if s.selectedGatewayProfile() == GatewayProfilePublicWSS {
+		if publicURL := s.publicGatewayWebSocketURL(); publicURL != "" {
+			return publicURL
+		}
+	}
+	return s.localGatewayWebSocketURL(r)
+}
+
+func (s *Server) publicGatewayWebSocketURL() string {
+	s.mu.Lock()
+	raw := s.publicGatewayURL
+	s.mu.Unlock()
+	return gatewayConfiguredWebSocketURL(raw)
+}
+
+func gatewayPublicWebSocketURL(raw string) string {
+	return gatewayConfiguredWebSocketURL(raw)
+}
+
+func gatewayConfiguredWebSocketURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" ||
+		strings.ContainsAny(raw, " \t\r\n") ||
+		strings.Contains(strings.ToLower(raw), "token") ||
+		strings.Contains(strings.ToLower(raw), "secret") {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ""
+	}
+	if sanitizedXiaozhiOTAHost(parsed.Host) == "" {
+		return ""
+	}
+	scheme := ""
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "ws":
+		scheme = "ws"
+	case "https", "wss":
+		scheme = "wss"
+	default:
+		return ""
+	}
+	endpointPath := strings.TrimRight(parsed.EscapedPath(), "/")
+	switch endpointPath {
+	case "", "/v1/xiaozhi":
+		endpointPath = "/v1/xiaozhi"
+	default:
+		return ""
+	}
+	return scheme + "://" + parsed.Host + endpointPath
 }
 
 func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
@@ -667,8 +866,8 @@ func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	host := sanitizedXiaozhiOTAHost(r.Host)
-	if host == "" {
+	webSocketURL := s.selectedGatewayWebSocketURL(r)
+	if webSocketURL == "" {
 		http.Error(w, "invalid host", http.StatusBadRequest)
 		return
 	}
@@ -678,11 +877,22 @@ func (s *Server) handleXiaozhiOTA(w http.ResponseWriter, r *http.Request) {
 			TimezoneOffset: 8 * 60,
 		},
 		WebSocket: XiaozhiOTAWebSocketConfig{
-			URL:     "ws://" + host + "/v1/xiaozhi",
+			URL:     webSocketURL,
 			Token:   "",
 			Version: xiaozhiOTAWebSocketVersion,
 		},
 	})
+}
+
+func xiaozhiOTAWebSocketScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "wss"
+	}
+	forwardedProto := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]))
+	if forwardedProto == "https" {
+		return "wss"
+	}
+	return "ws"
 }
 
 func sanitizedXiaozhiOTAHost(host string) string {

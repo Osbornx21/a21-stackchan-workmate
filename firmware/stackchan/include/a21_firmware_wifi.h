@@ -22,10 +22,36 @@
 static constexpr size_t A21_WIFI_SSID_CAP = 33;
 static constexpr size_t A21_WIFI_PASSWORD_CAP = 65;
 
+enum A21WiFiProvisioningMethod {
+  A21_WIFI_PROVISIONING_HOTSPOT,
+  A21_WIFI_PROVISIONING_BLUFI,
+  A21_WIFI_PROVISIONING_ACOUSTIC,
+};
+
+#ifndef A21_WIFI_PROVISIONING_METHOD
+#define A21_WIFI_PROVISIONING_METHOD A21_WIFI_PROVISIONING_HOTSPOT
+#endif
+
 struct A21WiFiConfig {
   char ssid[A21_WIFI_SSID_CAP];
   char password[A21_WIFI_PASSWORD_CAP];
 };
+
+inline const char* a21WiFiProvisioningMethodName(A21WiFiProvisioningMethod method) {
+  switch (method) {
+    case A21_WIFI_PROVISIONING_BLUFI:
+      return "blufi";
+    case A21_WIFI_PROVISIONING_ACOUSTIC:
+      return "acoustic";
+    case A21_WIFI_PROVISIONING_HOTSPOT:
+    default:
+      return "hotspot";
+  }
+}
+
+inline A21WiFiProvisioningMethod a21DefaultWiFiProvisioningMethod() {
+  return static_cast<A21WiFiProvisioningMethod>(A21_WIFI_PROVISIONING_METHOD);
+}
 
 inline void a21InitWiFiConfig(A21WiFiConfig* config) {
   if (config == nullptr) {

@@ -320,6 +320,41 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 	}
 }
 
+func TestOfficialXiaozhiCompatibleOverlayPreservesXiaozhiWifiProvisioning(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`,
+		`# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set`,
+		`# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set`,
+		`CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing Wi-Fi provisioning contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		`CONFIG_WIFI_SSID=`,
+		`CONFIG_WIFI_PASSWORD=`,
+		`A21_WIFI_PASSWORD`,
+		`101.132.117.182`,
+	} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official Xiaozhi-compatible overlay must not hardcode stale Wi-Fi/provisioning value %q", forbidden)
+		}
+	}
+}
+
 func TestRunStackChanOfficialPCMBridgePlanReportsDiagnosticContract(t *testing.T) {
 	source := writeTestOfficialStackChanRepo(t, true)
 	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-pcm-bridge.patch")

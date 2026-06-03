@@ -32,6 +32,23 @@ func TestFingerprintDetectsTunAndMappedDNS(t *testing.T) {
 	}
 }
 
+func TestFingerprintFallsBackToLinuxDefaultRoute(t *testing.T) {
+	runner := fakeRunner{
+		"route -n get default":              "",
+		"ip route show default":             "default via 172.24.30.253 dev eth0 proto dhcp src 172.24.30.54 metric 100\n",
+		"dig +short " + DefaultDNSProbeHost: "104.20.23.154\n",
+	}
+
+	fp := DetectFingerprint(context.Background(), runner, []string{"PATH=/usr/bin"})
+
+	if fp.NetworkInterface != "eth0" {
+		t.Fatalf("NetworkInterface = %q, want eth0", fp.NetworkInterface)
+	}
+	if fp.ExternalDNSMappedIP != "104.20.23.154" {
+		t.Fatalf("ExternalDNSMappedIP = %q, want 104.20.23.154", fp.ExternalDNSMappedIP)
+	}
+}
+
 func TestFingerprintRecordsProxyEnv(t *testing.T) {
 	fp := DetectFingerprint(context.Background(), fakeRunner{}, []string{
 		"HTTPS_PROXY=http://127.0.0.1:7892",

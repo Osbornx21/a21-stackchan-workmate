@@ -901,7 +901,7 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32] [--warm-product-chain]")
+			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32] [--mac-local-gateway-url ws://127.0.0.1:21081/v1/xiaozhi] [--public-gateway-url https://a21.example.com] [--warm-product-chain]")
 			return 0
 		case "--addr":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -938,6 +938,20 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 			}
 			i++
 			options.VoiceTextMaxTokens = args[i]
+		case "--public-gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--public-gateway-url requires a value")
+				return 2
+			}
+			i++
+			options.PublicGatewayURL = args[i]
+		case "--mac-local-gateway-url":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--mac-local-gateway-url requires a value")
+				return 2
+			}
+			i++
+			options.MacLocalGatewayURL = args[i]
 		case "--warm-product-chain":
 			options.WarmProductChain = true
 		default:
@@ -967,6 +981,8 @@ type gatewayCLIOptions struct {
 	LocalOllamaBaseURL string
 	LocalOllamaModel   string
 	VoiceTextMaxTokens string
+	MacLocalGatewayURL string
+	PublicGatewayURL   string
 	WarmProductChain   bool
 }
 
@@ -976,6 +992,8 @@ func gatewayEnvWithCLIOptions(env []string, options gatewayCLIOptions) []string 
 	out = gatewayEnvSetIfNotEmpty(out, "A21_LOCAL_OLLAMA_BASE_URL", options.LocalOllamaBaseURL)
 	out = gatewayEnvSetIfNotEmpty(out, "A21_LOCAL_OLLAMA_MODEL", options.LocalOllamaModel)
 	out = gatewayEnvSetIfNotEmpty(out, "A21_VOICE_TEXT_MAX_TOKENS", options.VoiceTextMaxTokens)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_MAC_LOCAL_GATEWAY_URL", options.MacLocalGatewayURL)
+	out = gatewayEnvSetIfNotEmpty(out, "A21_PUBLIC_GATEWAY_URL", options.PublicGatewayURL)
 	return out
 }
 
@@ -1006,6 +1024,8 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		XiaozhiVoicePipelineAdapters: &xiaozhiVoicePipelineAdapters,
 		AudioIngressConfig:           newAudioIngressConfigFromEnv(env),
 		XiaozhiStockProfessional:     appEnvBool(env, "A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE"),
+		MacLocalGatewayURL:           appEnvValue(env, "A21_MAC_LOCAL_GATEWAY_URL"),
+		PublicGatewayURL:             appEnvValue(env, "A21_PUBLIC_GATEWAY_URL"),
 	}
 	if listenMaxMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_XIAOZHI_LISTEN_MAX_MS"))); err == nil && listenMaxMS > 0 {
 		options.XiaozhiListenMaxDuration = time.Duration(listenMaxMS) * time.Millisecond

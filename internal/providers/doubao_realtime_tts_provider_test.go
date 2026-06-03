@@ -33,6 +33,30 @@ func TestDoubaoRealtimeTTSProviderFromEnvReportsConfiguredWithoutLeakingSecrets(
 	}
 }
 
+func TestDoubaoRealtimeTTSProviderFromEnvAcceptsAccessTokenAlias(t *testing.T) {
+	provider := NewDoubaoRealtimeTTSProviderFromEnv([]string{
+		"A21_DOUBAO_ACCESS_TOKEN=access-a21-secret",
+		"A21_DOUBAO_APP_ID=app-a21-secret",
+		"A21_DOUBAO_SECRET_KEY=secret-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=voice-secret",
+	}, nil)
+
+	health, err := provider.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != VoiceProviderHealthy || !health.Configured || !health.Realtime {
+		t.Fatalf("health = %#v, want healthy configured realtime", health)
+	}
+	rendered := doubaoTTSProviderMustJSON(t, health)
+	for _, forbidden := range []string{"access-a21-secret", "app-a21-secret", "secret-a21-secret", "doubao-tts", "voice-secret", "Authorization", "Bearer"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("health leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestDoubaoRealtimeTTSProviderFromEnvReportsMissingCredentials(t *testing.T) {
 	provider := NewDoubaoRealtimeTTSProviderFromEnv([]string{}, nil)
 

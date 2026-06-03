@@ -101,6 +101,7 @@ func TestExpressionStatesCoverLocalFallback(t *testing.T) {
 
 func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
 	tests := map[string]Mode{
+		"dialogue":       ModeDialogue,
 		"workmate":       ModeWorkmate,
 		"companion":      ModeCompanion,
 		"co_creation":    ModeCoCreation,
@@ -117,6 +118,33 @@ func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
 		if string(got) != want {
 			t.Fatalf("mode = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestProductModesConvergeToDialogueAndProfessional(t *testing.T) {
+	tests := map[Mode]Mode{
+		"":                ModeDialogue,
+		ModeDialogue:      ModeDialogue,
+		ModeWorkmate:      ModeDialogue,
+		ModeCompanion:     ModeDialogue,
+		ModeCoCreation:    ModeDialogue,
+		ModeRoleplay:      ModeDialogue,
+		ModeFocus:         ModeDialogue,
+		ModePublic:        ModeDialogue,
+		ModePrivate:       ModeDialogue,
+		ModeMuted:         ModeDialogue,
+		ModeProfessional:  ModeProfessional,
+		ModeLocalFallback: ModeLocalFallback,
+		ModeError:         ModeError,
+	}
+	for input, want := range tests {
+		if got := NormalizeProductMode(input); got != want {
+			t.Fatalf("NormalizeProductMode(%q) = %q, want %q", input, got, want)
+		}
+	}
+	catalog := CanonicalProductModes()
+	if len(catalog) != 2 || catalog[0] != ModeDialogue || catalog[1] != ModeProfessional {
+		t.Fatalf("canonical product modes = %#v, want dialogue/professional", catalog)
 	}
 }
 

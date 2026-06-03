@@ -225,6 +225,69 @@ func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredDoubaoRealtimeTTSStag
 	}
 }
 
+func TestXiaozhiStreamingProviderReadinessPassesConfiguredDialogueChainWithDoubaoAccessToken(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	helperPath := filepath.Join(root, "scripts", "a21_sherpa_onnx_streaming_asr_session.py")
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helperPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelDir := filepath.Join(root, ".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30")
+	createStreamingASRModelFiles(t, modelDir)
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
+	t.Setenv("A21_DOUBAO_ACCESS_TOKEN", "access-a21-secret")
+	t.Setenv("A21_DOUBAO_SECRET_KEY", "secret-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts-secret")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "voice-secret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"product_mode":"dialogue"`,
+		`"chain_mode":"dialogue_low_latency"`,
+		`"professional_boundary":"v21_adapter_only"`,
+		`"gate_status":"passed"`,
+		`"prd_accepted":false`,
+		`"asr":{"profile":"sherpa_onnx_streaming"`,
+		`"llm":{"profile":"stepfun"`,
+		`"tts":{"profile":"doubao_tts_realtime"`,
+		`"adapter":"doubao_realtime_tts_adapter"`,
+		`"ready":true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"app-a21-secret",
+		"access-a21-secret",
+		"secret-a21-secret",
+		"doubao-tts-secret",
+		"voice-secret",
+		root,
+		"Authorization",
+		"Bearer",
+		"http://",
+		"https://",
+		"wss://",
+		"/Users/",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiStreamingProviderReadinessAcceptsOnlyAllStreamingFixture(t *testing.T) {
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "a21_fixture_streaming_asr")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "a21_fixture_text_stream")

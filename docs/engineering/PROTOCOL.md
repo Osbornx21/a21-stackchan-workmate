@@ -294,9 +294,9 @@ by the xiaozhi runtime. Responses may include control events and audio playback
 chunks, but must not echo transcripts, provider text, raw audio, base64 input
 audio, full URLs, credentials, proxy values, or local paths.
 
-Fast companion accepts only executable voice modes. If the selected
-`voice_mode` is planned, such as `pure_cloud`, the endpoint returns `409` before
-provider or V21 execution.
+Fast companion accepts only `dialogue`. If the selected `voice_mode` is
+`professional`, the endpoint returns `409` before provider or V21 execution and
+points the caller to the professional path.
 
 ### Xiaozhi MCP And Expression Contract
 
@@ -438,13 +438,19 @@ evidence.
 
 ## Modes
 
-A21 mode values are semantic product and office-state signals, not provider names:
+A21 mode values are semantic product and office-state signals, not provider names.
+The launch product modes are only:
+
+- `dialogue`
+- `professional`
+
+Compatibility and state labels may still appear on lower-level runtime/control
+surfaces:
 
 - `workmate`
 - `companion`
 - `co_creation`
 - `roleplay`
-- `professional`
 - `focus`
 - `public`
 - `private`
@@ -454,13 +460,41 @@ A21 mode values are semantic product and office-state signals, not provider name
 
 Only `professional` with `professional_only` privacy is allowed to trigger the V21 adapter path. `focus`, `public`, `private`, and `muted` are office visibility/privacy states and must remain visible to the user without silently becoming professional retrieval context. Explicit `private` privacy keeps Agent I/O and professional/V21 evidence routing blocked, even if a caller also asks for professional evidence.
 
-`voice_mode` is a separate operator selection signal, not a replacement for
-product `mode` and not a provider router. `GET /v1/voice-modes` returns
-`a21.gateway.voice_modes.v1` with the selected voice mode and the small catalog:
-`edge_cloud` is the available default; `pure_cloud` is visible as planned
-spike-only. Selecting a planned voice mode persists visible state, but Gateway
-must reject relevant turn execution honestly instead of silently switching
-provider, V21, or firmware behavior.
+`voice_mode` is the operator-visible product-mode selector for the converged
+launch surface. `GET /v1/voice-modes` returns `a21.gateway.voice_modes.v1` with
+only `dialogue` and `professional`. `dialogue` is the default low-latency spoken
+chain. `professional` is the evidence-first V21 adapter path and must be
+rejected by dialogue-only endpoints instead of silently switching provider,
+V21, or firmware behavior. Legacy labels such as `workmate`, `companion`,
+`co_creation`, and `roleplay` normalize to `dialogue` at product-contract
+surfaces; visibility/privacy states remain separate policy fields.
+
+`gateway_profile` is the operator/frontend transport selector for where the
+StackChan product connects. It is independent from `voice_mode`: selecting
+`public_wss` must not turn dialogue into professional mode, and selecting
+`professional` must not silently move the device to a public Gateway.
+`GET /v1/gateway-profiles` returns `a21.gateway.profiles.v1` with `mac_local`
+and `public_wss`. `public_wss` is the default profile when
+`A21_PUBLIC_GATEWAY_URL` is configured, because the Aliyun edge is the main
+product Gateway. The production endpoint should be `https` or `wss` without
+credentials; IP-only ECS bring-up may temporarily use `http` or `ws`, which
+normalizes to `ws://.../v1/xiaozhi`. `mac_local` remains selectable for
+Mac-local models and local processing. Public control surfaces should configure
+`A21_MAC_LOCAL_GATEWAY_URL` when they need to display or select the actual Mac
+Gateway address; otherwise `mac_local` falls back to the local request-host
+WebSocket URL. `POST /v1/gateway-profiles` changes the selected profile, and
+`/xiaozhi/ota/` uses that profile to return either the configured Mac/local
+WebSocket URL, the local request-host WebSocket URL, or the configured public
+WebSocket endpoint.
+
+StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
+model. Stored NVS credentials are tried first. If none are available, the
+firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or
+falling into a silent local-only state. The A21 official-compatible product
+overlay selects Hotspot/SoftAP captive portal by default and keeps BluFi and
+acoustic provisioning as explicit build-time alternatives. Provider keys and
+Gateway secrets stay server-side and are never stored in Wi-Fi provisioning
+payloads or firmware.
 
 `local_fallback` is both a mode and an expression state. Gateway enters it when
 the local voice/provider pipeline cannot produce a playable answer after local
@@ -590,7 +624,7 @@ Request fields:
 
 - `device_id`: required A21 device ID
 - `state`: optional expression state, default `listening`
-- `mode`: optional A21 mode, default `workmate`
+- `mode`: optional A21 mode, default `dialogue`
 - `text`: optional short screen/status text
 - `trace_id` and `session_id`: optional explicit trace/session IDs
 - `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation

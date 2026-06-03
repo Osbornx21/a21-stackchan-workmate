@@ -24,6 +24,9 @@ Active child transitions:
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
 - `T-XIAOZHI-STALE-OPUS-INGRESS-SUPPRESSION-001`
+- `T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE`
+- `T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY`
+- `T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -105,6 +108,47 @@ are suppressed before decode, audio ingress, VAD, or streaming ASR append. This
 keeps abort/wake-as-abort/listen-start barge-in from letting old queued audio
 pollute the next listening turn. It is unit/Gateway evidence only, not real
 provider execution or physical PRD acceptance.
+`T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE` is active as the mode
+contraction slice: user-facing product modes converge to `dialogue` and
+`professional`; legacy labels such as `workmate`, `companion`, `co_creation`,
+and `roleplay` normalize to `dialogue` at product-contract surfaces. The
+dialogue readiness report now identifies the static `dialogue_low_latency`
+chain and accepts Doubao realtime TTS configuration via env-name-only
+`A21_DOUBAO_API_KEY` or `A21_DOUBAO_ACCESS_TOKEN`, while keeping
+`professional` on the V21 adapter boundary and `prd_accepted=false`.
+`T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY` is active as the main public
+transport profile slice: with a valid `A21_PUBLIC_GATEWAY_URL`, `public_wss`
+is the default product voice-edge Gateway, while `mac_local` remains
+selectable for Mac-local models and local processing. Gateway exposes
+`/v1/gateway-profiles`, simulator can select the profile, and
+`/xiaozhi/ota/` returns either request-host local `ws`/`wss` or configured
+public `ws`/`wss` `/v1/xiaozhi`. The earlier Aliyun SWAS host `101.132.117.182`
+proved the experimental chain under systemd/nginx with self-signed `443`, but
+the new ECS `47.103.57.217` / `i-uf63f4ymqc2dxtljxz2n` is now running the main
+A21 voice-edge Gateway under systemd on `127.0.0.1:21081` behind Caddy public
+`80/443`. External HTTP health/profile/OTA checks pass, OTA returns
+`ws://47.103.57.217/v1/xiaozhi`, and temporary self-signed HTTPS passes only
+with `-k`. Trusted TLS, secure provider-secret injection, real cloud
+ASR/LLM/TTS execution, physical StackChan public-WSS evidence, and wake-word
+product proof remain open before PRD acceptance.
+`T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE` is active as the endpoint
+provisioning contract: A21 no longer treats missing Wi-Fi credentials in the
+self-owned firmware state model as local fallback; it enters
+`Wi-Fi provisioning` and exposes Xiaozhi's three startup provisioning methods
+as `hotspot`, `blufi`, and `acoustic`, with `hotspot` as default. The
+official-compatible product overlay now explicitly selects Hotspot/SoftAP
+provisioning, keeps BluFi and acoustic disabled but named as build-time
+alternatives, points OTA at the main public Gateway
+`http://47.103.57.217/xiaozhi/ota/`, and still stores no provider keys or Wi-Fi
+credentials in repo/firmware. The product lane was rebuilt no-flash with the
+current overlay and produced
+`/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+with app SHA-256
+`c012542ee8f1837106da91fe934e27487813333eaad124841386706259f48659`; report
+`reports/a21-stackchan-official-baseline-20260603-150433-1780470273395485000.json`
+is `status=passed`, `official_avatar_action_preserved=true`, and
+`official_xiaozhi_start_preserved=true`. This is still below physical
+acceptance until flashed and observed through a guarded hardware window.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -2079,6 +2123,8 @@ Next state:
 | T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001: Xiaozhi nonblocking ASR commit | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md` scoped the cut. `listen.stop` and VAD auto-stop now start async streaming-ASR commit/final handling instead of blocking the `/v1/xiaozhi` WebSocket read loop. Focused Gateway tests prove abort can be processed while commit remains pending and that a streaming ASR final starts the voice pipeline without calling batch `Transcribe`. This keeps A21 closer to Xiaozhi's responsive control/media state machine while remaining below full PRD acceptance. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 | T-XIAOZHI-OFFICIAL-PROTOCOL-SOURCE-READ-AND-NEXT-CUT-001: Stock STT and wake preroll | Completed host-local stock fidelity cut | Plan `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md` scoped source-read workers plus a narrow red/green implementation. A21 now sends stock `stt` before `tts/start` when streaming ASR text exists, and buffers up to five true-idle wake pre-roll Opus frames for the next `listen/start` while preserving cooldown/current-turn `ignored_not_listening` behavior. Focused Gateway tests, full Gateway package tests, and focused app realtime parity/readiness tests passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime acceptance, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 | T-XIAOZHI-OPUS-INGRESS-QUEUE-001: Xiaozhi Opus ingress queue | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-opus-ingress-queue.md` scoped the cut. Listening Opus frames now enter a bounded per-session queue before decode/VAD/streaming-ASR append, and `listen.stop` finalization waits asynchronously for queued ingress to catch up. Focused Gateway tests, full Gateway package tests, focused app parity/readiness tests, `git diff --check`, and `make verify` passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime acceptance, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
+| T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE: Dialogue-first product mode and readiness gate | Active host-local convergence | Plan `docs/plans/2026-06-03-dialogue-first-low-latency-prd-convergence.md` scopes the cut. Product mode surfaces converge on `dialogue` plus `professional`; `dialogue` is the low-latency Xiaozhi/ASR/text/TTS chain and `professional` remains V21-only. Doubao realtime TTS static readiness accepts env-name-only access-token configuration without storing credential/model/voice values. No provider/V21 execution, Gateway restart, firmware, flash, hardware, or audio playback occurred in this transition. |
+| T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY: Main public Gateway profile | Active main-edge running | Plan `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md` scopes the cut. Gateway now separates `gateway_profile` from `voice_mode`: valid `A21_PUBLIC_GATEWAY_URL` selects `public_wss` as the main product public path, while `mac_local` remains available for Mac/local-model switching. Product deployment targets trusted `443`/`wss`; IP-only bring-up can use public `http/ws`. `/v1/gateway-profiles`, simulator selection, env `A21_PUBLIC_GATEWAY_URL`, CLI `--public-gateway-url`, and OTA public URL behavior are implemented. The earlier `101.132.117.182` SWAS path is experimental/backup. New ECS `47.103.57.217` is active behind Caddy, returns `ws://47.103.57.217/v1/xiaozhi` from OTA, and passed remote `make verify`; host-only bench remains blocked below PRD because no real provider/V21/hardware execution was injected. |
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
 

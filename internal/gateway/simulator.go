@@ -175,7 +175,7 @@ const simulatorHTML = `<!doctype html>
     }
     .readout {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 10px;
     }
     .visibility {
@@ -391,27 +391,24 @@ const simulatorHTML = `<!doctype html>
         </div>
         <div class="fields">
           <select id="mode" aria-label="mode">
-            <option value="workmate">workmate</option>
-            <option value="companion">companion</option>
-            <option value="co_creation">co_creation</option>
-            <option value="roleplay">roleplay</option>
+            <option value="dialogue">dialogue</option>
             <option value="professional">professional</option>
-            <option value="focus">focus</option>
-            <option value="public">public</option>
-            <option value="private">private</option>
-            <option value="muted">muted</option>
-            <option value="local_fallback">local_fallback</option>
           </select>
           <select id="voiceMode" aria-label="voice mode">
-            <option value="edge_cloud">edge_cloud</option>
-            <option value="pure_cloud">pure_cloud</option>
+            <option value="dialogue">dialogue</option>
+            <option value="professional">professional</option>
+          </select>
+          <select id="gatewayProfile" aria-label="gateway profile">
+            <option value="mac_local">mac_local</option>
+            <option value="public_wss">public_wss</option>
           </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
           <div class="metric"><label>State</label><div id="state">idle</div></div>
-          <div class="metric"><label>Mode</label><div id="modeReadout">workmate</div></div>
-          <div class="metric"><label>Voice</label><div id="voiceModeReadout">edge_cloud</div></div>
+          <div class="metric"><label>Mode</label><div id="modeReadout">dialogue</div></div>
+          <div class="metric"><label>Voice</label><div id="voiceModeReadout">dialogue</div></div>
+          <div class="metric"><label>Gateway</label><div id="gatewayProfileReadout">mac_local</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -515,6 +512,7 @@ const simulatorHTML = `<!doctype html>
       state: document.getElementById('state'),
       modeReadout: document.getElementById('modeReadout'),
       voiceModeReadout: document.getElementById('voiceModeReadout'),
+      gatewayProfileReadout: document.getElementById('gatewayProfileReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -562,6 +560,7 @@ const simulatorHTML = `<!doctype html>
       log: document.getElementById('log'),
       mode: document.getElementById('mode'),
       voiceMode: document.getElementById('voiceMode'),
+      gatewayProfile: document.getElementById('gatewayProfile'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -571,7 +570,7 @@ const simulatorHTML = `<!doctype html>
       seq: 1,
       traceId: '',
       sessionId: '',
-      mode: 'workmate',
+      mode: 'dialogue',
       state: 'idle',
       audioFrames: 0,
       playbackChunks: 0,
@@ -630,14 +629,18 @@ const simulatorHTML = `<!doctype html>
       updateVisibilityBadges();
     }
     function setMode(mode) {
-      sim.mode = mode || 'workmate';
+      sim.mode = mode || 'dialogue';
       document.body.dataset.mode = sim.mode;
       ui.modeReadout.textContent = sim.mode;
       updateVisibilityBadges();
     }
     function setVoiceMode(mode) {
-      ui.voiceMode.value = mode || 'edge_cloud';
+      ui.voiceMode.value = mode || 'dialogue';
       ui.voiceModeReadout.textContent = ui.voiceMode.value;
+    }
+    function setGatewayProfile(profile) {
+      ui.gatewayProfile.value = profile || 'mac_local';
+      ui.gatewayProfileReadout.textContent = ui.gatewayProfile.value;
     }
     function rememberEnvelope(envelope) {
       if (envelope.trace_id) {
@@ -859,9 +862,33 @@ const simulatorHTML = `<!doctype html>
           return;
         }
         const catalog = await response.json();
-        setVoiceMode(catalog.selected_voice_mode || 'edge_cloud');
+        setVoiceMode(catalog.selected_voice_mode || 'dialogue');
       } catch (err) {
         log('voice mode catalog unavailable');
+      }
+    }
+    async function refreshGatewayProfiles() {
+      try {
+        const response = await fetch('/v1/gateway-profiles', { cache: 'no-store' });
+        if (!response.ok) {
+          log('gateway profile catalog error ' + response.status);
+          return;
+        }
+        const catalog = await response.json();
+        const selected = catalog.selected_gateway_profile || 'mac_local';
+        const profiles = catalog.profiles || [];
+        if (profiles.length) {
+          ui.gatewayProfile.innerHTML = profiles.map((profile) => {
+            const id = escapeText(profile.id || '');
+            const status = profile.status || 'unknown';
+            const disabled = status === 'available' ? '' : ' disabled';
+            const selectedAttr = (profile.id || '') === selected ? ' selected' : '';
+            return '<option value="' + id + '"' + disabled + selectedAttr + '>' + id + '</option>';
+          }).join('');
+        }
+        setGatewayProfile(selected);
+      } catch (err) {
+        log('gateway profile catalog unavailable');
       }
     }
     async function saveVoiceMode() {
@@ -880,6 +907,25 @@ const simulatorHTML = `<!doctype html>
         refreshRegistry();
       } catch (err) {
         log('voice mode save unavailable');
+      }
+    }
+    async function saveGatewayProfile() {
+      try {
+        const response = await fetch('/v1/gateway-profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gateway_profile: ui.gatewayProfile.value })
+        });
+        if (!response.ok) {
+          log('gateway profile save failed ' + response.status);
+          refreshGatewayProfiles();
+          return;
+        }
+        const catalog = await response.json();
+        setGatewayProfile(catalog.selected_gateway_profile || ui.gatewayProfile.value);
+        refreshRegistry();
+      } catch (err) {
+        log('gateway profile save unavailable');
       }
     }
     async function refreshWaterfall() {
@@ -1156,8 +1202,10 @@ const simulatorHTML = `<!doctype html>
     ui.resetWakeWord.addEventListener('click', resetWakeWordConfig);
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
+    ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
     refreshRegistry();
     refreshVoiceModes();
+    refreshGatewayProfiles();
     refreshWakeWordConfig();
     setMode(ui.mode.value);
     updateVisibilityBadges();

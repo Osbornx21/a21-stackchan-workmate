@@ -16,7 +16,16 @@ StackChan must not know provider network details. Firmware connects only to A21 
 - network diagnostics
 - retry/fallback behavior
 
-Firmware Wi-Fi credentials are not provider credentials, but they are still local secrets. They must not be committed into `platformio.ini`, firmware docs, logs, doctor reports, or artifact names. Default firmware builds may contain no SSID and must enter local fallback. Local hardware bring-up may use ignored `firmware/stackchan/include/a21_firmware_secrets.local.h`; longer-term provisioning must preserve StackChan calibration/NVS keys and stay A21-namespaced.
+Firmware Wi-Fi credentials are not provider credentials, but they are still
+local secrets. They must not be committed into `platformio.ini`, firmware docs,
+logs, doctor reports, or artifact names. Default firmware builds may contain no
+SSID and must enter device-side Wi-Fi provisioning, not a dead local fallback.
+The product lane follows Xiaozhi's startup model: use stored NVS SSIDs first,
+then enter a build-selected provisioning method. Hotspot/SoftAP captive portal
+is the A21 product default; BluFi and acoustic provisioning remain named
+build-time alternatives. Local hardware bring-up may still use ignored
+`firmware/stackchan/include/a21_firmware_secrets.local.h`, but provisioning
+must preserve StackChan calibration/NVS keys and stay A21-namespaced.
 
 ## Direct-Connect Set
 
@@ -68,6 +77,29 @@ separate adapter transition with tests and redacted reporting.
 `agent-io-smoke --execute` is intentionally not a cloud provider egress client.
 It uses an HTTP transport with `Proxy: nil`, records only a coarse endpoint
 label, and refuses URL credentials or device-control paths.
+
+## Public Gateway Profile
+
+A21 exposes a product public Gateway profile for StackChan as the main
+voice-edge entry when a public URL is configured. This is a transport profile,
+not a new product mode and not a local model host replacement.
+
+- `public_wss` is enabled and selected by default when
+  `A21_PUBLIC_GATEWAY_URL` is a valid public endpoint without URL credentials,
+  token strings, or secret strings. Product deployment targets `https://...`
+  or `wss://.../v1/xiaozhi`; IP-only bring-up may temporarily use
+  `http://...` or `ws://.../v1/xiaozhi`.
+- `mac_local` remains selectable for Mac-local models and local processing.
+  When the frontend or public control surface must show the actual Mac path,
+  configure `A21_MAC_LOCAL_GATEWAY_URL` with a credential-free
+  `ws://.../v1/xiaozhi` or `wss://.../v1/xiaozhi` URL. If it is unset, Gateway
+  falls back to the local request-host URL.
+- Public ingress should terminate TLS on external `443` with Caddy/Nginx and
+  reverse proxy to the A21 Gateway process on the existing internal port.
+- No provider key may be stored in firmware or URL configuration.
+- `/xiaozhi/ota/` returns the selected profile's WebSocket URL. Behind TLS
+  reverse proxy, `X-Forwarded-Proto: https` maps local request-host OTA output
+  to `wss://.../v1/xiaozhi`.
 
 ## Mainland Lab Execution Boundary
 

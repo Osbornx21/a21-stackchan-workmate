@@ -59,6 +59,11 @@ func DetectFingerprint(ctx context.Context, runner CommandRunner, env []string) 
 	if out, err := runner.Run(ctx, "route", "-n", "get", "default"); err == nil {
 		fp.NetworkInterface = parseRouteInterface(out)
 	}
+	if fp.NetworkInterface == "" {
+		if out, err := runner.Run(ctx, "ip", "route", "show", "default"); err == nil {
+			fp.NetworkInterface = parseLinuxDefaultRouteInterface(out)
+		}
+	}
 	if out, err := runner.Run(ctx, "dig", "+short", DefaultDNSProbeHost); err == nil {
 		fp.ExternalDNSMappedIP = firstNonEmptyLine(out)
 	}
@@ -82,6 +87,18 @@ func parseRouteInterface(out string) string {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "interface:") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "interface:"))
+		}
+	}
+	return ""
+}
+
+func parseLinuxDefaultRouteInterface(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "dev" {
+				return fields[i+1]
+			}
 		}
 	}
 	return ""

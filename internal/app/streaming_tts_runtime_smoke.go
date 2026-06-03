@@ -138,7 +138,7 @@ func buildStreamingTTSRuntimeSmokeReport(ctx context.Context, options streamingT
 		EvidenceMode:          "runtime_realtime_tts_smoke",
 		ExecuteRequested:      options.Execute,
 		ProfileEnv:            "A21_TTS_FAST_PROFILE",
-		APIKeyEnv:             "A21_DOUBAO_API_KEY",
+		APIKeyEnv:             "A21_DOUBAO_API_KEY|A21_DOUBAO_ACCESS_TOKEN",
 		ModelEnv:              "A21_DOUBAO_TTS_MODEL",
 		VoiceEnv:              "A21_DOUBAO_TTS_VOICE",
 		SampleRateEnv:         "A21_DOUBAO_TTS_SAMPLE_RATE_HZ",
@@ -248,7 +248,11 @@ func streamingTTSRuntimeSmokeMissingEnv(env []string) []string {
 	if strings.TrimSpace(streamingTTSRuntimeSmokeEnvValue(env, "A21_TTS_FAST_PROFILE")) != "doubao_tts_realtime" {
 		missing = append(missing, "A21_TTS_FAST_PROFILE")
 	}
-	for _, name := range []string{"A21_DOUBAO_API_KEY", "A21_DOUBAO_TTS_MODEL", "A21_DOUBAO_TTS_VOICE"} {
+	if strings.TrimSpace(streamingTTSRuntimeSmokeEnvValue(env, "A21_DOUBAO_API_KEY")) == "" &&
+		strings.TrimSpace(streamingTTSRuntimeSmokeEnvValue(env, "A21_DOUBAO_ACCESS_TOKEN")) == "" {
+		missing = append(missing, "A21_DOUBAO_API_KEY")
+	}
+	for _, name := range []string{"A21_DOUBAO_TTS_MODEL", "A21_DOUBAO_TTS_VOICE"} {
 		if strings.TrimSpace(streamingTTSRuntimeSmokeEnvValue(env, name)) == "" {
 			missing = append(missing, name)
 		}

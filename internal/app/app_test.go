@@ -4493,6 +4493,38 @@ func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) 
 	}
 }
 
+func TestGatewayServerFromEnvExposesConfiguredPublicGatewayProfile(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_MAC_LOCAL_GATEWAY_URL=ws://192.168.1.20:21081/v1/xiaozhi",
+		"A21_PUBLIC_GATEWAY_URL=https://a21.example.com",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/gateway-profiles", nil)
+	req.Host = "127.0.0.1:21080"
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"selected_gateway_profile":"public_wss"`,
+		`"id":"public_wss"`,
+		`"status":"available"`,
+		`"websocket_url":"ws://192.168.1.20:21081/v1/xiaozhi"`,
+		`"websocket_url":"wss://a21.example.com/v1/xiaozhi"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("catalog missing %q: %s", want, rec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"token", "secret", "Authorization", "Bearer"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("catalog leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresSileroVADConfig(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_VAD_PREFERENCE=silero",

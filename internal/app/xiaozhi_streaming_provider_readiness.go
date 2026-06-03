@@ -20,19 +20,22 @@ type xiaozhiStreamingProviderReadinessOptions struct {
 }
 
 type xiaozhiStreamingProviderReadinessReport struct {
-	SchemaVersion string                                 `json:"schema_version"`
-	GeneratedAtMS int64                                  `json:"generated_at_ms"`
-	ExecutionMode string                                 `json:"execution_mode"`
-	Selection     providers.VoicePipelineSelection       `json:"selection"`
-	ASR           xiaozhiStreamingProviderReadinessStage `json:"asr"`
-	LLM           xiaozhiStreamingProviderReadinessStage `json:"llm"`
-	TTS           xiaozhiStreamingProviderReadinessStage `json:"tts"`
-	GateStatus    string                                 `json:"gate_status"`
-	PRDAccepted   bool                                   `json:"prd_accepted"`
-	Findings      []string                               `json:"findings"`
-	Redaction     xiaozhiVoiceBenchRedaction             `json:"redaction"`
-	NextRequired  []string                               `json:"next_required"`
-	ReportPath    string                                 `json:"report_path,omitempty"`
+	SchemaVersion        string                                 `json:"schema_version"`
+	GeneratedAtMS        int64                                  `json:"generated_at_ms"`
+	ExecutionMode        string                                 `json:"execution_mode"`
+	ProductMode          string                                 `json:"product_mode"`
+	ChainMode            string                                 `json:"chain_mode"`
+	ProfessionalBoundary string                                 `json:"professional_boundary"`
+	Selection            providers.VoicePipelineSelection       `json:"selection"`
+	ASR                  xiaozhiStreamingProviderReadinessStage `json:"asr"`
+	LLM                  xiaozhiStreamingProviderReadinessStage `json:"llm"`
+	TTS                  xiaozhiStreamingProviderReadinessStage `json:"tts"`
+	GateStatus           string                                 `json:"gate_status"`
+	PRDAccepted          bool                                   `json:"prd_accepted"`
+	Findings             []string                               `json:"findings"`
+	Redaction            xiaozhiVoiceBenchRedaction             `json:"redaction"`
+	NextRequired         []string                               `json:"next_required"`
+	ReportPath           string                                 `json:"report_path,omitempty"`
 }
 
 type xiaozhiStreamingProviderReadinessStage struct {
@@ -116,16 +119,19 @@ func buildXiaozhiStreamingProviderReadinessReport(env []string) xiaozhiStreaming
 		next = append(next, "implement streaming TTS that emits PCM/Opus chunks before complete WAV/file synthesis")
 	}
 	return xiaozhiStreamingProviderReadinessReport{
-		SchemaVersion: xiaozhiStreamingProviderReadinessSchemaVersion,
-		GeneratedAtMS: time.Now().UnixMilli(),
-		ExecutionMode: "static_no_execute_provider_capability_gate",
-		Selection:     selection,
-		ASR:           asr,
-		LLM:           llm,
-		TTS:           tts,
-		GateStatus:    status,
-		PRDAccepted:   false,
-		Findings:      uniqueXiaozhiStreamingFindings(findings),
+		SchemaVersion:        xiaozhiStreamingProviderReadinessSchemaVersion,
+		GeneratedAtMS:        time.Now().UnixMilli(),
+		ExecutionMode:        "static_no_execute_provider_capability_gate",
+		ProductMode:          "dialogue",
+		ChainMode:            "dialogue_low_latency",
+		ProfessionalBoundary: "v21_adapter_only",
+		Selection:            selection,
+		ASR:                  asr,
+		LLM:                  llm,
+		TTS:                  tts,
+		GateStatus:           status,
+		PRDAccepted:          false,
+		Findings:             uniqueXiaozhiStreamingFindings(findings),
 		Redaction: xiaozhiVoiceBenchRedaction{
 			PayloadsStored:         false,
 			CredentialValuesStored: false,
@@ -330,9 +336,14 @@ func xiaozhiSherpaStreamingASRConfigured(env []string) bool {
 }
 
 func xiaozhiDoubaoRealtimeTTSConfigured(env []string) bool {
-	return strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_API_KEY")) != "" &&
+	return xiaozhiDoubaoRealtimeTTSCredentialConfigured(env) &&
 		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_MODEL")) != "" &&
 		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_VOICE")) != ""
+}
+
+func xiaozhiDoubaoRealtimeTTSCredentialConfigured(env []string) bool {
+	return strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_API_KEY")) != "" ||
+		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_ACCESS_TOKEN")) != ""
 }
 
 func normalizeXiaozhiStreamingProfile(value string) string {

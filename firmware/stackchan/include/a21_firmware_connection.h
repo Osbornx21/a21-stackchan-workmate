@@ -14,6 +14,7 @@ static constexpr uint32_t A21_RECONNECT_MAX_MS = 30000;
 
 enum A21ConnectionPhase {
   A21_CONN_LOCAL_FALLBACK,
+  A21_CONN_WIFI_PROVISIONING,
   A21_CONN_WIFI_CONNECTING,
   A21_CONN_GATEWAY_CONNECTING,
   A21_CONN_GATEWAY_CONNECTED,
@@ -33,6 +34,8 @@ struct A21ConnectionState {
 
 inline const char* a21ConnectionStatusForPhase(A21ConnectionPhase phase) {
   switch (phase) {
+    case A21_CONN_WIFI_PROVISIONING:
+      return "Wi-Fi provisioning";
     case A21_CONN_WIFI_CONNECTING:
       return "Wi-Fi connecting";
     case A21_CONN_GATEWAY_CONNECTING:
@@ -102,8 +105,13 @@ inline void a21InitConnectionStateWithWiFi(
     return;
   }
   if (!a21ValidateWiFiConfig(wifi)) {
+    if (wifi == nullptr || wifi->ssid[0] == '\0') {
+      a21SetConnectionPhase(connection, A21_CONN_WIFI_PROVISIONING, now_ms);
+      a21CopyString(connection->last_error, A21_ERROR_CAP, "wifi_provisioning_required");
+      return;
+    }
     a21SetConnectionPhase(connection, A21_CONN_LOCAL_FALLBACK, now_ms);
-    a21CopyString(connection->last_error, A21_ERROR_CAP, (wifi == nullptr || wifi->ssid[0] == '\0') ? "missing_wifi" : "invalid_wifi");
+    a21CopyString(connection->last_error, A21_ERROR_CAP, "invalid_wifi");
   }
 }
 

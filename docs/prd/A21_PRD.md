@@ -86,15 +86,13 @@ A21 是“桌面实体 AI 伙计”。它不是普通语音助手、恋爱模拟
 
 | Mode | 目标 | 典型触发 | 输出形态 |
 | --- | --- | --- | --- |
-| `workmate` | 默认工位伙计态 | 开机、空闲、日常对话 | 短语音、眼神、呼吸感、轻反馈 |
-| `companion` | 情绪承接 | 吐槽、疲惫、压力表达 | 听见、复述、轻微吐槽、非鸡汤安慰 |
-| `co_creation` | 共创整理 | “帮我理一下”“这事怎么说” | 拆问题、改话术、生成会议/PRD表达 |
-| `roleplay` | 办公室小剧场 | 老板追问、研发反问、评审预演 | 多角色模拟、可打断、可调强度 |
+| `dialogue` | 默认低延迟对话态 | 开机、空闲、吐槽、共创、日常办公表达 | 短语音、眼神、呼吸感、轻反馈、可打断整理 |
 | `professional` | 证据型专业模式 | “专业模式”“给我证据” | V21 检索、结论、证据卡片、置信度 |
-| `focus` | 低打扰专注态 | 会议中、深度工作 | 屏幕状态为主，少说话 |
-| `public` | 公共办公室态 | 多人环境、外放风险 | 不复述隐私、不评价同事、不外放敏感资料 |
-| `private` | 私密承接态 | 用户显式确认 | 可承接情绪；记忆写入仍需确认 |
-| `local_fallback` | 本地降级态 | 外网/provider/V21 不可用 | “外部大脑连不上，但我还在” |
+
+Legacy labels such as `workmate`, `companion`, `co_creation`, and `roleplay`
+are compatibility aliases for `dialogue`, not separate launch modes. Privacy,
+focus, public/private visibility, local fallback, and error remain state or
+policy fields, not extra product modes.
 
 ### User Stories
 
@@ -172,7 +170,7 @@ A21 必须把 provider 能力拆成 lane，而不是用一个“万能主脑”�
 
 | Lane | 目标 | 推荐编排 | 当前优先级 |
 | --- | --- | --- | --- |
-| `fast_companion` | 陪伴首响和自然对话 | 本地 VAD/ASR -> 流式文本 provider -> 本地/流式 TTS | P0 |
+| `dialogue` | 低延迟自然对话主链 | 本地 VAD/ASR -> 流式文本 provider -> 流式 TTS -> stock Xiaozhi Opus | P0 |
 | `realtime_voice` | 端到端 speech-to-speech | provider realtime session，显式 opt-in | P1 |
 | `professional` | 证据型专业模式 | V21 adapter -> 证据/置信度 -> TTS/readout | P0 |
 | `local_fallback` | 网络坏时仍可回应 | 本地 VAD/ASR/TTS + Ollama/llama.cpp/vLLM | P0 |
@@ -463,6 +461,16 @@ Provider 事件进入 Gateway 前必须转换为 A21 provider-neutral event，�
 ### Proxy And Network Policy
 
 Gateway/Core 是唯一公网/provider 出口。StackChan、localhost、LAN、`.local`、V21 local adapter 必须直连，不得静默继承全局代理。
+
+Gateway 连接位置是独立产品配置。前端必须能在 `mac_local` 与
+`public_wss` Gateway profile 间选择: `public_wss` 是配置公网 URL 后的
+主产品 Gateway，正式产品用于公网 `443` / 可信 `wss` StackChan 接入；
+IP-only bring-up 可临时使用 `http/ws`；`mac_local` 保持 Mac Gateway 对本地模型
+和本地处理的极速能力，作为前端/operator 可切换路径。公网控制面展示
+`mac_local` 时必须支持通过 `A21_MAC_LOCAL_GATEWAY_URL` 配置真实 Mac/local
+WebSocket 地址；未配置时才回退到请求主机。这个选择不得变成第三个
+product mode，也不得改变
+`dialogue` / `professional` 的职责边界。
 
 Provider HTTP/WebSocket client 必须：
 

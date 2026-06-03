@@ -62,7 +62,7 @@ make stackchan-official-pcm-bridge-flash-plan
 
 `make stackchan-official-audio-smoke-build`, `make stackchan-official-audio-smoke-flash-plan`, and `make stackchan-official-audio-smoke-flash-execute` are the official StackChan/CoreS3 codec speaker-smoke lane. This lane exports official StackChan from Git `HEAD`, applies only the A21 audio-smoke overlay, verifies mature codec evidence, builds with ESP-IDF, records all `flash_args` parts and hashes, and requires `A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE` before any write. Use this only to validate clear physical speaker output through the official codec/HAL boundary. It is not production A21 firmware and does not replace A21 release packaging.
 
-`make a21-stackchan-official-xiaozhi-compatible-build` is the current correct A21 product-candidate build lane. It exports official StackChan from Git `HEAD`, applies only the A21 Xiaozhi-compatible overlay, preserves official `AppAvatar` / `AppAiAgent` / `GetHAL().startXiaozhi()` behavior, and builds `a21-stackchan-official-xiaozhi-compatible.bin` through ESP-IDF. The overlay does not replace `main.cpp`, does not draw a minimal A21 bridge screen, does not store provider keys, and points stock-compatible Xiaozhi setup at A21 Gateway `/v1/xiaozhi` through the controlled OTA configuration path.
+`make a21-stackchan-official-xiaozhi-compatible-build` is the current correct A21 product-candidate build lane. It exports official StackChan from Git `HEAD`, applies only the A21 Xiaozhi-compatible overlay, preserves official `AppAvatar` / `AppAiAgent` / `GetHAL().startXiaozhi()` behavior, and builds `a21-stackchan-official-xiaozhi-compatible.bin` through ESP-IDF. The overlay does not replace `main.cpp`, does not draw a minimal A21 bridge screen, does not store provider keys, and points stock-compatible Xiaozhi setup at A21 Gateway `/v1/xiaozhi` through the controlled OTA configuration path. First-boot Wi-Fi follows Xiaozhi's own model: stored NVS credentials first, then Hotspot/SoftAP provisioning by default, with BluFi and acoustic provisioning kept as explicit build-time alternatives.
 
 `make stackchan-official-pcm-bridge-build` exports official StackChan from Git `HEAD`, applies the A21 PCM bridge overlay, and builds `a21-stackchan-official-pcm-bridge.bin` through ESP-IDF. This is a diagnostic/M3-prep lane, not the A21 product screen/action candidate: it replaces the official app surface with a minimal A21 bridge status screen and therefore does not preserve official avatar/action acceptance. `make stackchan-official-pcm-bridge-nvs-plan` is no-write and records the redacted `a21/device_id` plus `a21/audio_ws_url` provisioning plan for the NVS partition at `0x9000/0x4000`. `make stackchan-official-pcm-bridge-nvs-execute` requires `A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS`, backs up the existing NVS partition, preserves current entries including calibration, mutates only the A21 namespace keys, and writes only the NVS partition. The run files live under `.a21-run/` because they may contain local Wi-Fi or historical device secrets. `make stackchan-official-pcm-bridge-flash-plan` remains no-flash for the app image: it checks the bridge app, required flash parts, USB serial port, `device_id`, and a redacted A21 audio websocket endpoint. `make stackchan-official-pcm-bridge-flash-execute` requires `A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP` and the A21 foreground T7 hardware guard before writing the app partition. If flashed without `a21/audio_ws_url`, the bridge must stay on a black A21 status page and remain silent.
 
@@ -81,21 +81,24 @@ Local hardware bring-up can override the Gateway host and Wi-Fi credentials thro
 
 `a21_firmware_connection.h` owns the hardware-free connection lifecycle model:
 
+- Wi-Fi provisioning
 - Wi-Fi connecting
 - Gateway connecting
 - Gateway connected
 - reconnect wait with bounded backoff
-- local fallback on invalid A21 Gateway config
+- local fallback on invalid A21 Gateway config or provisioning failure
 
 `a21_firmware_wifi.h` owns the first Wi-Fi configuration guard:
 
-- default builds have no Wi-Fi SSID and stay in local fallback
+- default builds have no Wi-Fi SSID and enter Wi-Fi provisioning
+- provisioning method names mirror Xiaozhi's startup options: `hotspot`,
+  `blufi`, and `acoustic`; `hotspot` is the A21 default
 - Wi-Fi status text redacts the password
 - SSIDs containing legacy project identity are rejected
 - `platformio.ini` must not contain `A21_WIFI_PASSWORD`
 - local hardware bring-up may copy `include/a21_firmware_secrets.example.h` to ignored `include/a21_firmware_secrets.local.h`
 
-`a21_firmware_wifi_runtime.h` provides the first guarded Wi-Fi runtime. It uses a small driver interface in native tests and Arduino `WiFi.h` on CoreS3. The runtime will not call `WiFi.begin` without valid credentials, calls it once per connection attempt, transitions to Gateway connecting when Wi-Fi reports connected, and enters reconnect wait after Wi-Fi loss.
+`a21_firmware_wifi_runtime.h` provides the first guarded Wi-Fi runtime. It uses a small driver interface in native tests and Arduino `WiFi.h` on CoreS3. The runtime will not call `WiFi.begin` without valid credentials, starts the configured provisioning method once when credentials are missing, calls station connect once per connection attempt when credentials exist, transitions to Gateway connecting when Wi-Fi reports connected, and enters reconnect wait after Wi-Fi loss.
 
 `a21_firmware_gateway_ws.h` owns the first guarded Gateway control WebSocket runtime:
 

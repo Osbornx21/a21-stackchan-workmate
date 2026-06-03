@@ -1,22 +1,44 @@
 # A21 Voice Mode Selection
 
-`voice_mode` is an explicit operator/frontend selection. It is separate from the
-product `mode` values such as `workmate`, `private`, `focus`, and
-`professional`.
+`voice_mode` is the explicit operator/frontend product-mode selection for the
+converged launch surface.
 
 Current catalog:
 
-- `edge_cloud`: available default. Uses the existing A21 local audio front end
-  and explicit provider seams.
-- `pure_cloud`: planned spike-only. It can be selected and displayed, but it
-  must not silently execute provider, V21, firmware, or hardware paths.
+- `dialogue`: available default. Uses A21 local audio front end, streaming ASR
+  where available, streaming text, streaming TTS, and stock Xiaozhi playback.
+- `professional`: available V21 evidence path. It is explicit, evidence-first,
+  and rejected by dialogue-only endpoints.
 
 Gateway exposes the catalog at `GET /v1/voice-modes` and accepts selection by
-`POST /v1/voice-modes` with `{"voice_mode":"edge_cloud"}` or
-`{"voice_mode":"pure_cloud"}`. The device registry includes
-`current_voice_mode` so operators can see the active selection next to
-`current_mode`.
+`POST /v1/voice-modes` with `{"voice_mode":"dialogue"}` or
+`{"voice_mode":"professional"}`. The device registry includes
+`current_voice_mode` so operators can see the active product mode next to the
+legacy transport/runtime `current_mode`.
 
-Launch rule: planned modes may reduce confusion by being visible, but they do
-not count as PRD execution evidence. Relevant turn paths must reject planned
-modes honestly instead of rerouting.
+Launch rule: `dialogue` and `professional` are the only user-facing product
+modes. Legacy labels such as `workmate`, `companion`, `co_creation`, and
+`roleplay` normalize to `dialogue`; privacy, focus, local fallback, and error
+remain state/policy fields rather than additional product modes. Professional
+work must stay on the V21 adapter path and must not be routed through the
+dialogue realtime chain.
+
+## Gateway Profile Is Separate
+
+`gateway_profile` is a separate frontend/operator selector for where the
+StackChan product connects:
+
+- `public_wss`: default when `A21_PUBLIC_GATEWAY_URL` is configured. Uses the
+  main product public Gateway. Product deployment targets trusted `443` /
+  `wss`; IP-only bring-up may temporarily use `http/ws`.
+- `mac_local`: selectable local path. Keeps the Mac Gateway path for local
+  models and local processing speed. `A21_MAC_LOCAL_GATEWAY_URL` can publish an
+  explicit credential-free Mac/local `/v1/xiaozhi` WebSocket URL for frontend
+  switching; unset deployments keep the request-host fallback.
+
+Gateway exposes this catalog at `GET /v1/gateway-profiles` and accepts
+selection by `POST /v1/gateway-profiles` with
+`{"gateway_profile":"mac_local"}` or `{"gateway_profile":"public_wss"}`.
+`public_wss` is rejected until the public URL is configured. This selector
+must not add a third voice mode and must not change the professional/V21
+boundary.

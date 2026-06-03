@@ -6602,3 +6602,526 @@ Current validation request:
 
 - No unresolved failure so far. The initial failure was the intentional red
   test.
+
+## 2026-06-03 12:11 CST - Dialogue-First Low-Latency PRD Convergence
+
+本轮目标:
+
+- 接续主控纪律，把 A21 当前产品模式收敛为两个对外模式:
+  `dialogue` 和 `professional`。
+- 专打对话低延迟链路，先把 PRD、协议、Gateway 合同、simulator
+  和 provider-readiness 报告对齐到 dialogue-first。
+- 保持 provider/V21/Gateway/硬件执行边界: 不落盘真实 provider
+  credential，不启动或停止 Gateway，不执行真实 provider/V21，不触碰
+  firmware/serial/hardware/audio playback。
+
+实际完成内容:
+
+- Added plan
+  `docs/plans/2026-06-03-dialogue-first-low-latency-prd-convergence.md`.
+- Updated PRD and engineering docs so the product-facing mode set is
+  `dialogue` + `professional`; older `workmate` / `companion` /
+  `co_creation` / `roleplay` labels are compatibility labels that normalize
+  to `dialogue` at product-contract surfaces.
+- Added protocol product-mode helpers for `dialogue`, canonical mode listing,
+  and legacy normalization.
+- Updated `/v1/voice-modes`, Gateway dialogue endpoints, and simulator mode
+  controls to expose dialogue/professional while keeping professional as the
+  V21 adapter boundary and rejected from dialogue-only endpoints.
+- Updated Xiaozhi streaming provider-readiness report with
+  `product_mode=dialogue`, `chain_mode=dialogue_low_latency`, and
+  `professional_boundary=v21_adapter_only`; the report remains static
+  no-execute evidence with `prd_accepted=false`.
+- Updated Doubao realtime TTS configuration checks so either
+  `A21_DOUBAO_API_KEY` or `A21_DOUBAO_ACCESS_TOKEN` can satisfy the credential
+  env requirement; report/test output uses env names only.
+- Renamed `internal/app/frozen_x21_firmware.go` to
+  `internal/app/frozen_external_firmware.go` with no behavior change. Reason:
+  X21 remains a frozen one-way reference, but A21 runtime/app path names should
+  not carry new X21 identity.
+- Updated `docs/project_state_machine.md` with active transition
+  `T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE`.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-dialogue-first-low-latency-prd-convergence.md`
+- `docs/prd/A21_PRD.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/VOICE_MODE_SELECTION.md`
+- `docs/project_state_machine.md`
+- `internal/protocol/message.go`
+- `internal/protocol/message_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/app/frozen_external_firmware.go`
+- `internal/app/streaming_tts_runtime_smoke.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `internal/providers/doubao_realtime_tts_provider.go`
+- `internal/providers/doubao_realtime_tts_provider_test.go`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Dialogue low-latency chain is contract-aligned but not product-accepted:
+  no real Doubao execution, no real Gateway runtime window, and no physical
+  stock `/v1/xiaozhi` trace were collected in this round.
+- Professional mode remains V21 adapter-only; no V21 execute or integration
+  validation was performed.
+- Doubao credential values supplied in chat were not written to repo files,
+  reports, or logs by this round. Future runtime work must inject them through
+  a local secret env path and redact evidence.
+- Physical acceptance still needs labeled stock trigger, streaming ASR/LLM/TTS
+  profile markers, audible playback, touch/barge-in, and idle recovery.
+
+测试/构建/运行结果:
+
+- Initial direct `go test ./internal/protocol ./internal/gateway
+  ./internal/app ./internal/providers -count=1` failed only in two doctor
+  tests because the shell inherited a global proxy and lacked full A21
+  direct-connect `NO_PROXY` coverage. Reproduced root cause as
+  `proxy_direct_bypass_missing`.
+- Same touched-package test passed after explicit direct-connect env:
+  `env NO_PROXY=localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16 no_proxy=localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16 A21_NO_PROXY=localhost,127.0.0.1,::1,.local,10.0.0.0/8,10.21.0.0/16,172.16.0.0/12,192.168.0.0/16 go test ./internal/protocol ./internal/gateway ./internal/app ./internal/providers -count=1`.
+- `make verify` passed.
+- `make preflight` passed. Host gate was ok, namespace audit was ok, with
+  existing warnings `firmware_current_artifact_missing` and
+  `wake_word_firmware_build_required`.
+- `make doctor` passed with the same existing warnings.
+- `git diff --cached --check` passed.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`,
+  host-loopback runtime acceptance, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only failure was the direct `go test` invocation
+  missing A21 direct-connect proxy coverage; Makefile-backed gates passed.
+
+## 2026-06-03 12:42 CST - Aliyun Public Gateway Profile Configuration
+
+本轮目标:
+
+- 接续用户最新决策: 公网通道合理，但不能替代 Mac Gateway 的本地模型和
+  本地处理极速能力。
+- 将公网 Gateway 做成可选产品配置，让前端可选，同时保持
+  `dialogue` / `professional` 仍是唯一产品模式集合。
+- 不切换 Mac 网络，不写入 provider credential，不重启现有 Gateway，不构建
+  或刷写 firmware，不触碰硬件/audio playback。
+
+实际完成内容:
+
+- Updated Aliyun plan
+  `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md`:
+  `mac_local` is the default local-speed profile and `public_wss` is an
+  optional product public Gateway profile.
+- Added Gateway profile API:
+  - `GET /v1/gateway-profiles`
+  - `POST /v1/gateway-profiles`
+  - schema `a21.gateway.profiles.v1`
+  - profiles `mac_local` and `public_wss`
+- Added `A21_PUBLIC_GATEWAY_URL` and CLI `--public-gateway-url` wiring.
+  Accepted public URLs must be `https` or `wss`, must not include URL
+  credentials, query, fragment, token strings, or secret strings, and normalize
+  to `wss://<host>/v1/xiaozhi`.
+- Updated `/xiaozhi/ota/` so:
+  - selected `mac_local` returns request-host `ws`/`wss`;
+  - `X-Forwarded-Proto: https` maps to `wss`;
+  - selected configured `public_wss` returns the configured public WSS endpoint.
+- Updated simulator frontend with a Gateway profile selector and readout; it
+  fetches/saves `/v1/gateway-profiles` independently from `/v1/voice-modes`.
+- Updated `PROTOCOL.md`, `VOICE_MODE_SELECTION.md`, `NETWORK.md`, PRD, and
+  project state machine to keep `gateway_profile` separate from `voice_mode`.
+- Ran non-mutating Aliyun reachability checks against the provided public host:
+  SSH `22` is reachable; `443` currently refuses connection. BatchMode SSH
+  probes for `root` and `ubuntu` failed with `Permission denied (publickey)`,
+  so this Mac currently lacks a usable key for remote deployment.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md`
+- `docs/prd/A21_PRD.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/VOICE_MODE_SELECTION.md`
+- `docs/engineering/NETWORK.md`
+- `docs/project_state_machine.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+
+测试/构建/运行结果:
+
+- Red test first failed as expected because `ServerOptions.PublicGatewayURL`
+  and `/v1/gateway-profiles` did not exist.
+- Focused gateway/app profile tests passed:
+  `go test ./internal/gateway ./internal/app -run 'Test(XiaozhiOTAEndpointUsesWSSBehindTLSReverseProxy|GatewayProfilesCatalogDefaultsToMacLocalAndAllowsConfiguredPublicWSS|GatewayProfilesRejectsPublicWSSWithoutConfiguredPublicURL|SimulatorPageServed|GatewayServerFromEnvExposesConfiguredPublicGatewayProfile)' -count=1`.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Focused app config tests passed:
+  `go test ./internal/app -run 'Test(GatewayServerFromEnvExposesConfiguredPublicGatewayProfile|GatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration|GatewayServerOptionsFromEnvWiresSileroVADConfig|GatewayServerFromEnvUsesSelectedProviderOnlyWhenExplicit)' -count=1`.
+- `git diff --check` and `git diff --cached --check` passed.
+- `make verify` passed.
+- `make preflight` passed with existing warnings only:
+  `firmware_current_artifact_missing`,
+  `wake_word_firmware_build_required`.
+- `make doctor` passed with the same existing warnings.
+
+当前未完成事项 / blockers:
+
+- Aliyun public Gateway is not deployed from this Mac yet: 443 is closed/refused
+  and SSH key access is not available for `root` or `ubuntu`.
+- No real provider execution, Aliyun runtime, physical StackChan public WSS
+  connection, wake-word proof, or PRD acceptance was collected in this round.
+- Product readiness remains blocked by physical StackChan acceptance and
+  wake-word product proof, not by the new profile API.
+
+推荐下一步:
+
+- Provide a usable SSH key/session for the Aliyun instance or run the deployment
+  commands on the host directly, then start A21 Gateway with
+  `A21_PUBLIC_GATEWAY_URL=https://<public-host>` behind Caddy/Nginx on `443`.
+- After `443` is healthy, select `public_wss` in `/simulator` and point
+  StackChan OTA at the public Gateway to collect a fresh physical candidate
+  trace.
+
+## 2026-06-03 13:35 CST - Aliyun Public Gateway Runtime Bring-up
+
+本轮目标:
+
+- 继续主控线程，不切换 Mac 网络。
+- 使用本机 Aliyun CLI/SWAS 命令助手，把 A21 公网 Gateway 候选通道实际部署
+  到用户给定的轻量应用服务器。
+- 保留 Mac Gateway 作为本地模型/本地处理极速路径；公网只作为
+  `gateway_profile=public_wss` 可选产品配置。
+- 不把对话中提供的 provider credential 写入 repo、命令内容、远端 env、
+  systemd unit、nginx config、报告或日志。
+
+实际完成内容:
+
+- 确认实例 `b5c8d6841b50416ca3470665a0087e28` 是 Aliyun SWAS/轻量应用
+  服务器，不是 ECS；必须使用
+  `aliyun swas-open ... --region cn-shanghai --endpoint
+  swas.cn-shanghai.aliyuncs.com --biz-region-id cn-shanghai`。
+- 确认服务器状态:
+  - Ubuntu 24.04, 2 vCPU / 2 GiB, public IP `101.132.117.182`
+  - SWAS 防火墙已有 `80`, `443`, `22`, ICMP allow
+  - `swas-open run-command` 以 root 可执行；SSH key 仍不可用
+- 远端 GitHub clone 因 `GnuTLS recv error (-110)` 失败；切换为 SWAS
+  命令分片传输本地 tracked snapshot。
+- 通过 119 个 SWAS command chunk 将
+  `/tmp/a21-tracked-current.tar.gz` 传到 `/opt/a21-deploy`；远端 base64
+  长度 `1425608` 和 tar SHA-256
+  `6c210949776d8295f25b62ffc7d9430d87fec5d91c8b5749be563c9c905e1f56`
+  与本地匹配后解包到 `/opt/a21`。
+- 安装远端构建依赖: `build-essential`, `pkg-config`, `libopus-dev`, Go
+  `1.26.3`。
+- 首次远端 build 失败在 `proxy.golang.org` 超时；使用
+  `GOPROXY=https://goproxy.cn,direct` 和
+  `GOSUMDB=sum.golang.google.cn` 后
+  `go build -o /opt/a21/bin/a21 ./cmd/a21` 通过。
+- 创建并启动 systemd service `a21-gateway`:
+  - 工作目录 `/opt/a21`
+  - 监听 `127.0.0.1:21080`
+  - `A21_PUBLIC_GATEWAY_URL=https://101.132.117.182`
+  - `A21_XIAOZHI_PRODUCT_CHAIN=host_local`
+  - `A21_VOICE_TEXT_MAX_TOKENS=32`
+  - 未注入 provider credential
+- 尝试 Caddy 反代时发现现有 nginx 已占用 `80`；根因是该服务器已有
+  X21/控制台站点。未抢占整站；Caddy 最终保持 `inactive/disabled`。
+- 备份并更新 `/etc/nginx/sites-enabled/x21`:
+  - 仅 A21 路径 `/healthz`, `/simulator`, `/v1/`, `/xiaozhi/ota`,
+    `/ws/audio` proxy 到 `127.0.0.1:21080`
+  - 原 root `/` 仍 proxy 到 `127.0.0.1:8000`
+  - nginx 增加 `443 ssl`，证书为 `/etc/a21/tls/a21-selfsigned.crt`
+    和 `/etc/a21/tls/a21-selfsigned.key`
+  - 原配置备份在 `/etc/nginx/a21-backups/`
+- 外部 Mac 验证:
+  - `curl http://101.132.117.182/healthz` 返回
+    `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`
+  - `curl -k https://101.132.117.182/healthz` 返回同样 health
+  - `curl -k https://101.132.117.182/v1/gateway-profiles` 返回
+    `selected_gateway_profile=public_wss`，并暴露
+    `wss://101.132.117.182/v1/xiaozhi`
+  - `curl -k https://101.132.117.182/xiaozhi/ota/` 返回 stock OTA
+    `websocket.url=wss://101.132.117.182/v1/xiaozhi`
+  - 不带 `-k` 的 HTTPS 验证失败:
+    `SSL certificate problem: self signed certificate`
+  - `curl http://101.132.117.182/` 仍返回原控制台 HTML，未被 A21 接管
+  - `curl -k https://101.132.117.182/simulator` 返回 A21 simulator HTML
+- 跑了一次 host-only 公网 WebSocket bench:
+  `go run ./cmd/a21 xiaozhi-voice-bench --gateway-url
+  http://101.132.117.182 --repeat 1 --timeout-ms 5000
+  --require-product-chain`
+  - 结果 exit 1，按预期未达验收
+  - answer turn: `hello_accepted=true`, `listen_ack=true`,
+    `metrics_observed=true`, status `passed`
+  - barge-in turn: status `failed`, finding `turn_read_failed`
+  - `acceptance_status=blocked`, `prd_accepted=false`
+  - execution flags:
+    `provider_executed=false`, `v21_executed=false`,
+    `hardware_executed=false`, `host_product_chain_ready=false`
+  - report:
+    `reports/a21-xiaozhi-voice-bench-20260603-133114.031578000.json`
+
+修改过的本地文件:
+
+- `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+远端运行/配置面:
+
+- `/opt/a21`
+- `/opt/a21/bin/a21`
+- `/etc/systemd/system/a21-gateway.service`
+- `/etc/nginx/sites-enabled/x21`
+- `/etc/nginx/a21-backups/`
+- `/etc/a21/tls/a21-selfsigned.crt`
+- `/etc/a21/tls/a21-selfsigned.key`
+
+当前未完成事项 / blockers:
+
+- `443` 目前是自签证书，只能 `curl -k` 验证；真实 StackChan 产品 WSS
+  需要可信域名证书，或明确的设备信任/证书策略。
+- 没有通过 CLI 命令内容写入任何 provider secret；因此远端还没有真实
+  cloud ASR / LLM / TTS execution。
+- 公网 WebSocket 已证明 hello/listen 候选，但没有真实 product chain、
+  downlink audio、物理 StackChan online/public-WSS、可听播放、barge-in
+  和 idle recovery 证据。
+- `product-readiness` 不能置绿；物理 StackChan acceptance 和 wake-word
+  product proof 仍是硬阻塞。
+
+推荐下一步:
+
+- 给 `101.132.117.182` 绑定一个 A21 域名并签发可信 TLS，或明确设备
+  证书信任策略；随后把 `A21_PUBLIC_GATEWAY_URL` 改为
+  `https://<a21-domain>`。
+- 用非日志化的 secret 注入方式配置真实 provider env；不要通过
+  `swas-open run-command --command-content` 直接传 provider key。
+- 可信 TLS 和 provider env 就绪后，重跑公网 `/v1/xiaozhi` host bench，
+  再让 StackChan OTA 指向公网 Gateway 采集物理 candidate trace。
+
+## 2026-06-03 14:22 CST - Main ECS Public Gateway Bring-up
+
+本轮目标:
+
+- 接续主控线程，不丢进程/进度。
+- 按用户最新决策修正口径: `47.103.57.217` 是 A21 主公网 voice-edge
+  Gateway，不是候选；Mac Gateway 作为前端/operator 可切换的本地极速路径。
+- 不切换 Mac 网络，不把 provider credential 写入 repo、命令记录、远端
+  systemd/Caddy 配置、固件、报告或日志。
+
+实际完成内容:
+
+- Added/updated tests so a valid `A21_PUBLIC_GATEWAY_URL` selects
+  `public_wss` by default while `mac_local` remains switchable.
+- Added IP-only public bring-up support: `http://...` and
+  `ws://.../v1/xiaozhi` public URLs normalize to `ws://.../v1/xiaozhi`;
+  `https`/`wss` still normalize to `wss`. URL credentials, query, fragment,
+  `token`, and `secret` strings remain rejected.
+- Updated PRD, protocol, network, voice-mode, Aliyun plan, and project state
+  docs:
+  - `47.103.57.217` / ECS `i-uf63f4ymqc2dxtljxz2n` is the main public
+    Gateway target.
+  - `101.132.117.182` SWAS is experimental/backup evidence only.
+  - Product target remains trusted `443`/`wss`; IP-only `http/ws` is bring-up.
+- Kept the Linux runtime fingerprint fix from the ECS bring-up:
+  `DetectFingerprint` now falls back to `ip route show default` and parses
+  `dev eth0` when macOS `route -n get default` is unavailable.
+- Synced current tracked A21 snapshot to new ECS through
+  `/tmp/a21-tracked-current-main-ecs.tar.gz`; remote SHA-256 matched
+  `1782eaec865fc771452956942f0563466c56b24c3a51bda1bb315028c34fb98a`.
+- On `47.103.57.217`, installed/confirmed Go `1.26.3`, build dependencies,
+  Caddy, UFW, and built `/opt/a21/bin/a21`.
+- Remote `/opt/a21` was deployed through `/opt/a21.next`; previous `/opt/a21`
+  was preserved under a timestamped backup.
+- Created/enabled `a21-gateway.service`:
+  - listens only on `127.0.0.1:21081`
+  - `--public-gateway-url http://47.103.57.217`
+  - `--product-chain host_local`
+  - no provider credential values
+- Configured Caddy public `80` and `443` reverse proxy to `127.0.0.1:21081`.
+  `443` uses a temporary 30-day self-signed IP SAN cert for bring-up only.
+- Fixed a Caddy restart failure caused by the temporary private key being
+  unreadable to the `caddy` user; changed ownership/permissions and restarted
+  successfully.
+
+修改过的本地文件:
+
+- `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md`
+- `docs/prd/A21_PRD.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/VOICE_MODE_SELECTION.md`
+- `docs/engineering/NETWORK.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app_test.go`
+- `internal/runtimeguard/fingerprint.go`
+- `internal/runtimeguard/fingerprint_test.go`
+
+远端运行/配置面:
+
+- `/opt/a21`
+- `/opt/a21/bin/a21`
+- `/etc/systemd/system/a21-gateway.service`
+- `/etc/caddy/Caddyfile`
+- `/etc/a21/tls/a21-edge-ip.crt`
+- `/etc/a21/tls/a21-edge-ip.key`
+
+测试/构建/运行结果:
+
+- Red test first failed for HTTP public bring-up because old validator rejected
+  `http://47.103.57.217`.
+- Focused public Gateway tests passed after the minimal validator change:
+  `go test ./internal/gateway ./internal/app -run
+  'TestGatewayProfiles(AcceptsPublicHTTPBringupURL|CatalogDefaultsToPublicWSSAndAllowsMacLocalSwitch|RejectsPublicURLWithQuery)|TestGatewayServerFromEnvExposesConfiguredPublicGatewayProfile'
+  -count=1`.
+- Touched package test passed with A21 direct-connect env:
+  `go test ./internal/gateway ./internal/app ./internal/runtimeguard -count=1`.
+- `git diff --check` and `git diff --cached --check` passed.
+- Local `make verify` passed.
+- Remote `make verify` passed on ECS.
+- Remote services:
+  - `a21-gateway`: active
+  - `caddy`: active
+  - listeners: public `80`, public `443`, local `127.0.0.1:21081`
+- External Mac verification passed:
+  - `http://47.103.57.217/healthz`
+  - `http://47.103.57.217/v1/gateway-profiles`
+  - `http://47.103.57.217/xiaozhi/ota/`
+  - `https://47.103.57.217/healthz` with `-k`
+  - `https://47.103.57.217/xiaozhi/ota/` with `-k`
+- OTA currently returns:
+  `ws://47.103.57.217/v1/xiaozhi`.
+- Host-only public WebSocket bench over `http://47.103.57.217` accepted
+  hello/listen and observed host-local voice-pipeline shape, but exited 1 as
+  expected:
+  - `prd_accepted=false`
+  - `provider_executed=false`
+  - `v21_executed=false`
+  - `hardware_executed=false`
+  - LLM profile still `mock`
+  - barge-in turn failed with `turn_read_failed`
+  - report `reports/a21-xiaozhi-voice-bench-20260603-142101.627764000.json`
+
+当前未完成事项 / blockers:
+
+- Provider secrets were intentionally not injected; no real cloud ASR/LLM/TTS
+  execution occurred on the ECS.
+- `443` is self-signed IP TLS for bring-up only. Product trusted `wss`
+  requires a domain and trusted certificate, or an explicit device trust
+  decision.
+- No physical StackChan public Gateway trace has been collected yet.
+- Product readiness remains blocked by real physical StackChan dialogue
+  acceptance and wake-word product proof.
+
+推荐下一步:
+
+- Point StackChan at `ws://47.103.57.217/v1/xiaozhi` for immediate main
+  public-edge bring-up.
+- Inject provider secrets through a non-logged server-side secret path, then
+  rerun public `/v1/xiaozhi` bench and collect physical StackChan trace.
+- Bind a domain to `47.103.57.217`, switch `A21_PUBLIC_GATEWAY_URL` to the
+  trusted `https://<domain>` endpoint, and promote OTA to `wss://.../v1/xiaozhi`.
+
+## 2026-06-03 - StackChan Xiaozhi-style Wi-Fi provisioning
+
+目标:
+
+- 按用户最新要求，不再只靠硬写 Wi-Fi；产品端侧配网按 Xiaozhi 启动思路推进。
+- 保持 47.103.57.217 作为主公网 Gateway，Mac Gateway 仍作为可切换本地路径。
+- 不写入 provider secret，不 flash 硬件，不回退当前 staged 公网/provider/模式收敛改动。
+
+实际完成内容:
+
+- 新增计划 `docs/plans/2026-06-03-stackchan-xiaozhi-style-wifi-provisioning.md`。
+- A21 self-owned firmware 状态机新增 `A21_CONN_WIFI_PROVISIONING`：
+  - 缺 Wi-Fi SSID 时进入 `Wi-Fi provisioning`。
+  - invalid Wi-Fi 仍进入 local fallback 并标记 `invalid_wifi`。
+  - provisioning 失败才进入 local fallback。
+- A21 self-owned firmware 新增 Xiaozhi-style 配网方法枚举：
+  - `hotspot`
+  - `blufi`
+  - `acoustic`
+  - 默认 `hotspot`
+- `a21_firmware_wifi_runtime.h` 新增 provisioning driver seam：
+  - 没有凭据时不会调用 `WiFi.begin`。
+  - provisioning method 只启动一次。
+  - 仍保留已有 station connect / reconnect 行为。
+- official-compatible product overlay 明确保留 Xiaozhi 端侧配网模型：
+  - `CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`
+  - `# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set`
+  - `# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set`
+  - OTA 更新为主公网 Gateway：`http://47.103.57.217/xiaozhi/ota/`
+- 文档更新：
+  - `docs/engineering/NETWORK.md`
+  - `docs/engineering/PROTOCOL.md`
+  - `firmware/stackchan/README.md`
+  - `docs/project_state_machine.md`
+
+修改过的本轮文件:
+
+- `docs/plans/2026-06-03-stackchan-xiaozhi-style-wifi-provisioning.md`
+- `firmware/stackchan/include/a21_firmware_connection.h`
+- `firmware/stackchan/include/a21_firmware_wifi.h`
+- `firmware/stackchan/include/a21_firmware_wifi_runtime.h`
+- `firmware/stackchan/test/test_protocol/test_main.cpp`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `firmware/stackchan/README.md`
+- `docs/engineering/NETWORK.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+测试/构建结果:
+
+- Red test first failed as expected:
+  - Go overlay test missing `CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`。
+  - firmware native test failed to compile because provisioning phase/method/runtime seam did not exist.
+- Focused Go test passed:
+  `go test ./internal/app -run TestOfficialXiaozhiCompatibleOverlayPreservesXiaozhiWifiProvisioning -count=1`
+- Firmware native tests passed:
+  `make firmware-test`
+  - `93 test cases: 93 succeeded`
+- Full local verification passed on retry:
+  `make verify`
+  - First run hit one non-reproducing doctor test failure.
+  - Focused doctor test passed.
+  - Second full run passed.
+- Product lane no-flash build passed:
+  `make a21-stackchan-official-xiaozhi-compatible-build`
+  - Report:
+    `reports/a21-stackchan-official-baseline-20260603-150433-1780470273395485000.json`
+  - Artifact:
+    `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  - App SHA-256:
+    `c012542ee8f1837106da91fe934e27487813333eaad124841386706259f48659`
+  - Overlay applied:
+    `true`
+  - Product candidate:
+    `a21-stackchan-official-xiaozhi-compatible`
+  - `official_avatar_action_preserved=true`
+  - `official_xiaozhi_start_preserved=true`
+  - Build sdkconfig/defaults confirmed:
+    `CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"`
+    `CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`
+    `# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set`
+    `# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set`
+
+未完成事项 / blockers:
+
+- 尚未通过 guarded hardware window flash 到真实 StackChan。
+- 尚未观察真实 first boot / no saved Wi-Fi NVS 的 Hotspot 配网画面或手机/浏览器配网链路。
+- 这不改变 PRD 口径：物理对话、半双工/打断、wake-word 产品证明仍需单独验收。
+
+推荐下一步:
+
+- 通过 guarded flash lane 刷 `a21-stackchan-official-xiaozhi-compatible.bin`，观察无凭据启动是否进入 Xiaozhi Hotspot 配网。
+- 之后再做真实 provider 注入和物理对话/打断/半双工验收。

@@ -34,6 +34,7 @@ type Envelope struct {
 type Mode string
 
 const (
+	ModeDialogue      Mode = "dialogue"
 	ModeWorkmate      Mode = "workmate"
 	ModeCompanion     Mode = "companion"
 	ModeCoCreation    Mode = "co_creation"
@@ -46,6 +47,25 @@ const (
 	ModeLocalFallback Mode = "local_fallback"
 	ModeError         Mode = "error"
 )
+
+func NormalizeProductMode(mode Mode) Mode {
+	switch mode {
+	case ModeProfessional:
+		return ModeProfessional
+	case ModeLocalFallback:
+		return ModeLocalFallback
+	case ModeError:
+		return ModeError
+	case ModeDialogue, ModeWorkmate, ModeCompanion, ModeCoCreation, ModeRoleplay, ModeFocus, ModePublic, ModePrivate, ModeMuted, "":
+		return ModeDialogue
+	default:
+		return ModeDialogue
+	}
+}
+
+func CanonicalProductModes() []Mode {
+	return []Mode{ModeDialogue, ModeProfessional}
+}
 
 type ExpressionState string
 

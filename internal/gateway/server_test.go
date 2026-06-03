@@ -81,6 +81,177 @@ func TestXiaozhiOTAEndpointReturnsStockWebSocketConfig(t *testing.T) {
 	}
 }
 
+func TestXiaozhiOTAEndpointUsesWSSBehindTLSReverseProxy(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/xiaozhi/ota/", strings.NewReader(`{}`))
+	req.Host = "a21.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		WebSocket struct {
+			URL string `json:"url"`
+		} `json:"websocket"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.WebSocket.URL != "wss://a21.example.com/v1/xiaozhi" {
+		t.Fatalf("websocket url = %q", body.WebSocket.URL)
+	}
+}
+
+func TestGatewayProfilesCatalogDefaultsToPublicWSSAndAllowsMacLocalSwitch(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		MacLocalGatewayURL: "ws://192.168.1.20:21081/v1/xiaozhi",
+		PublicGatewayURL:   "https://a21.example.com",
+	})
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/gateway-profiles", nil)
+	req.Host = "127.0.0.1:21080"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var catalog struct {
+		SchemaVersion string `json:"schema_version"`
+		Selected      string `json:"selected_gateway_profile"`
+		Profiles      []struct {
+			ID           string `json:"id"`
+			Status       string `json:"status"`
+			Default      bool   `json:"default"`
+			WebSocketURL string `json:"websocket_url"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.SchemaVersion != "a21.gateway.profiles.v1" || catalog.Selected != "public_wss" {
+		t.Fatalf("catalog = %+v", catalog)
+	}
+	seen := map[string]struct {
+		status  string
+		url     string
+		Default bool
+	}{}
+	defaults := 0
+	for _, profile := range catalog.Profiles {
+		seen[profile.ID] = struct {
+			status  string
+			url     string
+			Default bool
+		}{status: profile.Status, url: profile.WebSocketURL, Default: profile.Default}
+		if profile.Default {
+			defaults++
+		}
+	}
+	if seen["mac_local"].status != "available" || seen["public_wss"].status != "available" || defaults != 1 {
+		t.Fatalf("profiles = %+v, seen=%v defaults=%d", catalog.Profiles, seen, defaults)
+	}
+	if seen["mac_local"].Default || !seen["public_wss"].Default {
+		t.Fatalf("default flags = %+v", seen)
+	}
+	if seen["mac_local"].url != "ws://192.168.1.20:21081/v1/xiaozhi" {
+		t.Fatalf("mac local websocket url = %q", seen["mac_local"].url)
+	}
+	if seen["public_wss"].url != "wss://a21.example.com/v1/xiaozhi" {
+		t.Fatalf("public websocket url = %q", seen["public_wss"].url)
+	}
+
+	selectReq := httptest.NewRequest(http.MethodPost, "/v1/gateway-profiles", strings.NewReader(`{"gateway_profile":"mac_local"}`))
+	selectReq.Host = "127.0.0.1:21080"
+	selectRec := httptest.NewRecorder()
+	handler.ServeHTTP(selectRec, selectReq)
+	if selectRec.Code != http.StatusOK {
+		t.Fatalf("select status = %d, want 200: %s", selectRec.Code, selectRec.Body.String())
+	}
+	if !bytes.Contains(selectRec.Body.Bytes(), []byte(`"selected_gateway_profile":"mac_local"`)) {
+		t.Fatalf("selected mac profile missing: %s", selectRec.Body.String())
+	}
+
+	otaReq := httptest.NewRequest(http.MethodPost, "/xiaozhi/ota/", strings.NewReader(`{}`))
+	otaReq.Host = "127.0.0.1:21080"
+	otaRec := httptest.NewRecorder()
+	handler.ServeHTTP(otaRec, otaReq)
+	if otaRec.Code != http.StatusOK {
+		t.Fatalf("ota status = %d, want 200: %s", otaRec.Code, otaRec.Body.String())
+	}
+	var ota struct {
+		WebSocket struct {
+			URL string `json:"url"`
+		} `json:"websocket"`
+	}
+	if err := json.Unmarshal(otaRec.Body.Bytes(), &ota); err != nil {
+		t.Fatal(err)
+	}
+	if ota.WebSocket.URL != "ws://192.168.1.20:21081/v1/xiaozhi" {
+		t.Fatalf("ota websocket url = %q", ota.WebSocket.URL)
+	}
+}
+
+func TestGatewayProfilesRejectsPublicWSSWithoutConfiguredPublicURL(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/v1/gateway-profiles", strings.NewReader(`{"gateway_profile":"public_wss"}`))
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for unconfigured public gateway: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGatewayProfilesAcceptsPublicHTTPBringupURL(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{PublicGatewayURL: "http://47.103.57.217"})
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/gateway-profiles", nil)
+	req.Host = "127.0.0.1:21080"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"selected_gateway_profile":"public_wss"`)) {
+		t.Fatalf("public profile not selected for HTTP bring-up: %s", rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"websocket_url":"ws://47.103.57.217/v1/xiaozhi"`)) {
+		t.Fatalf("HTTP public URL was not normalized to ws: %s", rec.Body.String())
+	}
+
+	otaReq := httptest.NewRequest(http.MethodGet, "/xiaozhi/ota/", nil)
+	otaReq.Host = "127.0.0.1:21080"
+	otaRec := httptest.NewRecorder()
+	handler.ServeHTTP(otaRec, otaReq)
+	if otaRec.Code != http.StatusOK {
+		t.Fatalf("ota status = %d, want 200: %s", otaRec.Code, otaRec.Body.String())
+	}
+	if !bytes.Contains(otaRec.Body.Bytes(), []byte(`"url":"ws://47.103.57.217/v1/xiaozhi"`)) {
+		t.Fatalf("ota missing public ws URL: %s", otaRec.Body.String())
+	}
+}
+
+func TestGatewayProfilesRejectsPublicURLWithQuery(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{PublicGatewayURL: "https://a21.example.com/v1/xiaozhi?key=redacted"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/gateway-profiles", strings.NewReader(`{"gateway_profile":"public_wss"}`))
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for query-bearing public gateway URL: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestXiaozhiOTAEndpointRejectsUnsafeHost(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodPost, "/xiaozhi/ota/", strings.NewReader(`{}`))
@@ -164,8 +335,10 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="registryConnection"`,
 		`id="registryMode"`,
 		`id="voiceMode"`,
+		`id="gatewayProfile"`,
 		`id="registryVoiceMode"`,
 		`id="registryExpression"`,
+		`id="gatewayProfileReadout"`,
 		"Waterfall",
 		"Latency Summary",
 		"Professional Evidence",
@@ -208,6 +381,9 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="wakeWordStatus"`,
 		"refreshWakeWordConfig",
 		"saveWakeWordConfig",
+		"/v1/gateway-profiles",
+		"refreshGatewayProfiles",
+		"saveGatewayProfile",
 		"handleAudioPlaybackChunk",
 		"decodePCM16Base64",
 		"schedulePCMPlayback",
@@ -224,7 +400,7 @@ func TestSimulatorPageServed(t *testing.T) {
 	}
 }
 
-func TestVoiceModesCatalogDefaultsToEdgeCloudAndListsPlannedPureCloud(t *testing.T) {
+func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/voice-modes", nil)
 	rec := httptest.NewRecorder()
@@ -246,7 +422,7 @@ func TestVoiceModesCatalogDefaultsToEdgeCloudAndListsPlannedPureCloud(t *testing
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "edge_cloud" {
+	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "dialogue" {
 		t.Fatalf("catalog = %+v", response)
 	}
 	seen := map[string]string{}
@@ -257,14 +433,20 @@ func TestVoiceModesCatalogDefaultsToEdgeCloudAndListsPlannedPureCloud(t *testing
 			defaults++
 		}
 	}
-	if seen["edge_cloud"] != "available" || seen["pure_cloud"] != "planned" || defaults != 1 {
+	if seen["dialogue"] != "available" || seen["professional"] != "available" || defaults != 1 {
 		t.Fatalf("voice modes = %+v, statuses=%v defaults=%d", response.Modes, seen, defaults)
+	}
+	if _, ok := seen["edge_cloud"]; ok {
+		t.Fatalf("catalog still exposes old route selector as product mode: %+v", response.Modes)
+	}
+	if _, ok := seen["pure_cloud"]; ok {
+		t.Fatalf("catalog still exposes planned pure-cloud spike as product mode: %+v", response.Modes)
 	}
 }
 
-func TestVoiceModeSelectionPersistsInDeviceRegistryWithoutChangingProductMode(t *testing.T) {
+func TestVoiceModeSelectionPersistsDialogueInDeviceRegistryWithoutChangingLegacyTransportMode(t *testing.T) {
 	server := NewServer()
-	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"pure_cloud"}`))
+	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"dialogue"}`))
 	selectRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(selectRec, selectReq)
 	if selectRec.Code != http.StatusOK {
@@ -291,15 +473,15 @@ func TestVoiceModeSelectionPersistsInDeviceRegistryWithoutChangingProductMode(t 
 		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
 	}
 	device := registry.Devices[0]
-	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "pure_cloud" {
-		t.Fatalf("device state = %+v, want product mode workmate and voice_mode pure_cloud", device)
+	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "dialogue" {
+		t.Fatalf("device state = %+v, want legacy transport mode workmate and voice_mode dialogue", device)
 	}
 	if strings.Contains(devicesRec.Body.String(), "selected voice mode must not rewrite product mode") {
 		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
 	}
 }
 
-func TestFastCompanionRejectsPlannedVoiceModeWithoutProviderOrV21Execution(t *testing.T) {
+func TestFastCompanionRejectsProfessionalVoiceModeWithoutProviderOrV21Execution(t *testing.T) {
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true}},
 	}
@@ -310,7 +492,7 @@ func TestFastCompanionRejectsPlannedVoiceModeWithoutProviderOrV21Execution(t *te
 	})
 	handler := server.Handler()
 
-	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"pure_cloud"}`))
+	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"professional"}`))
 	selectRec := httptest.NewRecorder()
 	handler.ServeHTTP(selectRec, selectReq)
 	if selectRec.Code != http.StatusOK {
@@ -323,10 +505,10 @@ func TestFastCompanionRejectsPlannedVoiceModeWithoutProviderOrV21Execution(t *te
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409 for planned voice mode: %s", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d, want 409 for professional voice mode: %s", rec.Code, rec.Body.String())
 	}
 	if provider.startCalls != 0 || v21.calls != 0 {
-		t.Fatalf("planned voice mode executed provider/v21: provider=%d v21=%d", provider.startCalls, v21.calls)
+		t.Fatalf("professional voice mode executed provider/v21 from dialogue endpoint: provider=%d v21=%d", provider.startCalls, v21.calls)
 	}
 	if !strings.Contains(rec.Body.String(), "voice_mode") || strings.Contains(rec.Body.String(), "should not run") {
 		t.Fatalf("unexpected error body: %s", rec.Body.String())

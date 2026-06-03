@@ -59,6 +59,25 @@ void initFakeWiFiDriver(FakeWiFiDriver* fake, A21WiFiDriver* driver) {
   driver->local_ip = fakeWiFiLocalIP;
 }
 
+struct FakeWiFiProvisioningDriver {
+  int start_count;
+  A21WiFiProvisioningMethod last_method;
+};
+
+bool fakeWiFiProvisioningStart(void* ctx, A21WiFiProvisioningMethod method) {
+  FakeWiFiProvisioningDriver* driver = static_cast<FakeWiFiProvisioningDriver*>(ctx);
+  driver->start_count += 1;
+  driver->last_method = method;
+  return true;
+}
+
+void initFakeWiFiProvisioningDriver(FakeWiFiProvisioningDriver* fake, A21WiFiProvisioningDriver* driver) {
+  fake->start_count = 0;
+  fake->last_method = A21_WIFI_PROVISIONING_HOTSPOT;
+  driver->ctx = fake;
+  driver->start = fakeWiFiProvisioningStart;
+}
+
 struct FakeGatewayWSDriver {
   int begin_count;
   int loop_count;
@@ -736,7 +755,7 @@ void test_wifi_config_rejects_legacy_project_ssid() {
   TEST_ASSERT_FALSE(a21ValidateWiFiConfig(&wifi));
 }
 
-void test_connection_state_machine_uses_local_fallback_without_wifi_credentials() {
+void test_connection_state_machine_does_not_use_local_fallback_without_wifi_credentials() {
   A21ConnectionState connection;
   A21NetworkConfig config;
   A21WiFiConfig wifi;
@@ -745,9 +764,30 @@ void test_connection_state_machine_uses_local_fallback_without_wifi_credentials(
 
   a21InitConnectionStateWithWiFi(&connection, &config, &wifi, 1000);
 
-  TEST_ASSERT_EQUAL(A21_CONN_LOCAL_FALLBACK, connection.phase);
-  TEST_ASSERT_EQUAL_STRING("missing_wifi", connection.last_error);
-  TEST_ASSERT_EQUAL_STRING("Local fallback", connection.status_text);
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_PROVISIONING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("wifi_provisioning_required", connection.last_error);
+  TEST_ASSERT_EQUAL_STRING("Wi-Fi provisioning", connection.status_text);
+}
+
+void test_connection_state_machine_enters_wifi_provisioning_without_wifi_credentials() {
+  A21ConnectionState connection;
+  A21NetworkConfig config;
+  A21WiFiConfig wifi;
+  a21InitNetworkConfig(&config);
+  a21InitWiFiConfig(&wifi);
+
+  a21InitConnectionStateWithWiFi(&connection, &config, &wifi, 1000);
+
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_PROVISIONING, connection.phase);
+  TEST_ASSERT_EQUAL_STRING("wifi_provisioning_required", connection.last_error);
+  TEST_ASSERT_EQUAL_STRING("Wi-Fi provisioning", connection.status_text);
+}
+
+void test_wifi_provisioning_methods_match_xiaozhi_startup_options() {
+  TEST_ASSERT_EQUAL_STRING("hotspot", a21WiFiProvisioningMethodName(A21_WIFI_PROVISIONING_HOTSPOT));
+  TEST_ASSERT_EQUAL_STRING("blufi", a21WiFiProvisioningMethodName(A21_WIFI_PROVISIONING_BLUFI));
+  TEST_ASSERT_EQUAL_STRING("acoustic", a21WiFiProvisioningMethodName(A21_WIFI_PROVISIONING_ACOUSTIC));
+  TEST_ASSERT_EQUAL(A21_WIFI_PROVISIONING_HOTSPOT, a21DefaultWiFiProvisioningMethod());
 }
 
 void test_connection_state_machine_starts_wifi_when_credentials_are_valid() {
@@ -782,7 +822,29 @@ void test_wifi_runtime_does_not_begin_without_credentials() {
   a21WiFiRuntimeTick(&runtime, &driver, &connection, &wifi, 1200);
 
   TEST_ASSERT_EQUAL(0, fake.begin_count);
-  TEST_ASSERT_EQUAL(A21_CONN_LOCAL_FALLBACK, connection.phase);
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_PROVISIONING, connection.phase);
+}
+
+void test_wifi_runtime_starts_provisioning_once_without_credentials() {
+  A21WiFiRuntime runtime;
+  A21ConnectionState connection;
+  A21NetworkConfig network;
+  A21WiFiConfig wifi;
+  FakeWiFiProvisioningDriver fakeProvisioning;
+  A21WiFiProvisioningDriver provisioning;
+  initFakeWiFiProvisioningDriver(&fakeProvisioning, &provisioning);
+  a21InitNetworkConfig(&network);
+  a21InitWiFiConfig(&wifi);
+  a21InitConnectionStateWithWiFi(&connection, &network, &wifi, 1000);
+  a21InitWiFiRuntime(&runtime);
+
+  a21WiFiRuntimeTickWithProvisioning(&runtime, nullptr, &provisioning, &connection, &wifi, 1200);
+  a21WiFiRuntimeTickWithProvisioning(&runtime, nullptr, &provisioning, &connection, &wifi, 1300);
+
+  TEST_ASSERT_EQUAL(1, fakeProvisioning.start_count);
+  TEST_ASSERT_EQUAL(A21_WIFI_PROVISIONING_HOTSPOT, fakeProvisioning.last_method);
+  TEST_ASSERT_TRUE(runtime.provisioning_started);
+  TEST_ASSERT_EQUAL(A21_CONN_WIFI_PROVISIONING, connection.phase);
 }
 
 void test_wifi_runtime_begins_once_and_redacts_driver_state() {
@@ -2700,9 +2762,12 @@ int main(int argc, char** argv) {
   RUN_TEST(test_wifi_config_defaults_to_missing_credentials);
   RUN_TEST(test_wifi_config_redacts_password_in_status_text);
   RUN_TEST(test_wifi_config_rejects_legacy_project_ssid);
-  RUN_TEST(test_connection_state_machine_uses_local_fallback_without_wifi_credentials);
+  RUN_TEST(test_connection_state_machine_does_not_use_local_fallback_without_wifi_credentials);
+  RUN_TEST(test_connection_state_machine_enters_wifi_provisioning_without_wifi_credentials);
+  RUN_TEST(test_wifi_provisioning_methods_match_xiaozhi_startup_options);
   RUN_TEST(test_connection_state_machine_starts_wifi_when_credentials_are_valid);
   RUN_TEST(test_wifi_runtime_does_not_begin_without_credentials);
+  RUN_TEST(test_wifi_runtime_starts_provisioning_once_without_credentials);
   RUN_TEST(test_wifi_runtime_begins_once_and_redacts_driver_state);
   RUN_TEST(test_wifi_runtime_moves_to_gateway_connecting_on_connected_status);
   RUN_TEST(test_wifi_runtime_retries_after_disconnect);

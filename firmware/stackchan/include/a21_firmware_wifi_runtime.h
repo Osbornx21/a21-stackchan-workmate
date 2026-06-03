@@ -19,8 +19,14 @@ struct A21WiFiDriver {
   bool (*local_ip)(void* ctx, char* output, size_t output_size);
 };
 
+struct A21WiFiProvisioningDriver {
+  void* ctx;
+  bool (*start)(void* ctx, A21WiFiProvisioningMethod method);
+};
+
 struct A21WiFiRuntime {
   bool begin_sent;
+  bool provisioning_started;
   uint32_t last_begin_at_ms;
 };
 
@@ -29,6 +35,7 @@ inline void a21InitWiFiRuntime(A21WiFiRuntime* runtime) {
     return;
   }
   runtime->begin_sent = false;
+  runtime->provisioning_started = false;
   runtime->last_begin_at_ms = 0;
 }
 
@@ -36,13 +43,43 @@ inline bool a21WiFiDriverReady(const A21WiFiDriver* driver) {
   return driver != nullptr && driver->begin != nullptr && driver->status != nullptr && driver->local_ip != nullptr;
 }
 
+inline bool a21WiFiProvisioningDriverReady(const A21WiFiProvisioningDriver* driver) {
+  return driver != nullptr && driver->start != nullptr;
+}
+
 inline void a21WiFiRuntimeTick(
     A21WiFiRuntime* runtime,
     const A21WiFiDriver* driver,
     A21ConnectionState* connection,
     const A21WiFiConfig* wifi,
+    uint32_t now_ms);
+
+inline void a21WiFiRuntimeTickWithProvisioning(
+    A21WiFiRuntime* runtime,
+    const A21WiFiDriver* driver,
+    const A21WiFiProvisioningDriver* provisioning,
+    A21ConnectionState* connection,
+    const A21WiFiConfig* wifi,
     uint32_t now_ms) {
-  if (runtime == nullptr || !a21WiFiDriverReady(driver) || connection == nullptr || !a21ValidateWiFiConfig(wifi)) {
+  if (runtime == nullptr || connection == nullptr) {
+    return;
+  }
+
+  if (connection->phase == A21_CONN_WIFI_PROVISIONING) {
+    runtime->begin_sent = false;
+    runtime->last_begin_at_ms = 0;
+    if (!runtime->provisioning_started && a21WiFiProvisioningDriverReady(provisioning)) {
+      if (provisioning->start(provisioning->ctx, a21DefaultWiFiProvisioningMethod())) {
+        runtime->provisioning_started = true;
+      } else {
+        a21SetConnectionPhase(connection, A21_CONN_LOCAL_FALLBACK, now_ms);
+        a21CopyString(connection->last_error, A21_ERROR_CAP, "wifi_provisioning_failed");
+      }
+    }
+    return;
+  }
+
+  if (!a21WiFiDriverReady(driver) || !a21ValidateWiFiConfig(wifi)) {
     return;
   }
 
@@ -58,6 +95,7 @@ inline void a21WiFiRuntimeTick(
 
   if (connection->phase == A21_CONN_RECONNECT_WAIT && a21ConnectionRetryDue(connection, now_ms)) {
     runtime->begin_sent = false;
+    runtime->provisioning_started = false;
     runtime->last_begin_at_ms = 0;
     a21ConnectionStartRetry(connection, now_ms);
   }
@@ -73,6 +111,7 @@ inline void a21WiFiRuntimeTick(
     }
     a21ConnectionOnWiFiConnected(connection, local_ip, now_ms);
     runtime->begin_sent = false;
+    runtime->provisioning_started = false;
     runtime->last_begin_at_ms = 0;
     return;
   }
@@ -85,4 +124,13 @@ inline void a21WiFiRuntimeTick(
       a21ConnectionOnWiFiDisconnected(connection, "wifi_begin_failed", now_ms);
     }
   }
+}
+
+inline void a21WiFiRuntimeTick(
+    A21WiFiRuntime* runtime,
+    const A21WiFiDriver* driver,
+    A21ConnectionState* connection,
+    const A21WiFiConfig* wifi,
+    uint32_t now_ms) {
+  a21WiFiRuntimeTickWithProvisioning(runtime, driver, nullptr, connection, wifi, now_ms);
 }
