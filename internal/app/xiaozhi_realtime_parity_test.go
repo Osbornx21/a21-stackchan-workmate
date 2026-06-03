@@ -69,6 +69,7 @@ func TestXiaozhiRealtimeParityClassifiesRealtimeCandidateOrdering(t *testing.T) 
 		`"classification": "xiaozhi_realtime_candidate"`,
 		`"streaming_asr_before_speech_end": true`,
 		`"provider_before_asr_final": true`,
+		`"asr_stream_commit": 1`,
 		`"downlink_before_pipeline_completed": true`,
 		`"xiaozhi_realtime_candidate_not_product_accepted"`,
 	} {
@@ -78,8 +79,63 @@ func TestXiaozhiRealtimeParityClassifiesRealtimeCandidateOrdering(t *testing.T) 
 	}
 }
 
+func TestXiaozhiRealtimeParityDoesNotAcceptRealtimeOrderingWithoutASRCommit(t *testing.T) {
+	server := newXiaozhiRealtimeParityTestServer(t, "realtime_no_commit")
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-realtime-parity",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", "",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"classification": "turn_buffered_xiaozhi_candidate"`,
+		`"asr_stream_commit": 0`,
+		`"xiaozhi_realtime_stream_commit_missing"`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiRealtimeParityBlocksFakeSayPath(t *testing.T) {
 	server := newXiaozhiRealtimeParityTestServer(t, "fake_say")
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-realtime-parity",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", "",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked non-zero stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"classification": "blocked"`,
+		`"forbidden_fake_path": 1`,
+		`"xiaozhi_realtime_fake_path_detected"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiRealtimeParityBlocksHostLoopbackMarkers(t *testing.T) {
+	server := newXiaozhiRealtimeParityTestServer(t, "host_loopback")
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
@@ -190,7 +246,7 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 	if mode == "transport_only" {
 		return events
 	}
-	if mode == "realtime" {
+	if mode == "realtime" || mode == "realtime_no_commit" || mode == "host_loopback" {
 		events = append(events,
 			xiaozhiRealtimeParityTraceEvent("asr.stream.start", 1090, 90),
 			xiaozhiRealtimeParityTraceEvent("asr.audio.append", 1100, 100),
@@ -205,9 +261,14 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 	events = append(events,
 		xiaozhiRealtimeParityTraceEvent("vad.speech.end", 1300, 300),
 		xiaozhiRealtimeParityTraceEvent("xiaozhi.listen.auto_stop", 1310, 310),
+	)
+	if mode == "realtime" || mode == "host_loopback" {
+		events = append(events, xiaozhiRealtimeParityTraceEvent("asr.stream.commit", 1320, 320))
+	}
+	events = append(events,
 		xiaozhiRealtimeParityTraceEvent("asr.final", 1340, 340),
 	)
-	if mode != "realtime" {
+	if mode != "realtime" && mode != "realtime_no_commit" && mode != "host_loopback" {
 		events = append(events,
 			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.start", 1320, 320),
 			xiaozhiRealtimeParityTraceEvent("provider.first_content", 1400, 400),
@@ -221,6 +282,9 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 	}
 	if mode == "fake_say" {
 		events = append(events, xiaozhiRealtimeParityTraceEvent("xiaozhi.say.start", 1470, 470))
+	}
+	if mode == "host_loopback" {
+		events = append(events, xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_bench.host_loopback", 1470, 470))
 	}
 	events = append(events,
 		xiaozhiRealtimeParityTraceEvent("device.playback.start", 1490, 490),

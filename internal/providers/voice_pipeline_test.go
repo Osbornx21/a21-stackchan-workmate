@@ -381,6 +381,68 @@ func TestVoicePipelineRunStreamCarriesFallbackReportOnAudioChunks(t *testing.T) 
 	}
 }
 
+func TestVoicePipelineRunStreamStartsLLMFromStreamingASRPartialBeforeFinal(t *testing.T) {
+	tts := &recordingPipelineTTSAdapter{}
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR: scriptedPipelineASRAdapter{text: "batch fallback should not run for partial bridge"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{
+			{Kind: TextStreamDeltaContent, Text: "partial-driven answer。"},
+			{Kind: TextStreamDeltaDone},
+		}},
+		TTS:       tts,
+		Selection: VoicePipelineSelectionFromEnv(nil),
+	})
+
+	events, err := runner.RunStream(context.Background(), VoicePipelineRequest{
+		Session:             VoiceSession{TraceID: "a21-trace-partial-bridge", SessionID: "a21-session-partial-bridge", DeviceID: "stackchan-sim-001"},
+		Mode:                "workmate",
+		Frames:              []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+		ASRTranscript:       "streaming partial should not be stored",
+		ASRTranscriptSource: VoicePipelineASRTranscriptSourcePartial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var firstAudio VoicePipelineStreamEvent
+	var done VoicePipelineStreamEvent
+	for event := range events {
+		switch event.Kind {
+		case VoicePipelineStreamAudioChunk:
+			if firstAudio.Kind == "" {
+				firstAudio = event
+			}
+		case VoicePipelineStreamDone:
+			done = event
+		}
+	}
+	if firstAudio.Kind != VoicePipelineStreamAudioChunk {
+		t.Fatal("missing first streaming audio chunk")
+	}
+	if done.Kind != VoicePipelineStreamDone || done.Err != nil {
+		t.Fatalf("done event = %+v", done)
+	}
+	if firstAudio.Timing.ASRFirstPartialMS != 0 || firstAudio.Timing.ASRFinalMS != -1 {
+		t.Fatalf("first audio timing = %+v, want partial available and final not yet available", firstAudio.Timing)
+	}
+	if firstAudio.Timing.LLMFirstContentMS < 0 || firstAudio.Timing.TTSFirstAudioMS < firstAudio.Timing.LLMFirstContentMS {
+		t.Fatalf("first audio timing = %+v, want LLM content before TTS audio", firstAudio.Timing)
+	}
+	if done.Result.Timing.ASRFinalMS != -1 || done.Result.Timing.LLMFirstContentMS < 0 {
+		t.Fatalf("done timing = %+v, want no synthetic ASR final for partial-driven path", done.Result.Timing)
+	}
+	if !voicePipelineStringSliceHas(done.Result.Report.Findings, "streaming_asr_partial_reused") {
+		t.Fatalf("findings = %+v, want streaming_asr_partial_reused", done.Result.Report.Findings)
+	}
+	rendered := mustProviderJSON(t, done.Result.Report)
+	if strings.Contains(rendered, "streaming partial should not be stored") {
+		t.Fatalf("partial transcript leaked into report: %s", rendered)
+	}
+	if got := tts.texts(); len(got) != 1 || got[0] != "partial-driven answer。" {
+		t.Fatalf("tts texts = %#v, want one streamed answer segment", got)
+	}
+}
+
 func TestVoicePipelineSelectionCanChangeWithoutGatewayCore(t *testing.T) {
 	selection := VoicePipelineSelectionFromEnv([]string{
 		"A21_ASR_PROFILE=cloud",

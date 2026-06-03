@@ -1445,41 +1445,43 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 type xiaozhiSession struct {
-	mu                       sync.Mutex
-	writeMu                  sync.Mutex
-	traceID                  string
-	sessionID                string
-	deviceID                 string
-	features                 xiaozhitransport.HelloFeatures
-	currentTurn              *xiaozhiTurn
-	nextTurnID               uint64
-	helloReceived            bool
-	listening                bool
-	listenStartedAtMS        int64
-	binaryProtocolVersion    int
-	opusCodec                *opuscodec.Codec
-	opusSampleRateHz         int
-	opusChannels             int
-	opusFrameDurationMS      int
-	opusFrameCount           int
-	opusByteCount            int
-	opusDecodedFrameCount    int
-	opusDecodedSampleCount   int
-	opusDecodeErrorCount     int
-	voicePipelineFrames      []providers.VoicePipelinePCMFrame
-	voicePipelineHasSpeech   bool
-	ttsStopSent              bool
-	lastDownlinkAtMS         int64
-	lastDownlinkTurnID       string
-	lastPlaybackStopDoneAtMS int64
-	inputCooldownUntilMS     int64
-	inputCooldownReason      string
-	officialStackChanState   string
-	streamingASRSession      providers.StreamingASRSession
-	streamingASRHasPartial   bool
-	streamingASRHasFinal     bool
-	streamingASRFinalText    string
-	streamingASRClosed       bool
+	mu                               sync.Mutex
+	writeMu                          sync.Mutex
+	traceID                          string
+	sessionID                        string
+	deviceID                         string
+	features                         xiaozhitransport.HelloFeatures
+	currentTurn                      *xiaozhiTurn
+	nextTurnID                       uint64
+	helloReceived                    bool
+	listening                        bool
+	listenStartedAtMS                int64
+	binaryProtocolVersion            int
+	opusCodec                        *opuscodec.Codec
+	opusSampleRateHz                 int
+	opusChannels                     int
+	opusFrameDurationMS              int
+	opusFrameCount                   int
+	opusByteCount                    int
+	opusDecodedFrameCount            int
+	opusDecodedSampleCount           int
+	opusDecodeErrorCount             int
+	voicePipelineFrames              []providers.VoicePipelinePCMFrame
+	voicePipelineHasSpeech           bool
+	ttsStopSent                      bool
+	lastDownlinkAtMS                 int64
+	lastDownlinkTurnID               string
+	lastPlaybackStopDoneAtMS         int64
+	inputCooldownUntilMS             int64
+	inputCooldownReason              string
+	officialStackChanState           string
+	streamingASRSession              providers.StreamingASRSession
+	streamingASRHasPartial           bool
+	streamingASRPartialText          string
+	streamingASRHasFinal             bool
+	streamingASRFinalText            string
+	streamingASRClosed               bool
+	streamingASRPartialBridgeStarted bool
 }
 
 type xiaozhiTurn struct {
@@ -1508,17 +1510,19 @@ type xiaozhiVoicePipelineStreamer interface {
 }
 
 type xiaozhiTurnTask struct {
-	turn                   *xiaozhiTurn
-	turnID                 string
-	traceID                string
-	sessionID              string
-	deviceID               string
-	audioIngressBase       map[string]any
-	voicePipelineFrames    []providers.VoicePipelinePCMFrame
-	voicePipelineHasSpeech bool
-	streamingASRFinalText  string
-	streamingASRUsed       bool
-	mode                   protocol.Mode
+	turn                      *xiaozhiTurn
+	turnID                    string
+	traceID                   string
+	sessionID                 string
+	deviceID                  string
+	audioIngressBase          map[string]any
+	voicePipelineFrames       []providers.VoicePipelinePCMFrame
+	voicePipelineHasSpeech    bool
+	streamingASRPartialText   string
+	streamingASRPartialDriven bool
+	streamingASRFinalText     string
+	streamingASRUsed          bool
+	mode                      protocol.Mode
 }
 
 func defaultXiaozhiVoicePipelineRunner() xiaozhiVoicePipelineRunner {
@@ -1802,9 +1806,11 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	}
 	session.streamingASRSession = nil
 	session.streamingASRHasPartial = false
+	session.streamingASRPartialText = ""
 	session.streamingASRHasFinal = false
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
+	session.streamingASRPartialBridgeStarted = false
 }
 
 func (session *xiaozhiSession) xiaozhiOpusDecodeStatus() string {
@@ -1827,7 +1833,7 @@ func (session *xiaozhiSession) xiaozhiDecodedDurationMS() int {
 	return session.opusDecodedSampleCount * 1000 / session.opusSampleRateHz
 }
 
-func (s *Server) startXiaozhiStreamingASR(ctx context.Context, session *xiaozhiSession, mode protocol.Mode) {
+func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, mode protocol.Mode) {
 	if s == nil || session == nil || s.xiaozhiVoicePipelineASR == nil {
 		return
 	}
@@ -1850,30 +1856,35 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, session *xiaozhiS
 	session.mu.Lock()
 	session.streamingASRSession = stream
 	session.streamingASRHasPartial = false
+	session.streamingASRPartialText = ""
 	session.streamingASRHasFinal = false
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
+	session.streamingASRPartialBridgeStarted = false
 	session.mu.Unlock()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start", s.now().UnixMilli())
-	go s.consumeXiaozhiStreamingASREvents(session, stream)
+	go s.consumeXiaozhiStreamingASREvents(ctx, conn, session, stream)
 }
 
-func (s *Server) consumeXiaozhiStreamingASREvents(session *xiaozhiSession, stream providers.StreamingASRSession) {
+func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, stream providers.StreamingASRSession) {
 	for event := range stream.Events() {
 		if event.Err != nil {
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.error", s.now().UnixMilli())
 			continue
 		}
-		if strings.TrimSpace(event.Text) != "" {
+		partialText := strings.TrimSpace(event.Text)
+		if partialText != "" {
 			recordPartial := false
 			session.mu.Lock()
 			if !session.streamingASRHasPartial {
 				session.streamingASRHasPartial = true
+				session.streamingASRPartialText = partialText
 				recordPartial = true
 			}
 			session.mu.Unlock()
 			if recordPartial {
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.first_partial", s.now().UnixMilli())
+				s.startXiaozhiPartialVoicePipeline(ctx, conn, session, partialText)
 			}
 		}
 		if event.Final {
@@ -1889,6 +1900,37 @@ func (s *Server) consumeXiaozhiStreamingASREvents(session *xiaozhiSession, strea
 		session.streamingASRClosed = true
 	}
 	session.mu.Unlock()
+}
+
+func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, partialText string) {
+	if s == nil || session == nil || conn == nil || strings.TrimSpace(partialText) == "" {
+		return
+	}
+	session.mu.Lock()
+	if session.streamingASRPartialBridgeStarted || !session.listening || session.currentTurn == nil || len(session.voicePipelineFrames) == 0 {
+		session.mu.Unlock()
+		return
+	}
+	session.streamingASRPartialBridgeStarted = true
+	session.voicePipelineHasSpeech = true
+	turn := session.currentTurn
+	session.mu.Unlock()
+
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.partial_bridge_start", s.now().UnixMilli())
+	task := s.newXiaozhiTurnTask(session, turn)
+	task.streamingASRPartialText = partialText
+	task.streamingASRPartialDriven = true
+	task.voicePipelineHasSpeech = true
+	s.startXiaozhiTurnTask(ctx, conn, session, task)
+}
+
+func (session *xiaozhiSession) xiaozhiPartialVoicePipelineStarted() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.streamingASRPartialBridgeStarted
 }
 
 func (s *Server) appendXiaozhiStreamingASRFrame(ctx context.Context, session *xiaozhiSession, frame providers.VoicePipelinePCMFrame) {
@@ -2075,7 +2117,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.listening = true
 			session.listenStartedAtMS = nowMS
 			session.resetXiaozhiOpusIngress()
-			s.startXiaozhiStreamingASR(ctx, session, mode)
+			s.startXiaozhiStreamingASR(ctx, conn, session, mode)
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
@@ -2100,6 +2142,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			}
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
 			s.commitXiaozhiStreamingASR(ctx, session)
+			if session.xiaozhiPartialVoicePipelineStarted() {
+				return true
+			}
 			task := s.newXiaozhiTurnTask(session, session.currentXiaozhiTurn())
 			s.startXiaozhiTurnTask(ctx, conn, session, task)
 		}
@@ -2273,10 +2318,10 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 		PCM16LE:      pcm16Bytes(pcm),
 	}
 	session.voicePipelineFrames = append(session.voicePipelineFrames, pipelineFrame)
-	s.appendXiaozhiStreamingASRFrame(ctx, session, pipelineFrame)
 	if result.SpeechDetected || result.SpeechActive || containsAudioIngressEvent(result.Events, audio.EventVADSpeechStart) {
 		session.voicePipelineHasSpeech = true
 	}
+	s.appendXiaozhiStreamingASRFrame(ctx, session, pipelineFrame)
 	s.recordAudioCaptureFrame(frame, chunk, result, session.traceID, session.sessionID)
 	s.metrics.audioIngressFramesTotal.Inc()
 	if result.DroppedFrameDelta > 0 {
@@ -2465,6 +2510,7 @@ func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) 
 	decodeStatus := session.xiaozhiOpusDecodeStatus()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	session.mu.Lock()
+	streamingASRPartialText := session.streamingASRPartialText
 	streamingASRFinalText := session.streamingASRFinalText
 	streamingASRUsed := session.streamingASRHasFinal && strings.TrimSpace(session.streamingASRFinalText) != ""
 	session.mu.Unlock()
@@ -2489,10 +2535,11 @@ func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) 
 			"decoded_duration_ms":  session.xiaozhiDecodedDurationMS(),
 			"decode_error_count":   session.opusDecodeErrorCount,
 		},
-		voicePipelineFrames:    append([]providers.VoicePipelinePCMFrame(nil), session.voicePipelineFrames...),
-		voicePipelineHasSpeech: session.voicePipelineHasSpeech,
-		streamingASRFinalText:  streamingASRFinalText,
-		streamingASRUsed:       streamingASRUsed,
+		voicePipelineFrames:     append([]providers.VoicePipelinePCMFrame(nil), session.voicePipelineFrames...),
+		voicePipelineHasSpeech:  session.voicePipelineHasSpeech,
+		streamingASRPartialText: streamingASRPartialText,
+		streamingASRFinalText:   streamingASRFinalText,
+		streamingASRUsed:        streamingASRUsed,
 	}
 }
 
@@ -2534,6 +2581,9 @@ func (s *Server) maybeAutoStopXiaozhiTurnOnIngress(ctx context.Context, conn *we
 	}
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
 	s.commitXiaozhiStreamingASR(ctx, session)
+	if session.xiaozhiPartialVoicePipelineStarted() {
+		return
+	}
 	task := s.newXiaozhiTurnTask(session, turn)
 	s.startXiaozhiTurnTask(ctx, conn, session, task)
 }
@@ -2934,15 +2984,24 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_unavailable")
 		return true
 	}
+	asrTranscript := task.streamingASRFinalText
+	asrTranscriptSource := ""
+	if task.streamingASRPartialDriven && strings.TrimSpace(task.streamingASRPartialText) != "" {
+		asrTranscript = task.streamingASRPartialText
+		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourcePartial
+	} else if strings.TrimSpace(asrTranscript) != "" {
+		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourceFinal
+	}
 	request := providers.VoicePipelineRequest{
 		Session: providers.VoiceSession{
 			TraceID:   task.traceID,
 			SessionID: task.sessionID,
 			DeviceID:  task.deviceID,
 		},
-		Mode:          string(protocol.ModeWorkmate),
-		Frames:        append([]providers.VoicePipelinePCMFrame(nil), task.voicePipelineFrames...),
-		ASRTranscript: task.streamingASRFinalText,
+		Mode:                string(protocol.ModeWorkmate),
+		Frames:              append([]providers.VoicePipelinePCMFrame(nil), task.voicePipelineFrames...),
+		ASRTranscript:       asrTranscript,
+		ASRTranscriptSource: asrTranscriptSource,
 	}
 	if streamer, ok := runner.(xiaozhiVoicePipelineStreamer); ok {
 		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS)

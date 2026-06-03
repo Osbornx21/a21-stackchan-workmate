@@ -315,6 +315,11 @@ func xiaozhiRealtimeParityForbiddenFakeEvent(name string) bool {
 	case "xiaozhi.say.start",
 		"xiaozhi.say.wav_loaded",
 		"xiaozhi.say.wav_playback",
+		"xiaozhi.voice_bench.host_loopback",
+		"xiaozhi.voice_bench.start",
+		"local_voice_loopback.start",
+		"host_loopback.voice_pipeline.start",
+		"answer.first_audio.host_loopback",
 		"fast_companion.voice_pipeline.start",
 		"fast_companion.voice_pipeline.completed",
 		"control.local_fallback.sent",
@@ -372,6 +377,7 @@ func xiaozhiRealtimeParityClassification(report xiaozhiRealtimeParityReport) str
 	hasRealtime := report.StageAvailability["asr.partial_before_speech_end"].Available &&
 		report.StageAvailability["asr.stream.start"].Available &&
 		report.StageAvailability["asr.audio.append"].Available &&
+		report.StageAvailability["asr.stream.commit"].Available &&
 		report.StageAvailability["llm.provider_before_asr_final"].Available &&
 		report.StageAvailability["tts.before_pipeline_completed"].Available &&
 		report.StageAvailability["voice_pipeline.answer.downlink"].Available &&
@@ -408,6 +414,7 @@ func xiaozhiRealtimeParityFindings(report xiaozhiRealtimeParityReport, device fi
 		{"xiaozhi.transport.websocket", "xiaozhi_realtime_transport_missing", "stock Xiaozhi WebSocket transport evidence is missing"},
 		{"xiaozhi.opus.ingress", "xiaozhi_realtime_opus_ingress_missing", "real Opus ingress and PCM decode evidence are missing"},
 		{"vad.speech.end", "xiaozhi_realtime_vad_speech_end_missing", "speech-end evidence is missing"},
+		{"asr.stream.commit", "xiaozhi_realtime_stream_commit_missing", "ASR stream commit evidence is missing"},
 		{"asr.final", "xiaozhi_realtime_asr_final_missing", "ASR final evidence is missing"},
 		{"llm.provider.first_content", "xiaozhi_realtime_provider_first_content_missing", "LLM/text-stream first content evidence is missing"},
 		{"tts.first_audio", "xiaozhi_realtime_tts_first_audio_missing", "TTS first audio evidence is missing"},

@@ -5994,3 +5994,161 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No failure. This is a control-state update and worker-routing step only.
+
+## 2026-06-03 08:38 CST - Worker Completes ASR Partial To LLM Realtime Bridge
+
+本轮目标:
+
+- Execute scoped transition
+  `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001`.
+- Prove host-side stock `/v1/xiaozhi` ASR partials can start LLM/TTS streaming
+  before ASR final/listen stop, while keeping final/batch fallback intact.
+- Tighten `xiaozhi-realtime-parity` so turn-buffered-only and fake traces are
+  not confused with realtime candidate traces.
+
+实际完成内容:
+
+- Added `VoicePipelineRequest.ASRTranscriptSource` with explicit
+  `streaming_partial` vs `streaming_final` semantics.
+- Gateway now records the first streaming ASR partial, starts exactly one
+  workmate voice-pipeline answer task from that partial while the stock
+  `/v1/xiaozhi` turn is still listening, and skips a duplicate final-start task
+  after `listen.stop` or VAD/max-duration auto-stop.
+- Partial-driven pipeline requests no longer synthesize `asr.final=0`; final
+  transcript reuse remains the default source when a final transcript is
+  available.
+- `xiaozhi-realtime-parity` now requires `asr.stream.commit` for
+  `xiaozhi_realtime_candidate` and blocks host-loopback fake markers in
+  addition to `/say`, fast-companion, and local fallback markers.
+- Updated the state machine to record this as host-side candidate evidence only,
+  below real provider/runtime and physical PRD acceptance.
+
+修改过的文件:
+
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/xiaozhi_realtime_parity.go`
+- `internal/app/xiaozhi_realtime_parity_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance is still incomplete.
+- Real Sherpa streaming ASR remains blocked until model/helper runtime evidence
+  is provided.
+- Real streaming TTS runtime remains blocked until explicit provider execution
+  is authorized and complete env is present.
+- Physical product evidence still needs wake or labeled tap trigger, stock
+  `/v1/xiaozhi` device trace ordering, audible device playback, touch/barge-in,
+  and idle recovery.
+
+已知风险和阻塞点:
+
+- The bridge starts from first partial text and is host-side test evidence; it
+  does not prove real ASR model quality, real provider latency, or physical
+  user experience.
+- No raw transcripts, raw/base64 audio, credentials, full URLs, proxy values,
+  or absolute local paths were added to reports.
+
+下一轮建议动作:
+
+1. Run the real Sherpa streaming ASR no-audio/runtime unblock when model
+   artifacts are available.
+2. Run realtime TTS provider execution only with explicit operator
+   authorization.
+3. After real ASR/TTS runtime evidence, collect a physical stock `/v1/xiaozhi`
+   parity trace and keep `/say`, host loopback, mock, and WAV/file paths out of
+   acceptance.
+
+测试/构建/运行结果:
+
+- Red tests first:
+  `go test ./internal/providers -run TestVoicePipelineRunStreamStartsLLMFromStreamingASRPartialBeforeFinal -count=1`
+  failed before implementation because `ASRTranscriptSource` and
+  `VoicePipelineASRTranscriptSourcePartial` were undefined.
+- Red parity tests first:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity(ClassifiesRealtimeCandidateOrdering|DoesNotAcceptRealtimeOrderingWithoutASRCommit|BlocksHostLoopbackMarkers)' -count=1`
+  failed because no-commit and host-loopback traces were accepted as realtime.
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal -count=1`
+  failed because `xiaozhi.voice_pipeline.start` did not occur before
+  `listen.stop`.
+- Focused provider tests passed:
+  `go test ./internal/providers -run 'TestVoicePipelineRunStreamStartsLLMFromStreamingASRPartialBeforeFinal|TestVoicePipelineRunStreamDeliversDoneAfterBufferedChunksDrain|TestVoicePipelineRunStreamCarriesFallbackReportOnAudioChunks|TestMockStreamingASRAdapterEmitsPartialOnFrameAndFinalOnCommit' -count=1`.
+- Focused app tests passed:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity(ClassifiesRealtimeCandidateOrdering|DoesNotAcceptRealtimeOrderingWithoutASRCommit|BlocksHostLoopbackMarkers|BlocksFakeSayPath|DoesNotAcceptTransportOnlyTrace)' -count=1`.
+- Focused Gateway tests passed:
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal|TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop|TestXiaozhiWebSocketStreamsVoicePipelineAnswerChunks' -count=1`.
+- Broader relevant package tests passed:
+  `go test ./internal/providers -count=1`;
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity|TestRunXiaozhiStreamingProviderReadiness|TestRunStreamingTTSRuntimeSmoke|TestRunLocalASRStreamingSmoke' -count=1`;
+  `go test ./internal/gateway -count=1`.
+- Required verification passed before this handoff entry:
+  `git diff --check`; `make verify`.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host
+  loopback, WAV/file acceptance path, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only failures were intentional red tests before
+  implementation and one updated legacy Gateway assertion that previously froze
+  turn-buffered behavior.
+
+## 2026-06-03 08:41 CST - Control Integrates ASR Partial Bridge
+
+本轮目标:
+
+- Integrate worker `019e8ade-4fd4-7032-b508-2b786b71c162` into the main A21
+  control branch.
+- Preserve the result as host-side ordered evidence only, below real
+  provider/runtime and physical StackChan PRD acceptance.
+
+实际完成内容:
+
+- Applied the worker diff from worktree
+  `/Users/jiyurun/.codex/worktrees/4d95/New project` onto main branch
+  `codex/a21-hardware-window-20260602-stackchan-prd`.
+- Revalidated the same scope on main: Gateway/provider/parity tests plus full
+  `make verify`.
+- Confirmed the transition remains honest: it proves the host-side bridge and
+  tighter gates, not real model/provider execution or physical acceptance.
+
+修改过的文件:
+
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/xiaozhi_realtime_parity.go`
+- `internal/app/xiaozhi_realtime_parity_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Real Sherpa streaming ASR runtime/model proof.
+- Authorized real streaming TTS provider execution.
+- Physical stock `/v1/xiaozhi` trace with wake or labeled tap trigger, audible
+  playback, touch/barge-in, and idle recovery.
+
+测试/构建/运行结果:
+
+- Main branch focused provider tests passed:
+  `go test ./internal/providers -count=1`.
+- Main branch focused app tests passed:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity|TestRunXiaozhiStreamingProviderReadiness|TestRunStreamingTTSRuntimeSmoke|TestRunLocalASRStreamingSmoke' -count=1`.
+- Main branch focused Gateway tests passed:
+  `go test ./internal/gateway -count=1`.
+- Main branch `git diff --cached --check`: passed.
+- Main branch `make verify`: passed.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host
+  loopback, WAV/file acceptance path, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed by control integration.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved integration failure.

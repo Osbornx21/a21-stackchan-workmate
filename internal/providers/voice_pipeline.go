@@ -32,11 +32,17 @@ type VoicePipelinePCMFrame struct {
 }
 
 type VoicePipelineRequest struct {
-	Session       VoiceSession
-	Mode          string
-	Frames        []VoicePipelinePCMFrame
-	ASRTranscript string `json:"-"`
+	Session             VoiceSession
+	Mode                string
+	Frames              []VoicePipelinePCMFrame
+	ASRTranscript       string `json:"-"`
+	ASRTranscriptSource string `json:"-"`
 }
+
+const (
+	VoicePipelineASRTranscriptSourceFinal   = "streaming_final"
+	VoicePipelineASRTranscriptSourcePartial = "streaming_partial"
+)
 
 type VoicePipelineSelection struct {
 	ASRMode               string `json:"asr_mode"`
@@ -285,10 +291,16 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 	var transcript string
 	if strings.TrimSpace(req.ASRTranscript) != "" {
 		transcript = req.ASRTranscript
-		result.Timing.ASRFirstPartialMS = 0
-		result.Timing.ASRFinalMS = 0
-		result.Timing.SpeechEndToFinalASRMS = 0
-		report.Findings = append(report.Findings, "streaming_asr_final_reused")
+		switch voicePipelineASRTranscriptSource(req.ASRTranscriptSource) {
+		case VoicePipelineASRTranscriptSourcePartial:
+			result.Timing.ASRFirstPartialMS = 0
+			report.Findings = append(report.Findings, "streaming_asr_partial_reused")
+		default:
+			result.Timing.ASRFirstPartialMS = 0
+			result.Timing.ASRFinalMS = 0
+			result.Timing.SpeechEndToFinalASRMS = 0
+			report.Findings = append(report.Findings, "streaming_asr_final_reused")
+		}
 	} else {
 		asrEvents, err := r.adapters.ASR.Transcribe(ctx, ASRAdapterRequest{Session: req.Session, Mode: req.Mode, Frames: req.Frames})
 		if err != nil {
@@ -410,6 +422,15 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 	}
 	result.Report = finalizeVoicePipelineReport(report, result)
 	return result, nil
+}
+
+func voicePipelineASRTranscriptSource(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case VoicePipelineASRTranscriptSourcePartial:
+		return VoicePipelineASRTranscriptSourcePartial
+	default:
+		return VoicePipelineASRTranscriptSourceFinal
+	}
 }
 
 func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context, start time.Time, req VoicePipelineRequest, segment string, segmentSeq int, emit func(VoiceAudioChunk, int, VoicePipelineTiming, VoicePipelineReport) bool, result *VoicePipelineResult, report *VoicePipelineReport) error {

@@ -4181,8 +4181,8 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 			t.Fatalf("trace before listen stop missing %q: %+v", want, traces)
 		}
 	}
-	if traceContains(traces, "xiaozhi.listen.stop") || traceContains(traces, "xiaozhi.voice_pipeline.start") {
-		t.Fatalf("streaming ASR should start before listen stop/pipeline start: %+v", traces)
+	if traceContains(traces, "xiaozhi.listen.stop") {
+		t.Fatalf("streaming ASR should start before listen stop: %+v", traces)
 	}
 
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
@@ -4192,7 +4192,14 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
 		t.Fatalf("tts start = %#v", ttsStart)
 	}
-	traces = server.traceEvents("a21-trace-xiaozhi-streaming-asr")
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-streaming-asr")
+		if traceContains(traces, "asr.stream.commit") && traceContains(traces, "asr.final") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	for _, want := range []string{"asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.start"} {
 		if !traceContains(traces, want) {
 			t.Fatalf("trace after listen stop missing %q: %+v", want, traces)
@@ -4208,6 +4215,120 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 	}
 	if partialAt >= stopAt {
 		t.Fatalf("asr.first_partial at %d, want before listen.stop at %d", partialAt, stopAt)
+	}
+}
+
+func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal(t *testing.T) {
+	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
+	asr, ok := streamingASR.(providers.ASRAdapter)
+	if !ok {
+		t.Fatal("mock streaming ASR adapter must also satisfy batch ASR fallback")
+	}
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        asr,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-partial-bridge",
+		"session_id": "a21-session-xiaozhi-partial-bridge",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+
+	var traces []TraceEvent
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-partial-bridge")
+		if traceContains(traces, "provider.first_content") && traceContains(traces, "tts.first_audio") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"asr.first_partial", "xiaozhi.voice_pipeline.start", "provider.first_content", "tts.first_audio"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace before listen stop missing %q: %+v", want, traces)
+		}
+	}
+	for _, forbidden := range []string{"xiaozhi.listen.stop", "vad.speech.end", "asr.final"} {
+		if traceContains(traces, forbidden) {
+			t.Fatalf("trace should not contain %q before explicit stop: %+v", forbidden, traces)
+		}
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-partial-bridge")
+		if traceContains(traces, "asr.final") && traceContains(traces, "xiaozhi.voice_pipeline.completed") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"xiaozhi.listen.stop", "asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.completed"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace after listen stop missing %q: %+v", want, traces)
+		}
+	}
+	pipelineStartAt, ok := traceEventAtMS(traces, "xiaozhi.voice_pipeline.start")
+	if !ok {
+		t.Fatalf("missing xiaozhi.voice_pipeline.start: %+v", traces)
+	}
+	stopAt, ok := traceEventAtMS(traces, "xiaozhi.listen.stop")
+	if !ok {
+		t.Fatalf("missing xiaozhi.listen.stop: %+v", traces)
+	}
+	providerAt, ok := traceEventAtMS(traces, "provider.first_content")
+	if !ok {
+		t.Fatalf("missing provider.first_content: %+v", traces)
+	}
+	finalAt, ok := traceEventAtMS(traces, "asr.final")
+	if !ok {
+		t.Fatalf("missing asr.final: %+v", traces)
+	}
+	ttsAt, ok := traceEventAtMS(traces, "tts.first_audio")
+	if !ok {
+		t.Fatalf("missing tts.first_audio: %+v", traces)
+	}
+	completedAt, ok := traceEventAtMS(traces, "xiaozhi.voice_pipeline.completed")
+	if !ok {
+		t.Fatalf("missing xiaozhi.voice_pipeline.completed: %+v", traces)
+	}
+	if pipelineStartAt >= stopAt {
+		t.Fatalf("pipeline start at %d, want before listen.stop at %d", pipelineStartAt, stopAt)
+	}
+	if providerAt >= finalAt {
+		t.Fatalf("provider.first_content at %d, want before asr.final at %d", providerAt, finalAt)
+	}
+	if ttsAt >= completedAt {
+		t.Fatalf("tts.first_audio at %d, want before pipeline completed at %d", ttsAt, completedAt)
+	}
+	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != 1 {
+		t.Fatalf("voice pipeline start count = %d, want exactly one partial-driven task: %+v", got, traces)
 	}
 }
 
@@ -9425,4 +9546,14 @@ func traceEventAtMS(events []TraceEvent, name string) (int64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func traceEventCount(events []TraceEvent, name string) int {
+	count := 0
+	for _, event := range events {
+		if event.Name == name {
+			count++
+		}
+	}
+	return count
 }
