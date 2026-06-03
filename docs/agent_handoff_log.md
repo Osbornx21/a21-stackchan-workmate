@@ -9212,3 +9212,140 @@ Recommended next action:
 
 - Commit and deploy the small StepFun route-eligibility promotion patch before
   collecting fresh provider/readiness evidence.
+
+## 2026-06-04 03:17 CST - StepFun Route Eligibility Committed, ECS Deploy Blocked By SSH
+
+Round goal:
+
+- Deploy the committed StepFun route-eligibility promotion to ECS and collect a
+  fresh remote route-eligible provider-smoke report.
+
+Actual completed work:
+
+- Committed the route-eligibility promotion as
+  `3741c4a feat(providers): promote stepfun route eligibility`.
+- Confirmed the committed local binary now emits StepFun dry-run provider smoke
+  with `route_eligible=true`, `configured=true`, `stream=true`, and
+  `executed=false` when the required env names are present.
+- Attempted ECS deploy using the existing safe `git archive HEAD` to
+  `/opt/a21.next` pattern.
+- Confirmed default SSH is unusable in this thread.
+- Confirmed the available `~/.ssh` candidate identities are not accepted by
+  `root@47.103.57.217`; the remote closes the SSH connection.
+- Stopped before any remote file, service, selector, secret, firmware, flash,
+  or NVS mutation.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
+
+Unfinished items:
+
+- Restore or provide an approved SSH/control-plane identity for ECS.
+- Deploy commit `3741c4a` to `/opt/a21` using the existing safe swap pattern.
+- Run fresh remote StepFun `provider-smoke --execute --stream --repeat 3`.
+- Copy only the redacted provider-smoke report into local `reports/`.
+- Re-run product readiness and server-side readiness with the fresh report.
+- Physical playback ack, playback stop_done, or trusted audible/instrument
+  observation remains required before full PRD launch can be claimed.
+
+Known risks/blockers:
+
+- Do not use the older provider-smoke report as launch evidence; it was
+  generated before StepFun was route-eligible and correctly records
+  `route_eligible=false`.
+- Do not attempt blind remote changes without a verified ECS control-plane
+  identity.
+- Do not touch internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash
+  state, NVS, or endpoint-side accepted voice behavior in this route-only
+  promotion.
+
+Test/build/runtime results:
+
+- `git diff --check`: passed before commit.
+- `GOMAXPROCS=2 make verify`: passed before commit.
+- Local dry-run shape check:
+  StepFun provider smoke reports `status=ready`, `configured=true`,
+  `executed=false`, `stream=true`, `route_eligible=true`, with env names only.
+- ECS deploy attempt: blocked before remote mutation because SSH identity is
+  unavailable in this thread.
+
+Recommended next action:
+
+- Resume
+  `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md` at Action
+  Plan step 6 after ECS SSH/control-plane access is restored, then collect the
+  fresh remote provider/readiness evidence.
+
+## 2026-06-04 03:28 CST - Workspace Control Audit And Safe Cleanup
+
+Round goal:
+
+- Explain and contain the Git loose-object warning and branch/worktree/subagent
+  sprawl without destabilizing launch-critical internal test 3 work.
+- Clean the main workspace only where safe.
+
+Actual completed work:
+
+- Added current workspace audit:
+  `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`.
+- Marked `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md` as source-only
+  backlog rather than an active control source.
+- Updated current control to point at the workspace audit and current
+  route-promotion plan.
+- Added `.DS_Store` to `.gitignore`.
+- Removed `.DS_Store` noise from the main workspace.
+- Ran `git worktree prune`; it removed only the stale missing worktree
+  registration.
+- Confirmed the previously surfaced subagent ID is not known to the current
+  multi-agent runtime.
+- Confirmed A21-related Codex threads are historical/current control surfaces,
+  not active worker writers.
+
+Changed files:
+
+- `.gitignore`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`
+- `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- Existing source-only worker worktrees remain in place; do not delete them
+  without a dedicated cleanup plan and explicit approval.
+- Existing stashes remain source-only; do not apply/pop/drop them during the
+  launch-critical path.
+- Git object-store pruning remains deferred; loose objects are maintenance
+  debt, not current source dirty state.
+
+Known risks/blockers:
+
+- Deleting branches/worktrees by name is unsafe until each is classified as
+  merged, superseded, source-only, or disposable.
+- Running `git prune` or aggressive GC before classification could permanently
+  remove unreachable source material that still explains old worker output.
+- The main launch blocker is still ECS SSH/control-plane recovery for deploying
+  commit `3741c4a` and collecting fresh remote StepFun provider evidence.
+
+Test/build/runtime results:
+
+- `git worktree prune --dry-run` identified one stale registration.
+- `git worktree prune` completed; registered worktrees reduced from 38 to 37.
+- Post-prune worktree count:
+  37 existing, 0 missing, 4 dirty before committing this audit, 19 branched,
+  18 detached.
+- `git count-objects -vH` still reports about 7.9k loose objects and no
+  garbage; object-store cleanup is intentionally deferred.
+
+Recommended next action:
+
+- Commit the workspace audit/control cleanup, then continue only from the
+  current active plan. Do not spawn new workers or delete old branches until the
+  current route-promotion/ECS evidence path is closed or explicitly paused.

@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-STEPFUN-SELECTED-ROUTE-PROMOTION-IN-PROGRESS`
+Current total state: `S-PUBLIC-GATEWAY-STEPFUN-ROUTE-PROMOTED-DEPLOY-BLOCKED-BY-SSH`
 
 Active child transitions:
 
@@ -134,6 +134,14 @@ internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash state, or
 endpoint-side voice acceptance evidence. Full PRD remains blocked until
 physical playback ack, stop_done, or trusted audible/instrument observation is
 present.
+Commit `3741c4a` completes the source-level StepFun route-eligibility
+promotion locally and passed focused provider/app tests plus `GOMAXPROCS=2 make
+verify`. ECS deploy did not proceed because this thread no longer has an
+accepted SSH identity for `root@47.103.57.217`; no remote files, services,
+secrets, selectors, firmware, flash state, or NVS were mutated during the
+blocked deploy attempt. Resume the route promotion plan after control-plane
+access is restored by deploying `3741c4a`, running fresh executed StepFun
+provider smoke, and rerunning product/server-side readiness.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

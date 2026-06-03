@@ -199,6 +199,17 @@ New route decision:
   provider-smoke report with `route_eligible=true`; do not rewrite or
   reinterpret older reports.
 
+Promotion source status:
+
+- Commit `3741c4a feat(providers): promote stepfun route eligibility` promotes
+  the built-in StepFun catalog entry locally.
+- Local dry-run provider smoke now reports `route_eligible=true` for configured
+  StepFun, but `executed=false`; this is a schema/shape check only.
+- ECS has not yet been updated to `3741c4a` from this thread because SSH
+  control-plane access is unavailable.
+- The next launch-routing evidence must be a fresh remote executed StepFun
+  provider-smoke report produced after ECS is running `3741c4a` or newer.
+
 ## Missing Real Evidence
 
 Current full-launch gaps:

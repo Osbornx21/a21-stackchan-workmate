@@ -13,16 +13,20 @@ execution plan.
 
 - Workspace: `/Users/jiyurun/Documents/New project`
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
-- Current HEAD at sprint start:
+- Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
+- Current source HEAD:
+  `3741c4a feat(providers): promote stepfun route eligibility`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
   do not start launch implementation from unclassified tracked diffs.
-- Known untracked local noise at sprint start:
-  `.DS_Store`, `docs/.DS_Store`, `internal/.DS_Store`.
-- Known untracked control proposal:
+- `.DS_Store` policy:
+  ignored by `.gitignore`; existing workspace noise may be deleted.
+- Source-only control proposal:
   `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`.
+- Current workspace audit:
+  `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`.
 
 ## Current Product State
 
@@ -69,17 +73,17 @@ Evidence truth:
 
 Current active plan:
 
-- `docs/plans/2026-06-04-full-launch-protocol-adaptation.md`
+- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
 
 Transition:
 
-- `T-FULL-LAUNCH-001-PROTOCOL-ADAPTATION-SPRINT`
+- `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
 
 Target:
 
-- Adapt tests, readiness, firmware-evidence pointers, and provider selector
-  surfaces to the stock `/v1/xiaozhi` product protocol and internal test 3
-  evidence hierarchy before any full-launch claim.
+- Deploy the committed StepFun route-eligibility promotion, run fresh remote
+  StepFun provider smoke, and rerun readiness without changing internal test 3
+  `/v1/xiaozhi` protocol behavior or firmware flash state.
 
 ## Current Evidence Manifest
 
@@ -306,3 +310,37 @@ the built-in StepFun profile to explicit route-eligible launch-policy status,
 deploy the committed patch to ECS, run fresh redacted StepFun provider smoke,
 and then re-run product/server-side readiness. Do not touch internal test 3
 Gateway protocol, firmware flash state, or endpoint-side voice acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 03:17 CST
+
+Local promotion is committed; remote deploy is blocked by ECS SSH/control-plane
+access.
+
+- Commit:
+  `3741c4a feat(providers): promote stepfun route eligibility`.
+- Local verification before commit:
+  `go test ./internal/providers -run 'ProviderCatalog|ProviderSmoke' -count=1`
+  passed;
+  `go test ./internal/app -run 'LocalVoiceLoopbackCanUseCompatibilityTextStream|ProductReadiness|ServerSideReadinessBundle|XiaozhiStreamingProviderReadiness' -count=1`
+  passed;
+  `git diff --check` passed;
+  `GOMAXPROCS=2 make verify` passed.
+- Local dry-run shape after commit:
+  StepFun provider smoke reports `route_eligible=true` when configured, but
+  remains `executed=false` and is not launch evidence.
+- ECS deploy attempt stopped before remote mutation because this thread has no
+  accepted SSH identity for `root@47.103.57.217`; default SSH and local
+  `~/.ssh` candidates are unusable.
+
+Current conclusion:
+
+- The source-level StepFun route-eligibility blocker is closed locally.
+- Public Gateway has not yet been updated to commit `3741c4a` from this
+  thread.
+- The next action is control-plane recovery, then deploy `3741c4a`, run fresh
+  remote executed StepFun provider smoke, and rerun readiness.
+- Workspace cleanup is constrained by
+  `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`: clean current
+  mainline noise and stale registrations only; do not delete real branches,
+  existing worker worktrees, stashes, reports, firmware artifacts, or evidence
+  during launch-critical work.

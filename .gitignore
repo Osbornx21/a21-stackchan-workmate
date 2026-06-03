@@ -1,5 +1,6 @@
 reports/
 dist/
+.DS_Store
 .a21-run/
 .a21-tools/
 .pio/
