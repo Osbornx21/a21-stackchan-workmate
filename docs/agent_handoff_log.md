@@ -10246,3 +10246,59 @@ Recommended next action:
 - Next implementation candidate: V21/cloud worker contract for actual
   upload/import/index execution and personal/public corpus enforcement, while
   keeping StackChan document-free and provider-key-free.
+
+## 2026-06-04 05:59 CST - Main Control Integrated Hardware Parity Gap Map
+
+Round goal:
+
+- Audit whether the scoped hardware parity gap-map worker completed, then bring
+  the completed worker result back into the current main-control branch without
+  reverting the internal test 4 roleplay, professional workspace, or workspace
+  job changes.
+
+Actual completed work:
+
+- Located worker thread `019e8f55-d945-75a2-b887-14061793a086`
+  (`映射官方硬件差距`) and read its completion summary.
+- Fetched worker branch `codex/stackchan-official-hw-parity-gap-map-001`.
+- Cherry-picked worker commit
+  `d02a592 docs(stackchan): map official hardware parity gaps` into the current
+  branch as `271c25c`.
+- Resolved the only content conflict in `docs/agent_handoff_log.md` by keeping
+  both the worker's `05:18` hardware parity handoff and the current main-control
+  internal test 4 handoff entries.
+- Corrected `docs/engineering/A21_CURRENT_CONTROL.md` so the current source
+  baseline remains `0f4b354 feat(gateway): add workspace upload job skeleton`
+  rather than the older worker checkout base.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- The low-risk MCP/status parity worker has not been implemented yet.
+- No hardware, Gateway runtime, provider, V21, firmware, flash, serial, or NVS
+  action was performed during this integration.
+
+Known risks/blockers:
+
+- The official StackChan root reference remains a dirty working-tree reference,
+  not a clean upstream baseline.
+- Hardware PRD acceptance remains blocked by physical evidence and playback/
+  hardware-surface proof, not by this docs-only gap map.
+
+Test/build/runtime results:
+
+- `git diff --cached --check`: passed before `271c25c`.
+- `git diff --check`: passed after the main-control integration note.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Commit this main-control integration note and push the current branch.
+- Then schedule `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` as the next
+  low-risk hardware parity implementation slice.
