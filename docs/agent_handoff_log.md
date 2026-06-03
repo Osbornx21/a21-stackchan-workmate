@@ -9412,3 +9412,164 @@ Recommended next action:
 - Keep current `HEAD` as the control mainline. Next operational step remains
   ECS control-plane recovery and deployment of the local route-eligibility
   commit chain; do not start cleanup-driven reverts.
+
+## 2026-06-04 03:33 CST - Remote Branch Synced, ECS Runtime Still Blocked
+
+Round goal:
+
+- Continue from the integration audit by making sure the local commits are no
+  longer trapped on the control Mac.
+- Recheck public Gateway and ECS control-plane status without mutating runtime.
+
+Actual completed work:
+
+- Pushed current branch to
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`.
+- Confirmed remote tracking branch now contains `765ed41`, `3741c4a`,
+  `8396261`, and `5dba606`.
+- Rechecked public Gateway from the control Mac.
+- Confirmed TCP ports `22`, `80`, `443`, and `21081` on `47.103.57.217` are
+  reachable.
+- Confirmed HTTP paths `/healthz`, `/v1/devices`, `/v1/voice-chain-profiles`,
+  and `/xiaozhi/ota/` currently return empty replies.
+- Confirmed default SSH remains unusable for `root@47.103.57.217`.
+- No ECS files, services, provider secrets, selectors, firmware, flash state, or
+  NVS were mutated.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- Restore ECS SSH/control-plane access or have an approved operator run the
+  deploy commands on host.
+- Diagnose why public Gateway HTTP paths are returning empty replies.
+- Deploy commit `3741c4a` or newer to ECS after control-plane recovery.
+- Run fresh remote StepFun provider smoke and rerun readiness.
+
+Known risks/blockers:
+
+- Do not treat pushed Git source as equivalent to ECS runtime deployment.
+- Do not use older public Gateway snapshots while current HTTP checks return
+  empty replies.
+- Do not make blind remote changes without verified ECS control-plane access.
+
+Test/build/runtime results:
+
+- `git push origin codex/a21-hardware-window-20260603-wifi-provisioning-flash`:
+  passed.
+- `git status --short --branch`: clean after push before this doc update.
+- Public Gateway TCP reachability: ports `22`, `80`, `443`, and `21081`
+  reachable.
+- Public HTTP checks: empty replies for the current product paths.
+- SSH check: default SSH unusable.
+
+Recommended next action:
+
+- Commit and push this runtime-blocker update, then either recover ECS
+  control-plane access or hand the exact deploy/diagnosis task to an approved
+  operator with host access.
+
+## 2026-06-04 04:02 CST - ECS StepFun Cloud-Edge Evidence Accepted
+
+Round goal:
+
+- Resolve the ECS runtime/control-plane blocker without reverting internal test
+  3 protocol work.
+- Deploy the route-eligible StepFun code path.
+- Collect fresh ECS-side provider/readiness evidence.
+- Adapt readiness to accept cloud-edge Xiaozhi host evidence without promoting
+  it to physical PRD acceptance.
+
+Actual completed work:
+
+- Recovered ECS control through the approved 5080lab jump path and an explicit
+  existing local SSH identity.
+- Deployed `d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence` to
+  ECS using the existing `/opt/a21.next` safe-swap pattern.
+- Preserved provider secret values; only A21 profile selector IDs were changed
+  in the root-only ECS provider env file.
+- Confirmed `a21-gateway` and Caddy are active and ECS loopback health is ok.
+- Confirmed Gateway selector after restart is cascade DashScope ASR, StepFun
+  LLM, fixed DashScope TTS, with no findings.
+- Ran fresh ECS StepFun provider smoke, static provider readiness, Xiaozhi
+  cloud-edge host bench, product readiness, and server-side readiness.
+- Added readiness code support for cloud-edge Xiaozhi host evidence:
+  `cloud_edge` execution mode is preserved by the sanitizer, and
+  product-readiness accepts non-mock cloud-edge provider execution as
+  server-side candidate voice evidence while keeping it below PRD acceptance.
+- Diagnosed the Mac direct-curl symptom: this control Mac still receives empty
+  public HTTP replies, while 5080lab and ECS loopback are healthy; a later ECS
+  tcpdump did not observe the Mac curl reaching the host.
+
+Changed files:
+
+- `internal/app/app_test.go`
+- `internal/app/product_demo.go`
+- `internal/app/provider_latency_bench.go`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`
+- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
+- `docs/project_state_machine.md`
+
+Fresh evidence:
+
+- `reports/a21-provider-smoke-20260604-035200-977132343.json`:
+  `passed`, `executed=true`, `stream=true`, `route_eligible=true`.
+- `reports/a21-xiaozhi-streaming-provider-readiness-20260604-035317-1780516397705439206.json`:
+  `gate_status=passed`, `stepfun_selected`.
+- `reports/a21-xiaozhi-voice-bench-20260604-035502.222374820.json`:
+  `candidate_host_only`, `cloud_edge`, `failure_count=0`,
+  answer first-audio p95 `809 ms`, barge-in stop p95 `0 ms`.
+- `reports/a21-product-readiness-20260604-040153.json`:
+  `server_side_blocked`, provider evidence ready and host voice loopback ready.
+- `reports/a21-server-side-readiness-bundle-20260604-040207.json`:
+  `server_side_blocked`, missing `v21_professional_smoke`.
+
+Unfinished items:
+
+- V21 professional execution evidence remains missing.
+- Physical StackChan PRD acceptance remains missing: playback/audible and
+  stop/barge-in evidence are still required.
+- Mac direct public curls to `47.103.57.217` still return empty replies from
+  this control machine, but this is no longer classified as an A21 runtime
+  blocker because ECS loopback and 5080lab public checks are healthy.
+
+Known risks/blockers:
+
+- Do not claim `launch_ready=true` or `prd_accepted=true`; readiness is still
+  server-side blocked by V21 and physical evidence.
+- Do not run V21 execution without a scoped professional validation plan.
+- Do not use cloud-edge host bench as physical playback proof.
+- Do not prune Git loose objects or delete old worktrees/branches during the
+  launch-critical path.
+
+Test/build/runtime results:
+
+- Local:
+  `go test ./internal/app -run 'ProductReadiness|ServerSideReadinessBundle|XiaozhiVoiceBench|ProviderLatency' -count=1`
+  passed.
+- Local:
+  `go test ./internal/providers -run 'ProviderCatalog|ProviderSmoke' -count=1`
+  passed.
+- Local `git diff --check`: passed.
+- Remote pre-swap app/provider focused tests: passed.
+- Remote build `go build -o /opt/a21.next/bin/a21 ./cmd/a21`: passed.
+- Remote `a21-gateway`: active after swap.
+- Remote StepFun provider smoke: passed with no fallback.
+- Remote product/server-side readiness: provider and host voice evidence ready,
+  still blocked by V21/physical gates.
+
+Recommended next action:
+
+- Create or activate a scoped V21 professional validation transition, then run
+  the adapter evidence without leaking query text or provider outputs.
+- In a foreground hardware window, collect physical playback/stop/audible
+  evidence for the current StepFun cloud-edge chain.

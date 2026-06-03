@@ -20,6 +20,9 @@ runtime mutation.
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Branch state before this audit document:
   ahead of origin by 3 commits.
+- Follow-up update:
+  commits through `5dba606` were pushed to the remote tracking branch at
+  2026-06-04 03:33 CST.
 
 ## Inclusion Matrix
 
@@ -30,9 +33,11 @@ These commits are all ancestors of current `HEAD`.
 | `074e3d8` | Internal test 3 package source commit / suppressed listen verification | included | included |
 | `221c153` | Internal test 3 release documentation | included | included |
 | `b58283b` | Internal test 3 master handoff | included | included |
-| `765ed41` | Xiaozhi launch-gate hardening and readiness adaptation | included | not yet pushed |
-| `3741c4a` | StepFun built-in route-eligibility promotion | included | not yet pushed |
-| `8396261` | Workspace control audit and safe cleanup | included | not yet pushed |
+| `765ed41` | Xiaozhi launch-gate hardening and readiness adaptation | included | included |
+| `3741c4a` | StepFun built-in route-eligibility promotion | included | included |
+| `8396261` | Workspace control audit and safe cleanup | included | included |
+| `5dba606` | Integration audit and no-broad-revert guardrail | included | included |
+| `d9362a7` | Cloud-edge Xiaozhi evidence readiness adaptation | included | included after this control update is pushed |
 
 High-signal internal test 3 protocol/firmware commits were also confirmed as
 ancestors of current `HEAD`:
@@ -57,7 +62,8 @@ HEAD showed:
 - No runtime diff in `internal/transport/xiaozhi`.
 - No firmware diff in `firmware`.
 - Follow-up code changes after the master handoff are limited to readiness,
-  app evidence gates, provider catalog route eligibility, and tests.
+  app evidence gates, provider catalog route eligibility, cloud-edge evidence
+  absorption, and tests.
 - `internal/gateway/server_test.go` gained Xiaozhi regression coverage, but
   the Gateway runtime implementation was not reverted.
 
@@ -66,8 +72,10 @@ Interpretation:
 - Current `HEAD` keeps the internal test 3 endpoint-side protocol work.
 - The follow-up commits are forward-only guardrail/evidence/provider-routing
   changes, not mass rollback.
-- The three newest commits still need push or an explicit integration path
-  before they are present on the remote tracking branch.
+- The newest source/control commits are intended to stay on the remote tracking
+  branch after each control update is pushed.
+- ECS runtime deployment has been recovered for the StepFun/cloud-edge evidence
+  path; deployment truth remains separate from Git remote integration.
 
 ## Current Guardrail
 

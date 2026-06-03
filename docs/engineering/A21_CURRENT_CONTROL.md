@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `3741c4a feat(providers): promote stepfun route eligibility`
+  `d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -350,3 +350,77 @@ Current conclusion:
   `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`: internal test 3 commits
   are confirmed ancestors of current `HEAD`; do not perform broad revert or
   branch cleanup that could erase accepted endpoint-side protocol progress.
+
+## Latest Control-Tower Result - 2026-06-04 03:33 CST
+
+The current mainline commits are now pushed to the remote tracking branch, but
+the ECS runtime remains blocked by control-plane and public Gateway health.
+
+- Pushed to
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`:
+  `765ed41`, `3741c4a`, `8396261`, and `5dba606`.
+- `git branch -r --contains` confirms those commits are now present on the
+  remote tracking branch.
+- Public TCP ports `22`, `80`, `443`, and `21081` on `47.103.57.217` accept
+  connections.
+- Public HTTP paths `/healthz`, `/v1/devices`, `/v1/voice-chain-profiles`, and
+  `/xiaozhi/ota/` currently return empty HTTP replies from this control Mac.
+- Default SSH remains unusable for `root@47.103.57.217`; no ECS files,
+  services, secrets, selectors, firmware, flash state, or NVS were mutated.
+
+Current conclusion:
+
+- Repository integration is now recovered on the remote branch.
+- ECS deploy of `3741c4a` or newer is still pending.
+- Public Gateway health is now an active runtime blocker that requires ECS
+  control-plane access or an approved operator on the host.
+- Do not rerun or reinterpret older provider/readiness reports as launch
+  evidence while the public Gateway is returning empty replies.
+
+## Latest Control-Tower Result - 2026-06-04 04:02 CST
+
+The ECS runtime blocker is resolved for the A21 launch path, and the StepFun
+route-eligibility transition has moved from provider blocker to V21/physical
+blocker.
+
+- Deployed to ECS through the approved jump path and `/opt/a21.next` safe swap:
+  `d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence`.
+- Remote focused tests before swap:
+  `go test ./internal/app -run 'ProductReadiness|ServerSideReadinessBundle|XiaozhiVoiceBench|ProviderLatency' -count=1`
+  passed;
+  `go test ./internal/providers -run 'ProviderCatalog|ProviderSmoke' -count=1`
+  passed.
+- Remote `a21-gateway`: active.
+- Remote Caddy: active.
+- Remote `127.0.0.1:21081/healthz`: ok.
+- Remote selector after restart: cascade DashScope ASR, StepFun LLM, fixed
+  DashScope TTS, `findings=null`.
+- ECS provider env file remains root-owned and mode `600`; only A21 profile
+  selector IDs were changed, not provider secret values.
+- Fresh StepFun provider smoke:
+  `reports/a21-provider-smoke-20260604-035200-977132343.json`, `passed`,
+  `executed=true`, `stream=true`, `route_eligible=true`, no fallback.
+- Fresh static Xiaozhi provider readiness:
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260604-035317-1780516397705439206.json`,
+  `gate_status=passed`, `stepfun_selected`.
+- Fresh cloud-edge Xiaozhi host bench:
+  `reports/a21-xiaozhi-voice-bench-20260604-035502.222374820.json`,
+  `candidate_host_only`, `cloud_edge`, `failure_count=0`,
+  answer first-audio p95 `809 ms`, barge-in stop p95 `0 ms`.
+- Fresh product readiness:
+  `reports/a21-product-readiness-20260604-040153.json`,
+  `server_side_blocked`, with provider evidence and host voice loopback ready.
+- Fresh server-side readiness bundle:
+  `reports/a21-server-side-readiness-bundle-20260604-040207.json`,
+  `server_side_blocked`, missing `v21_professional_smoke`.
+
+Current conclusion:
+
+- StepFun route eligibility and cloud-edge host voice evidence are now accepted
+  by readiness.
+- Full launch remains blocked by `v21_professional_execution` and
+  `physical_stackchan_prd_acceptance`.
+- Direct curls from this control Mac to `47.103.57.217` still return empty
+  replies, while ECS loopback and 5080lab public HTTP are healthy. Treat this as
+  a source-path/network issue to inspect in Aliyun/network tooling, not as an
+  A21 Gateway runtime blocker.

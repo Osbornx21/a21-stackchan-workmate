@@ -1,6 +1,6 @@
 # 2026-06-04 - StepFun Route Eligibility Promotion
 
-Status: active control-tower plan.
+Status: accepted; V21 and physical launch gates remain open.
 Owner: A21 control tower.
 Transition: `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`.
 Created: 2026-06-04 CST.
@@ -30,6 +30,42 @@ values, or the selected public Gateway transport.
   `reports/a21-provider-smoke-20260604-023711-678466985.json`.
 - The report passed execution and streaming checks but has
   `route_eligible=false`, so readiness rejects it as `provider_smoke`.
+
+## Execution Update - 2026-06-04 03:33 CST
+
+- Source promotion is committed as
+  `3741c4a feat(providers): promote stepfun route eligibility`.
+- Control/audit commits through `5dba606` are pushed to
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`.
+- ECS has not been updated to `3741c4a` or newer from this thread because SSH
+  control-plane access is unavailable.
+- Public Gateway paths currently return empty HTTP replies even though TCP
+  ports are reachable, so fresh runtime evidence cannot be collected until ECS
+  access or operator intervention is restored.
+
+## Execution Update - 2026-06-04 04:02 CST
+
+- ECS access was recovered through the approved jump path.
+- Commit `d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence` was
+  deployed to ECS via `/opt/a21.next` safe swap.
+- ECS `provider.env` remains root-owned and mode `600`; the runtime selector
+  now uses only A21 profile IDs for DashScope ASR, StepFun LLM, and DashScope
+  TTS.
+- Fresh StepFun provider smoke:
+  `reports/a21-provider-smoke-20260604-035200-977132343.json`, `passed`,
+  `executed=true`, `stream=true`, `route_eligible=true`.
+- Fresh static provider readiness:
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260604-035317-1780516397705439206.json`,
+  `gate_status=passed`, `stepfun_selected`.
+- Fresh Xiaozhi host bench:
+  `reports/a21-xiaozhi-voice-bench-20260604-035502.222374820.json`,
+  `candidate_host_only`, `cloud_edge`, `failure_count=0`.
+- Fresh product/server-side readiness reports absorb provider and host voice
+  evidence:
+  `reports/a21-product-readiness-20260604-040153.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-040207.json`.
+- Remaining launch blockers are now `v21_professional_execution` and
+  `physical_stackchan_prd_acceptance`.
 
 ## Target State
 
@@ -79,6 +115,13 @@ values, or the selected public Gateway transport.
 - Canonical launch decision remains honest about remaining physical evidence
   gaps.
 
+Acceptance status:
+
+- Accepted for StepFun route eligibility and cloud-edge host voice evidence.
+- Not accepted for full PRD launch.
+- Remaining gates: V21 professional execution and physical StackChan playback /
+  stop / audible acceptance.
+
 ## Failure States
 
 - `test_failed`: focused or full verification fails.
@@ -97,7 +140,4 @@ product flash state during rollback.
 
 ## Next State
 
-- If accepted:
-  `S-PUBLIC-GATEWAY-STEPFUN-ROUTE-ELIGIBLE-PHYSICAL-EVIDENCE-PENDING`.
-- If blocked by physical evidence only:
-  `S-PUBLIC-GATEWAY-SERVER-SIDE-CANDIDATE-PHYSICAL-EVIDENCE-PENDING`.
+- `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-SERVER-SIDE-EVIDENCE-READY-V21-AND-PHYSICAL-PENDING`.

@@ -75,10 +75,12 @@ These are accepted for their stated scope only.
 
 ## Current Runtime Blockers
 
-- Live runtime still selects LLM `deepseek`; `stepfun` is only recommended.
-- Voice-chain snapshot includes `stepfun_not_selected`.
-- Product readiness remains `server_side_blocked`.
-- Machine-readable physical evidence remains `candidate_gateway_downlink`.
+- Live ECS runtime selects LLM `stepfun` in the cascade chain.
+- Fresh route-eligible StepFun provider smoke has passed.
+- Fresh cloud-edge Xiaozhi host bench has passed as `candidate_host_only`.
+- Product readiness remains `server_side_blocked` because V21 professional
+  execution and physical PRD acceptance are still missing.
+- Machine-readable physical evidence remains below PRD acceptance.
 - Stock firmware does not expose `device.playback.ack` or
   `device.playback.stop_done`.
 - Trusted operator/instrument audible observation is not yet encoded as launch
@@ -205,8 +207,14 @@ Promotion source status:
   the built-in StepFun catalog entry locally.
 - Local dry-run provider smoke now reports `route_eligible=true` for configured
   StepFun, but `executed=false`; this is a schema/shape check only.
-- ECS has not yet been updated to `3741c4a` from this thread because SSH
-  control-plane access is unavailable.
+- The local commit chain through
+  `5dba606 docs(control): record integration audit` has now been pushed to
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`.
+- ECS has not yet been updated to `3741c4a` or newer from this thread because
+  SSH control-plane access is unavailable.
+- Public Gateway health is currently not usable as launch evidence:
+  `/healthz`, `/v1/devices`, `/v1/voice-chain-profiles`, and `/xiaozhi/ota/`
+  return empty HTTP replies from the control Mac.
 - The next launch-routing evidence must be a fresh remote executed StepFun
   provider-smoke report produced after ECS is running `3741c4a` or newer.
 
@@ -214,8 +222,8 @@ Promotion source status:
 
 Current full-launch gaps:
 
-- Fresh route-eligible executed StepFun provider-smoke report.
-- Fresh product/server-side readiness reports after that provider-smoke report.
+- V21 professional execution evidence through the explicit A21/V21 adapter
+  boundary.
 - Fresh physical Xiaozhi evidence after the current selected chain.
 - Trusted physical audible/playback observation or debug playback
   acknowledgement.
@@ -223,6 +231,37 @@ Current full-launch gaps:
 - Wake-word product proof for the selected wake phrase/profile.
 - Final `product-readiness --require-real` style report that remains honest
   until all physical gates are complete.
+
+## 2026-06-04 ECS StepFun Cloud-Edge Evidence Update
+
+Current runtime evidence after deploying
+`d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence` to ECS:
+
+| Scope | Report | Status | Launch Use |
+| --- | --- | --- | --- |
+| StepFun provider smoke | `reports/a21-provider-smoke-20260604-035200-977132343.json` | `passed`, `executed=true`, `stream=true`, `route_eligible=true` | Real provider evidence |
+| Xiaozhi streaming provider readiness | `reports/a21-xiaozhi-streaming-provider-readiness-20260604-035317-1780516397705439206.json` | `passed`, `stepfun_selected` | Static provider-chain gate |
+| Xiaozhi cloud-edge host bench | `reports/a21-xiaozhi-voice-bench-20260604-035502.222374820.json` | `candidate_host_only`, `failure_count=0`, `cloud_edge` | Server-side host voice evidence only |
+| Product readiness | `reports/a21-product-readiness-20260604-040153.json` | `server_side_blocked`; provider and host voice ready | Canonical readiness |
+| Server-side readiness bundle | `reports/a21-server-side-readiness-bundle-20260604-040207.json` | `server_side_blocked`; missing `v21_professional_smoke` | Server-side bundle |
+
+Current decision:
+
+- `launch_ready`: false
+- `prd_accepted`: false
+- `current_status`: `server_side_blocked`
+- `provider_smoke`: closed for StepFun route eligibility
+- `host_voice_loopback`: closed as cloud-edge candidate evidence
+- remaining blockers: `v21_professional_execution` and
+  `physical_stackchan_prd_acceptance`
+
+Network note:
+
+- ECS loopback, Caddy, 5080lab public checks, and Gateway selector are healthy.
+- This control Mac still receives empty HTTP replies from direct public curls,
+  and a later ECS tcpdump did not observe the Mac curl reaching the host. Treat
+  this as a source-path/network issue, not as current A21 runtime health
+  evidence.
 
 ## Source-Only Or Blocked Evidence
 

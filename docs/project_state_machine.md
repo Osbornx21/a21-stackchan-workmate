@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-STEPFUN-ROUTE-PROMOTED-DEPLOY-BLOCKED-BY-SSH`
+Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-SERVER-SIDE-EVIDENCE-READY-V21-AND-PHYSICAL-PENDING`
 
 Active child transitions:
 
@@ -118,30 +118,41 @@ readiness/provider-selector code to ECS before the StepFun selector switch.
 This sync must not edit secrets, execute providers, flash firmware, write NVS,
 or POST the selector to StepFun.
 The current control thread then re-read the master handoff and live runtime
-before continuing: public `/v1/voice-chain-profiles` now reports selected LLM
-`stepfun`, `/v1/devices` shows product StackChan `44:1b:f6:e2:6a:60` online on
+before continuing: public `/v1/voice-chain-profiles` reported selected LLM
+`stepfun`, `/v1/devices` showed product StackChan `44:1b:f6:e2:6a:60` online on
 the selected StepFun cascade chain, and host bench
 `reports/a21-xiaozhi-voice-bench-20260604-023616.742713000.json` executed the
 cloud-edge DashScope ASR + StepFun LLM + DashScope TTS path. The remaining
-server-side blocker is no longer `stepfun_not_selected`; it is that the
+server-side blocker was no longer `stepfun_not_selected`; it was that the
 executed StepFun provider-smoke report
 `reports/a21-provider-smoke-20260604-023711-678466985.json` was produced before
-StepFun was promoted and therefore has `route_eligible=false`. Active
-transition `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION` promotes the built-in
-StepFun profile to explicit route-eligible launch-policy status, then requires
-a fresh executed provider-smoke report and readiness rerun. It must not change
-internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash state, or
-endpoint-side voice acceptance evidence. Full PRD remains blocked until
-physical playback ack, stop_done, or trusted audible/instrument observation is
-present.
-Commit `3741c4a` completes the source-level StepFun route-eligibility
-promotion locally and passed focused provider/app tests plus `GOMAXPROCS=2 make
-verify`. ECS deploy did not proceed because this thread no longer has an
-accepted SSH identity for `root@47.103.57.217`; no remote files, services,
-secrets, selectors, firmware, flash state, or NVS were mutated during the
-blocked deploy attempt. Resume the route promotion plan after control-plane
-access is restored by deploying `3741c4a`, running fresh executed StepFun
-provider smoke, and rerunning product/server-side readiness.
+StepFun was promoted and therefore had `route_eligible=false`. Active
+transition `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION` promoted the built-in
+StepFun profile to explicit route-eligible launch-policy status without
+changing internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash state,
+or endpoint-side voice acceptance evidence.
+
+The 2026-06-04 04:02 CST recovery resolved the ECS blocker. The control thread
+used the approved jump path to deploy `d9362a7 feat(readiness): accept
+cloud-edge xiaozhi evidence` to ECS through the existing `/opt/a21.next`
+safe-swap, kept `/etc/a21/secrets/provider.env` root-owned and mode `600`, and
+set only A21 profile IDs/selectors needed for the StepFun cascade. Fresh ECS
+evidence now shows StepFun provider smoke passed with `executed=true`,
+`stream=true`, `route_eligible=true`, static Xiaozhi provider readiness passed
+with `stepfun_selected`, and the 15s cloud-edge Xiaozhi host bench passed as
+`candidate_host_only` with `failure_count=0`. Product readiness and
+server-side readiness now absorb provider evidence and cloud-edge host voice
+evidence; they remain blocked only by `v21_professional_execution` and
+`physical_stackchan_prd_acceptance`. Full PRD remains blocked until physical
+playback ack, stop_done, or trusted audible/instrument observation is present.
+
+The control Mac still receives empty HTTP replies when directly curling
+`47.103.57.217`, while 5080lab, ECS loopback, Caddy, and Gateway health are
+normal. ECS tcpdump did not observe the later Mac curl attempt reaching the
+host, so this is tracked as a source-path/network issue rather than an A21
+runtime blocker. Do not use the Mac direct-curl symptom to invalidate the fresh
+ECS/5080lab runtime evidence, and do not claim launch readiness without the
+remaining V21 and physical evidence gates.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL
