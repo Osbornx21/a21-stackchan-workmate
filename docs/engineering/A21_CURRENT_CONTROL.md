@@ -550,3 +550,33 @@ Guardrails:
 - Do not claim internal test 4 cloud workspace readiness until upload/index
   scope, adapter v2, and hardware professional consult evidence are separately
   proven.
+
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Roleplay Runtime Slice
+
+The first internal test 4 runtime cut now moves beyond mode naming into a
+Gateway-owned roleplay profile contract.
+
+Current implementation state:
+
+- Gateway exposes `GET/POST/PUT /v1/roleplay-profile` with schema
+  `a21.gateway.roleplay_profile.v1`.
+- The runtime selector carries `roleplay_profile`, scenario/playbook, and
+  `voice_clone_profile`.
+- Selecting a roleplay voice clone also updates the existing voice-chain
+  selector, so the roleplay path reaches the selected TTS/voice-clone boundary
+  without adding a second provider control plane.
+- Fast companion roleplay turns return a redacted roleplay runtime summary and
+  trace `roleplay.profile.ready`; memory readiness adds
+  `roleplay.memory.ready`.
+- The runtime summary reports prompt composition readiness and memory hint
+  counts, but keeps prompt text, memory text, transcripts, provider output,
+  voice-clone samples, and V21 evidence out of responses and traces.
+
+Current conclusion:
+
+- `roleplay` is now the concrete default embodied/personality lane for internal
+  test 4, with scenario and voice-clone selection exposed to the simulator.
+- `professional` remains separate and still cannot execute through
+  fast-companion/dialogue endpoints.
+- Cloud upload/index/query-scope and hardware professional consult remain
+  planned work, not readiness claims.

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,6 +22,7 @@ import (
 	"a21.local/a21/internal/audio"
 	"a21.local/a21/internal/audio/opuscodec"
 	"a21.local/a21/internal/buildinfo"
+	"a21.local/a21/internal/personality"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
 	stackchantransport "a21.local/a21/internal/transport/stackchan"
@@ -74,6 +76,8 @@ type Server struct {
 	xiaozhiListenMaxDurationMS int64
 	wakeWordConfigPath         string
 	voiceModeConfig            string
+	roleplayProfileConfig      string
+	roleplayScenarioConfig     string
 	voiceChainModeConfig       string
 	cascadeASRProfileConfig    string
 	cascadeLLMProfileConfig    string
@@ -168,28 +172,76 @@ type FastCompanionLocalAudioFrame struct {
 }
 
 type FastCompanionTurnRequest struct {
-	DeviceID   string                        `json:"device_id"`
-	Mode       protocol.Mode                 `json:"mode,omitempty"`
-	TraceID    string                        `json:"trace_id,omitempty"`
-	SessionID  string                        `json:"session_id,omitempty"`
-	LocalAudio FastCompanionLocalAudioResult `json:"local_audio,omitempty"`
+	DeviceID   string                          `json:"device_id"`
+	Mode       protocol.Mode                   `json:"mode,omitempty"`
+	TraceID    string                          `json:"trace_id,omitempty"`
+	SessionID  string                          `json:"session_id,omitempty"`
+	Roleplay   RoleplayProfileSelectionRequest `json:"roleplay,omitempty"`
+	LocalAudio FastCompanionLocalAudioResult   `json:"local_audio,omitempty"`
 }
 
 type FastCompanionTurnResponse struct {
-	TraceID                    string              `json:"trace_id"`
-	SessionID                  string              `json:"session_id"`
-	DeviceID                   string              `json:"device_id"`
-	Mode                       protocol.Mode       `json:"mode"`
-	Status                     string              `json:"status"`
-	Route                      string              `json:"route"`
-	AudioFrontend              string              `json:"audio_frontend"`
-	TextStreamProvider         string              `json:"text_stream_provider"`
-	ProviderFamily             string              `json:"provider_family"`
-	TextStreamExecuted         bool                `json:"text_stream_executed"`
-	TextStreamFallbackUsed     bool                `json:"text_stream_fallback_used,omitempty"`
-	TextStreamFallbackProvider string              `json:"text_stream_fallback_provider,omitempty"`
-	TextStreamFallbackReason   string              `json:"text_stream_fallback_reason,omitempty"`
-	Events                     []protocol.Envelope `json:"events"`
+	TraceID                    string                 `json:"trace_id"`
+	SessionID                  string                 `json:"session_id"`
+	DeviceID                   string                 `json:"device_id"`
+	Mode                       protocol.Mode          `json:"mode"`
+	Status                     string                 `json:"status"`
+	Route                      string                 `json:"route"`
+	AudioFrontend              string                 `json:"audio_frontend"`
+	TextStreamProvider         string                 `json:"text_stream_provider"`
+	ProviderFamily             string                 `json:"provider_family"`
+	TextStreamExecuted         bool                   `json:"text_stream_executed"`
+	TextStreamFallbackUsed     bool                   `json:"text_stream_fallback_used,omitempty"`
+	TextStreamFallbackProvider string                 `json:"text_stream_fallback_provider,omitempty"`
+	TextStreamFallbackReason   string                 `json:"text_stream_fallback_reason,omitempty"`
+	Roleplay                   RoleplayRuntimeSummary `json:"roleplay"`
+	Events                     []protocol.Envelope    `json:"events"`
+}
+
+type RoleplayProfileOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Default     bool   `json:"default,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type RoleplayProfileSelectionRequest struct {
+	RoleplayProfile   string `json:"roleplay_profile,omitempty"`
+	Scenario          string `json:"scenario,omitempty"`
+	VoiceCloneProfile string `json:"voice_clone_profile,omitempty"`
+}
+
+type RoleplayProfileResponse struct {
+	SchemaVersion             string                  `json:"schema_version"`
+	Service                   string                  `json:"service"`
+	SelectedRoleplayProfile   string                  `json:"selected_roleplay_profile"`
+	SelectedScenario          string                  `json:"selected_scenario"`
+	SelectedVoiceCloneProfile string                  `json:"selected_voice_clone_profile"`
+	Memory                    personality.MemoryState `json:"memory"`
+	Runtime                   RoleplayRuntimeSummary  `json:"runtime"`
+	Profiles                  []RoleplayProfileOption `json:"profiles"`
+	Scenarios                 []RoleplayProfileOption `json:"scenarios"`
+}
+
+type RoleplayRuntimeSummary struct {
+	SchemaVersion            string `json:"schema_version"`
+	Mode                     string `json:"mode"`
+	RoleplayProfile          string `json:"roleplay_profile"`
+	Scenario                 string `json:"scenario"`
+	VoiceCloneProfile        string `json:"voice_clone_profile"`
+	MemoryPolicy             string `json:"memory_policy"`
+	MemoryConfigured         bool   `json:"memory_configured"`
+	MemoryPromptInputReady   bool   `json:"memory_prompt_input_ready"`
+	MemoryHintCount          int    `json:"memory_hint_count"`
+	PromptComposed           bool   `json:"prompt_composed"`
+	PromptStored             bool   `json:"prompt_stored"`
+	MemoryTextStored         bool   `json:"memory_text_stored"`
+	TranscriptStored         bool   `json:"transcript_stored"`
+	ProviderOutputStored     bool   `json:"provider_output_stored"`
+	VoiceCloneSampleStored   bool   `json:"voice_clone_sample_stored"`
+	ProfessionalRouteAllowed bool   `json:"professional_route_allowed"`
+	V21Executed              bool   `json:"v21_executed"`
 }
 
 type DeviceControlRequest struct {
@@ -477,6 +529,9 @@ const (
 	VoiceModeDialogue              = "dialogue"
 	VoiceModeRoleplay              = "roleplay"
 	VoiceModeProfessional          = "professional"
+	RoleplayProfileSchemaVersion   = "a21.gateway.roleplay_profile.v1"
+	DefaultRoleplayProfile         = "a21_roleplay_default"
+	DefaultRoleplayScenario        = "desk_mouthpiece"
 	VoiceChainProfileSchemaVersion = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade          = "cascade"
 	VoiceChainModeRealtime         = "realtime"
@@ -653,6 +708,8 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
 		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
+		roleplayProfileConfig:      DefaultRoleplayProfile,
+		roleplayScenarioConfig:     DefaultRoleplayScenario,
 		voiceChainModeConfig:       VoiceChainModeCascade,
 		cascadeASRProfileConfig:    initialASRProfile,
 		cascadeLLMProfileConfig:    initialLLMProfile,
@@ -696,6 +753,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
+	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
@@ -749,6 +807,36 @@ func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.setVoiceMode(req.VoiceMode)
 		writeJSON(w, http.StatusOK, s.voiceModeCatalog())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleRoleplayProfile(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response, err := s.roleplayProfileResponse(RoleplayProfileSelectionRequest{})
+		if err != nil {
+			http.Error(w, "roleplay profile unavailable", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case http.MethodPost, http.MethodPut:
+		var req RoleplayProfileSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if err := s.setRoleplayProfile(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		response, err := s.roleplayProfileResponse(RoleplayProfileSelectionRequest{})
+		if err != nil {
+			http.Error(w, "roleplay profile unavailable", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -887,6 +975,192 @@ func voiceModeAvailableForFastCompanion(mode string) bool {
 
 func plannedVoiceModeError(mode string) string {
 	return "voice_mode " + defaultVoiceMode(mode) + " must use the professional path and cannot execute dialogue turns"
+}
+
+func (s *Server) roleplayProfileResponse(override RoleplayProfileSelectionRequest) (RoleplayProfileResponse, error) {
+	summary, memory, err := s.roleplayRuntimeSummary(override)
+	if err != nil {
+		return RoleplayProfileResponse{}, err
+	}
+	return RoleplayProfileResponse{
+		SchemaVersion:             RoleplayProfileSchemaVersion,
+		Service:                   DeviceRegistryServiceName,
+		SelectedRoleplayProfile:   summary.RoleplayProfile,
+		SelectedScenario:          summary.Scenario,
+		SelectedVoiceCloneProfile: summary.VoiceCloneProfile,
+		Memory:                    memory,
+		Runtime:                   summary,
+		Profiles:                  roleplayProfileOptions(summary.RoleplayProfile),
+		Scenarios:                 roleplayScenarioOptions(summary.Scenario),
+	}, nil
+}
+
+func (s *Server) setRoleplayProfile(req RoleplayProfileSelectionRequest) error {
+	profile, scenario, voiceClone, err := s.resolveRoleplaySelection(req)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.VoiceCloneProfile) != "" {
+		if err := s.setVoiceChainProfile(VoiceChainProfileSelectionRequest{VoiceCloneProfile: voiceClone}); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.roleplayProfileConfig = profile
+	s.roleplayScenarioConfig = scenario
+	return nil
+}
+
+func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest) (RoleplayRuntimeSummary, personality.MemoryState, error) {
+	profile, scenario, voiceClone, err := s.resolveRoleplaySelection(override)
+	if err != nil {
+		return RoleplayRuntimeSummary{}, personality.MemoryState{}, err
+	}
+	env := s.roleplayRuntimeEnv()
+	memory, hints := personality.MemoryStateFromEnv(env)
+	promptComposed := false
+	if _, err := personality.Compose(personality.Options{
+		Mode:             personality.ModeRoleplay,
+		Scenario:         roleplayPersonalityScenario(scenario),
+		UserText:         "我在。",
+		MemoryHints:      hints,
+		MaxResponseRunes: 12,
+	}); err == nil {
+		promptComposed = true
+	}
+	return RoleplayRuntimeSummary{
+		SchemaVersion:            "a21.roleplay_runtime.v1",
+		Mode:                     VoiceModeRoleplay,
+		RoleplayProfile:          profile,
+		Scenario:                 scenario,
+		VoiceCloneProfile:        voiceClone,
+		MemoryPolicy:             memory.Policy,
+		MemoryConfigured:         memory.Configured,
+		MemoryPromptInputReady:   memory.PromptInputReady,
+		MemoryHintCount:          memory.UserPreferenceCount + memory.SessionMemoryCount,
+		PromptComposed:           promptComposed,
+		PromptStored:             false,
+		MemoryTextStored:         false,
+		TranscriptStored:         false,
+		ProviderOutputStored:     false,
+		VoiceCloneSampleStored:   false,
+		ProfessionalRouteAllowed: false,
+		V21Executed:              false,
+	}, memory, nil
+}
+
+func (s *Server) resolveRoleplaySelection(override RoleplayProfileSelectionRequest) (string, string, string, error) {
+	s.mu.Lock()
+	profile := defaultRoleplayProfile(s.roleplayProfileConfig)
+	scenario := defaultRoleplayScenario(s.roleplayScenarioConfig)
+	voiceClone := defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
+	s.mu.Unlock()
+	if strings.TrimSpace(override.RoleplayProfile) != "" {
+		profile = strings.ToLower(strings.TrimSpace(override.RoleplayProfile))
+		if !validRoleplayProfile(profile) {
+			return "", "", "", fmt.Errorf("valid roleplay_profile is required")
+		}
+	}
+	if strings.TrimSpace(override.Scenario) != "" {
+		scenario = strings.ToLower(strings.TrimSpace(override.Scenario))
+		if !validRoleplayScenario(scenario) {
+			return "", "", "", fmt.Errorf("valid roleplay scenario is required")
+		}
+	}
+	if strings.TrimSpace(override.VoiceCloneProfile) != "" {
+		voiceClone = strings.ToLower(strings.TrimSpace(override.VoiceCloneProfile))
+		if !validVoiceCloneProfile(voiceClone) {
+			return "", "", "", fmt.Errorf("valid voice_clone_profile is required")
+		}
+	}
+	return profile, scenario, voiceClone, nil
+}
+
+func (s *Server) roleplayRuntimeEnv() []string {
+	env := os.Environ()
+	s.mu.Lock()
+	env = append(env, s.cloudVoiceEnv...)
+	s.mu.Unlock()
+	return env
+}
+
+func defaultRoleplayProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if validRoleplayProfile(profile) {
+		return profile
+	}
+	return DefaultRoleplayProfile
+}
+
+func validRoleplayProfile(profile string) bool {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case DefaultRoleplayProfile:
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultRoleplayScenario(scenario string) string {
+	scenario = strings.ToLower(strings.TrimSpace(scenario))
+	if validRoleplayScenario(scenario) {
+		return scenario
+	}
+	return DefaultRoleplayScenario
+}
+
+func validRoleplayScenario(scenario string) bool {
+	return roleplayPersonalityScenario(scenario) != ""
+}
+
+func roleplayPersonalityScenario(scenario string) personality.Scenario {
+	switch strings.ToLower(strings.TrimSpace(scenario)) {
+	case "pre_meeting":
+		return personality.ScenarioPreMeeting
+	case "post_meeting":
+		return personality.ScenarioPostMeeting
+	case "boss_challenge":
+		return personality.ScenarioBossChallenge
+	case "engineer_pushback":
+		return personality.ScenarioEngineerPushback
+	case "user_complaint":
+		return personality.ScenarioUserComplaint
+	case "desk_mouthpiece":
+		return personality.ScenarioDeskMouthpiece
+	case "late_night_radio":
+		return personality.ScenarioLateNightRadio
+	default:
+		return ""
+	}
+}
+
+func roleplayProfileOptions(selected string) []RoleplayProfileOption {
+	selected = defaultRoleplayProfile(selected)
+	return []RoleplayProfileOption{{
+		ID:          DefaultRoleplayProfile,
+		Label:       "A21 roleplay soul",
+		Status:      "available",
+		Default:     selected == DefaultRoleplayProfile,
+		Description: "A21 role/personality prompt with bounded memory hints and voice clone selection",
+	}}
+}
+
+func roleplayScenarioOptions(selected string) []RoleplayProfileOption {
+	selected = defaultRoleplayScenario(selected)
+	options := []RoleplayProfileOption{
+		{ID: "desk_mouthpiece", Label: "Desk mouthpiece", Status: "available", Description: "Turn messy workplace emotion into usable language"},
+		{ID: "boss_challenge", Label: "Boss challenge", Status: "available", Description: "Rehearse pressure and sharpen the answer"},
+		{ID: "engineer_pushback", Label: "Engineer pushback", Status: "available", Description: "Prepare for implementation-boundary questions"},
+		{ID: "user_complaint", Label: "User complaint", Status: "available", Description: "Practice user-facing response under pressure"},
+		{ID: "pre_meeting", Label: "Pre-meeting", Status: "available", Description: "Get the framing ready before a meeting"},
+		{ID: "post_meeting", Label: "Post-meeting", Status: "available", Description: "Clean up a meeting aftermath into next actions"},
+		{ID: "late_night_radio", Label: "Late-night radio", Status: "available", Description: "Calmer reflective companionship without losing boundaries"},
+	}
+	for i := range options {
+		options[i].Default = options[i].ID == selected
+	}
+	return options
 }
 
 func (s *Server) currentVoiceProvider() providers.VoiceProvider {
@@ -6372,17 +6646,26 @@ func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid local_audio.frames", http.StatusBadRequest)
 		return
 	}
+	roleplay, _, err := s.roleplayRuntimeSummary(req.Roleplay)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	req.TraceID = traceID
 	req.SessionID = sessionID
 	receivedAtMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.turn.received", receivedAtMS)
-	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(r.Context(), req, receivedAtMS, frames))
+	s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.profile.ready", receivedAtMS)
+	if roleplay.MemoryPromptInputReady {
+		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.memory.ready", receivedAtMS)
+	}
+	writeJSON(w, http.StatusOK, s.fastCompanionTurnResponse(r.Context(), req, receivedAtMS, frames, roleplay))
 }
 
-func (s *Server) fastCompanionTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame) FastCompanionTurnResponse {
+func (s *Server) fastCompanionTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame, roleplay RoleplayRuntimeSummary) FastCompanionTurnResponse {
 	if len(frames) > 0 {
-		return s.fastCompanionVoicePipelineTurnResponse(ctx, req, receivedAtMS, frames)
+		return s.fastCompanionVoicePipelineTurnResponse(ctx, req, receivedAtMS, frames, roleplay)
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	asrFirstPartialAtMS := receivedAtMS + req.LocalAudio.FirstPartialMS
@@ -6411,11 +6694,12 @@ func (s *Server) fastCompanionTurnResponse(ctx context.Context, req FastCompanio
 		TextStreamProvider: "mock_text_stream",
 		ProviderFamily:     string(providers.ProviderFamilyTextStream),
 		TextStreamExecuted: false,
+		Roleplay:           roleplay,
 		Events:             events,
 	}
 }
 
-func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame) FastCompanionTurnResponse {
+func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req FastCompanionTurnRequest, receivedAtMS int64, frames []providers.VoicePipelinePCMFrame, roleplay RoleplayRuntimeSummary) FastCompanionTurnResponse {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", receivedAtMS)
 	startAtMS := s.now().UnixMilli()
@@ -6459,6 +6743,7 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 			TextStreamFallbackUsed:     fallbackUsed,
 			TextStreamFallbackProvider: fallbackProvider,
 			TextStreamFallbackReason:   fallbackReason,
+			Roleplay:                   roleplay,
 			Events:                     events,
 		}
 	}
@@ -6492,6 +6777,7 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 		TextStreamFallbackUsed:     fallbackUsed,
 		TextStreamFallbackProvider: fallbackProvider,
 		TextStreamFallbackReason:   fallbackReason,
+		Roleplay:                   roleplay,
 		Events:                     events,
 	}
 }

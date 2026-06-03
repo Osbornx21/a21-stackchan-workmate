@@ -9919,3 +9919,72 @@ Recommended next action:
   `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` first as a docs-only/read-only
   worker. After it lands, schedule the low-risk Gateway MCP/status worker
   before any firmware or high-risk hardware work.
+
+## 2026-06-04 05:34 CST - Internal Test 4 Roleplay Runtime Profile Slice
+
+Round goal:
+
+- Continue internal test 4 from the committed `roleplay`/`professional` mode
+  contract into a concrete Gateway roleplay runtime selector without regressing
+  internal test 3 Xiaozhi voice behavior or the V21 professional boundary.
+
+Actual completed work:
+
+- Accepted and pushed the StackChan official hardware parity control-tower plan
+  as commit `15757ca` and queued a separate docs-only/read-only gap-map worker
+  from the pushed branch. Pending worktree id:
+  `local:f9fd1abd-ffe0-4fbf-bbb7-eb71823b4885`.
+- Added Gateway `GET/POST/PUT /v1/roleplay-profile` with schema
+  `a21.gateway.roleplay_profile.v1`.
+- Added roleplay profile/scenario/voice-clone runtime selection. Voice-clone
+  selection through the roleplay endpoint updates the existing voice-chain
+  selector so the selected clone reaches the TTS boundary.
+- Added redacted fast-companion roleplay runtime summaries and trace markers
+  `roleplay.profile.ready` plus `roleplay.memory.ready`.
+- Updated simulator controls to display and persist roleplay scenarios while
+  preserving the `roleplay` default voice mode.
+- Updated protocol, internal test 4 plan, current control, and project state
+  machine docs for the roleplay runtime slice.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Cloud/Web/App upload, indexing, workspace query scope, and device binding are
+  still planned; this round does not implement those APIs.
+- Hardware professional consult and physical StackChan PRD acceptance remain
+  open.
+- The queued hardware parity gap-map worker has not returned yet.
+
+Known risks/blockers:
+
+- `roleplay` runtime memory is still environment-backed bounded prompt input,
+  not a durable user memory store.
+- `professional` must stay out of fast-companion/dialogue execution until the
+  explicit V21 adapter/workspace path is implemented.
+- Do not use this slice to claim cloud workspace readiness or physical PRD
+  acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'SimulatorPageServed|RoleplayProfile|FastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `go test ./internal/protocol ./internal/gateway ./internal/personality ./internal/v21adapter -count=1`:
+  passed.
+
+Recommended next action:
+
+- Run final `git diff --check` and `GOMAXPROCS=2 make verify`, commit/push the
+  roleplay runtime slice if clean, then continue with the next internal test 4
+  slice: no-execute upload/workspace API contract plus V21 adapter v2
+  `workspace_id`/`query_scope` fields.

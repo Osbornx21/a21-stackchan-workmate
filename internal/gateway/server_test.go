@@ -330,11 +330,13 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/ws/control",
 		"/v1/devices",
 		"/v1/voice-modes",
+		"/v1/roleplay-profile",
 		"/v1/traces",
 		"Device Registry",
 		`id="registryConnection"`,
 		`id="registryMode"`,
 		`id="voiceMode"`,
+		`id="roleplayScenario"`,
 		`id="gatewayProfile"`,
 		`id="cloudVoiceProfile"`,
 		`id="registryVoiceMode"`,
@@ -945,6 +947,49 @@ func TestVoiceModeSelectionAcceptsDialogueAliasAsRoleplayWithoutChangingLegacyTr
 	}
 }
 
+func TestRoleplayProfileEndpointPersistsScenarioVoiceCloneAndRedactsMemory(t *testing.T) {
+	t.Setenv("A21_MEMORY_USER_PREFERENCES", "偏好短句")
+	t.Setenv("A21_MEMORY_SESSION_NOTES", "当前任务是座舱 PRD 评审\nhttp://secret.example/leak\n/Users/me/a21-secret.txt")
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"scenario":"boss_challenge","voice_clone_profile":"a21_voice_clone_default"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response RoleplayProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.roleplay_profile.v1" ||
+		response.SelectedRoleplayProfile != "a21_roleplay_default" ||
+		response.SelectedScenario != "boss_challenge" ||
+		response.SelectedVoiceCloneProfile != "a21_voice_clone_default" {
+		t.Fatalf("roleplay profile = %+v", response)
+	}
+	if !response.Runtime.PromptComposed || response.Runtime.PromptStored || response.Runtime.MemoryTextStored || response.Runtime.V21Executed || response.Runtime.ProfessionalRouteAllowed {
+		t.Fatalf("runtime redaction/route = %+v", response.Runtime)
+	}
+	if response.Runtime.MemoryHintCount != 2 || !response.Memory.PromptInputReady {
+		t.Fatalf("memory = %+v runtime=%+v, want two safe hints", response.Memory, response.Runtime)
+	}
+	for _, forbidden := range []string{"偏好短句", "座舱 PRD", "secret.example", "/Users/me", "http://", "https://"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("roleplay profile leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+
+	chainReq := httptest.NewRequest(http.MethodGet, "/v1/voice-chain-profiles", nil)
+	chainRec := httptest.NewRecorder()
+	handler.ServeHTTP(chainRec, chainReq)
+	if !strings.Contains(chainRec.Body.String(), `"selected_voice_clone_profile":"a21_voice_clone_default"`) ||
+		!strings.Contains(chainRec.Body.String(), `"selected_tts_profile":"voice_clone_cli"`) {
+		t.Fatalf("voice clone selection did not reach voice chain: %s", chainRec.Body.String())
+	}
+}
+
 func TestFastCompanionRejectsProfessionalVoiceModeWithoutProviderOrV21Execution(t *testing.T) {
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true}},
@@ -1371,6 +1416,7 @@ func TestMockTurnUsesVoiceProviderEvents(t *testing.T) {
 }
 
 func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *testing.T) {
+	t.Setenv("A21_MEMORY_USER_PREFERENCES", "角色记住我喜欢短句")
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{
 			{Kind: providers.VoiceEventSpeaking, Text: "selected provider should not run", Final: true},
@@ -1379,6 +1425,12 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	v21 := &countingV21Client{}
 	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
 	handler := server.Handler()
+	profileReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"scenario":"desk_mouthpiece","voice_clone_profile":"a21_voice_clone_default"}`))
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusOK {
+		t.Fatalf("roleplay profile status = %d: %s", profileRec.Code, profileRec.Body.String())
+	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(`{
 		"device_id":"stackchan-sim-001",
 		"mode":"roleplay",
@@ -1394,17 +1446,18 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var response struct {
-		TraceID            string              `json:"trace_id"`
-		SessionID          string              `json:"session_id"`
-		DeviceID           string              `json:"device_id"`
-		Mode               protocol.Mode       `json:"mode"`
-		Status             string              `json:"status"`
-		Route              string              `json:"route"`
-		AudioFrontend      string              `json:"audio_frontend"`
-		TextStreamProvider string              `json:"text_stream_provider"`
-		ProviderFamily     string              `json:"provider_family"`
-		TextStreamExecuted bool                `json:"text_stream_executed"`
-		Events             []protocol.Envelope `json:"events"`
+		TraceID            string                 `json:"trace_id"`
+		SessionID          string                 `json:"session_id"`
+		DeviceID           string                 `json:"device_id"`
+		Mode               protocol.Mode          `json:"mode"`
+		Status             string                 `json:"status"`
+		Route              string                 `json:"route"`
+		AudioFrontend      string                 `json:"audio_frontend"`
+		TextStreamProvider string                 `json:"text_stream_provider"`
+		ProviderFamily     string                 `json:"provider_family"`
+		TextStreamExecuted bool                   `json:"text_stream_executed"`
+		Roleplay           RoleplayRuntimeSummary `json:"roleplay"`
+		Events             []protocol.Envelope    `json:"events"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -1417,6 +1470,23 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	}
 	if response.AudioFrontend != "local_audio" || response.ProviderFamily != "text_stream" || response.TextStreamProvider != "mock_text_stream" || response.TextStreamExecuted {
 		t.Fatalf("provider boundary = %+v", response)
+	}
+	if response.Roleplay.RoleplayProfile != "a21_roleplay_default" ||
+		response.Roleplay.Scenario != "desk_mouthpiece" ||
+		response.Roleplay.VoiceCloneProfile != "a21_voice_clone_default" ||
+		response.Roleplay.MemoryHintCount != 1 ||
+		!response.Roleplay.PromptComposed ||
+		response.Roleplay.PromptStored ||
+		response.Roleplay.MemoryTextStored ||
+		response.Roleplay.TranscriptStored ||
+		response.Roleplay.ProviderOutputStored ||
+		response.Roleplay.VoiceCloneSampleStored ||
+		response.Roleplay.ProfessionalRouteAllowed ||
+		response.Roleplay.V21Executed {
+		t.Fatalf("roleplay runtime = %+v", response.Roleplay)
+	}
+	if strings.Contains(rec.Body.String(), "角色记住我喜欢短句") {
+		t.Fatalf("fast companion response leaked memory text: %s", rec.Body.String())
 	}
 	if len(response.Events) != 3 {
 		t.Fatalf("events = %d, want 3", len(response.Events))
@@ -1458,6 +1528,8 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 		t.Fatalf("trace missing asr.first_partial event: %s", traceRec.Body.String())
 	}
 	for _, want := range []string{
+		"roleplay.profile.ready",
+		"roleplay.memory.ready",
 		"fast_companion.local_audio.frontend.accepted",
 		"asr.first_partial",
 		"provider.text_stream.route.placeholder",
@@ -1470,6 +1542,9 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 		if !strings.Contains(traceRec.Body.String(), want) {
 			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
 		}
+	}
+	if strings.Contains(traceRec.Body.String(), "角色记住我喜欢短句") {
+		t.Fatalf("trace leaked memory text: %s", traceRec.Body.String())
 	}
 }
 

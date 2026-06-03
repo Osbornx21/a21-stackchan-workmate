@@ -312,6 +312,14 @@ Fast companion accepts the `roleplay` product mode and the legacy
 `voice_mode` is `professional`, the endpoint returns `409` before provider or
 V21 execution and points the caller to the professional path.
 
+For internal test 4, the fast-companion response includes a redacted
+`roleplay` runtime summary. It carries only selected profile IDs, scenario,
+voice-clone profile, memory policy/count readiness, and boolean storage/route
+guards. It must not return prompt text, memory text, transcripts, provider
+output, voice-clone samples, URLs, credentials, local paths, or V21 evidence.
+Gateway records `roleplay.profile.ready` for accepted turns and
+`roleplay.memory.ready` only when memory hints are configured as prompt input.
+
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future
@@ -483,6 +491,26 @@ roleplay/dialogue-only endpoints instead of silently switching provider, V21,
 or firmware behavior. Legacy labels such as `dialogue`, `workmate`,
 `companion`, and `co_creation` normalize to `roleplay` at product-contract
 surfaces; visibility/privacy states remain separate policy fields.
+
+`roleplay_profile` is the frontend/Gateway selector for the default embodied
+roleplay runtime under `voice_mode=roleplay`. `GET /v1/roleplay-profile`
+returns `a21.gateway.roleplay_profile.v1`, the selected roleplay profile,
+scenario, voice-clone profile, redacted memory readiness, a redacted runtime
+summary, and safe option catalogs. `POST` or `PUT /v1/roleplay-profile` can
+change the selected roleplay scenario and voice-clone profile. Selecting a
+voice-clone profile through this endpoint also updates the existing
+`voice_chain_profile` selection so roleplay voice clone reaches the selected
+TTS boundary without adding a second provider selector. The current profile
+catalog intentionally exposes only `a21_roleplay_default`; scenario options are
+playbook labels under the roleplay product mode, not new product modes.
+
+The roleplay runtime composes personality prompt input only in memory and only
+from safe memory hints exposed by the personality package. Responses and traces
+must report readiness booleans and counts rather than storing or echoing the
+composed prompt, raw memory text, user transcript, provider text, voice sample,
+professional evidence, or V21 query/result. `professional_route_allowed` and
+`v21_executed` must remain false on this endpoint and on fast-companion roleplay
+turns.
 
 `gateway_profile` is the operator/frontend transport selector for where the
 StackChan product connects. It is independent from `voice_mode`: selecting

@@ -47,6 +47,14 @@ StackChan hardware.
   endpoint.
 - Internal test 3 legacy runtime labels such as `workmate` and `companion`
   remain valid below the user-facing product mode contract.
+- Gateway now exposes `GET/POST/PUT /v1/roleplay-profile` for the roleplay
+  runtime slice. The endpoint selects the default roleplay profile, roleplay
+  scenario/playbook, and voice-clone profile; voice-clone selection is bridged
+  into `/v1/voice-chain-profiles`.
+- Fast companion now returns a redacted `roleplay` runtime summary and records
+  `roleplay.profile.ready` plus `roleplay.memory.ready` trace markers without
+  storing prompt text, memory text, transcripts, provider output, voice-clone
+  samples, or V21 evidence.
 
 ## Product Form
 
@@ -246,6 +254,7 @@ Acceptance:
 1. Land the mode-contract v2 code/doc cut:
    - first-class `roleplay`;
    - `dialogue` compatibility alias;
+   - roleplay profile/scenario/voice-clone runtime selector;
    - professional-only V21 boundary unchanged.
 2. Add v2 adapter-plan docs for query scope and workspace fields.
 3. Add a no-execute upload/workspace PRD spec and API contract.

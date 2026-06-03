@@ -421,6 +421,11 @@ const simulatorHTML = `<!doctype html>
           <select id="voiceCloneProfile" aria-label="voice clone profile">
             <option value="a21_voice_default_dashscope">A21 natural voice</option>
           </select>
+          <select id="roleplayScenario" aria-label="roleplay scenario">
+            <option value="desk_mouthpiece">desk_mouthpiece</option>
+            <option value="boss_challenge">boss_challenge</option>
+            <option value="engineer_pushback">engineer_pushback</option>
+          </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -614,6 +619,7 @@ const simulatorHTML = `<!doctype html>
       cascadeLLMProfile: document.getElementById('cascadeLLMProfile'),
       realtimeProvider: document.getElementById('realtimeProvider'),
       voiceCloneProfile: document.getElementById('voiceCloneProfile'),
+      roleplayScenario: document.getElementById('roleplayScenario'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -682,14 +688,26 @@ const simulatorHTML = `<!doctype html>
       updateVisibilityBadges();
     }
     function setMode(mode) {
-      sim.mode = mode || 'dialogue';
+      sim.mode = mode || 'roleplay';
       document.body.dataset.mode = sim.mode;
       ui.modeReadout.textContent = sim.mode;
       updateVisibilityBadges();
     }
     function setVoiceMode(mode) {
-      ui.voiceMode.value = mode || 'dialogue';
+      ui.voiceMode.value = mode || 'roleplay';
       ui.voiceModeReadout.textContent = ui.voiceMode.value;
+    }
+    function setRoleplayProfile(catalog) {
+      const selectedScenario = catalog.selected_scenario || 'desk_mouthpiece';
+      const scenarios = catalog.scenarios || [];
+      if (scenarios.length) {
+        ui.roleplayScenario.innerHTML = scenarios.map((scenario) => optionHTML(scenario, selectedScenario)).join('');
+      }
+      ui.roleplayScenario.value = selectedScenario;
+      if (catalog.selected_voice_clone_profile) {
+        ui.voiceCloneProfile.value = catalog.selected_voice_clone_profile;
+        ui.voiceCloneProfileReadout.textContent = catalog.selected_voice_clone_profile;
+      }
     }
     function setGatewayProfile(profile) {
       ui.gatewayProfile.value = profile || 'mac_local';
@@ -981,6 +999,18 @@ const simulatorHTML = `<!doctype html>
         log('voice mode catalog unavailable');
       }
     }
+    async function refreshRoleplayProfile() {
+      try {
+        const response = await fetch('/v1/roleplay-profile', { cache: 'no-store' });
+        if (!response.ok) {
+          log('roleplay profile error ' + response.status);
+          return;
+        }
+        setRoleplayProfile(await response.json());
+      } catch (err) {
+        log('roleplay profile unavailable');
+      }
+    }
     async function refreshGatewayProfiles() {
       try {
         const response = await fetch('/v1/gateway-profiles', { cache: 'no-store' });
@@ -1056,6 +1086,28 @@ const simulatorHTML = `<!doctype html>
         refreshRegistry();
       } catch (err) {
         log('voice mode save unavailable');
+      }
+    }
+    async function saveRoleplayProfile() {
+      try {
+        const response = await fetch('/v1/roleplay-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scenario: ui.roleplayScenario.value,
+            voice_clone_profile: ui.voiceCloneProfile.value
+          })
+        });
+        if (!response.ok) {
+          log('roleplay save failed ' + response.status);
+          refreshRoleplayProfile();
+          return;
+        }
+        setRoleplayProfile(await response.json());
+        refreshVoiceChainProfiles();
+        refreshRegistry();
+      } catch (err) {
+        log('roleplay save unavailable');
       }
     }
     async function saveGatewayProfile() {
@@ -1394,15 +1446,20 @@ const simulatorHTML = `<!doctype html>
     ui.resetWakeWord.addEventListener('click', resetWakeWordConfig);
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
+    ui.roleplayScenario.addEventListener('change', saveRoleplayProfile);
     ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
     ui.cloudVoiceProfile.addEventListener('change', saveCloudVoiceProfile);
     ui.voiceChainMode.addEventListener('change', saveVoiceChainProfile);
     ui.cascadeASRProfile.addEventListener('change', saveVoiceChainProfile);
     ui.cascadeLLMProfile.addEventListener('change', saveVoiceChainProfile);
     ui.realtimeProvider.addEventListener('change', saveVoiceChainProfile);
-    ui.voiceCloneProfile.addEventListener('change', saveVoiceChainProfile);
+    ui.voiceCloneProfile.addEventListener('change', () => {
+      saveVoiceChainProfile();
+      saveRoleplayProfile();
+    });
     refreshRegistry();
     refreshVoiceModes();
+    refreshRoleplayProfile();
     refreshGatewayProfiles();
     refreshCloudVoiceProfiles();
     refreshVoiceChainProfiles();
