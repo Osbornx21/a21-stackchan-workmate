@@ -1,6 +1,6 @@
 # 2026-06-04 - V21 A21 v2 Workspace Query Scope Native Contract
 
-Status: dispatch plan.
+Status: V21 worker completed; V21 merge and ACL/schema follow-up pending.
 Owner: A21 control tower; execution in V21 scoped worker.
 Transition: `T-V21-A21-V2-WORKSPACE-QUERY-SCOPE-NATIVE-001`.
 
@@ -105,6 +105,35 @@ is already finished.
 - Tests prove the contract behavior.
 - V21 handoff states whether personal/public ACL enforcement is complete or
   pending.
+
+## Worker Result
+
+- V21 branch:
+  `origin/codex/a21-v2-workspace-query-scope-native-contract`.
+- V21 commit:
+  `ad61246 feat(voice-query): accept A21 workspace scope metadata`.
+- V21 `/internal/v1/knowledge/voice-query` now natively accepts
+  `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- V21 validates `query_scope` as `public_only`, `personal_only`, or
+  `personal_plus_public`.
+- V21 responses include redacted `source_scope_counts` and `workspace_status`.
+- Current truthful status is `scope_contract_ready_acl_pending` because V21's
+  current access classes do not prove A21 public/personal ACL enforcement.
+- Worker verification:
+  - `cd backend && go test ./internal/httpapi`: passed.
+  - `cd backend && go test ./...`: passed.
+  - JSON schema parse: passed.
+  - `git diff --check`: passed.
+  - `make compose-config`: passed.
+  - `make test` and `make check`: blocked at `check-toolchain` because the
+    installed Node runtime was `v25.8.0` while the Makefile required
+    `v24.15.0`.
+  - `ALLOW_BRANCH_MISMATCH=true make boundary-check`: blocked by existing
+    Compose project `v21air-lan-demo` owning Jaeger UI port `16687`; no
+    services were started or stopped.
+- Worker avoided A21 code changes, A21 Gateway runtime, StackChan hardware,
+  firmware, provider execution, V21 service startup, cleanup/prune, and dirty
+  V21 LAN/desktop connector files.
 
 ## Failure States
 

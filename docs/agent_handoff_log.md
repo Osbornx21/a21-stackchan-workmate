@@ -10587,3 +10587,84 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this round.
+
+## 2026-06-04 06:24 CST - Main Control Integrated MCP Worker And V21 Scope Result
+
+Round goal:
+
+- Regain control over the two active scoped workers, integrate the completed
+  A21 hardware MCP/status parity worker, and record the completed V21 native
+  scope worker result without mixing V21 code into A21.
+
+Actual completed work:
+
+- Read active worker threads:
+  - `019e8f82-7488-73a1-86ae-2afefefee595`:
+    `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001`.
+  - `019e8f88-5301-7101-afcc-79fb7a5c88e1`:
+    `T-V21-A21-V2-WORKSPACE-QUERY-SCOPE-NATIVE-001`.
+- Cherry-picked A21 MCP worker commit `3ec1540` into the main-control branch
+  as `b19d420 feat(gateway): add xiaozhi mcp status parity`.
+- Resolved the only cherry-pick conflict in `docs/agent_handoff_log.md` by
+  preserving the V21 dispatch record, the MCP worker completion record, and
+  the roleplay memory control record in time order.
+- Recorded the V21 worker result in A21 control docs:
+  V21 branch `origin/codex/a21-v2-workspace-query-scope-native-contract`,
+  commit `ad61246 feat(voice-query): accept A21 workspace scope metadata`.
+- Updated A21 state to show V21 native A21 v2 request/response shape is
+  complete on the V21 worker branch, while personal/public ACL enforcement is
+  still pending and must not be claimed by A21 yet.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-stackchan-official-mcp-status-parity.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-v21-a21-v2-workspace-query-scope-native-contract.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- V21 branch `origin/codex/a21-v2-workspace-query-scope-native-contract` still
+  needs V21-side review/merge/release.
+- V21 public/personal ACL enforcement still needs an ADR/schema/retrieval
+  filter transition before A21 can claim nonzero `source_scope_counts`.
+- MCP status/control delivery is Gateway contract parity only; it is not
+  physical screen/status product acceptance.
+
+Known risks/blockers:
+
+- V21 worker reported `make test`/`make check` blocked by Node toolchain
+  mismatch and `boundary-check` blocked by existing `v21air-lan-demo` Jaeger
+  port ownership. It did not start services or touch dirty LAN/desktop work.
+- MCP result correlation remains unimplemented; future work must not store raw
+  MCP response bodies, screenshots, images, URLs, paths, transcripts, secrets,
+  provider output, or raw/base64 audio.
+
+Recommended next action:
+
+- Push this main-control integration commit.
+- Then choose between:
+  - V21 merge/ACL ADR coordination for professional workspace correctness.
+  - Next hardware parity slice: display/avatar/action/touch/diagnostic sensors
+    with explicit physical-evidence gate.
+  - Next roleplay slice: persona example quality plus wake/touch entry evidence.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway ./internal/personality -run 'XiaozhiMCPStatusParity|XiaozhiSpeakerVolumeUsesStockMCPToolCall|RoleplayProfile|FastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary|SimulatorPageServed|PersonalityMemory' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred from
+  A21, and no firmware build, flash, serial, NVS, or physical hardware action
+  occurred.
+
+Failure location/reason:
+
+- None in this main-control integration round.

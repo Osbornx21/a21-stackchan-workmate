@@ -676,6 +676,37 @@ Current conclusion:
 - Full PRD readiness remains blocked by cloud workspace execution, hardware
   professional consult evidence, and physical StackChan acceptance.
 
+## Latest Control-Tower Result - 2026-06-04 V21 Native Scope Worker Completed
+
+The V21 scoped worker completed the first native A21 v2 voice-query contract
+cut in the V21 repository.
+
+Current implementation state:
+
+- V21 worker branch:
+  `origin/codex/a21-v2-workspace-query-scope-native-contract`.
+- V21 worker commit:
+  `ad61246 feat(voice-query): accept A21 workspace scope metadata`.
+- V21 `/internal/v1/knowledge/voice-query` now natively accepts
+  `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- Valid V21 `query_scope` values match A21 internal test 4:
+  `public_only`, `personal_only`, and `personal_plus_public`.
+- V21 responses now include safe metadata fields `source_scope_counts` and
+  `workspace_status`.
+- Because current V21 schema cannot yet prove personal/public ACL enforcement,
+  the worker truthfully returns `workspace_status=scope_contract_ready_acl_pending`
+  and zero classified `source_scope_counts` instead of claiming personal corpus
+  search is enforced.
+
+Current conclusion:
+
+- The A21/V21 adapter contract is now aligned on request/response shape at the
+  V21 worker branch level.
+- V21 merge/release and an ACL/schema ADR remain required before A21 can claim
+  personal/public corpus enforcement or nonzero personal/public scope counts.
+- The worker did not touch A21 code, A21 Gateway runtime, StackChan hardware,
+  firmware, provider APIs, or the dirty V21 LAN/desktop connector work.
+
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Workspace Job Skeleton
 
 The workspace surface now has a no-execute upload/import/index job contract.
