@@ -487,6 +487,32 @@ WebSocket URL. `POST /v1/gateway-profiles` changes the selected profile, and
 WebSocket URL, the local request-host WebSocket URL, or the configured public
 WebSocket endpoint.
 
+`voice_chain_profile` is the operator/frontend selector for the dialogue voice
+pipeline shape. It is independent from `voice_mode`, `gateway_profile`, and the
+catalog-only `cloud_voice_profile` surface. `GET /v1/voice-chain-profiles`
+returns `a21.gateway.voice_chain_profiles.v1` with two chain modes:
+`cascade` and `realtime`. `cascade` is the default ASR -> LLM -> fixed TTS
+path; it exposes selectable ASR and LLM profiles while keeping TTS fixed so
+latency testing does not silently change voice quality. The recommended LLM is
+`stepfun`; `deepseek` remains visible only as a fallback option. `realtime`
+exposes the end-to-end realtime provider used by `/v1/realtime/session`.
+`POST` or `PUT /v1/voice-chain-profiles` hot-switches the in-memory Gateway
+runtime by updating the selected ASR, LLM, realtime provider, and voice clone
+profile. The hot switch sets the existing `A21_GATEWAY_VOICE_PROVIDER=selected`
+runtime gate before selecting `A21_PROVIDER_PRIMARY`, so the realtime boundary
+uses the selected realtime provider instead of the mock voice provider.
+
+Voice clone selection is a separate voice/tonality choice under the same
+selector response. Public UI should show safe voice names such as `A21 natural
+voice` or `A21 cloned voice`, not provider secrets, raw model IDs, reference
+text, reference audio, full URLs, or local file paths. Selecting a clone maps
+the effective TTS profile to `voice_clone_cli`; selecting the default natural
+voice keeps the fixed cascade TTS at `dashscope_qwen_tts_realtime`. The device
+registry exposes only selected profile IDs and safe names:
+`current_voice_chain_mode`, `current_asr_profile`, `current_llm_profile`,
+`current_tts_profile`, `current_realtime_provider`, and
+`current_voice_clone_profile`.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or

@@ -390,6 +390,20 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/cloud-voice-profiles",
 		"refreshCloudVoiceProfiles",
 		"saveCloudVoiceProfile",
+		"/v1/voice-chain-profiles",
+		"refreshVoiceChainProfiles",
+		"saveVoiceChainProfile",
+		`id="voiceChainMode"`,
+		`id="cascadeASRProfile"`,
+		`id="cascadeLLMProfile"`,
+		`id="realtimeProvider"`,
+		`id="voiceCloneProfile"`,
+		`id="registryVoiceChainMode"`,
+		`id="registryASRProfile"`,
+		`id="registryLLMProfile"`,
+		`id="registryTTSProfile"`,
+		`id="registryRealtimeProvider"`,
+		`id="registryVoiceCloneProfile"`,
 		"handleAudioPlaybackChunk",
 		"decodePCM16Base64",
 		"schedulePCMPlayback",
@@ -403,6 +417,215 @@ func TestSimulatorPageServed(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q", want)
 		}
+	}
+}
+
+func TestVoiceChainProfilesCatalogDefaultsToCascadeStepFunAndShowsRealtimeProviders(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/v1/voice-chain-profiles", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response VoiceChainProfilesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != VoiceChainProfileSchemaVersion || response.Service != DeviceRegistryServiceName || !response.HotSwitch {
+		t.Fatalf("response metadata = %+v", response)
+	}
+	if response.SelectedVoiceChainMode != VoiceChainModeCascade {
+		t.Fatalf("selected chain mode = %q, want cascade", response.SelectedVoiceChainMode)
+	}
+	if response.SelectedLLMProfile != "stepfun" {
+		t.Fatalf("selected LLM = %q, want stepfun", response.SelectedLLMProfile)
+	}
+	if response.FixedTTSProfile != "dashscope_qwen_tts_realtime" || response.SelectedTTSProfile != "dashscope_qwen_tts_realtime" {
+		t.Fatalf("tts profiles = fixed %q selected %q", response.FixedTTSProfile, response.SelectedTTSProfile)
+	}
+	seenLLM := map[string]VoiceChainProfileOption{}
+	for _, profile := range response.Cascade.LLMProfiles {
+		seenLLM[profile.ID] = profile
+	}
+	if !seenLLM["stepfun"].Recommended || seenLLM["stepfun"].Status != "recommended" {
+		t.Fatalf("stepfun option = %+v, want recommended", seenLLM["stepfun"])
+	}
+	if seenLLM["deepseek"].Recommended || seenLLM["deepseek"].Status != "fallback" {
+		t.Fatalf("deepseek option = %+v, want fallback only", seenLLM["deepseek"])
+	}
+	seenRealtime := map[string]VoiceChainProfileOption{}
+	for _, profile := range response.Realtime.Providers {
+		seenRealtime[profile.ID] = profile
+	}
+	for _, want := range []string{"doubao_realtime", "openai_realtime", "doubao_tts_realtime"} {
+		if seenRealtime[want].ID == "" {
+			t.Fatalf("realtime providers missing %q: %+v", want, response.Realtime.Providers)
+		}
+	}
+	if response.SelectedVoiceCloneProfile != DefaultVoiceCloneProfile || len(response.Voices) == 0 {
+		t.Fatalf("voice clone catalog = selected %q voices %+v", response.SelectedVoiceCloneProfile, response.Voices)
+	}
+	for _, forbidden := range []string{"sk-", "Bearer", "Authorization", "http://", "https://", "/Users/"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("voice chain catalog leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func TestVoiceChainProfileHotSwitchUpdatesCascadeAndRegistryWithoutChangingModes(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		PublicGatewayURL: "https://a21.example.com",
+	})
+	handler := server.Handler()
+
+	voiceReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"professional"}`))
+	voiceRec := httptest.NewRecorder()
+	handler.ServeHTTP(voiceRec, voiceReq)
+	if voiceRec.Code != http.StatusOK {
+		t.Fatalf("voice mode status = %d: %s", voiceRec.Code, voiceRec.Body.String())
+	}
+
+	gatewayReq := httptest.NewRequest(http.MethodPost, "/v1/gateway-profiles", bytes.NewBufferString(`{"gateway_profile":"public_wss"}`))
+	gatewayRec := httptest.NewRecorder()
+	handler.ServeHTTP(gatewayRec, gatewayReq)
+	if gatewayRec.Code != http.StatusOK {
+		t.Fatalf("gateway profile status = %d: %s", gatewayRec.Code, gatewayRec.Body.String())
+	}
+
+	chainReq := httptest.NewRequest(http.MethodPost, "/v1/voice-chain-profiles", bytes.NewBufferString(`{"voice_chain_mode":"cascade","asr_profile":"doubao_asr_realtime","llm_profile":"stepfun","voice_clone_profile":"a21_voice_clone_default"}`))
+	chainRec := httptest.NewRecorder()
+	handler.ServeHTTP(chainRec, chainReq)
+	if chainRec.Code != http.StatusOK {
+		t.Fatalf("voice chain status = %d, want 200: %s", chainRec.Code, chainRec.Body.String())
+	}
+	var chain VoiceChainProfilesResponse
+	if err := json.Unmarshal(chainRec.Body.Bytes(), &chain); err != nil {
+		t.Fatal(err)
+	}
+	if chain.SelectedVoiceChainMode != "cascade" || chain.SelectedASRProfile != "doubao_asr_realtime" || chain.SelectedLLMProfile != "stepfun" {
+		t.Fatalf("chain selection = %+v", chain)
+	}
+	if chain.SelectedTTSProfile != "voice_clone_cli" || chain.SelectedVoiceCloneProfile != "a21_voice_clone_default" {
+		t.Fatalf("voice clone mapping = selected_tts %q voice %q", chain.SelectedTTSProfile, chain.SelectedVoiceCloneProfile)
+	}
+
+	checkVoiceReq := httptest.NewRequest(http.MethodGet, "/v1/voice-modes", nil)
+	checkVoiceRec := httptest.NewRecorder()
+	handler.ServeHTTP(checkVoiceRec, checkVoiceReq)
+	if !bytes.Contains(checkVoiceRec.Body.Bytes(), []byte(`"selected_voice_mode":"professional"`)) {
+		t.Fatalf("voice chain changed voice mode: %s", checkVoiceRec.Body.String())
+	}
+	checkGatewayReq := httptest.NewRequest(http.MethodGet, "/v1/gateway-profiles", nil)
+	checkGatewayRec := httptest.NewRecorder()
+	handler.ServeHTTP(checkGatewayRec, checkGatewayReq)
+	if !bytes.Contains(checkGatewayRec.Body.Bytes(), []byte(`"selected_gateway_profile":"public_wss"`)) {
+		t.Fatalf("voice chain changed gateway profile: %s", checkGatewayRec.Body.String())
+	}
+
+	server.controlSequence("stackchan-sim-001", "a21-trace-voice-chain", "a21-session-voice-chain", []protocol.ControlEventPayload{{
+		State: protocol.ExpressionListening,
+		Mode:  protocol.ModeWorkmate,
+		Text:  "voice chain registry must not leak this text",
+	}})
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	handler.ServeHTTP(devicesRec, devicesReq)
+	if devicesRec.Code != http.StatusOK {
+		t.Fatalf("devices status = %d: %s", devicesRec.Code, devicesRec.Body.String())
+	}
+	var registry DeviceRegistryResponse
+	if err := json.Unmarshal(devicesRec.Body.Bytes(), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("device count = %d: %s", len(registry.Devices), devicesRec.Body.String())
+	}
+	device := registry.Devices[0]
+	if device.CurrentMode != protocol.ModeWorkmate ||
+		device.CurrentVoiceMode != "professional" ||
+		device.CurrentVoiceChainMode != "cascade" ||
+		device.CurrentASRProfile != "doubao_asr_realtime" ||
+		device.CurrentLLMProfile != "stepfun" ||
+		device.CurrentTTSProfile != "voice_clone_cli" ||
+		device.CurrentVoiceCloneProfile != "a21_voice_clone_default" {
+		t.Fatalf("device state = %+v", device)
+	}
+	if strings.Contains(devicesRec.Body.String(), "voice chain registry must not leak this text") {
+		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
+	}
+}
+
+func TestVoiceChainRealtimeSelectionUpdatesRealtimeProviderWithoutProviderExecution(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-chain-profiles", bytes.NewBufferString(`{"voice_chain_mode":"realtime","realtime_provider":"openai_realtime"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"selected_voice_chain_mode":"realtime"`)) ||
+		!bytes.Contains(rec.Body.Bytes(), []byte(`"selected_realtime_provider":"openai_realtime"`)) {
+		t.Fatalf("realtime selection missing: %s", rec.Body.String())
+	}
+
+	healthReq := httptest.NewRequest(http.MethodGet, "/v1/providers/voice/health", nil)
+	healthRec := httptest.NewRecorder()
+	handler.ServeHTTP(healthRec, healthReq)
+	if healthRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("health status = %d, want 503 without provider secrets: %s", healthRec.Code, healthRec.Body.String())
+	}
+	if !bytes.Contains(healthRec.Body.Bytes(), []byte(`"provider":"a21-openai-realtime-voice"`)) {
+		t.Fatalf("health did not use selected realtime provider: %s", healthRec.Body.String())
+	}
+	for _, forbidden := range []string{"sk-", "Bearer", "Authorization"} {
+		if strings.Contains(healthRec.Body.String(), forbidden) {
+			t.Fatalf("health leaked %q: %s", forbidden, healthRec.Body.String())
+		}
+	}
+}
+
+func TestVoiceChainProfilesRejectUnknownValuesWithoutEchoOrStateReset(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+	validReq := httptest.NewRequest(http.MethodPost, "/v1/voice-chain-profiles", bytes.NewBufferString(`{"llm_profile":"stepfun","voice_clone_profile":"a21_voice_clone_default"}`))
+	validRec := httptest.NewRecorder()
+	handler.ServeHTTP(validRec, validReq)
+	if validRec.Code != http.StatusOK {
+		t.Fatalf("valid select status = %d: %s", validRec.Code, validRec.Body.String())
+	}
+
+	for _, body := range []string{
+		`{"voice_chain_mode":"x21_mode"}`,
+		`{"asr_profile":"x21_asr"}`,
+		`{"llm_profile":"secret_llm"}`,
+		`{"realtime_provider":"v21_voice"}`,
+		`{"voice_clone_profile":"secret_clone"}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/voice-chain-profiles", bytes.NewBufferString(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for %s: %s", rec.Code, body, rec.Body.String())
+		}
+		for _, forbidden := range []string{"x21", "v21", "secret"} {
+			if strings.Contains(strings.ToLower(rec.Body.String()), forbidden) {
+				t.Fatalf("error body leaked %q for %s: %s", forbidden, body, rec.Body.String())
+			}
+		}
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/voice-chain-profiles", nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+	if !bytes.Contains(getRec.Body.Bytes(), []byte(`"selected_llm_profile":"stepfun"`)) ||
+		!bytes.Contains(getRec.Body.Bytes(), []byte(`"selected_voice_clone_profile":"a21_voice_clone_default"`)) ||
+		!bytes.Contains(getRec.Body.Bytes(), []byte(`"selected_tts_profile":"voice_clone_cli"`)) {
+		t.Fatalf("invalid selection reset valid state: %s", getRec.Body.String())
 	}
 }
 

@@ -405,6 +405,22 @@ const simulatorHTML = `<!doctype html>
           <select id="cloudVoiceProfile" aria-label="cloud voice profile">
             <option value="a21_doubao_tts_realtime">a21_doubao_tts_realtime</option>
           </select>
+          <select id="voiceChainMode" aria-label="voice chain mode">
+            <option value="cascade">cascade</option>
+            <option value="realtime">realtime</option>
+          </select>
+          <select id="cascadeASRProfile" aria-label="cascade ASR profile">
+            <option value="dashscope_qwen_asr_realtime">Qwen ASR realtime</option>
+          </select>
+          <select id="cascadeLLMProfile" aria-label="cascade LLM profile">
+            <option value="stepfun">StepFun 8k fast</option>
+          </select>
+          <select id="realtimeProvider" aria-label="realtime provider">
+            <option value="doubao_realtime">Doubao realtime</option>
+          </select>
+          <select id="voiceCloneProfile" aria-label="voice clone profile">
+            <option value="a21_voice_default_dashscope">A21 natural voice</option>
+          </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -413,6 +429,12 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>Voice</label><div id="voiceModeReadout">dialogue</div></div>
           <div class="metric"><label>Gateway</label><div id="gatewayProfileReadout">mac_local</div></div>
           <div class="metric"><label>Cloud Voice</label><div id="cloudVoiceProfileReadout">a21_doubao_tts_realtime</div></div>
+          <div class="metric"><label>Chain</label><div id="voiceChainModeReadout">cascade</div></div>
+          <div class="metric"><label>ASR</label><div id="cascadeASRProfileReadout">dashscope_qwen_asr_realtime</div></div>
+          <div class="metric"><label>LLM</label><div id="cascadeLLMProfileReadout">stepfun</div></div>
+          <div class="metric"><label>TTS</label><div id="selectedTTSProfileReadout">dashscope_qwen_tts_realtime</div></div>
+          <div class="metric"><label>Realtime</label><div id="realtimeProviderReadout">doubao_realtime</div></div>
+          <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">A21 natural voice</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -480,6 +502,12 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Connection</label><div id="registryConnection">none</div></div>
             <div class="metric"><label>Mode</label><div id="registryMode">none</div></div>
             <div class="metric"><label>Voice</label><div id="registryVoiceMode">none</div></div>
+            <div class="metric"><label>Chain</label><div id="registryVoiceChainMode">none</div></div>
+            <div class="metric"><label>ASR</label><div id="registryASRProfile">none</div></div>
+            <div class="metric"><label>LLM</label><div id="registryLLMProfile">none</div></div>
+            <div class="metric"><label>TTS</label><div id="registryTTSProfile">none</div></div>
+            <div class="metric"><label>Realtime</label><div id="registryRealtimeProvider">none</div></div>
+            <div class="metric"><label>Voice Name</label><div id="registryVoiceCloneProfile">none</div></div>
             <div class="metric"><label>Cloud Voice</label><div id="registryCloudVoiceProfile">none</div></div>
             <div class="metric"><label>Expression</label><div id="registryExpression">none</div></div>
             <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
@@ -519,6 +547,12 @@ const simulatorHTML = `<!doctype html>
       voiceModeReadout: document.getElementById('voiceModeReadout'),
       gatewayProfileReadout: document.getElementById('gatewayProfileReadout'),
       cloudVoiceProfileReadout: document.getElementById('cloudVoiceProfileReadout'),
+      voiceChainModeReadout: document.getElementById('voiceChainModeReadout'),
+      cascadeASRProfileReadout: document.getElementById('cascadeASRProfileReadout'),
+      cascadeLLMProfileReadout: document.getElementById('cascadeLLMProfileReadout'),
+      selectedTTSProfileReadout: document.getElementById('selectedTTSProfileReadout'),
+      realtimeProviderReadout: document.getElementById('realtimeProviderReadout'),
+      voiceCloneProfileReadout: document.getElementById('voiceCloneProfileReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -542,6 +576,12 @@ const simulatorHTML = `<!doctype html>
       registryConnection: document.getElementById('registryConnection'),
       registryMode: document.getElementById('registryMode'),
       registryVoiceMode: document.getElementById('registryVoiceMode'),
+      registryVoiceChainMode: document.getElementById('registryVoiceChainMode'),
+      registryASRProfile: document.getElementById('registryASRProfile'),
+      registryLLMProfile: document.getElementById('registryLLMProfile'),
+      registryTTSProfile: document.getElementById('registryTTSProfile'),
+      registryRealtimeProvider: document.getElementById('registryRealtimeProvider'),
+      registryVoiceCloneProfile: document.getElementById('registryVoiceCloneProfile'),
       registryCloudVoiceProfile: document.getElementById('registryCloudVoiceProfile'),
       registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
@@ -569,6 +609,11 @@ const simulatorHTML = `<!doctype html>
       voiceMode: document.getElementById('voiceMode'),
       gatewayProfile: document.getElementById('gatewayProfile'),
       cloudVoiceProfile: document.getElementById('cloudVoiceProfile'),
+      voiceChainMode: document.getElementById('voiceChainMode'),
+      cascadeASRProfile: document.getElementById('cascadeASRProfile'),
+      cascadeLLMProfile: document.getElementById('cascadeLLMProfile'),
+      realtimeProvider: document.getElementById('realtimeProvider'),
+      voiceCloneProfile: document.getElementById('voiceCloneProfile'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -653,6 +698,56 @@ const simulatorHTML = `<!doctype html>
     function setCloudVoiceProfile(profile) {
       ui.cloudVoiceProfile.value = profile || 'a21_doubao_tts_realtime';
       ui.cloudVoiceProfileReadout.textContent = ui.cloudVoiceProfile.value;
+    }
+    function setVoiceChainProfile(catalog) {
+      const selectedMode = catalog.selected_voice_chain_mode || 'cascade';
+      const selectedASR = catalog.selected_asr_profile || 'dashscope_qwen_asr_realtime';
+      const selectedLLM = catalog.selected_llm_profile || 'stepfun';
+      const selectedRealtime = catalog.selected_realtime_provider || 'doubao_realtime';
+      const selectedVoice = catalog.selected_voice_clone_profile || 'a21_voice_default_dashscope';
+      const selectedTTS = catalog.selected_tts_profile || catalog.fixed_tts_profile || 'dashscope_qwen_tts_realtime';
+      const asrProfiles = (catalog.cascade && catalog.cascade.asr_profiles) || [];
+      const llmProfiles = (catalog.cascade && catalog.cascade.llm_profiles) || [];
+      const realtimeProviders = (catalog.realtime && catalog.realtime.providers) || [];
+      const voices = catalog.voices || [];
+      ui.voiceChainMode.value = selectedMode;
+      ui.voiceChainModeReadout.textContent = selectedMode;
+      if (asrProfiles.length) {
+        ui.cascadeASRProfile.innerHTML = asrProfiles.map((profile) => optionHTML(profile, selectedASR)).join('');
+      }
+      if (llmProfiles.length) {
+        ui.cascadeLLMProfile.innerHTML = llmProfiles.map((profile) => optionHTML(profile, selectedLLM)).join('');
+      }
+      if (realtimeProviders.length) {
+        ui.realtimeProvider.innerHTML = realtimeProviders.map((profile) => optionHTML(profile, selectedRealtime)).join('');
+      }
+      if (voices.length) {
+        ui.voiceCloneProfile.innerHTML = voices.map((voice) => optionHTML({
+          id: voice.id,
+          label: voice.label,
+          status: voice.status,
+          disabled: voice.status === 'planned'
+        }, selectedVoice)).join('');
+      }
+      ui.cascadeASRProfile.value = selectedASR;
+      ui.cascadeLLMProfile.value = selectedLLM;
+      ui.realtimeProvider.value = selectedRealtime;
+      ui.voiceCloneProfile.value = selectedVoice;
+      ui.cascadeASRProfileReadout.textContent = selectedASR;
+      ui.cascadeLLMProfileReadout.textContent = selectedLLM;
+      ui.selectedTTSProfileReadout.textContent = selectedTTS;
+      ui.realtimeProviderReadout.textContent = selectedRealtime;
+      const selectedVoiceOption = voices.find((voice) => voice.id === selectedVoice);
+      ui.voiceCloneProfileReadout.textContent = selectedVoiceOption ? selectedVoiceOption.label : selectedVoice;
+    }
+    function optionHTML(option, selected) {
+      const id = escapeText(option.id || '');
+      const label = escapeText(option.label || option.id || '');
+      const status = option.status ? ' [' + escapeText(option.status) + ']' : '';
+      const recommended = option.recommended ? ' *' : '';
+      const disabled = option.disabled || option.status === 'planned' ? ' disabled' : '';
+      const selectedAttr = (option.id || '') === selected ? ' selected' : '';
+      return '<option value="' + id + '"' + disabled + selectedAttr + '>' + label + recommended + status + '</option>';
     }
     function rememberEnvelope(envelope) {
       if (envelope.trace_id) {
@@ -859,6 +954,12 @@ const simulatorHTML = `<!doctype html>
         ui.registryConnection.textContent = (device.connection_status || 'none') + age;
         ui.registryMode.textContent = device.current_mode || 'none';
         ui.registryVoiceMode.textContent = device.current_voice_mode || 'none';
+        ui.registryVoiceChainMode.textContent = device.current_voice_chain_mode || 'none';
+        ui.registryASRProfile.textContent = device.current_asr_profile || 'none';
+        ui.registryLLMProfile.textContent = device.current_llm_profile || 'none';
+        ui.registryTTSProfile.textContent = device.current_tts_profile || 'none';
+        ui.registryRealtimeProvider.textContent = device.current_realtime_provider || 'none';
+        ui.registryVoiceCloneProfile.textContent = device.current_voice_clone_profile || 'none';
         ui.registryCloudVoiceProfile.textContent = device.current_cloud_voice_profile || 'none';
         ui.registryExpression.textContent = device.current_expression || 'none';
         ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';
@@ -927,6 +1028,18 @@ const simulatorHTML = `<!doctype html>
         log('cloud voice catalog unavailable');
       }
     }
+    async function refreshVoiceChainProfiles() {
+      try {
+        const response = await fetch('/v1/voice-chain-profiles', { cache: 'no-store' });
+        if (!response.ok) {
+          log('voice chain catalog error ' + response.status);
+          return;
+        }
+        setVoiceChainProfile(await response.json());
+      } catch (err) {
+        log('voice chain catalog unavailable');
+      }
+    }
     async function saveVoiceMode() {
       try {
         const response = await fetch('/v1/voice-modes', {
@@ -981,6 +1094,30 @@ const simulatorHTML = `<!doctype html>
         refreshRegistry();
       } catch (err) {
         log('cloud voice save unavailable');
+      }
+    }
+    async function saveVoiceChainProfile() {
+      try {
+        const response = await fetch('/v1/voice-chain-profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            voice_chain_mode: ui.voiceChainMode.value,
+            asr_profile: ui.cascadeASRProfile.value,
+            llm_profile: ui.cascadeLLMProfile.value,
+            realtime_provider: ui.realtimeProvider.value,
+            voice_clone_profile: ui.voiceCloneProfile.value
+          })
+        });
+        if (!response.ok) {
+          log('voice chain save failed ' + response.status);
+          refreshVoiceChainProfiles();
+          return;
+        }
+        setVoiceChainProfile(await response.json());
+        refreshRegistry();
+      } catch (err) {
+        log('voice chain save unavailable');
       }
     }
     async function refreshWaterfall() {
@@ -1259,10 +1396,16 @@ const simulatorHTML = `<!doctype html>
     ui.voiceMode.addEventListener('change', saveVoiceMode);
     ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
     ui.cloudVoiceProfile.addEventListener('change', saveCloudVoiceProfile);
+    ui.voiceChainMode.addEventListener('change', saveVoiceChainProfile);
+    ui.cascadeASRProfile.addEventListener('change', saveVoiceChainProfile);
+    ui.cascadeLLMProfile.addEventListener('change', saveVoiceChainProfile);
+    ui.realtimeProvider.addEventListener('change', saveVoiceChainProfile);
+    ui.voiceCloneProfile.addEventListener('change', saveVoiceChainProfile);
     refreshRegistry();
     refreshVoiceModes();
     refreshGatewayProfiles();
     refreshCloudVoiceProfiles();
+    refreshVoiceChainProfiles();
     refreshWakeWordConfig();
     setMode(ui.mode.value);
     updateVisibilityBadges();

@@ -7786,3 +7786,76 @@ Recommended next action:
    first audio, and Opus downlink.
 4. Only after host-loopback provider chain completes, run the physical
    StackChan dialogue/barge-in/wake-word evidence pass.
+
+## 2026-06-03 18:24 CST - Voice Chain Selector Hot Switch
+
+Round goal:
+
+- Add the product-facing dialogue-chain selector the user requested: cascade
+  ASR -> LLM -> fixed TTS versus end-to-end realtime, with frontend hot switch,
+  StepFun recommendation, visible realtime providers, and separate voice-clone
+  selection.
+
+Actual completed work:
+
+- Added `GET/POST/PUT /v1/voice-chain-profiles`.
+- Added provider-safe catalogs for:
+  - `cascade` chain mode with selectable ASR and LLM.
+  - `realtime` chain mode with visible realtime provider choices.
+  - voice/clone choices with safe display labels.
+- Made StepFun the recommended/default cascade LLM and kept DeepSeek visible
+  only as fallback.
+- Preserved fixed cascade TTS as `dashscope_qwen_tts_realtime`; selecting a
+  clone maps the effective TTS profile to `voice_clone_cli`.
+- Implemented in-memory hot switch for cascade runner metadata, ASR adapter,
+  TTS adapter, realtime provider, and device registry fields.
+- Corrected the realtime hot-switch root cause by setting the existing
+  `A21_GATEWAY_VOICE_PROVIDER=selected` runtime gate along with
+  `A21_PROVIDER_PRIMARY`.
+- Added simulator controls/readouts for chain mode, ASR, LLM, selected TTS,
+  realtime provider, and voice/clone.
+- Documented the selector boundary in `docs/engineering/PROTOCOL.md`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-03-voice-chain-product-selector-hot-switch.md`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused gateway tests passed:
+  `go test ./internal/gateway -run 'VoiceChain|Simulator|RealtimeSession|CloudVoice|VoiceMode' -count=1`
+- Related package tests passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- `git diff --check`: passed.
+- Full verification passed:
+  `make verify`
+
+Unfinished items:
+
+- No ECS deploy, provider execution, firmware build/flash, physical hardware
+  action, or audio playback was performed in this selector cut.
+- Remote ECS still needs root-only StepFun secret injection before the selected
+  product LLM can actually stop falling back to DeepSeek.
+
+Known risks/blockers:
+
+- This is runtime/config hot switch and UI/API state, not physical PRD green.
+- Realtime provider entries without secrets correctly report unavailable until
+  server-side env is injected.
+- Wake word and physical barge-in proof remain separate product acceptance
+  gates.
+
+Recommended next action:
+
+1. Commit this selector slice.
+2. Inject StepFun env on ECS through `/etc/a21/secrets/provider.env` without
+   printing values, restart Gateway, and verify `/v1/voice-chain-profiles` plus
+   static streaming readiness show `stepfun`.
+3. Then run the real physical StackChan dialogue/barge-in/wake-word evidence
+   pass.

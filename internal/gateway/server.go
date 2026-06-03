@@ -72,6 +72,12 @@ type Server struct {
 	xiaozhiListenMaxDurationMS int64
 	wakeWordConfigPath         string
 	voiceModeConfig            string
+	voiceChainModeConfig       string
+	cascadeASRProfileConfig    string
+	cascadeLLMProfileConfig    string
+	fixedTTSProfileConfig      string
+	realtimeProviderConfig     string
+	voiceCloneProfileConfig    string
 	gatewayProfileConfig       string
 	cloudVoiceProfileConfig    string
 	cloudVoiceEnv              []string
@@ -315,6 +321,12 @@ type DeviceRecord struct {
 	DeviceAgeMS              int64                    `json:"device_age_ms,omitempty"`
 	CurrentMode              protocol.Mode            `json:"current_mode,omitempty"`
 	CurrentVoiceMode         string                   `json:"current_voice_mode,omitempty"`
+	CurrentVoiceChainMode    string                   `json:"current_voice_chain_mode,omitempty"`
+	CurrentASRProfile        string                   `json:"current_asr_profile,omitempty"`
+	CurrentLLMProfile        string                   `json:"current_llm_profile,omitempty"`
+	CurrentTTSProfile        string                   `json:"current_tts_profile,omitempty"`
+	CurrentRealtimeProvider  string                   `json:"current_realtime_provider,omitempty"`
+	CurrentVoiceCloneProfile string                   `json:"current_voice_clone_profile,omitempty"`
 	CurrentCloudVoiceProfile string                   `json:"current_cloud_voice_profile,omitempty"`
 	CurrentExpr              protocol.ExpressionState `json:"current_expression,omitempty"`
 	PlaybackStream           string                   `json:"playback_stream_id,omitempty"`
@@ -350,6 +362,60 @@ type VoiceModeCatalogResponse struct {
 
 type VoiceModeSelectionRequest struct {
 	VoiceMode string `json:"voice_mode"`
+}
+
+type VoiceChainProfileOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Default     bool   `json:"default,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type VoiceChainVoiceOption struct {
+	ID              string `json:"id"`
+	Label           string `json:"label"`
+	Status          string `json:"status"`
+	ProviderProfile string `json:"provider_profile"`
+	TTSProfile      string `json:"tts_profile"`
+	VoiceClone      bool   `json:"voice_clone,omitempty"`
+	Default         bool   `json:"default,omitempty"`
+}
+
+type VoiceChainProfilesResponse struct {
+	SchemaVersion             string                    `json:"schema_version"`
+	Service                   string                    `json:"service"`
+	SelectedVoiceChainMode    string                    `json:"selected_voice_chain_mode"`
+	SelectedASRProfile        string                    `json:"selected_asr_profile"`
+	SelectedLLMProfile        string                    `json:"selected_llm_profile"`
+	FixedTTSProfile           string                    `json:"fixed_tts_profile"`
+	SelectedTTSProfile        string                    `json:"selected_tts_profile"`
+	SelectedRealtimeProvider  string                    `json:"selected_realtime_provider"`
+	SelectedVoiceCloneProfile string                    `json:"selected_voice_clone_profile"`
+	Cascade                   VoiceChainCascadeCatalog  `json:"cascade"`
+	Realtime                  VoiceChainRealtimeCatalog `json:"realtime"`
+	Voices                    []VoiceChainVoiceOption   `json:"voices"`
+	HotSwitch                 bool                      `json:"hot_switch"`
+	Findings                  []string                  `json:"findings,omitempty"`
+}
+
+type VoiceChainCascadeCatalog struct {
+	ASRProfiles []VoiceChainProfileOption `json:"asr_profiles"`
+	LLMProfiles []VoiceChainProfileOption `json:"llm_profiles"`
+	TTSProfile  VoiceChainProfileOption   `json:"tts_profile"`
+}
+
+type VoiceChainRealtimeCatalog struct {
+	Providers []VoiceChainProfileOption `json:"providers"`
+}
+
+type VoiceChainProfileSelectionRequest struct {
+	VoiceChainMode    string `json:"voice_chain_mode"`
+	ASRProfile        string `json:"asr_profile,omitempty"`
+	LLMProfile        string `json:"llm_profile,omitempty"`
+	RealtimeProvider  string `json:"realtime_provider,omitempty"`
+	VoiceCloneProfile string `json:"voice_clone_profile,omitempty"`
 }
 
 type GatewayProfileOption struct {
@@ -408,6 +474,14 @@ const (
 	VoiceModeSchemaVersion         = "a21.gateway.voice_modes.v1"
 	VoiceModeDialogue              = "dialogue"
 	VoiceModeProfessional          = "professional"
+	VoiceChainProfileSchemaVersion = "a21.gateway.voice_chain_profiles.v1"
+	VoiceChainModeCascade          = "cascade"
+	VoiceChainModeRealtime         = "realtime"
+	DefaultCascadeASRProfile       = "dashscope_qwen_asr_realtime"
+	DefaultCascadeLLMProfile       = "stepfun"
+	DefaultFixedTTSProfile         = "dashscope_qwen_tts_realtime"
+	DefaultRealtimeProvider        = "doubao_realtime"
+	DefaultVoiceCloneProfile       = "a21_voice_default_dashscope"
 	GatewayProfileSchemaVersion    = "a21.gateway.profiles.v1"
 	GatewayProfileMacLocal         = "mac_local"
 	GatewayProfilePublicWSS        = "public_wss"
@@ -542,6 +616,11 @@ func NewServerWithOptions(options ServerOptions) *Server {
 			xiaozhiProfessionalASR = adapters.ASR
 		}
 	}
+	initialASRProfile := defaultCascadeASRProfile(xiaozhiPipelineMeta.Selection.ASRProfile)
+	initialLLMProfile := defaultCascadeLLMProfile(xiaozhiPipelineMeta.Selection.LLMProfile)
+	initialTTSProfile := defaultFixedTTSProfile(xiaozhiPipelineMeta.Selection.TTSProfile)
+	initialRealtimeProvider := defaultRealtimeProvider(gatewayEnvValue(options.CloudVoiceEnv, "A21_PROVIDER_PRIMARY"))
+	initialVoiceCloneProfile := defaultVoiceCloneProfile(gatewayEnvValue(options.CloudVoiceEnv, "A21_VOICE_CLONE_PROFILE"))
 	return &Server{
 		now:                        time.Now,
 		metrics:                    newMetrics(),
@@ -571,12 +650,28 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
 		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
+		voiceChainModeConfig:       VoiceChainModeCascade,
+		cascadeASRProfileConfig:    initialASRProfile,
+		cascadeLLMProfileConfig:    initialLLMProfile,
+		fixedTTSProfileConfig:      initialTTSProfile,
+		realtimeProviderConfig:     initialRealtimeProvider,
+		voiceCloneProfileConfig:    initialVoiceCloneProfile,
 		gatewayProfileConfig:       defaultGatewayProfile(options.GatewayProfile, options.PublicGatewayURL),
 		cloudVoiceProfileConfig:    strings.TrimSpace(options.CloudVoiceProfile),
 		cloudVoiceEnv:              append([]string(nil), options.CloudVoiceEnv...),
 		macLocalGatewayURL:         strings.TrimSpace(options.MacLocalGatewayURL),
 		publicGatewayURL:           strings.TrimSpace(options.PublicGatewayURL),
 	}
+}
+
+func gatewayEnvValue(env []string, key string) string {
+	prefix := strings.TrimSpace(key) + "="
+	for _, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(item, prefix))
+		}
+	}
+	return ""
 }
 
 func isZeroGatewayVoicePipelineSelection(selection providers.VoicePipelineSelection) bool {
@@ -598,6 +693,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
+	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
 	mux.HandleFunc("/v1/audio/recent", s.handleAudioRecent)
@@ -650,6 +746,26 @@ func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.setVoiceMode(req.VoiceMode)
 		writeJSON(w, http.StatusOK, s.voiceModeCatalog())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleVoiceChainProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.voiceChainProfileCatalog())
+	case http.MethodPost, http.MethodPut:
+		var req VoiceChainProfileSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if err := s.setVoiceChainProfile(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.voiceChainProfileCatalog())
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -761,6 +877,354 @@ func voiceModeAvailableForFastCompanion(mode string) bool {
 
 func plannedVoiceModeError(mode string) string {
 	return "voice_mode " + defaultVoiceMode(mode) + " must use the professional path and cannot execute dialogue turns"
+}
+
+func (s *Server) currentVoiceProvider() providers.VoiceProvider {
+	if s == nil {
+		return providers.NewMockVoiceProvider()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.voice == nil {
+		return providers.NewMockVoiceProvider()
+	}
+	return s.voice
+}
+
+func (s *Server) currentXiaozhiVoicePipelineASR() providers.ASRAdapter {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.xiaozhiVoicePipelineASR
+}
+
+func (s *Server) currentXiaozhiVoicePipelineRunnerFactory() func() xiaozhiVoicePipelineRunner {
+	if s == nil {
+		return defaultXiaozhiVoicePipelineRunner
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.xiaozhiVoicePipelineRunner == nil {
+		return defaultXiaozhiVoicePipelineRunner
+	}
+	return s.xiaozhiVoicePipelineRunner
+}
+
+func (s *Server) currentXiaozhiVoicePipelineMeta() xiaozhiVoicePipelineMeta {
+	if s == nil {
+		return xiaozhiVoicePipelineMeta{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.xiaozhiVoicePipelineMeta
+}
+
+func (s *Server) voiceChainProfileCatalog() VoiceChainProfilesResponse {
+	s.mu.Lock()
+	mode := defaultVoiceChainMode(s.voiceChainModeConfig)
+	asrProfile := defaultCascadeASRProfile(s.cascadeASRProfileConfig)
+	llmProfile := defaultCascadeLLMProfile(s.cascadeLLMProfileConfig)
+	ttsProfile := defaultFixedTTSProfile(s.fixedTTSProfileConfig)
+	realtimeProvider := defaultRealtimeProvider(s.realtimeProviderConfig)
+	voiceCloneProfile := defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
+	selectedTTSProfile := voiceChainTTSForVoice(ttsProfile, voiceCloneProfile)
+	s.mu.Unlock()
+	findings := []string{}
+	if llmProfile == "deepseek" {
+		findings = append(findings, "stepfun_not_selected")
+	}
+	return VoiceChainProfilesResponse{
+		SchemaVersion:             VoiceChainProfileSchemaVersion,
+		Service:                   DeviceRegistryServiceName,
+		SelectedVoiceChainMode:    mode,
+		SelectedASRProfile:        asrProfile,
+		SelectedLLMProfile:        llmProfile,
+		FixedTTSProfile:           ttsProfile,
+		SelectedTTSProfile:        selectedTTSProfile,
+		SelectedRealtimeProvider:  realtimeProvider,
+		SelectedVoiceCloneProfile: voiceCloneProfile,
+		Cascade: VoiceChainCascadeCatalog{
+			ASRProfiles: voiceChainASRProfileOptions(asrProfile),
+			LLMProfiles: voiceChainLLMProfileOptions(llmProfile),
+			TTSProfile: VoiceChainProfileOption{
+				ID:      ttsProfile,
+				Label:   voiceChainTTSLabel(ttsProfile),
+				Status:  "fixed",
+				Default: true,
+				Reason:  "A21 keeps TTS fixed in cascade mode so ASR/LLM latency tests do not also change voice quality",
+			},
+		},
+		Realtime:  VoiceChainRealtimeCatalog{Providers: voiceChainRealtimeProviderOptions(realtimeProvider)},
+		Voices:    voiceChainVoiceOptions(voiceCloneProfile),
+		HotSwitch: true,
+		Findings:  findings,
+	}
+}
+
+func (s *Server) setVoiceChainProfile(req VoiceChainProfileSelectionRequest) error {
+	s.mu.Lock()
+	mode := defaultVoiceChainMode(s.voiceChainModeConfig)
+	asrProfile := defaultCascadeASRProfile(s.cascadeASRProfileConfig)
+	llmProfile := defaultCascadeLLMProfile(s.cascadeLLMProfileConfig)
+	ttsProfile := defaultFixedTTSProfile(s.fixedTTSProfileConfig)
+	realtimeProvider := defaultRealtimeProvider(s.realtimeProviderConfig)
+	voiceCloneProfile := defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
+	env := append([]string(nil), s.cloudVoiceEnv...)
+	s.mu.Unlock()
+
+	if strings.TrimSpace(req.VoiceChainMode) != "" {
+		mode = strings.ToLower(strings.TrimSpace(req.VoiceChainMode))
+		if !validVoiceChainMode(mode) {
+			return fmt.Errorf("valid voice_chain_mode is required")
+		}
+	}
+	if strings.TrimSpace(req.ASRProfile) != "" {
+		asrProfile = strings.ToLower(strings.TrimSpace(req.ASRProfile))
+		if !validCascadeASRProfile(asrProfile) {
+			return fmt.Errorf("valid asr_profile is required")
+		}
+	}
+	if strings.TrimSpace(req.LLMProfile) != "" {
+		llmProfile = strings.ToLower(strings.TrimSpace(req.LLMProfile))
+		if !validCascadeLLMProfile(llmProfile) {
+			return fmt.Errorf("valid llm_profile is required")
+		}
+	}
+	if strings.TrimSpace(req.RealtimeProvider) != "" {
+		realtimeProvider = strings.ToLower(strings.TrimSpace(req.RealtimeProvider))
+		if !validRealtimeProvider(realtimeProvider) {
+			return fmt.Errorf("valid realtime_provider is required")
+		}
+	}
+	if strings.TrimSpace(req.VoiceCloneProfile) != "" {
+		voiceCloneProfile = strings.ToLower(strings.TrimSpace(req.VoiceCloneProfile))
+		if !validVoiceCloneProfile(voiceCloneProfile) {
+			return fmt.Errorf("valid voice_clone_profile is required")
+		}
+	}
+	env = voiceChainEnvWithSelection(env, mode, asrProfile, llmProfile, ttsProfile, realtimeProvider, voiceCloneProfile)
+	adapters := providers.VoicePipelineAdaptersFromEnv(env)
+	voiceProvider := providers.NewGatewayVoiceProviderFromEnv(env)
+	runnerFactory := func() xiaozhiVoicePipelineRunner {
+		return providers.NewVoicePipelineRunner(adapters)
+	}
+	meta := xiaozhiVoicePipelineMeta{Selection: adapters.Selection, ExecutionMode: adapters.ExecutionMode}
+	if isZeroGatewayVoicePipelineSelection(meta.Selection) {
+		meta.Selection = providers.VoicePipelineSelectionFromEnv(env)
+	}
+	if strings.TrimSpace(meta.ExecutionMode) == "" {
+		meta.ExecutionMode = "fixture"
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.voiceChainModeConfig = mode
+	s.cascadeASRProfileConfig = asrProfile
+	s.cascadeLLMProfileConfig = llmProfile
+	s.fixedTTSProfileConfig = ttsProfile
+	s.realtimeProviderConfig = realtimeProvider
+	s.voiceCloneProfileConfig = voiceCloneProfile
+	s.cloudVoiceEnv = env
+	s.voice = voiceProvider
+	s.xiaozhiVoicePipelineRunner = runnerFactory
+	s.xiaozhiVoicePipelineMeta = meta
+	if adapters.ASR != nil {
+		s.xiaozhiVoicePipelineASR = adapters.ASR
+		s.xiaozhiProfessionalASR = adapters.ASR
+	}
+	if adapters.TTS != nil {
+		s.xiaozhiFastAckTTS = adapters.TTS
+	}
+	return nil
+}
+
+func defaultVoiceChainMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if validVoiceChainMode(mode) {
+		return mode
+	}
+	return VoiceChainModeCascade
+}
+
+func validVoiceChainMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case VoiceChainModeCascade, VoiceChainModeRealtime:
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultCascadeASRProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if validCascadeASRProfile(profile) {
+		return profile
+	}
+	return DefaultCascadeASRProfile
+}
+
+func validCascadeASRProfile(profile string) bool {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "dashscope_qwen_asr_realtime", "doubao_asr_realtime", "sherpa_onnx_streaming":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultCascadeLLMProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if validCascadeLLMProfile(profile) {
+		return profile
+	}
+	return DefaultCascadeLLMProfile
+}
+
+func validCascadeLLMProfile(profile string) bool {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "stepfun", "bailian_dashscope", "siliconflow", "deepseek", "local_ollama":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultFixedTTSProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if profile == "dashscope_qwen_tts_realtime" || profile == "doubao_tts_realtime" || profile == "voice_clone_cli" {
+		return profile
+	}
+	return DefaultFixedTTSProfile
+}
+
+func defaultRealtimeProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if validRealtimeProvider(provider) {
+		return provider
+	}
+	return DefaultRealtimeProvider
+}
+
+func validRealtimeProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "doubao_realtime", "openai_realtime", "doubao_tts_realtime":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultVoiceCloneProfile(profile string) string {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	if validVoiceCloneProfile(profile) {
+		return profile
+	}
+	return DefaultVoiceCloneProfile
+}
+
+func validVoiceCloneProfile(profile string) bool {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "a21_voice_default_dashscope", "a21_voice_clone_default", "a21_voice_clone_cosyvoice", "a21_voice_clone_minimax":
+		return true
+	default:
+		return false
+	}
+}
+
+func voiceChainASRProfileOptions(selected string) []VoiceChainProfileOption {
+	return []VoiceChainProfileOption{
+		{ID: "dashscope_qwen_asr_realtime", Label: "Qwen ASR realtime", Status: "available", Default: selected == "dashscope_qwen_asr_realtime", Recommended: true, Reason: "public cloud edge default"},
+		{ID: "doubao_asr_realtime", Label: "Doubao ASR realtime", Status: "available", Default: selected == "doubao_asr_realtime"},
+		{ID: "sherpa_onnx_streaming", Label: "Sherpa streaming local", Status: "mac_local", Default: selected == "sherpa_onnx_streaming"},
+	}
+}
+
+func voiceChainLLMProfileOptions(selected string) []VoiceChainProfileOption {
+	return []VoiceChainProfileOption{
+		{ID: "stepfun", Label: "StepFun 8k fast", Status: "recommended", Default: selected == "stepfun", Recommended: true, Reason: "fastest validated short-answer LLM when credentials are present"},
+		{ID: "bailian_dashscope", Label: "DashScope Qwen flash", Status: "available", Default: selected == "bailian_dashscope"},
+		{ID: "siliconflow", Label: "SiliconFlow Qwen", Status: "available", Default: selected == "siliconflow"},
+		{ID: "deepseek", Label: "DeepSeek fallback", Status: "fallback", Default: selected == "deepseek"},
+		{ID: "local_ollama", Label: "Local Ollama", Status: "mac_local", Default: selected == "local_ollama"},
+	}
+}
+
+func voiceChainRealtimeProviderOptions(selected string) []VoiceChainProfileOption {
+	return []VoiceChainProfileOption{
+		{ID: "doubao_realtime", Label: "Doubao speech-to-speech realtime", Status: "available", Default: selected == "doubao_realtime"},
+		{ID: "openai_realtime", Label: "OpenAI realtime", Status: "available", Default: selected == "openai_realtime"},
+		{ID: "doubao_tts_realtime", Label: "Doubao realtime TTS bridge", Status: "available", Default: selected == "doubao_tts_realtime"},
+		{ID: "dashscope_qwen_omni_realtime", Label: "Qwen Omni realtime", Status: "planned", Default: selected == "dashscope_qwen_omni_realtime"},
+	}
+}
+
+func voiceChainVoiceOptions(selected string) []VoiceChainVoiceOption {
+	return []VoiceChainVoiceOption{
+		{ID: "a21_voice_default_dashscope", Label: "A21 natural voice", Status: "default", ProviderProfile: "a21_bailian_qwen_tts_realtime", TTSProfile: "dashscope_qwen_tts_realtime", Default: selected == "a21_voice_default_dashscope"},
+		{ID: "a21_voice_clone_default", Label: "A21 cloned voice", Status: "available", ProviderProfile: "voice_clone_cli", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_default"},
+		{ID: "a21_voice_clone_cosyvoice", Label: "CosyVoice clone", Status: "planned", ProviderProfile: "a21_bailian_cosyvoice_clone_tts", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_cosyvoice"},
+		{ID: "a21_voice_clone_minimax", Label: "MiniMax clone", Status: "planned", ProviderProfile: "a21_minimax_voice_clone_tts", TTSProfile: "voice_clone_cli", VoiceClone: true, Default: selected == "a21_voice_clone_minimax"},
+	}
+}
+
+func voiceChainTTSLabel(profile string) string {
+	switch profile {
+	case "dashscope_qwen_tts_realtime":
+		return "A21 natural voice"
+	case "doubao_tts_realtime":
+		return "Doubao realtime voice"
+	case "voice_clone_cli":
+		return "A21 cloned voice"
+	default:
+		return profile
+	}
+}
+
+func voiceChainEnvWithSelection(env []string, mode string, asrProfile string, llmProfile string, ttsProfile string, realtimeProvider string, voiceCloneProfile string) []string {
+	out := append([]string(nil), env...)
+	out = upsertEnv(out, "A21_VOICE_CHAIN_MODE", mode)
+	out = upsertEnv(out, "A21_GATEWAY_VOICE_PROVIDER", "selected")
+	out = upsertEnv(out, "A21_ASR_PROFILE", voiceChainASRMode(asrProfile))
+	out = upsertEnv(out, "A21_ASR_CLOUD_PROFILE", asrProfile)
+	if asrProfile == "sherpa_onnx_streaming" {
+		out = upsertEnv(out, "A21_ASR_LOCAL_PROFILE", asrProfile)
+	}
+	out = upsertEnv(out, "A21_TEXT_STREAM_PROFILE", llmProfile)
+	out = upsertEnv(out, "A21_TTS_FAST_PROFILE", voiceChainTTSForVoice(ttsProfile, voiceCloneProfile))
+	out = upsertEnv(out, "A21_PROVIDER_PRIMARY", realtimeProvider)
+	out = upsertEnv(out, "A21_VOICE_CLONE_PROFILE", voiceCloneProfile)
+	return out
+}
+
+func voiceChainASRMode(profile string) string {
+	if profile == "sherpa_onnx_streaming" {
+		return "local"
+	}
+	return "cloud"
+}
+
+func voiceChainTTSForVoice(ttsProfile string, voiceCloneProfile string) string {
+	if voiceCloneProfile != "" && voiceCloneProfile != "a21_voice_default_dashscope" {
+		return "voice_clone_cli"
+	}
+	return defaultFixedTTSProfile(ttsProfile)
+}
+
+func upsertEnv(env []string, key string, value string) []string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return env
+	}
+	prefix := key + "="
+	for i, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
 }
 
 func (s *Server) gatewayProfileCatalog(r *http.Request) GatewayProfileCatalogResponse {
@@ -1528,7 +1992,7 @@ func (s *Server) handleVoiceProviderHealth(w http.ResponseWriter, r *http.Reques
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	health, err := s.voice.Health(ctx)
+	health, err := s.currentVoiceProvider().Health(ctx)
 	status := http.StatusOK
 	if err != nil || health.Status == providers.VoiceProviderUnavailable {
 		status = http.StatusServiceUnavailable
@@ -1576,7 +2040,7 @@ func (s *Server) handleRealtimeSessionStart(w http.ResponseWriter, r *http.Reque
 		TraceID:   traceID,
 		SessionID: sessionID,
 		DeviceID:  req.DeviceID,
-		Provider:  s.voice.Name(),
+		Provider:  s.currentVoiceProvider().Name(),
 		Status:    status,
 		Events:    events,
 	})
@@ -1585,7 +2049,7 @@ func (s *Server) handleRealtimeSessionStart(w http.ResponseWriter, r *http.Reque
 func (s *Server) startRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionRequest) ([]realtimeVoiceOutput, error) {
 	started := time.Now()
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.start_turn.start", s.now().UnixMilli())
-	providerEvents, err := s.voice.StartTurn(ctx, providers.VoiceTurnRequest{
+	providerEvents, err := s.currentVoiceProvider().StartTurn(ctx, providers.VoiceTurnRequest{
 		Session: providers.VoiceSession{TraceID: req.TraceID, SessionID: req.SessionID, DeviceID: req.DeviceID},
 		Text:    req.Text,
 		Mode:    string(req.Mode),
@@ -1656,7 +2120,7 @@ func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Requ
 		TraceID:   traceID,
 		SessionID: sessionID,
 		DeviceID:  req.DeviceID,
-		Provider:  s.voice.Name(),
+		Provider:  s.currentVoiceProvider().Name(),
 		Status:    status,
 		Events:    events,
 	})
@@ -1665,7 +2129,7 @@ func (s *Server) handleRealtimeSessionCancel(w http.ResponseWriter, r *http.Requ
 func (s *Server) cancelRealtimeVoiceTurn(ctx context.Context, req RealtimeSessionCancelRequest) ([]realtimeVoiceOutput, error) {
 	started := time.Now()
 	s.recordTrace(req.TraceID, req.SessionID, req.DeviceID, "provider.cancel.start", s.now().UnixMilli())
-	providerEvents, err := s.voice.Cancel(ctx, providers.VoiceCancelRequest{
+	providerEvents, err := s.currentVoiceProvider().Cancel(ctx, providers.VoiceCancelRequest{
 		Session:  providers.VoiceSession{TraceID: req.TraceID, SessionID: req.SessionID, DeviceID: req.DeviceID},
 		Reason:   req.Reason,
 		StreamID: req.StreamID,
@@ -2165,10 +2629,14 @@ func (session *xiaozhiSession) xiaozhiDecodedDurationMS() int {
 }
 
 func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, mode protocol.Mode) {
-	if s == nil || session == nil || s.xiaozhiVoicePipelineASR == nil {
+	if s == nil || session == nil {
 		return
 	}
-	streaming, ok := s.xiaozhiVoicePipelineASR.(providers.StreamingASRAdapter)
+	streamingASR := s.currentXiaozhiVoicePipelineASR()
+	if streamingASR == nil {
+		return
+	}
+	streaming, ok := streamingASR.(providers.StreamingASRAdapter)
 	if !ok {
 		return
 	}
@@ -3587,7 +4055,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	}
 	startAtMS := s.now().UnixMilli()
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.start", startAtMS)
-	newRunner := s.xiaozhiVoicePipelineRunner
+	newRunner := s.currentXiaozhiVoicePipelineRunnerFactory()
 	if newRunner == nil {
 		newRunner = defaultXiaozhiVoicePipelineRunner
 	}
@@ -3845,7 +4313,7 @@ func (s *Server) writeXiaozhiFastAckDownlink(ctx context.Context, conn *websocke
 }
 
 func (s *Server) xiaozhiVoicePipelineFastAckSummary() map[string]any {
-	meta := s.xiaozhiVoicePipelineMeta
+	meta := s.currentXiaozhiVoicePipelineMeta()
 	if isZeroGatewayVoicePipelineSelection(meta.Selection) {
 		meta.Selection = providers.VoicePipelineSelectionFromEnv(nil)
 	}
@@ -4778,7 +5246,7 @@ func vadDecisionLabel(speechDetected bool) string {
 }
 
 func (s *Server) realtimeAudioEvents(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, frame protocol.Envelope, traceID string, sessionID string, ingress audio.IngressResult, connectionSessionKeys map[string]struct{}) ([]protocol.Envelope, bool) {
-	provider, ok := s.voice.(providers.RealtimeVoiceProvider)
+	provider, ok := s.currentVoiceProvider().(providers.RealtimeVoiceProvider)
 	if !ok || frame.Kind != protocol.KindAudioFrame {
 		return nil, false
 	}
@@ -4936,7 +5404,7 @@ func (s *Server) audioBargeInEvents(frame protocol.Envelope, traceID string, ses
 	s.recordTrace(traceID, sessionID, frame.DeviceID, "playback.stop", now)
 	s.recordTrace(traceID, sessionID, frame.DeviceID, "provider.cancel", now)
 	payloads := make([]protocol.ControlEventPayload, 0, 2)
-	providerEvents, err := s.voice.Cancel(context.Background(), providers.VoiceCancelRequest{
+	providerEvents, err := s.currentVoiceProvider().Cancel(context.Background(), providers.VoiceCancelRequest{
 		Session:  providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: frame.DeviceID},
 		Reason:   providers.CancelBargeIn,
 		StreamID: streamID,
@@ -5207,6 +5675,12 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 		record.CurrentMode = payload.Mode
 	}
 	record.CurrentVoiceMode = defaultVoiceMode(s.voiceModeConfig)
+	record.CurrentVoiceChainMode = defaultVoiceChainMode(s.voiceChainModeConfig)
+	record.CurrentASRProfile = defaultCascadeASRProfile(s.cascadeASRProfileConfig)
+	record.CurrentLLMProfile = defaultCascadeLLMProfile(s.cascadeLLMProfileConfig)
+	record.CurrentTTSProfile = voiceChainTTSForVoice(defaultFixedTTSProfile(s.fixedTTSProfileConfig), defaultVoiceCloneProfile(s.voiceCloneProfileConfig))
+	record.CurrentRealtimeProvider = defaultRealtimeProvider(s.realtimeProviderConfig)
+	record.CurrentVoiceCloneProfile = defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
 	record.CurrentCloudVoiceProfile = providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
 	if payload.State != "" {
 		record.CurrentExpr = payload.State
@@ -5498,10 +5972,22 @@ func (s *Server) deviceRecords() []DeviceRecord {
 	defer s.mu.Unlock()
 	nowMS := s.now().UnixMilli()
 	voiceMode := defaultVoiceMode(s.voiceModeConfig)
+	voiceChainMode := defaultVoiceChainMode(s.voiceChainModeConfig)
+	asrProfile := defaultCascadeASRProfile(s.cascadeASRProfileConfig)
+	llmProfile := defaultCascadeLLMProfile(s.cascadeLLMProfileConfig)
+	ttsProfile := voiceChainTTSForVoice(defaultFixedTTSProfile(s.fixedTTSProfileConfig), defaultVoiceCloneProfile(s.voiceCloneProfileConfig))
+	realtimeProvider := defaultRealtimeProvider(s.realtimeProviderConfig)
+	voiceCloneProfile := defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
 	cloudVoiceProfile := providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
 	records := make([]DeviceRecord, 0, len(s.devices))
 	for _, record := range s.devices {
 		record.CurrentVoiceMode = voiceMode
+		record.CurrentVoiceChainMode = voiceChainMode
+		record.CurrentASRProfile = asrProfile
+		record.CurrentLLMProfile = llmProfile
+		record.CurrentTTSProfile = ttsProfile
+		record.CurrentRealtimeProvider = realtimeProvider
+		record.CurrentVoiceCloneProfile = voiceCloneProfile
 		record.CurrentCloudVoiceProfile = cloudVoiceProfile
 		records = append(records, withDeviceFreshness(record, nowMS))
 	}
@@ -5740,7 +6226,7 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.local_audio.frontend.accepted", receivedAtMS)
 	startAtMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "fast_companion.voice_pipeline.start", startAtMS)
-	newRunner := s.xiaozhiVoicePipelineRunner
+	newRunner := s.currentXiaozhiVoicePipelineRunnerFactory()
 	if newRunner == nil {
 		newRunner = defaultXiaozhiVoicePipelineRunner
 	}
@@ -5875,7 +6361,7 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 	payloads := []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: req.Mode, Text: "我在听"},
 	}
-	providerEvents, err := s.voice.StartTurn(context.Background(), providers.VoiceTurnRequest{
+	providerEvents, err := s.currentVoiceProvider().StartTurn(context.Background(), providers.VoiceTurnRequest{
 		Session: providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID},
 		Text:    req.Text,
 		Mode:    string(req.Mode),
@@ -5987,7 +6473,7 @@ func (s *Server) mockInterruptResponse(req MockTurnRequest) MockTurnResponse {
 		mode = protocol.ModeWorkmate
 	}
 	payloads := make([]protocol.ControlEventPayload, 0, 2)
-	providerEvents, err := s.voice.Cancel(context.Background(), providers.VoiceCancelRequest{
+	providerEvents, err := s.currentVoiceProvider().Cancel(context.Background(), providers.VoiceCancelRequest{
 		Session: providers.VoiceSession{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID},
 		Reason:  providers.CancelBargeIn,
 	})
