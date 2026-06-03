@@ -1,7 +1,7 @@
 # A21 Project State Machine
 
 Status: active state document.
-Last updated: 2026-06-03.
+Last updated: 2026-06-04.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-HW-STACKCHAN-COMPATIBLE-CURRENT-HEAD-NO-WELCOME-REFLASHED`
+Current total state: `S-PUBLIC-GATEWAY-HEALTHY-STEPFUN-SWITCH-BLOCKED-BY-ENV`
 
 Active child transitions:
 
@@ -33,6 +33,8 @@ Active child transitions:
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
 - `T-CLOUD-VOICE-001-PURE-CLOUD-PROVIDER-MATRIX`
+- `T-ECS-STEPFUN-001-CONTROL-PLANE-AND-RUNTIME-SWITCH`
+- `T-PUBLIC-GATEWAY-002-CODE-SYNC-BEFORE-STEPFUN`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -76,6 +78,44 @@ for this long control thread is
 `docs/handoffs/2026-06-03-a21-internal-test3-master-handoff.md`; read it before
 continuing Gateway, provider, firmware, or physical StackChan work from this
 state.
+The 2026-06-04 full-launch protocol-adaptation sprint landed locally and
+passed the unified verification surface. Gateway stock `/v1/xiaozhi`
+regressions now pin product message order and suppressed post-answer listen
+drain behavior; readiness/server-side readiness ingest voice-chain selector
+state and block on `stepfun_not_selected`; physical evidence matching rejects
+stale or mismatched device/trace/session targets and does not over-credit
+Gateway downlink as audible playback; doctor/preflight now recognize executed
+official-compatible product-lane flash evidence without weakening firmware
+guards; provider selector readiness distinguishes StepFun launch selection
+from DeepSeek fallback using env-name-only reporting and a redacted remote
+switch runbook. Local verification passed `make verify`, `make preflight`, and
+`make doctor`; the only host warning is still
+`wake_word_firmware_build_required`. Public Gateway retry on 2026-06-04
+02:13 CST recovered `http://47.103.57.217/healthz`, `/v1/devices`,
+`/v1/voice-chain-profiles`, `/v1/gateway-profiles`, and `/xiaozhi/ota/`, with
+the product device `44:1b:f6:e2:6a:60` online. The live selector still reports
+selected LLM `deepseek` and finding `stepfun_not_selected`, and SSH from this
+control machine is blocked by `Permission denied (publickey)`. The next
+runtime transition is
+`docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md`; do not blind
+POST a StepFun hot switch until remote StepFun env-name presence is verified.
+The follow-up ECS control-plane check succeeded with an explicit existing local
+SSH identity: `a21-gateway` and Caddy are active, `127.0.0.1:21081/healthz`
+returns ok, and public `80` remains the product entrypoint. The root-only
+remote provider env file exists with owner `root:root` and mode `600`, but
+`A21_LAB_STEPFUN_API_KEY` and `A21_STEPFUN_MODEL` are missing. Therefore the
+StepFun runtime switch is now blocked by env provisioning rather than SSH. Do
+not switch `/v1/voice-chain-profiles` to `stepfun` until an approved operator
+injects the missing A21 env names on ECS and restarts/validates
+`a21-gateway`.
+Before secret provisioning, the control tower also found remote binary drift:
+the current ECS `/opt/a21/bin/a21` still reports StepFun static readiness as
+passed even when the direct env-name check shows required StepFun env names are
+missing. Therefore
+`T-PUBLIC-GATEWAY-002-CODE-SYNC-BEFORE-STEPFUN` must deploy the locally verified
+readiness/provider-selector code to ECS before the StepFun selector switch.
+This sync must not edit secrets, execute providers, flash firmware, write NVS,
+or POST the selector to StepFun.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

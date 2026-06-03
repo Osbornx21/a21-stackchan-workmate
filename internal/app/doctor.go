@@ -53,20 +53,21 @@ type doctorReport struct {
 }
 
 type firmwareDoctorReport struct {
-	ManifestPath              string                       `json:"manifest_path"`
-	ManifestOK                bool                         `json:"manifest_ok"`
-	PlatformIOVenvPath        string                       `json:"platformio_venv_path"`
-	PlatformIOVenvOK          bool                         `json:"platformio_venv_ok"`
-	PlatformIOVersion         string                       `json:"platformio_version,omitempty"`
-	PlatformIOVersionOK       bool                         `json:"platformio_version_ok"`
-	ExpectedPlatformIOVersion string                       `json:"expected_platformio_version"`
-	PlatformIOCoreDir         string                       `json:"platformio_core_dir"`
-	PlatformIOCoreOK          bool                         `json:"platformio_core_ok"`
-	CurrentCommit             string                       `json:"current_commit,omitempty"`
-	CurrentArtifactPath       string                       `json:"current_artifact_path,omitempty"`
-	ArtifactCount             int                          `json:"artifact_count"`
-	SerialDevices             []firmwarecheck.SerialDevice `json:"serial_devices"`
-	Findings                  []runtimeguard.Finding       `json:"findings"`
+	ManifestPath                string                                        `json:"manifest_path"`
+	ManifestOK                  bool                                          `json:"manifest_ok"`
+	PlatformIOVenvPath          string                                        `json:"platformio_venv_path"`
+	PlatformIOVenvOK            bool                                          `json:"platformio_venv_ok"`
+	PlatformIOVersion           string                                        `json:"platformio_version,omitempty"`
+	PlatformIOVersionOK         bool                                          `json:"platformio_version_ok"`
+	ExpectedPlatformIOVersion   string                                        `json:"expected_platformio_version"`
+	PlatformIOCoreDir           string                                        `json:"platformio_core_dir"`
+	PlatformIOCoreOK            bool                                          `json:"platformio_core_ok"`
+	CurrentCommit               string                                        `json:"current_commit,omitempty"`
+	CurrentArtifactPath         string                                        `json:"current_artifact_path,omitempty"`
+	ProductLaneArtifactEvidence *officialStackChanProductLaneArtifactEvidence `json:"product_lane_artifact_evidence,omitempty"`
+	ArtifactCount               int                                           `json:"artifact_count"`
+	SerialDevices               []firmwarecheck.SerialDevice                  `json:"serial_devices"`
+	Findings                    []runtimeguard.Finding                        `json:"findings"`
 }
 
 type v21DoctorReport struct {
@@ -338,7 +339,8 @@ func buildFirmwareDoctorReport(projectRoot string, currentCommit string) firmwar
 			report.CurrentArtifactPath = absolutizeProjectPath(projectRoot, result.ArtifactPath)
 		}
 	}
-	if currentCommit != "" && report.CurrentArtifactPath == "" {
+	report.ProductLaneArtifactEvidence = discoverOfficialStackChanProductLaneArtifactEvidence(filepath.Join(projectRoot, "reports"))
+	if currentCommit != "" && report.CurrentArtifactPath == "" && !officialProductLaneEvidenceSatisfiesArtifact(report.ProductLaneArtifactEvidence) {
 		report.Findings = append(report.Findings, runtimeguard.Finding{
 			Code:     "firmware_current_artifact_missing",
 			Severity: runtimeguard.SeverityWarn,

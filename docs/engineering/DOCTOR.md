@@ -386,6 +386,18 @@ Do not point this at a dirty Xiaozhi/X21/V21 working tree.
 
 The firmware section's `current_artifact_path` is populated only through the same release-ledger guard. Loose `.bin + .sha256` files may be counted and individually checksum-checked, but they are not current release candidates without `a21-firmware-release-index.jsonl` and the sibling artifact manifest.
 
+For the official-compatible product lane, doctor also scans `reports/` for
+`a21-stackchan-official-xiaozhi-compatible-flash-*.json` and matching official
+baseline build receipts. When it finds exact
+`a21-stackchan-official-xiaozhi-compatible` evidence with app artifact
+`a21-stackchan-official-xiaozhi-compatible.bin`, it emits
+`firmware.product_lane_artifact_evidence` with schema
+`a21.firmware.product_lane_artifact_evidence.v1`. `status=satisfied` means an
+executed official-compatible flash receipt passed; `status=build_available`
+means a passed official-compatible build receipt exists; `status=planned` is
+dry-run annotation only. Executed flash evidence ranks above newer dry-run
+plans, and a generic `xiaozhi.bin` app is ignored for product-lane evidence.
+
 `firmware-artifact-prune-plan` is the no-delete artifact retention receipt. It uses the release-ledger current artifact guard, keeps the current package plus recent release-ledger-valid packages, lists older valid packages as prune candidates, and lists loose or incomplete packages for manual review. It writes `reports/a21-firmware-artifact-prune-plan-YYYYMMDD-HHMMSS.json`, prints only a summary when `--output-dir` is set, and always sets `delete_allowed=false`.
 
 `office-handoff` writes `reports/a21-office-handoff-YYYYMMDD-HHMMSS.json`. It is the home-to-office transfer manifest: current release-ledger artifact, artifact-retention summary, serial inventory, and explicit next physical acceptance actions. It never contacts a model provider, never contacts V21, never contacts Gateway, and sets both `flash_allowed=false` and `delete_allowed=false`.
@@ -393,6 +405,14 @@ The firmware section's `current_artifact_path` is populated only through the sam
 `firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It rejects known X21/V21 legacy ports before dialing, then requires the response to declare `schema_version=a21.gateway.devices.v1` and `service=a21-gateway` before any device identity is accepted. Use this instead of hand-written curl captures before device identity or flash-plan checks.
 
 `office-preflight` is the no-flash现场验收入口 for taking A21 into the office. It composes the newest current-commit firmware artifact, direct Gateway `/v1/devices` capture, Gateway identity check, device identity freshness check, flash-plan-equivalent device quiescence check, proxy/fingerprint metadata, and serial inventory into `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json`. It also writes the paired `a21-devices-YYYYMMDD-HHMMSS.json` used by downstream guards. It still sets `flash_allowed=false`; success only means the next step may be `firmware-flash-plan` with an explicit USB serial port.
+
+`office-preflight` reports the same
+`product_lane_artifact_evidence` object when the selected output reports
+directory already contains official-compatible product-lane evidence. This is
+an annotation, not flash readiness: if the release-ledger current artifact is
+missing, the report remains `ready_for_flash_plan=false` and records
+`official_product_lane_artifact_evidence_present` instead of pretending a prior
+flash receipt is a new flash-plan artifact.
 
 `office-acceptance` reads an `a21-office-handoff` report and an `a21-office-preflight` report, plus an optional `a21-firmware-flash-plan` report. It writes `reports/a21-office-acceptance-YYYYMMDD-HHMMSS.json` and cross-checks schema, no-flash/no-delete state, commit, artifact, SHA, and device consistency. A passing status is `ready_for_physical_acceptance`; it still does not flash or claim the physical device has been accepted.
 

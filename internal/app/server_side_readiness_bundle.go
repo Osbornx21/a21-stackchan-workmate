@@ -45,6 +45,7 @@ type serverSideReadinessBundleReport struct {
 	V21                        serverSideReadinessBundleEvidence  `json:"v21"`
 	HostVoice                  serverSideReadinessBundleEvidence  `json:"host_voice"`
 	WakeWord                   serverSideReadinessBundleEvidence  `json:"wake_word"`
+	VoiceChain                 productVoiceChainReadiness         `json:"voice_chain"`
 	ServerSide                 productServerSideReadiness         `json:"server_side"`
 	CanonicalDecision          productCanonicalReadinessDecision  `json:"canonical_decision"`
 	Collection                 serverSideReadinessCollection      `json:"collection"`
@@ -251,6 +252,7 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			Status:       productReport.WakeWord.RuntimeStatus,
 			SourceReport: firstNonEmpty(productReport.WakeWord.PhysicalAcceptanceSource, productReport.WakeWord.FirmwarePackageSource, productReport.WakeWord.FirmwarePlanSource),
 		},
+		VoiceChain:         productReport.Voice.VoiceChain,
 		ServerSide:         productReport.ServerSide,
 		CanonicalDecision:  productReport.CanonicalDecision,
 		Collection:         collection,

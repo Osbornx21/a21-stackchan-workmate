@@ -249,6 +249,24 @@ Rules:
 
 This lane exists to move M3 away from the rejected M5Unified `playRaw` path. It is not production firmware and must not bypass the existing A21 release package/flash discipline.
 
+## Official StackChan Xiaozhi-Compatible Product Lane
+
+Physical product StackChan app flashes use the official-compatible lane and app
+artifact `a21-stackchan-official-xiaozhi-compatible.bin`. The matching reports
+are `reports/a21-stackchan-official-xiaozhi-compatible-flash-*.json`; dry-run
+plans use schema `a21.stackchan.official_xiaozhi_compatible_flash_plan.v1`,
+and executed receipts use
+`a21.stackchan.official_xiaozhi_compatible_flash_execution.v1` with
+`status=passed`, `dry_run=false`, and `flash_executed=true`.
+
+Doctor and office-preflight may summarize these receipts as
+`product_lane_artifact_evidence` with schema
+`a21.firmware.product_lane_artifact_evidence.v1`. This is metadata evidence
+only. It never executes a build or flash command, never authorizes a product
+flash, and never converts the generic Xiaozhi `xiaozhi.bin` app into a product
+StackChan artifact. Newer dry-run plans must not override an older executed
+official-compatible flash receipt.
+
 When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
 
 ```bash
@@ -790,6 +808,14 @@ The command composes:
 - proxy/fingerprint metadata for the current network
 
 The preflight rejects manifest and artifact input paths that contain forbidden X21/V21 identity before reading them. It also refuses `ready_for_flash_plan=true` while the device is speaking, has active playback, is thinking, is in professional mode, or is in error/local fallback. It writes `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json` plus a paired `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It sets `dry_run=true` and `flash_allowed=false`. A passing office preflight only means the operator has enough evidence to run `firmware-flash-plan` with an explicit USB serial path; it is still not permission to flash.
+
+If the output reports directory already contains official-compatible
+product-lane evidence, office-preflight includes
+`product_lane_artifact_evidence`. When a release-ledger artifact is still
+missing, this remains an annotation and the report stays
+`ready_for_flash_plan=false` with
+`official_product_lane_artifact_evidence_present`; a prior executed app flash is
+not treated as permission or as a new generic flash-plan artifact.
 
 ## Office Acceptance Gate
 

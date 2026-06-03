@@ -462,6 +462,9 @@ func newProductReadinessCustomWakeTestServer(t *testing.T) *httptest.Server {
 		case "/v1/wake-word":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"custom_multinet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":35,"runtime_status":"pending_firmware_build","runtime_configurable":false,"firmware_build_required":true,"code":"a21_wake_word_firmware_build_required","message":"Custom wake words require a dedicated xiaozhi/ESP-SR MultiNet firmware build; Gateway only persists the requested profile."}`))
+		case "/v1/voice-chain-profiles":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(productReadinessVoiceChainProfilesJSON("stepfun", nil)))
 		default:
 			http.NotFound(w, r)
 		}

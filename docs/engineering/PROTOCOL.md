@@ -100,6 +100,17 @@ frames include VAD speech, `/v1/xiaozhi` runs the configured
 through the paced Opus downlink. When no speech or no usable decoded frame is
 available, it still emits the honest xiaozhi TTS lifecycle placeholder.
 
+For stock product acceptance, `/v1/xiaozhi` is gated by the physical device
+`listen.stop`: Gateway must not send speech downlink before that stop, and a
+streaming ASR final should surface as stock `stt` before `tts.start`. Immediate
+post-answer stock physical `listen.start` plus trailing Opus frames are treated
+as playback-tail drain when input suppression is armed; the matching
+`listen.stop` ends the suppressed session without starting another answer. The
+older `/ws/audio` envelope socket remains a legacy/dev diagnostic and simulator
+path for A21 control events and PCM fixtures. Batch/non-streaming ASR fallback
+on `/v1/xiaozhi` is below product acceptance until it carries equivalent
+`stt -> tts.start` evidence on the stock product socket.
+
 Xiaozhi TTS binary downlink uses the Go `AudioRateController` primitive before
 writing frames: default 60 ms frame slots, one-frame prebuffer, per-frame
 abort checks, and reset on turn cancellation. Raw unpaced binary writes are

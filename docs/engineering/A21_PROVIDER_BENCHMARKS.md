@@ -102,6 +102,15 @@ candidates that are not route-eligible. This is compatibility testing only:
 the report keeps `route_eligible=false`, `product-readiness` rejects it for
 launch closure, and promotion still requires an explicit A21 route decision.
 
+The public Gateway StepFun runtime switch is covered by
+`docs/engineering/A21_STEPFUN_REMOTE_SWITCH_RUNBOOK.md`. That runbook is the
+operator contract for ECS-only `/etc/a21/secrets/provider.env` updates,
+`a21-gateway` restart, fresh `/v1/voice-chain-profiles`, host bench, physical
+evidence, and readiness reruns. Reports from that path may record only env
+names, profile IDs, basenames, status fields, and redacted findings; they must
+not record key values, model values, full URLs, proxy values, transcripts,
+prompts, provider output, raw/base64 audio, or local secret paths.
+
 `provider-compat-matrix` is the ASR / LLM / TTS provider burn-down command:
 
 The pinned 5080lab closure plan is

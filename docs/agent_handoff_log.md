@@ -8769,3 +8769,362 @@ Recommended next action:
 - Commit this handoff document, then use it as the first-read file for the next
   control-thread continuation. The next product work should be the StepFun
   remote switch or trusted physical playback/stop acknowledgement evidence.
+
+## 2026-06-04 - Worker D - Provider Selector And StepFun Runtime Switch Plan
+
+Round goal:
+
+- Audit and adapt provider/voice-chain selector surfaces so StepFun remote
+  switch and post-switch evidence are explicit and redacted.
+
+Actual completed work:
+
+- Tightened `xiaozhi-streaming-provider-readiness` LLM stage reporting to use
+  provider-catalog readiness for built-in and loaded text-stream profiles.
+- Added env-name-only `required_env`, `present_env`, and `missing_env` fields
+  plus `selection_role` so `stepfun` launch selection is distinguishable from
+  DeepSeek fallback.
+- Added focused readiness tests for StepFun selected with missing env names and
+  DeepSeek fallback selected with env-name-only reporting.
+- Added an ECS-only StepFun remote switch runbook covering root-only
+  `/etc/a21/secrets/provider.env`, `a21-gateway` restart, fresh
+  `/v1/voice-chain-profiles`, host bench, physical evidence, and readiness
+  reruns.
+- Linked the runbook from the provider benchmark contract.
+
+Changed files:
+
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/engineering/A21_PROVIDER_BENCHMARKS.md`
+- `docs/engineering/A21_STEPFUN_REMOTE_SWITCH_RUNBOOK.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- The required `internal/app` acceptance command could not complete because
+  unrelated in-progress edits outside Worker D's write set currently break the
+  app package build.
+
+Known risks/blockers:
+
+- Disjoint dirty files observed during this round include `internal/app/app_test.go`,
+  `internal/app/official_stackchan.go`, `internal/app/product_demo.go`,
+  `internal/app/xiaozhi_physical_evidence_test.go`,
+  `internal/app/wake_word_physical_acceptance_test.go`,
+  `internal/gateway/server_test.go`, and `docs/engineering/PROTOCOL.md`.
+  They were not reverted or edited by Worker D.
+- Current app build failure locations:
+  `internal/app/product_demo.go:790` undefined
+  `fetchProductVoiceChainReadiness`,
+  `internal/app/product_demo.go:843` undefined
+  `productVoiceChainLaunchPolicySatisfied`, and
+  `internal/app/official_stackchan.go:16` unused `sort` import.
+
+Test/build/runtime results:
+
+- `go test ./internal/providers -run 'DashScope|Doubao|ProviderSmoke|TextStream|VoicePipelineAdapters|GatewayVoiceProvider|Realtime' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'VoiceChainProfiles|GatewayProfiles' -count=1`:
+  passed.
+- `go test ./internal/app -run 'XiaozhiStreamingProviderReadiness|ProviderSmoke|ProviderCompat|ProviderLatency' -count=1`:
+  failed before tests ran due to the unrelated app package build errors listed
+  above.
+- `git diff --check`: passed.
+
+Recommended next action:
+
+- Let the Worker B/C ownership lane finish or fix the app package build errors,
+  then rerun the required Worker D app acceptance command and the full
+  integration order from
+  `docs/plans/2026-06-04-full-launch-protocol-adaptation.md`.
+
+## 2026-06-04 02:13 CST - Full Launch Protocol Adaptation Integration
+
+Round goal:
+
+- Move from internal test 3 release packaging toward full-launch readiness by
+  adapting Gateway protocol regressions, readiness evidence semantics,
+  official-compatible firmware evidence pointers, and provider/StepFun selector
+  reporting after the stock `/v1/xiaozhi` protocol pivot.
+- Keep launch truth honest: no StepFun false green, no physical playback false
+  green, no firmware lane weakening, and no secret/provider leakage.
+
+Actual completed work:
+
+- Added the control plan
+  `docs/plans/2026-06-04-full-launch-protocol-adaptation.md`.
+- Added current control and evidence manifest entries under
+  `docs/engineering/A21_CURRENT_CONTROL.md` and
+  `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`.
+- Integrated Worker A Gateway tests for stock `/v1/xiaozhi` message ordering,
+  post-answer suppressed listen drain behavior, protocol v2 lifecycle coverage,
+  and product-vs-dev protocol wording.
+- Integrated Worker B readiness changes so product/server-side readiness ingest
+  voice-chain selector state, block on `stepfun_not_selected`, reject stale or
+  mismatched physical evidence targets, and avoid over-crediting Gateway
+  downlink as PRD playback acceptance.
+- Integrated Worker C official-compatible firmware evidence support so
+  doctor/preflight can surface executed product-lane flash evidence while
+  keeping generic `xiaozhi.bin` product flash blocked and wake-word warnings
+  honest.
+- Integrated Worker D provider selector reporting so StepFun launch selection
+  and DeepSeek fallback are distinguishable with env-name-only details, plus a
+  redacted ECS StepFun switch runbook.
+- Added the next runtime plan
+  `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md`.
+- Updated `docs/project_state_machine.md` to the current state
+  `S-PUBLIC-GATEWAY-HEALTHY-STEPFUN-SWITCH-BLOCKED-BY-SSH`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/engineering/A21_PROVIDER_BENCHMARKS.md`
+- `docs/engineering/A21_STEPFUN_REMOTE_SWITCH_RUNBOOK.md`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/FIRMWARE_RELEASE_DISCIPLINE.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-04-full-launch-protocol-adaptation.md`
+- `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md`
+- `internal/app/app_office_preflight.go`
+- `internal/app/app_stackchan_xiaozhi_half_duplex.go`
+- `internal/app/app_test.go`
+- `internal/app/doctor.go`
+- `internal/app/official_stackchan.go`
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/wake_word_physical_acceptance_test.go`
+- `internal/app/xiaozhi_physical_evidence.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `internal/app/official_firmware_evidence_test.go`
+- `internal/gateway/server_test.go`
+
+Unfinished items:
+
+- StepFun is not selected on the live public Gateway; `/v1/voice-chain-profiles`
+  still reports selected LLM `deepseek` and finding `stepfun_not_selected`.
+- Full PRD launch remains blocked by missing physical playback ack,
+  playback stop_done, and trusted audible/instrument observation.
+- Remote ECS systemd/secret inspection and restart are blocked from this Mac
+  because `ssh root@47.103.57.217` rejects the current public key.
+- Public direct `:21081` HTTP returns `Empty reply from server`; product
+  entrypoint `80` is healthy and remains the route for StackChan/OTA checks.
+
+Known risks/blockers:
+
+- Do not blind POST a StepFun hot switch on the public endpoint until remote
+  StepFun env-name presence is verified; a blind switch could disrupt the
+  working internal test 3 team-testing chain.
+- Do not treat doctor's satisfied official-compatible product-lane flash
+  evidence as wake-word or playback PRD acceptance.
+- Do not use report mtime to infer launch truth; use
+  `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`.
+- Existing untracked local noise remains untouched:
+  `.DS_Store`, `docs/.DS_Store`, `internal/.DS_Store`,
+  `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'Xiaozhi|WriteXiaozhi|OfficialStackChan|TraceEndpointReturnsVoicePipelineSplitSummary' -count=1`:
+  passed.
+- `go test ./internal/app -run 'XiaozhiPhysicalEvidence|XiaozhiHalfDuplex|ProductReadiness|ServerSideReadinessBundle|XiaozhiVoiceBench|ProviderLatencyBench' -count=1`:
+  passed.
+- `go test ./internal/app -run 'Doctor|OfficePreflight|StackChanOfficialXiaozhiCompatible|XiaozhiFirmwareFlash|FirmwareCurrentArtifact' -count=1`:
+  passed.
+- `go test ./internal/app -run 'XiaozhiStreamingProviderReadiness|ProviderSmoke|ProviderCompat|ProviderLatency' -count=1`:
+  passed.
+- `go test ./internal/providers -run 'DashScope|Doubao|ProviderSmoke|TextStream|VoicePipelineAdapters|GatewayVoiceProvider|Realtime' -count=1`:
+  passed.
+- `go test ./internal/transport/xiaozhi ./internal/transport/stackchan -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'VoiceChainProfiles|GatewayProfiles' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `make verify`: passed.
+- After the final documentation update, a default-concurrency `make verify`
+  retry was killed by the host with `Killed: 9`; follow-up `go test -p 1 ./...`,
+  `git diff --check`, and `GOMAXPROCS=2 make verify` all passed, so the kill is
+  classified as a local resource/concurrency interruption rather than a test
+  failure.
+- `make preflight`: passed with warning
+  `wake_word_firmware_build_required`.
+- `make doctor`: passed with warning `wake_word_firmware_build_required` and
+  `firmware.product_lane_artifact_evidence.status=satisfied` from the executed
+  official-compatible product-lane flash report.
+- Retry at 2026-06-04 02:13 CST:
+  `curl --noproxy '*' http://47.103.57.217/healthz` passed;
+  `/v1/devices` showed product device `44:1b:f6:e2:6a:60` online;
+  `/v1/voice-chain-profiles` still reported selected LLM `deepseek` and
+  `stepfun_not_selected`;
+  `/xiaozhi/ota/` returned `ws://47.103.57.217/v1/xiaozhi`;
+  `ssh root@47.103.57.217` failed with `Permission denied (publickey)`.
+
+Recommended next action:
+
+- Execute `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md`:
+  recover or delegate ECS control-plane access, verify StepFun env-name
+  presence without values, then switch/restart only if configured and collect
+  fresh Gateway, host bench, physical evidence, product readiness, and
+  server-side readiness evidence.
+
+## 2026-06-04 02:24 CST - ECS Control Plane Narrowed To StepFun Env Blocker
+
+Round goal:
+
+- Continue the ECS control-plane and StepFun switch transition under the master
+  control rules.
+- Verify whether the previous SSH blocker was absolute, then check StepFun
+  env-name readiness without exposing values.
+- Do not hot-switch public runtime unless StepFun env names are present.
+
+Actual completed work:
+
+- Read the current plan
+  `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md` and resumed
+  at Action Plan step 1.
+- Verified that default SSH still has no loaded identities, then used an
+  explicit existing local SSH identity for a read-only ECS service check.
+- Confirmed remote `a21-gateway` is active, Caddy is active, public product
+  entrypoint `80` is healthy, and remote `127.0.0.1:21081/healthz` returns ok.
+- Verified the remote provider env file is present, root-owned, and mode `600`.
+- Checked env-name presence only; no provider values were printed or copied.
+- Determined `A21_LAB_STEPFUN_API_KEY` and `A21_STEPFUN_MODEL` are missing on
+  ECS, while `A21_DASHSCOPE_API_KEY` is present.
+- Checked local control-machine env-name presence only; StepFun and DashScope
+  env names are also missing locally.
+- Stopped before any `/v1/voice-chain-profiles` StepFun hot switch.
+- Wrote fresh current-blocker readiness evidence:
+  `reports/a21-product-readiness-20260604-022419.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-022420.json`.
+- Updated current control, evidence manifest, the ECS/StepFun plan, and project
+  state machine to the env blocker state.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md`
+- `reports/a21-product-readiness-20260604-022419.json`
+- `reports/a21-server-side-readiness-bundle-20260604-022420.json`
+
+Unfinished items:
+
+- StepFun env names must be provisioned on ECS by an approved operator:
+  `A21_LAB_STEPFUN_API_KEY` and `A21_STEPFUN_MODEL`.
+- After provisioning, `a21-gateway` must be restarted/validated and then
+  `/v1/voice-chain-profiles` may be switched to StepFun.
+- Post-switch host bench, physical evidence, product readiness, and
+  server-side readiness are still pending.
+- Physical playback ack, playback stop_done, and trusted audible/instrument
+  observation remain required for PRD launch.
+
+Known risks/blockers:
+
+- Do not write provider secret values from this Mac; local env names are
+  missing and the project policy forbids secret values in repo, reports, logs,
+  traces, docs, stdout, or chat.
+- Do not blind hot-switch public runtime to StepFun while required env names
+  are missing; it would risk breaking the working internal test 3 chain.
+- Public direct `:21081` still should not be treated as the product entrypoint;
+  use public `80` for product StackChan/OTA checks unless ECS networking is
+  deliberately changed.
+
+Test/build/runtime results:
+
+- ECS read-only check:
+  `a21-gateway=active`, `caddy=active`,
+  remote `127.0.0.1:21081/healthz` ok.
+- Remote env-name check:
+  `A21_LAB_STEPFUN_API_KEY=missing`,
+  `A21_STEPFUN_MODEL=missing`,
+  `A21_DASHSCOPE_API_KEY=present`.
+- Local env-name check:
+  StepFun/DashScope env names missing.
+- `go run ./cmd/a21 product-readiness --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --use-latest-reports --output-dir reports`:
+  wrote `reports/a21-product-readiness-20260604-022419.json`,
+  `status=server_side_blocked`, `launch_ready=false`, selected LLM `deepseek`,
+  finding `stepfun_not_selected`.
+- `go run ./cmd/a21 server-side-readiness-bundle --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --use-latest-reports --output-dir reports`:
+  wrote `reports/a21-server-side-readiness-bundle-20260604-022420.json`,
+  `status=server_side_blocked`, missing `provider_smoke` and
+  `stepfun_not_selected`.
+
+Recommended next action:
+
+- Have an approved operator provision the missing StepFun env names in the
+  remote root-only provider env file, then resume
+  `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md` at Action
+  Plan step 3: restart/validate `a21-gateway`, switch selector to StepFun, and
+  collect fresh Gateway, host bench, physical evidence, product readiness, and
+  server-side readiness reports.
+
+## 2026-06-04 02:28 CST - Public Gateway Code Sync Required Before StepFun
+
+Round goal:
+
+- Keep pushing after StepFun env blocker by moving all locally verified
+  protocol/readiness/provider-selector fixes toward the public Gateway without
+  switching runtime state prematurely.
+- Detect whether the remote binary already enforces the new StepFun env-name
+  gate.
+
+Actual completed work:
+
+- Ran ECS-side `xiaozhi-streaming-provider-readiness` with selector env names
+  forcing StepFun while sourcing the remote root-only provider env file.
+- First run failed because remote `/opt/a21/reports` did not exist; created the
+  A21 reports directory and reran.
+- Found stale remote binary behavior: the ECS binary reported
+  `gate_status=passed` for StepFun static readiness even though the direct
+  env-name check showed required StepFun env names missing.
+- Added
+  `docs/plans/2026-06-04-public-gateway-code-sync-before-stepfun.md` to deploy
+  the locally verified code before any StepFun selector switch.
+- Updated current control and project state machine to require code sync before
+  StepFun switch.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-public-gateway-code-sync-before-stepfun.md`
+
+Unfinished items:
+
+- Commit the local protocol-adaptation/code-sync source.
+- Deploy that commit to ECS.
+- Re-run remote static StepFun readiness and require it to block when env names
+  are missing.
+- Only after remote code is synced, provision StepFun env names through the
+  root-only ECS secret file and switch `/v1/voice-chain-profiles`.
+
+Known risks/blockers:
+
+- Do not trust the current remote binary's StepFun static readiness result; it
+  predates the local env-name gate changes.
+- Do not POST/PUT the live voice-chain selector to StepFun before the code sync
+  and env-name verification pass.
+- Do not record provider secret values or model values in repo, reports, logs,
+  traces, stdout, or chat.
+
+Test/build/runtime results:
+
+- Remote stale-readiness observation wrote an ECS-side report under
+  `/opt/a21/reports`, but that ignored runtime report is not a commit artifact.
+- Local code remains the source of truth for the StepFun missing-env gate until
+  the code-sync deploy completes.
+
+Recommended next action:
+
+- Commit the locally verified changes, deploy the commit to ECS using
+  `git archive HEAD`, run focused remote tests/build, swap `/opt/a21`, and
+  prove the remote binary now blocks StepFun readiness until the missing env
+  names are provisioned.

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +39,9 @@ const stackChanOfficialXiaozhiCompatibleNVSConfirm = "WRITE_A21_STACKCHAN_OFFICI
 const stackChanOfficialPCMBridgeNVSOffset = "0x9000"
 const stackChanOfficialPCMBridgeNVSSizeHex = "0x4000"
 const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
+const officialProductLaneArtifactEvidenceSchema = "a21.firmware.product_lane_artifact_evidence.v1"
+const stackChanOfficialXiaozhiCompatibleFirmwareCandidate = "a21-stackchan-official-xiaozhi-compatible"
+const stackChanOfficialXiaozhiCompatibleAppBinary = "a21-stackchan-official-xiaozhi-compatible.bin"
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
@@ -348,6 +352,21 @@ type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
 	ExistingConnectionEntryCount int  `json:"existing_connection_entry_count"`
 	ServoCalibrationPresent      bool `json:"servo_calibration_present"`
 	WiFiCredentialsPreserved     bool `json:"wifi_credentials_preserved"`
+}
+
+type officialStackChanProductLaneArtifactEvidence struct {
+	SchemaVersion       string `json:"schema_version"`
+	Status              string `json:"status"`
+	Source              string `json:"source"`
+	ReportPath          string `json:"report_path,omitempty"`
+	SourceSchemaVersion string `json:"source_schema_version"`
+	FirmwareCandidate   string `json:"firmware_candidate"`
+	BuildLaneRole       string `json:"build_lane_role"`
+	ArtifactFile        string `json:"artifact_file"`
+	ArtifactSHA256      string `json:"artifact_sha256,omitempty"`
+	FlashExecuted       bool   `json:"flash_executed,omitempty"`
+	DryRun              bool   `json:"dry_run"`
+	GeneratedAtMS       int64  `json:"generated_at_ms,omitempty"`
 }
 
 type stackChanOfficialPCMBridgeAudioWS struct {
@@ -1305,7 +1324,7 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 		SchemaVersion:            schema,
 		GeneratedAtMS:            time.Now().UnixMilli(),
 		Status:                   "ready",
-		FirmwareCandidate:        "a21-stackchan-official-xiaozhi-compatible",
+		FirmwareCandidate:        stackChanOfficialXiaozhiCompatibleFirmwareCandidate,
 		BuildLaneRole:            "product_candidate",
 		DryRun:                   !options.Execute,
 		FlashAllowed:             false,
@@ -1454,7 +1473,7 @@ func collectOfficialPCMBridgeFlashParts(buildDir string) ([]stackChanOfficialSmo
 }
 
 func collectOfficialXiaozhiCompatibleFlashParts(buildDir string) ([]stackChanOfficialXiaozhiFlashPart, error) {
-	fullParts, err := collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin")
+	fullParts, err := collectOfficialFlashPartsForApp(buildDir, stackChanOfficialXiaozhiCompatibleAppBinary)
 	if err != nil {
 		return nil, err
 	}
@@ -1469,6 +1488,204 @@ func collectOfficialXiaozhiCompatibleFlashParts(buildDir string) ([]stackChanOff
 		})
 	}
 	return parts, nil
+}
+
+type officialStackChanProductLaneEvidenceCandidate struct {
+	evidence     officialStackChanProductLaneArtifactEvidence
+	priority     int
+	observedAtMS int64
+}
+
+type officialStackChanProductLaneRawPart struct {
+	Name        string `json:"name"`
+	Offset      string `json:"offset"`
+	FlashOffset string `json:"flash_offset"`
+	File        string `json:"file"`
+	Path        string `json:"path"`
+	SHA256      string `json:"sha256"`
+}
+
+type officialStackChanProductLaneRawReport struct {
+	SchemaVersion     string                                `json:"schema_version"`
+	GeneratedAtMS     int64                                 `json:"generated_at_ms"`
+	Status            string                                `json:"status"`
+	FirmwareCandidate string                                `json:"firmware_candidate"`
+	BuildLaneRole     string                                `json:"build_lane_role"`
+	DryRun            bool                                  `json:"dry_run"`
+	FlashExecuted     bool                                  `json:"flash_executed"`
+	Parts             []officialStackChanProductLaneRawPart `json:"parts"`
+	Build             officialStackChanProductLaneRawBuild  `json:"build"`
+}
+
+type officialStackChanProductLaneRawBuild struct {
+	BuildExecuted bool                                  `json:"build_executed"`
+	Artifacts     []officialStackChanProductLaneRawPart `json:"artifacts"`
+}
+
+func discoverOfficialStackChanProductLaneArtifactEvidence(reportDir string) *officialStackChanProductLaneArtifactEvidence {
+	reportDir = filepath.Clean(strings.TrimSpace(reportDir))
+	if reportDir == "" || reportDir == "." || containsLegacyIdentityPathToken(reportDir) {
+		return nil
+	}
+	info, err := os.Stat(reportDir)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+	patterns := []string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-*.json",
+		"a21-stackchan-official-baseline-*.json",
+	}
+	candidates := make([]officialStackChanProductLaneEvidenceCandidate, 0)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(filepath.Join(reportDir, pattern))
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			candidate, ok := readOfficialStackChanProductLaneArtifactEvidence(match)
+			if ok {
+				candidates = append(candidates, candidate)
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].priority != candidates[j].priority {
+			return candidates[i].priority > candidates[j].priority
+		}
+		if candidates[i].observedAtMS != candidates[j].observedAtMS {
+			return candidates[i].observedAtMS > candidates[j].observedAtMS
+		}
+		return candidates[i].evidence.ReportPath > candidates[j].evidence.ReportPath
+	})
+	evidence := candidates[0].evidence
+	return &evidence
+}
+
+func readOfficialStackChanProductLaneArtifactEvidence(reportPath string) (officialStackChanProductLaneEvidenceCandidate, bool) {
+	cleanPath := filepath.Clean(reportPath)
+	if containsLegacyIdentityPathToken(cleanPath) {
+		return officialStackChanProductLaneEvidenceCandidate{}, false
+	}
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return officialStackChanProductLaneEvidenceCandidate{}, false
+	}
+	var raw officialStackChanProductLaneRawReport
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return officialStackChanProductLaneEvidenceCandidate{}, false
+	}
+	generatedAtMS := raw.GeneratedAtMS
+	if generatedAtMS == 0 {
+		if info, err := os.Stat(cleanPath); err == nil {
+			generatedAtMS = info.ModTime().UnixMilli()
+		}
+	}
+	switch raw.SchemaVersion {
+	case stackChanOfficialXiaozhiCompatibleFlashExecutionSchema, stackChanOfficialXiaozhiCompatibleFlashPlanSchema:
+		file, sha, ok := officialXiaozhiCompatibleArtifactFromParts(raw.Parts)
+		if !ok ||
+			strings.TrimSpace(raw.FirmwareCandidate) != stackChanOfficialXiaozhiCompatibleFirmwareCandidate ||
+			strings.TrimSpace(raw.BuildLaneRole) != "product_candidate" {
+			return officialStackChanProductLaneEvidenceCandidate{}, false
+		}
+		status := "planned"
+		source := "official_xiaozhi_compatible_flash_plan"
+		priority := 1
+		if raw.SchemaVersion == stackChanOfficialXiaozhiCompatibleFlashExecutionSchema &&
+			raw.FlashExecuted &&
+			!raw.DryRun &&
+			strings.TrimSpace(raw.Status) == "passed" {
+			status = "satisfied"
+			source = "official_xiaozhi_compatible_flash_execution"
+			priority = 3
+		}
+		return officialStackChanProductLaneEvidenceCandidate{
+			evidence: officialStackChanProductLaneArtifactEvidence{
+				SchemaVersion:       officialProductLaneArtifactEvidenceSchema,
+				Status:              status,
+				Source:              source,
+				ReportPath:          cleanPath,
+				SourceSchemaVersion: raw.SchemaVersion,
+				FirmwareCandidate:   raw.FirmwareCandidate,
+				BuildLaneRole:       raw.BuildLaneRole,
+				ArtifactFile:        file,
+				ArtifactSHA256:      sha,
+				FlashExecuted:       raw.FlashExecuted,
+				DryRun:              raw.DryRun,
+				GeneratedAtMS:       generatedAtMS,
+			},
+			priority:     priority,
+			observedAtMS: generatedAtMS,
+		}, true
+	case stackChanOfficialBaselineSchema:
+		file, sha, ok := officialXiaozhiCompatibleArtifactFromParts(raw.Build.Artifacts)
+		if !ok ||
+			strings.TrimSpace(raw.FirmwareCandidate) != stackChanOfficialXiaozhiCompatibleFirmwareCandidate ||
+			strings.TrimSpace(raw.BuildLaneRole) != "product_candidate" ||
+			strings.TrimSpace(raw.Status) != "passed" ||
+			!raw.Build.BuildExecuted {
+			return officialStackChanProductLaneEvidenceCandidate{}, false
+		}
+		return officialStackChanProductLaneEvidenceCandidate{
+			evidence: officialStackChanProductLaneArtifactEvidence{
+				SchemaVersion:       officialProductLaneArtifactEvidenceSchema,
+				Status:              "build_available",
+				Source:              "official_xiaozhi_compatible_build",
+				ReportPath:          cleanPath,
+				SourceSchemaVersion: raw.SchemaVersion,
+				FirmwareCandidate:   raw.FirmwareCandidate,
+				BuildLaneRole:       raw.BuildLaneRole,
+				ArtifactFile:        file,
+				ArtifactSHA256:      sha,
+				DryRun:              false,
+				GeneratedAtMS:       generatedAtMS,
+			},
+			priority:     2,
+			observedAtMS: generatedAtMS,
+		}, true
+	default:
+		return officialStackChanProductLaneEvidenceCandidate{}, false
+	}
+}
+
+func officialXiaozhiCompatibleArtifactFromParts(parts []officialStackChanProductLaneRawPart) (string, string, bool) {
+	for _, part := range parts {
+		if strings.TrimSpace(part.Name) != "app" {
+			continue
+		}
+		name := filepath.Base(firstNonEmpty(strings.TrimSpace(part.File), strings.TrimSpace(part.Path)))
+		if name != stackChanOfficialXiaozhiCompatibleAppBinary {
+			return "", "", false
+		}
+		offset := firstNonEmpty(strings.TrimSpace(part.Offset), strings.TrimSpace(part.FlashOffset))
+		if offset != "" && offset != "0x20000" {
+			return "", "", false
+		}
+		sha := strings.ToLower(strings.TrimSpace(part.SHA256))
+		if sha != "" && !isSHA256Hex(sha) {
+			return "", "", false
+		}
+		return name, sha, true
+	}
+	return "", "", false
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func officialProductLaneEvidenceSatisfiesArtifact(evidence *officialStackChanProductLaneArtifactEvidence) bool {
+	if evidence == nil {
+		return false
+	}
+	return evidence.Status == "satisfied" || evidence.Status == "build_available"
 }
 
 func collectOfficialFlashPartsForApp(buildDir string, expectedAppName string) ([]stackChanOfficialSmokeFlashPart, error) {
@@ -2439,7 +2656,7 @@ func classifyStackChanOfficialCandidate(overlays []string, mainCPP string) (stri
 		base := filepath.Base(overlay)
 		switch {
 		case strings.Contains(base, "xiaozhi-compatible"):
-			return "a21-stackchan-official-xiaozhi-compatible", "product_candidate"
+			return stackChanOfficialXiaozhiCompatibleFirmwareCandidate, "product_candidate"
 		case strings.Contains(base, "pcm-bridge"):
 			return "a21-stackchan-official-pcm-bridge", "diagnostic_m3_prep"
 		case strings.Contains(base, "audio-smoke"):
@@ -2450,7 +2667,7 @@ func classifyStackChanOfficialCandidate(overlays []string, mainCPP string) (stri
 	case strings.Contains(mainCPP, "A21 BRIDGE"):
 		return "a21-stackchan-official-pcm-bridge", "diagnostic_m3_prep"
 	case strings.Contains(mainCPP, "a21-stackchan-official-xiaozhi-compatible"):
-		return "a21-stackchan-official-xiaozhi-compatible", "product_candidate"
+		return stackChanOfficialXiaozhiCompatibleFirmwareCandidate, "product_candidate"
 	case strings.Contains(mainCPP, "a21-stackchan-official-audio-smoke"):
 		return "a21-stackchan-official-audio-smoke", "diagnostic_audio_smoke"
 	default:
@@ -2750,7 +2967,7 @@ func collectOfficialStackChanBuildArtifacts(buildDir string) []stackChanOfficial
 		{name: "app", path: filepath.Join(buildDir, "stack-chan.bin")},
 		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-audio-smoke.bin")},
 		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-pcm-bridge.bin")},
-		{name: "app", path: filepath.Join(buildDir, "a21-stackchan-official-xiaozhi-compatible.bin")},
+		{name: "app", path: filepath.Join(buildDir, stackChanOfficialXiaozhiCompatibleAppBinary)},
 		{name: "assets", path: filepath.Join(buildDir, "generated_assets.bin")},
 	}
 	for _, candidate := range fallbackCandidates {

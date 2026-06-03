@@ -415,6 +415,9 @@ func buildXiaozhiPhysicalEvidenceReport(options xiaozhiPhysicalEvidenceOptions) 
 	if xiaozhiPhysicalGatewayDataUnsafe(device, trace, audioRecent) {
 		return xiaozhiPhysicalEvidenceReport{}, fmt.Errorf("gateway data unsafe")
 	}
+	if !xiaozhiPhysicalEvidenceMatchesTarget(options, device, trace, audioRecent) {
+		return xiaozhiPhysicalEvidenceReport{}, fmt.Errorf("gateway evidence target mismatch")
+	}
 	report := xiaozhiPhysicalEvidenceReport{
 		SchemaVersion:        xiaozhiPhysicalEvidenceSchemaVersion,
 		GeneratedAtMS:        time.Now().UnixMilli(),
@@ -598,10 +601,20 @@ func xiaozhiPhysicalStageAvailability(report xiaozhiPhysicalEvidenceReport, trac
 		"xiaozhi.listen.auto_stop":     xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.listen.auto_stop"), "gateway_trace"),
 		"xiaozhi.tts.downlink":         xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "xiaozhi.tts.opus_frame.downlink"), "gateway_trace"),
 		"answer.first_downlink":        report.GatewayMetrics.GatewayAnswerFirstDownlinkMS,
-		"device.playback.ack":          xiaozhiPhysicalBoolMetric(xiaozhiTraceHasEvent(trace, "device.playback.start") || report.CanonicalMetrics.DevicePlaybackStartMS.Available, "device_runtime_echo"),
+		"device.playback.ack":          xiaozhiPhysicalPlaybackAckMetric(report, trace),
 		"device.playback.stop_done":    report.CanonicalMetrics.BargeInPlaybackStopDoneMS,
 		"operator.audible_observation": xiaozhiPhysicalBoolMetric(xiaozhiPhysicalObservationAvailable(report.Observation), "instrument_observation"),
 	}
+}
+
+func xiaozhiPhysicalPlaybackAckMetric(report xiaozhiPhysicalEvidenceReport, trace gateway.TraceResponse) physicalStackChanMetric {
+	if xiaozhiTraceHasEvent(trace, "device.playback.start") {
+		return physicalStackChanMetric{Available: true, Source: "device_runtime_echo"}
+	}
+	if report.CanonicalMetrics.DevicePlaybackStartMS.Available {
+		return report.CanonicalMetrics.DevicePlaybackStartMS
+	}
+	return physicalStackChanMetric{}
 }
 
 func xiaozhiPhysicalFindings(report xiaozhiPhysicalEvidenceReport, trace gateway.TraceResponse) []physicalStackChanEvidenceFinding {
@@ -862,6 +875,43 @@ func xiaozhiPhysicalGatewayDataUnsafe(device firmwarecheck.DeviceIdentityRecord,
 		}
 	}
 	return false
+}
+
+func xiaozhiPhysicalEvidenceMatchesTarget(options xiaozhiPhysicalEvidenceOptions, device firmwarecheck.DeviceIdentityRecord, trace gateway.TraceResponse, audioRecent gateway.AudioRecentResponse) bool {
+	targetDeviceID := strings.TrimSpace(options.DeviceID)
+	targetTraceID := strings.TrimSpace(options.TraceID)
+	targetSessionID := strings.TrimSpace(options.SessionID)
+	if strings.TrimSpace(device.DeviceID) != targetDeviceID ||
+		strings.TrimSpace(trace.TraceID) != targetTraceID ||
+		strings.TrimSpace(audioRecent.DeviceID) != targetDeviceID ||
+		strings.TrimSpace(audioRecent.TraceID) != targetTraceID ||
+		strings.TrimSpace(audioRecent.SessionID) != targetSessionID {
+		return false
+	}
+	if !xiaozhiPhysicalOptionalTargetMatch(device.LastTraceID, targetTraceID) ||
+		!xiaozhiPhysicalOptionalTargetMatch(device.LastSessionID, targetSessionID) {
+		return false
+	}
+	for _, event := range trace.Events {
+		if !xiaozhiPhysicalOptionalTargetMatch(event.DeviceID, targetDeviceID) ||
+			!xiaozhiPhysicalOptionalTargetMatch(event.TraceID, targetTraceID) ||
+			!xiaozhiPhysicalOptionalTargetMatch(event.SessionID, targetSessionID) {
+			return false
+		}
+	}
+	for _, frame := range audioRecent.Frames {
+		if !xiaozhiPhysicalOptionalTargetMatch(frame.DeviceID, targetDeviceID) ||
+			!xiaozhiPhysicalOptionalTargetMatch(frame.TraceID, targetTraceID) ||
+			!xiaozhiPhysicalOptionalTargetMatch(frame.SessionID, targetSessionID) {
+			return false
+		}
+	}
+	return true
+}
+
+func xiaozhiPhysicalOptionalTargetMatch(value string, target string) bool {
+	value = strings.TrimSpace(value)
+	return value == "" || value == target
 }
 
 func xiaozhiPhysicalUnsafeString(value string) bool {

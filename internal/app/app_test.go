@@ -855,6 +855,142 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 	}
 }
 
+func TestProductReadinessBlocksServerSideCandidateWhenStepFunNotSelected(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("deepseek", []string{"stepfun_not_selected"}),
+	)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
+		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	})
+
+	if report.Status != "server_side_blocked" || report.ServerSide.CandidateReady {
+		t.Fatalf("status/server-side = %q/%+v, want StepFun launch-policy blocker", report.Status, report.ServerSide)
+	}
+	chain := report.Voice.VoiceChain
+	if !chain.Available ||
+		chain.Status != "launch_policy_blocked" ||
+		chain.SelectedVoiceChainMode != "cascade" ||
+		chain.SelectedLLMProfile != "deepseek" ||
+		chain.FixedTTSProfile != "dashscope_qwen_tts_realtime" ||
+		chain.LaunchPolicyExpectedLLMProfile != "stepfun" ||
+		chain.LaunchPolicySatisfied {
+		t.Fatalf("voice-chain readiness = %+v, want selected DeepSeek with StepFun blocker", chain)
+	}
+	if report.ServerSide.VoiceChain.SelectedLLMProfile != "deepseek" ||
+		report.ServerSide.VoiceChain.Status != "launch_policy_blocked" {
+		t.Fatalf("server-side voice-chain = %+v, want same selected DeepSeek blocker", report.ServerSide.VoiceChain)
+	}
+	if !containsExactProductString(report.ServerSide.MissingEvidence, "stepfun_not_selected") ||
+		!containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "stepfun_not_selected") ||
+		!containsProductFinding(report.Findings, "stepfun_not_selected", "") {
+		t.Fatalf("missing/finding = server:%#v canonical:%#v findings:%#v, want stepfun_not_selected blocker", report.ServerSide.MissingEvidence, report.CanonicalDecision.MissingRealEvidence, report.Findings)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"voice_chain"`,
+		`"selected_voice_chain_mode": "cascade"`,
+		`"selected_asr_profile": "dashscope_qwen_asr_realtime"`,
+		`"selected_llm_profile": "deepseek"`,
+		`"fixed_tts_profile": "dashscope_qwen_tts_realtime"`,
+		`"selected_tts_profile": "dashscope_qwen_tts_realtime"`,
+		`"launch_policy_expected_llm_profile": "stepfun"`,
+		`"stepfun_not_selected"`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness JSON missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", `"candidate_ready": true`, `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestServerSideReadinessBundleSurfacesStepFunNotSelected(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("deepseek", []string{"stepfun_not_selected"}),
+	)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildServerSideReadinessBundleReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
+		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+		"A21_V21_ADAPTER_URL=" + server.URL,
+		"A21_TEXT_STREAM_PROFILE=deepseek",
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx",
+		"A21_TTS_FAST_PROFILE=sherpa_onnx_tts",
+	}, serverSideReadinessCollection{})
+
+	if report.Status != "server_side_blocked" || report.CandidateReady {
+		t.Fatalf("bundle status/candidate = %q/%v, want StepFun selector blocker", report.Status, report.CandidateReady)
+	}
+	if report.VoiceChain.SelectedLLMProfile != "deepseek" ||
+		report.VoiceChain.Status != "launch_policy_blocked" ||
+		report.VoiceChain.LaunchPolicySatisfied {
+		t.Fatalf("bundle voice-chain = %+v, want selected DeepSeek blocker", report.VoiceChain)
+	}
+	if !containsExactProductString(report.MissingEvidence, "stepfun_not_selected") ||
+		!containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "stepfun_not_selected") {
+		t.Fatalf("bundle missing evidence = %#v canonical=%#v, want stepfun_not_selected", report.MissingEvidence, report.CanonicalDecision.MissingRealEvidence)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONServerSideReadinessBundle(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"voice_chain"`,
+		`"selected_llm_profile": "deepseek"`,
+		`"launch_policy_expected_llm_profile": "stepfun"`,
+		`"stepfun_not_selected"`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("bundle JSON missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", `"candidate_ready": true`, `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("bundle leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessReportsServerSideBlockedWhenWakeWordBlocksRealSlices(t *testing.T) {
 	server := newProductReadinessCustomWakeTestServer(t)
 	originalLister := listFirmwareSerialDevices
@@ -3569,6 +3705,11 @@ func TestProductVoiceReadinessSurfacesDefaultASRCacheWithoutExplicitEnv(t *testi
 
 func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.Server {
 	t.Helper()
+	return newProductReadinessTestServerWithVoiceChain(t, devicesJSON, productReadinessVoiceChainProfilesJSON("stepfun", nil))
+}
+
+func newProductReadinessTestServerWithVoiceChain(t *testing.T, devicesJSON string, voiceChainJSON string) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthz":
@@ -3583,10 +3724,35 @@ func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.S
 		case "/v1/wake-word":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"builtin_xiaozhi","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","threshold":30,"runtime_status":"active_builtin_model","runtime_configurable":false,"firmware_build_required":false}`))
+		case "/v1/voice-chain-profiles":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(voiceChainJSON))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func productReadinessVoiceChainProfilesJSON(selectedLLM string, findings []string) string {
+	selectedLLM = firstNonEmpty(strings.TrimSpace(selectedLLM), "stepfun")
+	payload := map[string]any{
+		"schema_version":               "a21.gateway.voice_chain_profiles.v1",
+		"service":                      "a21-gateway",
+		"selected_voice_chain_mode":    "cascade",
+		"selected_asr_profile":         "dashscope_qwen_asr_realtime",
+		"selected_llm_profile":         selectedLLM,
+		"fixed_tts_profile":            "dashscope_qwen_tts_realtime",
+		"selected_tts_profile":         "dashscope_qwen_tts_realtime",
+		"selected_realtime_provider":   "openai_realtime",
+		"selected_voice_clone_profile": "a21_voice_clone_default",
+		"hot_switch":                   true,
+		"findings":                     findings,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func createProductReadinessTTSModelDir(t *testing.T) string {

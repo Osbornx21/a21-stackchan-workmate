@@ -194,6 +194,81 @@ func TestRunXiaozhiPhysicalEvidenceRejectsUnsafeGatewayValuesWithoutLeak(t *test
 	}
 }
 
+func TestRunXiaozhiPhysicalEvidenceRejectsTargetMismatches(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		deviceID  string
+		traceID   string
+		sessionID string
+		playback  []bool
+	}{
+		{
+			name:      "stale device trace",
+			deviceID:  "44:1b:f6:e2:6a:60",
+			traceID:   "a21-trace-stale-target",
+			sessionID: "a21-session-44-1b-f6-e2-6a-60",
+		},
+		{
+			name:      "stale session",
+			deviceID:  "44:1b:f6:e2:6a:60",
+			traceID:   "a21-trace-44-1b-f6-e2-6a-60",
+			sessionID: "a21-session-stale-target",
+		},
+		{
+			name:      "stale device id",
+			deviceID:  "44:1b:f6:e2:6a:60",
+			traceID:   "a21-trace-44-1b-f6-e2-6a-60",
+			sessionID: "a21-session-44-1b-f6-e2-6a-60",
+			playback:  []bool{false, false, false, false, false, true},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newXiaozhiPhysicalEvidenceTestServer(t, false, tt.playback...)
+			dir := t.TempDir()
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+
+			code := Run([]string{
+				"xiaozhi-physical-evidence",
+				"--gateway-url", server.URL,
+				"--device-id", tt.deviceID,
+				"--trace-id", tt.traceID,
+				"--session-id", tt.sessionID,
+				"--output-dir", dir,
+			}, &stdout, &stderr)
+
+			if code != 1 {
+				t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			for _, want := range []string{"target mismatch"} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing %q: %s", want, stderr.String())
+				}
+			}
+			for _, forbidden := range []string{
+				server.URL,
+				"http://",
+				"https://",
+				"data_base64",
+				"raw_audio",
+				"transcript",
+				`"schema_version": "a21.xiaozhi_physical_evidence.v1"`,
+			} {
+				if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
+					t.Fatalf("target mismatch leaked or wrote report %q: stdout=%s stderr=%s", forbidden, stdout.String(), stderr.String())
+				}
+			}
+			matches, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-physical-evidence-*.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(matches) != 0 {
+				t.Fatalf("reports = %v, want none for target mismatch", matches)
+			}
+		})
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceConsumesValidInstrumentObservation(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true)
 	dir := t.TempDir()
@@ -280,7 +355,6 @@ func TestRunXiaozhiPhysicalEvidenceConsumesInstrumentPlaybackRuntimeEcho(t *test
 	reportJSON := newestXiaozhiPhysicalEvidenceReport(t, dir, stdout.String())
 	for _, want := range []string{
 		`"device.playback.ack": {`,
-		`"source": "device_runtime_echo"`,
 		`"device_playback_start_ms": {`,
 		`"value_ms": 120`,
 		`"source": "trusted_runtime_observation"`,
@@ -293,6 +367,11 @@ func TestRunXiaozhiPhysicalEvidenceConsumesInstrumentPlaybackRuntimeEcho(t *test
 		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
 			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
 		}
+	}
+	if strings.Contains(reportJSON, `"device.playback.ack": {
+      "available": true,
+      "source": "device_runtime_echo"`) {
+		t.Fatalf("instrument playback ack should not be labeled as stock debug runtime echo: stdout=%s report=%s", stdout.String(), reportJSON)
 	}
 	for _, forbidden := range []string{
 		observation,
@@ -944,12 +1023,59 @@ func TestRunXiaozhiPhysicalEvidenceRejectsUnrelatedLateStopDone(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiHalfDuplexAcceptanceMarksMissingPlaybackStopDoneAndTrustedObservationBelowPRD(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true)
+	dir := t.TempDir()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-half-duplex",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 candidate evidence below PRD: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiHalfDuplexAcceptanceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"half_duplex_acceptance_status": "candidate_gateway_trace_not_prd"`,
+		`"playback_ack_available": true`,
+		`"barge_in_stop_done_available": false`,
+		`"physical_sound_observed": false`,
+		`"prd_accepted": false`,
+		`"code": "xiaozhi_half_duplex_stop_done_missing"`,
+		`"code": "xiaozhi_half_duplex_audible_observation_missing"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		server.URL,
+		`"half_duplex_acceptance_status": "physical_review_required"`,
+		`"prd_accepted": true`,
+		"transcript",
+		"data_base64",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("half-duplex report leaked or overclaimed %q: stdout=%s report=%s stderr=%s", forbidden, stdout.String(), reportJSON, stderr.String())
+		}
+	}
+}
+
 func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ...bool) *httptest.Server {
 	t.Helper()
 	includePlayback := len(playback) > 0 && playback[0]
 	includeBargeIn := len(playback) > 1 && playback[1]
 	debugProfile := len(playback) > 3 && playback[3]
 	lateStopDone := len(playback) > 4 && playback[4]
+	mismatchAudioDevice := len(playback) > 5 && playback[5]
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/devices", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -1036,15 +1162,19 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 	})
 	mux.HandleFunc("/v1/audio/recent", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		audioDeviceID := "44:1b:f6:e2:6a:60"
+		if mismatchAudioDevice {
+			audioDeviceID = "44:1b:f6:e2:6a:61"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"schema_version": "a21.gateway.audio_recent.v1",
-			"device_id":      "44:1b:f6:e2:6a:60",
+			"device_id":      audioDeviceID,
 			"trace_id":       "a21-trace-44-1b-f6-e2-6a-60",
 			"session_id":     "a21-session-44-1b-f6-e2-6a-60",
 			"include_audio":  false,
 			"frames": []map[string]any{
-				{"device_id": "44:1b:f6:e2:6a:60", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "seq": 1, "received_at_ms": 1001, "sample_rate_hz": 16000, "channels": 1, "duration_ms": 60, "data_bytes": 1920, "rms": 0.12, "vad_detector": "a21-vad", "vad_status": "speech", "speech_detected": true, "speech_active": true, "ingress_buffer_frames": 1},
-				{"device_id": "44:1b:f6:e2:6a:60", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "seq": 2, "received_at_ms": 1061, "sample_rate_hz": 16000, "channels": 1, "duration_ms": 60, "data_bytes": 1920, "rms": 0.09, "vad_detector": "a21-vad", "vad_status": "speech_end", "speech_detected": true, "speech_active": false, "ingress_buffer_frames": 2},
+				{"device_id": audioDeviceID, "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "seq": 1, "received_at_ms": 1001, "sample_rate_hz": 16000, "channels": 1, "duration_ms": 60, "data_bytes": 1920, "rms": 0.12, "vad_detector": "a21-vad", "vad_status": "speech", "speech_detected": true, "speech_active": true, "ingress_buffer_frames": 1},
+				{"device_id": audioDeviceID, "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "seq": 2, "received_at_ms": 1061, "sample_rate_hz": 16000, "channels": 1, "duration_ms": 60, "data_bytes": 1920, "rms": 0.09, "vad_detector": "a21-vad", "vad_status": "speech_end", "speech_detected": true, "speech_active": false, "ingress_buffer_frames": 2},
 			},
 		})
 	})

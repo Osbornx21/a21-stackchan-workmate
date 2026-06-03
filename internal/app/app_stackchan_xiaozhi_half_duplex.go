@@ -218,7 +218,7 @@ func buildXiaozhiHalfDuplexAcceptanceReport(options xiaozhiPhysicalEvidenceOptio
 	if len(report.Findings) == 0 {
 		report.HalfDuplexAcceptanceStatus = "physical_review_required"
 	} else if xiaozhiHalfDuplexMachineTraceCandidate(report) {
-		report.HalfDuplexAcceptanceStatus = "candidate_gateway_trace"
+		report.HalfDuplexAcceptanceStatus = "candidate_gateway_trace_not_prd"
 	}
 	return report, nil
 }
@@ -255,14 +255,12 @@ func xiaozhiHalfDuplexFindings(report xiaozhiHalfDuplexAcceptanceReport) []physi
 		{report.PlaybackAckAvailable, "xiaozhi_half_duplex_playback_ack_missing", "device playback start or trusted runtime playback observation is missing"},
 		{report.BargeInDetectedAvailable, "xiaozhi_half_duplex_barge_in_detected_missing", "barge-in detection evidence is missing"},
 		{report.BargeInStopAvailable, "xiaozhi_half_duplex_barge_in_stop_missing", "barge-in stop evidence is missing"},
+		{report.BargeInStopDoneAvailable, "xiaozhi_half_duplex_stop_done_missing", "device playback stop_done evidence is missing"},
 		{report.Observation.Available && report.Observation.PhysicalSoundObserved, "xiaozhi_half_duplex_audible_observation_missing", "operator audible confirmation or instrumented audible observation is missing"},
 	} {
 		if !stage.available {
 			findings = append(findings, physicalStackChanFinding(stage.code, "error", stage.message))
 		}
-	}
-	if report.BargeInStopAvailable && !report.BargeInStopDoneAvailable {
-		findings = append(findings, physicalStackChanFinding("xiaozhi_half_duplex_stop_done_not_available", "info", "stock firmware may not expose device playback stop_done; Gateway barge-in stop evidence is present"))
 	}
 	return findings
 }

@@ -190,6 +190,7 @@ type productVoiceReadiness struct {
 	ASRProvider          string                        `json:"asr_provider"`
 	ContinuousVoiceReady bool                          `json:"continuous_voice_ready"`
 	VoicePipeline        productVoicePipelineReadiness `json:"voice_pipeline"`
+	VoiceChain           productVoiceChainReadiness    `json:"voice_chain"`
 }
 
 type productWakeWordReadiness struct {
@@ -231,20 +232,21 @@ type productWakeWordReadiness struct {
 }
 
 type productServerSideReadiness struct {
-	Status                       string   `json:"status"`
-	CandidateReady               bool     `json:"candidate_ready"`
-	AcceptanceStatus             string   `json:"acceptance_status"`
-	PRDAccepted                  bool     `json:"prd_accepted"`
-	GatewayReady                 bool     `json:"gateway_ready"`
-	ProviderEvidenceReady        bool     `json:"provider_evidence_ready"`
-	V21ProfessionalEvidenceReady bool     `json:"v21_professional_evidence_ready"`
-	HostVoiceLoopbackReady       bool     `json:"host_voice_loopback_ready"`
-	WakeWordReady                bool     `json:"wake_word_ready"`
-	RequiresPhysicalAcceptance   bool     `json:"requires_physical_acceptance"`
-	ProviderSmokeSourceReport    string   `json:"provider_smoke_source_report,omitempty"`
-	V21ProfessionalSourceReport  string   `json:"v21_professional_source_report,omitempty"`
-	HostVoiceSourceReport        string   `json:"host_voice_source_report,omitempty"`
-	MissingEvidence              []string `json:"missing_evidence,omitempty"`
+	Status                       string                     `json:"status"`
+	CandidateReady               bool                       `json:"candidate_ready"`
+	AcceptanceStatus             string                     `json:"acceptance_status"`
+	PRDAccepted                  bool                       `json:"prd_accepted"`
+	GatewayReady                 bool                       `json:"gateway_ready"`
+	ProviderEvidenceReady        bool                       `json:"provider_evidence_ready"`
+	V21ProfessionalEvidenceReady bool                       `json:"v21_professional_evidence_ready"`
+	HostVoiceLoopbackReady       bool                       `json:"host_voice_loopback_ready"`
+	WakeWordReady                bool                       `json:"wake_word_ready"`
+	RequiresPhysicalAcceptance   bool                       `json:"requires_physical_acceptance"`
+	VoiceChain                   productVoiceChainReadiness `json:"voice_chain"`
+	ProviderSmokeSourceReport    string                     `json:"provider_smoke_source_report,omitempty"`
+	V21ProfessionalSourceReport  string                     `json:"v21_professional_source_report,omitempty"`
+	HostVoiceSourceReport        string                     `json:"host_voice_source_report,omitempty"`
+	MissingEvidence              []string                   `json:"missing_evidence,omitempty"`
 }
 
 type productCanonicalReadinessDecision struct {
@@ -281,6 +283,22 @@ type productVoicePipelineReadiness struct {
 	FailureCount                 int     `json:"failure_count"`
 	SourceReport                 string  `json:"source_report,omitempty"`
 	PRDAccepted                  bool    `json:"prd_accepted"`
+}
+
+type productVoiceChainReadiness struct {
+	Available                      bool     `json:"available"`
+	Status                         string   `json:"status"`
+	SelectedVoiceChainMode         string   `json:"selected_voice_chain_mode,omitempty"`
+	SelectedASRProfile             string   `json:"selected_asr_profile,omitempty"`
+	SelectedLLMProfile             string   `json:"selected_llm_profile,omitempty"`
+	FixedTTSProfile                string   `json:"fixed_tts_profile,omitempty"`
+	SelectedTTSProfile             string   `json:"selected_tts_profile,omitempty"`
+	SelectedRealtimeProvider       string   `json:"selected_realtime_provider,omitempty"`
+	SelectedVoiceCloneProfile      string   `json:"selected_voice_clone_profile,omitempty"`
+	HotSwitch                      bool     `json:"hot_switch"`
+	LaunchPolicyExpectedLLMProfile string   `json:"launch_policy_expected_llm_profile,omitempty"`
+	LaunchPolicySatisfied          bool     `json:"launch_policy_satisfied"`
+	Findings                       []string `json:"findings,omitempty"`
 }
 
 type productReadinessFinding struct {
@@ -769,6 +787,8 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
+	voiceChain, voiceChainFindings := fetchProductVoiceChainReadiness(ctx, gatewayURL)
+	report.Findings = append(report.Findings, voiceChainFindings...)
 	report.Findings = append(report.Findings, resolveLatestProductWakeWordFirmwarePlan(&options, report.WakeWord)...)
 	wakeWordPlan, wakeWordPlanFindings := loadProductWakeWordFirmwarePlanEvidence(options.WakeWordFirmwarePlan)
 	report.Findings = append(report.Findings, wakeWordPlanFindings...)
@@ -810,6 +830,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.StackChan.PhysicalEvidence = physicalEvidence
 	report.Findings = append(report.Findings, physicalFindings...)
 	report.Voice = buildProductVoiceReadiness(env, report.Provider, report.StackChan, xiaozhiEvidence)
+	report.Voice.VoiceChain = voiceChain
 	report.ServerSide = buildProductServerSideReadiness(report)
 	report.LaunchReady = report.Gateway.Healthy &&
 		report.Provider.RealProviderReady &&
@@ -818,7 +839,8 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.StackChan.PhysicalDeviceOnline &&
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady &&
-		report.WakeWord.ProductReady
+		report.WakeWord.ProductReady &&
+		productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain)
 	report.DemoReady = report.Gateway.Healthy && report.Gateway.SimulatorReady && report.Voice.LocalTTSReady
 	report.NextActions = buildProductNextActions(report)
 	for _, action := range report.NextActions {
@@ -1489,6 +1511,152 @@ func productWakeWordStatusReady(status gateway.WakeWordConfigResponse) bool {
 		return false
 	}
 	return strings.TrimSpace(status.RuntimeStatus) != "" && strings.TrimSpace(status.RuntimeStatus) != "unavailable"
+}
+
+const productLaunchPolicyExpectedLLMProfile = "stepfun"
+
+func fetchProductVoiceChainReadiness(ctx context.Context, gatewayURL string) (productVoiceChainReadiness, []productReadinessFinding) {
+	unavailable := productVoiceChainReadiness{
+		Available:                      false,
+		Status:                         "unavailable",
+		LaunchPolicyExpectedLLMProfile: productLaunchPolicyExpectedLLMProfile,
+		LaunchPolicySatisfied:          false,
+	}
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/voice-chain-profiles", nil)
+	if err != nil {
+		return unavailable, []productReadinessFinding{{
+			Code:    "voice_chain_status_unavailable",
+			Message: "A21 Gateway voice-chain selector status is unavailable",
+			Detail:  "invalid_gateway_url",
+		}}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return unavailable, []productReadinessFinding{{
+			Code:    "voice_chain_status_unavailable",
+			Message: "A21 Gateway voice-chain selector status is unavailable",
+			Detail:  "invalid_request",
+		}}
+	}
+	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return unavailable, nil
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return unavailable, nil
+	}
+	var status gateway.VoiceChainProfilesResponse
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 8192))
+	if err := decoder.Decode(&status); err != nil {
+		return unavailable, []productReadinessFinding{{
+			Code:    "voice_chain_status_invalid",
+			Message: "A21 Gateway voice-chain selector status is invalid",
+			Detail:  "decode_failed",
+		}}
+	}
+	readiness, ok := productVoiceChainReadinessFromGateway(status)
+	if !ok {
+		return unavailable, []productReadinessFinding{{
+			Code:    "voice_chain_status_invalid",
+			Message: "A21 Gateway voice-chain selector status is invalid",
+			Detail:  "invalid_fields",
+		}}
+	}
+	var findings []productReadinessFinding
+	if productVoiceChainHasFinding(readiness, "stepfun_not_selected") {
+		findings = append(findings, productReadinessFinding{
+			Code:    "stepfun_not_selected",
+			Message: "Launch policy expects StepFun for the selected cascade LLM profile",
+		})
+	}
+	return readiness, findings
+}
+
+func productVoiceChainReadinessFromGateway(status gateway.VoiceChainProfilesResponse) (productVoiceChainReadiness, bool) {
+	if strings.TrimSpace(status.SchemaVersion) != gateway.VoiceChainProfileSchemaVersion {
+		return productVoiceChainReadiness{}, false
+	}
+	selectedMode := strings.TrimSpace(status.SelectedVoiceChainMode)
+	selectedASR := strings.TrimSpace(status.SelectedASRProfile)
+	selectedLLM := strings.TrimSpace(status.SelectedLLMProfile)
+	fixedTTS := strings.TrimSpace(status.FixedTTSProfile)
+	selectedTTS := strings.TrimSpace(status.SelectedTTSProfile)
+	selectedRealtime := strings.TrimSpace(status.SelectedRealtimeProvider)
+	selectedVoiceClone := strings.TrimSpace(status.SelectedVoiceCloneProfile)
+	if !productVoiceChainSafeID(selectedMode) ||
+		!productVoiceChainSafeID(selectedASR) ||
+		!productVoiceChainSafeID(selectedLLM) ||
+		!productVoiceChainSafeID(fixedTTS) ||
+		!productVoiceChainSafeID(selectedTTS) ||
+		!productVoiceChainSafeOptionalID(selectedRealtime) ||
+		!productVoiceChainSafeOptionalID(selectedVoiceClone) {
+		return productVoiceChainReadiness{}, false
+	}
+	findings := productVoiceChainSafeFindings(status.Findings)
+	if selectedLLM != productLaunchPolicyExpectedLLMProfile {
+		findings = appendProductFindingCode(findings, "stepfun_not_selected")
+	}
+	satisfied := !productVoiceChainHasFinding(productVoiceChainReadiness{Findings: findings}, "stepfun_not_selected") &&
+		selectedLLM == productLaunchPolicyExpectedLLMProfile
+	readinessStatus := "ready"
+	if !satisfied {
+		readinessStatus = "launch_policy_blocked"
+	}
+	return productVoiceChainReadiness{
+		Available:                      true,
+		Status:                         readinessStatus,
+		SelectedVoiceChainMode:         selectedMode,
+		SelectedASRProfile:             selectedASR,
+		SelectedLLMProfile:             selectedLLM,
+		FixedTTSProfile:                fixedTTS,
+		SelectedTTSProfile:             selectedTTS,
+		SelectedRealtimeProvider:       selectedRealtime,
+		SelectedVoiceCloneProfile:      selectedVoiceClone,
+		HotSwitch:                      status.HotSwitch,
+		LaunchPolicyExpectedLLMProfile: productLaunchPolicyExpectedLLMProfile,
+		LaunchPolicySatisfied:          satisfied,
+		Findings:                       findings,
+	}, true
+}
+
+func productVoiceChainSafeID(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && providerLatencySafeIdentifier(value, false) == value
+}
+
+func productVoiceChainSafeOptionalID(value string) bool {
+	value = strings.TrimSpace(value)
+	return value == "" || productVoiceChainSafeID(value)
+}
+
+func productVoiceChainSafeFindings(values []string) []string {
+	var findings []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if productVoiceChainSafeID(value) {
+			findings = appendProductFindingCode(findings, value)
+		}
+	}
+	return findings
+}
+
+func productVoiceChainHasFinding(readiness productVoiceChainReadiness, code string) bool {
+	return productStringSliceContains(readiness.Findings, code)
+}
+
+func productVoiceChainLaunchPolicySatisfied(readiness productVoiceChainReadiness) bool {
+	return readiness.Available && readiness.LaunchPolicySatisfied
+}
+
+func productStringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == want {
+			return true
+		}
+	}
+	return false
 }
 
 type productWakeWordFirmwarePlanEvidence struct {
@@ -2366,6 +2534,7 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		V21ProfessionalSourceReport: report.V21.Professional.SourceReport,
 		HostVoiceSourceReport:       report.Voice.VoicePipeline.SourceReport,
 		RequiresPhysicalAcceptance:  !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
+		VoiceChain:                  report.Voice.VoiceChain,
 	}
 	readiness.GatewayReady = report.Gateway.Healthy && report.Gateway.SimulatorReady
 	readiness.ProviderEvidenceReady = report.Provider.RealProviderReady &&
@@ -2388,6 +2557,15 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 	}
 	if !readiness.WakeWordReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "wake_word")
+	}
+	if !productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain) {
+		if productVoiceChainHasFinding(report.Voice.VoiceChain, "stepfun_not_selected") {
+			readiness.MissingEvidence = append(readiness.MissingEvidence, "stepfun_not_selected")
+		} else if report.Voice.VoiceChain.Available {
+			readiness.MissingEvidence = append(readiness.MissingEvidence, "voice_chain_launch_policy")
+		} else {
+			readiness.MissingEvidence = append(readiness.MissingEvidence, "voice_chain_selector")
+		}
 	}
 	readiness.CandidateReady = len(readiness.MissingEvidence) == 0
 	if readiness.CandidateReady {
@@ -2440,6 +2618,15 @@ func productMissingRealEvidence(report productReadinessReport) []string {
 	}
 	if !report.WakeWord.ProductReady {
 		missing = append(missing, "wake_word_product_ready")
+	}
+	if !productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain) {
+		if productVoiceChainHasFinding(report.Voice.VoiceChain, "stepfun_not_selected") {
+			missing = append(missing, "stepfun_not_selected")
+		} else if report.Voice.VoiceChain.Available {
+			missing = append(missing, "voice_chain_launch_policy")
+		} else {
+			missing = append(missing, "voice_chain_selector")
+		}
 	}
 	return missing
 }
@@ -3719,6 +3906,15 @@ func buildProductNextActions(report productReadinessReport) []string {
 			}
 		} else {
 			actions = append(actions, "restore A21 Gateway wake word readiness before launch")
+		}
+	}
+	if !productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain) {
+		if productVoiceChainHasFinding(report.Voice.VoiceChain, "stepfun_not_selected") {
+			actions = append(actions, "select StepFun in the A21 voice-chain profile before full launch evidence is treated as server-side ready")
+		} else if !report.Voice.VoiceChain.Available {
+			actions = append(actions, "refresh A21 Gateway voice-chain selector readiness before full launch")
+		} else {
+			actions = append(actions, "align the A21 voice-chain selector with launch policy before full launch")
 		}
 	}
 	return actions

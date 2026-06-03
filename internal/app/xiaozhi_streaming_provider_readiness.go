@@ -39,17 +39,21 @@ type xiaozhiStreamingProviderReadinessReport struct {
 }
 
 type xiaozhiStreamingProviderReadinessStage struct {
-	Profile              string `json:"profile"`
-	ProfileEnv           string `json:"profile_env,omitempty"`
-	Adapter              string `json:"adapter"`
-	Capability           string `json:"capability"`
-	Ready                bool   `json:"ready"`
-	RealProvider         bool   `json:"real_provider"`
-	Streaming            bool   `json:"streaming"`
-	UsesMock             bool   `json:"uses_mock"`
-	UsesFileBoundary     bool   `json:"uses_file_boundary"`
-	UsesWAVBoundary      bool   `json:"uses_wav_boundary"`
-	ImplementedInGateway bool   `json:"implemented_in_gateway"`
+	Profile              string   `json:"profile"`
+	ProfileEnv           string   `json:"profile_env,omitempty"`
+	SelectionRole        string   `json:"selection_role,omitempty"`
+	RequiredEnv          []string `json:"required_env,omitempty"`
+	PresentEnv           []string `json:"present_env,omitempty"`
+	MissingEnv           []string `json:"missing_env,omitempty"`
+	Adapter              string   `json:"adapter"`
+	Capability           string   `json:"capability"`
+	Ready                bool     `json:"ready"`
+	RealProvider         bool     `json:"real_provider"`
+	Streaming            bool     `json:"streaming"`
+	UsesMock             bool     `json:"uses_mock"`
+	UsesFileBoundary     bool     `json:"uses_file_boundary"`
+	UsesWAVBoundary      bool     `json:"uses_wav_boundary"`
+	ImplementedInGateway bool     `json:"implemented_in_gateway"`
 }
 
 func runXiaozhiStreamingProviderReadiness(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -202,10 +206,11 @@ func classifyXiaozhiStreamingASR(env []string, selection providers.VoicePipeline
 func classifyXiaozhiStreamingLLM(env []string, selection providers.VoicePipelineSelection) xiaozhiStreamingProviderReadinessStage {
 	profile := normalizeXiaozhiStreamingProfile(selection.LLMProfile)
 	stage := xiaozhiStreamingProviderReadinessStage{
-		Profile:    profile,
-		ProfileEnv: selection.LLMProfileEnv,
-		Adapter:    profile,
-		Capability: "text_delta_stream",
+		Profile:       profile,
+		ProfileEnv:    selection.LLMProfileEnv,
+		SelectionRole: xiaozhiStreamingLLMSelectionRole(profile),
+		Adapter:       profile,
+		Capability:    "text_delta_stream",
 	}
 	if profile == "a21_fixture_text_stream" {
 		stage.Ready = true
@@ -217,6 +222,20 @@ func classifyXiaozhiStreamingLLM(env []string, selection providers.VoicePipeline
 	if profile == "" || profile == "mock" || profile == "mock_text_stream" || profile == "mock-text-stream" {
 		stage.Adapter = "mock_text_stream"
 		stage.UsesMock = true
+		return stage
+	}
+	if readiness, ok := xiaozhiStreamingTextProfileReadiness(env, profile); ok {
+		stage.RequiredEnv = append([]string(nil), readiness.RequiredEnv...)
+		stage.PresentEnv = append([]string(nil), readiness.PresentEnv...)
+		stage.MissingEnv = append([]string(nil), readiness.MissingEnv...)
+		if readiness.Configured {
+			stage.Ready = true
+			stage.RealProvider = true
+			stage.Streaming = true
+			stage.ImplementedInGateway = true
+			return stage
+		}
+		stage.Adapter = "unconfigured_text_stream_profile"
 		return stage
 	}
 	if xiaozhiStreamingTextProfileConfigured(env, profile) {
@@ -306,13 +325,20 @@ func asrFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 }
 
 func llmFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
+	findings := []string{}
+	switch stage.SelectionRole {
+	case "launch_selected":
+		findings = append(findings, "stepfun_selected")
+	case "fallback_selected":
+		findings = append(findings, "stepfun_not_selected", "deepseek_fallback_selected")
+	}
 	if stage.Ready {
-		return nil
+		return findings
 	}
 	if stage.UsesMock {
-		return []string{"llm_mock_text_stream_not_product"}
+		return append(findings, "llm_mock_text_stream_not_product")
 	}
-	return []string{"llm_text_stream_profile_unconfigured"}
+	return append(findings, "llm_text_stream_profile_unconfigured")
 }
 
 func ttsFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
@@ -332,6 +358,34 @@ func ttsFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 		return []string{"tts_dashscope_realtime_config_missing"}
 	}
 	return []string{"tts_streaming_adapter_missing"}
+}
+
+func xiaozhiStreamingLLMSelectionRole(profile string) string {
+	switch normalizeXiaozhiStreamingProfile(profile) {
+	case "stepfun":
+		return "launch_selected"
+	case "deepseek":
+		return "fallback_selected"
+	case "":
+		return ""
+	default:
+		return "alternative_selected"
+	}
+}
+
+func xiaozhiStreamingTextProfileReadiness(env []string, profile string) (providers.ProviderReadiness, bool) {
+	profile = normalizeXiaozhiStreamingProfile(profile)
+	if profile == "" {
+		return providers.ProviderReadiness{}, false
+	}
+	catalog := providers.ProviderCatalogFromEnv(env)
+	for _, readiness := range catalog.Providers {
+		if normalizeXiaozhiStreamingProfile(readiness.Name) == profile &&
+			readiness.Family == string(providers.ProviderFamilyTextStream) {
+			return readiness, true
+		}
+	}
+	return providers.ProviderReadiness{}, false
 }
 
 func xiaozhiStreamingTextProfileConfigured(env []string, profile string) bool {

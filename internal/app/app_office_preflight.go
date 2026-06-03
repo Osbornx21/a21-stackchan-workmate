@@ -26,25 +26,26 @@ type officePreflightFinding struct {
 	Message string `json:"message"`
 }
 type officePreflightReport struct {
-	SchemaVersion            string                              `json:"schema_version"`
-	GeneratedAtMS            int64                               `json:"generated_at_ms"`
-	Metadata                 latencyBenchMetadata                `json:"metadata"`
-	DryRun                   bool                                `json:"dry_run"`
-	FlashAllowed             bool                                `json:"flash_allowed"`
-	ReadyForFlashPlan        bool                                `json:"ready_for_flash_plan"`
-	NextRequiredConfirmation string                              `json:"next_required_confirmation"`
-	GatewayURL               string                              `json:"gateway_url"`
-	DeviceID                 string                              `json:"device_id"`
-	Commit                   string                              `json:"commit"`
-	MaxDeviceAgeMS           int64                               `json:"max_device_age_ms"`
-	Artifact                 *firmwarecheck.ArtifactResult       `json:"artifact,omitempty"`
-	Gateway                  *firmwareDeviceReport               `json:"gateway,omitempty"`
-	DeviceIdentity           *firmwarecheck.DeviceIdentityResult `json:"device_identity,omitempty"`
-	SerialDevices            []firmwarecheck.SerialDevice        `json:"serial_devices"`
-	USBSerialCandidates      []firmwarecheck.SerialDevice        `json:"usb_serial_candidates"`
-	DeviceReportPath         string                              `json:"device_report_path,omitempty"`
-	ReportPath               string                              `json:"report_path,omitempty"`
-	Findings                 []officePreflightFinding            `json:"findings,omitempty"`
+	SchemaVersion               string                                        `json:"schema_version"`
+	GeneratedAtMS               int64                                         `json:"generated_at_ms"`
+	Metadata                    latencyBenchMetadata                          `json:"metadata"`
+	DryRun                      bool                                          `json:"dry_run"`
+	FlashAllowed                bool                                          `json:"flash_allowed"`
+	ReadyForFlashPlan           bool                                          `json:"ready_for_flash_plan"`
+	NextRequiredConfirmation    string                                        `json:"next_required_confirmation"`
+	GatewayURL                  string                                        `json:"gateway_url"`
+	DeviceID                    string                                        `json:"device_id"`
+	Commit                      string                                        `json:"commit"`
+	MaxDeviceAgeMS              int64                                         `json:"max_device_age_ms"`
+	Artifact                    *firmwarecheck.ArtifactResult                 `json:"artifact,omitempty"`
+	ProductLaneArtifactEvidence *officialStackChanProductLaneArtifactEvidence `json:"product_lane_artifact_evidence,omitempty"`
+	Gateway                     *firmwareDeviceReport                         `json:"gateway,omitempty"`
+	DeviceIdentity              *firmwarecheck.DeviceIdentityResult           `json:"device_identity,omitempty"`
+	SerialDevices               []firmwarecheck.SerialDevice                  `json:"serial_devices"`
+	USBSerialCandidates         []firmwarecheck.SerialDevice                  `json:"usb_serial_candidates"`
+	DeviceReportPath            string                                        `json:"device_report_path,omitempty"`
+	ReportPath                  string                                        `json:"report_path,omitempty"`
+	Findings                    []officePreflightFinding                      `json:"findings,omitempty"`
 }
 
 func readJSONFile(path string, target any) error {
@@ -215,6 +216,7 @@ func buildOfficePreflightReport(options officePreflightOptions) officePreflightR
 		Commit:                   options.Commit,
 		MaxDeviceAgeMS:           options.MaxDeviceAgeMS,
 	}
+	report.ProductLaneArtifactEvidence = discoverOfficialStackChanProductLaneArtifactEvidence(options.OutputDir)
 
 	artifact, err := firmwarecheck.ValidateLatestArtifactForCommit(firmwarecheck.LatestArtifactOptions{
 		ManifestPath: options.ManifestPath,
@@ -222,7 +224,14 @@ func buildOfficePreflightReport(options officePreflightOptions) officePreflightR
 		Commit:       options.Commit,
 	})
 	if err != nil {
-		report.addFinding("current_artifact_invalid", err.Error())
+		if officialProductLaneEvidenceSatisfiesArtifact(report.ProductLaneArtifactEvidence) {
+			report.addFinding("official_product_lane_artifact_evidence_present", "official-compatible product-lane artifact evidence is present; release-ledger artifact is still required before a new flash plan")
+		} else {
+			if report.ProductLaneArtifactEvidence != nil {
+				report.addFinding("official_product_lane_artifact_evidence_planned", "official-compatible product-lane evidence is dry-run or planned only; release-ledger artifact is still required before a new flash plan")
+			}
+			report.addFinding("current_artifact_invalid", err.Error())
+		}
 	} else {
 		report.Artifact = &artifact
 	}

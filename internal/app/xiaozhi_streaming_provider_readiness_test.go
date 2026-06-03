@@ -61,6 +61,71 @@ func TestXiaozhiStreamingProviderReadinessBlocksSherpaAndIflytekWAVBoundaries(t 
 	}
 }
 
+func TestXiaozhiStreamingProviderReadinessDistinguishesStepFunSelectedFromMissingEnv(t *testing.T) {
+	t.Setenv("A21_ASR_PROFILE", "cloud")
+	t.Setenv("A21_ASR_CLOUD_PROFILE", "dashscope_qwen_asr_realtime")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "dashscope_qwen_tts_realtime")
+	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-dashscope-secret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked until StepFun env names are present stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"blocked"`,
+		`"llm":{"profile":"stepfun","profile_env":"A21_TEXT_STREAM_PROFILE","selection_role":"launch_selected"`,
+		`"required_env":["A21_LAB_STEPFUN_API_KEY","A21_STEPFUN_MODEL"]`,
+		`"missing_env":["A21_LAB_STEPFUN_API_KEY","A21_STEPFUN_MODEL"]`,
+		`"stepfun_selected"`,
+		`"llm_text_stream_profile_unconfigured"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-dashscope-secret", "Authorization", "Bearer", "http://", "https://", "/Users/"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessMarksDeepSeekAsFallbackSelection(t *testing.T) {
+	t.Setenv("A21_ASR_PROFILE", "cloud")
+	t.Setenv("A21_ASR_CLOUD_PROFILE", "dashscope_qwen_asr_realtime")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "deepseek")
+	t.Setenv("A21_TTS_FAST_PROFILE", "dashscope_qwen_tts_realtime")
+	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-dashscope-secret")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-deepseek-secret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"passed"`,
+		`"llm":{"profile":"deepseek","profile_env":"A21_TEXT_STREAM_PROFILE","selection_role":"fallback_selected"`,
+		`"required_env":["A21_LAB_DEEPSEEK_API_KEY"]`,
+		`"present_env":["A21_LAB_DEEPSEEK_API_KEY"]`,
+		`"stepfun_not_selected"`,
+		`"deepseek_fallback_selected"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-dashscope-secret", "sk-a21-deepseek-secret", "deepseek-chat", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiStreamingProviderReadinessBlocksSherpaStreamingWhenHelperMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
@@ -198,6 +263,7 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDoubaoASRChai
 	t.Setenv("A21_ASR_CLOUD_PROFILE", "doubao_asr_realtime")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "deepseek")
 	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-deepseek-secret")
 	t.Setenv("A21_DOUBAO_ACCESS_TOKEN", "access-a21-secret")
 	t.Setenv("A21_DOUBAO_ASR_MODEL", "doubao-asr-secret")
 	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts-secret")
@@ -222,7 +288,7 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDoubaoASRChai
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"access-a21-secret", "doubao-asr-secret", "doubao-tts-secret", "voice-secret", "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"sk-a21-deepseek-secret", "deepseek-chat", "access-a21-secret", "doubao-asr-secret", "doubao-tts-secret", "voice-secret", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
 		}
@@ -235,6 +301,7 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDashScopeChai
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "deepseek")
 	t.Setenv("A21_TTS_FAST_PROFILE", "dashscope_qwen_tts_realtime")
 	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-dashscope-secret")
+	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "sk-a21-deepseek-secret")
 	t.Setenv("A21_DASHSCOPE_ASR_MODEL", "qwen3-asr-flash-realtime-secret")
 	t.Setenv("A21_DASHSCOPE_TTS_MODEL", "qwen3-tts-flash-realtime-secret")
 	t.Setenv("A21_DASHSCOPE_TTS_VOICE", "CherrySecret")
@@ -258,7 +325,7 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDashScopeChai
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"sk-a21-dashscope-secret", "qwen3-asr-flash-realtime-secret", "qwen3-tts-flash-realtime-secret", "CherrySecret", "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"sk-a21-dashscope-secret", "sk-a21-deepseek-secret", "deepseek-chat", "qwen3-asr-flash-realtime-secret", "qwen3-tts-flash-realtime-secret", "CherrySecret", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
 		}
@@ -346,6 +413,8 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredDialogueChainWithDouba
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
 	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_LAB_STEPFUN_API_KEY", "sk-a21-stepfun-secret")
+	t.Setenv("A21_STEPFUN_MODEL", "step-1-8k-secret")
 	t.Setenv("A21_DOUBAO_APP_ID", "app-a21-secret")
 	t.Setenv("A21_DOUBAO_ACCESS_TOKEN", "access-a21-secret")
 	t.Setenv("A21_DOUBAO_SECRET_KEY", "secret-a21-secret")
@@ -375,6 +444,8 @@ func TestXiaozhiStreamingProviderReadinessPassesConfiguredDialogueChainWithDouba
 		}
 	}
 	for _, forbidden := range []string{
+		"sk-a21-stepfun-secret",
+		"step-1-8k-secret",
 		"app-a21-secret",
 		"access-a21-secret",
 		"secret-a21-secret",
