@@ -11076,3 +11076,82 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 08:18 CST - Professional Workspace Read Records
+
+Round goal:
+
+- Close the internal test 4 professional workspace audit gap by recording safe
+  metadata for each professional V21 read without storing query text, retrieved
+  text, provider output, evidence bodies, document contents, credentials, URLs,
+  paths, voice transcript, audio, or hardware evidence.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-professional-workspace-read-records.md`.
+- Added `GET /v1/professional-read-records` with schema
+  `a21.gateway.professional_read_records.v1`.
+- Added memory-only `ProfessionalReadRecord` ledger state to Gateway.
+- Mock professional turns now start a read record before V21 query and mark it
+  `completed` with safe `source_scope_counts` / `workspace_status` or `failed`
+  with a safe failure code.
+- Stock `/v1/xiaozhi` professional turns use the same read-record flow.
+- Added trace markers `professional.read_record.started`,
+  `professional.read_record.completed`, and `professional.read_record.failed`.
+- Added redaction tests using deliberate `RAW_SECRET` / `RAW_PRIVATE_QUERY`
+  fixtures to prove the read-record endpoint does not store or return raw
+  utterance, retrieved evidence, cards, speech blocks, provider output, URLs,
+  paths, credentials, or document text.
+- Updated protocol, internal-test4 plan, current control, and project state
+  machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-professional-workspace-read-records.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not document upload byte storage, indexing, ACL enforcement, database
+  persistence, V21 tenant migration, or production cloud ingest.
+- Physical StackChan professional consult acceptance is still unproven in this
+  round; `professional` hardware evidence still needs a foreground hardware
+  window.
+
+Known risks/blockers:
+
+- The ledger is in-memory and will reset with Gateway process restart.
+- Source-scope counts and workspace status are only as truthful as the V21
+  adapter response contract; V21 ACL enforcement remains a separate worker
+  concern.
+
+Recommended next action:
+
+- Continue with either the next no-execute workspace/index readiness slice or
+  dispatch the approved hardware evidence worker for professional mode cue,
+  answer playback, and visible card/status proof. Do not jump to real ingest or
+  hardware write without a scoped plan.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestProfessionalReadRecords' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestProfessionalReadRecords|TestProfessionalModeSendsExplicitV21PlaceholderContract|TestProfessionalModeV21TimeoutCancelsQueryAndFallsBack|TestWorkmateModeDoesNotCallV21Adapter' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no real provider or real V21 execution
+  occurred, and no firmware build, flash, serial, NVS, or physical hardware
+  action occurred.
+
+Failure location/reason:
+
+- None in this focused round.

@@ -592,6 +592,18 @@ private document contents. V21 adapter responses may include redacted
 `source_scope_counts` and `workspace_status`; these are counts/status only, not
 retrieved document bodies.
 
+`professional_read_records` is the Gateway-owned read ledger for professional
+queries. `GET /v1/professional-read-records` returns
+`a21.gateway.professional_read_records.v1` with memory-only records that can be
+filtered by `record_id`, `trace_id`, or `session_id`. A record starts before a
+professional V21 query and finishes as `completed` or `failed`. Stored fields
+are limited to safe IDs, redacted `user_id`/`workspace_id`, `query_scope`,
+`privacy_scope`, `latency_profile`, `answer_style`, `utterance_bucket`,
+safe `source_scope_counts`, safe `workspace_status`, timestamps, and redaction
+flags. It must not store utterance text, retrieved text, evidence bodies,
+screen-card text, speech blocks, provider output, document text, full URLs,
+local paths, credentials, API keys, voice transcripts, or audio.
+
 `workspace_upload_jobs` is the no-execute upload/import/index job contract for
 the A21 workspace surface. `GET /v1/workspace-upload-jobs` returns
 `a21.gateway.workspace_upload_jobs.v1` and redacted job metadata. `POST

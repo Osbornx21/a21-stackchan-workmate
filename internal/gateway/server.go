@@ -84,6 +84,8 @@ type Server struct {
 	professionalUserIDConfig     string
 	professionalWorkspaceConfig  string
 	professionalQueryScopeConfig string
+	professionalReadRecords      map[string]ProfessionalReadRecord
+	professionalReadRecordSeq    uint64
 	workspaceUploadJobs          map[string]WorkspaceUploadJob
 	workspaceUploadJobSeq        uint64
 	voiceChainModeConfig         string
@@ -307,6 +309,35 @@ type ProfessionalWorkspaceRedaction struct {
 	CredentialValueStored bool `json:"credential_value_stored"`
 	ProviderOutputStored  bool `json:"provider_output_stored"`
 	VoiceTranscriptStored bool `json:"voice_transcript_stored"`
+}
+
+type ProfessionalReadRecordsResponse struct {
+	SchemaVersion string                         `json:"schema_version"`
+	Service       string                         `json:"service"`
+	Status        string                         `json:"status"`
+	Records       []ProfessionalReadRecord       `json:"records"`
+	Redaction     ProfessionalWorkspaceRedaction `json:"redaction"`
+}
+
+type ProfessionalReadRecord struct {
+	RecordID          string                         `json:"record_id"`
+	Status            string                         `json:"status"`
+	FailureCode       string                         `json:"failure_code,omitempty"`
+	TraceID           string                         `json:"trace_id,omitempty"`
+	SessionID         string                         `json:"session_id,omitempty"`
+	DeviceID          string                         `json:"device_id,omitempty"`
+	UserID            string                         `json:"user_id"`
+	WorkspaceID       string                         `json:"workspace_id"`
+	QueryScope        string                         `json:"query_scope"`
+	PrivacyScope      string                         `json:"privacy_scope"`
+	LatencyProfile    string                         `json:"latency_profile"`
+	AnswerStyle       string                         `json:"answer_style"`
+	UtteranceBucket   string                         `json:"utterance_bucket"`
+	SourceScopeCounts map[string]int                 `json:"source_scope_counts,omitempty"`
+	WorkspaceStatus   string                         `json:"workspace_status,omitempty"`
+	StartedAtMS       int64                          `json:"started_at_ms"`
+	CompletedAtMS     int64                          `json:"completed_at_ms,omitempty"`
+	Redaction         ProfessionalWorkspaceRedaction `json:"redaction"`
 }
 
 type WorkspaceUploadJobRequest struct {
@@ -708,6 +739,7 @@ const (
 	ProfessionalWorkspaceSchemaVersion        = "a21.gateway.professional_workspace.v1"
 	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
 	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
+	ProfessionalReadRecordsSchemaVersion      = "a21.gateway.professional_read_records.v1"
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade                     = "cascade"
@@ -890,6 +922,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		professionalUserIDConfig:     v21adapter.DefaultUserID,
 		professionalWorkspaceConfig:  v21adapter.DefaultWorkspaceID,
 		professionalQueryScopeConfig: v21adapter.QueryScopePublic,
+		professionalReadRecords:      make(map[string]ProfessionalReadRecord),
 		workspaceUploadJobs:          make(map[string]WorkspaceUploadJob),
 		voiceChainModeConfig:         VoiceChainModeCascade,
 		cascadeASRProfileConfig:      initialASRProfile,
@@ -936,6 +969,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
+	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
@@ -1050,6 +1084,20 @@ func (s *Server) handleProfessionalWorkspace(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "professional workspace unavailable", http.StatusInternalServerError)
 			return
 		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleProfessionalReadRecords(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response := s.professionalReadRecordsResponse(
+			strings.TrimSpace(r.URL.Query().Get("record_id")),
+			strings.TrimSpace(r.URL.Query().Get("trace_id")),
+			strings.TrimSpace(r.URL.Query().Get("session_id")),
+		)
 		writeJSON(w, http.StatusOK, response)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1678,6 +1726,212 @@ func professionalWorkspaceRedaction() ProfessionalWorkspaceRedaction {
 		CredentialValueStored: false,
 		ProviderOutputStored:  false,
 		VoiceTranscriptStored: false,
+	}
+}
+
+func (s *Server) startProfessionalReadRecord(request v21adapter.QueryRequest, utteranceBucket string) string {
+	nowMS := s.now().UnixMilli()
+	record := ProfessionalReadRecord{
+		Status:          "started",
+		TraceID:         safeOptionalWorkspaceLabel(request.TraceID),
+		SessionID:       safeOptionalWorkspaceLabel(request.SessionID),
+		DeviceID:        safeOptionalWorkspaceLabel(request.DeviceID),
+		UserID:          defaultProfessionalLabel(request.UserID, v21adapter.DefaultUserID),
+		WorkspaceID:     defaultProfessionalLabel(request.WorkspaceID, v21adapter.DefaultWorkspaceID),
+		QueryScope:      defaultProfessionalQueryScope(request.QueryScope),
+		PrivacyScope:    defaultProfessionalPrivacyScope(request.PrivacyScope),
+		LatencyProfile:  defaultProfessionalLatencyProfile(request.LatencyProfile),
+		AnswerStyle:     defaultProfessionalAnswerStyle(request.AnswerStyle),
+		UtteranceBucket: defaultProfessionalUtteranceBucket(utteranceBucket),
+		StartedAtMS:     nowMS,
+		Redaction:       professionalWorkspaceRedaction(),
+	}
+	s.mu.Lock()
+	s.professionalReadRecordSeq++
+	record.RecordID = fmt.Sprintf("a21-professional-read-%06d", s.professionalReadRecordSeq)
+	s.professionalReadRecords[record.RecordID] = record
+	s.mu.Unlock()
+	if record.TraceID != "" {
+		s.recordTrace(record.TraceID, record.SessionID, record.DeviceID, "professional.read_record.started", nowMS)
+	}
+	return record.RecordID
+}
+
+func (s *Server) completeProfessionalReadRecord(recordID string, response v21adapter.QueryResponse) {
+	s.updateProfessionalReadRecord(recordID, "completed", "", safeProfessionalSourceScopeCounts(response.SourceScopeCounts), safeProfessionalWorkspaceStatus(response.WorkspaceStatus))
+}
+
+func (s *Server) failProfessionalReadRecord(recordID string, code string) {
+	s.updateProfessionalReadRecord(recordID, "failed", safeProfessionalReadFailureCode(code), nil, "")
+}
+
+func (s *Server) updateProfessionalReadRecord(recordID string, status string, failureCode string, counts map[string]int, workspaceStatus string) {
+	recordID = strings.TrimSpace(recordID)
+	if recordID == "" {
+		return
+	}
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	record, ok := s.professionalReadRecords[recordID]
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	record.Status = status
+	record.FailureCode = failureCode
+	record.CompletedAtMS = nowMS
+	record.SourceScopeCounts = counts
+	record.WorkspaceStatus = workspaceStatus
+	s.professionalReadRecords[recordID] = record
+	s.mu.Unlock()
+	if record.TraceID != "" {
+		marker := "professional.read_record." + status
+		s.recordTrace(record.TraceID, record.SessionID, record.DeviceID, marker, nowMS)
+	}
+}
+
+func (s *Server) professionalReadRecordsResponse(recordID string, traceID string, sessionID string) ProfessionalReadRecordsResponse {
+	records := s.professionalReadRecordsSnapshot(recordID, traceID, sessionID)
+	status := "ok"
+	if (strings.TrimSpace(recordID) != "" || strings.TrimSpace(traceID) != "" || strings.TrimSpace(sessionID) != "") && len(records) == 0 {
+		status = "not_found"
+	}
+	return ProfessionalReadRecordsResponse{
+		SchemaVersion: ProfessionalReadRecordsSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        status,
+		Records:       records,
+		Redaction:     professionalWorkspaceRedaction(),
+	}
+}
+
+func (s *Server) professionalReadRecordsSnapshot(recordID string, traceID string, sessionID string) []ProfessionalReadRecord {
+	recordID = strings.TrimSpace(recordID)
+	traceID = strings.TrimSpace(traceID)
+	sessionID = strings.TrimSpace(sessionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := make([]ProfessionalReadRecord, 0, len(s.professionalReadRecords))
+	keys := make([]string, 0, len(s.professionalReadRecords))
+	if recordID != "" {
+		keys = append(keys, recordID)
+	} else {
+		for key := range s.professionalReadRecords {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+	}
+	for _, key := range keys {
+		record, ok := s.professionalReadRecords[key]
+		if !ok {
+			continue
+		}
+		if traceID != "" && record.TraceID != traceID {
+			continue
+		}
+		if sessionID != "" && record.SessionID != sessionID {
+			continue
+		}
+		records = append(records, copyProfessionalReadRecord(record))
+	}
+	return records
+}
+
+func copyProfessionalReadRecord(record ProfessionalReadRecord) ProfessionalReadRecord {
+	if len(record.SourceScopeCounts) > 0 {
+		counts := make(map[string]int, len(record.SourceScopeCounts))
+		for scope, count := range record.SourceScopeCounts {
+			counts[scope] = count
+		}
+		record.SourceScopeCounts = counts
+	}
+	return record
+}
+
+func defaultProfessionalPrivacyScope(scope string) string {
+	if strings.TrimSpace(scope) == "professional_only" {
+		return "professional_only"
+	}
+	return "professional_only"
+}
+
+func defaultProfessionalLatencyProfile(profile string) string {
+	switch strings.TrimSpace(profile) {
+	case "fast_first":
+		return "fast_first"
+	default:
+		return "fast_first"
+	}
+}
+
+func defaultProfessionalAnswerStyle(style string) string {
+	switch strings.TrimSpace(style) {
+	case "voice_first_with_citations":
+		return "voice_first_with_citations"
+	default:
+		return "voice_first_with_citations"
+	}
+}
+
+func defaultProfessionalUtteranceBucket(bucket string) string {
+	switch strings.TrimSpace(bucket) {
+	case "length_empty", "length_1_16", "length_17_64", "length_65_160", "length_gt_160":
+		return strings.TrimSpace(bucket)
+	default:
+		return "length_empty"
+	}
+}
+
+func safeProfessionalSourceScopeCounts(counts map[string]int) map[string]int {
+	if len(counts) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(counts))
+	for scope, count := range counts {
+		switch scope {
+		case "public", "personal":
+		default:
+			return nil
+		}
+		if count < 0 {
+			return nil
+		}
+		out[scope] = count
+	}
+	return out
+}
+
+func safeProfessionalWorkspaceStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case v21adapter.WorkspaceSearchable, "uploaded", "indexing", "failed", "unavailable":
+		return strings.TrimSpace(status)
+	default:
+		return ""
+	}
+}
+
+func professionalReadFailureCode(err error, queryCtx context.Context) string {
+	if errors.Is(err, context.DeadlineExceeded) || (queryCtx != nil && errors.Is(queryCtx.Err(), context.DeadlineExceeded)) {
+		return "timeout"
+	}
+	if class := v21adapter.QueryFailureClassOf(err); class != "" {
+		return string(class)
+	}
+	if statusClass := v21adapter.QueryFailureStatusClassOf(err); statusClass != "" {
+		switch statusClass {
+		case "4xx", "5xx":
+			return "upstream_" + statusClass
+		}
+	}
+	return "query_error"
+}
+
+func safeProfessionalReadFailureCode(code string) string {
+	switch strings.TrimSpace(code) {
+	case "timeout", "contract_invalid", "upstream_status", "no_evidence", "adapter_status", "transport_error", "query_error", "suppressed", "upstream_4xx", "upstream_5xx":
+		return strings.TrimSpace(code)
+	default:
+		return "query_error"
 	}
 }
 
@@ -5213,9 +5467,11 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
 		PrivacyScope:       "professional_only",
 	}
+	utteranceBucket := v21UtteranceLengthBucket(utterance)
+	readRecordID := s.startProfessionalReadRecord(request, utteranceBucket)
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.workspace.ready", s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
-	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.utterance."+v21UtteranceLengthBucket(utterance), s.now().UnixMilli())
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
 	defer cancel()
@@ -5224,24 +5480,29 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	if err != nil {
 		if errors.Is(err, context.Canceled) || session.shouldAbortXiaozhiTurn(turn) {
+			s.failProfessionalReadRecord(readRecordID, "suppressed")
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
 			return
 		}
+		s.failProfessionalReadRecord(readRecordID, professionalReadFailureCode(err, queryCtx))
 		s.recordV21QueryFailure(task.traceID, task.sessionID, task.deviceID, err, queryCtx)
 		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_v21_unavailable")
 		return
 	}
 	if session.shouldAbortXiaozhiTurn(turn) {
+		s.failProfessionalReadRecord(readRecordID, "suppressed")
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_result_suppressed", s.now().UnixMilli())
 		return
 	}
 	report, err := v21adapter.NewProfessionalBridgeEvidenceReport(response)
 	if err != nil {
+		s.failProfessionalReadRecord(readRecordID, "contract_invalid")
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.error", s.now().UnixMilli())
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.error.contract_invalid", s.now().UnixMilli())
 		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_contract_invalid")
 		return
 	}
+	s.completeProfessionalReadRecord(readRecordID, response)
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.first_result", s.now().UnixMilli())
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":         "tts",
@@ -7961,12 +8222,8 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.workspace.ready", s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
-	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+v21UtteranceLengthBucket(req.Text), s.now().UnixMilli())
-	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
-	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
-	defer cancel()
-	started := time.Now()
-	response, err := s.v21.Query(queryCtx, v21adapter.QueryRequest{
+	utteranceBucket := v21UtteranceLengthBucket(req.Text)
+	queryRequest := v21adapter.QueryRequest{
 		TraceID:            traceID,
 		SessionID:          sessionID,
 		DeviceID:           req.DeviceID,
@@ -7979,10 +8236,18 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		AnswerStyle:        "voice_first_with_citations",
 		MaxFirstResponseMS: 1200,
 		PrivacyScope:       "professional_only",
-	})
+	}
+	readRecordID := s.startProfessionalReadRecord(queryRequest, utteranceBucket)
+	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
+	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
+	defer cancel()
+	started := time.Now()
+	response, err := s.v21.Query(queryCtx, queryRequest)
 	s.metrics.v21QueryMS.Observe(float64(time.Since(started)) / float64(time.Millisecond))
 	postQueryPayloads := make([]protocol.ControlEventPayload, 0, 1)
 	if err != nil {
+		s.failProfessionalReadRecord(readRecordID, professionalReadFailureCode(err, queryCtx))
 		s.recordV21QueryFailure(traceID, sessionID, req.DeviceID, err, queryCtx)
 		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State: protocol.ExpressionError,
@@ -7990,7 +8255,18 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
 			Final: true,
 		})
+	} else if _, reportErr := v21adapter.NewProfessionalBridgeEvidenceReport(response); reportErr != nil {
+		s.failProfessionalReadRecord(readRecordID, "contract_invalid")
+		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error", s.now().UnixMilli())
+		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error.contract_invalid", s.now().UnixMilli())
+		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
+			State: protocol.ExpressionError,
+			Mode:  protocol.ModeProfessional,
+			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
+			Final: true,
+		})
 	} else {
+		s.completeProfessionalReadRecord(readRecordID, response)
 		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.first_result", s.now().UnixMilli())
 		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State:        protocol.ExpressionSpeaking,

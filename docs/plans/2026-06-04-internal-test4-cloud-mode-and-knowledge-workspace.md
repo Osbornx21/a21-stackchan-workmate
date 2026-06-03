@@ -76,6 +76,12 @@ StackChan hardware.
   label, evidence-first cue text, professional expression, trace marker,
   `professional_only` workspace policy, `v21_allowed=true`, and
   `physical_accepted=false`; the simulator displays the selected mode cue.
+- Gateway now exposes `GET /v1/professional-read-records` as a memory-only
+  professional read ledger. Mock professional turns and the stock Xiaozhi
+  professional route start a record before V21 query and complete or fail it
+  with only safe scope/status/count/timing metadata: no utterance text,
+  retrieved text, evidence bodies, screen-card text, speech blocks, provider
+  output, document text, URLs, paths, credentials, voice transcript, or audio.
 
 ## Product Form
 

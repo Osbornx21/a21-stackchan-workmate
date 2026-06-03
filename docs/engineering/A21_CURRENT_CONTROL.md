@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `0f4b354 feat(gateway): add workspace upload job skeleton`
+  `b0c7ea5 feat(gateway): expose professional mode ritual contract`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -87,6 +87,17 @@ Target:
   and `professional` the two user-facing modes, keep `dialogue` as a
   compatibility alias, and define the A21 Cloud/Web/App plus V21 Knowledge
   Service/Adapter shape for public-only and personal+public professional query.
+
+Current focused cut:
+
+- `docs/plans/2026-06-04-professional-workspace-read-records.md`
+- Transition:
+  `T-INTERNAL-TEST4-PROFESSIONAL-WORKSPACE-READ-RECORDS-001`
+- Target:
+  record memory-only professional read metadata for mock professional turns and
+  stock Xiaozhi professional turns before/after V21 adapter execution, without
+  storing utterance text, retrieved text, evidence bodies, provider output,
+  document text, URLs, paths, credentials, voice transcripts, or audio.
 
 ## Scoped Hardware Parity Transition
 

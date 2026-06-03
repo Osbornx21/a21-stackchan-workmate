@@ -1296,6 +1296,131 @@ func TestWorkspaceUploadJobsRejectRawPayloadFields(t *testing.T) {
 	}
 }
 
+func TestProfessionalReadRecordsCompleteWithRedactedScopeMetadata(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{V21Client: readRecordV21Client{}})
+	handler := server.Handler()
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_read","workspace_id":"a21_workspace_read","query_scope":"personal_plus_public"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"RAW_PRIVATE_QUERY_FOR_READ_LEDGER","mode":"professional","trace_id":"a21-trace-read-record","session_id":"a21-session-read-record"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("turn status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	recordsReq := httptest.NewRequest(http.MethodGet, "/v1/professional-read-records?trace_id=a21-trace-read-record", nil)
+	recordsRec := httptest.NewRecorder()
+	handler.ServeHTTP(recordsRec, recordsReq)
+	if recordsRec.Code != http.StatusOK {
+		t.Fatalf("read-record status = %d, want 200: %s", recordsRec.Code, recordsRec.Body.String())
+	}
+	var response ProfessionalReadRecordsResponse
+	if err := json.Unmarshal(recordsRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.professional_read_records.v1" || response.Status != "ok" || len(response.Records) != 1 {
+		t.Fatalf("read-record response = %+v", response)
+	}
+	record := response.Records[0]
+	if record.RecordID == "" ||
+		record.Status != "completed" ||
+		record.TraceID != "a21-trace-read-record" ||
+		record.SessionID != "a21-session-read-record" ||
+		record.DeviceID != "stackchan-sim-001" ||
+		record.UserID != "a21_user_read" ||
+		record.WorkspaceID != "a21_workspace_read" ||
+		record.QueryScope != "personal_plus_public" ||
+		record.PrivacyScope != "professional_only" ||
+		record.LatencyProfile != "fast_first" ||
+		record.AnswerStyle != "voice_first_with_citations" ||
+		record.UtteranceBucket != "length_17_64" ||
+		record.WorkspaceStatus != "searchable" ||
+		record.SourceScopeCounts["public"] != 2 ||
+		record.SourceScopeCounts["personal"] != 1 ||
+		record.StartedAtMS == 0 ||
+		record.CompletedAtMS == 0 ||
+		record.CompletedAtMS < record.StartedAtMS {
+		t.Fatalf("read record = %+v", record)
+	}
+	if response.Redaction.QueryTextStored || response.Redaction.RetrievedTextStored || response.Redaction.ProviderOutputStored ||
+		response.Redaction.DocumentTextStored || response.Redaction.FullURLStored || response.Redaction.LocalPathStored ||
+		response.Redaction.CredentialValueStored || response.Redaction.VoiceTranscriptStored {
+		t.Fatalf("response redaction = %+v", response.Redaction)
+	}
+	if record.Redaction.QueryTextStored || record.Redaction.RetrievedTextStored || record.Redaction.ProviderOutputStored ||
+		record.Redaction.DocumentTextStored || record.Redaction.FullURLStored || record.Redaction.LocalPathStored ||
+		record.Redaction.CredentialValueStored || record.Redaction.VoiceTranscriptStored {
+		t.Fatalf("record redaction = %+v", record.Redaction)
+	}
+	for _, forbidden := range []string{"RAW_PRIVATE_QUERY", "RAW_SECRET", "https://", "/Users/", "api_key", "token"} {
+		if strings.Contains(strings.ToLower(recordsRec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("read records leaked %q: %s", forbidden, recordsRec.Body.String())
+		}
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-read-record", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"professional.read_record.started", "professional.read_record.completed"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+}
+
+func TestProfessionalReadRecordsFailSafelyWhenV21Unavailable(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{V21Client: failingV21Client{}})
+	handler := server.Handler()
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"RAW_PRIVATE_QUERY_FAILURE","mode":"professional","trace_id":"a21-trace-read-failed","session_id":"a21-session-read-failed"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("turn status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	recordsReq := httptest.NewRequest(http.MethodGet, "/v1/professional-read-records?trace_id=a21-trace-read-failed", nil)
+	recordsRec := httptest.NewRecorder()
+	handler.ServeHTTP(recordsRec, recordsReq)
+	if recordsRec.Code != http.StatusOK {
+		t.Fatalf("read-record status = %d, want 200: %s", recordsRec.Code, recordsRec.Body.String())
+	}
+	var response ProfessionalReadRecordsResponse
+	if err := json.Unmarshal(recordsRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Records) != 1 {
+		t.Fatalf("read-record response = %+v", response)
+	}
+	record := response.Records[0]
+	if record.Status != "failed" ||
+		record.FailureCode != "query_error" ||
+		record.TraceID != "a21-trace-read-failed" ||
+		record.UtteranceBucket != "length_17_64" ||
+		record.CompletedAtMS == 0 {
+		t.Fatalf("failed read record = %+v", record)
+	}
+	for _, forbidden := range []string{"RAW_PRIVATE_QUERY", "v21 unavailable", "https://", "/Users/", "api_key", "token"} {
+		if strings.Contains(strings.ToLower(recordsRec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("failed read records leaked %q: %s", forbidden, recordsRec.Body.String())
+		}
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-read-failed", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), "professional.read_record.failed") {
+		t.Fatalf("trace missing failed read-record marker: %s", traceRec.Body.String())
+	}
+}
+
 func TestFastCompanionRejectsProfessionalVoiceModeWithoutProviderOrV21Execution(t *testing.T) {
 	provider := &capturingVoiceProvider{
 		startEvents: []providers.VoiceEvent{{Kind: providers.VoiceEventSpeaking, Text: "should not run", Final: true}},
@@ -12226,6 +12351,28 @@ type countingV21Client struct {
 func (c *countingV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
 	c.calls++
 	return v21adapter.NewMockClient().Query(ctx, request)
+}
+
+type readRecordV21Client struct{}
+
+func (readRecordV21Client) Query(ctx context.Context, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	return v21adapter.QueryResponse{
+		TraceID:    request.TraceID,
+		FastAnswer: "RAW_SECRET_FAST_ANSWER",
+		Confidence: 0.91,
+		Evidence: []v21adapter.Evidence{{
+			Title:    "RAW_SECRET_TITLE",
+			Type:     "v21_retrieval_evidence",
+			SourceID: "v21-doc-read-record-001",
+			Summary:  "RAW_SECRET_EVIDENCE_BODY",
+			Quote:    "RAW_SECRET_QUOTE",
+		}},
+		SpeechBlocks:      []string{"RAW_SECRET_SPEECH_BLOCK"},
+		ScreenCards:       []v21adapter.ScreenCard{{Label: "结论", Text: "RAW_SECRET_CARD_TEXT"}},
+		FollowUps:         []string{"RAW_SECRET_FOLLOW_UP"},
+		SourceScopeCounts: map[string]int{"public": 2, "personal": 1},
+		WorkspaceStatus:   v21adapter.WorkspaceSearchable,
+	}, nil
 }
 
 type capturingV21Client struct {
