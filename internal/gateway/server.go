@@ -4457,6 +4457,18 @@ func xiaozhiVoicePipelineFindingMarker(finding string) string {
 		return "xiaozhi.voice_pipeline.failed.tts_provider_error"
 	case "tts adapter invalid audio delta":
 		return "xiaozhi.voice_pipeline.failed.tts_invalid_audio_delta"
+	case "tts adapter missing configuration":
+		return "xiaozhi.voice_pipeline.failed.tts_missing_configuration"
+	case "tts adapter connect failed":
+		return "xiaozhi.voice_pipeline.failed.tts_connect_failed"
+	case "tts adapter session update failed":
+		return "xiaozhi.voice_pipeline.failed.tts_session_update_failed"
+	case "tts adapter text append failed":
+		return "xiaozhi.voice_pipeline.failed.tts_text_append_failed"
+	case "tts adapter text commit failed":
+		return "xiaozhi.voice_pipeline.failed.tts_text_commit_failed"
+	case "tts adapter session finish failed":
+		return "xiaozhi.voice_pipeline.failed.tts_session_finish_failed"
 	case "provider_fallback_used":
 		return "xiaozhi.voice_pipeline.provider_fallback_used"
 	case "streaming_asr_partial_reused":

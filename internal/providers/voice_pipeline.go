@@ -440,7 +440,7 @@ func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context
 	ttsChunks, err := r.adapters.TTS.Synthesize(ctx, TTSAdapterRequest{Session: req.Session, Mode: req.Mode, Text: segment})
 	if err != nil {
 		report.Status = string(VoicePipelineStatusFailed)
-		report.Findings = append(report.Findings, "tts adapter failed")
+		report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "tts adapter failed", voicePipelineTTSAdapterFailureFinding(err))
 		result.Report = *report
 		return err
 	}
@@ -472,6 +472,29 @@ func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context
 		}
 	}
 	return nil
+}
+
+func voicePipelineTTSAdapterFailureFinding(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "missing"):
+		return "tts adapter missing configuration"
+	case strings.Contains(message, "dial") || strings.Contains(message, "connect"):
+		return "tts adapter connect failed"
+	case strings.Contains(message, "session update"):
+		return "tts adapter session update failed"
+	case strings.Contains(message, "text append"):
+		return "tts adapter text append failed"
+	case strings.Contains(message, "text commit"):
+		return "tts adapter text commit failed"
+	case strings.Contains(message, "session finish"):
+		return "tts adapter session finish failed"
+	default:
+		return "tts adapter failed"
+	}
 }
 
 func (r *VoicePipelineRunner) applyCancel(ctx context.Context, start time.Time, result *VoicePipelineResult) bool {
