@@ -3064,6 +3064,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 	lastSegmentSeq := 0
 	firstDownlink := true
 	stageMarkersRecorded := false
+	profileMarkersRecorded := false
 	var finalResult providers.VoicePipelineResult
 	for event := range events {
 		if session.shouldAbortXiaozhiTurn(turn) {
@@ -3093,6 +3094,10 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			if !stageMarkersRecorded {
 				stageMarkersRecorded = true
 				s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, event.Timing)
+			}
+			if !profileMarkersRecorded {
+				profileMarkersRecorded = true
+				s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, event.Report)
 			}
 			ok, err := s.writeXiaozhiOpusDownlink(ctx, conn, session, turn, event.AudioChunk)
 			if err != nil {
@@ -3128,6 +3133,9 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 	}
 	if !stageMarkersRecorded {
 		s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, finalResult.Timing)
+	}
+	if !profileMarkersRecorded {
+		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
@@ -3256,6 +3264,66 @@ func (s *Server) recordXiaozhiVoicePipelineStageMarkers(traceID string, sessionI
 	if timing.TTSFirstAudioMS >= 0 {
 		s.recordTrace(traceID, sessionID, deviceID, "tts.first_audio", startAtMS+timing.TTSFirstAudioMS)
 	}
+}
+
+func (s *Server) recordXiaozhiVoicePipelineProfileMarkers(traceID string, sessionID string, deviceID string, report providers.VoicePipelineReport) {
+	now := s.now().UnixMilli()
+	for _, marker := range xiaozhiVoicePipelineProfileMarkers(report) {
+		s.recordTrace(traceID, sessionID, deviceID, marker, now)
+	}
+}
+
+func xiaozhiVoicePipelineProfileMarkers(report providers.VoicePipelineReport) []string {
+	markers := make([]string, 0, 3)
+	if xiaozhiVoicePipelineASRRealStreaming(report) {
+		markers = append(markers, "xiaozhi.voice_pipeline.asr.real_streaming")
+	} else if strings.Contains(report.Selection.ASRProfile, "mock") {
+		markers = append(markers, "xiaozhi.voice_pipeline.asr.mock_blocked")
+	} else {
+		markers = append(markers, "xiaozhi.voice_pipeline.asr.batch_blocked")
+	}
+	if xiaozhiVoicePipelineLLMRealStreaming(report.Selection.LLMProfile) {
+		markers = append(markers, "xiaozhi.voice_pipeline.llm.real_streaming")
+	} else {
+		markers = append(markers, "xiaozhi.voice_pipeline.llm.mock_blocked")
+	}
+	if xiaozhiVoicePipelineTTSRealStreaming(report.Selection.TTSProfile) {
+		markers = append(markers, "xiaozhi.voice_pipeline.tts.real_streaming")
+	} else if strings.Contains(report.Selection.TTSProfile, "mock") {
+		markers = append(markers, "xiaozhi.voice_pipeline.tts.mock_blocked")
+	} else {
+		markers = append(markers, "xiaozhi.voice_pipeline.tts.file_boundary_blocked")
+	}
+	return markers
+}
+
+func xiaozhiVoicePipelineASRRealStreaming(report providers.VoicePipelineReport) bool {
+	profile := strings.ToLower(strings.TrimSpace(report.Selection.ASRProfile))
+	return (profile == "sherpa_onnx_streaming" || profile == "local_sherpa_onnx_streaming" || profile == "streaming_zipformer") &&
+		(gatewayStringSliceHas(report.Findings, "streaming_asr_partial_reused") || gatewayStringSliceHas(report.Findings, "streaming_asr_final_reused"))
+}
+
+func xiaozhiVoicePipelineLLMRealStreaming(profile string) bool {
+	profile = strings.ToLower(strings.TrimSpace(profile))
+	return profile != "" && !strings.Contains(profile, "mock")
+}
+
+func xiaozhiVoicePipelineTTSRealStreaming(profile string) bool {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case "doubao_tts_realtime", "doubao_realtime_tts":
+		return true
+	default:
+		return false
+	}
+}
+
+func gatewayStringSliceHas(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) xiaozhiAudioIngressSummary(session *xiaozhiSession, asrStatus string, ttsStatus string) map[string]any {

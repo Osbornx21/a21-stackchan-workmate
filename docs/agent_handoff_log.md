@@ -6234,3 +6234,94 @@ Current validation request:
 
 - No unresolved failure. The only failures were intentional red tests and the
   expected readiness block on mock LLM/TTS.
+
+## 2026-06-03 09:06 CST - Xiaozhi Realtime Parity Real Profile Evidence
+
+本轮目标:
+
+- Continue the persistent full Xiaozhi realtime convergence goal without
+  claiming acceptance from a narrower slice.
+- Follow the user's instruction to use multiple subthreads for read-only
+  Xiaozhi/A21 inspection before the next implementation cut.
+- Harden the realtime parity gate so a stock-shaped, well-ordered trace cannot
+  pass as `xiaozhi_realtime_candidate` unless it also proves real streaming
+  ASR/LLM/TTS profile classes.
+- Keep scope host-local and no-execute: no provider/V21, no Gateway lifecycle,
+  no `/v1/xiaozhi/say`, no firmware/hardware/audio playback.
+
+子线程/只读审查:
+
+- Protocol explorer `019e8afe-6a0f-7f23-8c4c-8cfcbacde774` read upstream
+  Xiaozhi docs plus local protocol/firmware material. Conclusion: A21's
+  WebSocket JSON plus binary Opus shell matches the immediate Xiaozhi product
+  lane direction, but full voice parity still requires real streaming
+  ASR/LLM/TTS, barge-in, wake, playback, and idle recovery evidence.
+- Runtime explorer `019e8afe-8dc1-75c0-9239-47c44ef18379` read A21 Gateway,
+  transport, audio, provider, and tests. Conclusion: current `/v1/xiaozhi`
+  ingress/downlink is real Opus, but the middle still has mock defaults,
+  batch/WAV fallback seams, a blocking ASR commit path, and mixed state flags;
+  the next state-machine cut should make commit/final handling non-blocking and
+  explicit.
+
+实际完成内容:
+
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-realtime-parity-real-profile-evidence.md`.
+- Added Gateway profile-class trace markers for Xiaozhi voice-pipeline turns:
+  - `xiaozhi.voice_pipeline.asr.real_streaming`
+  - `xiaozhi.voice_pipeline.llm.real_streaming`
+  - `xiaozhi.voice_pipeline.tts.real_streaming`
+  - blocker markers for mock, batch, and file-boundary stages
+- Added parity-gate counts and stage availability:
+  - `asr.real_streaming_profile`
+  - `llm.real_streaming_profile`
+  - `tts.real_streaming_profile`
+  - `realtime_profile.blocker_absent`
+- `xiaozhi-realtime-parity` now requires all three real streaming profile
+  markers and no profile blockers before returning `xiaozhi_realtime_candidate`.
+  Ordered traces without those markers downgrade to
+  `turn_buffered_xiaozhi_candidate` and report
+  `xiaozhi_realtime_real_profile_evidence_missing`.
+- Updated `docs/project_state_machine.md` with the completed transition and
+  next recommended state-machine cut.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-realtime-parity-real-profile-evidence.md`
+- `internal/app/xiaozhi_realtime_parity.go`
+- `internal/app/xiaozhi_realtime_parity_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance remains incomplete.
+- Real streaming TTS provider execution still needs explicit authorization and
+  complete env.
+- A physical stock `/v1/xiaozhi` trace still needs wake or labeled tap trigger,
+  real profile markers, audible playback, touch/barge-in, and idle recovery.
+- Runtime explorer recommends the next narrow transition: make streaming ASR
+  commit/final handling explicit and non-blocking so the WebSocket read loop is
+  not held by `commitXiaozhiStreamingASR`.
+
+测试/构建/运行结果:
+
+- Red app test first:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity(ClassifiesRealtimeCandidateOrdering|BlocksRealtimeOrderingWithoutRealProfileEvidence)' -count=1`
+  failed because the gate accepted a realtime-looking trace without real
+  profile markers as `xiaozhi_realtime_candidate`.
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal -count=1`
+  failed because mock partial-bridge turns lacked mock/blocker profile markers.
+- Focused tests passed after implementation:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity' -count=1`;
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal|TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop|TestXiaozhiVoicePipeline' -count=1`.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host
+  loopback runtime, firmware build, flash, NVS/serial access, hardware action,
+  or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only failures were intentional red tests.

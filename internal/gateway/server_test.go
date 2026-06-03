@@ -4272,6 +4272,16 @@ func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFi
 			t.Fatalf("trace before listen stop missing %q: %+v", want, traces)
 		}
 	}
+	for _, want := range []string{"xiaozhi.voice_pipeline.llm.mock_blocked", "xiaozhi.voice_pipeline.tts.mock_blocked"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace before listen stop missing mock blocker %q: %+v", want, traces)
+		}
+	}
+	for _, forbidden := range []string{"xiaozhi.voice_pipeline.llm.real_streaming", "xiaozhi.voice_pipeline.tts.real_streaming"} {
+		if traceContains(traces, forbidden) {
+			t.Fatalf("mock pipeline trace must not contain %q: %+v", forbidden, traces)
+		}
+	}
 	for _, forbidden := range []string{"xiaozhi.listen.stop", "vad.speech.end", "asr.final"} {
 		if traceContains(traces, forbidden) {
 			t.Fatalf("trace should not contain %q before explicit stop: %+v", forbidden, traces)

@@ -50,7 +50,7 @@ func TestXiaozhiRealtimeParityClassifiesTurnBufferedPhysicalTrace(t *testing.T) 
 }
 
 func TestXiaozhiRealtimeParityClassifiesRealtimeCandidateOrdering(t *testing.T) {
-	server := newXiaozhiRealtimeParityTestServer(t, "realtime")
+	server := newXiaozhiRealtimeParityTestServer(t, "realtime_real_profiles")
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
@@ -72,6 +72,36 @@ func TestXiaozhiRealtimeParityClassifiesRealtimeCandidateOrdering(t *testing.T) 
 		`"asr_stream_commit": 1`,
 		`"downlink_before_pipeline_completed": true`,
 		`"xiaozhi_realtime_candidate_not_product_accepted"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiRealtimeParityBlocksRealtimeOrderingWithoutRealProfileEvidence(t *testing.T) {
+	server := newXiaozhiRealtimeParityTestServer(t, "realtime")
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-realtime-parity",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--output-dir", "",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"classification": "turn_buffered_xiaozhi_candidate"`,
+		`"asr.real_streaming_profile": {`,
+		`"llm.real_streaming_profile": {`,
+		`"tts.real_streaming_profile": {`,
+		`"xiaozhi_realtime_real_profile_evidence_missing"`,
+		`"prd_accepted": false`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
@@ -246,7 +276,7 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 	if mode == "transport_only" {
 		return events
 	}
-	if mode == "realtime" || mode == "realtime_no_commit" || mode == "host_loopback" {
+	if mode == "realtime" || mode == "realtime_real_profiles" || mode == "realtime_no_commit" || mode == "host_loopback" {
 		events = append(events,
 			xiaozhiRealtimeParityTraceEvent("asr.stream.start", 1090, 90),
 			xiaozhiRealtimeParityTraceEvent("asr.audio.append", 1100, 100),
@@ -262,13 +292,13 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 		xiaozhiRealtimeParityTraceEvent("vad.speech.end", 1300, 300),
 		xiaozhiRealtimeParityTraceEvent("xiaozhi.listen.auto_stop", 1310, 310),
 	)
-	if mode == "realtime" || mode == "host_loopback" {
+	if mode == "realtime" || mode == "realtime_real_profiles" || mode == "host_loopback" {
 		events = append(events, xiaozhiRealtimeParityTraceEvent("asr.stream.commit", 1320, 320))
 	}
 	events = append(events,
 		xiaozhiRealtimeParityTraceEvent("asr.final", 1340, 340),
 	)
-	if mode != "realtime" && mode != "realtime_no_commit" && mode != "host_loopback" {
+	if mode != "realtime" && mode != "realtime_real_profiles" && mode != "realtime_no_commit" && mode != "host_loopback" {
 		events = append(events,
 			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.start", 1320, 320),
 			xiaozhiRealtimeParityTraceEvent("provider.first_content", 1400, 400),
@@ -279,6 +309,13 @@ func xiaozhiRealtimeParityTraceEvents(mode string) []map[string]any {
 		)
 	} else {
 		events = append(events, xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.start", 1090, 90))
+	}
+	if mode == "realtime_real_profiles" {
+		events = append(events,
+			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.asr.real_streaming", 1091, 91),
+			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.llm.real_streaming", 1092, 92),
+			xiaozhiRealtimeParityTraceEvent("xiaozhi.voice_pipeline.tts.real_streaming", 1093, 93),
+		)
 	}
 	if mode == "fake_say" {
 		events = append(events, xiaozhiRealtimeParityTraceEvent("xiaozhi.say.start", 1470, 470))

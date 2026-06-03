@@ -66,6 +66,10 @@ type xiaozhiRealtimeParityCounts struct {
 	VoicePipelineStart      int `json:"voice_pipeline_start"`
 	VoicePipelineCompleted  int `json:"voice_pipeline_completed"`
 	DevicePlaybackStart     int `json:"device_playback_start"`
+	ASRRealStreamingProfile int `json:"asr_real_streaming_profile"`
+	LLMRealStreamingProfile int `json:"llm_real_streaming_profile"`
+	TTSRealStreamingProfile int `json:"tts_real_streaming_profile"`
+	RealtimeProfileBlocked  int `json:"realtime_profile_blocked"`
 	ForbiddenFakePath       int `json:"forbidden_fake_path"`
 }
 
@@ -274,6 +278,15 @@ func xiaozhiRealtimeParityCountEvents(events []gateway.TraceEvent) xiaozhiRealti
 			counts.VoicePipelineCompleted++
 		case "device.playback.start":
 			counts.DevicePlaybackStart++
+		case "xiaozhi.voice_pipeline.asr.real_streaming":
+			counts.ASRRealStreamingProfile++
+		case "xiaozhi.voice_pipeline.llm.real_streaming":
+			counts.LLMRealStreamingProfile++
+		case "xiaozhi.voice_pipeline.tts.real_streaming":
+			counts.TTSRealStreamingProfile++
+		}
+		if xiaozhiRealtimeParityProfileBlockedEvent(event.Name) {
+			counts.RealtimeProfileBlocked++
 		}
 		if xiaozhiRealtimeParityForbiddenFakeEvent(event.Name) {
 			counts.ForbiddenFakePath++
@@ -330,6 +343,19 @@ func xiaozhiRealtimeParityForbiddenFakeEvent(name string) bool {
 	}
 }
 
+func xiaozhiRealtimeParityProfileBlockedEvent(name string) bool {
+	switch name {
+	case "xiaozhi.voice_pipeline.asr.mock_blocked",
+		"xiaozhi.voice_pipeline.asr.batch_blocked",
+		"xiaozhi.voice_pipeline.llm.mock_blocked",
+		"xiaozhi.voice_pipeline.tts.mock_blocked",
+		"xiaozhi.voice_pipeline.tts.file_boundary_blocked":
+		return true
+	default:
+		return false
+	}
+}
+
 func xiaozhiRealtimeParityStageAvailability(report xiaozhiRealtimeParityReport, device firmwarecheck.DeviceIdentityRecord, trace gateway.TraceResponse) map[string]physicalStackChanMetric {
 	return map[string]physicalStackChanMetric{
 		"physical_device.online":             xiaozhiPhysicalBoolMetric(report.PhysicalDeviceOnline, "gateway_device_registry"),
@@ -352,6 +378,10 @@ func xiaozhiRealtimeParityStageAvailability(report xiaozhiRealtimeParityReport, 
 		"voice_pipeline.answer.downlink":     xiaozhiPhysicalBoolMetric(report.Counts.AnswerDownlinkFrames > 0, "gateway_trace"),
 		"downlink.before_pipeline_completed": xiaozhiPhysicalBoolMetric(report.Ordering.DownlinkBeforePipelineCompleted, "gateway_trace"),
 		"voice_pipeline.completed":           xiaozhiPhysicalBoolMetric(report.Counts.VoicePipelineCompleted > 0, "gateway_trace"),
+		"asr.real_streaming_profile":         xiaozhiPhysicalBoolMetric(report.Counts.ASRRealStreamingProfile > 0, "gateway_trace"),
+		"llm.real_streaming_profile":         xiaozhiPhysicalBoolMetric(report.Counts.LLMRealStreamingProfile > 0, "gateway_trace"),
+		"tts.real_streaming_profile":         xiaozhiPhysicalBoolMetric(report.Counts.TTSRealStreamingProfile > 0, "gateway_trace"),
+		"realtime_profile.blocker_absent":    xiaozhiPhysicalBoolMetric(report.Counts.RealtimeProfileBlocked == 0, "gateway_trace"),
 		"fake_path.absent":                   xiaozhiPhysicalBoolMetric(report.Counts.ForbiddenFakePath == 0, "gateway_trace"),
 		"device.playback.start":              xiaozhiPhysicalBoolMetric(trace.Summary.DevicePlaybackStartMS != nil || report.Counts.DevicePlaybackStart > 0, "gateway_trace"),
 	}
@@ -381,7 +411,11 @@ func xiaozhiRealtimeParityClassification(report xiaozhiRealtimeParityReport) str
 		report.StageAvailability["llm.provider_before_asr_final"].Available &&
 		report.StageAvailability["tts.before_pipeline_completed"].Available &&
 		report.StageAvailability["voice_pipeline.answer.downlink"].Available &&
-		report.StageAvailability["downlink.before_pipeline_completed"].Available
+		report.StageAvailability["downlink.before_pipeline_completed"].Available &&
+		report.StageAvailability["asr.real_streaming_profile"].Available &&
+		report.StageAvailability["llm.real_streaming_profile"].Available &&
+		report.StageAvailability["tts.real_streaming_profile"].Available &&
+		report.StageAvailability["realtime_profile.blocker_absent"].Available
 	if hasRealtime {
 		return "xiaozhi_realtime_candidate"
 	}
@@ -427,6 +461,12 @@ func xiaozhiRealtimeParityFindings(report xiaozhiRealtimeParityReport, device fi
 	}
 	if report.Classification == "turn_buffered_xiaozhi_candidate" {
 		findings = append(findings, physicalStackChanFinding("xiaozhi_realtime_turn_buffered", "warning", "physical stock Opus path reached downlink, but ASR/LLM/TTS ordering still looks turn-buffered rather than fully Xiaozhi-style streaming"))
+	}
+	if report.Counts.RealtimeProfileBlocked > 0 ||
+		!report.StageAvailability["asr.real_streaming_profile"].Available ||
+		!report.StageAvailability["llm.real_streaming_profile"].Available ||
+		!report.StageAvailability["tts.real_streaming_profile"].Available {
+		findings = append(findings, physicalStackChanFinding("xiaozhi_realtime_real_profile_evidence_missing", "error", "trace is missing real streaming ASR/LLM/TTS profile evidence or contains mock/file-boundary profile blockers"))
 	}
 	if report.Classification == "xiaozhi_realtime_candidate" {
 		findings = append(findings, physicalStackChanFinding("xiaozhi_realtime_candidate_not_product_accepted", "info", "trace ordering matches realtime candidate criteria, but wake, audible playback, interruption, and setup-free physical acceptance are still separate gates"))
