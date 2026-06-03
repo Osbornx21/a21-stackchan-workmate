@@ -10083,7 +10083,7 @@ func TestRunProviderRealtimePlanDoubaoTTSDoesNotLeakSecrets(t *testing.T) {
 		`"configured": true`,
 		`"executed": false`,
 		`"endpoint_host": "ai-gateway.vei.volces.com"`,
-		`"api_key_env": "A21_DOUBAO_API_KEY"`,
+		`"api_key_env": "A21_DOUBAO_API_KEY|A21_DOUBAO_ACCESS_TOKEN"`,
 		`"model_env": "A21_DOUBAO_TTS_MODEL"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {

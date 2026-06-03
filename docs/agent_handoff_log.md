@@ -7125,3 +7125,94 @@ Current validation request:
 
 - 通过 guarded flash lane 刷 `a21-stackchan-official-xiaozhi-compatible.bin`，观察无凭据启动是否进入 Xiaozhi Hotspot 配网。
 - 之后再做真实 provider 注入和物理对话/打断/半双工验收。
+
+## 2026-06-03 15:45 CST - Public Edge Provider/TTS And Physical Downlink Push
+
+目标:
+
+- 保持 `47.103.57.217` 作为主公网 Gateway。
+- 在不把 provider key 写入 repo、固件、systemd unit、Caddy 配置、报告或日志的前提下，给公网 Gateway 注入真实 TTS 能力。
+- 验证真实 StackChan 公网下行、host-level abort/barge-in 时序，并如实保留 PRD blockers。
+
+实际完成内容:
+
+- 在 ECS `/etc/a21/secrets/provider.env` 通过 root-only `0600` secret 文件注入 provider 环境变量；输出只记录变量名，不记录值。
+- 部署并启用 `scripts/a21_dashscope_cosyvoice_tts.py`：
+  - 作为 A21 `voice_clone_cli` wrapper。
+  - 使用 DashScope CosyVoice WebSocket TTS。
+  - 输出 PCM16 mono WAV 给现有 A21 local TTS adapter。
+  - 不打印文本、provider output、API key、Authorization、Bearer、URL 或本地路径。
+- ECS 安装 `python3-websocket` 作为 wrapper runtime dependency。
+- Gateway systemd 继续只读取 `EnvironmentFile=-/etc/a21/secrets/provider.env`，未写入 secret 值。
+- 验证并保留失败事实:
+  - Doubao realtime TTS `ai-gateway.vei.volces.com` 使用用户提供 access token / secretkey 作为 Bearer key 均返回 handshake `401`。
+  - 将 Doubao model 临时改为 `doubao-tts` 仍为 `401`，说明当前凭证不适用于 A21 已接入的 AI Gateway Realtime TTS Bearer API。
+  - Iflytek TTS 兼容映射用户三元组也返回 `iflytek_tts_websocket_dial_failed_http_401`。
+- 验证 DashScope CosyVoice 可用组合:
+  - `cosyvoice-v3-flash`
+  - `longanyang`
+  - `pcm`
+  - `16000 Hz`
+- 远端 `local-tts-smoke --engine voice_clone_cli` 通过：
+  - report path: `/tmp/a21-provider-smoke/a21-local-tts-smoke-20260603-154156.json`
+  - provider/engine: `voice_clone_cli`
+  - model label: `cosyvoice_v3_flash`
+  - output bytes: `76844`
+  - duration: `2400 ms`
+  - peak: `-8.663 dBFS`
+  - RMS: `-26.018 dBFS`
+- 真实公网 StackChan `/v1/xiaozhi/say` delivered：
+  - device: `44:1b:f6:e2:6a:60`
+  - trace: `a21-trace-public-edge-dashscope-say-1780472526`
+  - status: `delivered`
+  - transport: `xiaozhi_ws`
+  - text chars: `23`
+  - Opus chunks: `87`
+  - `tts.first_audio` offset: `2159 ms`
+  - `audio.downlink.first_frame` offset: `2160 ms`
+  - trace includes `xiaozhi.say.delivered`
+- 公网 `xiaozhi-voice-bench` host-loopback ran against `http://47.103.57.217`:
+  - report: `reports/a21-xiaozhi-voice-bench-20260603-154310.624051000.json`
+  - answer turn passed with first audio `1185 ms`
+  - barge-in turn passed with `abort_stop_ms=1`
+  - final status still `blocked`, `prd_accepted=false`, because it is host/virtual evidence and did not prove physical microphone or full real ASR/Text/TTS execution.
+- 公网 physical half-duplex acceptance was attempted and correctly blocked:
+  - report: `reports/a21-stackchan-half-duplex-acceptance-20260603-154254.json`
+  - reason: the current product Xiaozhi firmware is not the diagnostic mic-probe lane and lacks the diagnostic runtime echo counters required by this acceptance tool.
+
+修改过的本轮文件:
+
+- `scripts/a21_dashscope_cosyvoice_tts.py`
+- `internal/providers/realtime.go`
+- `internal/providers/realtime_test.go`
+- `internal/app/streaming_tts_runtime_smoke.go`
+- `internal/app/streaming_tts_runtime_smoke_test.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`
+
+测试/部署结果:
+
+- Focused tests passed:
+  `go test ./internal/providers ./internal/app -run 'RealtimeWebSocketPlan|StreamingTTSRuntimeSmoke' -count=1`
+- Full local verification passed:
+  `make verify`
+- Script validation passed:
+  `python3 -m py_compile scripts/a21_dashscope_cosyvoice_tts.py`
+  and `git diff --check`
+- ECS deployed from a tracked/current working-tree tarball; remote Gateway restarted and `/healthz` passed.
+
+未完成事项 / blockers:
+
+- Physical audible confirmation for the new DashScope voice still needs operator listening/recording.
+- Normal physical half-duplex and real microphone-driven dialogue remain open; the current half-duplex tool requires diagnostic firmware counters and is not applicable to stock product firmware.
+- Wake-word product proof remains open.
+- Doubao realtime TTS remains blocked by `401` until an AI Gateway Realtime Bearer API key is provided or a different Doubao auth adapter is added.
+- Full PRD remains blocked; do not mark launch/full green from this round.
+
+推荐下一步:
+
+- Ask operator to confirm whether the delivered DashScope `/v1/xiaozhi/say` audio was audible and acceptable.
+- Add a stock-Xiaozhi physical half-duplex acceptance path that uses real `/v1/xiaozhi` mic ingress/downlink traces instead of diagnostic runtime echo counters.
+- Continue a separate real dialogue test with physical mic trigger, DeepSeek text stream, DashScope TTS downlink, and abort/barge-in trace.

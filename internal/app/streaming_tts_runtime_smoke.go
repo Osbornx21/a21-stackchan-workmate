@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -189,17 +190,17 @@ func executeStreamingTTSRuntimeSmoke(ctx context.Context, env []string, dialer p
 		DeviceID:  "a21-host-runtime-smoke",
 	})
 	if err != nil {
-		return fmt.Errorf("provider_runtime_failed")
+		return fmt.Errorf("%s", streamingTTSRuntimeSmokeRuntimeFailureFinding(err))
 	}
 	defer session.Close(context.Background())
 	report.SessionUpdateSent = true
 	report.SampleRateHz = session.OutputSampleRateHz()
 	if err := session.SendText(ctx, streamingTTSRuntimeSmokeText); err != nil {
-		return fmt.Errorf("provider_runtime_failed")
+		return fmt.Errorf("%s", streamingTTSRuntimeSmokeRuntimeFailureFinding(err))
 	}
 	report.TextAppendSent = true
 	if err := session.TextDone(ctx); err != nil {
-		return fmt.Errorf("provider_runtime_failed")
+		return fmt.Errorf("%s", streamingTTSRuntimeSmokeRuntimeFailureFinding(err))
 	}
 	report.TextDoneSent = true
 	chunker := newStreamingTTSRuntimeSmokeChunker(report.SampleRateHz)
@@ -213,7 +214,7 @@ func executeStreamingTTSRuntimeSmoke(ctx context.Context, env []string, dialer p
 			if ctx.Err() != nil {
 				return fmt.Errorf("provider_runtime_timeout")
 			}
-			return fmt.Errorf("provider_runtime_failed")
+			return fmt.Errorf("%s", streamingTTSRuntimeSmokeRuntimeFailureFinding(err))
 		}
 		if !ok || event.Audio == nil {
 			continue
@@ -281,11 +282,50 @@ func streamingTTSRuntimeSmokeSampleRate(env []string) int {
 	}
 }
 
+var streamingTTSRuntimeSmokeURLPattern = regexp.MustCompile(`(?i)(https?|wss?)://[^\s"']+`)
+var streamingTTSRuntimeSmokeCredentialPattern = regexp.MustCompile(`(?i)(authorization|bearer|token|secret|api[_-]?key|access[_-]?token)[^\s"']*`)
+
+func streamingTTSRuntimeSmokeRuntimeFailureFinding(err error) string {
+	if err == nil || strings.TrimSpace(err.Error()) == "" {
+		return "provider_runtime_failed"
+	}
+	detail := strings.ToLower(strings.TrimSpace(err.Error()))
+	detail = streamingTTSRuntimeSmokeURLPattern.ReplaceAllString(detail, "redacted_url")
+	if streamingTTSRuntimeSmokeCredentialPattern.MatchString(detail) {
+		return "provider_runtime_failed_redacted"
+	}
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range detail {
+		keep := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if keep {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+		if b.Len() >= 120 {
+			break
+		}
+	}
+	token := strings.Trim(b.String(), "_")
+	if token == "" {
+		return "provider_runtime_failed"
+	}
+	return "provider_runtime_failed_" + token
+}
+
 func streamingTTSRuntimeSmokeStatusForFinding(finding string) string {
 	switch finding {
-	case "provider_runtime_timeout", "provider_runtime_failed", "provider_audio_delta_invalid":
+	case "provider_runtime_timeout", "provider_audio_delta_invalid":
 		return "failed"
 	default:
+		if strings.HasPrefix(finding, "provider_runtime_failed") {
+			return "failed"
+		}
 		return "blocked"
 	}
 }

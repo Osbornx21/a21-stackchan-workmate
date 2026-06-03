@@ -131,6 +131,29 @@ A21 voice-edge Gateway under systemd on `127.0.0.1:21081` behind Caddy public
 with `-k`. Trusted TLS, secure provider-secret injection, real cloud
 ASR/LLM/TTS execution, physical StackChan public-WSS evidence, and wake-word
 product proof remain open before PRD acceptance.
+The 2026-06-03 public-edge provider push moved this slice beyond host-only
+reachability: ECS `47.103.57.217` now reads provider configuration from
+root-only `/etc/a21/secrets/provider.env`, runs a DashScope CosyVoice wrapper
+through A21's existing `voice_clone_cli` TTS seam, and delivered real
+DashScope-generated audio to the physical StackChan over stock
+`/v1/xiaozhi`. Evidence trace
+`a21-trace-public-edge-dashscope-say-1780472526` returned
+`status=delivered`, `delivered_transport=xiaozhi_ws`, `audio_chunks=87`,
+`tts.first_audio=2159 ms`, `audio.downlink.first_frame=2160 ms`, and
+`xiaozhi.say.delivered` for device `44:1b:f6:e2:6a:60`. The matching remote
+TTS smoke `/tmp/a21-provider-smoke/a21-local-tts-smoke-20260603-154156.json`
+passed with `provider=voice_clone_cli`, `model=cosyvoice_v3_flash`, and a
+redacted PCM16 mono WAV quality report. Doubao realtime TTS and the attempted
+Iflytek mapping remain blocked by provider `401`; their credentials must not
+be treated as A21-ready Realtime/Iflytek credentials. Public host-loopback
+bench report `reports/a21-xiaozhi-voice-bench-20260603-154310.624051000.json`
+proved virtual answer and abort timing (`barge_in_stop_p95_ms=1`) but stayed
+`prd_accepted=false`. Physical half-duplex report
+`reports/a21-stackchan-half-duplex-acceptance-20260603-154254.json` correctly
+blocked because the stock product firmware is not the diagnostic mic-probe
+runtime echo lane. Full PRD remains blocked by operator audible confirmation,
+stock physical mic-driven dialogue, normal half-duplex/barge-in proof, and
+wake-word product proof.
 `T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE` is active as the endpoint
 provisioning contract: A21 no longer treats missing Wi-Fi credentials in the
 self-owned firmware state model as local fallback; it enters

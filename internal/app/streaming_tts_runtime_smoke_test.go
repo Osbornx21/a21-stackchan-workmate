@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -170,6 +171,40 @@ func TestRunStreamingTTSRuntimeSmokeFakeRuntimeProvesFirstChunkBeforeEOF(t *test
 	}
 }
 
+func TestRunStreamingTTSRuntimeSmokeFailureFindingIsRedacted(t *testing.T) {
+	dir := t.TempDir()
+	previousDialer := streamingTTSRuntimeSmokeDialer
+	streamingTTSRuntimeSmokeDialer = appFailingRealtimeDialer{
+		err: fmt.Errorf("failed to dial wss://example.invalid/v1/realtime?token=secret-value: Authorization Bearer sk-a21-secret rejected"),
+	}
+	t.Cleanup(func() { streamingTTSRuntimeSmokeDialer = previousDialer })
+	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_ACCESS_TOKEN", "access-a21-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts-secret")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "voice-secret")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"streaming-tts-runtime-smoke", "--execute", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	report := readStreamingTTSRuntimeSmokeReportFromDir(t, dir)
+	if report.Status != "failed" || !report.Executed || !report.ProviderConfigured {
+		t.Fatalf("status/executed/configured = %q/%v/%v", report.Status, report.Executed, report.ProviderConfigured)
+	}
+	if !appStringSliceContains(report.Findings, "provider_runtime_failed_redacted") {
+		t.Fatalf("findings = %#v, want redacted runtime failure", report.Findings)
+	}
+	rendered := stdout.String() + mustJSONForAppTest(t, report)
+	for _, forbidden := range []string{"access-a21-secret", "sk-a21-secret", "secret-value", "doubao-tts-secret", "voice-secret", "Authorization", "Bearer", "wss://", "https://", "token="} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("streaming TTS failure report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func readStreamingTTSRuntimeSmokeReportFromDir(t *testing.T, dir string) streamingTTSRuntimeSmokeReport {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "a21-streaming-tts-runtime-smoke-*.json"))
@@ -242,6 +277,14 @@ type appFakeRealtimeDialer struct {
 
 func (d appFakeRealtimeDialer) Dial(_ context.Context, _ string, _ http.Header, _ providers.NetworkPolicy) (providers.RealtimeConn, error) {
 	return d.conn, nil
+}
+
+type appFailingRealtimeDialer struct {
+	err error
+}
+
+func (d appFailingRealtimeDialer) Dial(_ context.Context, _ string, _ http.Header, _ providers.NetworkPolicy) (providers.RealtimeConn, error) {
+	return nil, d.err
 }
 
 func appRealtimeEventTypes(messages []map[string]any) []string {

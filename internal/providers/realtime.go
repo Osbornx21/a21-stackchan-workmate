@@ -129,14 +129,10 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		report.Provider = provider
 		report.Family = string(ProviderFamilyVoiceHybrid)
 		report.RouteEligible = false
-		report.APIKeyEnv = "A21_DOUBAO_API_KEY"
+		report.APIKeyEnv = "A21_DOUBAO_API_KEY|A21_DOUBAO_ACCESS_TOKEN"
 		report.ModelEnv = "A21_DOUBAO_TTS_MODEL"
 		report.BaseURLEnv = "A21_DOUBAO_TTS_REALTIME_URL"
-		report.Configured, report.MissingEnv = providerSmokeConfigured(env, providerSmokeSpec{
-			APIKeyEnv:   report.APIKeyEnv,
-			ModelEnv:    report.ModelEnv,
-			RequiredEnv: []string{"A21_DOUBAO_TTS_VOICE"},
-		})
+		report.Configured, report.MissingEnv = doubaoRealtimeTTSPlanConfigured(env)
 		if !report.Configured {
 			report.Status = ProviderSmokeSkipped
 			report.Detail = "doubao realtime TTS plan skipped because required env is missing"
@@ -161,6 +157,21 @@ func RealtimeWebSocketPlanFromEnv(env []string, providerName string) ProviderSmo
 		}
 		return report
 	}
+}
+
+func doubaoRealtimeTTSPlanConfigured(env []string) (bool, []string) {
+	var missing []string
+	if strings.TrimSpace(envValue(env, "A21_DOUBAO_API_KEY")) == "" &&
+		strings.TrimSpace(envValue(env, "A21_DOUBAO_ACCESS_TOKEN")) == "" {
+		missing = append(missing, "A21_DOUBAO_API_KEY")
+	}
+	if strings.TrimSpace(envValue(env, "A21_DOUBAO_TTS_MODEL")) == "" {
+		missing = append(missing, "A21_DOUBAO_TTS_MODEL")
+	}
+	if strings.TrimSpace(envValue(env, "A21_DOUBAO_TTS_VOICE")) == "" {
+		missing = append(missing, "A21_DOUBAO_TTS_VOICE")
+	}
+	return len(missing) == 0, missing
 }
 
 func NewRealtimeWebSocketAdapter(config RealtimeWebSocketConfig, dialer RealtimeDialer) *RealtimeWebSocketAdapter {

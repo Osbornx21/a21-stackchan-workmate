@@ -282,3 +282,49 @@ Acceptance:
 Next worker should execute `T-PROVIDER-002b`: use the fastest real egress path
 for TTS, preferably 5080/Alibaba relay if direct Mac remains blocked, then run
 Iflytek smoke, StepFun+TTS loopback, and physical StackChan playback.
+
+## 2026-06-03 Public Edge DashScope Execution Update
+
+- The main public Gateway on ECS `47.103.57.217` now consumes provider secrets
+  only through root-only `/etc/a21/secrets/provider.env`; no secret values are
+  stored in repo, firmware, systemd unit, Caddy config, reports, or docs.
+- Doubao realtime TTS was attempted with the user-provided access token and
+  secretkey through A21's existing `doubao_tts_realtime` adapter. Both attempts
+  reached the Volcengine AI Gateway host but failed WebSocket handshake with
+  HTTP `401`. Temporarily changing the model query to `doubao-tts` still
+  returned `401`, so this is recorded as credential/API-family mismatch rather
+  than device or Gateway failure.
+- Iflytek TTS was attempted by mapping the same user-provided appid/key/secret
+  into `A21_IFLYTEK_TTS_*`; it failed with
+  `iflytek_tts_websocket_dial_failed_http_401`. This is not treated as a valid
+  Iflytek credential set.
+- A minimal DashScope CosyVoice wrapper was added at
+  `scripts/a21_dashscope_cosyvoice_tts.py` and selected through the existing
+  A21 `voice_clone_cli` seam:
+  - `A21_TTS_FAST_PROFILE=voice_clone_cli`
+  - `A21_VOICE_CLONE_COMMAND=python3 /opt/a21/scripts/a21_dashscope_cosyvoice_tts.py`
+  - `A21_DASHSCOPE_TTS_MODEL=cosyvoice-v3-flash`
+  - `A21_DASHSCOPE_TTS_VOICE=longanyang`
+- Remote `local-tts-smoke --engine voice_clone_cli` passed with report
+  `/tmp/a21-provider-smoke/a21-local-tts-smoke-20260603-154156.json`.
+- Real physical public downlink passed through `/v1/xiaozhi/say`:
+  trace `a21-trace-public-edge-dashscope-say-1780472526`, device
+  `44:1b:f6:e2:6a:60`, `status=delivered`, `audio_chunks=87`,
+  `tts.first_audio=2159 ms`, and `xiaozhi.say.delivered`.
+- Public `xiaozhi-voice-bench` produced virtual/host evidence only:
+  report `reports/a21-xiaozhi-voice-bench-20260603-154310.624051000.json`
+  has answer/barge turns passing and `barge_in_stop_p95_ms=1`, but remains
+  `prd_accepted=false`.
+- Physical half-duplex acceptance was attempted and correctly blocked because
+  the current stock Xiaozhi product firmware is not the diagnostic mic-probe
+  runtime echo lane required by that acceptance tool:
+  `reports/a21-stackchan-half-duplex-acceptance-20260603-154254.json`.
+
+Updated target interpretation:
+
+- Public Gateway now has a real cloud TTS downlink path through DashScope
+  CosyVoice and the existing A21 `voice_clone_cli` seam.
+- This is not the final streaming TTS architecture and is not full PRD green.
+  It is a product-useful public downlink bridge while the pure streaming
+  Doubao/DashScope adapter and physical mic-driven dialogue evidence remain
+  open.

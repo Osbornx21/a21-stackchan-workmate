@@ -127,6 +127,28 @@ func TestRealtimeWebSocketPlanFromEnvSkipsDoubaoTTSWhenVoiceMissing(t *testing.T
 	}
 }
 
+func TestRealtimeWebSocketPlanFromEnvAcceptsDoubaoTTSAccessTokenAlias(t *testing.T) {
+	report := RealtimeWebSocketPlanFromEnv([]string{
+		"A21_PROVIDER_PRIMARY=doubao_tts_realtime",
+		"A21_DOUBAO_ACCESS_TOKEN=access-a21-secret",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+	}, "doubao_tts_realtime")
+
+	if report.Status != ProviderSmokeReady {
+		t.Fatalf("status = %q, want ready: missing=%#v detail=%s", report.Status, report.MissingEnv, report.Detail)
+	}
+	if report.APIKeyEnv != "A21_DOUBAO_API_KEY|A21_DOUBAO_ACCESS_TOKEN" {
+		t.Fatalf("api key env = %q, want access-token alias documented", report.APIKeyEnv)
+	}
+	rendered := mustJSON(t, report)
+	for _, forbidden := range []string{"access-a21-secret", "doubao-tts", "zh_female_kailangjiejie", "Authorization", "Bearer"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("plan leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestRealtimeWebSocketPlanFromEnvSkipsWhenCredentialsMissing(t *testing.T) {
 	report := RealtimeWebSocketPlanFromEnv([]string{
 		"A21_PROVIDER_PRIMARY=openai_realtime",
@@ -229,6 +251,15 @@ func TestRealtimeWebSocketAdapterPassesHeadersToDialerOnly(t *testing.T) {
 			t.Fatalf("adapter report leaked %q: %s", forbidden, rendered)
 		}
 	}
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 type fakeRealtimeConn struct {
