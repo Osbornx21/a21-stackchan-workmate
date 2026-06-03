@@ -331,7 +331,7 @@ func buildXiaozhiVoiceBenchReport(ctx context.Context, options xiaozhiVoiceBench
 	if options.RequireProductChain && !xiaozhiVoiceBenchProductChainReady(report.Execution) {
 		report.Findings = append(report.Findings, xiaozhiVoiceBenchFinding{
 			Code:    "product_chain_not_executed",
-			Message: "xiaozhi voice bench did not observe non-fixture ASR, text stream, and TTS stages in one host-local product chain",
+			Message: "xiaozhi voice bench did not observe non-fixture ASR, text stream, and TTS stages in one product chain",
 		})
 	}
 	report.Counts.FailureCount = xiaozhiVoiceBenchFailureCount(report.AnswerTurns) + xiaozhiVoiceBenchFailureCount(report.BargeInTurns) + len(report.Findings)
@@ -515,6 +515,11 @@ func xiaozhiVoiceBenchExecutionFromPipeline(pipeline map[string]any) xiaozhiVoic
 		execution.HostLocalTTSExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.TTSProfile)
 		execution.ProviderExecuted = execution.HostLocalTextExecuted
 		execution.HostProductChainReady = xiaozhiVoiceBenchProductChainReady(execution)
+	} else if execution.VoicePipelineExecutionMode == "cloud_edge" {
+		execution.ProviderExecuted = xiaozhiVoiceBenchNonMockStageProfile(execution.ASRProfile) &&
+			xiaozhiVoiceBenchNonMockStageProfile(execution.LLMProfile) &&
+			xiaozhiVoiceBenchNonMockStageProfile(execution.TTSProfile)
+		execution.HostProductChainReady = execution.ProviderExecuted
 	}
 	return execution
 }
@@ -524,10 +529,12 @@ func xiaozhiVoiceBenchProductChainReady(execution xiaozhiVoiceBenchExecution) bo
 		return true
 	}
 	return execution.VoicePipelineObserved &&
-		execution.VoicePipelineExecutionMode == "host_local" &&
-		execution.HostLocalASRExecuted &&
-		execution.HostLocalTextExecuted &&
-		execution.HostLocalTTSExecuted
+		((execution.VoicePipelineExecutionMode == "host_local" &&
+			execution.HostLocalASRExecuted &&
+			execution.HostLocalTextExecuted &&
+			execution.HostLocalTTSExecuted) ||
+			(execution.VoicePipelineExecutionMode == "cloud_edge" &&
+				execution.ProviderExecuted))
 }
 
 func xiaozhiVoiceBenchNonMockStageProfile(profile string) bool {
@@ -551,6 +558,8 @@ func xiaozhiVoiceBenchSafeExecutionMode(mode string) string {
 		return "fixture"
 	case "host_local":
 		return "host_local"
+	case "cloud_edge":
+		return "cloud_edge"
 	default:
 		return "unknown"
 	}

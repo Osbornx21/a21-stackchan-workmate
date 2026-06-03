@@ -7290,6 +7290,27 @@ func TestXiaozhiVoiceBenchExecutionFromPipelineMarksNonMockTextProviderExecuted(
 	}
 }
 
+func TestXiaozhiVoiceBenchExecutionFromPipelineMarksCloudEdgeProductChain(t *testing.T) {
+	execution := xiaozhiVoiceBenchExecutionFromPipeline(map[string]any{
+		"execution_mode": "cloud_edge",
+		"selection": map[string]any{
+			"asr_profile":     "dashscope_qwen_asr_realtime",
+			"asr_profile_env": "A21_ASR_CLOUD_PROFILE",
+			"llm_profile":     "deepseek",
+			"llm_profile_env": "A21_TEXT_STREAM_PROFILE",
+			"tts_profile":     "dashscope_qwen_tts_realtime",
+			"tts_profile_env": "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	if execution.VoicePipelineExecutionMode != "cloud_edge" || !execution.ProviderExecuted || !execution.HostProductChainReady {
+		t.Fatalf("execution = %+v, want cloud edge provider product chain", execution)
+	}
+	if execution.HostLocalASRExecuted || execution.HostLocalTextExecuted || execution.HostLocalTTSExecuted || execution.HardwareExecuted {
+		t.Fatalf("execution = %+v, want cloud edge not host-local or hardware execution", execution)
+	}
+}
+
 func TestRunXiaozhiVoiceBenchSupportsRedactedInputWAVFixture(t *testing.T) {
 	gatewayServer := newGatewayServerFromEnv(nil)
 	httpServer := httptest.NewServer(gatewayServer.Handler())
