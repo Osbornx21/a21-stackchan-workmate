@@ -4134,6 +4134,9 @@ func TestXiaozhiWebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForS
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 
 	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-no-speech-cooldown", nil)
@@ -4151,6 +4154,7 @@ func TestXiaozhiWebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForS
 		"xiaozhi.listen.start.input_suppressed",
 		"xiaozhi.listen.start.suppressed_after_no_speech",
 		"xiaozhi.opus_frame.ignored_suppressed_listen",
+		"xiaozhi.listen.stop.suppressed_session_drain_armed",
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)

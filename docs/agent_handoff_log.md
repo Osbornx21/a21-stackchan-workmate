@@ -8591,6 +8591,11 @@ Follow-up reset pass:
   and cannot enter wake-preroll or ASR. The state is cleared only when the
   device sends `listen.stop`, traced as
   `xiaozhi.listen.stop.suppressed_session_ended`.
+- Physical follow-up showed one remaining tail frame could arrive immediately
+  after the suppressed listen's `listen.stop`. Added
+  `xiaozhi.listen.stop.suppressed_session_drain_armed`, a short drain after a
+  rejected listen session ends, so stop-tail Opus is also discarded instead of
+  entering wake-preroll.
 - Updated no-speech and host-say suppression tests so suppressed-listen audio
   is forbidden from entering `xiaozhi.wake_preroll.opus_frame.buffered`.
 
@@ -8602,3 +8607,4 @@ Follow-up test/build results:
 - Related packages passed:
   `go test ./internal/app ./internal/providers -count=1`.
 - `git diff --check` passed.
+- Latest focused drain tests passed after the stop-tail drain addition.

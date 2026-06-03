@@ -35,6 +35,7 @@ const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
 const xiaozhiNoSpeechInputCooldownMS int64 = 1200
 const xiaozhiPostTTSInputCooldownMS int64 = 900
+const xiaozhiSuppressedListenDrainMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
 const maxXiaozhiOpusIngressQueueFrames = 16
@@ -3037,7 +3038,10 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		case "stop":
 			if !session.listening {
 				if session.clearSuppressedXiaozhiListen() {
-					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_ended", s.now().UnixMilli())
+					nowMS := s.now().UnixMilli()
+					session.suppressXiaozhiInputUntil(nowMS+xiaozhiSuppressedListenDrainMS, "after_suppressed_listen")
+					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_ended", nowMS)
+					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_drain_armed", nowMS)
 				}
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
 				s.writeXiaozhiListenReply(ctx, conn, session, "stop", "ignored", "")
