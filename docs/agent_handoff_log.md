@@ -8386,3 +8386,51 @@ Post-deploy update:
   deploy as stock Xiaozhi Opus transport, but the latest post-deploy physical
   event is hello-only. A fresh operator wake/speak trace is still needed to
   confirm the audible "no speaking before I finish" fix on hardware.
+
+## 2026-06-03 22:xx CST - Xiaozhi Late ASR Final Reply Recovery
+
+Round goal:
+
+- Fix the post-hotfix regression where a long utterance can leave StackChan in
+  green listening state and never reply.
+
+Actual completed work:
+
+- Pulled the live physical trace for device `44:1b:f6:e2:6a:60` after the user
+  reproduced the issue. The Gateway received real stock Opus uplink
+  (`xiaozhi.opus_frame.received=299`) and the endpoint eventually sent
+  `xiaozhi.listen.stop`.
+- Root cause: `asr.stream.commit` waited only 200 ms for final text. The live
+  DashScope final arrived about 222 ms after commit, so Gateway recorded
+  `asr.stream.final_timeout`, returned, then later recorded `asr.final` without
+  any code path left to start the voice pipeline.
+- Added late-final recovery: when an ASR final event arrives after commit and
+  the turn is no longer listening, Gateway claims the turn exactly once and
+  starts the answer pipeline. This preserves the earlier no-pre-stop-speaking
+  fix while preventing green-listening/no-reply.
+- Renamed the internal one-shot guard from the old partial-bridge meaning to a
+  generic streaming-ASR answer claim.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Added regression:
+  `TestXiaozhiWebSocketLateStreamingASRFinalStillStartsPipeline`.
+- Focused Gateway streaming/listen tests passed.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Related packages passed:
+  `go test ./internal/app ./internal/providers -count=1`.
+- `make verify` passed.
+
+Unfinished items:
+
+- Commit and deploy this late-final recovery to `47.103.57.217`.
+- Re-run the same physical long-speech test and require `asr.stream.final_timeout`
+  followed by `asr.final` and then `xiaozhi.voice_pipeline.start` / downlink,
+  or no timeout at all with normal final-driven reply.

@@ -2193,51 +2193,51 @@ func (s *Server) handleMockInterrupt(w http.ResponseWriter, r *http.Request) {
 }
 
 type xiaozhiSession struct {
-	mu                               sync.Mutex
-	writeMu                          sync.Mutex
-	traceID                          string
-	sessionID                        string
-	deviceID                         string
-	features                         xiaozhitransport.HelloFeatures
-	currentTurn                      *xiaozhiTurn
-	nextTurnID                       uint64
-	helloReceived                    bool
-	listening                        bool
-	listenStartedAtMS                int64
-	binaryProtocolVersion            int
-	opusCodec                        *opuscodec.Codec
-	opusSampleRateHz                 int
-	opusChannels                     int
-	opusFrameDurationMS              int
-	opusFrameCount                   int
-	opusByteCount                    int
-	opusDecodedFrameCount            int
-	opusDecodedSampleCount           int
-	opusDecodeErrorCount             int
-	opusIngressProcessedFrameCount   int
-	voicePipelineFrames              []providers.VoicePipelinePCMFrame
-	voicePipelineHasSpeech           bool
-	ttsStopSent                      bool
-	lastDownlinkAtMS                 int64
-	lastDownlinkTurnID               string
-	lastPlaybackStopDoneAtMS         int64
-	inputCooldownUntilMS             int64
-	inputCooldownReason              string
-	officialStackChanState           string
-	streamingASRSession              providers.StreamingASRSession
-	streamingASRHasPartial           bool
-	streamingASRPartialText          string
-	streamingASRHasFinal             bool
-	streamingASRFinalText            string
-	streamingASRClosed               bool
-	streamingASRCommitStarted        bool
-	streamingASRPartialBridgeStarted bool
-	wakePrerollFrames                []providers.VoicePipelinePCMFrame
-	wakePrerollPayloadBytes          []int
-	wakePrerollHasSpeech             bool
-	opusIngressQueue                 chan xiaozhiOpusIngressFrame
-	opusIngressCtx                   context.Context
-	opusIngressCancel                context.CancelFunc
+	mu                             sync.Mutex
+	writeMu                        sync.Mutex
+	traceID                        string
+	sessionID                      string
+	deviceID                       string
+	features                       xiaozhitransport.HelloFeatures
+	currentTurn                    *xiaozhiTurn
+	nextTurnID                     uint64
+	helloReceived                  bool
+	listening                      bool
+	listenStartedAtMS              int64
+	binaryProtocolVersion          int
+	opusCodec                      *opuscodec.Codec
+	opusSampleRateHz               int
+	opusChannels                   int
+	opusFrameDurationMS            int
+	opusFrameCount                 int
+	opusByteCount                  int
+	opusDecodedFrameCount          int
+	opusDecodedSampleCount         int
+	opusDecodeErrorCount           int
+	opusIngressProcessedFrameCount int
+	voicePipelineFrames            []providers.VoicePipelinePCMFrame
+	voicePipelineHasSpeech         bool
+	ttsStopSent                    bool
+	lastDownlinkAtMS               int64
+	lastDownlinkTurnID             string
+	lastPlaybackStopDoneAtMS       int64
+	inputCooldownUntilMS           int64
+	inputCooldownReason            string
+	officialStackChanState         string
+	streamingASRSession            providers.StreamingASRSession
+	streamingASRHasPartial         bool
+	streamingASRPartialText        string
+	streamingASRHasFinal           bool
+	streamingASRFinalText          string
+	streamingASRClosed             bool
+	streamingASRCommitStarted      bool
+	streamingASRAnswerStarted      bool
+	wakePrerollFrames              []providers.VoicePipelinePCMFrame
+	wakePrerollPayloadBytes        []int
+	wakePrerollHasSpeech           bool
+	opusIngressQueue               chan xiaozhiOpusIngressFrame
+	opusIngressCtx                 context.Context
+	opusIngressCancel              context.CancelFunc
 }
 
 type xiaozhiTurn struct {
@@ -2575,7 +2575,7 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.streamingASRHasFinal = false
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
-	session.streamingASRPartialBridgeStarted = false
+	session.streamingASRAnswerStarted = false
 }
 
 func (session *xiaozhiSession) xiaozhiOpusIngressQueue() chan xiaozhiOpusIngressFrame {
@@ -2661,7 +2661,7 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
 	session.streamingASRCommitStarted = false
-	session.streamingASRPartialBridgeStarted = false
+	session.streamingASRAnswerStarted = false
 	session.mu.Unlock()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start", s.now().UnixMilli())
 	go s.consumeXiaozhiStreamingASREvents(ctx, conn, session, stream)
@@ -2717,6 +2717,7 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 			session.streamingASRFinalText = event.Text
 			session.mu.Unlock()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.final", s.now().UnixMilli())
+			s.maybeStartXiaozhiStreamingASRFinalAnswer(ctx, conn, session)
 		}
 	}
 	session.mu.Lock()
@@ -2731,7 +2732,7 @@ func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *web
 		return
 	}
 	session.mu.Lock()
-	if session.streamingASRPartialBridgeStarted || !session.listening || session.currentTurn == nil || len(session.voicePipelineFrames) == 0 {
+	if session.streamingASRAnswerStarted || !session.listening || session.currentTurn == nil || len(session.voicePipelineFrames) == 0 {
 		session.mu.Unlock()
 		return
 	}
@@ -2741,13 +2742,17 @@ func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *web
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.partial_prewarm_deferred", s.now().UnixMilli())
 }
 
-func (session *xiaozhiSession) xiaozhiPartialVoicePipelineStarted() bool {
+func (session *xiaozhiSession) claimXiaozhiStreamingASRAnswer(turn *xiaozhiTurn) bool {
 	if session == nil {
 		return false
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	return session.streamingASRPartialBridgeStarted
+	if turn == nil || session.currentTurn != turn || session.streamingASRAnswerStarted {
+		return false
+	}
+	session.streamingASRAnswerStarted = true
+	return true
 }
 
 func (s *Server) appendXiaozhiStreamingASRFrame(ctx context.Context, session *xiaozhiSession, frame providers.VoicePipelinePCMFrame) {
@@ -2802,15 +2807,32 @@ func (s *Server) finishXiaozhiStreamingASRCommit(ctx context.Context, conn *webs
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_timeout", s.now().UnixMilli())
 		return
 	}
-	if session.xiaozhiPartialVoicePipelineStarted() || session.shouldAbortXiaozhiTurn(turn) {
-		return
+	s.maybeStartXiaozhiStreamingASRFinalAnswer(ctx, conn, session)
+}
+
+func (s *Server) maybeStartXiaozhiStreamingASRFinalAnswer(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession) bool {
+	if s == nil || session == nil || conn == nil {
+		return false
+	}
+	session.mu.Lock()
+	turn := session.currentTurn
+	listening := session.listening
+	commitStarted := session.streamingASRCommitStarted
+	hasFinal := session.streamingASRHasFinal && strings.TrimSpace(session.streamingASRFinalText) != ""
+	session.mu.Unlock()
+	if listening || !commitStarted || !hasFinal || turn == nil || session.shouldAbortXiaozhiTurn(turn) {
+		return false
+	}
+	if !session.claimXiaozhiStreamingASRAnswer(turn) {
+		return false
 	}
 	task := s.newXiaozhiTurnTask(session, turn)
 	if strings.TrimSpace(task.streamingASRFinalText) == "" {
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_empty", s.now().UnixMilli())
-		return
+		return false
 	}
 	s.startXiaozhiTurnTask(ctx, conn, session, task)
+	return true
 }
 
 func (s *Server) waitXiaozhiStreamingASRFinal(session *xiaozhiSession, timeout time.Duration) bool {
