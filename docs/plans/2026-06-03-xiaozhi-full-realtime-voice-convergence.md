@@ -122,6 +122,32 @@ Workers are read-only. They must return evidence and transition suggestions;
 they must not edit, commit, build, flash, start/stop services, execute
 provider/V21 calls, write NVS, or play audio.
 
+Second read-only cross-check on current mainline `188b341`:
+
+1. Protocol/state-machine audit:
+   - Thread: `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168`
+   - Result: A21 matches stock-shaped WebSocket hello/listen/abort, binary
+     Opus ingress, and paced downlink, but it remains narrower than full
+     Xiaozhi transport because MQTT+UDP is not implemented. WebSocket-only is
+     acceptable for the immediate product lane, with MQTT+UDP planned later.
+2. Endpoint voice parity audit:
+   - Thread: `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c`
+   - Result: highest endpoint parity risks are custom wake vs official
+     AFE/WakeNet behavior and the parked direct-Xiaozhi path bypassing the
+     normal Mooncake/AppLauncher lifecycle. These are physical/product-lane
+     transitions, not host smoke acceptance.
+3. Gateway/provider realtime gap audit:
+   - Thread: `019e8ac3-c9f6-7350-a66e-e51dcdc8109e`
+   - Result: the next host-side implementation transition should bridge ASR
+     partials into LLM/TTS before ASR final, while keeping real ASR model and
+     real TTS execution as separate truthful blockers.
+4. Architecture reuse strategy audit:
+   - Thread: `019e8ac3-c9fa-7ed0-8b61-625a418a84c2`
+   - Result: choose incremental A21 convergence on Xiaozhi firmware/protocol
+     and audio-service patterns. Do not embed the full Python/Java/Vue
+     Xiaozhi server stack unless an ADR creates an isolated voice-engine
+     adapter and preserves A21 Go/provider/V21 boundaries.
+
 ## Phased Execution Steps
 
 ### Phase 0: Cross-Check Current Truth
@@ -234,6 +260,36 @@ Rollback:
 
 - Evidence-only rollback is deleting the new report. Runtime changes must be
   reverted per their own transition if they caused regression.
+
+### Phase 3a: ASR Partial To LLM Realtime Bridge
+
+Transition:
+
+- `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001`
+
+Actions:
+
+- Add a narrow host-side bridge so ASR partial events from the stock
+  `/v1/xiaozhi` media path can start LLM streaming before ASR final.
+- Preserve the current final transcript and batch fallback path.
+- Add ordering trace markers and parity-gate rejection for turn-buffered-only
+  evidence.
+
+Acceptance:
+
+- Tests prove `asr.first_partial` precedes listen stop or VAD speech end in a
+  stock `/v1/xiaozhi` turn.
+- Tests prove `llm.first_content` can occur before `asr.final` for the
+  partial-driven path.
+- Tests prove first TTS audio chunk before pipeline completion, without WAV or
+  file boundaries.
+- Static, mock, `/say`, host-loopback, and fast-companion traces remain
+  rejected as full realtime acceptance.
+
+Rollback:
+
+- Revert bridge changes and return to the final-transcript voice pipeline.
+  Existing ASR/TTS seams and paced Opus downlink remain intact.
 
 ### Phase 4: Wake And State-Machine Closure
 

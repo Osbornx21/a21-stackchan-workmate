@@ -522,7 +522,7 @@ Next state:
 
 Current state:
 
-- `S-XIAOZHI-REALTIME-SEAMS-MAINLINE-NOT-RUNTIME-ACCEPTED`
+- `S-XIAOZHI-REALTIME-SEAMS-MAINLINE-NOT-OVERLAPPED`
 
 Trigger:
 
@@ -542,12 +542,16 @@ Action:
   `docs/plans/2026-06-03-xiaozhi-full-realtime-voice-convergence.md`.
 - Keep the product firmware lane on
   `a21-stackchan-official-xiaozhi-compatible`.
-- Dispatch read-only worker audits for official Xiaozhi protocol/state,
-  CoreS3/audio HAL/wake behavior, and A21 runtime gaps.
+- Read-only worker audits for official Xiaozhi protocol/state, CoreS3/audio
+  HAL/wake behavior, A21 runtime gaps, and architecture strategy have completed
+  again on HEAD `188b341`. They agree that A21 should continue incremental
+  convergence on stock Xiaozhi protocol/framework patterns, not wholesale
+  server-stack embedding, while keeping full realtime acceptance red.
 - Sequence the next implementation transitions as:
-  real Sherpa streaming ASR no-audio smoke, streaming TTS runtime proof,
-  physical stock `/v1/xiaozhi` realtime parity, local wake/state closure, and
-  official StackChan audio/HAL behavior parity.
+  ASR partial-to-LLM bridge, real Sherpa streaming ASR unblock, real streaming
+  TTS runtime execution if authorized, physical stock `/v1/xiaozhi` realtime
+  parity, local wake/state closure, and official StackChan audio/HAL behavior
+  parity.
 - Preserve strict evidence boundaries: host/static/mock/provider-shape evidence
   cannot claim physical PRD acceptance.
 
@@ -576,10 +580,9 @@ Rollback path:
 
 Next state:
 
-- `S-XIAOZHI-REALTIME-CONVERGENCE-PLAN-RECORDED`
-- Next transition: read worker returns, then dispatch either
-  `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` or
-  `T-STREAMING-TTS-RUNTIME-PROOF-001` depending on the strongest current gap.
+- `S-XIAOZHI-CONTINUOUS-TURN-BRIDGE-CANDIDATE`
+- Next transition: dispatch
+  `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001` in a scoped worker branch.
 
 ### Active T-XIAOZHI-REALTIME-VOICE-PARITY-001: Xiaozhi Realtime Voice Parity Gate
 
@@ -1772,6 +1775,8 @@ Next state:
 | T-XIAOZHI-STREAMING-TTS-ADAPTER-001: Doubao realtime TTS adapter seam | Completed adapter seam, runtime provider not executed | Plan `docs/plans/2026-06-03-xiaozhi-streaming-tts-adapter.md` scoped the work. Added an explicit `providers.StreamingTTSAdapter` marker, a Doubao realtime TTS pipeline adapter selected by `A21_TTS_FAST_PROFILE=doubao_tts_realtime`, and a PCM16 mono chunker that turns provider audio deltas into exact 60 ms downlink-ready chunks without writing or reading a WAV. Local/Iflytek/voice-clone TTS remain classified as WAV/file boundaries. New readiness reports prove the distinction: `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061849-1780438729911945000.json` blocks missing Doubao TTS config, `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730222971000.json` marks TTS ready but still blocks ASR helper proof, and `reports/a21-xiaozhi-streaming-provider-readiness-20260603-061850-1780438730359984000.json` passes the static provider-shape gate when ASR helper env, StepFun, and Doubao realtime TTS env are all present. `prd_accepted` remains false because no real provider execution or physical `/v1/xiaozhi` trace was captured. Focused provider/app tests, `git diff --check`, and `make verify` passed. |
 | T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS runtime smoke | Completed truthful blocker | Added redacted `a21 streaming-tts-runtime-smoke` plus `make streaming-tts-runtime-smoke`. Without `--execute`, local report `reports/a21-streaming-tts-runtime-smoke-20260603-074721-1780444041851710000.json` is `status=blocked`, finding `execute_flag_required`. Tests use a fake realtime dialer/session to prove `tts_session.update`, `input_text.append`, and `input_text.done` are sent, the first provider audio delta is observed while the stream is open, and at least one exact 60 ms PCM16 mono chunk is counted without WAV/file boundary. No real provider execution or physical Xiaozhi/StackChan path was used. |
 
+| T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
+
 ## Blocked Transitions
 
 | Transition | Blocker | Required unblock |
@@ -1830,7 +1835,15 @@ Next state:
      `/v1/xiaozhi/say`, `xiaozhi-voice-bench`, or `fast-companion-turn` as
      physical parity evidence.
 
-7. `T-XIAOZHI-STREAMING-ASR-001`
+7. `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001`
+   - Current phase: planned from read-only runtime audit
+     `019e8ac3-c9f6-7350-a66e-e51dcdc8109e`.
+   - Next action: implement a narrow host-side bridge so ASR partial events can
+     start LLM streaming before ASR final/listen stop, then tighten
+     `xiaozhi-realtime-parity` to distinguish true ordered stock traces from
+     turn-buffered-only traces.
+
+8. `T-XIAOZHI-STREAMING-ASR-001`
    - Current phase: not started. Read-only workers agreed the present stock
      `/v1/xiaozhi` path is still turn-buffered at the ASR boundary: Opus frames
      are decoded live, but ASR starts from accumulated frames after stop/VAD end.
@@ -1839,7 +1852,7 @@ Next state:
      arrive, let VAD end commit/finalize, and prove `asr.first_partial` occurs
      before `vad.speech.end`/listen stop.
 
-8. `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
+9. `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
    - Current phase: static provider readiness gate landed and is correctly red;
      `sherpa_onnx_streaming` is now selectable as a StreamingASRAdapter seam,
      and `doubao_tts_realtime` is now selectable as a StreamingTTSAdapter seam.
@@ -1851,20 +1864,20 @@ Next state:
      `xiaozhi-realtime-parity` on an operator-triggered stock `/v1/xiaozhi`
      turn.
 
-9. `T-WAKE-004-AFE-VS-CUSTOM-PARITY`
+10. `T-WAKE-004-AFE-VS-CUSTOM-PARITY`
    - Current phase: candidate from read-only audio HAL/wake worker
      `019e8a8a-7263-7b20-94b9-9b2847aa741d`.
    - Next action: plan whether to restore official AFE WakeNet behavior or
      harden custom MultiNet `紫悦`; acceptance must be physical wake from idle,
      not screen tap.
 
-10. `T-STACKCHAN-APP-LIFECYCLE-PARITY`
+11. `T-STACKCHAN-APP-LIFECYCLE-PARITY`
     - Current phase: candidate from read-only audio HAL/wake worker.
     - Next action: plan how to preserve official StackChan AppLauncher,
       AppAiAgent, AppAvatar, AppDance, AppSetup/Mooncake lifecycle while still
       avoiding the welcome/setup trap.
 
-11. `T-HAL-AUDIO-CONFIG-PARITY`
+12. `T-HAL-AUDIO-CONFIG-PARITY`
     - Current phase: candidate from read-only audio HAL/wake worker.
     - Next action: record and, if evidence supports it, align CoreS3/StackChan
       codec constants and init order such as ES7210 input gain, AFE/AEC/VAD,

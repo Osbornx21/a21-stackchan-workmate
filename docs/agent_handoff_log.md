@@ -5918,3 +5918,79 @@ Current validation request:
 
 - No unresolved integration failure. `T-STREAMING-TTS-RUNTIME-PROOF-001` is
   integrated as a truthful blocker, not runtime/physical acceptance.
+
+## 2026-06-03 08:22 CST - Control Cross-Checks Xiaozhi Realtime Convergence
+
+本轮目标:
+
+- Recover the main control thread after integrating the streaming TTS runtime
+  smoke.
+- Re-run strict read-only cross-checks across Xiaozhi protocol, endpoint
+  parity, Gateway/provider runtime gaps, and architecture reuse strategy.
+- Choose the next scoped implementation transition without redefining full
+  Xiaozhi realtime success around static gates, `/say`, WAV, host loopback,
+  mock tests, or plan-only progress.
+
+实际完成内容:
+
+- Confirmed main branch `codex/a21-hardware-window-20260602-stackchan-prd` at
+  HEAD `188b341`, clean.
+- Collected final structured reports from four read-only workers:
+  - Protocol/state worker `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168`.
+  - Endpoint/HAL/wake worker `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c`.
+  - Gateway/provider runtime gap worker `019e8ac3-c9f6-7350-a66e-e51dcdc8109e`.
+  - Architecture strategy worker `019e8ac3-c9fa-7ed0-8b61-625a418a84c2`.
+- Cross-check conclusion:
+  - Immediate product lane can stay WebSocket/Opus; MQTT+UDP is a planned
+    transport-parity gap.
+  - Endpoint parity risk is concentrated in custom wake vs official AFE/WakeNet
+    and the parked direct-Xiaozhi path bypassing normal Mooncake/AppLauncher
+    lifecycle.
+  - Runtime host blocker is now sharper: ASR partials exist as evidence markers
+    but do not yet drive LLM/TTS before ASR final/listen stop.
+  - Architecture direction remains incremental A21 convergence using Xiaozhi
+    firmware/protocol/audio-service patterns. Full server-stack embedding would
+    need an ADR and must preserve A21 Go/provider/V21 boundaries.
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-asr-partial-to-llm-realtime-bridge.md`.
+- Updated the full realtime convergence plan and state machine to make
+  `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001` the next scoped
+  host-side implementation candidate.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-asr-partial-to-llm-realtime-bridge.md`
+- `docs/plans/2026-06-03-xiaozhi-full-realtime-voice-convergence.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime objective is still incomplete.
+- Real Sherpa streaming ASR remains blocked by missing model/config evidence.
+- Real Doubao realtime TTS runtime remains blocked until explicit operator
+  authorization and complete env for `--execute`.
+- Physical product evidence still needs wake or labeled tap trigger, stock
+  `/v1/xiaozhi` trace ordering, device playback, touch/barge-in, and idle
+  recovery.
+
+下一轮建议动作:
+
+1. Dispatch scoped worker
+   `T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001`.
+2. Worker must not build/flash firmware, start/stop Gateway, call providers/V21,
+   play audio, touch NVS/serial/hardware, or use `/v1/xiaozhi/say` as
+   acceptance.
+3. Acceptance is host-side ordered trace/test evidence only, below physical PRD
+   acceptance.
+
+测试/构建/运行结果:
+
+- No tests run yet for this documentation/planning update.
+- No provider execution, Gateway start/stop, ASR/LLM/V21 execution,
+  `/v1/xiaozhi/say`, physical device path, firmware build, flash, NVS write,
+  serial access, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure. This is a control-state update and worker-routing step only.
