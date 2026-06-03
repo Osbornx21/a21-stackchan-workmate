@@ -8087,3 +8087,77 @@ Recommended next action:
    binary downlink frames, and barge-in metrics.
 4. Then inject StepFun server-side env when available and repeat the same
    evidence pass with `selected_llm_profile=stepfun`.
+
+## 2026-06-03 20:4x CST - Zi Yue Custom Wake Root Cause And Product Rebuild
+
+Round goal:
+
+- Answer why custom wake did not pass and close the concrete firmware-side
+  root cause without using the bare `xiaozhi.bin` lane.
+
+Actual completed work:
+
+- Confirmed public Gateway `/v1/wake-word` still reports builtin
+  `你好小智` and `custom_runtime_active=false`; this endpoint is not proof that
+  the flashed product app has active custom wake.
+- Captured a 25-second serial window on `/dev/cu.usbmodem101`; only periodic
+  `SystemInfo` logs appeared, with no custom wake detection log.
+- Inspected the official-compatible firmware source and found the real root
+  cause: `CustomWakeWord::Initialize()` only used `CONFIG_CUSTOM_WAKE_WORD`
+  when `models_list == nullptr`. In the normal official Xiaozhi path,
+  `models_list` is already supplied, so the code calls
+  `ParseWakenetModelConfig()` and reads the asset `index.json` command table.
+  The A21 `zi yue|...` aliases could therefore be present in `sdkconfig` and
+  binary strings without becoming the active MultiNet commands.
+- Updated
+  `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+  so `CONFIG_USE_CUSTOM_WAKE_WORD=y` overrides the asset command list with the
+  A21 sdkconfig aliases on both init paths.
+- Added/updated the official StackChan test guard to require the asset-command
+  override marker.
+- Rebuilt the official-compatible product lane only:
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Focused official StackChan tests passed:
+  `go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake|OfficialXiaozhiCompatible|StackChanOfficial' -count=1`.
+- `git diff --check`: passed.
+- Product build passed with dependency cache:
+  `A21_STACKCHAN_OFFICIAL_DEP_CACHE="/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan" make a21-stackchan-official-xiaozhi-compatible-build`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260603-204131-1780490491190876000.json`.
+- Product app:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- Product app SHA-256:
+  `7b547c8706f7ad89d6a3436ddd7a21e299f5a25ec20461a5489d0ee2076a1537`.
+- Binary strings now include:
+  `Loaded %d A21 sdkconfig custom wake command(s) for %s`,
+  `A21 overriding asset multinet commands with sdkconfig custom wake commands`,
+  and `Custom wake word detected: command_id=%d, string=%s, prob=%f`.
+- `make verify`: passed.
+
+Unfinished items:
+
+- This fix is built but not yet flashed in this round.
+- Custom wake remains unaccepted until a guarded product-lane flash and
+  physical idle wake proof pass.
+- Barge-in still has a separate runtime issue: traces show stop markers, but
+  downlink can continue after barge-in; that needs the next Gateway cancellation
+  fix.
+
+Recommended next action:
+
+1. Commit this wake override fix.
+2. Guarded-flash only the newly built
+   `a21-stackchan-official-xiaozhi-compatible.bin`.
+3. Capture boot serial logs showing the A21 override and loaded command count.
+4. Test `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle and then regenerate
+   wake/physical evidence.

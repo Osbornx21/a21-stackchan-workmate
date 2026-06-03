@@ -338,10 +338,15 @@ diff --git a/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc b/
 index 5ca6a37..fe49f98 100644
 --- a/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc
 +++ b/firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc
-@@ -91,3 +91,21 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list)
- #ifdef CONFIG_CUSTOM_WAKE_WORD
-         threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
--        commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
+@@ -85,17 +85,44 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list)
+ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
+     codec_ = codec;
+     commands_.clear();
+-
++#ifdef CONFIG_CUSTOM_WAKE_WORD
++    auto load_a21_custom_wake_commands = [this]() {
++        commands_.clear();
++        threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
 +        std::string command_list = CONFIG_CUSTOM_WAKE_WORD;
 +        size_t start = 0;
 +        int command_count = 0;
@@ -361,9 +366,27 @@ index 5ca6a37..fe49f98 100644
 +            }
 +            start = end + 1;
 +        }
-+        ESP_LOGI(TAG, "Loaded %d A21 custom wake command(s) for %s", command_count, CONFIG_CUSTOM_WAKE_WORD_DISPLAY);
++        ESP_LOGI(TAG, "Loaded %d A21 sdkconfig custom wake command(s) for %s", command_count, CONFIG_CUSTOM_WAKE_WORD_DISPLAY);
++    };
++#endif
+     if (models_list == nullptr) {
+         language_ = "cn";
+         models_ = esp_srmodel_init("model");
+ #ifdef CONFIG_CUSTOM_WAKE_WORD
+-        threshold_ = CONFIG_CUSTOM_WAKE_WORD_THRESHOLD / 100.0f;
+-        commands_.push_back({CONFIG_CUSTOM_WAKE_WORD, CONFIG_CUSTOM_WAKE_WORD_DISPLAY, "wake"});
++        load_a21_custom_wake_commands();
  #endif
      } else {
+         models_ = models_list;
+         ParseWakenetModelConfig();
++#ifdef CONFIG_CUSTOM_WAKE_WORD
++        ESP_LOGI(TAG, "A21 overriding asset multinet commands with sdkconfig custom wake commands");
++        load_a21_custom_wake_commands();
++#endif
+     }
+-
+     if (models_ == nullptr || models_->num == -1) {
 diff --git a/firmware/xiaozhi-esp32/main/application.h b/firmware/xiaozhi-esp32/main/application.h
 index 7ca7af4..46cfdac 100644
 --- a/firmware/xiaozhi-esp32/main/application.h

@@ -2214,12 +2214,21 @@ Next state:
 ## Next Candidate Transitions
 
 1. `T-WAKE-003: Zi Yue Phrase Tuning`
-   - Current phase: multi-phrase splitter candidate flashed so `紫悦`,
-     `紫悦紫悦`, `你好紫悦`, and `小紫悦` are registered as separate MultiNet
-     commands instead of one `|`-joined string.
-   - Next action: physically retry all four wake variants from idle and capture
-     trace/serial evidence; if all fail, add CustomWakeWord init/feed logging
-     or tune threshold next.
+   - Current phase: root cause found and product-lane rebuild passed. The prior
+     custom wake config entered `sdkconfig`, but `CustomWakeWord::Initialize`
+     used the asset `index.json` command path whenever a model list was already
+     loaded, so the A21 `CONFIG_CUSTOM_WAKE_WORD` aliases were not guaranteed to
+     become the active MultiNet command table. The overlay now overrides the
+     asset command list with the A21 sdkconfig custom wake aliases even on the
+     model-list path. Product build
+     `reports/a21-stackchan-official-baseline-20260603-204131-1780490491190876000.json`
+     passed with app SHA-256
+     `7b547c8706f7ad89d6a3436ddd7a21e299f5a25ec20461a5489d0ee2076a1537`.
+   - Next action: commit the wake override fix, guarded-flash only
+     `a21-stackchan-official-xiaozhi-compatible.bin`, capture serial boot logs
+     proving `A21 overriding asset multinet commands...` and
+     `Loaded ... A21 sdkconfig custom wake command(s)`, then physically retry
+     `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle.
 
 2. `T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop`
    - Current phase: product app flashed, firmware no-speech timer is present,
