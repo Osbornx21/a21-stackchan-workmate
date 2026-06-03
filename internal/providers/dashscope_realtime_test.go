@@ -130,7 +130,7 @@ func TestDashScopeRealtimeTTSWaitsForSessionUpdatedBeforeText(t *testing.T) {
 	}
 }
 
-func TestDashScopeRealtimeTTSDoesNotFinishBeforeAudioDone(t *testing.T) {
+func TestDashScopeRealtimeTTSSendsFinishAfterCommitBeforeAudio(t *testing.T) {
 	conn := &fakeRealtimeConn{
 		serverMessages: []map[string]any{
 			{"type": "session.created"},
@@ -159,16 +159,17 @@ func TestDashScopeRealtimeTTSDoesNotFinishBeforeAudioDone(t *testing.T) {
 	}
 	for range chunks {
 	}
-	if timelineIndex(conn.timeline, "write:session.finish") < timelineIndex(conn.timeline, "read:response.audio.done") {
-		t.Fatalf("timeline = %#v, session.finish must follow audio completion", conn.timeline)
+	if timelineIndex(conn.timeline, "write:session.finish") < timelineIndex(conn.timeline, "write:input_text_buffer.commit") {
+		t.Fatalf("timeline = %#v, session.finish must follow text commit", conn.timeline)
 	}
-	if timelineIndex(conn.timeline, "write:session.finish") < timelineIndex(conn.timeline, "read:response.audio.delta") {
-		t.Fatalf("timeline = %#v, audio delta must arrive before session.finish", conn.timeline)
+	if types := realtimeEventTypes(conn.messages); strings.Join(types, ",") != "session.update,input_text_buffer.append,input_text_buffer.commit,session.finish" {
+		t.Fatalf("client event types = %#v", types)
 	}
 }
 
-func TestDashScopeRealtimeTTSCancelDoesNotSendSessionFinish(t *testing.T) {
+func TestDashScopeRealtimeTTSCancelBeforeReadyDoesNotSendSessionFinish(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	conn := &fakeRealtimeConn{
 		serverMessages: []map[string]any{
 			{"type": "session.updated"},
@@ -179,11 +180,10 @@ func TestDashScopeRealtimeTTSCancelDoesNotSendSessionFinish(t *testing.T) {
 		Dialer: fakeRealtimeDialer{conn: conn},
 	})
 	chunks, err := adapter.Synthesize(ctx, TTSAdapterRequest{Text: "文本不进报告"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cancel()
-	for range chunks {
+	if err == nil {
+		for range chunks {
+		}
+		t.Fatal("Synthesize succeeded after context was cancelled")
 	}
 	if timelineIndex(conn.timeline, "write:session.finish") < len(conn.timeline) {
 		t.Fatalf("timeline = %#v, cancelled TTS must not send session.finish", conn.timeline)

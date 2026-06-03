@@ -193,6 +193,9 @@ func (s *dashScopeRealtimeASRSession) readLoop(ctx context.Context) {
 }
 
 func (a *dashScopeRealtimeTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	key := strings.TrimSpace(envValue(a.env, "A21_DASHSCOPE_API_KEY"))
 	if key == "" {
 		return nil, fmt.Errorf("dashscope realtime TTS provider missing A21_DASHSCOPE_API_KEY")
@@ -214,41 +217,38 @@ func (a *dashScopeRealtimeTTSAdapter) Synthesize(ctx context.Context, req TTSAda
 	session := &RealtimeWebSocketSession{provider: a.name, conn: conn}
 	out := make(chan VoiceAudioChunk, 4)
 	ready := make(chan error, 1)
-	commitResult := make(chan bool, 1)
-	go dashScopeRealtimeTTSReadLoop(ctx, session, out, ready, commitResult)
+	go dashScopeRealtimeTTSReadLoop(ctx, session, out, ready)
 	if err := session.conn.WriteJSON(ctx, dashScopeTTSUpdateEvent(a.env)); err != nil {
-		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS session update failed")
 	}
 	select {
 	case err := <-ready:
 		if err != nil {
-			signalDashScopeTTSCommitResult(commitResult, false)
 			_ = conn.Close(ctx)
 			return nil, fmt.Errorf("dashscope realtime TTS session update failed")
 		}
 	case <-ctx.Done():
-		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(context.Background())
 		return nil, ctx.Err()
 	case <-time.After(dashscopeTTSReadyTimeout):
 	}
 	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_append"), "type": "input_text_buffer.append", "text": req.Text}); err != nil {
-		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text append failed")
 	}
 	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_commit"), "type": "input_text_buffer.commit"}); err != nil {
-		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text commit failed")
 	}
-	signalDashScopeTTSCommitResult(commitResult, true)
+	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_finish"), "type": "session.finish"}); err != nil {
+		_ = conn.Close(ctx)
+		return nil, fmt.Errorf("dashscope realtime TTS session finish failed")
+	}
 	return out, nil
 }
 
-func dashScopeRealtimeTTSReadLoop(ctx context.Context, session *RealtimeWebSocketSession, out chan<- VoiceAudioChunk, ready chan<- error, commitResult <-chan bool) {
+func dashScopeRealtimeTTSReadLoop(ctx context.Context, session *RealtimeWebSocketSession, out chan<- VoiceAudioChunk, ready chan<- error) {
 	defer close(out)
 	defer session.Close(context.Background())
 	chunker := newPCM16Mono60MSChunker(24000)
@@ -321,9 +321,6 @@ func dashScopeRealtimeTTSReadLoop(ctx context.Context, session *RealtimeWebSocke
 				sendDashScopeTTSError(ctx, out, "tts adapter no audio", "dashscope realtime TTS produced no audio")
 				return
 			}
-			if ctx.Err() == nil && waitDashScopeTTSCommitted(ctx, commitResult) {
-				_ = session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_finish"), "type": "session.finish"})
-			}
 			return
 		case "session.finished":
 			signalReady(nil)
@@ -343,22 +340,6 @@ func dashScopeRealtimeTTSReadLoop(ctx context.Context, session *RealtimeWebSocke
 			sendDashScopeTTSError(ctx, out, "tts adapter provider error", "dashscope realtime TTS provider error")
 			return
 		}
-	}
-}
-
-func signalDashScopeTTSCommitResult(commitResult chan<- bool, ok bool) {
-	select {
-	case commitResult <- ok:
-	default:
-	}
-}
-
-func waitDashScopeTTSCommitted(ctx context.Context, commitResult <-chan bool) bool {
-	select {
-	case ok := <-commitResult:
-		return ok
-	case <-ctx.Done():
-		return false
 	}
 }
 
