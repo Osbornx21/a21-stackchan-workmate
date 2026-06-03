@@ -8608,3 +8608,28 @@ Follow-up test/build results:
   `go test ./internal/app ./internal/providers -count=1`.
 - `git diff --check` passed.
 - Latest focused drain tests passed after the stop-tail drain addition.
+- `make verify` passed after the stop-tail drain addition.
+
+Follow-up deploy and physical check:
+
+- Committed as `862791e fix(gateway): drop suppressed xiaozhi listen audio`.
+- Committed the stop-tail drain as
+  `e17aa3d fix(gateway): drain suppressed xiaozhi listen tail`.
+- Deployed `e17aa3d` to main public ECS Gateway `47.103.57.217`; remote
+  focused tests passed, `go build ./cmd/a21` passed, `a21-gateway` restarted
+  active, and `healthz` returned ok.
+- Public host-loopback bench passed after deploy:
+  `reports/a21-xiaozhi-voice-bench-20260603-224856.376949000.json`.
+  It remains host-loopback candidate evidence, not physical PRD acceptance.
+- Physical trace window for product device `44:1b:f6:e2:6a:60` showed one
+  complete real turn after deploy: `listen.start`, Opus ingress, `listen.stop`,
+  `asr.final`, `xiaozhi.voice_pipeline.start`, `provider.first_content`,
+  `tts.first_audio`, and TTS Opus downlink.
+- The same physical trace showed the post-TTS self-loop guard working:
+  `xiaozhi.listen.start.suppressed_post_tts_drain=1`,
+  `xiaozhi.listen.stop.suppressed_session_ended=1`,
+  `xiaozhi.listen.stop.suppressed_session_drain_armed=1`,
+  `xiaozhi.opus_frame.ignored_suppressed_listen=12`, with no
+  `xiaozhi.wake_preroll.opus_frame.buffered`, no
+  `xiaozhi.voice_pipeline.unavailable`, and no `xiaozhi.local_fallback.sent`
+  observed in that window.
