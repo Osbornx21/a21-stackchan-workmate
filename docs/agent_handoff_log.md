@@ -10668,3 +10668,77 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this main-control integration round.
+
+## 2026-06-04 06:36 CST - Roleplay Prompt Voice Pipeline Cut
+
+Round goal:
+
+- Close the gap where roleplay personality/memory was configurable and
+  summarized but not guaranteed to affect the actual low-latency voice
+  provider request.
+
+Actual completed work:
+
+- Added plan `docs/plans/2026-06-04-roleplay-prompt-voice-pipeline.md`.
+- Added runtime-only `VoicePipelineRequest.TextPrompt`.
+- Updated voice pipeline text-stream execution to use `TextPrompt` when
+  present, while keeping ASR transcript metrics/reporting separate.
+- Added `prompt_input_ready` and `prompt_input_not_recorded` report metadata
+  without storing prompt bodies.
+- Injected composed roleplay personality/scenario/memory prompt into:
+  - fast-companion roleplay turns with PCM frames;
+  - stock `/v1/xiaozhi` roleplay voice-pipeline turns.
+- Added redacted trace marker `roleplay.prompt_input.used`.
+- Added provider and Gateway tests proving prompt input reaches the text-stream
+  boundary and does not leak through responses, traces, or voice-pipeline
+  reports.
+- Updated protocol, internal-test4 plan, current-control, and state-machine
+  docs.
+
+Changed files:
+
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-roleplay-prompt-voice-pipeline.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is still host/runtime evidence, not physical StackChan roleplay
+  acceptance.
+- Persona quality examples, wake/touch entry into roleplay, and audible
+  physical proof remain follow-up work.
+- Voice-clone provider runtime evidence remains separate from prompt injection.
+
+Known risks/blockers:
+
+- Prompt bodies intentionally enter provider request memory. They must remain
+  out of reports, traces, docs examples, and API responses.
+- Stock `/v1/xiaozhi` physical roleplay evidence still requires an operator
+  turn with provider execution and trusted audible/playback evidence.
+
+Recommended next action:
+
+- Schedule either roleplay persona-quality/physical-evidence worker, or the
+  next StackChan display/avatar/touch parity slice. Keep V21 ACL ADR/merge
+  coordination active in parallel.
+
+Test/build/runtime results:
+
+- `go test ./internal/providers ./internal/gateway -run 'VoicePipelineRunnerUsesPromptInput|VoicePipelineRunnerProducesDownlinkReady|FastCompanionHybridRunsVoicePipelineWhenFramesProvided|XiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus|RoleplayProfileEndpointSetsRuntimeMemoryHints|RoleplayProfileEndpointPersistsScenarioVoiceClone' -count=1`:
+  passed.
+- `go test ./internal/providers ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this round.

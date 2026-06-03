@@ -646,6 +646,35 @@ Current conclusion:
 - This is not durable long-term memory, document upload, personal workspace
   indexing, provider transcript storage, or V21 professional retrieval.
 
+## Latest Control-Tower Result - 2026-06-04 Roleplay Prompt Enters Voice Pipeline
+
+The roleplay lane now carries the selected personality/scenario/memory prompt
+into the low-latency text-stream provider boundary instead of stopping at
+configuration readiness.
+
+Current implementation state:
+
+- `VoicePipelineRequest` has a redacted runtime-only `TextPrompt` field.
+- Voice pipeline text-stream adapters receive `TextPrompt` when present;
+  reports continue to record ASR/transcript counts separately and do not store
+  prompt text.
+- `VoicePipelineReport` exposes only `prompt_input_ready` and
+  `prompt_input_not_recorded`.
+- Fast-companion roleplay turns with PCM frames compose the selected roleplay
+  prompt and pass it into the voice pipeline.
+- Stock `/v1/xiaozhi` roleplay turns also compose the selected roleplay prompt
+  before the text-stream provider boundary.
+- Gateway traces only `roleplay.prompt_input.used`; prompt bodies, memory text,
+  transcripts, and provider output remain unrecorded.
+
+Current conclusion:
+
+- Roleplay persona and memory can now affect actual voice answers on the
+  low-latency provider path, not only simulator/profile summaries.
+- This is still host/runtime evidence. Physical StackChan roleplay acceptance
+  requires an operator-triggered stock `/v1/xiaozhi` turn and audible/provider
+  evidence.
+
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Professional Workspace Contract
 
 The next internal test 4 cut gives professional mode an explicit workspace and

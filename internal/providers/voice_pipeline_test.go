@@ -105,6 +105,44 @@ func TestVoicePipelineRunnerProducesDownlinkReadyMockChunksAndRedactedReport(t *
 	}
 }
 
+func TestVoicePipelineRunnerUsesPromptInputWithoutRecordingPromptText(t *testing.T) {
+	textStream := &recordingPipelineTextStreamAdapter{
+		events: []TextStreamEvent{{Kind: TextStreamDeltaContent, Text: "收到。"}, {Kind: TextStreamDeltaDone}},
+	}
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR:        scriptedPipelineASRAdapter{text: "raw transcript should stay out"},
+		TextStream: textStream,
+		TTS:        NewMockTTSAdapter("mock-fast-tts"),
+		Selection:  VoicePipelineSelectionFromEnv(nil),
+	})
+	prompt := "# A21 roleplay prompt\nMemory Hints\nsession_memory:session_memory_1: private hint should stay out"
+
+	result, err := runner.Run(context.Background(), VoicePipelineRequest{
+		Session:    VoiceSession{TraceID: "a21-trace-prompt-input", SessionID: "a21-session-prompt-input", DeviceID: "stackchan-sim-001"},
+		Mode:       "roleplay",
+		TextPrompt: prompt,
+		Frames:     []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VoicePipelineStatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	if len(textStream.requests) != 1 || textStream.requests[0] != prompt {
+		t.Fatalf("text stream did not receive roleplay prompt input")
+	}
+	if !result.Report.Input.PromptInputReady || result.Report.Redaction.PromptPolicy != "prompt_input_not_recorded" {
+		t.Fatalf("prompt redaction/readiness = %+v / %+v", result.Report.Input, result.Report.Redaction)
+	}
+	rendered := mustProviderJSON(t, result.Report)
+	for _, forbidden := range []string{"A21 roleplay prompt", "Memory Hints", "private hint should stay out", "raw transcript should stay out"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("voice pipeline report leaked prompt/transcript text")
+		}
+	}
+}
+
 func TestMockStreamingASRAdapterEmitsPartialOnFrameAndFinalOnCommit(t *testing.T) {
 	adapter := NewMockStreamingASRAdapter("mock-streaming-asr")
 	session, err := adapter.StartStreamingASR(context.Background(), StreamingASRStartRequest{
@@ -516,6 +554,28 @@ func (a scriptedPipelineTextStreamAdapter) Name() string {
 }
 
 func (a scriptedPipelineTextStreamAdapter) StreamText(ctx context.Context, req TextStreamAdapterRequest) (<-chan TextStreamEvent, error) {
+	out := make(chan TextStreamEvent, len(a.events))
+	for _, event := range a.events {
+		out <- event
+	}
+	close(out)
+	return out, nil
+}
+
+type recordingPipelineTextStreamAdapter struct {
+	mu       sync.Mutex
+	requests []string
+	events   []TextStreamEvent
+}
+
+func (a *recordingPipelineTextStreamAdapter) Name() string {
+	return "a21-recording-text-stream"
+}
+
+func (a *recordingPipelineTextStreamAdapter) StreamText(ctx context.Context, req TextStreamAdapterRequest) (<-chan TextStreamEvent, error) {
+	a.mu.Lock()
+	a.requests = append(a.requests, req.Text)
+	a.mu.Unlock()
 	out := make(chan TextStreamEvent, len(a.events))
 	for _, event := range a.events {
 		out <- event

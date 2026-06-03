@@ -35,6 +35,7 @@ type VoicePipelineRequest struct {
 	Session             VoiceSession
 	Mode                string
 	Frames              []VoicePipelinePCMFrame
+	TextPrompt          string `json:"-"`
 	ASRTranscript       string `json:"-"`
 	ASRTranscriptSource string `json:"-"`
 }
@@ -101,12 +102,13 @@ type VoicePipelineFallbackReport struct {
 }
 
 type VoicePipelineInputReport struct {
-	FrameCount      int    `json:"frame_count"`
-	TotalBytes      int    `json:"total_bytes"`
-	Codec           string `json:"codec,omitempty"`
-	SampleRateHz    int    `json:"sample_rate_hz,omitempty"`
-	Channels        int    `json:"channels,omitempty"`
-	FrameDurationMS int    `json:"frame_duration_ms,omitempty"`
+	FrameCount       int    `json:"frame_count"`
+	TotalBytes       int    `json:"total_bytes"`
+	Codec            string `json:"codec,omitempty"`
+	SampleRateHz     int    `json:"sample_rate_hz,omitempty"`
+	Channels         int    `json:"channels,omitempty"`
+	FrameDurationMS  int    `json:"frame_duration_ms,omitempty"`
+	PromptInputReady bool   `json:"prompt_input_ready,omitempty"`
 }
 
 type VoicePipelineOutputReport struct {
@@ -123,6 +125,7 @@ type VoicePipelineOutputReport struct {
 }
 
 type VoicePipelineRedactionPolicies struct {
+	PromptPolicy         string `json:"prompt_policy"`
 	TranscriptPolicy     string `json:"transcript_policy"`
 	ProviderOutputPolicy string `json:"provider_output_policy"`
 	AudioPayloadPolicy   string `json:"audio_payload_policy"`
@@ -336,7 +339,7 @@ func (r *VoicePipelineRunner) run(ctx context.Context, req VoicePipelineRequest,
 		return result, nil
 	}
 
-	textEvents, err := r.adapters.TextStream.StreamText(ctx, TextStreamAdapterRequest{Session: req.Session, Mode: req.Mode, Text: transcript})
+	textEvents, err := r.adapters.TextStream.StreamText(ctx, TextStreamAdapterRequest{Session: req.Session, Mode: req.Mode, Text: voicePipelineTextPrompt(req, transcript)})
 	if err != nil {
 		report.Status = string(VoicePipelineStatusFailed)
 		report.Findings = append(report.Findings, "text stream adapter failed")
@@ -431,6 +434,14 @@ func voicePipelineASRTranscriptSource(source string) string {
 	default:
 		return VoicePipelineASRTranscriptSourceFinal
 	}
+}
+
+func voicePipelineTextPrompt(req VoicePipelineRequest, transcript string) string {
+	prompt := strings.TrimSpace(req.TextPrompt)
+	if prompt != "" {
+		return prompt
+	}
+	return transcript
 }
 
 func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context, start time.Time, req VoicePipelineRequest, segment string, segmentSeq int, emit func(VoiceAudioChunk, int, VoicePipelineTiming, VoicePipelineReport) bool, result *VoicePipelineResult, report *VoicePipelineReport) error {
@@ -606,6 +617,7 @@ func safeVoicePipelineProfileName(value string) string {
 
 func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSelection, executionMode string) VoicePipelineReport {
 	input := VoicePipelineInputReport{FrameCount: len(req.Frames)}
+	input.PromptInputReady = strings.TrimSpace(req.TextPrompt) != ""
 	for i, frame := range req.Frames {
 		input.TotalBytes += frame.ByteCount
 		if i == 0 {
@@ -640,6 +652,7 @@ func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSel
 		Input:         input,
 		Findings:      findings,
 		Redaction: VoicePipelineRedactionPolicies{
+			PromptPolicy:         "prompt_input_not_recorded",
 			TranscriptPolicy:     "transcript_not_recorded",
 			ProviderOutputPolicy: "provider_output_not_recorded",
 			AudioPayloadPolicy:   "audio_payload_not_recorded",

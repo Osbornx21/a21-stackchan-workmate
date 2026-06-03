@@ -225,6 +225,9 @@ Acceptance:
 - `/v1/roleplay-profile` can set and clear bounded runtime memory hints for
   roleplay. Responses and simulator readouts show only readiness/counts and
   finding codes, not memory text.
+- Fast-companion and stock `/v1/xiaozhi` roleplay turns pass the composed
+  personality/scenario/memory prompt into the voice pipeline text provider
+  while reports expose only readiness/redaction metadata.
 - Reports include profile IDs and counts only, not user text, memory content,
   prompt bodies, or cloned voice samples.
 - Barge-in timing remains within the internal test 3 acceptance envelope.
@@ -235,6 +238,9 @@ Implementation slice:
   `clear_memory` to the existing roleplay profile contract. Runtime hints are
   sanitized with the personality memory policy, stored only in Gateway memory,
   and reused by fast-companion roleplay summaries without V21 execution.
+- `T-ROLEPLAY-PROMPT-VOICE-PIPELINE-001` carries the composed roleplay prompt
+  into the provider-neutral voice pipeline through a runtime-only prompt field;
+  prompt bodies remain out of reports, traces, and API responses.
 
 ### A21-3: Professional Cloud Workspace Route
 

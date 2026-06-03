@@ -1247,9 +1247,7 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 	if err != nil {
 		return RoleplayRuntimeSummary{}, personality.MemoryState{}, err
 	}
-	env, runtimeMemoryConfigured, runtimeMemoryFindings := s.roleplayRuntimeEnv()
-	memory, hints := personality.MemoryStateFromEnv(env)
-	memory = mergeRoleplayRuntimeMemoryFindings(memory, runtimeMemoryConfigured, runtimeMemoryFindings)
+	memory, hints := s.roleplayMemoryHints()
 	promptComposed := false
 	if _, err := personality.Compose(personality.Options{
 		Mode:             personality.ModeRoleplay,
@@ -1279,6 +1277,31 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 		ProfessionalRouteAllowed: false,
 		V21Executed:              false,
 	}, memory, nil
+}
+
+func (s *Server) roleplayPromptInput(override RoleplayProfileSelectionRequest, userText string) (string, error) {
+	_, scenario, _, err := s.resolveRoleplaySelection(override)
+	if err != nil {
+		return "", err
+	}
+	_, hints := s.roleplayMemoryHints()
+	prompt, err := personality.Compose(personality.Options{
+		Mode:             personality.ModeRoleplay,
+		Scenario:         roleplayPersonalityScenario(scenario),
+		UserText:         userText,
+		MemoryHints:      hints,
+		MaxResponseRunes: 12,
+	})
+	if err != nil {
+		return "", err
+	}
+	return prompt, nil
+}
+
+func (s *Server) roleplayMemoryHints() (personality.MemoryState, []personality.MemoryHint) {
+	env, runtimeMemoryConfigured, runtimeMemoryFindings := s.roleplayRuntimeEnv()
+	memory, hints := personality.MemoryStateFromEnv(env)
+	return mergeRoleplayRuntimeMemoryFindings(memory, runtimeMemoryConfigured, runtimeMemoryFindings), hints
 }
 
 func (s *Server) resolveRoleplaySelection(override RoleplayProfileSelectionRequest) (string, string, string, error) {
@@ -1362,6 +1385,14 @@ func mergeRoleplayRuntimeMemoryFindings(memory personality.MemoryState, runtimeC
 		memory.Findings = merged
 	}
 	return memory
+}
+
+func roleplayPromptUserText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "我在。"
+	}
+	return text
 }
 
 func defaultRoleplayProfile(profile string) string {
@@ -5353,6 +5384,12 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		ASRTranscript:       asrTranscript,
 		ASRTranscriptSource: asrTranscriptSource,
 	}
+	if s.selectedVoiceMode() == VoiceModeRoleplay {
+		if prompt, err := s.roleplayPromptInput(RoleplayProfileSelectionRequest{}, roleplayPromptUserText(asrTranscript)); err == nil && strings.TrimSpace(prompt) != "" {
+			request.TextPrompt = prompt
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "roleplay.prompt_input.used", s.now().UnixMilli())
+		}
+	}
 	if streamer, ok := runner.(xiaozhiVoicePipelineStreamer); ok {
 		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS)
 	}
@@ -7619,6 +7656,10 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 		},
 		Mode:   string(req.Mode),
 		Frames: append([]providers.VoicePipelinePCMFrame(nil), frames...),
+	}
+	if prompt, err := s.roleplayPromptInput(req.Roleplay, "我在。"); err == nil && strings.TrimSpace(prompt) != "" {
+		request.TextPrompt = prompt
+		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.prompt_input.used", s.now().UnixMilli())
 	}
 	result, err := runner.Run(ctx, request)
 	s.recordVoicePipelineFallback(traceID, sessionID, req.DeviceID, result.Report)

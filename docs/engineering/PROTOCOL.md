@@ -526,11 +526,16 @@ from safe memory hints exposed by the personality package. Runtime memory hints
 are filtered by the same bounded policy as `A21_MEMORY_*`: unsafe URLs, local
 paths, and credential-looking strings are rejected before storage, long hints
 are truncated, and only sanitized prompt-input text is kept in Gateway memory.
-Responses, simulator readouts, and traces must report readiness booleans,
-counts, and finding codes rather than storing or echoing the composed prompt,
-raw memory text, user transcript, provider text, voice sample, professional
-evidence, or V21 query/result. `professional_route_allowed` and `v21_executed`
-must remain false on this endpoint and on fast-companion roleplay turns.
+For roleplay voice turns, Gateway passes the composed personality/scenario/
+memory prompt to the provider-neutral voice pipeline text-stream request while
+keeping the prompt out of `VoicePipelineReport`, traces, and API responses.
+Reports may expose `prompt_input_ready` and redaction policy
+`prompt_input_not_recorded`, but must not expose the prompt body. Responses,
+simulator readouts, and traces must report readiness booleans, counts, and
+finding codes rather than storing or echoing the composed prompt, raw memory
+text, user transcript, provider text, voice sample, professional evidence, or
+V21 query/result. `professional_route_allowed` and `v21_executed` must remain
+false on this endpoint and on fast-companion roleplay turns.
 
 `professional_workspace` is the Gateway-owned professional query-scope
 contract for internal test 4. `GET /v1/professional-workspace` returns

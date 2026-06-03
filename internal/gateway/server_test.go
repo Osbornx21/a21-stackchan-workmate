@@ -1809,11 +1809,21 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	}
 	v21 := &countingV21Client{}
 	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: v21})
+	runner := newRecordingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
 	handler := server.Handler()
+	profileReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"memory_hints":["角色语气只给短句"]}`))
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusOK {
+		t.Fatalf("roleplay profile status = %d: %s", profileRec.Code, profileRec.Body.String())
+	}
 	frameBase64 := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1, 0}, 960))
 	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(fmt.Sprintf(`{
 		"device_id":"stackchan-sim-001",
-		"mode":"workmate",
+		"mode":"roleplay",
 		"trace_id":"a21-trace-fast-pipeline-001",
 		"session_id":"a21-session-fast-pipeline-001",
 		"local_audio":{
@@ -1830,7 +1840,7 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	for _, forbidden := range []string{"fixture transcript should never be stored", "mock provider output should never be stored", frameBase64} {
+	for _, forbidden := range []string{"fixture transcript should never be stored", "mock provider output should never be stored", "角色语气只给短句", frameBase64} {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("fast companion response leaked %q: %s", forbidden, rec.Body.String())
 		}
@@ -1870,6 +1880,17 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	if speaking.State != protocol.ExpressionSpeaking || speaking.StreamID != "a21-fast-companion-voice-pipeline" {
 		t.Fatalf("speaking payload = %+v", speaking)
 	}
+	var captured providers.VoicePipelineRequest
+	select {
+	case captured = <-runner.requests:
+	case <-time.After(time.Second):
+		t.Fatal("voice pipeline runner did not capture request")
+	}
+	if !strings.Contains(captured.TextPrompt, "Memory Hints") ||
+		!strings.Contains(captured.TextPrompt, "session_memory:session_memory_1") ||
+		!strings.Contains(captured.TextPrompt, "角色语气只给短句") {
+		t.Fatalf("voice pipeline request missing redacted roleplay prompt input")
+	}
 	if provider.startCalls != 0 {
 		t.Fatalf("voice provider start calls = %d, want 0", provider.startCalls)
 	}
@@ -1888,11 +1909,15 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 		"provider.first_content",
 		"tts.first_audio",
 		"audio.downlink.first_frame",
+		"roleplay.prompt_input.used",
 		"fast_companion.voice_pipeline.completed",
 	} {
 		if !strings.Contains(traceRec.Body.String(), want) {
 			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
 		}
+	}
+	if strings.Contains(traceRec.Body.String(), "角色语气只给短句") {
+		t.Fatalf("trace leaked roleplay prompt hint")
 	}
 }
 
@@ -5366,6 +5391,20 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	t.Cleanup(cancel)
+	profileReq, err := http.NewRequestWithContext(ctx, http.MethodPost, httpServer.URL+"/v1/roleplay-profile", bytes.NewBufferString(`{"scenario":"desk_mouthpiece","memory_hints":["真实语音也要短句角色感"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileReq.Header.Set("Content-Type", "application/json")
+	profileResp, err := http.DefaultClient.Do(profileReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = profileResp.Body.Close() })
+	if profileResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(profileResp.Body)
+		t.Fatalf("roleplay profile status = %d: %s", profileResp.StatusCode, string(body))
+	}
 
 	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
 	if err != nil {
@@ -5409,7 +5448,7 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 		t.Fatalf("voice pipeline = %#v", pipeline)
 	}
 	startPayload := mustJSON(t, ttsStart)
-	for _, forbidden := range []string{"data_base64", "raw_audio", "provider output", "fixture transcript", "http://", "https://", "/Users/"} {
+	for _, forbidden := range []string{"data_base64", "raw_audio", "provider output", "fixture transcript", "真实语音也要短句角色感", "http://", "https://", "/Users/"} {
 		if strings.Contains(startPayload, forbidden) {
 			t.Fatalf("tts start leaked %q: %s", forbidden, startPayload)
 		}
@@ -5460,6 +5499,11 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	if len(captured.Frames[0].PCM16LE) != captured.Frames[0].ByteCount || len(captured.Frames[0].PCM16LE) == 0 {
 		t.Fatalf("captured frame PCM bytes = %d, byte_count = %d", len(captured.Frames[0].PCM16LE), captured.Frames[0].ByteCount)
 	}
+	if !strings.Contains(captured.TextPrompt, "Memory Hints") ||
+		!strings.Contains(captured.TextPrompt, "session_memory:session_memory_1") ||
+		!strings.Contains(captured.TextPrompt, "真实语音也要短句角色感") {
+		t.Fatalf("xiaozhi voice pipeline request missing roleplay prompt input")
+	}
 
 	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-pipeline")
 	if err != nil {
@@ -5477,11 +5521,15 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 		"tts.first_audio",
 		"audio.downlink.first_frame",
 		"xiaozhi.tts.opus_frame.downlink",
+		"roleplay.prompt_input.used",
 		"xiaozhi.voice_pipeline.completed",
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
+	}
+	if strings.Contains(mustJSON(t, traces), "真实语音也要短句角色感") {
+		t.Fatalf("trace leaked roleplay prompt hint")
 	}
 }
 
