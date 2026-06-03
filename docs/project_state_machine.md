@@ -26,6 +26,7 @@ Active child transitions:
 - `T-XIAOZHI-STALE-OPUS-INGRESS-SUPPRESSION-001`
 - `T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE`
 - `T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY`
+- `T-XIAOZHI-STOCK-HALF-DUPLEX-ACCEPTANCE-001`
 - `T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
@@ -154,6 +155,21 @@ blocked because the stock product firmware is not the diagnostic mic-probe
 runtime echo lane. Full PRD remains blocked by operator audible confirmation,
 stock physical mic-driven dialogue, normal half-duplex/barge-in proof, and
 wake-word product proof.
+`T-XIAOZHI-STOCK-HALF-DUPLEX-ACCEPTANCE-001` is active as the product-firmware
+half-duplex evidence correction. A new `stackchan-accept --check
+xiaozhi-half-duplex` gate now reads stock `/v1/xiaozhi` Gateway traces and
+`/v1/audio/recent`, can derive the latest trace/session from `/v1/devices`, and
+writes `a21.xiaozhi_half_duplex_acceptance.v1` reports with
+`hardware_acceptance_scope=stock_xiaozhi_mic_to_tts_downlink` and
+`diagnostic_mic_probe_required=false`. It does not require the diagnostic
+mic-probe capability or runtime echo counters, so product stock Xiaozhi
+firmware is no longer misclassified by the older diagnostic half-duplex gate.
+The first public run against `47.103.57.217` produced
+`reports/a21-xiaozhi-half-duplex-acceptance-20260603-161717.013784000.json`:
+device `44:1b:f6:e2:6a:60` was online with stock Xiaozhi transport, but the
+latest trace was hello-only with zero audio frames, no downlink, no playback
+ack, and no barge-in stop evidence, so status correctly remained `blocked` and
+`prd_accepted=false`.
 `T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE` is active as the endpoint
 provisioning contract: A21 no longer treats missing Wi-Fi credentials in the
 self-owned firmware state model as local fallback; it enters

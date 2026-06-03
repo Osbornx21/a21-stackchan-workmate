@@ -7216,3 +7216,71 @@ Current validation request:
 - Ask operator to confirm whether the delivered DashScope `/v1/xiaozhi/say` audio was audible and acceptable.
 - Add a stock-Xiaozhi physical half-duplex acceptance path that uses real `/v1/xiaozhi` mic ingress/downlink traces instead of diagnostic runtime echo counters.
 - Continue a separate real dialogue test with physical mic trigger, DeepSeek text stream, DashScope TTS downlink, and abort/barge-in trace.
+
+## 2026-06-03 16:18 CST - Stock Xiaozhi Half-Duplex Acceptance Gate
+
+目标:
+
+- 补齐产品 stock Xiaozhi 固件可用的半双工验收路径，避免继续用诊断 mic-probe runtime echo counter 误挡产品固件。
+- 保持公网 `47.103.57.217` 为主 Gateway，Mac Gateway 仍是可切换本地路径。
+- 不动 firmware、不写 provider secret、不宣称 full PRD green。
+
+实际完成内容:
+
+- 新增 `stackchan-accept --check xiaozhi-half-duplex`：
+  - 读取 stock `/v1/xiaozhi` trace 和 `/v1/audio/recent`。
+  - 缺省可从 `/v1/devices` 自动派生 `last_trace_id` / `last_session_id`。
+  - 写 `a21.xiaozhi_half_duplex_acceptance.v1` 报告。
+  - `hardware_acceptance_scope=stock_xiaozhi_mic_to_tts_downlink`。
+  - `diagnostic_mic_probe_required=false`。
+  - 不调用 `/v1/devices/control`，不要求诊断 mic-probe capability 或 runtime echo mic counters。
+- 保留旧 `stackchan-accept --check half-duplex` 作为诊断/仪表化 mic-to-mock-playback gate。
+- 更新文档：
+  - `docs/engineering/DOCTOR.md`
+  - `docs/engineering/PROTOCOL.md`
+  - `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`
+  - `docs/project_state_machine.md`
+
+修改过的本轮文件:
+
+- `internal/app/app_stackchan_common.go`
+- `internal/app/app_stackchan_xiaozhi_half_duplex.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-03-provider-tts-real-dialogue-acceptance.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+测试/实测结果:
+
+- Red test first failed as expected:
+  `unknown stackchan acceptance check "xiaozhi-half-duplex"`。
+- Focused test passed:
+  `go test ./internal/app -run 'TestRunXiaozhiHalfDuplexAcceptance(UsesStockTraceEvidence|DerivesLatestDeviceTrace)' -count=1`。
+- Related focused suite passed:
+  `go test ./internal/app -run 'XiaozhiPhysicalEvidence|XiaozhiHalfDuplex|StackChanHalfDuplex|StackChanAccept' -count=1`。
+- Public Gateway live check passed for health/device/profile:
+  - `http://47.103.57.217/healthz` OK。
+  - `/v1/devices` shows physical `44:1b:f6:e2:6a:60` online, stock Xiaozhi transport, latest event `xiaozhi.hello`。
+  - `/v1/gateway-profiles` still selects `public_wss` and keeps `mac_local` available。
+- New stock half-duplex gate ran against `http://47.103.57.217` and correctly blocked:
+  - report `reports/a21-xiaozhi-half-duplex-acceptance-20260603-161717.013784000.json`
+  - physical device online: true
+  - profile: stock
+  - audio frame count: 0
+  - mic/downlink/playback/barge-in evidence: missing
+  - `prd_accepted=false`
+
+未完成事项 / blockers:
+
+- No current physical mic-driven dialogue trace has been captured on the public Gateway; latest physical trace is hello-only.
+- Normal physical half-duplex/barge-in proof remains open until StackChan produces real mic Opus ingress and downlink in the same stock trace.
+- Operator audible confirmation for the DashScope voice remains open.
+- Wake-word product proof remains open.
+
+推荐下一步:
+
+- Trigger a real physical StackChan turn on the public Gateway, then rerun:
+  `go run ./cmd/a21 stackchan-accept --check xiaozhi-half-duplex --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --output-dir reports`
+- If that report moves to `physical_review_required`, pair it with operator/instrument listening evidence and then refresh product readiness without marking full PRD green until wake-word proof exists.

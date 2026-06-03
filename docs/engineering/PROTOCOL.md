@@ -637,6 +637,19 @@ Request fields:
 
 The audio WebSocket mock path keeps simulator devices silent by default, but physical `stackchan-*` devices can receive a short non-silent PCM chunk after an explicit one-shot validation arm or after the VAD `speech_start` uplink frame. Later frames in the same speech segment are measured but do not produce more mock playback. That distinction lets the half-duplex acceptance prove a real microphone-to-Gateway-to-speaker loop without creating a mic/playback feedback loop, changing simulator expectations, or claiming a real provider response.
 
+Stock Xiaozhi product firmware uses a separate physical half-duplex gate:
+`stackchan-accept --check xiaozhi-half-duplex`. This gate reads stock
+`/v1/xiaozhi` traces and `/v1/audio/recent` instead of diagnostic device
+runtime counters. It may derive `trace_id` and `session_id` from the device
+registry's latest `last_trace_id` and `last_session_id`, then requires real
+device online evidence, Opus decode, PCM ingress, listen/VAD lifecycle,
+TTS Opus downlink, playback observation when available, and barge-in stop
+markers. Its report schema is `a21.xiaozhi_half_duplex_acceptance.v1`, its
+scope is `stock_xiaozhi_mic_to_tts_downlink`, and
+`diagnostic_mic_probe_required=false`. It never promotes PRD readiness by
+itself; a passing machine trace is still `physical_review_required`, while a
+hello-only or downlink-only trace remains blocked/candidate evidence.
+
 This endpoint is not a provider path, not a conversation transcript API, and not a replacement for real VAD/STT/LLM/TTS. It exists so office acceptance can command a real device into `listening` or play a bounded validation beep while preserving trace/session evidence.
 
 Professional `control.event` payloads can now include explicit evidence fields:

@@ -328,3 +328,33 @@ Updated target interpretation:
   It is a product-useful public downlink bridge while the pure streaming
   Doubao/DashScope adapter and physical mic-driven dialogue evidence remain
   open.
+
+## 2026-06-03 Stock Xiaozhi Half-Duplex Acceptance Update
+
+- Added a stock product-firmware half-duplex acceptance path:
+  `stackchan-accept --check xiaozhi-half-duplex`.
+- The new gate reuses the redacted `xiaozhi-physical-evidence` fetch and
+  safety model, but writes a dedicated
+  `a21.xiaozhi_half_duplex_acceptance.v1` report with
+  `hardware_acceptance_scope=stock_xiaozhi_mic_to_tts_downlink`.
+- It does not use `/v1/devices/control`, does not require diagnostic
+  `runtime_echo` mic counters, and sets
+  `diagnostic_mic_probe_required=false`; this keeps product stock Xiaozhi
+  firmware separate from the diagnostic mic-probe lane.
+- If `--trace-id` / `--session-id` are omitted, the command derives the latest
+  trace/session from `/v1/devices` for the requested physical device.
+- Focused tests passed:
+  `go test ./internal/app -run 'XiaozhiPhysicalEvidence|XiaozhiHalfDuplex|StackChanHalfDuplex|StackChanAccept' -count=1`.
+- Public Gateway live check against `http://47.103.57.217` produced blocked
+  report `reports/a21-xiaozhi-half-duplex-acceptance-20260603-161717.013784000.json`:
+  the physical device `44:1b:f6:e2:6a:60` was online and stock, but the latest
+  trace was hello-only with zero recent audio frames, no downlink, no playback
+  ack, and no barge-in stop evidence.
+
+Updated interpretation:
+
+- The half-duplex blocker is now accurately represented as missing stock
+  `/v1/xiaozhi` mic-driven dialogue evidence, not as a product-firmware
+  incompatibility with diagnostic mic-probe counters.
+- Full PRD remains blocked by physical mic-driven dialogue, audible/operator
+  review, normal barge-in proof, and wake-word product proof.

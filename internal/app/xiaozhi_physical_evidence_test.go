@@ -374,6 +374,103 @@ func TestRunXiaozhiPhysicalEvidenceMapsDebugPlaybackStopDone(t *testing.T) {
 	}
 }
 
+func TestRunXiaozhiHalfDuplexAcceptanceUsesStockTraceEvidence(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true)
+	dir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"device_playback_observed":                           true,
+		"device_playback_observation_source":                 "device_runtime_echo",
+		"gateway_first_downlink_to_device_playback_start_ms": 30,
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-half-duplex",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	reportJSON := newestXiaozhiHalfDuplexAcceptanceReport(t, dir, stdout.String())
+	for _, want := range []string{
+		`"schema_version": "a21.xiaozhi_half_duplex_acceptance.v1"`,
+		`"hardware_acceptance_scope": "stock_xiaozhi_mic_to_tts_downlink"`,
+		`"half_duplex_acceptance_status": "physical_review_required"`,
+		`"diagnostic_mic_probe_required": false`,
+		`"physical_device_online": true`,
+		`"audio_frame_count": 2`,
+		`"mic_available": true`,
+		`"downlink_available": true`,
+		`"playback_ack_available": true`,
+		`"barge_in_stop_available": true`,
+		`"prd_accepted": false`,
+		`"source": "xiaozhi_physical_evidence"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	if !strings.Contains(stdout.String(), "stackchan stock Xiaozhi half-duplex acceptance needs physical review") {
+		t.Fatalf("stdout missing physical review line: %s", stdout.String())
+	}
+	for _, forbidden := range []string{
+		observation,
+		filepath.Dir(observation),
+		server.URL,
+		"diagnostic_probe_m5unified_i2s_capture",
+		"microphone_not_diagnostic_probe",
+		"secret-token",
+		"transcript",
+		"data_base64",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) {
+			t.Fatalf("report leaked or used diagnostic-only requirement %q: stdout=%s report=%s", forbidden, stdout.String(), reportJSON)
+		}
+	}
+}
+
+func TestRunXiaozhiHalfDuplexAcceptanceDerivesLatestDeviceTrace(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true)
+	dir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"device_playback_observed":                           true,
+		"device_playback_observation_source":                 "device_runtime_echo",
+		"gateway_first_downlink_to_device_playback_start_ms": 30,
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-half-duplex",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--instrument-observation-report", observation,
+		"--output-dir", dir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"trace_id": "a21-trace-44-1b-f6-e2-6a-60"`,
+		`"session_id": "a21-session-44-1b-f6-e2-6a-60"`,
+		`"half_duplex_acceptance_status": "physical_review_required"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunXiaozhiPhysicalEvidenceIgnoresInvalidInstrumentPlaybackRuntimeEcho(t *testing.T) {
 	server := newXiaozhiPhysicalEvidenceTestServer(t, false)
 	dir := t.TempDir()
@@ -999,6 +1096,28 @@ func writeXiaozhiInstrumentObservationReport(t *testing.T, overrides map[string]
 		t.Fatal(err)
 	}
 	return path
+}
+
+func newestXiaozhiHalfDuplexAcceptanceReport(t *testing.T, outputDir string, stdout string) string {
+	t.Helper()
+	if !strings.Contains(stdout, `"report_path": "a21-xiaozhi-half-duplex-acceptance-`) {
+		t.Fatalf("stdout missing basename report path: %s", stdout)
+	}
+	if strings.Contains(stdout, outputDir) {
+		t.Fatalf("stdout leaked output dir: %s", stdout)
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-xiaozhi-half-duplex-acceptance-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	data, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func newestXiaozhiPhysicalEvidenceReport(t *testing.T, outputDir string, stdout string) string {
