@@ -2279,16 +2279,33 @@ Next state:
      voice-bench, or file-boundary evidence.
 
 9. `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
-   - Current phase: static provider readiness gate landed and is correctly red;
-     `sherpa_onnx_streaming` is now selectable as a StreamingASRAdapter seam,
-     and `doubao_tts_realtime` is now selectable as a StreamingTTSAdapter seam.
-     Real helper/provider runtime proof is not executed yet. With redacted ASR
-     helper/model env plus Doubao realtime TTS env present, the static
-     provider-shape gate can pass, while `prd_accepted` remains false.
-   - Next action: implement/connect the long-lived Sherpa streaming helper and
-     run a no-audio provider smoke for realtime TTS, then rerun physical
-     `xiaozhi-realtime-parity` on an operator-triggered stock `/v1/xiaozhi`
-     turn.
+   - Current phase: public Gateway `cloud_edge` runtime bridge is implemented
+     in code. `sherpa_onnx_streaming` remains the local streaming ASR seam,
+     `doubao_asr_realtime` and `dashscope_qwen_asr_realtime` are now
+     selectable cloud `StreamingASRAdapter` profiles, and
+     `doubao_tts_realtime` plus `dashscope_qwen_tts_realtime` are selectable
+     `StreamingTTSAdapter` profiles. `A21_XIAOZHI_PRODUCT_CHAIN=cloud_edge`
+     now defaults the public product chain away from local Sherpa and toward
+     cloud ASR + text-stream LLM + realtime TTS. With `A21_DASHSCOPE_API_KEY`
+     present and no explicit ASR/TTS override, the cloud-edge default selects
+     DashScope ASR/TTS. With `A21_LAB_STEPFUN_API_KEY` present and no explicit
+     text override, the cloud-edge default now selects StepFun before falling
+     back to DeepSeek. Static readiness can pass for configured cloud ASR,
+     configured StepFun or DeepSeek text stream, and configured realtime TTS,
+     while `prd_accepted` remains false.
+   - Current deployment note: main ECS `47.103.57.217` is running the verified
+     cloud-edge build behind Caddy, and remote readiness currently reports
+     `dashscope_qwen_asr_realtime + deepseek + dashscope_qwen_tts_realtime`
+     because `/etc/a21/secrets/provider.env` contains no StepFun key/model
+     entries. The remaining correction for the intended `stepfun` LLM path is
+     root-only injection of `A21_LAB_STEPFUN_API_KEY` and
+     `A21_STEPFUN_MODEL=step-1-8k`, then service restart and a fresh provider
+     bench. Credentialed live provider execution and physical trace proof are
+     still pending.
+   - Next action: inject StepFun secrets into the ECS root-only provider env if
+     available, rerun `xiaozhi-streaming-provider-readiness` to prove
+     `llm_profile=stepfun`, then collect an operator-triggered physical stock
+     `/v1/xiaozhi` trace and run `xiaozhi-realtime-parity`.
 
 10. `T-WAKE-004-AFE-VS-CUSTOM-PARITY`
    - Current phase: candidate from read-only audio HAL/wake worker

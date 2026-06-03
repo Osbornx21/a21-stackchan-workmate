@@ -2182,6 +2182,7 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	})
 	if err != nil {
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.unavailable", s.now().UnixMilli())
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start_failed."+xiaozhiStreamingASRErrorCode(err), s.now().UnixMilli())
 		return
 	}
 	session.mu.Lock()
@@ -2196,6 +2197,29 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	session.mu.Unlock()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start", s.now().UnixMilli())
 	go s.consumeXiaozhiStreamingASREvents(ctx, conn, session, stream)
+}
+
+func xiaozhiStreamingASRErrorCode(err error) string {
+	message := strings.ToLower(strings.TrimSpace(errString(err)))
+	switch {
+	case message == "":
+		return "unknown"
+	case strings.Contains(message, "missing"):
+		return "missing_env"
+	case strings.Contains(message, "dial") || strings.Contains(message, "websocket"):
+		return "dial_failed"
+	case strings.Contains(message, "session") || strings.Contains(message, "update"):
+		return "session_update_failed"
+	default:
+		return "provider_failed"
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, stream providers.StreamingASRSession) {

@@ -584,10 +584,14 @@ func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSel
 	executionMode = sanitizeVoicePipelineValue(executionMode, "fixture")
 	schemaVersion := "a21.voice_pipeline.fixture.v1"
 	var findings []string
-	if executionMode == "host_local" {
+	switch executionMode {
+	case "host_local":
 		schemaVersion = "a21.voice_pipeline.host_local.v1"
 		findings = append(findings, "host_local_voice_pipeline_candidate_not_prd_accepted")
-	} else {
+	case "cloud_edge":
+		schemaVersion = "a21.voice_pipeline.cloud_edge.v1"
+		findings = append(findings, "cloud_edge_voice_pipeline_candidate_not_prd_accepted")
+	default:
 		executionMode = "fixture"
 	}
 	return VoicePipelineReport{

@@ -901,7 +901,7 @@ func runGateway(args []string, stdout io.Writer, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32] [--mac-local-gateway-url ws://127.0.0.1:21081/v1/xiaozhi] [--public-gateway-url https://a21.example.com] [--warm-product-chain]")
+			fmt.Fprintln(stdout, "a21 gateway --addr 127.0.0.1:21080 [--product-chain host_local|cloud_edge] [--local-ollama-base-url http://127.0.0.1:11434] [--local-ollama-model qwen2.5:0.5b] [--voice-text-max-tokens 32] [--mac-local-gateway-url ws://127.0.0.1:21081/v1/xiaozhi] [--public-gateway-url https://a21.example.com] [--warm-product-chain]")
 			return 0
 		case "--addr":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -1045,6 +1045,8 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 
 func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 	switch gatewayProductChainMode(env) {
+	case "cloud_edge", "cloud-edge", "public_cloud", "public-cloud":
+		return applyXiaozhiCloudEdgeProductChainEnvDefaults(env)
 	case "host_local", "host-local", "product", "real":
 	default:
 		return env
@@ -1072,12 +1074,47 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 	return out
 }
 
+func applyXiaozhiCloudEdgeProductChainEnvDefaults(env []string) []string {
+	out := append([]string(nil), env...)
+	if strings.TrimSpace(appEnvValue(out, "A21_ASR_PROFILE")) == "" {
+		out = append(out, "A21_ASR_PROFILE=cloud")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_ASR_CLOUD_PROFILE")) == "" {
+		if strings.TrimSpace(appEnvValue(out, "A21_DASHSCOPE_API_KEY")) != "" {
+			out = append(out, "A21_ASR_CLOUD_PROFILE=dashscope_qwen_asr_realtime")
+		} else {
+			out = append(out, "A21_ASR_CLOUD_PROFILE=doubao_asr_realtime")
+		}
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_TEXT_STREAM_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_PROVIDER_PRIMARY")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_LAB_STEPFUN_API_KEY")) != "" {
+		out = append(out, "A21_TEXT_STREAM_PROFILE=stepfun")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_TEXT_STREAM_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_PROVIDER_PRIMARY")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_LAB_DEEPSEEK_API_KEY")) != "" {
+		out = append(out, "A21_TEXT_STREAM_PROFILE=deepseek")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_TTS_FAST_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_TTS_BALANCED_PROFILE")) == "" &&
+		strings.TrimSpace(appEnvValue(out, "A21_TTS_QUALITY_PROFILE")) == "" {
+		if strings.TrimSpace(appEnvValue(out, "A21_DASHSCOPE_API_KEY")) != "" {
+			out = append(out, "A21_TTS_FAST_PROFILE=dashscope_qwen_tts_realtime")
+		} else {
+			out = append(out, "A21_TTS_FAST_PROFILE=doubao_tts_realtime")
+		}
+	}
+	return out
+}
+
 func gatewayProductChainMode(env []string) string {
 	return strings.ToLower(strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_XIAOZHI_PRODUCT_CHAIN"), appEnvValue(env, "A21_PRODUCT_CHAIN"))))
 }
 
 func warmGatewayProductChain(ctx context.Context, env []string) error {
 	switch gatewayProductChainMode(env) {
+	case "cloud_edge", "cloud-edge", "public_cloud", "public-cloud":
 	case "host_local", "host-local", "product", "real":
 	default:
 		return nil

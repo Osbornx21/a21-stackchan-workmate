@@ -193,6 +193,112 @@ func TestXiaozhiStreamingProviderReadinessBlocksDoubaoRealtimeTTSWhenConfigMissi
 	}
 }
 
+func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDoubaoASRChain(t *testing.T) {
+	t.Setenv("A21_ASR_PROFILE", "cloud")
+	t.Setenv("A21_ASR_CLOUD_PROFILE", "doubao_asr_realtime")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "deepseek")
+	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")
+	t.Setenv("A21_DOUBAO_ACCESS_TOKEN", "access-a21-secret")
+	t.Setenv("A21_DOUBAO_ASR_MODEL", "doubao-asr-secret")
+	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts-secret")
+	t.Setenv("A21_DOUBAO_TTS_VOICE", "voice-secret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"passed"`,
+		`"prd_accepted":false`,
+		`"asr":{"profile":"doubao_asr_realtime","profile_env":"A21_ASR_CLOUD_PROFILE","adapter":"doubao_realtime_asr_adapter"`,
+		`"llm":{"profile":"deepseek"`,
+		`"tts":{"profile":"doubao_tts_realtime"`,
+		`"adapter":"doubao_realtime_tts_adapter"`,
+		`"ready":true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"access-a21-secret", "doubao-asr-secret", "doubao-tts-secret", "voice-secret", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDashScopeChain(t *testing.T) {
+	t.Setenv("A21_ASR_PROFILE", "cloud")
+	t.Setenv("A21_ASR_CLOUD_PROFILE", "dashscope_qwen_asr_realtime")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "deepseek")
+	t.Setenv("A21_TTS_FAST_PROFILE", "dashscope_qwen_tts_realtime")
+	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-dashscope-secret")
+	t.Setenv("A21_DASHSCOPE_ASR_MODEL", "qwen3-asr-flash-realtime-secret")
+	t.Setenv("A21_DASHSCOPE_TTS_MODEL", "qwen3-tts-flash-realtime-secret")
+	t.Setenv("A21_DASHSCOPE_TTS_VOICE", "CherrySecret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"passed"`,
+		`"prd_accepted":false`,
+		`"asr":{"profile":"dashscope_qwen_asr_realtime","profile_env":"A21_ASR_CLOUD_PROFILE","adapter":"dashscope_realtime_asr_adapter"`,
+		`"llm":{"profile":"deepseek"`,
+		`"tts":{"profile":"dashscope_qwen_tts_realtime"`,
+		`"adapter":"dashscope_realtime_tts_adapter"`,
+		`"ready":true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-dashscope-secret", "qwen3-asr-flash-realtime-secret", "qwen3-tts-flash-realtime-secret", "CherrySecret", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDashScopeStepFunChain(t *testing.T) {
+	t.Setenv("A21_ASR_PROFILE", "cloud")
+	t.Setenv("A21_ASR_CLOUD_PROFILE", "dashscope_qwen_asr_realtime")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "dashscope_qwen_tts_realtime")
+	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-dashscope-secret")
+	t.Setenv("A21_LAB_STEPFUN_API_KEY", "sk-a21-stepfun-secret")
+	t.Setenv("A21_STEPFUN_MODEL", "step-1-8k-secret")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"gate_status":"passed"`,
+		`"prd_accepted":false`,
+		`"asr":{"profile":"dashscope_qwen_asr_realtime"`,
+		`"llm":{"profile":"stepfun"`,
+		`"tts":{"profile":"dashscope_qwen_tts_realtime"`,
+		`"ready":true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{"sk-a21-dashscope-secret", "sk-a21-stepfun-secret", "step-1-8k-secret", "Authorization", "Bearer"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredDoubaoRealtimeTTSStageOnly(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")

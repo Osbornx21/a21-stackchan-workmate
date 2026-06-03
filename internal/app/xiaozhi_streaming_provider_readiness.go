@@ -164,6 +164,22 @@ func classifyXiaozhiStreamingASR(env []string, selection providers.VoicePipeline
 		if xiaozhiSherpaStreamingASRConfigured(env) {
 			stage.Ready = true
 		}
+	case "doubao_asr_realtime", "doubao_realtime_asr":
+		stage.Adapter = "doubao_realtime_asr_adapter"
+		stage.RealProvider = true
+		stage.Streaming = true
+		stage.ImplementedInGateway = true
+		if xiaozhiDoubaoRealtimeASRConfigured(env) {
+			stage.Ready = true
+		}
+	case "dashscope_qwen_asr_realtime", "dashscope_asr_realtime", "qwen_asr_realtime", "qwen3_asr_realtime":
+		stage.Adapter = "dashscope_realtime_asr_adapter"
+		stage.RealProvider = true
+		stage.Streaming = true
+		stage.ImplementedInGateway = true
+		if xiaozhiDashScopeRealtimeASRConfigured(env) {
+			stage.Ready = true
+		}
 	case "sherpa_onnx", "local_sherpa_onnx":
 		stage.Adapter = "local_sherpa_onnx_asr"
 		stage.UsesFileBoundary = true
@@ -236,6 +252,14 @@ func classifyXiaozhiStreamingTTS(env []string, selection providers.VoicePipeline
 		if xiaozhiDoubaoRealtimeTTSConfigured(env) {
 			stage.Ready = true
 		}
+	case "dashscope_qwen_tts_realtime", "dashscope_tts_realtime", "qwen_tts_realtime", "qwen3_tts_realtime":
+		stage.Adapter = "dashscope_realtime_tts_adapter"
+		stage.RealProvider = true
+		stage.Streaming = true
+		stage.ImplementedInGateway = true
+		if xiaozhiDashScopeRealtimeTTSConfigured(env) {
+			stage.Ready = true
+		}
 	case "iflytek_tts", "iflytek", "xfyun", "xfyun_tts":
 		stage.Adapter = "iflytek_tts_via_local_wav_adapter"
 		stage.RealProvider = true
@@ -269,6 +293,12 @@ func asrFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 	if stage.Adapter == "local_sherpa_onnx_streaming_asr" {
 		return []string{"asr_sherpa_streaming_helper_or_model_missing"}
 	}
+	if stage.Adapter == "doubao_realtime_asr_adapter" {
+		return []string{"asr_doubao_realtime_config_missing"}
+	}
+	if stage.Adapter == "dashscope_realtime_asr_adapter" {
+		return []string{"asr_dashscope_realtime_config_missing"}
+	}
 	if strings.Contains(stage.Adapter, "iflytek") {
 		return []string{"asr_iflytek_iat_streaming_adapter_missing"}
 	}
@@ -297,6 +327,9 @@ func ttsFindings(stage xiaozhiStreamingProviderReadinessStage) []string {
 	}
 	if stage.Adapter == "doubao_realtime_tts_adapter" {
 		return []string{"tts_doubao_realtime_config_missing"}
+	}
+	if stage.Adapter == "dashscope_realtime_tts_adapter" {
+		return []string{"tts_dashscope_realtime_config_missing"}
 	}
 	return []string{"tts_streaming_adapter_missing"}
 }
@@ -339,6 +372,19 @@ func xiaozhiDoubaoRealtimeTTSConfigured(env []string) bool {
 	return xiaozhiDoubaoRealtimeTTSCredentialConfigured(env) &&
 		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_MODEL")) != "" &&
 		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_TTS_VOICE")) != ""
+}
+
+func xiaozhiDoubaoRealtimeASRConfigured(env []string) bool {
+	return xiaozhiDoubaoRealtimeTTSCredentialConfigured(env) &&
+		strings.TrimSpace(appEnvValue(env, "A21_DOUBAO_ASR_MODEL")) != ""
+}
+
+func xiaozhiDashScopeRealtimeTTSConfigured(env []string) bool {
+	return strings.TrimSpace(appEnvValue(env, "A21_DASHSCOPE_API_KEY")) != ""
+}
+
+func xiaozhiDashScopeRealtimeASRConfigured(env []string) bool {
+	return strings.TrimSpace(appEnvValue(env, "A21_DASHSCOPE_API_KEY")) != ""
 }
 
 func xiaozhiDoubaoRealtimeTTSCredentialConfigured(env []string) bool {

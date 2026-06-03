@@ -7607,3 +7607,182 @@ Current validation request:
 
 - No failure remains in this round. The only observed red states were the
   expected TDD red tests before implementation.
+
+## 2026-06-03 17:35 CST - Main Public Gateway Cloud Edge Runtime Bridge
+
+Round goal:
+
+- Continue full push after the pure-cloud selector merge by turning the main
+  public Gateway path away from broken `host_local` defaults on ECS and toward
+  a real cloud-edge voice chain.
+
+Actual completed work:
+
+- Fixed the post-cherry-pick doctor test failure root cause: two Doubao doctor
+  tests were missing A21 direct `NO_PROXY` isolation, so current global proxy
+  settings triggered the expected `proxy_direct_bypass_missing` block.
+- Added a provider-neutral A21 `cloud_edge` execution mode for voice-pipeline
+  reports.
+- Added a Doubao realtime ASR streaming adapter for `A21_ASR_PROFILE=cloud`
+  plus `A21_ASR_CLOUD_PROFILE=doubao_asr_realtime`.
+- Added cloud-edge Gateway product-chain defaults:
+  - `A21_ASR_PROFILE=cloud`
+  - `A21_ASR_CLOUD_PROFILE=doubao_asr_realtime`
+  - `A21_TTS_FAST_PROFILE=doubao_tts_realtime`
+  - `A21_TEXT_STREAM_PROFILE=deepseek` only when DeepSeek key env is present
+    and no text profile is already selected.
+- Updated xiaozhi streaming provider readiness so configured Doubao ASR +
+  DeepSeek text stream + Doubao realtime TTS can pass the static runtime-shape
+  gate while still keeping `prd_accepted=false`.
+
+Changed files:
+
+- `internal/providers/doubao_realtime_asr.go`
+- `internal/providers/doubao_realtime_asr_test.go`
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused provider tests passed:
+  `go test ./internal/providers -run 'TestDoubaoRealtimeASR|TestVoicePipelineAdaptersFromEnvSelectsDoubaoCloudStreamingASR|TestVoicePipelineAdaptersFromEnvSelectsDoubaoRealtimeTTS|TestVoicePipelineRunStreamStartsLLMFromStreamingASRPartialBeforeFinal' -count=1 -v`
+- Focused app tests passed:
+  `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvCloudEdgeProductChainDoesNotDefaultToLocalSherpa|TestXiaozhiStreamingProviderReadiness.*Doubao|TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets|TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime' -count=1 -v`
+- Related package tests passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- `git diff --check`: passed.
+
+Unfinished items:
+
+- Full `make verify` still needs to run after this log update.
+- Main ECS `47.103.57.217` still needs deployment with
+  `--product-chain cloud_edge`.
+- Server-side provider secrets must be injected through root-only env/secret
+  files, not repo/docs/systemd unit/firmware.
+- Physical StackChan trace is still required for audible dialogue, barge-in,
+  and wake-word acceptance.
+
+Known risks/blockers:
+
+- The Doubao ASR event shape is intentionally tolerant around transcript field
+  names but still needs a credentialed runtime smoke against the live endpoint.
+- The existing Doubao realtime TTS adapter also still needs live endpoint
+  confirmation before claiming provider runtime acceptance.
+- Wake word from idle is still not accepted; screen tap remains only a labeled
+  fallback trigger.
+
+Recommended next action:
+
+1. Run full `make verify`.
+2. Build and deploy the current A21 binary to `47.103.57.217`.
+3. Update `a21-gateway.service` to run `--product-chain cloud_edge`, with
+   secrets loaded from a root-only environment file.
+4. Verify `/healthz`, `/v1/gateway-profiles`,
+   `/v1/cloud-voice-profiles`, `/xiaozhi/ota/`, and
+   `xiaozhi-streaming-provider-readiness` with env names only.
+5. Trigger one real StackChan turn and run `xiaozhi-realtime-parity` on the
+   live trace before making any physical acceptance claim.
+
+## 2026-06-03 18:10 CST - DashScope Public Edge Pivot And StepFun Text Selector Correction
+
+Round goal:
+
+- Continue the main public Gateway voice chain after live Doubao ASR/TTS dial
+  evidence showed the current Doubao credential/endpoint shape was not usable,
+  and correct the accidental DeepSeek text-stream selection in the cloud-edge
+  path.
+
+Actual completed work:
+
+- Added DashScope realtime ASR and TTS adapters:
+  - ASR profile: `dashscope_qwen_asr_realtime`.
+  - TTS profile: `dashscope_qwen_tts_realtime`.
+  - Realtime WebSocket shape uses bearer auth headers, `session.update`,
+    audio/text buffer append+commit, `session.finish`, and 60 ms PCM16 mono
+    downlink chunks.
+- Wired DashScope ASR/TTS into `VoicePipelineAdaptersFromEnv`, the cloud-edge
+  execution mode, and xiaozhi streaming provider readiness.
+- Changed cloud-edge product-chain defaults:
+  - If `A21_DASHSCOPE_API_KEY` exists and ASR/TTS profiles are not explicitly
+    set, select DashScope ASR/TTS.
+  - If `A21_LAB_STEPFUN_API_KEY` exists and no text profile is explicitly set,
+    select `stepfun` before falling back to `deepseek`.
+- Deployed the verified build to main ECS `47.103.57.217`.
+- Updated remote root-only provider env profile IDs for ASR/TTS only:
+  - `A21_ASR_CLOUD_PROFILE=dashscope_qwen_asr_realtime`
+  - `A21_TTS_FAST_PROFILE=dashscope_qwen_tts_realtime`
+- Confirmed the remote systemd service still uses root-only env files and runs:
+  `/opt/a21/bin/a21 gateway --addr 127.0.0.1:21081 --public-gateway-url
+  http://47.103.57.217 --product-chain cloud_edge --voice-text-max-tokens 32`.
+
+Changed files:
+
+- `internal/providers/dashscope_realtime.go`
+- `internal/providers/dashscope_realtime_test.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused app tests passed:
+  `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvCloudEdge.*(DashScope|StepFun)|TestXiaozhiStreamingProviderReadinessPassesConfiguredCloudEdgeDashScope' -count=1`
+- Related package tests passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- `git diff --check`: passed.
+- Remote focused tests passed after rsync:
+  `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvCloudEdgePrefersStepFunOverDeepSeekWhenConfigured|TestGatewayServerOptionsFromEnvCloudEdgePrefersDashScopeWhenConfigured' -count=1`
+- Remote build passed:
+  `go build -o /opt/a21/bin/a21 ./cmd/a21`
+- Remote service restart passed; `http://47.103.57.217/healthz` returns OK.
+- Remote static provider readiness currently reports:
+  `dashscope_qwen_asr_realtime + deepseek + dashscope_qwen_tts_realtime`,
+  `gate_status=passed`, `prd_accepted=false`.
+- Public host-loopback `xiaozhi-voice-bench --require-product-chain` now sees
+  the selected DashScope ASR/TTS profiles, but still blocks because the full
+  non-fixture ASR+LLM+TTS product chain did not complete in one turn.
+
+Unfinished items:
+
+- StepFun is not active on the ECS because `/etc/a21/secrets/provider.env` does
+  not currently contain `A21_LAB_STEPFUN_API_KEY`, `A21_STEPFUN_MODEL`, or
+  `A21_STEPFUN_BASE_URL`.
+- The local shell also has no StepFun env, and the plaintext 5080 source report
+  was not found in the current workspace search; only redacted reports and
+  env-name templates were found.
+- Full `make verify` still needs to run after this handoff entry.
+- Real physical StackChan mic-driven dialogue, barge-in, audible playback, and
+  wake-word acceptance are still not proven.
+
+Known risks/blockers:
+
+- The intended text path is StepFun `step-1-8k`, but current deployment still
+  falls back to DeepSeek until the StepFun secret is injected into the root-only
+  provider env.
+- DashScope realtime event shapes are covered by fake adapter tests and static
+  readiness, but still need live credentialed runtime evidence before PRD
+  acceptance.
+- Wake word remains below product acceptance until guarded physical proof.
+
+Recommended next action:
+
+1. Inject StepFun into `/etc/a21/secrets/provider.env` without printing values:
+   `A21_LAB_STEPFUN_API_KEY`, `A21_STEPFUN_MODEL=step-1-8k`, and optional
+   `A21_STEPFUN_BASE_URL`.
+2. Restart `a21-gateway` and rerun static readiness; expected LLM profile is
+   `stepfun`.
+3. Run public `xiaozhi-voice-bench --require-product-chain` again and inspect
+   trace events for ASR partial/final, StepFun first content, DashScope TTS
+   first audio, and Opus downlink.
+4. Only after host-loopback provider chain completes, run the physical
+   StackChan dialogue/barge-in/wake-word evidence pass.

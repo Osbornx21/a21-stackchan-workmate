@@ -1089,6 +1089,20 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 			StreamingPythonPath:     firstNonEmptyPipelineValue(strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_PYTHON")), defaultSherpaStreamingASRPythonPath()),
 		})
 		adapters.ExecutionMode = "host_local"
+	} else if isDoubaoRealtimeASRProfile(selection.ASRProfile) {
+		adapters.ASR = NewDoubaoRealtimeASRAdapter(DoubaoRealtimeASRAdapterOptions{
+			Name:   selection.ASRProfile,
+			Env:    env,
+			Dialer: options.TTSRealtimeDialer,
+		})
+		adapters.ExecutionMode = "cloud_edge"
+	} else if isDashScopeRealtimeASRProfile(selection.ASRProfile) {
+		adapters.ASR = NewDashScopeRealtimeASRAdapter(DashScopeRealtimeASRAdapterOptions{
+			Name:   selection.ASRProfile,
+			Env:    env,
+			Dialer: options.TTSRealtimeDialer,
+		})
+		adapters.ExecutionMode = "cloud_edge"
 	} else if isLocalSherpaASRProfile(selection.ASRProfile) {
 		adapters.ASR = NewLocalSherpaONNXASRAdapter(LocalSherpaONNXASRAdapterOptions{
 			Name:     selection.ASRProfile,
@@ -1108,7 +1122,9 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 			})
 		}
 		adapters.TextStream = textStream
-		adapters.ExecutionMode = "host_local"
+		if adapters.ExecutionMode != "cloud_edge" {
+			adapters.ExecutionMode = "host_local"
+		}
 	}
 	if isDoubaoRealtimeTTSProfile(selection.TTSProfile) {
 		adapters.TTS = NewDoubaoRealtimeTTSTTSAdapter(DoubaoRealtimeTTSTTSAdapterOptions{
@@ -1116,7 +1132,16 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 			Env:    env,
 			Dialer: options.TTSRealtimeDialer,
 		})
-		adapters.ExecutionMode = "host_local"
+		if adapters.ExecutionMode != "cloud_edge" {
+			adapters.ExecutionMode = "host_local"
+		}
+	} else if isDashScopeRealtimeTTSProfile(selection.TTSProfile) {
+		adapters.TTS = NewDashScopeRealtimeTTSAdapter(DashScopeRealtimeTTSAdapterOptions{
+			Name:   selection.TTSProfile,
+			Env:    env,
+			Dialer: options.TTSRealtimeDialer,
+		})
+		adapters.ExecutionMode = "cloud_edge"
 	} else if isLocalTTSProfile(selection.TTSProfile) {
 		synthesizer := options.TTSSynthesizer
 		if synthesizer == nil && normalizePipelineProfile(selection.TTSProfile) == "macos_say" {
@@ -1203,6 +1228,24 @@ func isLocalSherpaStreamingASRProfile(profile string) bool {
 	}
 }
 
+func isDoubaoRealtimeASRProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "doubao_asr_realtime", "doubao_realtime_asr":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDashScopeRealtimeASRProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "dashscope_qwen_asr_realtime", "dashscope_asr_realtime", "qwen_asr_realtime", "qwen3_asr_realtime":
+		return true
+	default:
+		return false
+	}
+}
+
 func openAITextStreamProfileFromEnv(env []string, profile string) (ProviderProfile, bool) {
 	return textStreamProfileFromEnv(env, profile, "openai_chat_completions")
 }
@@ -1232,6 +1275,15 @@ func isLocalTTSProfile(profile string) bool {
 func isDoubaoRealtimeTTSProfile(profile string) bool {
 	switch normalizePipelineProfile(profile) {
 	case "doubao_tts_realtime", "doubao_realtime_tts":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDashScopeRealtimeTTSProfile(profile string) bool {
+	switch normalizePipelineProfile(profile) {
+	case "dashscope_qwen_tts_realtime", "dashscope_tts_realtime", "qwen_tts_realtime", "qwen3_tts_realtime":
 		return true
 	default:
 		return false

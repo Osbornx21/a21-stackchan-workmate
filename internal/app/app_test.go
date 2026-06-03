@@ -4438,6 +4438,127 @@ func TestGatewayServerOptionsFromEnvProductChainModeDefaultsHostLocalAdapters(t 
 	}
 }
 
+func TestGatewayServerOptionsFromEnvCloudEdgeProductChainDoesNotDefaultToLocalSherpa(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_CHAIN=cloud_edge",
+		"A21_DOUBAO_API_KEY=sk-a21-secret",
+		"A21_DOUBAO_ASR_MODEL=doubao-asr",
+		"A21_DOUBAO_TTS_MODEL=doubao-tts",
+		"A21_DOUBAO_TTS_VOICE=zh_female_kailangjiejie_moon_bigtts",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-deepseek-secret",
+	})
+	if options.XiaozhiVoicePipelineAdapters == nil {
+		t.Fatal("xiaozhi voice pipeline adapters not configured")
+	}
+	adapters := *options.XiaozhiVoicePipelineAdapters
+	if adapters.ExecutionMode != "cloud_edge" {
+		t.Fatalf("execution mode = %q, want cloud_edge", adapters.ExecutionMode)
+	}
+	if adapters.ASR.Name() != "doubao_asr_realtime" || adapters.TextStream.Name() != "deepseek" || adapters.TTS.Name() != "doubao_tts_realtime" {
+		t.Fatalf("adapters = %s/%s/%s, want doubao_asr_realtime/deepseek/doubao_tts_realtime", adapters.ASR.Name(), adapters.TextStream.Name(), adapters.TTS.Name())
+	}
+	selectionBytes, err := json.Marshal(adapters.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionPayload := string(selectionBytes)
+	for _, want := range []string{
+		`"asr_mode":"cloud"`,
+		`"asr_profile":"doubao_asr_realtime"`,
+		`"asr_profile_env":"A21_ASR_CLOUD_PROFILE"`,
+		`"llm_profile":"deepseek"`,
+		`"tts_profile":"doubao_tts_realtime"`,
+	} {
+		if !strings.Contains(selectionPayload, want) {
+			t.Fatalf("selection missing %q: %s", want, selectionPayload)
+		}
+	}
+	for _, forbidden := range []string{"sherpa_onnx", "sk-a21-secret", "doubao-asr", "doubao-tts", "zh_female"} {
+		if strings.Contains(selectionPayload, forbidden) {
+			t.Fatalf("selection leaked or kept local default %q: %s", forbidden, selectionPayload)
+		}
+	}
+}
+
+func TestGatewayServerOptionsFromEnvCloudEdgePrefersDashScopeWhenConfigured(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_CHAIN=cloud_edge",
+		"A21_DASHSCOPE_API_KEY=sk-a21-dashscope-secret",
+		"A21_DASHSCOPE_ASR_MODEL=qwen3-asr-flash-realtime-secret",
+		"A21_DASHSCOPE_TTS_MODEL=qwen3-tts-flash-realtime-secret",
+		"A21_DASHSCOPE_TTS_VOICE=CherrySecret",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-deepseek-secret",
+	})
+	if options.XiaozhiVoicePipelineAdapters == nil {
+		t.Fatal("xiaozhi voice pipeline adapters not configured")
+	}
+	adapters := *options.XiaozhiVoicePipelineAdapters
+	if adapters.ExecutionMode != "cloud_edge" {
+		t.Fatalf("execution mode = %q, want cloud_edge", adapters.ExecutionMode)
+	}
+	if adapters.ASR.Name() != "dashscope_qwen_asr_realtime" ||
+		adapters.TextStream.Name() != "deepseek" ||
+		adapters.TTS.Name() != "dashscope_qwen_tts_realtime" {
+		t.Fatalf("adapters = %s/%s/%s, want dashscope_qwen_asr_realtime/deepseek/dashscope_qwen_tts_realtime", adapters.ASR.Name(), adapters.TextStream.Name(), adapters.TTS.Name())
+	}
+	selectionBytes, err := json.Marshal(adapters.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionPayload := string(selectionBytes)
+	for _, want := range []string{
+		`"asr_mode":"cloud"`,
+		`"asr_profile":"dashscope_qwen_asr_realtime"`,
+		`"asr_profile_env":"A21_ASR_CLOUD_PROFILE"`,
+		`"llm_profile":"deepseek"`,
+		`"tts_profile":"dashscope_qwen_tts_realtime"`,
+	} {
+		if !strings.Contains(selectionPayload, want) {
+			t.Fatalf("selection missing %q: %s", want, selectionPayload)
+		}
+	}
+	for _, forbidden := range []string{"sherpa_onnx", "sk-a21", "qwen3-asr", "qwen3-tts", "CherrySecret"} {
+		if strings.Contains(selectionPayload, forbidden) {
+			t.Fatalf("selection leaked or kept local default %q: %s", forbidden, selectionPayload)
+		}
+	}
+}
+
+func TestGatewayServerOptionsFromEnvCloudEdgePrefersStepFunOverDeepSeekWhenConfigured(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_CHAIN=cloud_edge",
+		"A21_DASHSCOPE_API_KEY=sk-a21-dashscope-secret",
+		"A21_LAB_STEPFUN_API_KEY=sk-a21-stepfun-secret",
+		"A21_STEPFUN_MODEL=step-1-8k-secret",
+		"A21_LAB_DEEPSEEK_API_KEY=sk-a21-deepseek-secret",
+	})
+	if options.XiaozhiVoicePipelineAdapters == nil {
+		t.Fatal("xiaozhi voice pipeline adapters not configured")
+	}
+	adapters := *options.XiaozhiVoicePipelineAdapters
+	if adapters.TextStream.Name() != "stepfun" {
+		t.Fatalf("text stream = %q, want stepfun", adapters.TextStream.Name())
+	}
+	selectionBytes, err := json.Marshal(adapters.Selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectionPayload := string(selectionBytes)
+	for _, want := range []string{
+		`"llm_profile":"stepfun"`,
+		`"llm_profile_env":"A21_TEXT_STREAM_PROFILE"`,
+	} {
+		if !strings.Contains(selectionPayload, want) {
+			t.Fatalf("selection missing %q: %s", want, selectionPayload)
+		}
+	}
+	for _, forbidden := range []string{"deepseek", "sk-a21", "step-1-8k-secret"} {
+		if strings.Contains(selectionPayload, forbidden) {
+			t.Fatalf("selection leaked or chose wrong provider %q: %s", forbidden, selectionPayload)
+		}
+	}
+}
+
 func TestGatewayCLIOptionsApplyProductChainEnvOverrides(t *testing.T) {
 	env := gatewayEnvWithCLIOptions([]string{
 		"A21_LOCAL_OLLAMA_MODEL=old-model",
@@ -5030,6 +5151,7 @@ func TestRunDoctorIncludesCloudVoiceProfilesWithoutSecrets(t *testing.T) {
 }
 
 func TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets(t *testing.T) {
+	setA21DirectProxyBypassForTest(t)
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
 	t.Setenv("A21_DOUBAO_TTS_MODEL", "doubao-tts")
@@ -5110,6 +5232,7 @@ func TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets(t *test
 }
 
 func TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime(t *testing.T) {
+	setA21DirectProxyBypassForTest(t)
 	t.Setenv("A21_GATEWAY_VOICE_PROVIDER", "selected")
 	t.Setenv("A21_PROVIDER_PRIMARY", "doubao_tts_realtime")
 	t.Setenv("A21_DOUBAO_API_KEY", "sk-a21-secret")
