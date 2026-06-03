@@ -2356,6 +2356,7 @@ Next state:
 | T-XIAOZHI-PHYSICAL-PUBLIC-GATEWAY-TRACE-001: Public real-device voice trace | Completed physical gateway-trace candidate | Physical StackChan `44:1b:f6:e2:6a:60` connected to public Gateway `47.103.57.217` on stock Xiaozhi websocket profile and produced trace `a21-trace-44-1b-f6-e2-6a-60` / session `a21-session-44-1b-f6-e2-6a-60`. Counters showed real mic/Opus ingress (`xiaozhi.opus_frame.received=66`, decoded `66`), VAD speech start/end (`5/5`), listen auto-stop `5`, ASR partial/final (`11/11`), LLM first content `5`, TTS first audio `5`, TTS Opus downlink `506`, answer downlink first-frame markers `10`, completed voice pipelines `3`, and trace-level barge-in/playback stop evidence (`barge_in.detected=5`, `playback.stop=5`). Reports `reports/a21-xiaozhi-physical-evidence-20260603-201623.594517000.json` and `reports/a21-xiaozhi-half-duplex-acceptance-20260603-201623.946467000.json` record `candidate_gateway_downlink` / `candidate_gateway_trace`, mic delivery ratio `1`, `answer.first_downlink=571 ms`, downlink available, barge-in stop available, and `prd_accepted=false`. Remaining blockers are device playback ack or trusted runtime playback start, operator/instrumented audible observation, and stock firmware playback `stop_done` exposure. |
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
+| T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001: Official hardware parity gap map | Completed docs/state baseline | Worker froze the official-vs-A21 hardware/control/status gap map in `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md` using the local official StackChan root `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483` as a dirty working-tree reference and the Xiaozhi sub-tree `e77dedb1309153bb63fed285772962c920c97dd4` as a clean detached-HEAD reference. The map distinguishes `available`, `diagnostic`, `planned`, `blocked`, and `product-accepted`, assigns owner transitions, acceptance evidence, and rollback paths for every surface in the parity plan, and updates `docs/engineering/A21_CURRENT_CONTROL.md`. No Gateway start, provider/V21 execution, firmware build, flash, serial, or NVS write occurred. Next candidate is the low-risk MCP/status worker, not firmware or high-risk hardware. |
 
 ## Blocked Transitions
 
@@ -2370,17 +2371,20 @@ Next state:
 Priority candidate added from the 2026-06-04 hardware parity comparison:
 
 - `T-STACKCHAN-OFFICIAL-HARDWARE-PARITY-001`
-  - Current phase: detailed landing plan written after comparing A21's current
-    hardware/control/status surface with the local official StackChan/Xiaozhi
-    package.
+  - Current phase: first docs-only gap map worker
+    `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` completed. The official
+    source identity, A21 source identity, parity matrix, landing class, owner
+    transition, evidence, and rollback path are frozen in
+    `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`.
   - Plan:
     `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
-  - Next action: main control should first dispatch the docs-only/read-only gap
-    map worker `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001`, then schedule the
-    low-risk Gateway MCP/status worker before any firmware, flash, camera,
-    video, NFC, infrared, or app-lifecycle work.
-  - Boundary: no provider execution, Gateway start, firmware build, flash,
-    serial, or NVS write in the first worker.
+  - Next action: dispatch
+    `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` for low-risk Gateway
+    MCP/status parity before any firmware, flash, camera, video, NFC,
+    infrared, or app-lifecycle work.
+  - Boundary for next worker: no firmware build, flash, serial, NVS write,
+    reboot/upgrade exposure, camera/photo, screen snapshot, video stream,
+    NFC, infrared, or app-lifecycle changes.
 
 1. `T-WAKE-003: Zi Yue Phrase Tuning`
    - Current phase: root causes found and product-lane rebuild passed. First,

@@ -46,6 +46,128 @@ The current product firmware declares:
 
 This prevents A21 from silently shrinking StackChan into a screen-plus-LED device while still avoiding false claims about unimplemented hardware.
 
+## Official StackChan Parity Gap Map
+
+Frozen by transition:
+`T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001`.
+
+Plan:
+`docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
+
+This map treats the official StackChan/Xiaozhi package as a reference
+hardware/control/status surface only. Official support is not A21 product
+acceptance. A capability may be `available`, `diagnostic`, `planned`,
+`blocked`, or `product-accepted` only through A21 evidence and gates.
+
+Official source identity:
+
+| Tree | Remote | Branch | HEAD | Dirty state | Reference basis |
+| --- | --- | --- | --- | --- | --- |
+| `/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan` | `https://github.com/m5stack/StackChan.git` | `main...origin/main` | `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483` | Dirty: modified `firmware/dependencies.lock`, `firmware/main/Kconfig.projbuild`, `firmware/main/hal/board/hal_bridge.cc`, `firmware/main/hal/board/stackchan_display.cc`, `firmware/main/hal/hal_ble.cpp`, `firmware/main/hal/hal_io_expander.cpp`, `firmware/main/hal/hal_servo.cpp`, `firmware/main/main.cpp`, `firmware/partitions.csv`, `firmware/sdkconfig.defaults`; untracked `firmware/sources/` | Working tree reference, not a clean upstream baseline |
+| `/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan/firmware/xiaozhi-esp32` | `https://gitclone.com/github.com/78/xiaozhi-esp32.git` | detached `HEAD` | `e77dedb1309153bb63fed285772962c920c97dd4` | Clean | `HEAD` reference |
+
+A21 source identity for this gap map:
+
+| Tree | Remote | Checkout | HEAD | Dirty state before worker edits | Reference basis |
+| --- | --- | --- | --- | --- | --- |
+| `/Users/jiyurun/.codex/worktrees/be17/New project` | `https://github.com/Osbornx21/a21-stackchan-workmate.git` | detached worker checkout from the main A21 branch line | `15757cad5e7cbcf2df5f2601ffa3904dd766e0ac` | Clean | Current worker tree |
+
+Reference inventory extracted from the official package:
+
+- Official root `README.md` lists CoreS3 screen, capacitive touch, camera,
+  proximity and ambient light sensor, IMU, microSD, speaker, dual microphones,
+  battery, NFC, infrared, RGB LEDs, and two servos.
+- Official HAL exposes battery, backlight, RGB, servo power, head touch,
+  IMU motion events, BLE app-control signals, and WebSocket avatar/action
+  signals in `firmware/main/hal/hal.h`.
+- Official avatar WebSocket supports typed binary frames for Opus, JPEG,
+  avatar control, motion control, camera stream start/stop, text, calls,
+  device name, heartbeat, video mode, dance sequence, and audio stream start/
+  stop in `firmware/main/hal/hal_ws_avatar.cpp`.
+- Official servo HAL implements yaw and pitch servos, angle limits, torque,
+  zero calibration, and yaw PWM/rotation mode in
+  `firmware/main/hal/hal_servo.cpp`.
+- Official IMU and top-touch HALs expose BMI270 shake events and SI12T
+  press/release/swipe gestures in `firmware/main/hal/hal_imu.cpp` and
+  `firmware/main/hal/hal_head_touch.cpp`.
+- Official Xiaozhi MCP common tools include `self.get_device_status`,
+  `self.audio_speaker.set_volume`, `self.screen.set_brightness`,
+  `self.screen.set_theme`, and `self.camera.take_photo`; user-only tools
+  include `self.get_system_info`, `self.reboot`,
+  `self.upgrade_firmware`, `self.screen.get_info`, and
+  `self.screen.snapshot` in `firmware/xiaozhi-esp32/main/mcp_server.cc`.
+- Official Xiaozhi display/status paths expose status, notification, emotion,
+  chat message, theme, status bar, and power-save methods in
+  `firmware/xiaozhi-esp32/main/display/display.h` and map device states such
+  as `starting`, `wifi_configuring`, `idle`, `connecting`, `listening`,
+  `speaking`, `upgrading`, `activating`, `audio_testing`, and `fatal_error`
+  in `device_state_machine.*` and `application.cc`.
+- Official Xiaozhi audio service covers microphone capture, Opus encode/decode,
+  wake word, VAD/AEC-capable processing, playback queue, and output volume in
+  `firmware/xiaozhi-esp32/main/audio/*`.
+
+Current A21 inventory extracted from the worker checkout:
+
+- A21 Gateway already accepts stock `/v1/xiaozhi` devices and records a
+  sanitized stock capability map for `microphone=available_xiaozhi_opus_ingress`
+  and `speaker=available_xiaozhi_opus_downlink`, but full PRD physical
+  acceptance remains open.
+- `POST /v1/xiaozhi/speaker-volume` is live-whitelisted and sends the stock
+  MCP tool `self.audio_speaker.set_volume`.
+- `POST /v1/stackchan/official/control` maps only selected A21 semantic
+  events to official `ControlAvatar`, `ControlMotion`, and `DanceSequence`
+  frames.
+- A21 runtime/evidence paths know `screen`, `screen_touch`, `top_touch`,
+  `servo_y`, and `rgb` as stable declared surfaces, but physical acceptance is
+  per-report rather than automatic product acceptance.
+- A21 keeps `imu`, `ambient_light`, `proximity`, and `battery` on read-only
+  diagnostic tracks; diagnostic probe evidence does not promote product
+  availability.
+- A21 keeps `servo_x`, `camera`, `nfc`, and `infrared` planned or blocked
+  until safety, privacy, product semantics, and physical evidence are approved.
+
+Parity matrix:
+
+| Surface | Official package | A21 current classification | Landing class | Owner transition | Acceptance evidence | Rollback path |
+| --- | --- | --- | --- | --- | --- | --- |
+| Microphone | Dual microphones through Xiaozhi audio service, Opus uplink, wake word, VAD, and AEC-capable paths | `available_xiaozhi_opus_ingress` as stock transport evidence; not `product-accepted` | Physical evidence gate | `T-XIAOZHI-PHYSICAL-PUBLIC-GATEWAY-TRACE-001` follow-up and audio evidence closure | Fresh device report with `trace_id`, `session_id`, `device_id`, real Opus ingress, ASR final, no raw audio/transcript persistence | Keep stock uplink as candidate only; do not promote PRD acceptance |
+| Speaker | Codec output, volume control, playback queue, Opus downlink, speaking UI | `available_xiaozhi_opus_downlink`; MCP volume accepted; playback-start/stop proof still open | Freeze plus playback-start proof | `T-AUDIO-002`, `T-AUDIO-003`, and physical playback ack follow-up | Runtime volume trace plus trusted audible or device playback-start/stop evidence | Keep volume endpoint; block full PRD acceptance |
+| Screen | Status, notification, emotion, chat, theme, power save, status bar | Available as coarse A21 registry/expression and selected relay, not full official UI parity | Medium-risk UI parity | `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` | Display-state registry tests plus operator screen evidence before product claims | Fall back to coarse A21 state/expression |
+| Screen touch | Official display touch can enter listen/config flows | Acceptance CLI cases exist for screen touch; not full official flow parity | Low-medium physical gate | `T-STACKCHAN-OFFICIAL-TOUCH-ACTION-EVIDENCE-001` | Touch acceptance report tied to device and trace/session ids | Keep touch as declared surface; block new behavior |
+| Top touch | Three-zone press/release/swipe gestures | Acceptance CLI cases exist for top tap/swipe/barge-in; product proof incomplete | Low-medium physical gate | `T-STACKCHAN-OFFICIAL-TOUCH-ACTION-EVIDENCE-001` | Press/swipe/barge-in report with no false promotion | Keep current limited touch acceptance only |
+| Servo Y/pitch | Pitch servo angle/torque/motion with clamps | Stable A21 surface, declared available; physical behavior still report-scoped | Keep and verify | `T-STACKCHAN-OFFICIAL-ACTION-MOTION-PARITY-001` | Operator or instrumented pose evidence with clamp verification | Preserve current pitch-only safe mapping |
+| Servo X/yaw | Yaw servo angle/PWM/continuous rotation mode | Planned or partial sequence use; not product-available | Medium-high safety gate | `T-STACKCHAN-OFFICIAL-ACTION-MOTION-PARITY-001` | Mechanical range, torque, clamp, and collision safety evidence | Keep `servo_x=planned_continuous_rotation_axis` |
+| RGB | 12 LED individual/all control | Declared stable expression surface; rich official per-LED API not exposed | Medium Gateway/action mapping | `T-STACKCHAN-OFFICIAL-ACTION-MOTION-PARITY-001` | Visible RGB evidence and semantic mapping tests | Keep current simple expression mapping |
+| Camera/photo | Camera capture and MCP photo explanation | Planned, privacy-sensitive | High privacy spike | `T-STACKCHAN-OFFICIAL-CAMERA-PRIVACY-SPIKE-001` | ADR/privacy plan, local consent behavior, redacted evidence | Keep camera blocked from product controls |
+| Camera stream/video | JPEG frames, start/stop stream, video mode | Not product surface | High privacy/bandwidth spike | `T-STACKCHAN-OFFICIAL-CAMERA-STREAM-SPIKE-001` | Explicit stream lifecycle, bandwidth, privacy, and UI evidence | Keep stream/video blocked |
+| IMU | BMI270 shake event, motion hooks | Diagnostic/planned only | Medium diagnostic-to-product | `T-STACKCHAN-OFFICIAL-SENSOR-BATTERY-DIAG-001` | Read-only diagnostic report, then separate product behavior evidence | Keep `imu=planned_9_axis_imu` |
+| Ambient/proximity | CoreS3 proximity and ambient light hardware | Diagnostic/planned only | Medium diagnostic-to-product | `T-STACKCHAN-OFFICIAL-SENSOR-BATTERY-DIAG-001` | Sensor-probe report with samples/read-error deltas | Keep planned sensor statuses |
+| Battery/charging | Battery status and status-bar display | Diagnostic/planned only | Low read-only, medium product | `T-STACKCHAN-OFFICIAL-SENSOR-BATTERY-DIAG-001` | INA226/battery diagnostic evidence plus display policy | Keep `battery=planned_550mah_battery` |
+| NFC | Full-featured NFC module | Planned, no product semantics | High product-semantics spike | `T-STACKCHAN-OFFICIAL-NFC-IR-SPIKE-001` | Opt-in interaction ADR and physical evidence | Keep `nfc=planned_nfc` |
+| Infrared | IR transmitter/receiver | Planned, no product semantics | High product-semantics spike | `T-STACKCHAN-OFFICIAL-NFC-IR-SPIKE-001` | Opt-in IR semantics, safety, and evidence | Keep `infrared=planned_infrared_tx_rx` |
+| MCP device status | `self.get_device_status` | Not live-whitelisted | Low | `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` | Endpoint tests, MCP capability check, redacted result metadata | Remove endpoint mapping if raw result or hidden claim leaks |
+| MCP speaker volume | `self.audio_speaker.set_volume` | Live-whitelisted and physically used for runtime volume | Done/freeze | Already landed, freeze in next MCP worker | Existing volume traces plus regression tests | Keep current endpoint only |
+| MCP brightness/theme/info | Screen brightness, theme, info | Not live-whitelisted | Low-medium | `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` | Endpoint tests with allowed tools only and no raw body logging | Do not expose brightness/theme/info until tests pass |
+| MCP reboot/OTA | System info, reboot, upgrade firmware | Not product-exposed | High guardrail | Future guarded system-control ADR only | Explicit ADR, guard, no unapproved reboot/upgrade | Keep reboot/upgrade blocked |
+| Device state display | Starting, wifi, idle, connect, listen, speak, upgrade, fatal/error states | Coarser A21 state/trace view | Medium-high | `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` | Stable state map, traces, display evidence | Fall back to coarse state/expression |
+| Official WS avatar | Avatar, motion, dance, heartbeat, text, call, video, camera, audio stream binary frames | Avatar/motion/dance/heartbeat subset only | Staged medium/high | `T-STACKCHAN-OFFICIAL-ACTION-MOTION-PARITY-001` plus camera/audio spikes | Frame-shape tests and physical proof per frame class | Reject unsupported official frame types |
+| App lifecycle | Mooncake/AppLauncher/AppAiAgent/AppAvatar/AppDance/AppSetup | Product path parks after direct Xiaozhi start to avoid setup trap | High reconciliation | `T-STACKCHAN-OFFICIAL-APP-LIFECYCLE-PARITY-001` | No-welcome boot proof plus official app-surface reconciliation plan | Keep parked no-welcome product path |
+| OTA/provisioning | Official OTA, provisioning, mobile/remote app ecosystem | Product OTA route exists; mobile/app ecosystem not A21 product surface | Medium/high by scope | `T-STACKCHAN-OFFICIAL-OTA-PROVISIONING-SCOPE-001` | ADR and guarded A21 namespace route evidence | Keep official ecosystem out of product claims |
+
+Promotion rule:
+
+- `available` means the current A21 runtime or firmware can expose the surface
+  honestly, but it is not sufficient for product acceptance.
+- `diagnostic` means a special probe or read-only report exists and must not be
+  shipped as product behavior.
+- `planned` means StackChan has the hardware or official surface, but A21 has
+  not landed an accepted implementation.
+- `blocked` means privacy, safety, key-isolation, proxy, firmware, or product
+  semantics prevent exposure.
+- `product-accepted` requires explicit A21 evidence with `trace_id`,
+  `session_id`, `device_id`, no raw secrets/transcripts/audio/provider payloads,
+  and no regression of the official-compatible product flash guard.
+
 ## Product Gate
 
 Before a planned capability can become `available`, it needs:

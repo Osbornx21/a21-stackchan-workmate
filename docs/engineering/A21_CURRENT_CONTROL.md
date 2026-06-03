@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `900264e docs(control): record v21 adapter evidence`
+  `0f4b354 feat(gateway): add workspace upload job skeleton`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -87,6 +87,44 @@ Target:
   and `professional` the two user-facing modes, keep `dialogue` as a
   compatibility alias, and define the A21 Cloud/Web/App plus V21 Knowledge
   Service/Adapter shape for public-only and personal+public professional query.
+
+## Scoped Hardware Parity Transition
+
+Transition:
+
+- `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001`
+
+Plan:
+
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+
+Status:
+
+- Gap map frozen in
+  `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`.
+- This is a docs/state baseline only. It does not expose new Gateway controls,
+  start Gateway, execute providers or V21, build firmware, flash firmware,
+  touch serial, or write NVS.
+- Official StackChan/Xiaozhi capabilities remain reference material. A21
+  product availability still requires A21 evidence and the promotion gates in
+  the capability charter.
+
+Current official-source reference:
+
+- StackChan root:
+  `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483`, dirty working tree, read as
+  working-tree reference.
+- Xiaozhi sub-tree:
+  `e77dedb1309153bb63fed285772962c920c97dd4`, detached clean `HEAD`, read as
+  `HEAD` reference.
+
+Next operator/control action:
+
+- Dispatch `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` for low-risk
+  `self.get_device_status`, screen brightness/theme, and screen info parity.
+- Keep reboot, upgrade, camera/photo, screen snapshot, camera stream/video,
+  NFC, infrared, app lifecycle, firmware, flash, serial, and NVS out of that
+  low-risk worker.
 
 ## Current Evidence Manifest
 
