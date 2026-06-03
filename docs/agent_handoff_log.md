@@ -7787,6 +7787,87 @@ Recommended next action:
 4. Only after host-loopback provider chain completes, run the physical
    StackChan dialogue/barge-in/wake-word evidence pass.
 
+## 2026-06-03 19:15 CST - Xiaozhi Provider State Machine Rebuild
+
+Round goal:
+
+- Stop patch-chasing the public voice chain and rebuild the failing provider
+  bridge against the official Xiaozhi and realtime provider state machines.
+
+Actual completed work:
+
+- Created the control plan
+  `docs/plans/2026-06-03-xiaozhi-provider-state-machine-rebuild.md`.
+- Confirmed the root cause is not loss of the Mac Gateway transport/audio work:
+  the public chain still has Xiaozhi WebSocket, Opus ingress/downlink,
+  streaming ASR reuse, nonblocking commit, and barge-in surfaces.
+- Fixed the DashScope realtime TTS adapter so it is no longer a synchronous
+  RPC wrapper:
+  - starts the read loop before text append/commit;
+  - waits for `session.updated` when available;
+  - emits audio on `response.audio.delta`;
+  - delays `session.finish` until after audio completion and successful text
+    commit;
+  - closes without `session.finish` on cancellation;
+  - reports redacted, stage-specific no-audio/read/provider/invalid-delta
+    failures.
+- Added provider tests that fail on the old order where
+  `session.finish` was sent before audio was read.
+- Added fake realtime timeline recording for precise write/read ordering
+  assertions.
+
+Changed files:
+
+- `docs/plans/2026-06-03-xiaozhi-provider-state-machine-rebuild.md`
+- `internal/providers/dashscope_realtime.go`
+- `internal/providers/dashscope_realtime_test.go`
+- `internal/providers/realtime_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused DashScope tests passed:
+  `go test ./internal/providers -run 'DashScopeRealtime(TTS|ASR)|VoicePipelineAdaptersFromEnvSelectsDashScope' -count=1`
+- Provider package passed:
+  `go test ./internal/providers -count=1`
+- Related packages passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- `git diff --check`: passed.
+- Full verification passed:
+  `make verify`
+
+Unfinished items:
+
+- This fix is not yet deployed to the public ECS `47.103.57.217` at the time
+  of this handoff entry.
+- A fresh public `xiaozhi-voice-bench --require-product-chain` must prove
+  ASR partial/final, LLM first content, TTS first audio, binary Opus downlink,
+  and barge-in cleanup on the main public Gateway.
+- Physical StackChan wake, mic-driven dialogue, audible playback, and
+  touch/new-wake barge-in acceptance are still not proven by this host-side
+  adapter fix.
+
+Known risks/blockers:
+
+- StepFun is still not active unless root-only ECS env includes
+  `A21_LAB_STEPFUN_API_KEY` and `A21_STEPFUN_MODEL=step-1-8k`.
+- If live DashScope sends a different event ordering than the documented
+  `session.updated`/`response.audio.delta` lifecycle, the adapter will proceed
+  after a bounded readiness timeout but public bench must confirm behavior.
+- This is a main-chain candidate unblock, not full PRD green.
+
+Recommended next action:
+
+1. Commit this state-machine fix.
+2. Deploy the commit to `47.103.57.217`.
+3. Run public `xiaozhi-voice-bench --require-product-chain` and inspect trace
+   markers for `provider.first_content`, `tts.first_audio`,
+   `audio.downlink.first_frame`, `xiaozhi.voice_pipeline.completed`, and
+   clean abort/stop behavior.
+4. Only after public host bench has binary downlink, test the physical
+   StackChan against `ws://47.103.57.217/v1/xiaozhi`.
+
 ## 2026-06-03 18:24 CST - Voice Chain Selector Hot Switch
 
 Round goal:

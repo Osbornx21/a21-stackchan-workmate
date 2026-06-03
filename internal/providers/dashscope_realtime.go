@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 const (
 	dashscopeRealtimeDefaultURL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 	dashscopeASRDefaultModel    = "qwen3-asr-flash-realtime"
 	dashscopeTTSDefaultModel    = "qwen3-tts-flash-realtime"
+	dashscopeTTSReadyTimeout    = 200 * time.Millisecond
 )
 
 var dashScopeRealtimeEventSeq atomic.Uint64
@@ -210,81 +212,154 @@ func (a *dashScopeRealtimeTTSAdapter) Synthesize(ctx context.Context, req TTSAda
 		return nil, err
 	}
 	session := &RealtimeWebSocketSession{provider: a.name, conn: conn}
+	out := make(chan VoiceAudioChunk, 4)
+	ready := make(chan error, 1)
+	commitResult := make(chan bool, 1)
+	go dashScopeRealtimeTTSReadLoop(ctx, session, out, ready, commitResult)
 	if err := session.conn.WriteJSON(ctx, dashScopeTTSUpdateEvent(a.env)); err != nil {
+		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS session update failed")
 	}
+	select {
+	case err := <-ready:
+		if err != nil {
+			signalDashScopeTTSCommitResult(commitResult, false)
+			_ = conn.Close(ctx)
+			return nil, fmt.Errorf("dashscope realtime TTS session update failed")
+		}
+	case <-ctx.Done():
+		signalDashScopeTTSCommitResult(commitResult, false)
+		_ = conn.Close(context.Background())
+		return nil, ctx.Err()
+	case <-time.After(dashscopeTTSReadyTimeout):
+	}
 	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_append"), "type": "input_text_buffer.append", "text": req.Text}); err != nil {
+		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text append failed")
 	}
 	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_commit"), "type": "input_text_buffer.commit"}); err != nil {
+		signalDashScopeTTSCommitResult(commitResult, false)
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text commit failed")
 	}
-	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_finish"), "type": "session.finish"}); err != nil {
-		_ = conn.Close(ctx)
-		return nil, fmt.Errorf("dashscope realtime TTS session finish failed")
+	signalDashScopeTTSCommitResult(commitResult, true)
+	return out, nil
+}
+
+func dashScopeRealtimeTTSReadLoop(ctx context.Context, session *RealtimeWebSocketSession, out chan<- VoiceAudioChunk, ready chan<- error, commitResult <-chan bool) {
+	defer close(out)
+	defer session.Close(context.Background())
+	chunker := newPCM16Mono60MSChunker(24000)
+	audioSeen := false
+	readySent := false
+	signalReady := func(err error) {
+		if readySent {
+			return
+		}
+		readySent = true
+		select {
+		case ready <- err:
+		default:
+		}
 	}
-	out := make(chan VoiceAudioChunk, 4)
-	go func() {
-		defer close(out)
-		defer session.Close(context.Background())
-		chunker := newPCM16Mono60MSChunker(24000)
-		audioSeen := false
-		for {
-			raw, err := session.ReadEvent(ctx)
-			if err != nil {
-				if err == io.EOF {
-					for _, chunk := range chunker.Flush() {
-						audioSeen = true
-						if !sendVoiceAudioChunk(ctx, out, chunk) {
-							return
-						}
-					}
-					if !audioSeen {
-						sendDashScopeTTSError(ctx, out, "dashscope realtime TTS produced no audio")
-					}
-					return
-				}
-				if ctx.Err() == nil {
-					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS read failed")
-				}
-				return
-			}
-			eventType, _ := raw["type"].(string)
-			if eventType == "response.audio.delta" {
-				chunks, err := chunkDashScopeAudio(chunker, raw)
-				if err != nil {
-					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS audio delta invalid")
-					return
-				}
-				for _, chunk := range chunks {
-					audioSeen = true
-					if !sendVoiceAudioChunk(ctx, out, chunk) {
-						return
-					}
-				}
-			}
-			if eventType == "error" {
-				sendDashScopeTTSError(ctx, out, "dashscope realtime TTS provider error")
-				return
-			}
-			if eventType == "response.done" || eventType == "session.finished" {
+	for {
+		raw, err := session.ReadEvent(ctx)
+		if err != nil {
+			if err == io.EOF {
+				signalReady(fmt.Errorf("dashscope realtime TTS ended before session update"))
 				for _, chunk := range chunker.Flush() {
 					audioSeen = true
 					if !sendVoiceAudioChunk(ctx, out, chunk) {
 						return
 					}
 				}
-				if !audioSeen {
-					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS produced no audio")
+				if !audioSeen && ctx.Err() == nil {
+					sendDashScopeTTSError(ctx, out, "tts adapter no audio", "dashscope realtime TTS produced no audio")
 				}
 				return
 			}
+			if ctx.Err() == nil {
+				signalReady(fmt.Errorf("dashscope realtime TTS read failed"))
+				sendDashScopeTTSError(ctx, out, "tts adapter read failed", "dashscope realtime TTS read failed")
+			}
+			return
 		}
-	}()
-	return out, nil
+		eventType, _ := raw["type"].(string)
+		switch eventType {
+		case "session.created":
+			continue
+		case "session.updated":
+			signalReady(nil)
+		case "response.created":
+			signalReady(nil)
+		case "response.audio.delta":
+			signalReady(nil)
+			chunks, err := chunkDashScopeAudio(chunker, raw)
+			if err != nil {
+				sendDashScopeTTSError(ctx, out, "tts adapter invalid audio delta", "dashscope realtime TTS audio delta invalid")
+				return
+			}
+			for _, chunk := range chunks {
+				audioSeen = true
+				if !sendVoiceAudioChunk(ctx, out, chunk) {
+					return
+				}
+			}
+		case "response.audio.done":
+			signalReady(nil)
+		case "response.done":
+			signalReady(nil)
+			for _, chunk := range chunker.Flush() {
+				audioSeen = true
+				if !sendVoiceAudioChunk(ctx, out, chunk) {
+					return
+				}
+			}
+			if !audioSeen {
+				sendDashScopeTTSError(ctx, out, "tts adapter no audio", "dashscope realtime TTS produced no audio")
+				return
+			}
+			if ctx.Err() == nil && waitDashScopeTTSCommitted(ctx, commitResult) {
+				_ = session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_finish"), "type": "session.finish"})
+			}
+			return
+		case "session.finished":
+			signalReady(nil)
+			for _, chunk := range chunker.Flush() {
+				audioSeen = true
+				if !sendVoiceAudioChunk(ctx, out, chunk) {
+					return
+				}
+			}
+			if !audioSeen {
+				sendDashScopeTTSError(ctx, out, "tts adapter no audio", "dashscope realtime TTS produced no audio")
+			}
+			return
+		case "error":
+			err := fmt.Errorf("dashscope realtime TTS provider error")
+			signalReady(err)
+			sendDashScopeTTSError(ctx, out, "tts adapter provider error", "dashscope realtime TTS provider error")
+			return
+		}
+	}
+}
+
+func signalDashScopeTTSCommitResult(commitResult chan<- bool, ok bool) {
+	select {
+	case commitResult <- ok:
+	default:
+	}
+}
+
+func waitDashScopeTTSCommitted(ctx context.Context, commitResult <-chan bool) bool {
+	select {
+	case ok := <-commitResult:
+		return ok
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func dashScopeTTSUpdateEvent(env []string) map[string]any {
@@ -315,9 +390,13 @@ func chunkDashScopeAudio(chunker *pcm16Mono60MSChunker, raw map[string]any) ([]V
 	return chunks, nil
 }
 
-func sendDashScopeTTSError(ctx context.Context, out chan<- VoiceAudioChunk, message string) bool {
+func sendDashScopeTTSError(ctx context.Context, out chan<- VoiceAudioChunk, finding string, message string) bool {
+	finding = strings.TrimSpace(finding)
+	if finding == "" {
+		finding = "tts adapter failed"
+	}
 	return sendVoiceAudioChunk(ctx, out, VoiceAudioChunk{
-		Finding: "tts adapter failed",
+		Finding: finding,
 		Err:     fmt.Errorf("%s", message),
 	})
 }

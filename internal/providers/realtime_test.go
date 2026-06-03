@@ -265,6 +265,7 @@ func mustJSON(t *testing.T, value any) string {
 type fakeRealtimeConn struct {
 	messages       []map[string]any
 	serverMessages []map[string]any
+	timeline       []string
 	readIndex      int
 	closed         bool
 }
@@ -279,6 +280,9 @@ func (c *fakeRealtimeConn) WriteJSON(_ context.Context, value any) error {
 		return err
 	}
 	c.messages = append(c.messages, message)
+	if eventType, _ := message["type"].(string); eventType != "" {
+		c.timeline = append(c.timeline, "write:"+eventType)
+	}
 	return nil
 }
 
@@ -291,6 +295,9 @@ func (c *fakeRealtimeConn) ReadJSON(_ context.Context, value any) error {
 		return err
 	}
 	c.readIndex++
+	if eventType, _ := c.serverMessages[c.readIndex-1]["type"].(string); eventType != "" {
+		c.timeline = append(c.timeline, "read:"+eventType)
+	}
 	return json.Unmarshal(encoded, value)
 }
 

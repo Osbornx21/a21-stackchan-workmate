@@ -55,11 +55,16 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeCloudStreamingASR(t *testin
 func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
 	conn := &fakeRealtimeConn{
 		serverMessages: []map[string]any{
+			{"type": "session.created"},
+			{"type": "session.updated"},
+			{"type": "response.created"},
 			{
 				"type":  "response.audio.delta",
 				"delta": base64.StdEncoding.EncodeToString(make([]byte, 2880)),
 			},
+			{"type": "response.audio.done"},
 			{"type": "response.done"},
+			{"type": "session.finished"},
 		},
 	}
 	adapters := VoicePipelineAdaptersFromEnv([]string{
@@ -84,15 +89,111 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
 	if first.SampleRateHz != 24000 || first.DurationMS != 60 {
 		t.Fatalf("first chunk = %+v, want 24k 60ms", first)
 	}
+	for range chunks {
+	}
 	if types := realtimeEventTypes(conn.messages); strings.Join(types, ",") != "session.update,input_text_buffer.append,input_text_buffer.commit,session.finish" {
 		t.Fatalf("client event types = %#v", types)
 	}
 	assertDashScopeRealtimeEventIDs(t, conn.messages)
 }
 
+func TestDashScopeRealtimeTTSWaitsForSessionUpdatedBeforeText(t *testing.T) {
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{
+			{"type": "session.created"},
+			{"type": "session.updated"},
+			{
+				"type":  "response.audio.delta",
+				"delta": base64.StdEncoding.EncodeToString(make([]byte, 2880)),
+			},
+			{"type": "response.audio.done"},
+			{"type": "response.done"},
+			{"type": "session.finished"},
+		},
+	}
+	adapter := NewDashScopeRealtimeTTSAdapter(DashScopeRealtimeTTSAdapterOptions{
+		Env:    []string{"A21_DASHSCOPE_API_KEY=sk-a21-secret"},
+		Dialer: fakeRealtimeDialer{conn: conn},
+	})
+	chunks, err := adapter.Synthesize(context.Background(), TTSAdapterRequest{Text: "文本不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := receiveVoiceAudioChunk(t, chunks)
+	if first.Err != nil || first.SampleRateHz != 24000 {
+		t.Fatalf("first chunk = %+v", first)
+	}
+	for range chunks {
+	}
+	if timelineIndex(conn.timeline, "write:input_text_buffer.append") < timelineIndex(conn.timeline, "read:session.updated") {
+		t.Fatalf("timeline = %#v, text append must wait for session.updated", conn.timeline)
+	}
+}
+
+func TestDashScopeRealtimeTTSDoesNotFinishBeforeAudioDone(t *testing.T) {
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{
+			{"type": "session.created"},
+			{"type": "session.updated"},
+			{"type": "response.created"},
+			{
+				"type":  "response.audio.delta",
+				"delta": base64.StdEncoding.EncodeToString(make([]byte, 2880)),
+			},
+			{"type": "response.audio.done"},
+			{"type": "response.done"},
+			{"type": "session.finished"},
+		},
+	}
+	adapter := NewDashScopeRealtimeTTSAdapter(DashScopeRealtimeTTSAdapterOptions{
+		Env:    []string{"A21_DASHSCOPE_API_KEY=sk-a21-secret"},
+		Dialer: fakeRealtimeDialer{conn: conn},
+	})
+	chunks, err := adapter.Synthesize(context.Background(), TTSAdapterRequest{Text: "文本不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := receiveVoiceAudioChunk(t, chunks)
+	if first.Err != nil || first.SampleRateHz != 24000 {
+		t.Fatalf("first chunk = %+v", first)
+	}
+	for range chunks {
+	}
+	if timelineIndex(conn.timeline, "write:session.finish") < timelineIndex(conn.timeline, "read:response.audio.done") {
+		t.Fatalf("timeline = %#v, session.finish must follow audio completion", conn.timeline)
+	}
+	if timelineIndex(conn.timeline, "write:session.finish") < timelineIndex(conn.timeline, "read:response.audio.delta") {
+		t.Fatalf("timeline = %#v, audio delta must arrive before session.finish", conn.timeline)
+	}
+}
+
+func TestDashScopeRealtimeTTSCancelDoesNotSendSessionFinish(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{
+			{"type": "session.updated"},
+		},
+	}
+	adapter := NewDashScopeRealtimeTTSAdapter(DashScopeRealtimeTTSAdapterOptions{
+		Env:    []string{"A21_DASHSCOPE_API_KEY=sk-a21-secret"},
+		Dialer: fakeRealtimeDialer{conn: conn},
+	})
+	chunks, err := adapter.Synthesize(ctx, TTSAdapterRequest{Text: "文本不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	for range chunks {
+	}
+	if timelineIndex(conn.timeline, "write:session.finish") < len(conn.timeline) {
+		t.Fatalf("timeline = %#v, cancelled TTS must not send session.finish", conn.timeline)
+	}
+}
+
 func TestDashScopeRealtimeTTSReportsDoneWithoutAudioAsAdapterFailure(t *testing.T) {
 	conn := &fakeRealtimeConn{
 		serverMessages: []map[string]any{
+			{"type": "session.updated"},
 			{"type": "response.done"},
 		},
 	}
@@ -108,9 +209,18 @@ func TestDashScopeRealtimeTTSReportsDoneWithoutAudioAsAdapterFailure(t *testing.
 	if !ok {
 		t.Fatal("chunks closed without adapter failure marker")
 	}
-	if chunk.Err == nil || chunk.Finding != "tts adapter failed" {
-		t.Fatalf("chunk error = %+v, want redacted TTS adapter failure", chunk)
+	if chunk.Err == nil || chunk.Finding != "tts adapter no audio" {
+		t.Fatalf("chunk error = %+v, want redacted no-audio TTS adapter failure", chunk)
 	}
+}
+
+func timelineIndex(timeline []string, value string) int {
+	for i, got := range timeline {
+		if got == value {
+			return i
+		}
+	}
+	return 1 << 30
 }
 
 func assertDashScopeRealtimeEventIDs(t *testing.T, messages []map[string]any) {
