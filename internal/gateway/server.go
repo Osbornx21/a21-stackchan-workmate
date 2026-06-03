@@ -560,17 +560,30 @@ type DeviceRegistryResponse struct {
 }
 
 type VoiceModeOption struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Status      string `json:"status"`
-	Default     bool   `json:"default,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID          string          `json:"id"`
+	Label       string          `json:"label"`
+	Status      string          `json:"status"`
+	Default     bool            `json:"default,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Ritual      VoiceModeRitual `json:"ritual"`
+}
+
+type VoiceModeRitual struct {
+	Mode             string                   `json:"mode"`
+	ScreenLabel      string                   `json:"screen_label"`
+	CueText          string                   `json:"cue_text"`
+	Expression       protocol.ExpressionState `json:"expression"`
+	TraceMarker      string                   `json:"trace_marker"`
+	WorkspacePolicy  string                   `json:"workspace_policy"`
+	V21Allowed       bool                     `json:"v21_allowed"`
+	PhysicalAccepted bool                     `json:"physical_accepted"`
 }
 
 type VoiceModeCatalogResponse struct {
 	SchemaVersion     string            `json:"schema_version"`
 	Service           string            `json:"service"`
 	SelectedVoiceMode string            `json:"selected_voice_mode"`
+	SelectedRitual    VoiceModeRitual   `json:"selected_ritual"`
 	Modes             []VoiceModeOption `json:"modes"`
 }
 
@@ -1136,10 +1149,12 @@ func (s *Server) handleCloudVoiceProfiles(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
+	selected := s.selectedVoiceMode()
 	return VoiceModeCatalogResponse{
 		SchemaVersion:     VoiceModeSchemaVersion,
 		Service:           DeviceRegistryServiceName,
-		SelectedVoiceMode: s.selectedVoiceMode(),
+		SelectedVoiceMode: selected,
+		SelectedRitual:    voiceModeRitual(selected),
 		Modes: []VoiceModeOption{
 			{
 				ID:          VoiceModeRoleplay,
@@ -1147,14 +1162,43 @@ func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
 				Status:      "available",
 				Default:     true,
 				Description: "role personality, memory hints, voice clone, low-latency speech, and stock Xiaozhi playback",
+				Ritual:      voiceModeRitual(VoiceModeRoleplay),
 			},
 			{
 				ID:          VoiceModeProfessional,
 				Label:       "Professional",
 				Status:      "available",
 				Description: "explicit evidence-first V21 adapter path; not routed through dialogue endpoints",
+				Ritual:      voiceModeRitual(VoiceModeProfessional),
 			},
 		},
+	}
+}
+
+func voiceModeRitual(mode string) VoiceModeRitual {
+	switch defaultVoiceMode(mode) {
+	case VoiceModeProfessional:
+		return VoiceModeRitual{
+			Mode:             VoiceModeProfessional,
+			ScreenLabel:      "PRO",
+			CueText:          v21adapter.ProfessionalCheckingFeedbackText,
+			Expression:       protocol.ExpressionProfessional,
+			TraceMarker:      "professional.checking_feedback.sent",
+			WorkspacePolicy:  "professional_only",
+			V21Allowed:       true,
+			PhysicalAccepted: false,
+		}
+	default:
+		return VoiceModeRitual{
+			Mode:             VoiceModeRoleplay,
+			ScreenLabel:      "A21",
+			CueText:          "我在。你说，我先接住。",
+			Expression:       protocol.ExpressionListening,
+			TraceMarker:      "roleplay.profile.ready",
+			WorkspacePolicy:  "roleplay_private_no_v21",
+			V21Allowed:       false,
+			PhysicalAccepted: false,
+		}
 	}
 }
 

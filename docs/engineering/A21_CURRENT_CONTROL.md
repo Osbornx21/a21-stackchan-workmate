@@ -593,6 +593,11 @@ First code/doc cut in progress:
 - Gateway `/v1/voice-modes` catalog defaults to `roleplay`, lists
   `roleplay`/`professional`, and accepts old `dialogue` input as a
   compatibility alias.
+- `/v1/voice-modes` now carries `selected_ritual` and per-mode `ritual`
+  metadata. Selecting `professional` returns `screen_label=PRO`, the shared
+  evidence-first checking cue, `expression=professional`, trace marker
+  `professional.checking_feedback.sent`, `workspace_policy=professional_only`,
+  `v21_allowed=true`, and `physical_accepted=false`.
 - Fast companion accepts `roleplay` while still rejecting selected
   `professional` before provider or V21 execution.
 
@@ -719,6 +724,30 @@ Current conclusion:
 - This still does not execute a real clone provider or prove physical
   StackChan roleplay audio. Provider execution and physical acceptance remain
   separate gates.
+
+## Latest Control-Tower Result - 2026-06-04 Professional Mode Ritual Contract
+
+Professional mode selection now has a first-class switching ritual contract
+instead of only changing an enum.
+
+Current implementation state:
+
+- `GET/POST /v1/voice-modes` returns `selected_ritual` and per-mode `ritual`
+  metadata.
+- The professional ritual uses screen label `PRO`, cue
+  `我在查，先把证据和置信度拉出来。`, expression `professional`, trace marker
+  `professional.checking_feedback.sent`, workspace policy
+  `professional_only`, `v21_allowed=true`, and `physical_accepted=false`.
+- The simulator displays the selected mode cue through `modeRitualReadout`.
+- Fast companion remains blocked when the selected voice mode is
+  `professional`; no provider or V21 execution occurs from that endpoint.
+
+Current conclusion:
+
+- Web/app/hardware controls now have a shared redacted ritual payload for
+  entering professional mode. Actual professional answers and evidence still
+  require the existing professional/V21 path, and physical StackChan
+  acceptance remains separate.
 
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Professional Workspace Contract
 

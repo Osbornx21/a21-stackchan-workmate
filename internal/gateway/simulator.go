@@ -442,6 +442,7 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>State</label><div id="state">idle</div></div>
           <div class="metric"><label>Mode</label><div id="modeReadout">roleplay</div></div>
           <div class="metric"><label>Voice</label><div id="voiceModeReadout">roleplay</div></div>
+          <div class="metric"><label>Mode Cue</label><div id="modeRitualReadout">我在。你说，我先接住。</div></div>
           <div class="metric"><label>Gateway</label><div id="gatewayProfileReadout">mac_local</div></div>
           <div class="metric"><label>Cloud Voice</label><div id="cloudVoiceProfileReadout">a21_doubao_tts_realtime</div></div>
           <div class="metric"><label>Chain</label><div id="voiceChainModeReadout">cascade</div></div>
@@ -561,6 +562,7 @@ const simulatorHTML = `<!doctype html>
       state: document.getElementById('state'),
       modeReadout: document.getElementById('modeReadout'),
       voiceModeReadout: document.getElementById('voiceModeReadout'),
+      modeRitualReadout: document.getElementById('modeRitualReadout'),
       gatewayProfileReadout: document.getElementById('gatewayProfileReadout'),
       cloudVoiceProfileReadout: document.getElementById('cloudVoiceProfileReadout'),
       voiceChainModeReadout: document.getElementById('voiceChainModeReadout'),
@@ -710,9 +712,12 @@ const simulatorHTML = `<!doctype html>
       ui.modeReadout.textContent = sim.mode;
       updateVisibilityBadges();
     }
-    function setVoiceMode(mode) {
+    function setVoiceMode(mode, ritual) {
       ui.voiceMode.value = mode || 'roleplay';
       ui.voiceModeReadout.textContent = ui.voiceMode.value;
+      const cue = (ritual && ritual.cue_text) || (ui.voiceMode.value === 'professional' ? '我在查，先把证据和置信度拉出来。' : '我在。你说，我先接住。');
+      const screen = (ritual && ritual.screen_label) || (ui.voiceMode.value === 'professional' ? 'PRO' : 'A21');
+      ui.modeRitualReadout.textContent = screen + ' / ' + cue;
     }
     function setRoleplayProfile(catalog) {
       const selectedScenario = catalog.selected_scenario || 'desk_mouthpiece';
@@ -1022,7 +1027,7 @@ const simulatorHTML = `<!doctype html>
           return;
         }
         const catalog = await response.json();
-        setVoiceMode(catalog.selected_voice_mode || 'roleplay');
+        setVoiceMode(catalog.selected_voice_mode || 'roleplay', catalog.selected_ritual || null);
       } catch (err) {
         log('voice mode catalog unavailable');
       }
@@ -1122,7 +1127,7 @@ const simulatorHTML = `<!doctype html>
           return;
         }
         const catalog = await response.json();
-        setVoiceMode(catalog.selected_voice_mode || ui.voiceMode.value);
+        setVoiceMode(catalog.selected_voice_mode || ui.voiceMode.value, catalog.selected_ritual || null);
         refreshRegistry();
       } catch (err) {
         log('voice mode save unavailable');

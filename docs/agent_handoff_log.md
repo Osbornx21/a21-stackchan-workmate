@@ -10997,3 +10997,82 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this round.
+
+## 2026-06-04 07:58 CST - Professional Mode Ritual Contract
+
+Round goal:
+
+- Make professional mode switching visible and intentional for internal test 4
+  without changing the accepted internal test 3 Xiaozhi voice path or executing
+  provider/V21/hardware work.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-professional-mode-ritual-contract.md`.
+- Added `VoiceModeRitual` to `/v1/voice-modes` responses.
+- Added top-level `selected_ritual` plus per-mode `ritual` metadata.
+- Professional mode now exposes a redacted mode-switch ritual:
+  `screen_label=PRO`, cue `我在查，先把证据和置信度拉出来。`,
+  expression `professional`, trace marker
+  `professional.checking_feedback.sent`, workspace policy
+  `professional_only`, `v21_allowed=true`, and `physical_accepted=false`.
+- Roleplay mode exposes a no-V21 ritual with `screen_label=A21` and
+  `physical_accepted=false`.
+- Simulator now displays the selected mode cue through `modeRitualReadout`.
+- Added tests proving the ritual contract is present, redacted, and does not
+  unblock fast-companion professional execution.
+- Updated protocol, internal-test4 plan, current control, and project state
+  machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/plans/2026-06-04-professional-mode-ritual-contract.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is host/web/simulator mode-contract evidence only. It does not prove a
+  physical StackChan professional consult, audible checking cue, or evidence
+  card render on hardware.
+- Actual professional answers still require the existing professional/V21 path
+  and fresh adapter/runtime evidence.
+
+Known risks/blockers:
+
+- The ritual cue is intentionally static and redacted. Future personalized
+  professional intros must not include user utterance text, workspace text,
+  evidence bodies, provider output, URLs, paths, credentials, or raw audio.
+- Physical professional mode acceptance still needs foreground hardware
+  evidence after the user opens that window.
+
+Recommended next action:
+
+- Continue toward internal test 4 acceptance by either:
+  - opening the no-flash hardware evidence window for professional/touch/action
+    proof; or
+  - implementing the next cloud upload/index execution slice behind the
+    existing no-execute `/v1/workspace-upload-jobs` contract.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional|TestVoiceModeSelectionProfessionalReturnsRitualContract|TestFastCompanionRejectsProfessionalVoiceModeWithoutProviderOrV21Execution|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestVoiceMode|TestFastCompanionRejectsProfessionalVoiceMode|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.

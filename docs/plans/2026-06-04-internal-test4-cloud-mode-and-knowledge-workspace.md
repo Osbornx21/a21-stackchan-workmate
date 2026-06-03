@@ -71,6 +71,11 @@ StackChan hardware.
   upload/import/index job skeleton. It can create, poll, mark failed, retry,
   and delete redacted metadata jobs while rejecting document text, bytes,
   base64 payloads, import URLs, local paths, credentials, and provider output.
+- Gateway now exposes a professional mode ritual contract in
+  `GET/POST /v1/voice-modes`. Selecting `professional` returns a `PRO` screen
+  label, evidence-first cue text, professional expression, trace marker,
+  `professional_only` workspace policy, `v21_allowed=true`, and
+  `physical_accepted=false`; the simulator displays the selected mode cue.
 
 ## Product Form
 
@@ -267,6 +272,8 @@ Acceptance:
 
 - Hardware professional consult shows `PRO`, checking feedback, and evidence
   cards.
+- `/v1/voice-modes` exposes the same `PRO` checking cue contract used by
+  hardware/web/app mode selection before V21 evidence is read aloud.
 - Web/app professional consult and hardware consult use the same adapter
   contract.
 - `public_only` and `personal_plus_public` scopes are observable in redacted

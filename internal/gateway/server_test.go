@@ -343,6 +343,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="saveRoleplayMemory"`,
 		`id="clearRoleplayMemory"`,
 		`id="roleplayMemoryReadout"`,
+		`id="modeRitualReadout"`,
 		`id="professionalQueryScope"`,
 		`id="workspaceDocumentLabel"`,
 		`id="workspaceJob"`,
@@ -885,10 +886,20 @@ func TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional(t *testing.T) {
 	var response struct {
 		SchemaVersion string `json:"schema_version"`
 		Selected      string `json:"selected_voice_mode"`
-		Modes         []struct {
+		Ritual        struct {
+			Mode             string `json:"mode"`
+			ScreenLabel      string `json:"screen_label"`
+			V21Allowed       bool   `json:"v21_allowed"`
+			PhysicalAccepted bool   `json:"physical_accepted"`
+		} `json:"selected_ritual"`
+		Modes []struct {
 			ID      string `json:"id"`
 			Status  string `json:"status"`
 			Default bool   `json:"default"`
+			Ritual  struct {
+				Mode             string `json:"mode"`
+				PhysicalAccepted bool   `json:"physical_accepted"`
+			} `json:"ritual"`
 		} `json:"modes"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -897,12 +908,21 @@ func TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional(t *testing.T) {
 	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "roleplay" {
 		t.Fatalf("catalog = %+v", response)
 	}
+	if response.Ritual.Mode != "roleplay" ||
+		response.Ritual.ScreenLabel != "A21" ||
+		response.Ritual.V21Allowed ||
+		response.Ritual.PhysicalAccepted {
+		t.Fatalf("selected ritual = %+v, want roleplay no-v21 no-physical", response.Ritual)
+	}
 	seen := map[string]string{}
 	defaults := 0
 	for _, mode := range response.Modes {
 		seen[mode.ID] = mode.Status
 		if mode.Default {
 			defaults++
+		}
+		if mode.Ritual.Mode != mode.ID || mode.Ritual.PhysicalAccepted {
+			t.Fatalf("mode ritual = %+v for mode %+v, want matching non-physical ritual", mode.Ritual, mode)
 		}
 	}
 	if seen["roleplay"] != "available" || seen["professional"] != "available" || defaults != 1 {
@@ -916,6 +936,39 @@ func TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional(t *testing.T) {
 	}
 	if _, ok := seen["pure_cloud"]; ok {
 		t.Fatalf("catalog still exposes planned pure-cloud spike as product mode: %+v", response.Modes)
+	}
+}
+
+func TestVoiceModeSelectionProfessionalReturnsRitualContract(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"professional"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response VoiceModeCatalogResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	ritual := response.SelectedRitual
+	if response.SelectedVoiceMode != VoiceModeProfessional ||
+		ritual.Mode != VoiceModeProfessional ||
+		ritual.ScreenLabel != "PRO" ||
+		ritual.CueText != v21adapter.ProfessionalCheckingFeedbackText ||
+		ritual.Expression != protocol.ExpressionProfessional ||
+		ritual.TraceMarker != "professional.checking_feedback.sent" ||
+		ritual.WorkspacePolicy != "professional_only" ||
+		!ritual.V21Allowed ||
+		ritual.PhysicalAccepted {
+		t.Fatalf("professional ritual = %+v selected=%s", ritual, response.SelectedVoiceMode)
+	}
+	for _, forbidden := range []string{"http://", "https://", "/Users/", "sk-", "secret", "source_text", "evidence_body"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("professional ritual leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 

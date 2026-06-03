@@ -529,6 +529,15 @@ roleplay/dialogue-only endpoints instead of silently switching provider, V21,
 or firmware behavior. Legacy labels such as `dialogue`, `workmate`,
 `companion`, and `co_creation` normalize to `roleplay` at product-contract
 surfaces; visibility/privacy states remain separate policy fields.
+The same response carries `selected_ritual` and per-mode `ritual` metadata so
+web/app/hardware surfaces can show one consistent mode switch ritual. The
+professional ritual uses screen label `PRO`, expression `professional`, trace
+marker `professional.checking_feedback.sent`, workspace policy
+`professional_only`, `v21_allowed=true`, and `physical_accepted=false`. Its
+cue text is the same checking acknowledgement used before V21 query execution:
+"我在查，先把证据和置信度拉出来。" The ritual contract must not include user
+utterances, workspace text, evidence bodies, provider output, URLs, paths,
+credentials, or raw audio.
 
 `roleplay_profile` is the frontend/Gateway selector for the default embodied
 roleplay runtime under `voice_mode=roleplay`. `GET /v1/roleplay-profile`
