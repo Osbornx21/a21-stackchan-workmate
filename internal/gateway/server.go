@@ -2475,6 +2475,10 @@ func (s *Server) processXiaozhiOpusIngressFrame(ctx context.Context, conn *webso
 	defer func() {
 		session.opusIngressProcessedFrameCount++
 	}()
+	if ctx != nil && ctx.Err() != nil {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.stale_frame_suppressed", s.now().UnixMilli())
+		return
+	}
 	if session.opusCodec == nil {
 		session.opusDecodeErrorCount++
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())

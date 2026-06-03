@@ -6538,3 +6538,67 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No unresolved failure. The initial failure was the intentional red test.
+
+## 2026-06-03 10:48 CST - Xiaozhi Stale Opus Ingress Suppression
+
+本轮目标:
+
+- Continue the persistent Xiaozhi realtime convergence goal by tightening the
+  Opus ingress queue ownership boundary after `fc79156`.
+- Prevent abort/wake-as-abort/listen-start barge-in from letting queued
+  old-turn Opus frames decode into the next listening turn.
+- Keep the cut host-local and stock-protocol aligned.
+
+实际完成内容:
+
+- Added plan `docs/plans/2026-06-03-xiaozhi-stale-opus-ingress-suppression.md`.
+- Ran two read-only explorers:
+  - Raman confirmed stock-shaped behavior: wake/listen during Speaking should
+    interrupt current playback/turn and then allow fresh Listening; debug
+    `stop_done` must stay optional and not become stock acceptance.
+  - Aristotle identified the narrowest next A21 gap: abort can process while
+    Opus append is blocked, but queued old-turn frames still needed explicit
+    cancellation/suppression proof.
+- Added a low-level Gateway red test proving a cancelled Opus ingress item
+  previously reached `audio.ingress.buffered`.
+- Added a WebSocket regression proving abort with queued old-turn Opus frames
+  suppresses the queued frames and does not start stale voice-pipeline/downlink
+  work.
+- Added a pre-decode stale-context guard in `processXiaozhiOpusIngressFrame`.
+- Updated `docs/project_state_machine.md`.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-stale-opus-ingress-suppression.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance remains incomplete.
+- Real streaming TTS execution is still pending complete provider env.
+- User supplied provider credentials in-chat during this round; do not echo,
+  commit, or write them to tracked docs. Current known missing Doubao realtime
+  TTS values still include model and voice names unless they are supplied via
+  a local env file.
+- Physical stock `/v1/xiaozhi` trace still needs wake or labeled tap trigger,
+  real streaming ASR/LLM/TTS profile markers, audible playback, touch/barge-in,
+  playback stop completion where available, and idle recovery.
+
+测试/构建/运行结果:
+
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiOpusIngressSkipsCanceledTurnFrame -count=1`
+  failed because a cancelled Opus ingress item reached
+  `audio.ingress.buffered` and lacked stale suppression.
+- Green focused stale-ingress tests passed:
+  `go test ./internal/gateway -run 'TestXiaozhi(OpusIngressSkipsCanceledTurnFrame|WebSocketAbortSuppressesQueuedOldTurnOpusFrames)' -count=1`.
+- Focused Xiaozhi Gateway tests passed:
+  `go test ./internal/gateway -run 'Test(XiaozhiOpusIngressSkipsCanceledTurnFrame|XiaozhiWebSocket(AbortSuppressesQueuedOldTurnOpusFrames|OpusAppendDoesNotBlockAbortControlFrame|ListenStopDoesNotBlockAbortWhileStreamingASRCommitPending|ListenStartBargeInStopsActiveTTS|AbortCancelsBlockedTurnTaskWithinBargeInBudget|WakePrerollOpusFeedsNextTurn|StreamingASRFinalSendsStockSTTBeforeTTS|StreamingASRFinalStartsPipelineWithoutBatchFallback|ListenStopRunsVoicePipelineAndSendsPacedOpus|StreamingASRStartsBeforeListenStop|ASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal|AbortDuringStreamingAnswerSuppressesStaleSegments|AbortAfterFastAckSuppressesAnswerFrames|AbortStopsPlaceholderTTSAndPreventsStaleBinary)|WriteXiaozhiOpusDownlinkSkipsStaleTurn)' -count=1`.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure so far. The initial failure was the intentional red
+  test.

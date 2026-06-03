@@ -23,6 +23,7 @@ Active child transitions:
 - `T-XIAOZHI-STREAMING-ASR-001`
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
+- `T-XIAOZHI-STALE-OPUS-INGRESS-SUPPRESSION-001`
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
@@ -98,6 +99,12 @@ loop can still read `abort` while ASR append is slow. `listen.stop`
 finalization now waits asynchronously for queued ingress to catch up before
 committing streaming ASR or starting the voice pipeline. This is still
 host-local evidence, not physical Xiaozhi PRD acceptance.
+`T-XIAOZHI-STALE-OPUS-INGRESS-SUPPRESSION-001` now closes the next queue
+ownership gap: Opus ingress items whose turn context has already been cancelled
+are suppressed before decode, audio ingress, VAD, or streaming ASR append. This
+keeps abort/wake-as-abort/listen-start barge-in from letting old queued audio
+pollute the next listening turn. It is unit/Gateway evidence only, not real
+provider execution or physical PRD acceptance.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -2144,9 +2151,11 @@ Next state:
      nonblocking commit, stock `stt` ordering, and true-idle wake pre-roll
      buffering are implemented and covered by Gateway tests. Listening Opus
      frames now pass through a bounded per-session ingress queue so decode,
-     VAD, and ASR append do not block the WebSocket control loop. Full runtime
-     proof is still missing because no physical stock `/v1/xiaozhi` trace has
-     shown real streaming ASR/LLM/TTS profile markers plus playback.
+     VAD, and ASR append do not block the WebSocket control loop. Cancelled
+     queue items are now suppressed before audio ingress so old-turn audio
+     cannot leak into a fresh listening turn. Full runtime proof is still
+     missing because no physical stock `/v1/xiaozhi` trace has shown real
+     streaming ASR/LLM/TTS profile markers plus playback.
    - Next action: in an approved runtime/hardware window, collect an
      operator-triggered physical stock `/v1/xiaozhi` trace and run
      `xiaozhi-realtime-parity`; do not promote host-loopback, `/say`,

@@ -3766,6 +3766,50 @@ func TestWriteXiaozhiOpusDownlinkSkipsStaleTurn(t *testing.T) {
 	}
 }
 
+func TestXiaozhiOpusIngressSkipsCanceledTurnFrame(t *testing.T) {
+	server := NewServer()
+	session := &xiaozhiSession{
+		deviceID:  "stackchan-001",
+		traceID:   "a21-trace-xiaozhi-stale-ingress",
+		sessionID: "a21-session-xiaozhi-stale-ingress",
+	}
+	if err := session.configureXiaozhiAudio(xiaozhitransport.AudioParams{
+		Format:        "opus",
+		SampleRate:    16000,
+		Channels:      1,
+		FrameDuration: 60,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	staleCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	packet := xiaozhiTestSpeechOpusPacket(t)
+
+	server.processXiaozhiOpusIngressFrame(staleCtx, nil, session, xiaozhitransport.Frame{
+		Kind:      xiaozhitransport.FrameKindOpus,
+		Direction: xiaozhitransport.DirectionDeviceToServer,
+		DeviceID:  session.deviceID,
+		TraceID:   session.traceID,
+		SessionID: session.sessionID,
+		Opus: &xiaozhitransport.OpusFrame{
+			Codec:        "opus",
+			Payload:      packet,
+			PayloadBytes: len(packet),
+		},
+	}, 1)
+
+	traces := server.traceEvents("a21-trace-xiaozhi-stale-ingress")
+	if !traceContains(traces, "xiaozhi.opus_ingress.stale_frame_suppressed") {
+		t.Fatalf("trace missing stale ingress suppression marker: %+v", traces)
+	}
+	if traceContains(traces, "audio.ingress.buffered") {
+		t.Fatalf("stale ingress frame reached audio ingress: %+v", traces)
+	}
+	if len(session.voicePipelineFrames) != 0 {
+		t.Fatalf("voice pipeline frames = %d, want 0 for stale ingress", len(session.voicePipelineFrames))
+	}
+}
+
 func TestXiaozhiWebSocketUsesStockHandshakeHeaders(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)
@@ -4516,6 +4560,74 @@ func TestXiaozhiWebSocketOpusAppendDoesNotBlockAbortControlFrame(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("abort was not processed while Opus append was blocked: %+v", server.traceEvents("a21-trace-xiaozhi-opus-ingress-queue"))
+}
+
+func TestXiaozhiWebSocketAbortSuppressesQueuedOldTurnOpusFrames(t *testing.T) {
+	streamingASR := newBlockingAppendStreamingASRAdapter()
+	defer streamingASR.releaseAppend()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-abort-queued-opus",
+		"session_id": "a21-session-xiaozhi-abort-queued-opus",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	for i := 0; i < 3; i++ {
+		if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-streamingASR.appendEntered:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR append did not block on first Opus frame")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "abort" {
+		t.Fatalf("abort stop = %#v", stop)
+	}
+
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		traces := server.traceEvents("a21-trace-xiaozhi-abort-queued-opus")
+		if traceEventCount(traces, "xiaozhi.opus_ingress.stale_frame_suppressed") >= 2 {
+			if got := traceEventCount(traces, "audio.ingress.buffered"); got != 1 {
+				t.Fatalf("audio ingress buffered = %d, want only first pre-abort frame; traces=%+v", got, traces)
+			}
+			if traceContains(traces, "xiaozhi.voice_pipeline.start") || traceContains(traces, "xiaozhi.tts.opus_frame.downlink") {
+				t.Fatalf("stale queued frames started pipeline/downlink after abort: %+v", traces)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("queued stale Opus frames were not suppressed after abort: %+v", server.traceEvents("a21-trace-xiaozhi-abort-queued-opus"))
 }
 
 func TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWithoutBatchFallback(t *testing.T) {
