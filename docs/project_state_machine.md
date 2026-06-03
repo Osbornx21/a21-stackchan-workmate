@@ -2356,6 +2356,21 @@ Next state:
 
 ## Next Candidate Transitions
 
+Priority candidate added from the 2026-06-04 hardware parity comparison:
+
+- `T-STACKCHAN-OFFICIAL-HARDWARE-PARITY-001`
+  - Current phase: detailed landing plan written after comparing A21's current
+    hardware/control/status surface with the local official StackChan/Xiaozhi
+    package.
+  - Plan:
+    `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
+  - Next action: main control should first dispatch the docs-only/read-only gap
+    map worker `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001`, then schedule the
+    low-risk Gateway MCP/status worker before any firmware, flash, camera,
+    video, NFC, infrared, or app-lifecycle work.
+  - Boundary: no provider execution, Gateway start, firmware build, flash,
+    serial, or NVS write in the first worker.
+
 1. `T-WAKE-003: Zi Yue Phrase Tuning`
    - Current phase: root causes found and product-lane rebuild passed. First,
      `CustomWakeWord::Initialize` used the asset `index.json` command path

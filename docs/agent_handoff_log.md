@@ -9850,3 +9850,72 @@ Recommended next action:
 - Refresh live A21 Gateway/voice-chain/wake evidence against the current
   StepFun cloud-edge chain, then collect physical StackChan PRD playback/stop
   or trusted audible evidence.
+
+## 2026-06-04 05:06 CST - StackChan Official Hardware Parity Plan Handed Back
+
+Round goal:
+
+- Turn the read-only comparison between A21's current StackChan hardware
+  control/status surface and the official Xiaozhi StackChan package into a
+  detailed main-control implementation plan.
+
+Actual completed work:
+
+- Wrote a detailed staged plan:
+  `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
+- Captured the official-vs-A21 parity matrix across microphone, speaker,
+  screen/status display, screen touch, top touch, pitch/yaw servos, RGB,
+  camera/photo/video, IMU, ambient/proximity, battery/charging, NFC, infrared,
+  Xiaozhi MCP tools, official StackChan WebSocket avatar/action frames, app
+  lifecycle, OTA/provisioning, wake/audio/AEC/playback evidence, and physical
+  PRD gates.
+- Split the work into ordered transitions:
+  docs-only gap map, low-risk MCP/status parity, display-state registry
+  parity, official avatar/motion/RGB/servo mapping, physical touch/action
+  evidence, sensor/battery diagnostics, audio/wake/playback evidence closure,
+  official app-lifecycle reconciliation, and high-risk camera/video/NFC/IR
+  spikes.
+- Added `T-STACKCHAN-OFFICIAL-HARDWARE-PARITY-001` as a next candidate in
+  `docs/project_state_machine.md` without taking over the current active
+  Internal Test 4 work.
+
+Changed files:
+
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- The plan has not been executed.
+- No Gateway MCP/status endpoints were added in this round.
+- No firmware build, flash, serial, NVS write, provider execution, Gateway
+  start, or physical hardware action was performed.
+- The main control thread still needs to schedule the first worker.
+
+Known risks/blockers:
+
+- The local official source trees used for comparison may be dirty; the first
+  worker must record exact remotes, branches, HEAD commits, and dirty state.
+- The current A21 worktree already contains main-control Internal Test 4
+  changes; workers must not revert or overwrite them.
+- Product hardware availability must remain blocked unless a worker produces
+  physical or diagnostic evidence with `trace_id`, `session_id`, and
+  `device_id`.
+- Camera/video/NFC/IR/app-lifecycle work is high risk and must not be folded
+  into the first low-risk MCP/status worker.
+
+Test/build/runtime results:
+
+- No product code was changed.
+- Plan self-review searched the new plan for placeholder markers such as
+  `TODO`, `TBD`, and stale placeholder source paths; none remained.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- In the main control thread, dispatch
+  `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` first as a docs-only/read-only
+  worker. After it lands, schedule the low-risk Gateway MCP/status worker
+  before any firmware or high-risk hardware work.
