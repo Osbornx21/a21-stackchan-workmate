@@ -445,6 +445,17 @@ func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context
 		return err
 	}
 	for chunk := range ttsChunks {
+		if chunk.Finding != "" {
+			report.Findings = appendUniqueVoicePipelineFindings(report.Findings, chunk.Finding)
+		}
+		if chunk.Err != nil {
+			report.Status = string(VoicePipelineStatusFailed)
+			if chunk.Finding == "" {
+				report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "tts adapter failed")
+			}
+			result.Report = *report
+			return chunk.Err
+		}
 		if cancelled := r.applyCancel(ctx, start, result); cancelled {
 			result.Report = finalizeVoicePipelineReport(*report, *result)
 			return nil

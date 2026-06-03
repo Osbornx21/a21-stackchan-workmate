@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -175,6 +176,30 @@ func TestVoicePipelineReportFlagsTTSClippingWithoutAudioPayload(t *testing.T) {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("voice pipeline quality report leaked %q: %s", forbidden, rendered)
 		}
+	}
+}
+
+func TestVoicePipelineRunnerTreatsTTSChunkErrorAsAdapterFailure(t *testing.T) {
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR:        scriptedPipelineASRAdapter{text: "private asr words never stored"},
+		TextStream: scriptedPipelineTextStreamAdapter{events: []TextStreamEvent{{Kind: TextStreamDeltaContent, Text: "收到。"}, {Kind: TextStreamDeltaDone}}},
+		TTS:        failingChunkPipelineTTSAdapter{},
+		Selection:  VoicePipelineSelectionFromEnv(nil),
+	})
+
+	result, err := runner.Run(context.Background(), VoicePipelineRequest{
+		Session: VoiceSession{TraceID: "a21-trace-tts-chunk-error", SessionID: "a21-session-tts-chunk-error", DeviceID: "stackchan-sim-001"},
+		Mode:    "workmate",
+		Frames:  []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err == nil {
+		t.Fatal("Run err = nil, want TTS adapter failure")
+	}
+	if result.Status != VoicePipelineStatusFailed || len(result.AudioChunks) != 0 {
+		t.Fatalf("result status/chunks = %s/%d, want failed with no audio", result.Status, len(result.AudioChunks))
+	}
+	if !voicePipelineStringSliceHas(result.Report.Findings, "tts adapter failed") {
+		t.Fatalf("report findings = %#v, want tts adapter failed", result.Report.Findings)
 	}
 }
 
@@ -545,6 +570,19 @@ func (clippingPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAdapter
 		DurationMS:   60,
 		DataBase64:   clippingPipelineBase64(),
 	}
+	close(out)
+	return out, nil
+}
+
+type failingChunkPipelineTTSAdapter struct{}
+
+func (failingChunkPipelineTTSAdapter) Name() string {
+	return "a21-failing-chunk-tts"
+}
+
+func (failingChunkPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
+	out := make(chan VoiceAudioChunk, 1)
+	out <- VoiceAudioChunk{Finding: "tts adapter failed", Err: errors.New("a21 redacted tts chunk failure")}
 	close(out)
 	return out, nil
 }

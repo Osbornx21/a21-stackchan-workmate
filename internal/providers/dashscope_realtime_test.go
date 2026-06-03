@@ -90,6 +90,29 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
 	assertDashScopeRealtimeEventIDs(t, conn.messages)
 }
 
+func TestDashScopeRealtimeTTSReportsDoneWithoutAudioAsAdapterFailure(t *testing.T) {
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{
+			{"type": "response.done"},
+		},
+	}
+	adapter := NewDashScopeRealtimeTTSAdapter(DashScopeRealtimeTTSAdapterOptions{
+		Env:    []string{"A21_DASHSCOPE_API_KEY=sk-a21-secret"},
+		Dialer: fakeRealtimeDialer{conn: conn},
+	})
+	chunks, err := adapter.Synthesize(context.Background(), TTSAdapterRequest{Text: "文本不进报告"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk, ok := <-chunks
+	if !ok {
+		t.Fatal("chunks closed without adapter failure marker")
+	}
+	if chunk.Err == nil || chunk.Finding != "tts adapter failed" {
+		t.Fatalf("chunk error = %+v, want redacted TTS adapter failure", chunk)
+	}
+}
+
 func assertDashScopeRealtimeEventIDs(t *testing.T, messages []map[string]any) {
 	t.Helper()
 	for _, message := range messages {

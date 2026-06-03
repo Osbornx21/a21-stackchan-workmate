@@ -59,6 +59,8 @@ type VoiceAudioChunk struct {
 	Channels     int
 	DurationMS   int
 	DataBase64   string
+	Finding      string `json:"finding,omitempty"`
+	Err          error  `json:"-"`
 }
 
 type VoiceProviderHealthStatus string

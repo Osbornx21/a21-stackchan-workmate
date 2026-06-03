@@ -231,27 +231,54 @@ func (a *dashScopeRealtimeTTSAdapter) Synthesize(ctx context.Context, req TTSAda
 		defer close(out)
 		defer session.Close(context.Background())
 		chunker := newPCM16Mono60MSChunker(24000)
+		audioSeen := false
 		for {
 			raw, err := session.ReadEvent(ctx)
 			if err != nil {
 				if err == io.EOF {
 					for _, chunk := range chunker.Flush() {
-						sendVoiceAudioChunk(ctx, out, chunk)
+						audioSeen = true
+						if !sendVoiceAudioChunk(ctx, out, chunk) {
+							return
+						}
 					}
+					if !audioSeen {
+						sendDashScopeTTSError(ctx, out, "dashscope realtime TTS produced no audio")
+					}
+					return
+				}
+				if ctx.Err() == nil {
+					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS read failed")
 				}
 				return
 			}
 			eventType, _ := raw["type"].(string)
 			if eventType == "response.audio.delta" {
-				for _, chunk := range mustChunkDashScopeAudio(chunker, raw) {
+				chunks, err := chunkDashScopeAudio(chunker, raw)
+				if err != nil {
+					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS audio delta invalid")
+					return
+				}
+				for _, chunk := range chunks {
+					audioSeen = true
 					if !sendVoiceAudioChunk(ctx, out, chunk) {
 						return
 					}
 				}
 			}
+			if eventType == "error" {
+				sendDashScopeTTSError(ctx, out, "dashscope realtime TTS provider error")
+				return
+			}
 			if eventType == "response.done" || eventType == "session.finished" {
 				for _, chunk := range chunker.Flush() {
-					sendVoiceAudioChunk(ctx, out, chunk)
+					audioSeen = true
+					if !sendVoiceAudioChunk(ctx, out, chunk) {
+						return
+					}
+				}
+				if !audioSeen {
+					sendDashScopeTTSError(ctx, out, "dashscope realtime TTS produced no audio")
 				}
 				return
 			}
@@ -280,12 +307,19 @@ func dashScopeRealtimeEventID(prefix string) string {
 	return "a21_" + prefix + "_" + strconv.FormatUint(dashScopeRealtimeEventSeq.Add(1), 10)
 }
 
-func mustChunkDashScopeAudio(chunker *pcm16Mono60MSChunker, raw map[string]any) []VoiceAudioChunk {
+func chunkDashScopeAudio(chunker *pcm16Mono60MSChunker, raw map[string]any) ([]VoiceAudioChunk, error) {
 	chunks, err := chunker.AppendBase64(firstStringField(raw, "delta"))
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return chunks
+	return chunks, nil
+}
+
+func sendDashScopeTTSError(ctx context.Context, out chan<- VoiceAudioChunk, message string) bool {
+	return sendVoiceAudioChunk(ctx, out, VoiceAudioChunk{
+		Finding: "tts adapter failed",
+		Err:     fmt.Errorf("%s", message),
+	})
 }
 
 func dashScopeRealtimeURL(model string, override string) (string, error) {
