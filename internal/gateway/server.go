@@ -81,6 +81,8 @@ type Server struct {
 	professionalUserIDConfig     string
 	professionalWorkspaceConfig  string
 	professionalQueryScopeConfig string
+	workspaceUploadJobs          map[string]WorkspaceUploadJob
+	workspaceUploadJobSeq        uint64
 	voiceChainModeConfig         string
 	cascadeASRProfileConfig      string
 	cascadeLLMProfileConfig      string
@@ -300,6 +302,72 @@ type ProfessionalWorkspaceRedaction struct {
 	CredentialValueStored bool `json:"credential_value_stored"`
 	ProviderOutputStored  bool `json:"provider_output_stored"`
 	VoiceTranscriptStored bool `json:"voice_transcript_stored"`
+}
+
+type WorkspaceUploadJobRequest struct {
+	JobID         string `json:"job_id,omitempty"`
+	Action        string `json:"action,omitempty"`
+	UserID        string `json:"user_id,omitempty"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+	SourceScope   string `json:"source_scope,omitempty"`
+	SourceKind    string `json:"source_kind,omitempty"`
+	DocumentLabel string `json:"document_label,omitempty"`
+	ContentType   string `json:"content_type,omitempty"`
+	SizeBytes     int64  `json:"size_bytes,omitempty"`
+	TraceID       string `json:"trace_id,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	DeviceID      string `json:"device_id,omitempty"`
+}
+
+type WorkspaceUploadJobsResponse struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Service       string                      `json:"service"`
+	Status        string                      `json:"status"`
+	Jobs          []WorkspaceUploadJob        `json:"jobs"`
+	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceUploadJob struct {
+	JobID            string                      `json:"job_id"`
+	UserID           string                      `json:"user_id"`
+	WorkspaceID      string                      `json:"workspace_id"`
+	SourceScope      string                      `json:"source_scope"`
+	SourceKind       string                      `json:"source_kind"`
+	DocumentLabel    string                      `json:"document_label"`
+	ContentType      string                      `json:"content_type,omitempty"`
+	SizeBytes        int64                       `json:"size_bytes,omitempty"`
+	Status           string                      `json:"status"`
+	IndexStatus      string                      `json:"index_status"`
+	Attempt          int                         `json:"attempt"`
+	CreatedAtMS      int64                       `json:"created_at_ms"`
+	UpdatedAtMS      int64                       `json:"updated_at_ms"`
+	TraceID          string                      `json:"trace_id,omitempty"`
+	SessionID        string                      `json:"session_id,omitempty"`
+	DeviceID         string                      `json:"device_id,omitempty"`
+	UploadAPIReady   bool                        `json:"upload_api_ready"`
+	ImportAPIReady   bool                        `json:"import_api_ready"`
+	IndexingAPIReady bool                        `json:"indexing_api_ready"`
+	ExecutionStarted bool                        `json:"execution_started"`
+	RetryAllowed     bool                        `json:"retry_allowed"`
+	DeleteAllowed    bool                        `json:"delete_allowed"`
+	Redaction        WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings         []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceUploadJobRedaction struct {
+	DocumentTextStored    bool `json:"document_text_stored"`
+	DocumentBytesStored   bool `json:"document_bytes_stored"`
+	Base64PayloadStored   bool `json:"base64_payload_stored"`
+	ImportURLStored       bool `json:"import_url_stored"`
+	LocalPathStored       bool `json:"local_path_stored"`
+	CredentialValueStored bool `json:"credential_value_stored"`
+	ProviderOutputStored  bool `json:"provider_output_stored"`
+}
+
+type WorkspaceUploadJobFinding struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type DeviceControlRequest struct {
@@ -593,6 +661,7 @@ const (
 	ProfessionalWorkspaceSchemaVersion        = "a21.gateway.professional_workspace.v1"
 	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
 	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
+	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade                     = "cascade"
 	VoiceChainModeRealtime                    = "realtime"
@@ -774,6 +843,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		professionalUserIDConfig:     v21adapter.DefaultUserID,
 		professionalWorkspaceConfig:  v21adapter.DefaultWorkspaceID,
 		professionalQueryScopeConfig: v21adapter.QueryScopePublic,
+		workspaceUploadJobs:          make(map[string]WorkspaceUploadJob),
 		voiceChainModeConfig:         VoiceChainModeCascade,
 		cascadeASRProfileConfig:      initialASRProfile,
 		cascadeLLMProfileConfig:      initialLLMProfile,
@@ -819,6 +889,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
+	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
@@ -929,6 +1000,32 @@ func (s *Server) handleProfessionalWorkspace(w http.ResponseWriter, r *http.Requ
 		response, err := s.professionalWorkspaceResponse(ProfessionalWorkspaceSelectionRequest{})
 		if err != nil {
 			http.Error(w, "professional workspace unavailable", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWorkspaceUploadJobs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.workspaceUploadJobsResponse(strings.TrimSpace(r.URL.Query().Get("job_id")), nil))
+	case http.MethodPost, http.MethodPut:
+		req, err := decodeWorkspaceUploadJobRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var response WorkspaceUploadJobsResponse
+		if r.Method == http.MethodPost && strings.TrimSpace(req.Action) == "" {
+			response, err = s.createWorkspaceUploadJob(req)
+		} else {
+			response, err = s.applyWorkspaceUploadJobAction(req)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, http.StatusOK, response)
@@ -1410,6 +1507,328 @@ func professionalWorkspaceRedaction() ProfessionalWorkspaceRedaction {
 		CredentialValueStored: false,
 		ProviderOutputStored:  false,
 		VoiceTranscriptStored: false,
+	}
+}
+
+func decodeWorkspaceUploadJobRequest(r *http.Request) (WorkspaceUploadJobRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return WorkspaceUploadJobRequest{}, fmt.Errorf("invalid json")
+	}
+	for key := range raw {
+		if workspaceUploadJobForbiddenKey(key) {
+			return WorkspaceUploadJobRequest{}, fmt.Errorf("workspace upload job request must not include raw document, URL, path, credential, or payload fields")
+		}
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return WorkspaceUploadJobRequest{}, fmt.Errorf("invalid json")
+	}
+	var req WorkspaceUploadJobRequest
+	if err := json.Unmarshal(encoded, &req); err != nil {
+		return WorkspaceUploadJobRequest{}, fmt.Errorf("invalid json")
+	}
+	return req, nil
+}
+
+func workspaceUploadJobForbiddenKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	for _, forbidden := range []string{
+		"content",
+		"document_text",
+		"raw_text",
+		"text_body",
+		"content_base64",
+		"data_base64",
+		"bytes",
+		"file_path",
+		"local_path",
+		"import_url",
+		"url",
+		"credential",
+		"credentials",
+		"api_key",
+		"token",
+	} {
+		if key == forbidden {
+			return true
+		}
+	}
+	for _, forbidden := range []string{"base64", "credential", "api_key"} {
+		if strings.Contains(key, forbidden) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) createWorkspaceUploadJob(req WorkspaceUploadJobRequest) (WorkspaceUploadJobsResponse, error) {
+	userID, workspaceID, _, err := s.resolveProfessionalWorkspace(ProfessionalWorkspaceSelectionRequest{
+		UserID:      req.UserID,
+		WorkspaceID: req.WorkspaceID,
+	})
+	if err != nil {
+		return WorkspaceUploadJobsResponse{}, err
+	}
+	sourceScope := defaultWorkspaceSourceScope(req.SourceScope)
+	if !validWorkspaceSourceScope(sourceScope) {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("source_scope must be personal or public")
+	}
+	sourceKind := defaultWorkspaceSourceKind(req.SourceKind)
+	if !validWorkspaceSourceKind(sourceKind) {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("source_kind must be upload or import")
+	}
+	documentLabel := safeWorkspaceDocumentLabel(req.DocumentLabel)
+	if documentLabel == "" {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("valid redacted document_label is required")
+	}
+	contentType := safeWorkspaceContentType(req.ContentType)
+	if strings.TrimSpace(req.ContentType) != "" && contentType == "" {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("valid redacted content_type is required")
+	}
+	if req.SizeBytes < 0 {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("size_bytes must be non-negative")
+	}
+	nowMS := s.now().UnixMilli()
+	traceID := safeOptionalWorkspaceLabel(req.TraceID)
+	sessionID := safeOptionalWorkspaceLabel(req.SessionID)
+	deviceID := safeOptionalWorkspaceLabel(req.DeviceID)
+	s.mu.Lock()
+	s.workspaceUploadJobSeq++
+	jobID := fmt.Sprintf("a21-workspace-job-%06d", s.workspaceUploadJobSeq)
+	job := WorkspaceUploadJob{
+		JobID:            jobID,
+		UserID:           userID,
+		WorkspaceID:      workspaceID,
+		SourceScope:      sourceScope,
+		SourceKind:       sourceKind,
+		DocumentLabel:    documentLabel,
+		ContentType:      contentType,
+		SizeBytes:        req.SizeBytes,
+		Status:           "accepted_no_execute",
+		IndexStatus:      "not_started_no_execute",
+		Attempt:          1,
+		CreatedAtMS:      nowMS,
+		UpdatedAtMS:      nowMS,
+		TraceID:          traceID,
+		SessionID:        sessionID,
+		DeviceID:         deviceID,
+		UploadAPIReady:   true,
+		ImportAPIReady:   true,
+		IndexingAPIReady: false,
+		ExecutionStarted: false,
+		RetryAllowed:     true,
+		DeleteAllowed:    true,
+		Redaction:        workspaceUploadJobRedaction(),
+		Findings: []WorkspaceUploadJobFinding{{
+			Code:    "workspace_job_no_execute",
+			Message: "A21 accepted only redacted workspace job metadata; upload bytes and indexing execution are not implemented in this slice",
+		}},
+	}
+	s.workspaceUploadJobs[jobID] = job
+	s.mu.Unlock()
+	if traceID != "" {
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.upload_job.accepted_no_execute", nowMS)
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.index_job.not_started_no_execute", nowMS)
+	}
+	return s.workspaceUploadJobsResponse(jobID, nil), nil
+}
+
+func (s *Server) applyWorkspaceUploadJobAction(req WorkspaceUploadJobRequest) (WorkspaceUploadJobsResponse, error) {
+	jobID := strings.TrimSpace(req.JobID)
+	if jobID == "" {
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("job_id is required")
+	}
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "retry"
+	}
+	s.mu.Lock()
+	job, ok := s.workspaceUploadJobs[jobID]
+	if !ok {
+		s.mu.Unlock()
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("workspace upload job not found")
+	}
+	nowMS := s.now().UnixMilli()
+	switch action {
+	case "mark_failed", "fail":
+		job.Status = "failed"
+		job.IndexStatus = "failed_no_execute"
+		job.UpdatedAtMS = nowMS
+		job.RetryAllowed = true
+		job.DeleteAllowed = true
+		job.Findings = append(job.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_job_marked_failed",
+			Message: "A21 marked the redacted workspace job failed without storing document text or bytes",
+		})
+	case "retry":
+		job.Status = "accepted_no_execute"
+		job.IndexStatus = "not_started_no_execute"
+		job.Attempt++
+		job.UpdatedAtMS = nowMS
+		job.RetryAllowed = true
+		job.DeleteAllowed = true
+		job.Findings = append(job.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_job_retry_no_execute",
+			Message: "A21 accepted a retry request but did not execute upload or indexing",
+		})
+	case "delete":
+		job.Status = "deleted"
+		job.IndexStatus = "deleted_no_execute"
+		job.DocumentLabel = "deleted"
+		job.ContentType = ""
+		job.SizeBytes = 0
+		job.UpdatedAtMS = nowMS
+		job.RetryAllowed = false
+		job.DeleteAllowed = false
+		job.Findings = append(job.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_job_deleted",
+			Message: "A21 retained only a redacted deletion tombstone",
+		})
+	default:
+		s.mu.Unlock()
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("action must be retry, mark_failed, or delete")
+	}
+	s.workspaceUploadJobs[jobID] = job
+	s.mu.Unlock()
+	if job.TraceID != "" {
+		s.recordTrace(job.TraceID, job.SessionID, job.DeviceID, "workspace.upload_job."+job.Status, nowMS)
+	}
+	return s.workspaceUploadJobsResponse(jobID, nil), nil
+}
+
+func (s *Server) workspaceUploadJobsResponse(jobID string, findings []WorkspaceUploadJobFinding) WorkspaceUploadJobsResponse {
+	jobs := s.workspaceUploadJobsSnapshot(jobID)
+	status := "ok"
+	if strings.TrimSpace(jobID) != "" && len(jobs) == 0 {
+		status = "not_found"
+		findings = append(findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_job_not_found",
+			Message: "A21 has no redacted workspace job with that id",
+		})
+	}
+	return WorkspaceUploadJobsResponse{
+		SchemaVersion: WorkspaceUploadJobsSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        status,
+		Jobs:          jobs,
+		Redaction:     workspaceUploadJobRedaction(),
+		Findings:      findings,
+	}
+}
+
+func (s *Server) workspaceUploadJobsSnapshot(jobID string) []WorkspaceUploadJob {
+	jobID = strings.TrimSpace(jobID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	jobs := make([]WorkspaceUploadJob, 0, len(s.workspaceUploadJobs))
+	if jobID != "" {
+		if job, ok := s.workspaceUploadJobs[jobID]; ok {
+			return []WorkspaceUploadJob{job}
+		}
+		return nil
+	}
+	keys := make([]string, 0, len(s.workspaceUploadJobs))
+	for key := range s.workspaceUploadJobs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		jobs = append(jobs, s.workspaceUploadJobs[key])
+	}
+	return jobs
+}
+
+func defaultWorkspaceSourceScope(scope string) string {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		return "personal"
+	}
+	return scope
+}
+
+func validWorkspaceSourceScope(scope string) bool {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "personal", "public":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultWorkspaceSourceKind(kind string) string {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		return "upload"
+	}
+	return kind
+}
+
+func validWorkspaceSourceKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "upload", "import":
+		return true
+	default:
+		return false
+	}
+}
+
+func safeWorkspaceDocumentLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" || len([]rune(label)) > 96 {
+		return ""
+	}
+	lower := strings.ToLower(label)
+	for _, forbidden := range []string{"http://", "https://", "/", "\\", "api_key", "secret", "token", "bearer "} {
+		if strings.Contains(lower, forbidden) {
+			return ""
+		}
+	}
+	for _, r := range label {
+		if r < 32 || r == 127 {
+			return ""
+		}
+	}
+	return label
+}
+
+func safeWorkspaceContentType(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if contentType == "" {
+		return ""
+	}
+	if len(contentType) > 80 {
+		return ""
+	}
+	for _, r := range contentType {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '/' || r == '-' || r == '_' || r == '+' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return contentType
+}
+
+func safeOptionalWorkspaceLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return ""
+	}
+	if validProfessionalLabel(label) {
+		return label
+	}
+	return ""
+}
+
+func workspaceUploadJobRedaction() WorkspaceUploadJobRedaction {
+	return WorkspaceUploadJobRedaction{
+		DocumentTextStored:    false,
+		DocumentBytesStored:   false,
+		Base64PayloadStored:   false,
+		ImportURLStored:       false,
+		LocalPathStored:       false,
+		CredentialValueStored: false,
+		ProviderOutputStored:  false,
 	}
 }
 

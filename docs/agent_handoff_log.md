@@ -10072,3 +10072,84 @@ Recommended next action:
 - Next implementation candidate: no-execute upload/import/index job API
   skeleton with redacted job status, followed by a V21-side worker for
   personal/public corpus enforcement.
+
+## 2026-06-04 05:53 CST - Internal Test 4 Workspace Upload Job Skeleton
+
+Round goal:
+
+- Continue internal test 4 by adding a no-execute upload/import/index job
+  lifecycle surface for the A21 workspace, without storing raw documents,
+  executing V21 indexing, touching firmware, or regressing internal test 3
+  Xiaozhi/StackChan voice behavior.
+
+Actual completed work:
+
+- Added Gateway `GET/POST/PUT /v1/workspace-upload-jobs` with schema
+  `a21.gateway.workspace_upload_jobs.v1`.
+- Added redacted metadata-only job creation for `upload` and `import`
+  source kinds with `personal` or `public` source scope.
+- Added job polling plus `mark_failed`, `retry`, and `delete` actions.
+- Kept job states explicitly no-execute:
+  `accepted_no_execute`, `not_started_no_execute`, `failed_no_execute`, and
+  `deleted_no_execute`.
+- Rejected raw document text, file bytes, base64 payloads, import URLs, local
+  paths, credentials, API keys, tokens, and provider outputs at decode time.
+- Added trace markers for accepted, failed, deleted, and not-started index
+  states without tracing document/user content.
+- Added simulator `Workspace Job` control wired to the current professional
+  query-scope context.
+- Updated protocol, observability, V21 integration, current-control, internal
+  test 4 plan, and project state machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/V21_INTEGRATION.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No real file upload byte storage is implemented.
+- No import URL fetching is implemented.
+- No indexing worker or V21 repository-side corpus enforcement is implemented.
+- No durable auth/account/device binding store is implemented.
+- Hardware professional consult evidence and physical StackChan PRD acceptance
+  remain open.
+- The hardware parity gap-map worker queued from pending worktree
+  `local:f9fd1abd-ffe0-4fbf-bbb7-eb71823b4885` has not returned in this
+  control thread yet.
+
+Known risks/blockers:
+
+- `personal` and `public` source scopes are lifecycle metadata only until the
+  V21/cloud workspace workers implement ACL-aware storage and retrieval.
+- The endpoint intentionally refuses raw upload/import payloads; frontend or
+  cloud workers must add storage under a separate plan before claiming upload
+  execution readiness.
+- Traces and reports must continue to avoid raw document text, filenames that
+  contain paths/URLs/secrets, provider outputs, credentials, and user content.
+
+Test/build/runtime results:
+
+- `git diff --check`: passed before this handoff entry.
+- `go test ./internal/gateway -run 'SimulatorPageServed|WorkspaceUploadJobs' -count=1`:
+  passed.
+- `go test ./internal/gateway ./internal/app -run 'SimulatorPageServed|WorkspaceUploadJobs|ProfessionalWorkspace|ProductReadiness' -count=1`:
+  passed.
+- `go test ./internal/gateway ./internal/app ./internal/v21adapter -count=1`:
+  passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Commit/push the workspace job skeleton if the range remains limited.
+- Next implementation candidate: V21/cloud worker contract for actual
+  upload/import/index execution and personal/public corpus enforcement, while
+  keeping StackChan document-free and provider-key-free.

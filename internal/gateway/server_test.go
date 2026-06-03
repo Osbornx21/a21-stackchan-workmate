@@ -332,6 +332,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/voice-modes",
 		"/v1/roleplay-profile",
 		"/v1/professional-workspace",
+		"/v1/workspace-upload-jobs",
 		"/v1/traces",
 		"Device Registry",
 		`id="registryConnection"`,
@@ -339,6 +340,8 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="voiceMode"`,
 		`id="roleplayScenario"`,
 		`id="professionalQueryScope"`,
+		`id="workspaceDocumentLabel"`,
+		`id="workspaceJob"`,
 		`id="gatewayProfile"`,
 		`id="cloudVoiceProfile"`,
 		`id="registryVoiceMode"`,
@@ -1033,6 +1036,123 @@ func TestProfessionalWorkspaceEndpointPersistsQueryScopeAndRedactsDocumentBounda
 	handler.ServeHTTP(badRec, badReq)
 	if badRec.Code != http.StatusBadRequest {
 		t.Fatalf("bad workspace status = %d, want 400: %s", badRec.Code, badRec.Body.String())
+	}
+}
+
+func TestWorkspaceUploadJobsLifecycleIsNoExecuteAndRedacted(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{
+		"user_id":"a21_user_demo",
+		"workspace_id":"a21_workspace_demo",
+		"source_scope":"personal",
+		"source_kind":"upload",
+		"document_label":"PRD pack",
+		"content_type":"application/pdf",
+		"size_bytes":2048,
+		"trace_id":"a21-trace-upload-job",
+		"session_id":"a21-session-upload-job",
+		"device_id":"stackchan-sim-001"
+	}`))
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200: %s", createRec.Code, createRec.Body.String())
+	}
+	var createResp WorkspaceUploadJobsResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createResp); err != nil {
+		t.Fatal(err)
+	}
+	if createResp.SchemaVersion != "a21.gateway.workspace_upload_jobs.v1" || len(createResp.Jobs) != 1 {
+		t.Fatalf("create response = %+v", createResp)
+	}
+	job := createResp.Jobs[0]
+	if job.JobID == "" ||
+		job.UserID != "a21_user_demo" ||
+		job.WorkspaceID != "a21_workspace_demo" ||
+		job.SourceScope != "personal" ||
+		job.SourceKind != "upload" ||
+		job.DocumentLabel != "PRD pack" ||
+		job.ContentType != "application/pdf" ||
+		job.Status != "accepted_no_execute" ||
+		job.IndexStatus != "not_started_no_execute" ||
+		!job.UploadAPIReady ||
+		!job.ImportAPIReady ||
+		job.IndexingAPIReady ||
+		job.ExecutionStarted ||
+		!job.RetryAllowed ||
+		!job.DeleteAllowed {
+		t.Fatalf("job = %+v", job)
+	}
+	if job.Redaction.DocumentTextStored || job.Redaction.DocumentBytesStored || job.Redaction.Base64PayloadStored ||
+		job.Redaction.ImportURLStored || job.Redaction.LocalPathStored || job.Redaction.CredentialValueStored ||
+		job.Redaction.ProviderOutputStored {
+		t.Fatalf("job redaction = %+v", job.Redaction)
+	}
+
+	failReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"mark_failed"}`))
+	failRec := httptest.NewRecorder()
+	handler.ServeHTTP(failRec, failReq)
+	if failRec.Code != http.StatusOK {
+		t.Fatalf("fail status = %d: %s", failRec.Code, failRec.Body.String())
+	}
+	if !strings.Contains(failRec.Body.String(), `"status":"failed"`) || !strings.Contains(failRec.Body.String(), `"index_status":"failed_no_execute"`) {
+		t.Fatalf("fail response = %s", failRec.Body.String())
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"retry"}`))
+	retryRec := httptest.NewRecorder()
+	handler.ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("retry status = %d: %s", retryRec.Code, retryRec.Body.String())
+	}
+	if !strings.Contains(retryRec.Body.String(), `"attempt":2`) || !strings.Contains(retryRec.Body.String(), `"status":"accepted_no_execute"`) {
+		t.Fatalf("retry response = %s", retryRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"delete"}`))
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+	if !strings.Contains(deleteRec.Body.String(), `"status":"deleted"`) || !strings.Contains(deleteRec.Body.String(), `"document_label":"deleted"`) {
+		t.Fatalf("delete response = %s", deleteRec.Body.String())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-upload-job", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"workspace.upload_job.accepted_no_execute", "workspace.index_job.not_started_no_execute", "workspace.upload_job.deleted"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"raw document", "http://", "https://", "/Users/", "secret", "api_key", "content_base64"} {
+		if strings.Contains(strings.ToLower(createRec.Body.String()+failRec.Body.String()+retryRec.Body.String()+deleteRec.Body.String()+traceRec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("workspace upload job leaked %q", forbidden)
+		}
+	}
+}
+
+func TestWorkspaceUploadJobsRejectRawPayloadFields(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{
+		"workspace_id":"a21_workspace_demo",
+		"document_label":"secret.pdf",
+		"content_base64":"UkFX",
+		"import_url":"https://secret.example/file.pdf"
+	}`))
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"UkFX", "secret.example", "secret.pdf"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("rejection leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 

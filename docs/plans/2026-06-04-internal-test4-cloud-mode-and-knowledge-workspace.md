@@ -64,6 +64,10 @@ StackChan hardware.
   `device_id`, `user_id`, `workspace_id`, `query_scope`, source-scope counts,
   and workspace status. Gateway professional turns pass those fields to the
   adapter and trace only safe readiness/scope markers.
+- Gateway now exposes `GET/POST/PUT /v1/workspace-upload-jobs` as a no-execute
+  upload/import/index job skeleton. It can create, poll, mark failed, retry,
+  and delete redacted metadata jobs while rejecting document text, bytes,
+  base64 payloads, import URLs, local paths, credentials, and provider output.
 
 ## Product Form
 
@@ -269,8 +273,8 @@ Acceptance:
    for the Gateway/V21 adapter contract; V21 repository implementation remains
    a separate worker task.
 3. Add a no-execute upload/workspace PRD spec and API contract. Completed for
-   `/v1/professional-workspace`; file upload/import/index job execution is
-   still not implemented.
+   `/v1/professional-workspace` and `/v1/workspace-upload-jobs`; file
+   upload/import/index job execution is still not implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;
    - dialogue alias normalization;

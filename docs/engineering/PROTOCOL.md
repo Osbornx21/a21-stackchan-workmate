@@ -534,6 +534,20 @@ private document contents. V21 adapter responses may include redacted
 `source_scope_counts` and `workspace_status`; these are counts/status only, not
 retrieved document bodies.
 
+`workspace_upload_jobs` is the no-execute upload/import/index job contract for
+the A21 workspace surface. `GET /v1/workspace-upload-jobs` returns
+`a21.gateway.workspace_upload_jobs.v1` and redacted job metadata. `POST
+/v1/workspace-upload-jobs` creates a job from metadata only:
+`user_id`, `workspace_id`, `source_scope`, `source_kind`, `document_label`,
+`content_type`, `size_bytes`, and optional trace/session/device IDs. `PUT
+/v1/workspace-upload-jobs` accepts low-risk control actions: `mark_failed`,
+`retry`, and `delete`. The endpoint must reject raw document text, file bytes,
+base64 payloads, import URLs, local paths, credentials, API keys, and provider
+outputs. Current job status values such as `accepted_no_execute`,
+`failed`, `deleted`, and index statuses such as `not_started_no_execute` are
+contract/readiness metadata only; they do not mean upload bytes were stored or
+V21 indexing ran.
+
 `gateway_profile` is the operator/frontend transport selector for where the
 StackChan product connects. It is independent from `voice_mode`: selecting
 `public_wss` must not turn roleplay into professional mode, and selecting

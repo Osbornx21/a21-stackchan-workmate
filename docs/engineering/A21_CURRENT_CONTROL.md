@@ -610,3 +610,31 @@ Current conclusion:
   enforcement remain separate unshipped slices.
 - Full PRD readiness remains blocked by cloud workspace execution, hardware
   professional consult evidence, and physical StackChan acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Workspace Job Skeleton
+
+The workspace surface now has a no-execute upload/import/index job contract.
+
+Current implementation state:
+
+- Gateway exposes `GET/POST/PUT /v1/workspace-upload-jobs` with schema
+  `a21.gateway.workspace_upload_jobs.v1`.
+- `POST` creates a redacted metadata job for `upload` or `import` source kinds.
+- `GET` polls all jobs or a single `job_id`.
+- `PUT` supports `mark_failed`, `retry`, and `delete`.
+- Jobs store only redacted labels, source scope, content type, size, status,
+  attempt count, and trace/session/device IDs.
+- Jobs explicitly report `accepted_no_execute`,
+  `not_started_no_execute`, and redaction flags; no document text, bytes,
+  base64 payload, import URL, local path, credential, or provider output is
+  accepted.
+- Simulator exposes a `Workspace Job` button that creates a no-execute metadata
+  job from the current professional query-scope context.
+
+Current conclusion:
+
+- The A21 Cloud/Web/App workspace API skeleton is now present for upload/import
+  job lifecycle UX and worker integration.
+- Real upload storage, indexing execution, delete propagation, source ACLs,
+  durable user/device binding, and V21 personal/public corpus enforcement
+  remain separate unshipped slices.

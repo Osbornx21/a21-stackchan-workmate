@@ -388,6 +388,7 @@ const simulatorHTML = `<!doctype html>
           <button id="mockTurn">Mock Turn</button>
           <button class="warn" id="interrupt">Interrupt</button>
           <button id="audioFrame">Audio Frame</button>
+          <button id="workspaceJob">Workspace Job</button>
         </div>
         <div class="fields">
           <select id="mode" aria-label="mode">
@@ -431,6 +432,7 @@ const simulatorHTML = `<!doctype html>
             <option value="personal_only">personal_only</option>
             <option value="personal_plus_public">personal_plus_public</option>
           </select>
+          <input id="workspaceDocumentLabel" value="PRD pack" aria-label="workspace document label">
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -626,6 +628,7 @@ const simulatorHTML = `<!doctype html>
       voiceCloneProfile: document.getElementById('voiceCloneProfile'),
       roleplayScenario: document.getElementById('roleplayScenario'),
       professionalQueryScope: document.getElementById('professionalQueryScope'),
+      workspaceDocumentLabel: document.getElementById('workspaceDocumentLabel'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -1153,6 +1156,35 @@ const simulatorHTML = `<!doctype html>
         log('professional workspace save unavailable');
       }
     }
+    async function createWorkspaceUploadJob() {
+      try {
+        const queryScope = ui.professionalQueryScope.value;
+        const response = await fetch('/v1/workspace-upload-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workspace_id: 'a21_local_workspace',
+            user_id: 'a21_local_user',
+            source_scope: queryScope === 'public_only' ? 'public' : 'personal',
+            source_kind: 'upload',
+            document_label: ui.workspaceDocumentLabel.value || 'workspace note',
+            content_type: 'application/octet-stream',
+            trace_id: sim.traceId || '',
+            session_id: sim.sessionId || '',
+            device_id: deviceId()
+          })
+        });
+        if (!response.ok) {
+          log('workspace job failed ' + response.status);
+          return;
+        }
+        const payload = await response.json();
+        const job = (payload.jobs || [])[0] || {};
+        log('workspace job ' + (job.job_id || 'accepted') + ' ' + (job.status || 'no_execute'));
+      } catch (err) {
+        log('workspace job unavailable');
+      }
+    }
     async function saveGatewayProfile() {
       try {
         const response = await fetch('/v1/gateway-profiles', {
@@ -1481,6 +1513,7 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('mockTurn').addEventListener('click', () => sendDeviceEvent('mock.turn'));
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
+    document.getElementById('workspaceJob').addEventListener('click', createWorkspaceUploadJob);
     ui.mode.addEventListener('change', () => setMode(ui.mode.value));
     document.getElementById('startMic').addEventListener('click', startMicrophoneStream);
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);

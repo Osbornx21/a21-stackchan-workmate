@@ -478,6 +478,10 @@ Current mock trace events include:
 - `professional.query_scope.public_only`
 - `professional.query_scope.personal_only`
 - `professional.query_scope.personal_plus_public`
+- `workspace.upload_job.accepted_no_execute`
+- `workspace.upload_job.failed`
+- `workspace.upload_job.deleted`
+- `workspace.index_job.not_started_no_execute`
 - `xiaozhi.professional_asr_empty`
 - `xiaozhi.professional_asr_unavailable`
 - `xiaozhi.professional_result_suppressed`

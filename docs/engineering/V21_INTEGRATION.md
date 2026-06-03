@@ -141,6 +141,10 @@ Rules:
 - Gateway exposes `GET/POST/PUT /v1/professional-workspace` as the no-execute
   selector for redacted `user_id`, `workspace_id`, and `query_scope`. This is
   not upload/index readiness.
+- Gateway exposes `GET/POST/PUT /v1/workspace-upload-jobs` as the no-execute
+  upload/import/index job lifecycle contract. It can create, poll, fail, retry,
+  and delete redacted metadata jobs, but it does not store file bytes or execute
+  V21 indexing.
 - A21 hardware may initiate a professional consult only through Gateway/Core;
   StackChan does not store workspace documents, embeddings, provider keys, or
   V21 credentials.
