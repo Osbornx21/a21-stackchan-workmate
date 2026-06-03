@@ -34,6 +34,7 @@ const xiaozhiTouchBargeInInputCooldownMS int64 = 700
 const xiaozhiHostSayInputCooldownMS int64 = 1200
 const xiaozhiNoSpeechInputCooldownMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
+const maxXiaozhiWakePrerollFrames = 5
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
@@ -1483,6 +1484,9 @@ type xiaozhiSession struct {
 	streamingASRClosed               bool
 	streamingASRCommitStarted        bool
 	streamingASRPartialBridgeStarted bool
+	wakePrerollFrames                []providers.VoicePipelinePCMFrame
+	wakePrerollPayloadBytes          []int
+	wakePrerollHasSpeech             bool
 }
 
 type xiaozhiTurn struct {
@@ -1814,6 +1818,27 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.streamingASRPartialBridgeStarted = false
 }
 
+func (session *xiaozhiSession) resetXiaozhiWakePreroll() {
+	session.wakePrerollFrames = nil
+	session.wakePrerollPayloadBytes = nil
+	session.wakePrerollHasSpeech = false
+}
+
+func (session *xiaozhiSession) shouldBufferXiaozhiWakePreroll(nowMS int64) bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.currentTurn != nil {
+		return false
+	}
+	if session.inputCooldownUntilMS > 0 && nowMS >= 0 && nowMS < session.inputCooldownUntilMS {
+		return false
+	}
+	return true
+}
+
 func (session *xiaozhiSession) xiaozhiOpusDecodeStatus() string {
 	if session.opusDecodeErrorCount > 0 && session.opusDecodedFrameCount > 0 {
 		return XiaozhiOpusPartialDecodeErrorState
@@ -2117,6 +2142,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.listening = false
 		session.listenStartedAtMS = 0
 		session.resetXiaozhiTTSStop()
+		session.resetXiaozhiWakePreroll()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
 		s.registerXiaozhiSocket(session.deviceID, conn, &session.writeMu, session, session.features)
@@ -2137,6 +2163,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				session.listening = false
 				session.listenStartedAtMS = 0
 				session.resetXiaozhiOpusIngress()
+				session.resetXiaozhiWakePreroll()
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_"+reason, nowMS)
 				s.writeXiaozhiListenReply(ctx, conn, session, "start", "ignored", "")
@@ -2152,6 +2179,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.listenStartedAtMS = nowMS
 			session.resetXiaozhiOpusIngress()
 			s.startXiaozhiStreamingASR(ctx, conn, session, mode)
+			s.attachXiaozhiWakePreroll(ctx, session)
 			session.resetXiaozhiTTSStop()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
@@ -2282,6 +2310,9 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	}
 	session.adoptFrame(frame)
 	if !session.listening {
+		if session.shouldBufferXiaozhiWakePreroll(s.now().UnixMilli()) {
+			return s.bufferXiaozhiWakePreroll(session, frame)
+		}
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.ignored_not_listening", s.now().UnixMilli())
 		return true
 	}
@@ -2307,6 +2338,103 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	})
 	s.observeXiaozhiDecodedIngress(ctx, conn, session, pcm)
 	return true
+}
+
+func (s *Server) bufferXiaozhiWakePreroll(session *xiaozhiSession, frame xiaozhitransport.Frame) bool {
+	if session == nil || frame.Opus == nil {
+		return true
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.received", s.now().UnixMilli())
+	if session.opusCodec == nil {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
+		return true
+	}
+	pcm, err := session.opusCodec.DecodePCM16(frame.Opus.Payload)
+	if err != nil {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
+		return true
+	}
+	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
+		return true
+	}
+	durationMS := len(pcm) * 1000 / session.opusSampleRateHz / session.opusChannels
+	chunk := protocol.AudioChunk{
+		Codec:        protocol.AudioCodecPCMS16LE,
+		SampleRateHz: session.opusSampleRateHz,
+		Channels:     session.opusChannels,
+		DurationMS:   durationMS,
+		DataBase64:   pcm16Base64(pcm),
+	}
+	seq := uint64(len(session.wakePrerollFrames) + 1)
+	result := s.audioIngress.Push(audio.Frame{
+		DeviceID:     session.deviceID,
+		TraceID:      session.traceID,
+		SessionID:    session.sessionID,
+		Seq:          seq,
+		SampleRateHz: chunk.SampleRateHz,
+		Channels:     chunk.Channels,
+		DurationMS:   chunk.DurationMS,
+		DataBase64:   chunk.DataBase64,
+	})
+	pipelineFrame := providers.VoicePipelinePCMFrame{
+		Seq:          seq,
+		Codec:        string(chunk.Codec),
+		SampleRateHz: chunk.SampleRateHz,
+		Channels:     chunk.Channels,
+		DurationMS:   chunk.DurationMS,
+		ByteCount:    len(pcm) * 2,
+		RMS:          result.RMS,
+		PCM16LE:      pcm16Bytes(pcm),
+	}
+	session.wakePrerollFrames = append(session.wakePrerollFrames, pipelineFrame)
+	session.wakePrerollPayloadBytes = append(session.wakePrerollPayloadBytes, frame.Opus.PayloadBytes)
+	if len(session.wakePrerollFrames) > maxXiaozhiWakePrerollFrames {
+		session.wakePrerollFrames = session.wakePrerollFrames[len(session.wakePrerollFrames)-maxXiaozhiWakePrerollFrames:]
+		session.wakePrerollPayloadBytes = session.wakePrerollPayloadBytes[len(session.wakePrerollPayloadBytes)-maxXiaozhiWakePrerollFrames:]
+	}
+	if result.SpeechDetected || result.SpeechActive || containsAudioIngressEvent(result.Events, audio.EventVADSpeechStart) {
+		session.wakePrerollHasSpeech = true
+	}
+	s.recordAudioCaptureFrame(protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  session.deviceID,
+		Kind:      protocol.KindAudioFrame,
+		Seq:       seq,
+		TraceID:   session.traceID,
+		SessionID: session.sessionID,
+		SentAtMS:  s.now().UnixMilli(),
+	}, chunk, result, session.traceID, session.sessionID)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.buffered", s.now().UnixMilli())
+	return true
+}
+
+func (s *Server) attachXiaozhiWakePreroll(ctx context.Context, session *xiaozhiSession) {
+	if session == nil || len(session.wakePrerollFrames) == 0 {
+		return
+	}
+	frames := append([]providers.VoicePipelinePCMFrame(nil), session.wakePrerollFrames...)
+	payloadBytes := append([]int(nil), session.wakePrerollPayloadBytes...)
+	for i := range frames {
+		frames[i].PCM16LE = append([]byte(nil), session.wakePrerollFrames[i].PCM16LE...)
+	}
+	hasSpeech := session.wakePrerollHasSpeech
+	session.resetXiaozhiWakePreroll()
+	session.voicePipelineFrames = append(session.voicePipelineFrames, frames...)
+	for i, frame := range frames {
+		session.opusFrameCount++
+		if i < len(payloadBytes) {
+			session.opusByteCount += payloadBytes[i]
+		}
+		session.opusDecodedFrameCount++
+		session.opusDecodedSampleCount += frame.ByteCount / 2
+	}
+	if hasSpeech {
+		session.voicePipelineHasSpeech = true
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.attached", s.now().UnixMilli())
+	for _, frame := range frames {
+		s.appendXiaozhiStreamingASRFrame(ctx, session, frame)
+	}
 }
 
 func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, pcm []int16) {
@@ -2999,6 +3127,19 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		newRunner = defaultXiaozhiVoicePipelineRunner
 	}
 	runner := newRunner()
+	asrTranscript := task.streamingASRFinalText
+	asrTranscriptSource := ""
+	if task.streamingASRPartialDriven && strings.TrimSpace(task.streamingASRPartialText) != "" {
+		asrTranscript = task.streamingASRPartialText
+		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourcePartial
+	} else if strings.TrimSpace(asrTranscript) != "" {
+		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourceFinal
+	}
+	if strings.TrimSpace(asrTranscript) != "" {
+		if !s.writeXiaozhiSTT(ctx, conn, session, turn, task, asrTranscript, asrTranscriptSource) {
+			return true
+		}
+	}
 	s.writeXiaozhiOfficialStackChanState(ctx, session, "thinking", "voice_pipeline_start", false)
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":           "tts",
@@ -3015,14 +3156,6 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	if !s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task) {
 		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_unavailable")
 		return true
-	}
-	asrTranscript := task.streamingASRFinalText
-	asrTranscriptSource := ""
-	if task.streamingASRPartialDriven && strings.TrimSpace(task.streamingASRPartialText) != "" {
-		asrTranscript = task.streamingASRPartialText
-		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourcePartial
-	} else if strings.TrimSpace(asrTranscript) != "" {
-		asrTranscriptSource = providers.VoicePipelineASRTranscriptSourceFinal
 	}
 	request := providers.VoicePipelineRequest{
 		Session: providers.VoiceSession{
@@ -3082,6 +3215,27 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
+	return true
+}
+
+func (s *Server) writeXiaozhiSTT(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, text string, source string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return true
+	}
+	payload := map[string]any{
+		"type":       "stt",
+		"session_id": task.sessionID,
+		"text":       text,
+	}
+	if err := session.writeXiaozhiJSON(ctx, conn, turn, payload); err != nil {
+		session.cancelXiaozhiTurnContext(turn, "stt_write_error")
+		return false
+	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt.sent", s.now().UnixMilli())
+	if source != "" {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt."+safeGatewayFallbackToken(source, "streaming"), s.now().UnixMilli())
+	}
 	return true
 }
 

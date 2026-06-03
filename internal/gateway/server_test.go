@@ -4127,6 +4127,61 @@ func TestXiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus(t *testing
 	}
 }
 
+func TestXiaozhiWebSocketWakePrerollOpusFeedsNextTurn(t *testing.T) {
+	server := NewServer()
+	runner := newRecordingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-wake-preroll",
+		"session_id": "a21-session-xiaozhi-wake-preroll",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var captured providers.VoicePipelineRequest
+	select {
+	case captured = <-runner.requests:
+	case <-time.After(time.Second):
+		t.Fatal("voice pipeline runner did not capture request")
+	}
+	if len(captured.Frames) != 1 {
+		t.Fatalf("captured frames = %d, want wake pre-roll frame carried into next turn", len(captured.Frames))
+	}
+	traces := server.traceEvents("a21-trace-xiaozhi-wake-preroll")
+	for _, want := range []string{"xiaozhi.wake_preroll.opus_frame.buffered", "xiaozhi.wake_preroll.attached", "xiaozhi.voice_pipeline.start"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces)
+		}
+	}
+	if traceContains(traces, "xiaozhi.opus_frame.ignored_not_listening") {
+		t.Fatalf("wake pre-roll should not be discarded as not-listening: %+v", traces)
+	}
+}
+
 func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
 	asr, ok := streamingASR.(providers.ASRAdapter)
@@ -4187,6 +4242,10 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 
 	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
 		t.Fatal(err)
+	}
+	stt := readXiaozhiJSON(t, ctx, conn)
+	if stt["type"] != "stt" {
+		t.Fatalf("post-stop stt = %#v", stt)
 	}
 	ttsStart := readXiaozhiJSON(t, ctx, conn)
 	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
@@ -4474,6 +4533,71 @@ func TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWithoutBatchFallback(t *
 	case <-streamingASR.transcribe:
 		t.Fatalf("batch Transcribe was called despite streaming ASR final: %+v", traces)
 	default:
+	}
+}
+
+func TestXiaozhiWebSocketStreamingASRFinalSendsStockSTTBeforeTTS(t *testing.T) {
+	streamingASR := newBlockingCommitStreamingASRAdapter()
+	defer streamingASR.releaseCommit()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-streaming-final-stt",
+		"session_id": "a21-session-xiaozhi-streaming-final-stt",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.appended:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR did not receive an audio frame")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.commitEntered:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR commit did not start")
+	}
+	streamingASR.releaseCommit()
+
+	stt := readXiaozhiJSON(t, ctx, conn)
+	if stt["type"] != "stt" || stt["text"] != "streaming final after async commit" {
+		t.Fatalf("first post-ASR message = %#v, want stock stt text before tts", stt)
+	}
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start after stt = %#v", ttsStart)
+	}
+	tracePayload := mustJSON(t, server.traceEvents("a21-trace-xiaozhi-streaming-final-stt"))
+	if strings.Contains(tracePayload, "streaming final after async commit") {
+		t.Fatalf("trace leaked ASR transcript text: %s", tracePayload)
 	}
 }
 

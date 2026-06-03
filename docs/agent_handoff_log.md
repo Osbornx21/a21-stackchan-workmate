@@ -6387,3 +6387,79 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No unresolved failure. The only failure was the intentional red test.
+
+## 2026-06-03 10:19 CST - Xiaozhi Stock STT And Wake Preroll
+
+本轮目标:
+
+- Continue the persistent Xiaozhi realtime convergence goal with a
+  protocol-faithful, host-local cut after source-reading Xiaozhi behavior.
+- Improve stock `/v1/xiaozhi` message/audio fidelity without provider/V21
+  execution, Gateway lifecycle changes, `/v1/xiaozhi/say`, host-loopback
+  runtime acceptance, firmware, hardware, or audio playback.
+
+实际完成内容:
+
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md`.
+- Dispatched two read-only source explorers:
+  - Explorer A confirmed stock Xiaozhi is device-driven for `listen`; server
+    should send `hello`, `stt`, `llm`, `tts`, `mcp`, and related messages, not
+    rely on server-to-device `listen` for stock physical devices.
+  - Explorer B identified wake-word pre-roll Opus as the biggest immediate
+    host-side audio mismatch; upstream Xiaozhi can send audio before/around
+    `listen/detect`, while A21 had dropped binary Opus when not listening.
+- Explorer C could not be spawned because the thread limit was reached; the
+  main thread performed the A21 gap read locally.
+- Added stock `stt` WebSocket emission before `tts/start` when streaming ASR
+  partial/final text exists, without storing transcript text in traces.
+- Added bounded true-idle wake pre-roll buffering: up to five decoded Opus
+  frames received before `listen/start` are attached to the next turn, counted
+  in audio ingress evidence, and fed to streaming ASR when active.
+- Preserved no-speech/host-say cooldown behavior so cooldown or current-turn
+  Opus remains `xiaozhi.opus_frame.ignored_not_listening` rather than false
+  wake pre-roll.
+- Updated `docs/project_state_machine.md` with the completed transition,
+  remaining PRD blockers, and the next physical/runtime evidence direction.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance remains incomplete.
+- Real streaming provider execution is still not done.
+- Physical stock `/v1/xiaozhi` trace still needs wake or labeled tap trigger,
+  real streaming ASR/LLM/TTS profile markers, audible playback,
+  touch/barge-in, and idle recovery.
+- Next useful transition: with explicit authorization, either collect a
+  physical stock `/v1/xiaozhi` trace and run `xiaozhi-realtime-parity`, or run
+  the real streaming TTS provider runtime path with complete env.
+
+测试/构建/运行结果:
+
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketStreamingASRFinalSendsStockSTTBeforeTTS -count=1`
+  failed because the first post-ASR message was `tts/start` instead of stock
+  `stt`.
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketWakePrerollOpusFeedsNextTurn -count=1`
+  failed because the voice pipeline did not receive the pre-listen Opus frame.
+- Focused Gateway tests passed:
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocket(WakePrerollOpusFeedsNextTurn|StreamingASRFinalSendsStockSTTBeforeTTS|StreamingASRFinalStartsPipelineWithoutBatchFallback|ListenStopRunsVoicePipelineAndSendsPacedOpus|StreamingASRStartsBeforeListenStop|ASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal)' -count=1`.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Focused app parity/readiness tests passed:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity|TestXiaozhiStreamingProviderReadiness' -count=1`.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`,
+  host-loopback runtime acceptance, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The failures above were intentional red tests.

@@ -83,6 +83,14 @@ auto-stop off the blocking ASR commit path: streaming ASR commit/finalization
 runs asynchronously, the WebSocket read loop can process abort/barge-in while
 commit is pending, and final-driven voice-pipeline startup uses the streaming
 ASR final without falling back to batch `Transcribe`.
+`T-XIAOZHI-OFFICIAL-PROTOCOL-SOURCE-READ-AND-NEXT-CUT-001` is now a
+host-local stock-protocol fidelity cut: A21 emits stock `stt` before `tts`
+when streaming ASR partial/final text exists, and buffers a bounded idle
+wake pre-roll of decoded Opus frames so wake-adjacent audio can feed the next
+`listen/start` turn instead of being dropped. This remains below PRD
+acceptance because it is unit/Gateway evidence only, with no real provider
+execution, physical stock trace, wake/tap proof, barge-in/touch evidence, or
+audible playback.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -785,6 +793,71 @@ Next state:
 - Next transition: feed the real Sherpa streaming ASR session through a stock
   `/v1/xiaozhi` host-local trace, then keep realtime parity blocked until real
   streaming LLM/TTS profile evidence and physical playback are present.
+
+### Completed T-XIAOZHI-OFFICIAL-PROTOCOL-SOURCE-READ-AND-NEXT-CUT-001: Stock STT And Wake Preroll
+
+Current state:
+
+- `S-XIAOZHI-STOCK-STT-WAKE-PREROLL-HOST-TESTED`
+
+Trigger:
+
+- Source-read workers compared upstream Xiaozhi protocol/audio behavior with
+  A21 and found two narrow host-side fidelity gaps that did not require live
+  providers, Gateway lifecycle changes, firmware, hardware, or audio playback.
+- Stock Xiaozhi expects server `stt` display messages before TTS when
+  transcripts exist, and wake-adjacent Opus can arrive before/around
+  `listen/detect`.
+
+Target state:
+
+- `S-XIAOZHI-STOCK-STT-AND-IDLE-PREROLL-PRESERVED`
+
+Action:
+
+- Added plan
+  `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md`.
+- Emitted stock `stt` WebSocket messages before `tts/start` when a streaming
+  ASR partial or final transcript is available, without recording transcript
+  text in traces.
+- Added bounded idle wake pre-roll buffering for decoded Opus frames received
+  before `listen/start`, attaching those frames to the next turn and feeding
+  them into streaming ASR when active.
+- Kept cooldown and current-turn suppression intact so post-placeholder or
+  host-say Opus remains `ignored_not_listening` instead of becoming false wake
+  evidence.
+
+Acceptance conditions:
+
+- Red tests first proved TTS began before stock `stt` and pre-listen Opus was
+  dropped from the next voice pipeline request.
+- Focused Gateway tests prove stock `stt` precedes TTS, wake pre-roll feeds the
+  next turn, streaming ASR/final/partial paths still work, and paced Opus TTS
+  downlink still works.
+- Full Gateway package and focused app realtime parity/readiness tests pass.
+
+Failure states:
+
+- `F-XIAOZHI-STT-ORDER-REGRESSION` if TTS starts before stock `stt` when a
+  transcript exists.
+- `F-XIAOZHI-WAKE-PREROLL-DROPPED` if idle pre-listen Opus cannot feed the next
+  streaming ASR/voice-pipeline turn.
+- `F-XIAOZHI-COOLDOWN-FALSE-WAKE` if cooldown or current-turn Opus is
+  misclassified as wake pre-roll.
+
+Rollback path:
+
+- Revert the stock STT helper, wake pre-roll buffering/attach logic, tests,
+  plan, and state/log entries. Existing nonblocking ASR commit, partial bridge,
+  real-profile gate, Sherpa smoke, and realtime TTS seam remain intact.
+
+Next state:
+
+- `S-XIAOZHI-STOCK-STT-AND-IDLE-PREROLL-PRESERVED`
+- Next transition: with authorization, collect a physical stock `/v1/xiaozhi`
+  trace or execute the real streaming TTS provider path; keep realtime PRD
+  acceptance false until real streaming ASR/LLM/TTS profile evidence, physical
+  playback, barge-in/touch, and idle recovery are proven.
 
 ### Active T-XIAOZHI-STREAMING-ASR-001: Stock Xiaozhi Streaming ASR Session
 
@@ -1923,6 +1996,7 @@ Next state:
 | T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001: ASR partial to LLM realtime bridge | Completed host-side candidate | Added a partial transcript source for `VoicePipelineRequest`, a stock `/v1/xiaozhi` partial bridge that starts exactly one workmate streaming answer from the first ASR partial before `listen.stop`/`asr.final`, and parity gates that require ordered `asr.stream.commit` while blocking host-loopback fake markers. Focused provider/Gateway/app tests passed. This does not execute real providers/V21, start Gateway, flash firmware, play audio, or claim physical PRD acceptance. |
 | T-XIAOZHI-REALTIME-PARITY-REAL-PROFILE-EVIDENCE-001: Realtime parity real profile evidence | Completed evidence hardening | Plan `docs/plans/2026-06-03-xiaozhi-realtime-parity-real-profile-evidence.md` scoped the no-execute/no-hardware cut. Gateway now records redacted profile-class markers for Xiaozhi voice-pipeline turns, distinguishing real streaming ASR/LLM/TTS from mock, batch, and file-boundary stages without storing raw provider names, transcripts, provider outputs, URLs, credentials, paths, or audio payloads. `xiaozhi-realtime-parity` now requires all three real streaming profile markers and no profile blockers before returning `xiaozhi_realtime_candidate`; ordered traces without those markers downgrade to `turn_buffered_xiaozhi_candidate` with `xiaozhi_realtime_real_profile_evidence_missing`. Focused app/Gateway tests passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 | T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001: Xiaozhi nonblocking ASR commit | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md` scoped the cut. `listen.stop` and VAD auto-stop now start async streaming-ASR commit/final handling instead of blocking the `/v1/xiaozhi` WebSocket read loop. Focused Gateway tests prove abort can be processed while commit remains pending and that a streaming ASR final starts the voice pipeline without calling batch `Transcribe`. This keeps A21 closer to Xiaozhi's responsive control/media state machine while remaining below full PRD acceptance. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
+| T-XIAOZHI-OFFICIAL-PROTOCOL-SOURCE-READ-AND-NEXT-CUT-001: Stock STT and wake preroll | Completed host-local stock fidelity cut | Plan `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md` scoped source-read workers plus a narrow red/green implementation. A21 now sends stock `stt` before `tts/start` when streaming ASR text exists, and buffers up to five true-idle wake pre-roll Opus frames for the next `listen/start` while preserving cooldown/current-turn `ignored_not_listening` behavior. Focused Gateway tests, full Gateway package tests, and focused app realtime parity/readiness tests passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime acceptance, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
 
@@ -1991,13 +2065,15 @@ Next state:
      execution, and a physical stock `/v1/xiaozhi` trace.
 
 8. `T-XIAOZHI-STREAMING-ASR-001`
-   - Current phase: not started. Read-only workers agreed the present stock
-     `/v1/xiaozhi` path is still turn-buffered at the ASR boundary: Opus frames
-     are decoded live, but ASR starts from accumulated frames after stop/VAD end.
-   - Next action: write a plan for streaming ASR on stock `/v1/xiaozhi`:
-     pre-open ASR session on listen start, feed decoded PCM frames as they
-     arrive, let VAD end commit/finalize, and prove `asr.first_partial` occurs
-     before `vad.speech.end`/listen stop.
+   - Current phase: host-side streaming ASR session, partial-to-LLM bridge,
+     nonblocking commit, stock `stt` ordering, and true-idle wake pre-roll
+     buffering are implemented and covered by Gateway tests. Full runtime proof
+     is still missing because no physical stock `/v1/xiaozhi` trace has shown
+     real streaming ASR/LLM/TTS profile markers plus playback.
+   - Next action: in an approved runtime/hardware window, collect an
+     operator-triggered physical stock `/v1/xiaozhi` trace and run
+     `xiaozhi-realtime-parity`; do not promote host-loopback, `/say`,
+     voice-bench, or file-boundary evidence.
 
 9. `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
    - Current phase: static provider readiness gate landed and is correctly red;
