@@ -60,6 +60,18 @@ evidence, and separated the no-flash normal-dialogue observation path from the
 optional diagnostic half-duplex counter path. The no-flash self-trigger
 observation now has candidate evidence, while custom wake and clone-capable
 local TTS remain explicit recovery tasks rather than hidden blockers.
+The 2026-06-03 internal test 3 closure packages the public-Gateway voice
+main-chain breakthrough at HEAD `074e3d877d33` into
+`dist/a21-internal-test3-20260603-233245`. Fresh verification passed
+`make verify`, host preflight/doctor with firmware/wake warnings, packaged
+binary host gate with A21 direct `NO_PROXY`, public Gateway health/profile/OTA
+checks, and public host-loopback voice bench. The product StackChan
+`44:1b:f6:e2:6a:60` was online on `ws://47.103.57.217/v1/xiaozhi`; remote
+runtime snapshot shows `cascade` with ASR `dashscope_qwen_asr_realtime`, LLM
+`deepseek`, fixed TTS `dashscope_qwen_tts_realtime`, hot switch enabled, and
+`stepfun_not_selected` still present. Machine-readable physical evidence is
+still `candidate_gateway_downlink`, so this is an internal voice-main-chain
+release rather than full PRD launch readiness.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

@@ -8633,3 +8633,83 @@ Follow-up deploy and physical check:
   `xiaozhi.wake_preroll.opus_frame.buffered`, no
   `xiaozhi.voice_pipeline.unavailable`, and no `xiaozhi.local_fallback.sent`
   observed in that window.
+
+## 2026-06-03 23:3x CST - Internal Test 3 Release Closure
+
+Round goal:
+
+- Close the current voice-main-chain branch state, verify build/integration, and
+  publish the A21 internal test 3 package after the user accepted the physical
+  voice main-chain breakthrough.
+
+Actual completed work:
+
+- Rechecked branch `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
+  at HEAD `074e3d877d33`; no tracked dirty files were present before release
+  packaging.
+- Verified the latest real product firmware flash evidence remains the
+  official-compatible lane:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-170812-1780477692092580000.json`
+  with `flash_executed=true` and app artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`; no bare `xiaozhi.bin`
+  product flash was used for this release record.
+- Rechecked the main public Gateway `47.103.57.217`: `/healthz` returned ok,
+  `/xiaozhi/ota/` returned `ws://47.103.57.217/v1/xiaozhi`, and device
+  `44:1b:f6:e2:6a:60` was online.
+- Captured public Gateway runtime snapshots for devices, gateway profiles,
+  voice-chain profiles, OTA, and health.
+- Built the packaged CLI from current HEAD and archived current source.
+- Published package directory
+  `dist/a21-internal-test3-20260603-233245` and refreshed `SHA256SUMS`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `.a21-run/latest-internal-test3-package.path`
+- `dist/a21-internal-test3-20260603-233245/**`
+
+Test/build/runtime results:
+
+- `make verify`: passed.
+- `make preflight`: passed with warnings
+  `firmware_current_artifact_missing` and `wake_word_firmware_build_required`.
+- `make doctor`: passed with the same warnings.
+- Packaged binary `bin/a21 gate --scope host`: passed with the A21 direct
+  `NO_PROXY` coverage, with the same firmware/wake-word warnings.
+- Public host-loopback voice bench passed:
+  `reports/a21-xiaozhi-voice-bench-20260603-233014.342186000.json`;
+  `answer_first_audio_p95_ms=792`, `barge_in_stop_p95_ms=20`,
+  `failure_count=0`, ASR `dashscope_qwen_asr_realtime`, LLM `deepseek`, TTS
+  `dashscope_qwen_tts_realtime`.
+- Fresh xiaozhi physical evidence report:
+  `reports/a21-xiaozhi-physical-evidence-20260603-232946.250456000.json`;
+  device online, Opus ingress/downlink present, but machine-readable status
+  remains `candidate_gateway_downlink`.
+- Fresh product readiness:
+  `reports/a21-product-readiness-20260603-233027.json`; `demo_ready=true`,
+  `launch_ready=false`, `status=server_side_blocked`.
+- Fresh server-side bundle:
+  `reports/a21-server-side-readiness-bundle-20260603-233027.json`;
+  `status=server_side_blocked`.
+- Static local streaming provider readiness wrote
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-233026-1780500626486079000.json`
+  and exited 1 as expected without local provider env; remote runtime snapshot
+  remains the public-Gateway truth for internal test 3.
+
+Known risks/blockers:
+
+- Remote voice-chain profile still reports `stepfun_not_selected`; current
+  runtime LLM is `deepseek`.
+- Machine-readable physical evidence still lacks device playback ack,
+  playback stop_done, and trusted operator audible observation.
+- Local readiness tools still see local provider env as mock/blocked, so their
+  provider section is not the same as the remote ECS runtime provider state.
+- Full PRD launch remains blocked; internal test 3 is a voice-main-chain
+  release package, not a full PRD green.
+
+Recommended next action:
+
+- Use the internal test 3 package for team testing on the public Gateway, then
+  separately cut the StepFun remote switch and trusted physical playback/stop
+  acknowledgement evidence.
