@@ -50,6 +50,7 @@ type stackChanOfficialBaselineOptions struct {
 	BuildDir   string
 	IDFExport  string
 	OutputDir  string
+	DepCache   string
 	Overlays   []string
 	Execute    bool
 }
@@ -92,11 +93,13 @@ type stackChanOfficialBaselineEvidence struct {
 }
 
 type stackChanOfficialBaselineBuild struct {
-	FetchExecuted bool                                     `json:"fetch_executed"`
-	BuildExecuted bool                                     `json:"build_executed"`
-	FetchLogPath  string                                   `json:"fetch_log_path,omitempty"`
-	BuildLogPath  string                                   `json:"build_log_path,omitempty"`
-	Artifacts     []stackChanOfficialBaselineBuildArtifact `json:"artifacts,omitempty"`
+	FetchExecuted       bool                                     `json:"fetch_executed"`
+	BuildExecuted       bool                                     `json:"build_executed"`
+	DependencyCacheUsed bool                                     `json:"dependency_cache_used,omitempty"`
+	DependencyCacheRoot string                                   `json:"dependency_cache_root,omitempty"`
+	FetchLogPath        string                                   `json:"fetch_log_path,omitempty"`
+	BuildLogPath        string                                   `json:"build_log_path,omitempty"`
+	Artifacts           []stackChanOfficialBaselineBuildArtifact `json:"artifacts,omitempty"`
 }
 
 type stackChanOfficialBaselineOverlay struct {
@@ -375,11 +378,12 @@ func runStackChanOfficialBaseline(args []string, stdout io.Writer, stderr io.Wri
 		WorkDir:    firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_WORK_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-clean")),
 		BuildDir:   firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
 		IDFExport:  firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		DepCache:   strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_DEP_CACHE")),
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-official-baseline --source <m5stack-stackchan-repo> [--overlay firmware/stackchan-official/overlays/a21-official-audio-smoke.patch] [--execute] [--work-dir /tmp/a21-stackchan-official-clean] [--build-dir /tmp/a21-stackchan-official-build] [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-official-baseline --source <m5stack-stackchan-repo> [--overlay firmware/stackchan-official/overlays/a21-official-audio-smoke.patch] [--execute] [--dep-cache <m5stack-stackchan-repo-or-firmware-dir>] [--work-dir /tmp/a21-stackchan-official-clean] [--build-dir /tmp/a21-stackchan-official-build] [--idf-export /path/to/export.sh] [--output-dir reports]")
 			return 0
 		case "--source":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -409,6 +413,13 @@ func runStackChanOfficialBaseline(args []string, stdout io.Writer, stderr io.Wri
 			}
 			i++
 			options.IDFExport = args[i]
+		case "--dep-cache":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--dep-cache requires a value")
+				return 2
+			}
+			i++
+			options.DepCache = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -2406,15 +2417,24 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 		return
 	}
 
-	fetchLog := filepath.Join(options.BuildDir, "a21-official-fetch.log")
 	buildLog := filepath.Join(options.BuildDir, "a21-official-build.log")
 	_ = os.MkdirAll(options.BuildDir, 0o755)
 
-	report.Build.FetchExecuted = true
-	report.Build.FetchLogPath = fetchLog
-	if err := runLoggedCommand(ctx, filepath.Join(options.WorkDir, "firmware"), fetchLog, "python3", "./fetch_repos.py"); err != nil {
-		report.fail("fetch_repos_failed", "official fetch_repos.py failed")
-		return
+	if options.DepCache != "" {
+		report.Build.DependencyCacheUsed = true
+		report.Build.DependencyCacheRoot = options.DepCache
+		if err := hydrateStackChanOfficialDependenciesFromCache(options.WorkDir, options.DepCache); err != nil {
+			report.fail("dependency_cache_failed", err.Error())
+			return
+		}
+	} else {
+		fetchLog := filepath.Join(options.BuildDir, "a21-official-fetch.log")
+		report.Build.FetchExecuted = true
+		report.Build.FetchLogPath = fetchLog
+		if err := runLoggedCommand(ctx, filepath.Join(options.WorkDir, "firmware"), fetchLog, "python3", "./fetch_repos.py"); err != nil {
+			report.fail("fetch_repos_failed", "official fetch_repos.py failed")
+			return
+		}
 	}
 	for index, overlay := range options.Overlays {
 		cleanOverlay := filepath.Clean(overlay)
@@ -2471,6 +2491,136 @@ func exportGitHEAD(ctx context.Context, sourceRoot string, workDir string) error
 		return archiveErr
 	}
 	return tarErr
+}
+
+type stackChanOfficialRepoConfig struct {
+	URL            string `json:"url"`
+	Path           string `json:"path"`
+	Branch         string `json:"branch"`
+	WithSubmodules bool   `json:"with_submodules"`
+	Patch          string `json:"patch"`
+}
+
+func hydrateStackChanOfficialDependenciesFromCache(workDir string, cacheRoot string) error {
+	reposPath := filepath.Join(workDir, "firmware", "repos.json")
+	data, err := os.ReadFile(reposPath)
+	if err != nil {
+		return fmt.Errorf("read official repos.json: %w", err)
+	}
+	var repos []stackChanOfficialRepoConfig
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return fmt.Errorf("parse official repos.json: %w", err)
+	}
+	if len(repos) == 0 {
+		return fmt.Errorf("official repos.json has no dependencies")
+	}
+	for _, repo := range repos {
+		if repo.Path == "" {
+			return fmt.Errorf("official dependency path is required")
+		}
+		if filepath.IsAbs(repo.Path) || strings.Contains(repo.Path, "..") || containsLegacyIdentityPathToken(repo.Path) {
+			return fmt.Errorf("official dependency path %q is not allowed", repo.Path)
+		}
+		src, err := resolveStackChanOfficialCacheRepo(cacheRoot, repo.Path)
+		if err != nil {
+			return err
+		}
+		if repo.Branch != "" {
+			if err := validateStackChanOfficialCacheRef(src, repo.Branch); err != nil {
+				return fmt.Errorf("validate dependency cache %s: %w", repo.Path, err)
+			}
+		}
+		dst := filepath.Join(workDir, "firmware", filepath.FromSlash(repo.Path))
+		if err := os.RemoveAll(dst); err != nil {
+			return fmt.Errorf("clean dependency destination %s: %w", repo.Path, err)
+		}
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return fmt.Errorf("create dependency destination %s: %w", repo.Path, err)
+		}
+		if err := exportGitHEAD(context.Background(), src, dst); err != nil {
+			return fmt.Errorf("export dependency cache %s: %w", repo.Path, err)
+		}
+		if repo.Patch != "" {
+			patchPath := repo.Patch
+			if !filepath.IsAbs(patchPath) {
+				patchPath = filepath.Join(workDir, "firmware", filepath.FromSlash(repo.Patch))
+			}
+			if err := applyStackChanOfficialDependencyPatch(dst, patchPath); err != nil {
+				return fmt.Errorf("apply dependency patch %s: %w", repo.Path, err)
+			}
+		}
+	}
+	return nil
+}
+
+func resolveStackChanOfficialCacheRepo(cacheRoot string, repoPath string) (string, error) {
+	if cacheRoot == "" {
+		return "", fmt.Errorf("dependency cache root is required")
+	}
+	candidates := []string{
+		filepath.Join(cacheRoot, "firmware", filepath.FromSlash(repoPath)),
+		filepath.Join(cacheRoot, filepath.FromSlash(repoPath)),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(filepath.Join(candidate, ".git")); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("dependency cache missing repo %s", repoPath)
+}
+
+func validateStackChanOfficialCacheRef(repoDir string, ref string) error {
+	wanted, err := gitRevParse(repoDir, ref+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve ref %q: %w", ref, err)
+	}
+	head, err := gitRevParse(repoDir, "HEAD")
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+	if wanted != head {
+		return fmt.Errorf("HEAD %s does not match required ref %q (%s)", head, ref, wanted)
+	}
+	return nil
+}
+
+func gitRevParse(repoDir string, rev string) (string, error) {
+	out, err := exec.Command("git", "-C", repoDir, "rev-parse", "--verify", rev).Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func applyStackChanOfficialDependencyPatch(repoDir string, patchPath string) error {
+	if patchPath == "" {
+		return nil
+	}
+	cleanPatch := filepath.Clean(patchPath)
+	if containsLegacyIdentityPathToken(cleanPatch) {
+		return fmt.Errorf("dependency patch path contains forbidden legacy identity")
+	}
+	if _, err := os.Stat(cleanPatch); err != nil {
+		return fmt.Errorf("dependency patch missing: %w", err)
+	}
+	if err := runCommandInDir(repoDir, "git", "init"); err != nil {
+		return fmt.Errorf("init temporary dependency repo: %w", err)
+	}
+	if err := runCommandInDir(repoDir, "git", "apply", "--check", cleanPatch); err != nil {
+		_ = os.RemoveAll(filepath.Join(repoDir, ".git"))
+		return fmt.Errorf("dependency patch check failed: %w", err)
+	}
+	if err := runCommandInDir(repoDir, "git", "apply", cleanPatch); err != nil {
+		_ = os.RemoveAll(filepath.Join(repoDir, ".git"))
+		return fmt.Errorf("dependency patch apply failed: %w", err)
+	}
+	return os.RemoveAll(filepath.Join(repoDir, ".git"))
+}
+
+func runCommandInDir(dir string, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	return cmd.Run()
 }
 
 func runLoggedCommand(ctx context.Context, dir string, logPath string, name string, args ...string) error {

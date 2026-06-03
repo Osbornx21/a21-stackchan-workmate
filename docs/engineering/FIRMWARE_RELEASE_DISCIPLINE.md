@@ -195,6 +195,11 @@ make stackchan-official-audio-smoke-flash-execute
 Rules:
 
 - source is exported from the official StackChan Git `HEAD`; local dirty files in that source checkout are not copied into the build;
+- when GitHub dependency fetch is unstable, `A21_STACKCHAN_OFFICIAL_DEP_CACHE`
+  may point at a local official StackChan dependency cache; the builder exports
+  each dependency from its pinned Git `HEAD`, checks the `repos.json` ref, applies
+  the official dependency patch, and must not consume dirty X21/V21 working-tree
+  files;
 - the plan verifies official codec evidence before build: `AudioCodec::OutputData`, `esp_codec_dev_open`, `esp_codec_dev_write`, `CreateDuplexChannels`, and Xiaozhi `AudioService` output-task usage;
 - the overlay must be an A21-owned patch under `firmware/stackchan-official/overlays/`;
 - the ESP-IDF build output must include `a21-stackchan-official-audio-smoke.bin` at app offset `0x20000` in `flash_args`;

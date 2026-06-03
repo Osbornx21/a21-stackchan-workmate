@@ -110,6 +110,73 @@ func TestRunStackChanOfficialBaselineNormalizesRelativeOverlayPath(t *testing.T)
 	}
 }
 
+func TestHydrateStackChanOfficialDependenciesFromCacheCopiesPinnedRepos(t *testing.T) {
+	workDir := t.TempDir()
+	cacheRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(workDir, "firmware", "repos.json"), `[
+  {
+    "url": "https://github.com/Forairaaaaa/mooncake.git",
+    "path": "components/mooncake",
+    "branch": "v2.3.3",
+    "patch": "patches/mooncake.patch"
+  }
+]`)
+	writeTestFile(t, filepath.Join(workDir, "firmware", "patches", "mooncake.patch"), strings.Join([]string{
+		"diff --git a/include/mooncake.h b/include/mooncake.h",
+		"--- a/include/mooncake.h",
+		"+++ b/include/mooncake.h",
+		"@@ -1 +1 @@",
+		"-moon",
+		"+patched moon",
+	}, "\n")+"\n")
+	repoDir := filepath.Join(cacheRoot, "firmware", "components", "mooncake")
+	writeTestFile(t, filepath.Join(repoDir, "include", "mooncake.h"), "moon\n")
+	runGitForTest(t, repoDir, "init")
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=A21 Test", "-c", "user.email=a21@example.invalid", "commit", "-m", "cache repo")
+	runGitForTest(t, repoDir, "tag", "v2.3.3")
+
+	if err := hydrateStackChanOfficialDependenciesFromCache(workDir, cacheRoot); err != nil {
+		t.Fatalf("hydrate dependency cache: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "firmware", "components", "mooncake", "include", "mooncake.h")); err != nil {
+		t.Fatalf("cached dependency file missing: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(workDir, "firmware", "components", "mooncake", "include", "mooncake.h"))
+	if err != nil {
+		t.Fatalf("read cached dependency file: %v", err)
+	}
+	if string(data) != "patched moon\n" {
+		t.Fatalf("cached dependency patch was not applied: %q", string(data))
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "firmware", "components", "mooncake", ".git")); !os.IsNotExist(err) {
+		t.Fatalf("dependency cache copy must not include .git, stat err=%v", err)
+	}
+}
+
+func TestHydrateStackChanOfficialDependenciesFromCacheRejectsWrongRef(t *testing.T) {
+	workDir := t.TempDir()
+	cacheRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(workDir, "firmware", "repos.json"), `[
+  {
+    "url": "https://github.com/Forairaaaaa/mooncake.git",
+    "path": "components/mooncake",
+    "branch": "v2.3.3"
+  }
+]`)
+	repoDir := filepath.Join(cacheRoot, "firmware", "components", "mooncake")
+	writeTestFile(t, filepath.Join(repoDir, "include", "mooncake.h"), "moon")
+	runGitForTest(t, repoDir, "init")
+	runGitForTest(t, repoDir, "add", ".")
+	runGitForTest(t, repoDir, "-c", "user.name=A21 Test", "-c", "user.email=a21@example.invalid", "commit", "-m", "cache repo")
+	runGitForTest(t, repoDir, "tag", "v2.3.2")
+
+	err := hydrateStackChanOfficialDependenciesFromCache(workDir, cacheRoot)
+	if err == nil || !strings.Contains(err.Error(), `resolve ref "v2.3.3"`) {
+		t.Fatalf("hydrate error = %v, want ref mismatch", err)
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract(t *testing.T) {
 	source := writeTestOfficialStackChanRepo(t, true)
 	overlay := filepath.Join("firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")

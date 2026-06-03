@@ -371,6 +371,13 @@ make stackchan-official-audio-smoke-flash-execute
 
 This lane is allowed only for the official codec speaker baseline. It builds from official StackChan Git `HEAD`, records hashes from IDF `flash_args`, and requires the same explicit USB serial-port discipline. It is not production A21 firmware and cannot replace `firmware-package`, `firmware-check --kind upload`, or steady-state `firmware-flash-plan`.
 
+If GitHub dependency fetch is unstable, the official StackChan build family can
+use `A21_STACKCHAN_OFFICIAL_DEP_CACHE=/path/to/m5stack-stackchan`. The cache is
+accepted only as pinned Git dependency checkouts from `repos.json`; the builder
+exports clean `HEAD` content, validates the requested ref, applies any official
+dependency patch, and records `dependency_cache_used` in the baseline report.
+Do not point this at a dirty Xiaozhi/X21/V21 working tree.
+
 `stackchan-official-pcm-bridge-build` is the matching build lane for M3 downlink preparation. It exports official StackChan Git `HEAD`, applies the A21 PCM bridge overlay, and must produce `a21-stackchan-official-pcm-bridge.bin` at app offset `0x20000`. `stackchan-official-pcm-bridge-nvs` is no-write by default and records the NVS partition offset `0x9000`, size `0x4000`, explicit USB serial readiness, `device_id`, and redacted audio-websocket endpoint fields. `stackchan-official-pcm-bridge-nvs --execute` requires `WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS`, backs up current NVS, preserves existing entries including servo calibration, mutates only `a21/device_id` plus `a21/audio_ws_url`, and writes only the NVS partition. `stackchan-official-pcm-bridge-flash` is no-write by default and records the bridge app hash plus required flash parts. `stackchan-official-pcm-bridge-flash --execute` is the guarded bridge app flashing lane and must consume the normal explicit USB serial, control gate, and confirmation-token guards.
 
 `namespace-audit` scans tracked file paths and blocks X21/V21-looking runtime paths outside the explicit V21 adapter/docs boundary. It is part of `make release-check` so path-level project identity drift is caught before merge.

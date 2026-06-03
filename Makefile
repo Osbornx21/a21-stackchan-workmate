@@ -32,6 +32,7 @@ A21_SPEAKER_WINDOW_MS ?= 1500
 A21_STACKCHAN_OFFICIAL_SOURCE ?= /Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan
 A21_STACKCHAN_OFFICIAL_WORK_DIR ?= /tmp/a21-stackchan-official-clean
 A21_STACKCHAN_OFFICIAL_BUILD_DIR ?= /tmp/a21-stackchan-official-build
+A21_STACKCHAN_OFFICIAL_DEP_CACHE ?=
 A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_OVERLAY ?= firmware/stackchan-official/overlays/a21-official-audio-smoke.patch
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_OVERLAY ?= firmware/stackchan-official/overlays/a21-official-pcm-bridge.patch
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OVERLAY ?= firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch
@@ -224,19 +225,19 @@ stackchan-fast-companion-turn:
 	go run ./cmd/a21 stackchan-fast-companion-turn --repeat 3 --output-dir reports
 
 stackchan-official-baseline:
-	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --output-dir reports
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --output-dir reports
 
 stackchan-official-baseline-build:
-	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --execute --output-dir reports
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --execute --output-dir reports
 
 stackchan-official-audio-smoke-build:
-	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --overlay "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_OVERLAY)" --execute --output-dir reports
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --overlay "$(A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE_OVERLAY)" --execute --output-dir reports
 
 stackchan-official-pcm-bridge-build:
-	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --overlay "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_OVERLAY)" --execute --output-dir reports
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --overlay "$(A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_OVERLAY)" --execute --output-dir reports
 
 a21-stackchan-official-xiaozhi-compatible-build:
-	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --overlay "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OVERLAY)" --execute --output-dir reports
+	go run ./cmd/a21 stackchan-official-baseline --source "$(A21_STACKCHAN_OFFICIAL_SOURCE)" --work-dir "$(A21_STACKCHAN_OFFICIAL_WORK_DIR)" --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" $(if $(A21_STACKCHAN_OFFICIAL_DEP_CACHE),--dep-cache "$(A21_STACKCHAN_OFFICIAL_DEP_CACHE)",) --overlay "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OVERLAY)" --execute --output-dir reports
 
 stackchan-official-audio-smoke-flash-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
