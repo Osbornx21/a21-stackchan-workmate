@@ -2359,6 +2359,7 @@ Next state:
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
 | T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001: Official hardware parity gap map | Completed docs/state baseline | Worker froze the official-vs-A21 hardware/control/status gap map in `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md` using the local official StackChan root `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483` as a dirty working-tree reference and the Xiaozhi sub-tree `e77dedb1309153bb63fed285772962c920c97dd4` as a clean detached-HEAD reference. The map distinguishes `available`, `diagnostic`, `planned`, `blocked`, and `product-accepted`, assigns owner transitions, acceptance evidence, and rollback paths for every surface in the parity plan, and updates `docs/engineering/A21_CURRENT_CONTROL.md`. No Gateway start, provider/V21 execution, firmware build, flash, serial, or NVS write occurred. Next candidate is the low-risk MCP/status worker, not firmware or high-risk hardware. |
+| T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001: Official MCP status/control parity | Completed low-risk Gateway contract | Worker added `POST /v1/xiaozhi/mcp-control` for only `self.get_device_status`, `self.screen.set_brightness`, `self.screen.set_theme`, and `self.screen.get_info`. Requests require A21 `device_id`, carry or generate `trace_id` and `session_id`, require an online `/v1/xiaozhi` socket with `hello.features.mcp=true`, and record only redacted send markers after delivery. High-risk tools such as reboot, firmware upgrade, camera/photo, screen snapshot, stream/video, NFC, infrared, and app lifecycle are rejected before websocket write. This is not firmware work, physical evidence, or product acceptance. |
 
 ## Blocked Transitions
 
@@ -2373,16 +2374,18 @@ Next state:
 Priority candidate added from the 2026-06-04 hardware parity comparison:
 
 - `T-STACKCHAN-OFFICIAL-HARDWARE-PARITY-001`
-  - Current phase: first docs-only gap map worker
-    `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` completed. The official
-    source identity, A21 source identity, parity matrix, landing class, owner
-    transition, evidence, and rollback path are frozen in
+  - Current phase: docs-only gap map worker
+    `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` completed, and the low-risk
+    Gateway MCP/status worker
+    `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` landed as a control contract.
+    The official source identity, A21 source identity, parity matrix, landing
+    class, owner transition, evidence, and rollback path remain frozen in
     `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`.
   - Plan:
     `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
-  - Next action: dispatch
-    `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` for low-risk Gateway
-    MCP/status parity before any firmware, flash, camera, video, NFC,
+  - Next action: main control should choose the next medium-risk display,
+    avatar/action, touch, or diagnostic-sensor parity slice with an explicit
+    plan and evidence gate before any firmware, flash, camera, video, NFC,
     infrared, or app-lifecycle work.
   - Boundary for next worker: no firmware build, flash, serial, NVS write,
     reboot/upgrade exposure, camera/photo, screen snapshot, video stream,
