@@ -8549,12 +8549,56 @@ Test/build/runtime results:
 - Related packages passed:
   `go test ./internal/app ./internal/providers -count=1`.
 - `git diff --check` passed.
+- `make verify` passed.
 
 Recommended next action:
 
-1. Run `make verify`.
-2. Commit and deploy to `47.103.57.217`.
-3. Re-run a physical long reply plus repeated interruption test and require:
+1. Commit and deploy to `47.103.57.217`.
+2. Re-run a physical long reply plus repeated interruption test and require:
    no `xiaozhi.local_fallback.sent` after answer downlink has begun, no
    `xiaozhi.voice_pipeline.unavailable` after answer downlink has begun, and
    no accepted `listen.start` inside the post-TTS drain window.
+
+Post-deploy update:
+
+- Committed as `0aa1eda fix(gateway): prevent xiaozhi speaking self loop`.
+- Deployed to main public ECS Gateway `47.103.57.217`; remote focused tests
+  passed, `go build ./cmd/a21` passed, `a21-gateway` restarted active, and
+  `healthz` returned ok.
+- Public host-loopback bench passed after deploy:
+  `reports/a21-xiaozhi-voice-bench-20260603-222620.134851000.json`.
+  It remains host-loopback candidate evidence, not physical PRD acceptance.
+- A 90-second physical trace watch after deployment saw only fresh
+  `xiaozhi.hello.received` events and no new `listen.start`/Opus ingress, so
+  the self-loop fix still needs an operator-triggered physical repro pass.
+
+Follow-up reset pass:
+
+- A later physical trace after `0aa1eda` showed the first guard working:
+  two post-stop `listen.start` events were suppressed with
+  `xiaozhi.listen.start.suppressed_post_tts_drain`, and there were no
+  `xiaozhi.voice_pipeline.unavailable` or `xiaozhi.local_fallback.sent`
+  markers after answer downlink.
+- The same trace exposed a second state-machine gap: after Gateway suppressed a
+  post-TTS `listen.start`, the device continued sending several seconds of
+  Opus until its eventual `listen.stop.ignored`. Gateway was no longer
+  accepting a new turn, but once the fixed cooldown expired it started buffering
+  that still-suppressed Opus as `xiaozhi.wake_preroll.*`. That can pollute the
+  next real wake/listen turn with playback tail audio.
+- Added an explicit `suppressedListenActive` state. When Gateway rejects a
+  `listen.start` because input is suppressed, all binary Opus from that rejected
+  listen session is traced as `xiaozhi.opus_frame.ignored_suppressed_listen`
+  and cannot enter wake-preroll or ASR. The state is cleared only when the
+  device sends `listen.stop`, traced as
+  `xiaozhi.listen.stop.suppressed_session_ended`.
+- Updated no-speech and host-say suppression tests so suppressed-listen audio
+  is forbidden from entering `xiaozhi.wake_preroll.opus_frame.buffered`.
+
+Follow-up test/build results:
+
+- Focused Xiaozhi suppression/self-loop/no-reply/barge tests passed.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Related packages passed:
+  `go test ./internal/app ./internal/providers -count=1`.
+- `git diff --check` passed.

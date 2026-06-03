@@ -2205,6 +2205,7 @@ type xiaozhiSession struct {
 	helloReceived                  bool
 	listening                      bool
 	listenStartedAtMS              int64
+	suppressedListenActive         bool
 	binaryProtocolVersion          int
 	opusCodec                      *opuscodec.Codec
 	opusSampleRateHz               int
@@ -2422,6 +2423,28 @@ func (session *xiaozhiSession) xiaozhiInputSuppression(nowMS int64) (bool, strin
 		return true, firstNonEmpty(session.inputCooldownReason, "cooldown")
 	}
 	return false, ""
+}
+
+func (session *xiaozhiSession) xiaozhiSuppressedListenActive() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.suppressedListenActive
+}
+
+func (session *xiaozhiSession) clearSuppressedXiaozhiListen() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if !session.suppressedListenActive {
+		return false
+	}
+	session.suppressedListenActive = false
+	return true
 }
 
 func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reason string) {
@@ -2958,6 +2981,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 		session.helloReceived = true
 		session.listening = false
 		session.listenStartedAtMS = 0
+		session.suppressedListenActive = false
 		session.resetXiaozhiTTSStop()
 		session.resetXiaozhiWakePreroll()
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
@@ -2979,6 +3003,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			if suppressed, reason := session.xiaozhiInputSuppression(nowMS); suppressed {
 				session.listening = false
 				session.listenStartedAtMS = 0
+				session.suppressedListenActive = true
 				session.resetXiaozhiOpusIngress()
 				session.resetXiaozhiWakePreroll()
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
@@ -3011,6 +3036,9 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			s.writeXiaozhiListenReply(ctx, conn, session, "detect", "accepted", session.currentXiaozhiTurnID())
 		case "stop":
 			if !session.listening {
+				if session.clearSuppressedXiaozhiListen() {
+					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_ended", s.now().UnixMilli())
+				}
 				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
 				s.writeXiaozhiListenReply(ctx, conn, session, "stop", "ignored", "")
 				return true
@@ -3124,6 +3152,10 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	}
 	session.adoptFrame(frame)
 	if !session.listening {
+		if session.xiaozhiSuppressedListenActive() {
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.ignored_suppressed_listen", s.now().UnixMilli())
+			return true
+		}
 		if session.shouldBufferXiaozhiWakePreroll(s.now().UnixMilli()) {
 			return s.bufferXiaozhiWakePreroll(session, frame)
 		}

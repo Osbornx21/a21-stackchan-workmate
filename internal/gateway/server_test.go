@@ -3934,10 +3934,13 @@ func TestXiaozhiSaySuppressesImmediateListenRestartForStockPhysical(t *testing.T
 	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"xiaozhi.say.input_suppression_armed", "xiaozhi.listen.start.input_suppressed", "xiaozhi.opus_frame.ignored_not_listening"} {
+	for _, want := range []string{"xiaozhi.say.input_suppression_armed", "xiaozhi.listen.start.input_suppressed", "xiaozhi.opus_frame.ignored_suppressed_listen"} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
+	}
+	if traceContains(traces.Events, "xiaozhi.wake_preroll.opus_frame.buffered") {
+		t.Fatalf("suppressed host-say echo must not enter wake preroll: %+v", traces.Events)
 	}
 	for _, forbidden := range []string{"xiaozhi.turn.start", "audio.ingress.buffered", "xiaozhi.voice_pipeline.start"} {
 		if traceContains(traces.Events, forbidden) {
@@ -4122,6 +4125,15 @@ func TestXiaozhiWebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForS
 	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
 		t.Fatal(err)
 	}
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "listen",
+		"state":      "stop",
+		"trace_id":   "a21-trace-xiaozhi-no-speech-cooldown",
+		"session_id": "a21-session-xiaozhi-no-speech-cooldown",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 
 	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-no-speech-cooldown", nil)
@@ -4138,11 +4150,14 @@ func TestXiaozhiWebSocketNoSpeechPlaceholderSuppressesImmediateListenRestartForS
 		"xiaozhi.no_speech.input_suppression_armed",
 		"xiaozhi.listen.start.input_suppressed",
 		"xiaozhi.listen.start.suppressed_after_no_speech",
-		"xiaozhi.opus_frame.ignored_not_listening",
+		"xiaozhi.opus_frame.ignored_suppressed_listen",
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
+	}
+	if traceContains(traces.Events, "xiaozhi.wake_preroll.opus_frame.buffered") {
+		t.Fatalf("suppressed listen audio must not enter wake preroll: %+v", traces.Events)
 	}
 	if countTraceEvents(traces.Events, "xiaozhi.turn.start") != 1 {
 		t.Fatalf("turn starts = %+v, want only the no-speech turn", traces.Events)
