@@ -96,9 +96,9 @@ Response:
 ## Internal Test 4 Adapter v2 Direction
 
 Internal test 4 keeps the v1 adapter smoke as accepted local boundary evidence,
-but the cloud workspace product needs a scoped v2 professional query contract.
-A21 should remain ignorant of V21 internals while carrying enough user/workspace
-context for V21 to enforce permissions.
+and A21 now carries a scoped v2 professional query contract. A21 remains
+ignorant of V21 internals while carrying enough redacted user/workspace context
+for V21 or the adapter bridge to enforce permissions.
 
 Additional request fields:
 
@@ -138,6 +138,9 @@ Rules:
 - V21 reports may include scope labels and counts, but not uploaded document
   text, evidence bodies, full source paths, credentials, local private URLs,
   prompts, transcripts, or provider output.
+- Gateway exposes `GET/POST/PUT /v1/professional-workspace` as the no-execute
+  selector for redacted `user_id`, `workspace_id`, and `query_scope`. This is
+  not upload/index readiness.
 - A21 hardware may initiate a professional consult only through Gateway/Core;
   StackChan does not store workspace documents, embeddings, provider keys, or
   V21 credentials.
@@ -196,14 +199,19 @@ Safety rules:
 - `v21-adapter-smoke --output-dir reports` writes `reports/a21-v21-adapter-smoke-YYYYMMDD-HHMMSS.json` with a basename-only `report_path`.
 - `v21-professional-readiness --output-dir reports` writes `reports/a21-v21-professional-readiness-YYYYMMDD-HHMMSS.json` with a basename-only `report_path`.
 - `xiaozhi-professional-bench --output-dir reports` writes `reports/a21-xiaozhi-professional-bench-YYYYMMDD-HHMMSS.NNNNNNNNN.json` with a basename-only `report_path`.
-- V21 smoke reports may include adapter name, protocol, status, configured/executed flags, endpoint host, fixed health/query paths, professional request contract labels, latency, confidence, response counts, and `redaction_ok`. They must not include the user query text, response text, full adapter URL, credentials, API keys, or V21 document content.
-- `product-readiness --v21-adapter-smoke-report <report.json>` ingests an executed smoke report as real adapter-boundary evidence only when it proves the same professional contract (`mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, `max_first_response_ms=1200`), positive confidence, evidence/speech/card/follow-up counts, and report redaction. `product-readiness --v21-professional-report <report.json>` also accepts an `a21.xiaozhi_professional_bench.v1` external-Gateway report when it proves checking feedback, evidence/cards/follow-ups, redaction, and real V21 query markers. Health alone is not enough for launch readiness; the rollup still keeps `prd_accepted=false` and requires physical StackChan and voice evidence separately.
+- V21 smoke reports may include adapter name, protocol, status, configured/executed flags, endpoint host, fixed health/query paths, professional request contract labels, query scope, source-scope counts, workspace status, latency, confidence, response counts, and `redaction_ok`. They must not include the user query text, response text, full adapter URL, credentials, API keys, or V21 document content.
+- `product-readiness --v21-adapter-smoke-report <report.json>` ingests an executed smoke report as real adapter-boundary evidence only when it proves the same professional contract (`mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, `max_first_response_ms=1200`), positive confidence, evidence/speech/card/follow-up counts, and report redaction. Internal test 4 readiness additionally needs the v2 scope fields (`query_scope`, `source_scope_counts`, and `workspace_status`) before cloud workspace readiness can be claimed. `product-readiness --v21-professional-report <report.json>` also accepts an `a21.xiaozhi_professional_bench.v1` external-Gateway report when it proves checking feedback, evidence/cards/follow-ups, redaction, and real V21 query markers. Health alone is not enough for launch readiness; the rollup still keeps `prd_accepted=false` and requires physical StackChan and voice evidence separately.
 - When either executed adapter smoke or external-Gateway professional evidence is accepted, product-readiness mirrors only redacted booleans/counts/status and the basename-only source into `v21.v21_professional_execution`. Host-mock professional reports keep that section invalid and leave canonical `missing_real_evidence=v21_professional_execution` in place.
 - Professional readiness reports may include acknowledgement timing, adapter configured/executed flags, evidence/card/follow-up availability booleans, counts, low-information evidence types, redaction status, and fixed findings. They must not include query text, retrieved text, prompts, transcripts, provider output, reasoning, full URLs, proxy values, local paths, or secrets.
-- HTTP client applies professional defaults: `mode=professional`, `latency_profile=fast_first`, `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
+- HTTP client applies professional defaults: `user_id=a21_local_user`,
+  `workspace_id=a21_local_workspace`, `query_scope=public_only`,
+  `mode=professional`, `latency_profile=fast_first`,
+  `answer_style=voice_first_with_citations`,
+  `privacy_scope=professional_only`, and `max_first_response_ms=1200`.
 - HTTP client and bridge handler validate the professional query contract before
   network or retrieval execution: explicit non-`professional` mode, explicit
-  non-`professional_only` privacy, and empty utterance are rejected locally.
+  non-`professional_only` privacy, invalid `query_scope`, unsafe user/workspace
+  labels, and empty utterance are rejected locally.
 - HTTP client rejects adapter URLs containing credentials.
 - HTTP client rejects known X21/V21 internal legacy ports such as `8000`, `8080`, `18080`, `4173`, `42173`, `16686`, and `16687`. A21 must target an adapter boundary, not V21 internals.
 - Gateway calls V21 only when the request mode is `professional`.

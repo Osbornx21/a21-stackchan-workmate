@@ -152,7 +152,11 @@ func professionalReadinessRequest() QueryRequest {
 	return QueryRequest{
 		TraceID:      "a21-trace-professional-readiness",
 		SessionID:    "a21-session-professional-readiness",
+		DeviceID:     "a21-readiness-device",
+		UserID:       DefaultUserID,
+		WorkspaceID:  DefaultWorkspaceID,
 		Mode:         "professional",
+		QueryScope:   QueryScopePublic,
 		Utterance:    "professional readiness fixture query",
 		PrivacyScope: "professional_only",
 	}

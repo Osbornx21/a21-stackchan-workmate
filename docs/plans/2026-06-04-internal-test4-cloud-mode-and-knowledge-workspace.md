@@ -55,6 +55,15 @@ StackChan hardware.
   `roleplay.profile.ready` plus `roleplay.memory.ready` trace markers without
   storing prompt text, memory text, transcripts, provider output, voice-clone
   samples, or V21 evidence.
+- Gateway now exposes `GET/POST/PUT /v1/professional-workspace` for the
+  professional no-execute workspace contract. It selects redacted `user_id`,
+  `workspace_id`, and `query_scope` (`public_only`, `personal_only`, or
+  `personal_plus_public`) while keeping upload, indexing, and V21 execution
+  separate gates.
+- The A21/V21 adapter query contract now carries v2 fields:
+  `device_id`, `user_id`, `workspace_id`, `query_scope`, source-scope counts,
+  and workspace status. Gateway professional turns pass those fields to the
+  adapter and trace only safe readiness/scope markers.
 
 ## Product Form
 
@@ -256,8 +265,12 @@ Acceptance:
    - `dialogue` compatibility alias;
    - roleplay profile/scenario/voice-clone runtime selector;
    - professional-only V21 boundary unchanged.
-2. Add v2 adapter-plan docs for query scope and workspace fields.
-3. Add a no-execute upload/workspace PRD spec and API contract.
+2. Add v2 adapter-plan docs for query scope and workspace fields. Completed
+   for the Gateway/V21 adapter contract; V21 repository implementation remains
+   a separate worker task.
+3. Add a no-execute upload/workspace PRD spec and API contract. Completed for
+   `/v1/professional-workspace`; file upload/import/index job execution is
+   still not implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;
    - dialogue alias normalization;

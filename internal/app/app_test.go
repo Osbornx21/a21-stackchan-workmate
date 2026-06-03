@@ -1856,6 +1856,10 @@ func TestRunProductReadinessCommandAcceptsV21AdapterSmokeReportAndRedactsOutput(
 		`"evidence_count": 5`,
 		`"card_count": 1`,
 		`"follow_up_count": 1`,
+		`"query_scope": "public_only"`,
+		`"workspace_status": "searchable"`,
+		`"source_scope_counts": {`,
+		`"public": 5`,
 		`"professional_acceptance_status": "adapter_smoke_passed"`,
 		`"source_report": "a21-v21-adapter-smoke-real.json"`,
 		`"adapter_executed": true`,
@@ -1905,6 +1909,9 @@ func TestProductReadinessExposesV21ProfessionalExecutionForRealAdapterReport(t *
 		!execution.EvidenceAvailable ||
 		!execution.CardsAvailable ||
 		!execution.FollowUpsAvailable ||
+		execution.QueryScope != "public_only" ||
+		execution.WorkspaceStatus != "searchable" ||
+		execution.SourceScopeCounts["public"] != 5 ||
 		execution.EvidenceCount != 5 ||
 		execution.CardCount != 1 ||
 		execution.FollowUpCount != 1 ||
@@ -1924,6 +1931,9 @@ func TestProductReadinessExposesV21ProfessionalExecutionForRealAdapterReport(t *
 		`"source_report": "a21-v21-adapter-smoke-real.json"`,
 		`"query_executed": true`,
 		`"adapter_executed": true`,
+		`"query_scope": "public_only"`,
+		`"workspace_status": "searchable"`,
+		`"source_scope_counts": {`,
 		`"redaction_ok": true`,
 		`"prd_accepted": false`,
 	} {
@@ -4097,10 +4107,13 @@ func productReadinessV21AdapterSmokeReportFixtureJSON() string {
   "executed": true,
   "endpoint_host": "127.0.0.1:21121",
   "mode": "professional",
+  "query_scope": "public_only",
   "latency_profile": "fast_first",
   "answer_style": "voice_first_with_citations",
   "privacy_scope": "professional_only",
   "max_first_response_ms": 1200,
+  "source_scope_counts": {"public": 5},
+  "workspace_status": "searchable",
   "query_path": "/a21/v21/query",
   "health_path": "/healthz",
   "duration_ms": 1330.653,

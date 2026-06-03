@@ -474,6 +474,10 @@ Current mock trace events include:
 - `audio.playback.chunk.sent`
 - `xiaozhi.tts.opus_frame.downlink`
 - `professional.checking_feedback.sent`
+- `professional.workspace.ready`
+- `professional.query_scope.public_only`
+- `professional.query_scope.personal_only`
+- `professional.query_scope.personal_plus_public`
 - `xiaozhi.professional_asr_empty`
 - `xiaozhi.professional_asr_unavailable`
 - `xiaozhi.professional_result_suppressed`
@@ -511,10 +515,12 @@ adapter-boundary execution evidence. Product readiness accepts it only when the
 report keeps the professional query contract visible through fixed labels
 (`mode=professional`, `latency_profile=fast_first`,
 `answer_style=voice_first_with_citations`, `privacy_scope=professional_only`,
-`max_first_response_ms=1200`), has positive confidence plus evidence, speech,
-card, and follow-up counts, records `redaction_ok=true`, and stores only a
-basename `report_path`. It still does not prove physical StackChan audio,
-provider TTS, or PRD launch acceptance by itself.
+`query_scope=public_only` by default, `max_first_response_ms=1200`), has
+positive confidence plus evidence, speech, card, and follow-up counts, can carry
+redacted `source_scope_counts` and `workspace_status`, records
+`redaction_ok=true`, and stores only a basename `report_path`. It still does
+not prove physical StackChan audio, provider TTS, personal workspace indexing,
+or PRD launch acceptance by itself.
 
 ## Voice Waterfall Events
 

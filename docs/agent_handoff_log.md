@@ -9988,3 +9988,87 @@ Recommended next action:
   roleplay runtime slice if clean, then continue with the next internal test 4
   slice: no-execute upload/workspace API contract plus V21 adapter v2
   `workspace_id`/`query_scope` fields.
+
+## 2026-06-04 06:12 CST - Internal Test 4 Professional Workspace Contract Slice
+
+Round goal:
+
+- Continue internal test 4 by landing the no-execute professional workspace and
+  V21 adapter v2 query-scope contract, without claiming cloud upload/index
+  readiness or touching firmware/hardware.
+
+Actual completed work:
+
+- Added Gateway `GET/POST/PUT /v1/professional-workspace` with schema
+  `a21.gateway.professional_workspace.v1`.
+- Added redacted professional context selection for `user_id`, `workspace_id`,
+  and `query_scope`.
+- Supported query scopes: `public_only`, `personal_only`, and
+  `personal_plus_public`.
+- Extended the A21/V21 adapter query request with v2 fields:
+  `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- Extended adapter responses and smoke/readiness surfaces with redacted
+  `source_scope_counts` and `workspace_status`.
+- Wired Gateway professional turns and stock Xiaozhi professional turns to send
+  the selected workspace/query-scope context to the V21 adapter.
+- Added simulator `professionalQueryScope` control.
+- Updated protocol, V21 integration, observability, current control, internal
+  test 4 plan, and state machine docs.
+- Product-readiness remains compatible with old v1 smoke reports while
+  mirroring optional v2 scope/status/count fields when present.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/v21adapter/client.go`
+- `internal/v21adapter/client_test.go`
+- `internal/v21adapter/smoke.go`
+- `internal/v21adapter/professional_readiness.go`
+- `internal/app/professional_adapter_bridge.go`
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/V21_INTEGRATION.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No file upload/import/index job execution was implemented.
+- No durable auth/account/device binding store was implemented.
+- No V21 repository-side personal/public corpus enforcement was implemented.
+- Hardware professional consult evidence and physical StackChan PRD acceptance
+  remain open.
+- The hardware parity gap-map worker still has not returned in this control
+  thread.
+
+Known risks/blockers:
+
+- `personal_only` and `personal_plus_public` are contract scopes only until V21
+  and cloud upload/index workers implement source-scope enforcement.
+- Product-readiness accepts v1 adapter smoke for internal test 3 evidence; do
+  not reinterpret that as internal test 4 cloud workspace readiness.
+- Professional traces must continue to avoid user/workspace labels, utterance
+  text, retrieved text, URLs, paths, and secrets.
+
+Test/build/runtime results:
+
+- `go test ./internal/v21adapter ./internal/gateway ./internal/app -run 'HTTPClientPostsProfessionalQueryContract|HTTPClientPostsExplicitWorkspaceScopeContract|ProfessionalWorkspace|ProfessionalModeSendsExplicitV21PlaceholderContract|SimulatorPageServed|V21Adapter|Professional' -count=1`:
+  passed.
+- `go test ./internal/v21adapter ./internal/gateway ./internal/app -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Commit/push this workspace contract slice if the staged range remains
+  limited to the files above.
+- Next implementation candidate: no-execute upload/import/index job API
+  skeleton with redacted job status, followed by a V21-side worker for
+  personal/public corpus enforcement.

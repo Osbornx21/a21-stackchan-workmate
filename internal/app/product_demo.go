@@ -115,36 +115,42 @@ type productV21Readiness struct {
 }
 
 type productV21ProfessionalReadiness struct {
-	Valid                        bool   `json:"valid"`
-	CheckingAckWithin1200        bool   `json:"checking_ack_within_1200"`
-	EvidenceAvailable            bool   `json:"evidence_available"`
-	CardsAvailable               bool   `json:"cards_available"`
-	FollowUpsAvailable           bool   `json:"follow_ups_available"`
-	EvidenceCount                int    `json:"evidence_count"`
-	CardCount                    int    `json:"card_count"`
-	FollowUpCount                int    `json:"follow_up_count"`
-	ProfessionalAcceptanceStatus string `json:"professional_acceptance_status,omitempty"`
-	SourceReport                 string `json:"source_report,omitempty"`
-	AdapterExecuted              bool   `json:"adapter_executed"`
-	PRDAccepted                  bool   `json:"prd_accepted"`
+	Valid                        bool           `json:"valid"`
+	CheckingAckWithin1200        bool           `json:"checking_ack_within_1200"`
+	EvidenceAvailable            bool           `json:"evidence_available"`
+	CardsAvailable               bool           `json:"cards_available"`
+	FollowUpsAvailable           bool           `json:"follow_ups_available"`
+	QueryScope                   string         `json:"query_scope,omitempty"`
+	WorkspaceStatus              string         `json:"workspace_status,omitempty"`
+	SourceScopeCounts            map[string]int `json:"source_scope_counts,omitempty"`
+	EvidenceCount                int            `json:"evidence_count"`
+	CardCount                    int            `json:"card_count"`
+	FollowUpCount                int            `json:"follow_up_count"`
+	ProfessionalAcceptanceStatus string         `json:"professional_acceptance_status,omitempty"`
+	SourceReport                 string         `json:"source_report,omitempty"`
+	AdapterExecuted              bool           `json:"adapter_executed"`
+	PRDAccepted                  bool           `json:"prd_accepted"`
 }
 
 type productV21ProfessionalExecutionReadiness struct {
-	Valid                        bool   `json:"valid"`
-	SourceKind                   string `json:"source_kind,omitempty"`
-	SourceReport                 string `json:"source_report,omitempty"`
-	QueryExecuted                bool   `json:"query_executed"`
-	AdapterExecuted              bool   `json:"adapter_executed"`
-	CheckingAckWithin1200        bool   `json:"checking_ack_within_1200"`
-	EvidenceAvailable            bool   `json:"evidence_available"`
-	CardsAvailable               bool   `json:"cards_available"`
-	FollowUpsAvailable           bool   `json:"follow_ups_available"`
-	EvidenceCount                int    `json:"evidence_count"`
-	CardCount                    int    `json:"card_count"`
-	FollowUpCount                int    `json:"follow_up_count"`
-	ProfessionalAcceptanceStatus string `json:"professional_acceptance_status,omitempty"`
-	RedactionOK                  bool   `json:"redaction_ok"`
-	PRDAccepted                  bool   `json:"prd_accepted"`
+	Valid                        bool           `json:"valid"`
+	SourceKind                   string         `json:"source_kind,omitempty"`
+	SourceReport                 string         `json:"source_report,omitempty"`
+	QueryExecuted                bool           `json:"query_executed"`
+	AdapterExecuted              bool           `json:"adapter_executed"`
+	QueryScope                   string         `json:"query_scope,omitempty"`
+	WorkspaceStatus              string         `json:"workspace_status,omitempty"`
+	SourceScopeCounts            map[string]int `json:"source_scope_counts,omitempty"`
+	CheckingAckWithin1200        bool           `json:"checking_ack_within_1200"`
+	EvidenceAvailable            bool           `json:"evidence_available"`
+	CardsAvailable               bool           `json:"cards_available"`
+	FollowUpsAvailable           bool           `json:"follow_ups_available"`
+	EvidenceCount                int            `json:"evidence_count"`
+	CardCount                    int            `json:"card_count"`
+	FollowUpCount                int            `json:"follow_up_count"`
+	ProfessionalAcceptanceStatus string         `json:"professional_acceptance_status,omitempty"`
+	RedactionOK                  bool           `json:"redaction_ok"`
+	PRDAccepted                  bool           `json:"prd_accepted"`
 }
 
 type productStackChanReadiness struct {
@@ -2502,6 +2508,9 @@ func buildProductV21ProfessionalExecutionReadiness(professional productV21Profes
 		SourceReport:                 professional.SourceReport,
 		QueryExecuted:                true,
 		AdapterExecuted:              true,
+		QueryScope:                   professional.QueryScope,
+		WorkspaceStatus:              professional.WorkspaceStatus,
+		SourceScopeCounts:            copyStringIntMap(professional.SourceScopeCounts),
 		CheckingAckWithin1200:        professional.CheckingAckWithin1200,
 		EvidenceAvailable:            professional.EvidenceAvailable,
 		CardsAvailable:               professional.CardsAvailable,
@@ -2512,6 +2521,40 @@ func buildProductV21ProfessionalExecutionReadiness(professional productV21Profes
 		ProfessionalAcceptanceStatus: professional.ProfessionalAcceptanceStatus,
 		RedactionOK:                  true,
 		PRDAccepted:                  false,
+	}
+}
+
+func copyStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func validProductV21SourceScopeCounts(counts map[string]int) bool {
+	for scope, count := range counts {
+		switch scope {
+		case "public", "personal":
+		default:
+			return false
+		}
+		if count < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validProductV21WorkspaceStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "searchable", "uploaded", "indexing", "failed", "unavailable":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -3703,26 +3746,29 @@ func productV21ProfessionalReportContainsForbiddenValue(value any) bool {
 }
 
 type productV21AdapterSmokeReportFixture struct {
-	SchemaVersion      string   `json:"schema_version"`
-	GeneratedAtMS      *int64   `json:"generated_at_ms"`
-	Adapter            string   `json:"adapter"`
-	Protocol           string   `json:"protocol"`
-	Status             string   `json:"status"`
-	Configured         *bool    `json:"configured"`
-	Executed           *bool    `json:"executed"`
-	Mode               string   `json:"mode"`
-	LatencyProfile     string   `json:"latency_profile"`
-	AnswerStyle        string   `json:"answer_style"`
-	PrivacyScope       string   `json:"privacy_scope"`
-	MaxFirstResponseMS *int     `json:"max_first_response_ms"`
-	QueryPath          string   `json:"query_path"`
-	HealthPath         string   `json:"health_path"`
-	EvidenceCount      *int     `json:"evidence_count"`
-	SpeechBlockCount   *int     `json:"speech_block_count"`
-	ScreenCardCount    *int     `json:"screen_card_count"`
-	FollowUpCount      *int     `json:"follow_up_count"`
-	Confidence         *float64 `json:"confidence"`
-	RedactionOK        *bool    `json:"redaction_ok"`
+	SchemaVersion      string         `json:"schema_version"`
+	GeneratedAtMS      *int64         `json:"generated_at_ms"`
+	Adapter            string         `json:"adapter"`
+	Protocol           string         `json:"protocol"`
+	Status             string         `json:"status"`
+	Configured         *bool          `json:"configured"`
+	Executed           *bool          `json:"executed"`
+	Mode               string         `json:"mode"`
+	QueryScope         string         `json:"query_scope"`
+	LatencyProfile     string         `json:"latency_profile"`
+	AnswerStyle        string         `json:"answer_style"`
+	PrivacyScope       string         `json:"privacy_scope"`
+	MaxFirstResponseMS *int           `json:"max_first_response_ms"`
+	WorkspaceStatus    string         `json:"workspace_status"`
+	SourceScopeCounts  map[string]int `json:"source_scope_counts"`
+	QueryPath          string         `json:"query_path"`
+	HealthPath         string         `json:"health_path"`
+	EvidenceCount      *int           `json:"evidence_count"`
+	SpeechBlockCount   *int           `json:"speech_block_count"`
+	ScreenCardCount    *int           `json:"screen_card_count"`
+	FollowUpCount      *int           `json:"follow_up_count"`
+	Confidence         *float64       `json:"confidence"`
+	RedactionOK        *bool          `json:"redaction_ok"`
 }
 
 func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readiness) (productV21ProfessionalReadiness, []productReadinessFinding) {
@@ -3780,12 +3826,26 @@ func loadProductV21AdapterSmokeReportEvidence(path string, v21 productV21Readine
 		!*fixture.RedactionOK {
 		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
 	}
+	queryScope := strings.TrimSpace(fixture.QueryScope)
+	if queryScope != "" && !v21adapter.ValidQueryScope(queryScope) {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	workspaceStatus := strings.TrimSpace(fixture.WorkspaceStatus)
+	if workspaceStatus != "" && !validProductV21WorkspaceStatus(workspaceStatus) {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
+	if len(fixture.SourceScopeCounts) > 0 && !validProductV21SourceScopeCounts(fixture.SourceScopeCounts) {
+		return productV21ProfessionalReadiness{}, []productReadinessFinding{invalidProductV21AdapterSmokeReportFinding()}
+	}
 	return productV21ProfessionalReadiness{
 		Valid:                        true,
 		CheckingAckWithin1200:        v21.CheckingFeedbackSupported && v21.MaxFirstResponseMS <= v21adapter.ProfessionalMaxFirstResponseMS,
 		EvidenceAvailable:            *fixture.EvidenceCount > 0,
 		CardsAvailable:               *fixture.ScreenCardCount > 0,
 		FollowUpsAvailable:           *fixture.FollowUpCount > 0,
+		QueryScope:                   queryScope,
+		WorkspaceStatus:              workspaceStatus,
+		SourceScopeCounts:            copyStringIntMap(fixture.SourceScopeCounts),
 		EvidenceCount:                *fixture.EvidenceCount,
 		CardCount:                    *fixture.ScreenCardCount,
 		FollowUpCount:                *fixture.FollowUpCount,

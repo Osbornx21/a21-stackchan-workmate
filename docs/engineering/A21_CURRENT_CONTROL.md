@@ -580,3 +580,33 @@ Current conclusion:
   fast-companion/dialogue endpoints.
 - Cloud upload/index/query-scope and hardware professional consult remain
   planned work, not readiness claims.
+
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Professional Workspace Contract
+
+The next internal test 4 cut gives professional mode an explicit workspace and
+query-scope contract without implementing cloud upload/index execution yet.
+
+Current implementation state:
+
+- Gateway exposes `GET/POST/PUT /v1/professional-workspace` with schema
+  `a21.gateway.professional_workspace.v1`.
+- The selected professional context carries redacted `user_id`,
+  `workspace_id`, and `query_scope`.
+- Supported contract scopes are `public_only`, `personal_only`, and
+  `personal_plus_public`.
+- Professional turns now send `device_id`, `user_id`, `workspace_id`, and
+  `query_scope` to the A21/V21 adapter contract v2.
+- Gateway traces only `professional.workspace.ready` and
+  `professional.query_scope.<scope>`; it does not trace user/workspace labels
+  or utterance text.
+- V21 adapter responses and smoke reports can carry redacted
+  `source_scope_counts` and `workspace_status`.
+
+Current conclusion:
+
+- A21 now has the no-execute professional workspace/query-scope API contract
+  needed for cloud/app and V21-side workers.
+- Upload/import/index job APIs, durable account binding, and personal corpus
+  enforcement remain separate unshipped slices.
+- Full PRD readiness remains blocked by cloud workspace execution, hardware
+  professional consult evidence, and physical StackChan acceptance.

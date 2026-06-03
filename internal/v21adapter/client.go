@@ -18,6 +18,15 @@ const HealthPath = "/healthz"
 const ProfessionalMaxFirstResponseMS = 1200
 const ProfessionalCheckingFeedbackText = "我在查，先把证据和置信度拉出来。"
 
+const (
+	DefaultUserID       = "a21_local_user"
+	DefaultWorkspaceID  = "a21_local_workspace"
+	QueryScopePublic    = "public_only"
+	QueryScopePersonal  = "personal_only"
+	QueryScopeCombined  = "personal_plus_public"
+	WorkspaceSearchable = "searchable"
+)
+
 type QueryFailureClass string
 
 const (
@@ -90,7 +99,11 @@ type Client interface {
 type QueryRequest struct {
 	TraceID            string `json:"trace_id"`
 	SessionID          string `json:"session_id"`
+	DeviceID           string `json:"device_id,omitempty"`
+	UserID             string `json:"user_id,omitempty"`
+	WorkspaceID        string `json:"workspace_id,omitempty"`
 	Mode               string `json:"mode"`
+	QueryScope         string `json:"query_scope,omitempty"`
 	Utterance          string `json:"utterance"`
 	LatencyProfile     string `json:"latency_profile"`
 	AnswerStyle        string `json:"answer_style"`
@@ -112,13 +125,15 @@ type ScreenCard struct {
 }
 
 type QueryResponse struct {
-	TraceID      string       `json:"trace_id"`
-	FastAnswer   string       `json:"fast_answer"`
-	Confidence   float64      `json:"confidence"`
-	Evidence     []Evidence   `json:"evidence"`
-	SpeechBlocks []string     `json:"speech_blocks"`
-	ScreenCards  []ScreenCard `json:"screen_cards"`
-	FollowUps    []string     `json:"follow_ups"`
+	TraceID           string         `json:"trace_id"`
+	FastAnswer        string         `json:"fast_answer"`
+	Confidence        float64        `json:"confidence"`
+	Evidence          []Evidence     `json:"evidence"`
+	SpeechBlocks      []string       `json:"speech_blocks"`
+	ScreenCards       []ScreenCard   `json:"screen_cards"`
+	FollowUps         []string       `json:"follow_ups"`
+	SourceScopeCounts map[string]int `json:"source_scope_counts,omitempty"`
+	WorkspaceStatus   string         `json:"workspace_status,omitempty"`
 }
 
 type ProfessionalBridgeReceipt struct {
@@ -136,6 +151,8 @@ type ProfessionalBridgeEvidenceReport struct {
 	SchemaVersion     string                            `json:"schema_version"`
 	TraceID           string                            `json:"trace_id,omitempty"`
 	Status            string                            `json:"status"`
+	WorkspaceStatus   string                            `json:"workspace_status,omitempty"`
+	SourceScopeCounts map[string]int                    `json:"source_scope_counts,omitempty"`
 	EvidenceCompleted bool                              `json:"evidence_completed"`
 	ConfidencePresent bool                              `json:"confidence_present"`
 	EvidenceCount     int                               `json:"evidence_count"`
@@ -214,10 +231,10 @@ func NewHTTPClient(baseURL string) (*HTTPClient, error) {
 }
 
 func (c *HTTPClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	request = withDefaults(request)
 	if err := ValidateProfessionalQueryRequest(request); err != nil {
 		return QueryResponse{}, &QueryFailure{Class: QueryFailureContractInvalid}
 	}
-	request = withDefaults(request)
 	body, err := json.Marshal(request)
 	if err != nil {
 		return QueryResponse{}, err
@@ -276,10 +293,10 @@ func ProbeHealth(ctx context.Context, baseURL string, httpClient *http.Client) e
 }
 
 func NewProfessionalBridgeReceipt(request QueryRequest) (ProfessionalBridgeReceipt, error) {
+	request = withDefaults(request)
 	if err := ValidateProfessionalQueryRequest(request); err != nil {
 		return ProfessionalBridgeReceipt{}, err
 	}
-	request = withDefaults(request)
 	return ProfessionalBridgeReceipt{
 		SchemaVersion:      "a21.v21_professional_bridge_receipt.v1",
 		TraceID:            request.TraceID,
@@ -300,6 +317,8 @@ func NewProfessionalBridgeEvidenceReport(response QueryResponse) (ProfessionalBr
 		SchemaVersion:     "a21.v21_professional_bridge_evidence.v1",
 		TraceID:           response.TraceID,
 		Status:            "evidence_completed",
+		WorkspaceStatus:   redactedWorkspaceStatus(response.WorkspaceStatus),
+		SourceScopeCounts: redactedSourceScopeCounts(response.SourceScopeCounts),
 		EvidenceCompleted: true,
 		ConfidencePresent: true,
 		EvidenceCount:     len(response.Evidence),
@@ -458,10 +477,10 @@ func NewMockClient() MockClient {
 }
 
 func (MockClient) Query(ctx context.Context, request QueryRequest) (QueryResponse, error) {
+	request = withDefaults(request)
 	if err := ValidateProfessionalQueryRequest(request); err != nil {
 		return QueryResponse{}, err
 	}
-	request = withDefaults(request)
 	return QueryResponse{
 		TraceID:    request.TraceID,
 		FastAnswer: "历史讨论主要集中在多人说话、相似音节误唤醒和连续对话残留监听三个场景。",
@@ -487,6 +506,8 @@ func (MockClient) Query(ctx context.Context, request QueryRequest) (QueryRespons
 			"要不要按车型展开？",
 			"要不要查对应埋点口径？",
 		},
+		SourceScopeCounts: mockSourceScopeCounts(request.QueryScope),
+		WorkspaceStatus:   WorkspaceSearchable,
 	}, nil
 }
 
@@ -499,6 +520,21 @@ func ValidateProfessionalQueryRequest(request QueryRequest) error {
 	}
 	if privacyScope := strings.TrimSpace(request.PrivacyScope); privacyScope != "" && privacyScope != "professional_only" {
 		return fmt.Errorf("v21 adapter accepts only professional_only privacy scope")
+	}
+	if queryScope := strings.TrimSpace(request.QueryScope); queryScope != "" && !ValidQueryScope(queryScope) {
+		return fmt.Errorf("v21 adapter query_scope must be public_only, personal_only, or personal_plus_public")
+	}
+	for _, label := range []struct {
+		name  string
+		value string
+	}{
+		{name: "device_id", value: request.DeviceID},
+		{name: "user_id", value: request.UserID},
+		{name: "workspace_id", value: request.WorkspaceID},
+	} {
+		if strings.TrimSpace(label.value) != "" && !safeAdapterLabel(label.value) {
+			return fmt.Errorf("v21 adapter %s must be a redacted A21 label", label.name)
+		}
 	}
 	return nil
 }
@@ -517,14 +553,27 @@ func ValidateProfessionalQueryResponse(response QueryResponse) error {
 		return fmt.Errorf("v21 adapter professional response contract invalid: missing screen_cards")
 	case len(response.FollowUps) == 0:
 		return fmt.Errorf("v21 adapter professional response contract invalid: missing follow_ups")
+	case !validSourceScopeCounts(response.SourceScopeCounts):
+		return fmt.Errorf("v21 adapter professional response contract invalid: invalid source_scope_counts")
+	case strings.TrimSpace(response.WorkspaceStatus) != "" && redactedWorkspaceStatus(response.WorkspaceStatus) == "":
+		return fmt.Errorf("v21 adapter professional response contract invalid: invalid workspace_status")
 	default:
 		return nil
 	}
 }
 
 func withDefaults(request QueryRequest) QueryRequest {
+	if request.UserID == "" {
+		request.UserID = DefaultUserID
+	}
+	if request.WorkspaceID == "" {
+		request.WorkspaceID = DefaultWorkspaceID
+	}
 	if request.Mode == "" {
 		request.Mode = "professional"
+	}
+	if request.QueryScope == "" {
+		request.QueryScope = QueryScopePublic
 	}
 	if request.LatencyProfile == "" {
 		request.LatencyProfile = "fast_first"
@@ -539,6 +588,82 @@ func withDefaults(request QueryRequest) QueryRequest {
 		request.PrivacyScope = "professional_only"
 	}
 	return request
+}
+
+func ValidQueryScope(scope string) bool {
+	switch strings.TrimSpace(scope) {
+	case QueryScopePublic, QueryScopePersonal, QueryScopeCombined:
+		return true
+	default:
+		return false
+	}
+}
+
+func safeAdapterLabel(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 96 {
+		return false
+	}
+	lower := strings.ToLower(value)
+	for _, forbidden := range []string{"http://", "https://", "/", "\\", "api_key", "secret", "token"} {
+		if strings.Contains(lower, forbidden) {
+			return false
+		}
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == ':' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func mockSourceScopeCounts(queryScope string) map[string]int {
+	switch queryScope {
+	case QueryScopePersonal:
+		return map[string]int{"personal": 1}
+	case QueryScopeCombined:
+		return map[string]int{"public": 1, "personal": 1}
+	default:
+		return map[string]int{"public": 1}
+	}
+}
+
+func validSourceScopeCounts(counts map[string]int) bool {
+	for scope, count := range counts {
+		switch scope {
+		case "public", "personal":
+		default:
+			return false
+		}
+		if count < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func redactedSourceScopeCounts(counts map[string]int) map[string]int {
+	if !validSourceScopeCounts(counts) || len(counts) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(counts))
+	for scope, count := range counts {
+		out[scope] = count
+	}
+	return out
+}
+
+func redactedWorkspaceStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "", "unknown":
+		return ""
+	case WorkspaceSearchable, "uploaded", "indexing", "failed", "unavailable":
+		return strings.TrimSpace(status)
+	default:
+		return ""
+	}
 }
 
 func redactedEvidenceType(value string) string {

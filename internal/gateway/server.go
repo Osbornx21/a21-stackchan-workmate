@@ -45,50 +45,53 @@ const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
 type Server struct {
-	mu                         sync.Mutex
-	next                       uint64
-	now                        func() time.Time
-	metrics                    *metrics
-	voice                      providers.VoiceProvider
-	v21                        v21adapter.Client
-	v21TTL                     time.Duration
-	devices                    map[string]DeviceRecord
-	traces                     map[string][]TraceEvent
-	audioStreams               map[string]string
-	activeStreams              map[string]string
-	realtimeAudio              map[string]providers.RealtimeVoiceSession
-	realtimeAudioCommitAt      map[string]time.Time
-	realtimeAudioFirstDownlink map[string]bool
-	audioProbeSessions         map[string]bool
-	mockPlaybackArmedSessions  map[string]int
-	realtimeArmedSessions      map[string]bool
-	audioIngress               *audio.Ingress
-	audioSockets               map[string]*deviceSocket
-	xiaozhiSockets             map[string]*xiaozhiDeviceSocket
-	officialStackChanSockets   map[string]*deviceSocket
-	audioCaptureFrames         []AudioCaptureFrame
-	xiaozhiVoicePipelineRunner func() xiaozhiVoicePipelineRunner
-	xiaozhiVoicePipelineMeta   xiaozhiVoicePipelineMeta
-	xiaozhiVoicePipelineASR    providers.ASRAdapter
-	xiaozhiProfessionalASR     providers.ASRAdapter
-	xiaozhiFastAckTTS          providers.TTSAdapter
-	xiaozhiStockProfessional   bool
-	xiaozhiListenMaxDurationMS int64
-	wakeWordConfigPath         string
-	voiceModeConfig            string
-	roleplayProfileConfig      string
-	roleplayScenarioConfig     string
-	voiceChainModeConfig       string
-	cascadeASRProfileConfig    string
-	cascadeLLMProfileConfig    string
-	fixedTTSProfileConfig      string
-	realtimeProviderConfig     string
-	voiceCloneProfileConfig    string
-	gatewayProfileConfig       string
-	cloudVoiceProfileConfig    string
-	cloudVoiceEnv              []string
-	macLocalGatewayURL         string
-	publicGatewayURL           string
+	mu                           sync.Mutex
+	next                         uint64
+	now                          func() time.Time
+	metrics                      *metrics
+	voice                        providers.VoiceProvider
+	v21                          v21adapter.Client
+	v21TTL                       time.Duration
+	devices                      map[string]DeviceRecord
+	traces                       map[string][]TraceEvent
+	audioStreams                 map[string]string
+	activeStreams                map[string]string
+	realtimeAudio                map[string]providers.RealtimeVoiceSession
+	realtimeAudioCommitAt        map[string]time.Time
+	realtimeAudioFirstDownlink   map[string]bool
+	audioProbeSessions           map[string]bool
+	mockPlaybackArmedSessions    map[string]int
+	realtimeArmedSessions        map[string]bool
+	audioIngress                 *audio.Ingress
+	audioSockets                 map[string]*deviceSocket
+	xiaozhiSockets               map[string]*xiaozhiDeviceSocket
+	officialStackChanSockets     map[string]*deviceSocket
+	audioCaptureFrames           []AudioCaptureFrame
+	xiaozhiVoicePipelineRunner   func() xiaozhiVoicePipelineRunner
+	xiaozhiVoicePipelineMeta     xiaozhiVoicePipelineMeta
+	xiaozhiVoicePipelineASR      providers.ASRAdapter
+	xiaozhiProfessionalASR       providers.ASRAdapter
+	xiaozhiFastAckTTS            providers.TTSAdapter
+	xiaozhiStockProfessional     bool
+	xiaozhiListenMaxDurationMS   int64
+	wakeWordConfigPath           string
+	voiceModeConfig              string
+	roleplayProfileConfig        string
+	roleplayScenarioConfig       string
+	professionalUserIDConfig     string
+	professionalWorkspaceConfig  string
+	professionalQueryScopeConfig string
+	voiceChainModeConfig         string
+	cascadeASRProfileConfig      string
+	cascadeLLMProfileConfig      string
+	fixedTTSProfileConfig        string
+	realtimeProviderConfig       string
+	voiceCloneProfileConfig      string
+	gatewayProfileConfig         string
+	cloudVoiceProfileConfig      string
+	cloudVoiceEnv                []string
+	macLocalGatewayURL           string
+	publicGatewayURL             string
 }
 
 type ServerOptions struct {
@@ -242,6 +245,61 @@ type RoleplayRuntimeSummary struct {
 	VoiceCloneSampleStored   bool   `json:"voice_clone_sample_stored"`
 	ProfessionalRouteAllowed bool   `json:"professional_route_allowed"`
 	V21Executed              bool   `json:"v21_executed"`
+}
+
+type ProfessionalWorkspaceOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Default     bool   `json:"default,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type ProfessionalWorkspaceSelectionRequest struct {
+	UserID      string `json:"user_id,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	QueryScope  string `json:"query_scope,omitempty"`
+}
+
+type ProfessionalWorkspaceResponse struct {
+	SchemaVersion          string                         `json:"schema_version"`
+	Service                string                         `json:"service"`
+	AdapterContractVersion string                         `json:"adapter_contract_version"`
+	SelectedUserID         string                         `json:"selected_user_id"`
+	SelectedWorkspaceID    string                         `json:"selected_workspace_id"`
+	SelectedQueryScope     string                         `json:"selected_query_scope"`
+	WorkspaceStatus        string                         `json:"workspace_status"`
+	PrivacyScope           string                         `json:"privacy_scope"`
+	V21ExecutionAllowed    bool                           `json:"v21_execution_allowed"`
+	Runtime                ProfessionalWorkspaceRuntime   `json:"runtime"`
+	QueryScopes            []ProfessionalWorkspaceOption  `json:"query_scopes"`
+	Redaction              ProfessionalWorkspaceRedaction `json:"redaction"`
+}
+
+type ProfessionalWorkspaceRuntime struct {
+	SchemaVersion          string `json:"schema_version"`
+	Mode                   string `json:"mode"`
+	UserID                 string `json:"user_id"`
+	WorkspaceID            string `json:"workspace_id"`
+	QueryScope             string `json:"query_scope"`
+	PrivacyScope           string `json:"privacy_scope"`
+	AdapterContractVersion string `json:"adapter_contract_version"`
+	WorkspaceStatus        string `json:"workspace_status"`
+	UploadAPIReady         bool   `json:"upload_api_ready"`
+	IndexingAPIReady       bool   `json:"indexing_api_ready"`
+	QueryScopeReady        bool   `json:"query_scope_ready"`
+	V21ExecutionAllowed    bool   `json:"v21_execution_allowed"`
+}
+
+type ProfessionalWorkspaceRedaction struct {
+	DocumentTextStored    bool `json:"document_text_stored"`
+	QueryTextStored       bool `json:"query_text_stored"`
+	RetrievedTextStored   bool `json:"retrieved_text_stored"`
+	FullURLStored         bool `json:"full_url_stored"`
+	LocalPathStored       bool `json:"local_path_stored"`
+	CredentialValueStored bool `json:"credential_value_stored"`
+	ProviderOutputStored  bool `json:"provider_output_stored"`
+	VoiceTranscriptStored bool `json:"voice_transcript_stored"`
 }
 
 type DeviceControlRequest struct {
@@ -523,30 +581,33 @@ type XiaozhiOTAWebSocketConfig struct {
 }
 
 const (
-	DeviceRegistrySchemaVersion    = "a21.gateway.devices.v1"
-	DeviceRegistryServiceName      = "a21-gateway"
-	VoiceModeSchemaVersion         = "a21.gateway.voice_modes.v1"
-	VoiceModeDialogue              = "dialogue"
-	VoiceModeRoleplay              = "roleplay"
-	VoiceModeProfessional          = "professional"
-	RoleplayProfileSchemaVersion   = "a21.gateway.roleplay_profile.v1"
-	DefaultRoleplayProfile         = "a21_roleplay_default"
-	DefaultRoleplayScenario        = "desk_mouthpiece"
-	VoiceChainProfileSchemaVersion = "a21.gateway.voice_chain_profiles.v1"
-	VoiceChainModeCascade          = "cascade"
-	VoiceChainModeRealtime         = "realtime"
-	DefaultCascadeASRProfile       = "dashscope_qwen_asr_realtime"
-	DefaultCascadeLLMProfile       = "stepfun"
-	DefaultFixedTTSProfile         = "dashscope_qwen_tts_realtime"
-	DefaultRealtimeProvider        = "doubao_realtime"
-	DefaultVoiceCloneProfile       = "a21_voice_default_dashscope"
-	GatewayProfileSchemaVersion    = "a21.gateway.profiles.v1"
-	GatewayProfileMacLocal         = "mac_local"
-	GatewayProfilePublicWSS        = "public_wss"
-	CloudVoiceProfileSchemaVersion = "a21.gateway.cloud_voice_profiles.v1"
-	AudioRecentSchemaVersion       = "a21.gateway.audio_recent.v1"
-	maxAudioCaptureFrames          = 512
-	xiaozhiOTAWebSocketVersion     = 1
+	DeviceRegistrySchemaVersion               = "a21.gateway.devices.v1"
+	DeviceRegistryServiceName                 = "a21-gateway"
+	VoiceModeSchemaVersion                    = "a21.gateway.voice_modes.v1"
+	VoiceModeDialogue                         = "dialogue"
+	VoiceModeRoleplay                         = "roleplay"
+	VoiceModeProfessional                     = "professional"
+	RoleplayProfileSchemaVersion              = "a21.gateway.roleplay_profile.v1"
+	DefaultRoleplayProfile                    = "a21_roleplay_default"
+	DefaultRoleplayScenario                   = "desk_mouthpiece"
+	ProfessionalWorkspaceSchemaVersion        = "a21.gateway.professional_workspace.v1"
+	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
+	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
+	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
+	VoiceChainModeCascade                     = "cascade"
+	VoiceChainModeRealtime                    = "realtime"
+	DefaultCascadeASRProfile                  = "dashscope_qwen_asr_realtime"
+	DefaultCascadeLLMProfile                  = "stepfun"
+	DefaultFixedTTSProfile                    = "dashscope_qwen_tts_realtime"
+	DefaultRealtimeProvider                   = "doubao_realtime"
+	DefaultVoiceCloneProfile                  = "a21_voice_default_dashscope"
+	GatewayProfileSchemaVersion               = "a21.gateway.profiles.v1"
+	GatewayProfileMacLocal                    = "mac_local"
+	GatewayProfilePublicWSS                   = "public_wss"
+	CloudVoiceProfileSchemaVersion            = "a21.gateway.cloud_voice_profiles.v1"
+	AudioRecentSchemaVersion                  = "a21.gateway.audio_recent.v1"
+	maxAudioCaptureFrames                     = 512
+	xiaozhiOTAWebSocketVersion                = 1
 )
 
 const (
@@ -680,47 +741,50 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	initialRealtimeProvider := defaultRealtimeProvider(gatewayEnvValue(options.CloudVoiceEnv, "A21_PROVIDER_PRIMARY"))
 	initialVoiceCloneProfile := defaultVoiceCloneProfile(gatewayEnvValue(options.CloudVoiceEnv, "A21_VOICE_CLONE_PROFILE"))
 	return &Server{
-		now:                        time.Now,
-		metrics:                    newMetrics(),
-		voice:                      voiceProvider,
-		v21:                        v21Client,
-		v21TTL:                     v21TTL,
-		devices:                    make(map[string]DeviceRecord),
-		traces:                     make(map[string][]TraceEvent),
-		audioStreams:               make(map[string]string),
-		activeStreams:              make(map[string]string),
-		realtimeAudio:              make(map[string]providers.RealtimeVoiceSession),
-		realtimeAudioCommitAt:      make(map[string]time.Time),
-		realtimeAudioFirstDownlink: make(map[string]bool),
-		audioProbeSessions:         make(map[string]bool),
-		mockPlaybackArmedSessions:  make(map[string]int),
-		realtimeArmedSessions:      make(map[string]bool),
-		audioIngress:               audio.NewIngress(options.AudioIngressConfig),
-		audioSockets:               make(map[string]*deviceSocket),
-		xiaozhiSockets:             make(map[string]*xiaozhiDeviceSocket),
-		officialStackChanSockets:   make(map[string]*deviceSocket),
-		audioCaptureFrames:         make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
-		xiaozhiVoicePipelineRunner: xiaozhiRunnerFactory,
-		xiaozhiVoicePipelineMeta:   xiaozhiPipelineMeta,
-		xiaozhiVoicePipelineASR:    xiaozhiVoicePipelineASR,
-		xiaozhiProfessionalASR:     xiaozhiProfessionalASR,
-		xiaozhiFastAckTTS:          xiaozhiFastAckTTS,
-		xiaozhiStockProfessional:   options.XiaozhiStockProfessional,
-		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
-		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
-		roleplayProfileConfig:      DefaultRoleplayProfile,
-		roleplayScenarioConfig:     DefaultRoleplayScenario,
-		voiceChainModeConfig:       VoiceChainModeCascade,
-		cascadeASRProfileConfig:    initialASRProfile,
-		cascadeLLMProfileConfig:    initialLLMProfile,
-		fixedTTSProfileConfig:      initialTTSProfile,
-		realtimeProviderConfig:     initialRealtimeProvider,
-		voiceCloneProfileConfig:    initialVoiceCloneProfile,
-		gatewayProfileConfig:       defaultGatewayProfile(options.GatewayProfile, options.PublicGatewayURL),
-		cloudVoiceProfileConfig:    strings.TrimSpace(options.CloudVoiceProfile),
-		cloudVoiceEnv:              append([]string(nil), options.CloudVoiceEnv...),
-		macLocalGatewayURL:         strings.TrimSpace(options.MacLocalGatewayURL),
-		publicGatewayURL:           strings.TrimSpace(options.PublicGatewayURL),
+		now:                          time.Now,
+		metrics:                      newMetrics(),
+		voice:                        voiceProvider,
+		v21:                          v21Client,
+		v21TTL:                       v21TTL,
+		devices:                      make(map[string]DeviceRecord),
+		traces:                       make(map[string][]TraceEvent),
+		audioStreams:                 make(map[string]string),
+		activeStreams:                make(map[string]string),
+		realtimeAudio:                make(map[string]providers.RealtimeVoiceSession),
+		realtimeAudioCommitAt:        make(map[string]time.Time),
+		realtimeAudioFirstDownlink:   make(map[string]bool),
+		audioProbeSessions:           make(map[string]bool),
+		mockPlaybackArmedSessions:    make(map[string]int),
+		realtimeArmedSessions:        make(map[string]bool),
+		audioIngress:                 audio.NewIngress(options.AudioIngressConfig),
+		audioSockets:                 make(map[string]*deviceSocket),
+		xiaozhiSockets:               make(map[string]*xiaozhiDeviceSocket),
+		officialStackChanSockets:     make(map[string]*deviceSocket),
+		audioCaptureFrames:           make([]AudioCaptureFrame, 0, maxAudioCaptureFrames),
+		xiaozhiVoicePipelineRunner:   xiaozhiRunnerFactory,
+		xiaozhiVoicePipelineMeta:     xiaozhiPipelineMeta,
+		xiaozhiVoicePipelineASR:      xiaozhiVoicePipelineASR,
+		xiaozhiProfessionalASR:       xiaozhiProfessionalASR,
+		xiaozhiFastAckTTS:            xiaozhiFastAckTTS,
+		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
+		xiaozhiListenMaxDurationMS:   xiaozhiListenMaxDurationMS,
+		wakeWordConfigPath:           wakeWordConfigPath(options.WakeWordConfigPath),
+		roleplayProfileConfig:        DefaultRoleplayProfile,
+		roleplayScenarioConfig:       DefaultRoleplayScenario,
+		professionalUserIDConfig:     v21adapter.DefaultUserID,
+		professionalWorkspaceConfig:  v21adapter.DefaultWorkspaceID,
+		professionalQueryScopeConfig: v21adapter.QueryScopePublic,
+		voiceChainModeConfig:         VoiceChainModeCascade,
+		cascadeASRProfileConfig:      initialASRProfile,
+		cascadeLLMProfileConfig:      initialLLMProfile,
+		fixedTTSProfileConfig:        initialTTSProfile,
+		realtimeProviderConfig:       initialRealtimeProvider,
+		voiceCloneProfileConfig:      initialVoiceCloneProfile,
+		gatewayProfileConfig:         defaultGatewayProfile(options.GatewayProfile, options.PublicGatewayURL),
+		cloudVoiceProfileConfig:      strings.TrimSpace(options.CloudVoiceProfile),
+		cloudVoiceEnv:                append([]string(nil), options.CloudVoiceEnv...),
+		macLocalGatewayURL:           strings.TrimSpace(options.MacLocalGatewayURL),
+		publicGatewayURL:             strings.TrimSpace(options.PublicGatewayURL),
 	}
 }
 
@@ -754,6 +818,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
+	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
@@ -834,6 +899,36 @@ func (s *Server) handleRoleplayProfile(w http.ResponseWriter, r *http.Request) {
 		response, err := s.roleplayProfileResponse(RoleplayProfileSelectionRequest{})
 		if err != nil {
 			http.Error(w, "roleplay profile unavailable", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleProfessionalWorkspace(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response, err := s.professionalWorkspaceResponse(ProfessionalWorkspaceSelectionRequest{})
+		if err != nil {
+			http.Error(w, "professional workspace unavailable", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case http.MethodPost, http.MethodPut:
+		var req ProfessionalWorkspaceSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if err := s.setProfessionalWorkspace(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		response, err := s.professionalWorkspaceResponse(ProfessionalWorkspaceSelectionRequest{})
+		if err != nil {
+			http.Error(w, "professional workspace unavailable", http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusOK, response)
@@ -1161,6 +1256,161 @@ func roleplayScenarioOptions(selected string) []RoleplayProfileOption {
 		options[i].Default = options[i].ID == selected
 	}
 	return options
+}
+
+func (s *Server) professionalWorkspaceResponse(override ProfessionalWorkspaceSelectionRequest) (ProfessionalWorkspaceResponse, error) {
+	runtime, err := s.professionalWorkspaceRuntime(override)
+	if err != nil {
+		return ProfessionalWorkspaceResponse{}, err
+	}
+	return ProfessionalWorkspaceResponse{
+		SchemaVersion:          ProfessionalWorkspaceSchemaVersion,
+		Service:                DeviceRegistryServiceName,
+		AdapterContractVersion: ProfessionalAdapterContractVersion,
+		SelectedUserID:         runtime.UserID,
+		SelectedWorkspaceID:    runtime.WorkspaceID,
+		SelectedQueryScope:     runtime.QueryScope,
+		WorkspaceStatus:        runtime.WorkspaceStatus,
+		PrivacyScope:           runtime.PrivacyScope,
+		V21ExecutionAllowed:    runtime.V21ExecutionAllowed,
+		Runtime:                runtime,
+		QueryScopes:            professionalQueryScopeOptions(runtime.QueryScope),
+		Redaction:              professionalWorkspaceRedaction(),
+	}, nil
+}
+
+func (s *Server) setProfessionalWorkspace(req ProfessionalWorkspaceSelectionRequest) error {
+	userID, workspaceID, queryScope, err := s.resolveProfessionalWorkspace(req)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.professionalUserIDConfig = userID
+	s.professionalWorkspaceConfig = workspaceID
+	s.professionalQueryScopeConfig = queryScope
+	return nil
+}
+
+func (s *Server) professionalWorkspaceRuntime(override ProfessionalWorkspaceSelectionRequest) (ProfessionalWorkspaceRuntime, error) {
+	userID, workspaceID, queryScope, err := s.resolveProfessionalWorkspace(override)
+	if err != nil {
+		return ProfessionalWorkspaceRuntime{}, err
+	}
+	return ProfessionalWorkspaceRuntime{
+		SchemaVersion:          ProfessionalWorkspaceRuntimeSchemaVersion,
+		Mode:                   VoiceModeProfessional,
+		UserID:                 userID,
+		WorkspaceID:            workspaceID,
+		QueryScope:             queryScope,
+		PrivacyScope:           "professional_only",
+		AdapterContractVersion: ProfessionalAdapterContractVersion,
+		WorkspaceStatus:        "contract_ready",
+		UploadAPIReady:         false,
+		IndexingAPIReady:       false,
+		QueryScopeReady:        true,
+		V21ExecutionAllowed:    false,
+	}, nil
+}
+
+func (s *Server) resolveProfessionalWorkspace(override ProfessionalWorkspaceSelectionRequest) (string, string, string, error) {
+	s.mu.Lock()
+	userID := defaultProfessionalLabel(s.professionalUserIDConfig, v21adapter.DefaultUserID)
+	workspaceID := defaultProfessionalLabel(s.professionalWorkspaceConfig, v21adapter.DefaultWorkspaceID)
+	queryScope := defaultProfessionalQueryScope(s.professionalQueryScopeConfig)
+	s.mu.Unlock()
+	if strings.TrimSpace(override.UserID) != "" {
+		userID = strings.ToLower(strings.TrimSpace(override.UserID))
+		if !validProfessionalLabel(userID) {
+			return "", "", "", fmt.Errorf("valid redacted user_id is required")
+		}
+	}
+	if strings.TrimSpace(override.WorkspaceID) != "" {
+		workspaceID = strings.ToLower(strings.TrimSpace(override.WorkspaceID))
+		if !validProfessionalLabel(workspaceID) {
+			return "", "", "", fmt.Errorf("valid redacted workspace_id is required")
+		}
+	}
+	if strings.TrimSpace(override.QueryScope) != "" {
+		queryScope = strings.ToLower(strings.TrimSpace(override.QueryScope))
+		if !v21adapter.ValidQueryScope(queryScope) {
+			return "", "", "", fmt.Errorf("query_scope must be public_only, personal_only, or personal_plus_public")
+		}
+	}
+	return userID, workspaceID, queryScope, nil
+}
+
+func (s *Server) selectedProfessionalWorkspace() ProfessionalWorkspaceRuntime {
+	runtime, err := s.professionalWorkspaceRuntime(ProfessionalWorkspaceSelectionRequest{})
+	if err != nil {
+		return ProfessionalWorkspaceRuntime{
+			SchemaVersion:          ProfessionalWorkspaceRuntimeSchemaVersion,
+			Mode:                   VoiceModeProfessional,
+			UserID:                 v21adapter.DefaultUserID,
+			WorkspaceID:            v21adapter.DefaultWorkspaceID,
+			QueryScope:             v21adapter.QueryScopePublic,
+			PrivacyScope:           "professional_only",
+			AdapterContractVersion: ProfessionalAdapterContractVersion,
+			WorkspaceStatus:        "contract_ready",
+			QueryScopeReady:        true,
+		}
+	}
+	return runtime
+}
+
+func defaultProfessionalLabel(value string, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if validProfessionalLabel(value) {
+		return value
+	}
+	return fallback
+}
+
+func validProfessionalLabel(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	return v21adapter.ValidateProfessionalQueryRequest(v21adapter.QueryRequest{
+		Utterance:    "a21 validation",
+		Mode:         VoiceModeProfessional,
+		PrivacyScope: "professional_only",
+		UserID:       value,
+		WorkspaceID:  value,
+	}) == nil
+}
+
+func defaultProfessionalQueryScope(scope string) string {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if v21adapter.ValidQueryScope(scope) {
+		return scope
+	}
+	return v21adapter.QueryScopePublic
+}
+
+func professionalQueryScopeOptions(selected string) []ProfessionalWorkspaceOption {
+	selected = defaultProfessionalQueryScope(selected)
+	options := []ProfessionalWorkspaceOption{
+		{ID: v21adapter.QueryScopePublic, Label: "Public only", Status: "available", Description: "Use only public A21/V21 resources"},
+		{ID: v21adapter.QueryScopePersonal, Label: "Personal only", Status: "available", Description: "Contract scope for the signed-in user's uploaded workspace; upload/index readiness remains separate"},
+		{ID: v21adapter.QueryScopeCombined, Label: "Personal plus public", Status: "available", Description: "Contract scope combining personal workspace and public resources; upload/index readiness remains separate"},
+	}
+	for i := range options {
+		options[i].Default = options[i].ID == selected
+	}
+	return options
+}
+
+func professionalWorkspaceRedaction() ProfessionalWorkspaceRedaction {
+	return ProfessionalWorkspaceRedaction{
+		DocumentTextStored:    false,
+		QueryTextStored:       false,
+		RetrievedTextStored:   false,
+		FullURLStored:         false,
+		LocalPathStored:       false,
+		CredentialValueStored: false,
+		ProviderOutputStored:  false,
+		VoiceTranscriptStored: false,
+	}
 }
 
 func (s *Server) currentVoiceProvider() providers.VoiceProvider {
@@ -4151,16 +4401,23 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_asr_empty")
 		return
 	}
+	workspace := s.selectedProfessionalWorkspace()
 	request := v21adapter.QueryRequest{
 		TraceID:            task.traceID,
 		SessionID:          task.sessionID,
+		DeviceID:           task.deviceID,
+		UserID:             workspace.UserID,
+		WorkspaceID:        workspace.WorkspaceID,
 		Mode:               "professional",
+		QueryScope:         workspace.QueryScope,
 		Utterance:          utterance,
 		LatencyProfile:     "fast_first",
 		AnswerStyle:        "voice_first_with_citations",
 		MaxFirstResponseMS: v21adapter.ProfessionalMaxFirstResponseMS,
 		PrivacyScope:       "professional_only",
 	}
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.workspace.ready", s.now().UnixMilli())
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.utterance."+v21UtteranceLengthBucket(utterance), s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
@@ -6865,7 +7122,10 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		{State: protocol.ExpressionThinking, Mode: protocol.ModeProfessional, Text: "我在查，先把证据和置信度拉出来。"},
 	}
 	events := s.controlSequence(req.DeviceID, traceID, sessionID, preQueryPayloads)
+	workspace := s.selectedProfessionalWorkspace()
 	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.workspace.ready", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+v21UtteranceLengthBucket(req.Text), s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
@@ -6874,7 +7134,11 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	response, err := s.v21.Query(queryCtx, v21adapter.QueryRequest{
 		TraceID:            traceID,
 		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		UserID:             workspace.UserID,
+		WorkspaceID:        workspace.WorkspaceID,
 		Mode:               "professional",
+		QueryScope:         workspace.QueryScope,
 		Utterance:          req.Text,
 		LatencyProfile:     "fast_first",
 		AnswerStyle:        "voice_first_with_citations",

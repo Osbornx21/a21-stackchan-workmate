@@ -426,6 +426,11 @@ const simulatorHTML = `<!doctype html>
             <option value="boss_challenge">boss_challenge</option>
             <option value="engineer_pushback">engineer_pushback</option>
           </select>
+          <select id="professionalQueryScope" aria-label="professional query scope">
+            <option value="public_only">public_only</option>
+            <option value="personal_only">personal_only</option>
+            <option value="personal_plus_public">personal_plus_public</option>
+          </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -620,6 +625,7 @@ const simulatorHTML = `<!doctype html>
       realtimeProvider: document.getElementById('realtimeProvider'),
       voiceCloneProfile: document.getElementById('voiceCloneProfile'),
       roleplayScenario: document.getElementById('roleplayScenario'),
+      professionalQueryScope: document.getElementById('professionalQueryScope'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -708,6 +714,14 @@ const simulatorHTML = `<!doctype html>
         ui.voiceCloneProfile.value = catalog.selected_voice_clone_profile;
         ui.voiceCloneProfileReadout.textContent = catalog.selected_voice_clone_profile;
       }
+    }
+    function setProfessionalWorkspace(catalog) {
+      const selectedScope = catalog.selected_query_scope || 'public_only';
+      const scopes = catalog.query_scopes || [];
+      if (scopes.length) {
+        ui.professionalQueryScope.innerHTML = scopes.map((scope) => optionHTML(scope, selectedScope)).join('');
+      }
+      ui.professionalQueryScope.value = selectedScope;
     }
     function setGatewayProfile(profile) {
       ui.gatewayProfile.value = profile || 'mac_local';
@@ -1011,6 +1025,18 @@ const simulatorHTML = `<!doctype html>
         log('roleplay profile unavailable');
       }
     }
+    async function refreshProfessionalWorkspace() {
+      try {
+        const response = await fetch('/v1/professional-workspace', { cache: 'no-store' });
+        if (!response.ok) {
+          log('professional workspace error ' + response.status);
+          return;
+        }
+        setProfessionalWorkspace(await response.json());
+      } catch (err) {
+        log('professional workspace unavailable');
+      }
+    }
     async function refreshGatewayProfiles() {
       try {
         const response = await fetch('/v1/gateway-profiles', { cache: 'no-store' });
@@ -1108,6 +1134,23 @@ const simulatorHTML = `<!doctype html>
         refreshRegistry();
       } catch (err) {
         log('roleplay save unavailable');
+      }
+    }
+    async function saveProfessionalWorkspace() {
+      try {
+        const response = await fetch('/v1/professional-workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query_scope: ui.professionalQueryScope.value })
+        });
+        if (!response.ok) {
+          log('professional workspace save failed ' + response.status);
+          refreshProfessionalWorkspace();
+          return;
+        }
+        setProfessionalWorkspace(await response.json());
+      } catch (err) {
+        log('professional workspace save unavailable');
       }
     }
     async function saveGatewayProfile() {
@@ -1447,6 +1490,7 @@ const simulatorHTML = `<!doctype html>
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
     ui.roleplayScenario.addEventListener('change', saveRoleplayProfile);
+    ui.professionalQueryScope.addEventListener('change', saveProfessionalWorkspace);
     ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
     ui.cloudVoiceProfile.addEventListener('change', saveCloudVoiceProfile);
     ui.voiceChainMode.addEventListener('change', saveVoiceChainProfile);
@@ -1460,6 +1504,7 @@ const simulatorHTML = `<!doctype html>
     refreshRegistry();
     refreshVoiceModes();
     refreshRoleplayProfile();
+    refreshProfessionalWorkspace();
     refreshGatewayProfiles();
     refreshCloudVoiceProfiles();
     refreshVoiceChainProfiles();

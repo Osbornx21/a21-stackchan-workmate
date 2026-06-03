@@ -289,6 +289,8 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
 	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
+	response.SourceScopeCounts = v21BridgeSourceScopeCounts(request.QueryScope, len(response.Evidence))
+	response.WorkspaceStatus = v21adapter.WorkspaceSearchable
 	return response, nil
 }
 
@@ -377,7 +379,23 @@ func executeV21RetrievalQueryText(ctx context.Context, client *http.Client, v21B
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
 	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
+	response.SourceScopeCounts = v21BridgeSourceScopeCounts(request.QueryScope, len(response.Evidence))
+	response.WorkspaceStatus = v21adapter.WorkspaceSearchable
 	return response, nil
+}
+
+func v21BridgeSourceScopeCounts(queryScope string, evidenceCount int) map[string]int {
+	if evidenceCount <= 0 {
+		return nil
+	}
+	switch queryScope {
+	case v21adapter.QueryScopePersonal:
+		return map[string]int{"personal": evidenceCount}
+	case v21adapter.QueryScopeCombined:
+		return map[string]int{"public": evidenceCount, "personal": 0}
+	default:
+		return map[string]int{"public": evidenceCount}
+	}
 }
 
 func isV21BridgeNoEvidence(err error) bool {

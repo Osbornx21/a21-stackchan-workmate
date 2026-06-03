@@ -512,6 +512,28 @@ professional evidence, or V21 query/result. `professional_route_allowed` and
 `v21_executed` must remain false on this endpoint and on fast-companion roleplay
 turns.
 
+`professional_workspace` is the Gateway-owned professional query-scope
+contract for internal test 4. `GET /v1/professional-workspace` returns
+`a21.gateway.professional_workspace.v1`, adapter contract
+`a21.v21_adapter_query.v2`, selected redacted `user_id`, `workspace_id`,
+`query_scope`, `professional_only` privacy, query-scope options, and storage
+redaction flags. `POST` or `PUT /v1/professional-workspace` can update
+redacted labels and one of three query scopes: `public_only`, `personal_only`,
+or `personal_plus_public`. This endpoint does not upload files, index
+documents, execute V21, store document text, store utterance text, store
+retrieved text, or persist provider output.
+
+When the professional path does execute V21, Gateway sends the same v2 scope
+fields to the A21/V21 adapter: `device_id`, `user_id`, `workspace_id`,
+`query_scope`, `privacy_scope=professional_only`, `latency_profile=fast_first`,
+`answer_style=voice_first_with_citations`, and `max_first_response_ms=1200`.
+Traces may record `professional.workspace.ready` and
+`professional.query_scope.<scope>`, but must not record user labels, workspace
+labels, utterance text, evidence bodies, full URLs, credentials, local paths, or
+private document contents. V21 adapter responses may include redacted
+`source_scope_counts` and `workspace_status`; these are counts/status only, not
+retrieved document bodies.
+
 `gateway_profile` is the operator/frontend transport selector for where the
 StackChan product connects. It is independent from `voice_mode`: selecting
 `public_wss` must not turn roleplay into professional mode, and selecting

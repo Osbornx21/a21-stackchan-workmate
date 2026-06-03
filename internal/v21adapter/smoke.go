@@ -16,32 +16,35 @@ var smokeURLPattern = regexp.MustCompile(`https?://[^\s"']+`)
 const SmokeSchemaVersion = "a21.v21_adapter_smoke.v1"
 
 type SmokeReport struct {
-	SchemaVersion      string  `json:"schema_version"`
-	GeneratedAtMS      int64   `json:"generated_at_ms"`
-	Adapter            string  `json:"adapter"`
-	Protocol           string  `json:"protocol"`
-	Status             string  `json:"status"`
-	Configured         bool    `json:"configured"`
-	Executed           bool    `json:"executed"`
-	EndpointHost       string  `json:"endpoint_host,omitempty"`
-	Mode               string  `json:"mode,omitempty"`
-	LatencyProfile     string  `json:"latency_profile,omitempty"`
-	AnswerStyle        string  `json:"answer_style,omitempty"`
-	PrivacyScope       string  `json:"privacy_scope,omitempty"`
-	MaxFirstResponseMS int     `json:"max_first_response_ms,omitempty"`
-	QueryPath          string  `json:"query_path"`
-	HealthPath         string  `json:"health_path"`
-	DurationMS         float64 `json:"duration_ms,omitempty"`
-	Confidence         float64 `json:"confidence,omitempty"`
-	EvidenceCount      int     `json:"evidence_count,omitempty"`
-	SpeechBlockCount   int     `json:"speech_block_count,omitempty"`
-	ScreenCardCount    int     `json:"screen_card_count,omitempty"`
-	FollowUpCount      int     `json:"follow_up_count,omitempty"`
-	FailureClass       string  `json:"failure_class,omitempty"`
-	StatusClass        string  `json:"status_class,omitempty"`
-	RedactionOK        bool    `json:"redaction_ok"`
-	ReportPath         string  `json:"report_path,omitempty"`
-	Detail             string  `json:"detail,omitempty"`
+	SchemaVersion      string         `json:"schema_version"`
+	GeneratedAtMS      int64          `json:"generated_at_ms"`
+	Adapter            string         `json:"adapter"`
+	Protocol           string         `json:"protocol"`
+	Status             string         `json:"status"`
+	Configured         bool           `json:"configured"`
+	Executed           bool           `json:"executed"`
+	EndpointHost       string         `json:"endpoint_host,omitempty"`
+	Mode               string         `json:"mode,omitempty"`
+	QueryScope         string         `json:"query_scope,omitempty"`
+	LatencyProfile     string         `json:"latency_profile,omitempty"`
+	AnswerStyle        string         `json:"answer_style,omitempty"`
+	PrivacyScope       string         `json:"privacy_scope,omitempty"`
+	MaxFirstResponseMS int            `json:"max_first_response_ms,omitempty"`
+	WorkspaceStatus    string         `json:"workspace_status,omitempty"`
+	SourceScopeCounts  map[string]int `json:"source_scope_counts,omitempty"`
+	QueryPath          string         `json:"query_path"`
+	HealthPath         string         `json:"health_path"`
+	DurationMS         float64        `json:"duration_ms,omitempty"`
+	Confidence         float64        `json:"confidence,omitempty"`
+	EvidenceCount      int            `json:"evidence_count,omitempty"`
+	SpeechBlockCount   int            `json:"speech_block_count,omitempty"`
+	ScreenCardCount    int            `json:"screen_card_count,omitempty"`
+	FollowUpCount      int            `json:"follow_up_count,omitempty"`
+	FailureClass       string         `json:"failure_class,omitempty"`
+	StatusClass        string         `json:"status_class,omitempty"`
+	RedactionOK        bool           `json:"redaction_ok"`
+	ReportPath         string         `json:"report_path,omitempty"`
+	Detail             string         `json:"detail,omitempty"`
 }
 
 func Smoke(ctx context.Context, adapterURL string, utterance string, execute bool, httpClient *http.Client) SmokeReport {
@@ -87,6 +90,7 @@ func Smoke(ctx context.Context, adapterURL string, utterance string, execute boo
 		Utterance: utterance,
 	})
 	report.Mode = request.Mode
+	report.QueryScope = request.QueryScope
 	report.LatencyProfile = request.LatencyProfile
 	report.AnswerStyle = request.AnswerStyle
 	report.PrivacyScope = request.PrivacyScope
@@ -108,6 +112,8 @@ func Smoke(ctx context.Context, adapterURL string, utterance string, execute boo
 	report.SpeechBlockCount = len(response.SpeechBlocks)
 	report.ScreenCardCount = len(response.ScreenCards)
 	report.FollowUpCount = len(response.FollowUps)
+	report.WorkspaceStatus = redactedWorkspaceStatus(response.WorkspaceStatus)
+	report.SourceScopeCounts = redactedSourceScopeCounts(response.SourceScopeCounts)
 	report.Detail = "v21 adapter query smoke succeeded"
 	return finalizedSmokeReport(report)
 }

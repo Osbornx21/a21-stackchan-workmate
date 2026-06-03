@@ -26,6 +26,9 @@ func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
 		if req.TraceID != "a21-trace-v21-001" || req.SessionID != "a21-session-v21-001" {
 			t.Fatalf("ids = %q / %q", req.TraceID, req.SessionID)
 		}
+		if req.UserID != "a21_local_user" || req.WorkspaceID != "a21_local_workspace" || req.QueryScope != "public_only" {
+			t.Fatalf("workspace defaults = %+v", req)
+		}
 		if req.Mode != "professional" {
 			t.Fatalf("mode = %q, want professional", req.Mode)
 		}
@@ -46,7 +49,9 @@ func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
 			"evidence":[{"title":"语音唤醒体验复盘","type":"meeting","source_id":"v21-doc-001","summary":"提到多人说话导致误唤醒。"}],
 			"speech_blocks":["我先说结论。","第一，多人说话是主要场景。"],
 			"screen_cards":[{"label":"结论","text":"误唤醒集中在 2 类场景"}],
-			"follow_ups":["要不要按车型展开？"]
+			"follow_ups":["要不要按车型展开？"],
+			"source_scope_counts":{"public":1},
+			"workspace_status":"searchable"
 		}`))
 	}))
 	defer server.Close()
@@ -63,8 +68,88 @@ func TestHTTPClientPostsProfessionalQueryContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.FastAnswer == "" || len(response.Evidence) != 1 || len(response.ScreenCards) != 1 {
+	if response.FastAnswer == "" || len(response.Evidence) != 1 || len(response.ScreenCards) != 1 || response.SourceScopeCounts["public"] != 1 || response.WorkspaceStatus != "searchable" {
 		t.Fatalf("response missing professional fields: %+v", response)
+	}
+}
+
+func TestHTTPClientPostsExplicitWorkspaceScopeContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req QueryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.DeviceID != "44:1b:f6:e2:6a:60" || req.UserID != "a21_user_demo" || req.WorkspaceID != "a21_workspace_demo" || req.QueryScope != "personal_plus_public" {
+			t.Fatalf("workspace v2 request = %+v", req)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"trace_id":"a21-trace-v21-scope",
+			"fast_answer":"找到公开和个人资料中的交叉证据。",
+			"confidence":0.91,
+			"evidence":[{"title":"scope fixture","type":"retrieval","source_id":"a21-doc-scope-001","summary":"sanitized"}],
+			"speech_blocks":["找到交叉证据。"],
+			"screen_cards":[{"label":"Scope","text":"public + personal"}],
+			"follow_ups":["要不要展开？"],
+			"source_scope_counts":{"public":1,"personal":1},
+			"workspace_status":"searchable"
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.Query(context.Background(), QueryRequest{
+		TraceID:     "a21-trace-v21-scope",
+		SessionID:   "a21-session-v21-scope",
+		DeviceID:    "44:1b:f6:e2:6a:60",
+		UserID:      "a21_user_demo",
+		WorkspaceID: "a21_workspace_demo",
+		QueryScope:  QueryScopeCombined,
+		Utterance:   "查一下范围证据",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := NewProfessionalBridgeEvidenceReport(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SourceScopeCounts["public"] != 1 || report.SourceScopeCounts["personal"] != 1 || report.WorkspaceStatus != "searchable" {
+		t.Fatalf("report source scope = %+v", report)
+	}
+}
+
+func TestHTTPClientRejectsUnsafeWorkspaceScopeBeforeNetwork(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Query(context.Background(), QueryRequest{
+		TraceID:     "a21-trace-v21-unsafe-scope",
+		SessionID:   "a21-session-v21-unsafe-scope",
+		WorkspaceID: "https://secret.example/workspace",
+		QueryScope:  "all_private_everything",
+		Utterance:   "查一下证据",
+	})
+	if err == nil {
+		t.Fatal("expected unsafe workspace scope to be rejected")
+	}
+	if calls != 0 {
+		t.Fatalf("network calls = %d, want 0", calls)
+	}
+	for _, forbidden := range []string{"secret.example", "查一下证据", "all_private_everything"} {
+		if strings.Contains(err.Error(), forbidden) {
+			t.Fatalf("error leaked %q: %q", forbidden, err.Error())
+		}
 	}
 }
 

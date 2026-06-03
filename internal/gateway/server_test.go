@@ -331,12 +331,14 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/devices",
 		"/v1/voice-modes",
 		"/v1/roleplay-profile",
+		"/v1/professional-workspace",
 		"/v1/traces",
 		"Device Registry",
 		`id="registryConnection"`,
 		`id="registryMode"`,
 		`id="voiceMode"`,
 		`id="roleplayScenario"`,
+		`id="professionalQueryScope"`,
 		`id="gatewayProfile"`,
 		`id="cloudVoiceProfile"`,
 		`id="registryVoiceMode"`,
@@ -987,6 +989,50 @@ func TestRoleplayProfileEndpointPersistsScenarioVoiceCloneAndRedactsMemory(t *te
 	if !strings.Contains(chainRec.Body.String(), `"selected_voice_clone_profile":"a21_voice_clone_default"`) ||
 		!strings.Contains(chainRec.Body.String(), `"selected_tts_profile":"voice_clone_cli"`) {
 		t.Fatalf("voice clone selection did not reach voice chain: %s", chainRec.Body.String())
+	}
+}
+
+func TestProfessionalWorkspaceEndpointPersistsQueryScopeAndRedactsDocumentBoundary(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_demo","workspace_id":"a21_workspace_demo","query_scope":"personal_plus_public"}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response ProfessionalWorkspaceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.professional_workspace.v1" ||
+		response.AdapterContractVersion != "a21.v21_adapter_query.v2" ||
+		response.SelectedUserID != "a21_user_demo" ||
+		response.SelectedWorkspaceID != "a21_workspace_demo" ||
+		response.SelectedQueryScope != "personal_plus_public" ||
+		response.PrivacyScope != "professional_only" {
+		t.Fatalf("workspace response = %+v", response)
+	}
+	if !response.Runtime.QueryScopeReady || response.Runtime.UploadAPIReady || response.Runtime.IndexingAPIReady || response.V21ExecutionAllowed {
+		t.Fatalf("runtime gates = %+v", response.Runtime)
+	}
+	if response.Redaction.DocumentTextStored || response.Redaction.QueryTextStored || response.Redaction.RetrievedTextStored ||
+		response.Redaction.FullURLStored || response.Redaction.LocalPathStored || response.Redaction.CredentialValueStored ||
+		response.Redaction.ProviderOutputStored || response.Redaction.VoiceTranscriptStored {
+		t.Fatalf("workspace redaction = %+v", response.Redaction)
+	}
+	for _, forbidden := range []string{"http://", "https://", "/Users/", "secret", "api_key", "raw document", "retrieved text"} {
+		if strings.Contains(strings.ToLower(rec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("professional workspace leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"workspace_id":"https://secret.example/workspace","query_scope":"personal_plus_public"}`))
+	badRec := httptest.NewRecorder()
+	handler.ServeHTTP(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("bad workspace status = %d, want 400: %s", badRec.Code, badRec.Body.String())
 	}
 }
 
@@ -2242,6 +2288,12 @@ func TestProfessionalModeSendsExplicitV21PlaceholderContract(t *testing.T) {
 	v21 := &capturingV21Client{}
 	server := NewServerWithOptions(ServerOptions{V21Client: v21})
 	handler := server.Handler()
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_contract","workspace_id":"a21_workspace_contract","query_scope":"personal_plus_public"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
 	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"查一下证据","mode":"professional","trace_id":"a21-trace-pro-contract","session_id":"a21-session-pro-contract"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
 	rec := httptest.NewRecorder()
@@ -2253,6 +2305,10 @@ func TestProfessionalModeSendsExplicitV21PlaceholderContract(t *testing.T) {
 	}
 	if v21.request.Mode != "professional" ||
 		v21.request.PrivacyScope != "professional_only" ||
+		v21.request.DeviceID != "stackchan-sim-001" ||
+		v21.request.UserID != "a21_user_contract" ||
+		v21.request.WorkspaceID != "a21_workspace_contract" ||
+		v21.request.QueryScope != "personal_plus_public" ||
 		v21.request.LatencyProfile != "fast_first" ||
 		v21.request.AnswerStyle != "voice_first_with_citations" ||
 		v21.request.MaxFirstResponseMS != 1200 {
@@ -2284,6 +2340,16 @@ func TestProfessionalModeSendsExplicitV21PlaceholderContract(t *testing.T) {
 	v21StartAt, ok := traceEventAtMS(traces.Events, "v21.query.start")
 	if !ok {
 		t.Fatalf("trace missing V21 start marker: %s", traceRec.Body.String())
+	}
+	for _, want := range []string{"professional.workspace.ready", "professional.query_scope.personal_plus_public"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"a21_user_contract", "a21_workspace_contract", "查一下证据"} {
+		if strings.Contains(traceRec.Body.String(), forbidden) {
+			t.Fatalf("trace leaked %q: %s", forbidden, traceRec.Body.String())
+		}
 	}
 	if v21StartAt-checkingAt > 1200 {
 		t.Fatalf("placeholder boundary = %dms, want <=1200ms", v21StartAt-checkingAt)
