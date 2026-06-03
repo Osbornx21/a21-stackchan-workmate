@@ -7859,3 +7859,75 @@ Recommended next action:
    static streaming readiness show `stepfun`.
 3. Then run the real physical StackChan dialogue/barge-in/wake-word evidence
    pass.
+
+## 2026-06-03 18:36 CST - Fast Ack Must Not Block Main Answer
+
+Round goal:
+
+- Continue the Xiaozhi voice main-chain push and verify whether the protocol,
+  audio, ASR/LLM/TTS streaming, and barge-in work had actually reached a clear,
+  smooth, low-latency chain.
+
+Actual completed work:
+
+- Re-ran the current public Gateway `xiaozhi-voice-bench` against
+  `http://47.103.57.217`.
+- Confirmed the current chain already reaches stock `/v1/xiaozhi` hello/listen,
+  Opus ingress/decode, streaming ASR append/commit, ASR partial/final, stock
+  `stt`, and trace timing.
+- Found the main answer-chain blocker: if the fast-ack TTS path failed,
+  Gateway sent `tts.stop` with `fast_ack_unavailable` and returned before
+  running the full ASR -> LLM -> TTS answer pipeline.
+- Fixed `writeXiaozhiVoicePipelineTTS` so fast ack is an optional latency
+  optimization, not a hard dependency. If fast ack does not produce audio and
+  the turn has not been aborted, Gateway continues into the full answer
+  pipeline.
+- Updated the regression test from the old wrong contract
+  `StopsLifecycleWhenFastAckUnavailable` to
+  `ContinuesAnswerWhenFastAckUnavailable`, requiring answer sentence start,
+  binary Opus downlink, `provider.first_content`, `tts.first_audio`,
+  `audio.downlink.first_frame`, and `xiaozhi.voice_pipeline.completed`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Focused Gateway tests passed:
+  `go test ./internal/gateway -run 'FastAckUnavailable|ListenStopRunsVoicePipelineAndSendsPacedOpus|ASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal|AbortCancelsBlockedTurnTaskWithinBargeInBudget|ListenStartBargeInStopsActiveTTS' -count=1`
+- Related package tests passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- `git diff --check`: passed.
+- Full verification passed:
+  `make verify`
+
+Unfinished items:
+
+- This fix still needs commit, deployment to the public Gateway, and a fresh
+  public `xiaozhi-voice-bench --require-product-chain` run.
+- StepFun is still not active on ECS because no StepFun env names are present
+  in `/etc/a21/secrets/provider.env`; current public selector still reports
+  `selected_llm_profile=deepseek` and finding `stepfun_not_selected`.
+- No physical StackChan dialogue/barge-in/wake-word evidence was collected in
+  this round yet.
+
+Known risks/blockers:
+
+- The fresh public bench before the fix showed ASR partial/final around
+  154-155 ms, but no LLM first content, TTS first audio, or Opus downlink
+  because the fast-ack failure ended the turn early.
+- The fix should unblock the answer pipeline, but product acceptance still
+  requires a post-deploy bench and physical evidence.
+
+Recommended next action:
+
+1. Commit this fast-ack continuity fix.
+2. Deploy the commit to `47.103.57.217`.
+3. Re-run public `xiaozhi-voice-bench --require-product-chain` and inspect
+   `provider.first_content`, `tts.first_audio`, `audio.downlink.first_frame`,
+   binary downlink frames, and barge-in metrics.
+4. Then inject StepFun server-side env when available and repeat the same
+   evidence pass with `selected_llm_profile=stepfun`.

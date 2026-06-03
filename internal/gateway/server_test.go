@@ -6837,9 +6837,12 @@ func TestXiaozhiWebSocketAbortAfterFastAckSuppressesAnswerFrames(t *testing.T) {
 	assertNoXiaozhiMessage(t, conn, 150*time.Millisecond)
 }
 
-func TestXiaozhiWebSocketStopsLifecycleWhenFastAckUnavailable(t *testing.T) {
+func TestXiaozhiWebSocketContinuesAnswerWhenFastAckUnavailable(t *testing.T) {
 	server := NewServer()
 	server.xiaozhiFastAckTTS = failingXiaozhiTTSAdapter{}
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return fallbackReportingXiaozhiPipelineRunner{}
+	}
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -6877,11 +6880,36 @@ func TestXiaozhiWebSocketStopsLifecycleWhenFastAckUnavailable(t *testing.T) {
 	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
 		t.Fatalf("ack sentence = %#v", ackSentence)
 	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
 	ttsStop := readXiaozhiJSON(t, ctx, conn)
-	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "fast_ack_unavailable" {
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
 		t.Fatalf("tts stop = %#v", ttsStop)
 	}
-	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-fast-ack-unavailable", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xiaozhi.fast_ack.unavailable", "provider.first_content", "tts.first_audio", "audio.downlink.first_frame", "xiaozhi.voice_pipeline.completed"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
 }
 
 func TestNewServerWithOptionsUsesConfiguredXiaozhiVoicePipelineAdapters(t *testing.T) {
