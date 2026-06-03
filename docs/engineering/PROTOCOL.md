@@ -497,20 +497,26 @@ roleplay runtime under `voice_mode=roleplay`. `GET /v1/roleplay-profile`
 returns `a21.gateway.roleplay_profile.v1`, the selected roleplay profile,
 scenario, voice-clone profile, redacted memory readiness, a redacted runtime
 summary, and safe option catalogs. `POST` or `PUT /v1/roleplay-profile` can
-change the selected roleplay scenario and voice-clone profile. Selecting a
-voice-clone profile through this endpoint also updates the existing
+change the selected roleplay scenario, voice-clone profile, and bounded
+session memory hints through `memory_hints`; `clear_memory=true` clears only
+Gateway runtime roleplay hints, not environment-provided operator hints or any
+professional/V21 workspace. Selecting a voice-clone profile through this
+endpoint also updates the existing
 `voice_chain_profile` selection so roleplay voice clone reaches the selected
 TTS boundary without adding a second provider selector. The current profile
 catalog intentionally exposes only `a21_roleplay_default`; scenario options are
 playbook labels under the roleplay product mode, not new product modes.
 
 The roleplay runtime composes personality prompt input only in memory and only
-from safe memory hints exposed by the personality package. Responses and traces
-must report readiness booleans and counts rather than storing or echoing the
-composed prompt, raw memory text, user transcript, provider text, voice sample,
-professional evidence, or V21 query/result. `professional_route_allowed` and
-`v21_executed` must remain false on this endpoint and on fast-companion roleplay
-turns.
+from safe memory hints exposed by the personality package. Runtime memory hints
+are filtered by the same bounded policy as `A21_MEMORY_*`: unsafe URLs, local
+paths, and credential-looking strings are rejected before storage, long hints
+are truncated, and only sanitized prompt-input text is kept in Gateway memory.
+Responses, simulator readouts, and traces must report readiness booleans,
+counts, and finding codes rather than storing or echoing the composed prompt,
+raw memory text, user transcript, provider text, voice sample, professional
+evidence, or V21 query/result. `professional_route_allowed` and `v21_executed`
+must remain false on this endpoint and on fast-companion roleplay turns.
 
 `professional_workspace` is the Gateway-owned professional query-scope
 contract for internal test 4. `GET /v1/professional-workspace` returns

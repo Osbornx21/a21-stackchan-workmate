@@ -10428,3 +10428,78 @@ Test/build/runtime results:
 
 - `git diff --check`: passed before commit.
 - `GOMAXPROCS=2 make verify`: passed.
+
+## 2026-06-04 06:24 CST - Internal Test 4 Roleplay Memory Control Cut
+
+Round goal:
+
+- Continue the internal test 4 roleplay/persona/memory lane without regressing
+  internal test 3 device-side voice/protocol behavior, and make roleplay memory
+  a product-visible control surface paired with scenario and voice-clone
+  selection.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-roleplay-memory-control-surface.md`.
+- Extended `POST`/`PUT /v1/roleplay-profile` with `memory_hints` and
+  `clear_memory`.
+- Runtime roleplay hints are sanitized through the existing personality memory
+  policy, stored only as bounded Gateway runtime prompt-input hints, and
+  reported only as readiness/counts/finding codes.
+- Fast companion roleplay summaries use the configured hint count and keep
+  `professional_route_allowed=false` and `v21_executed=false`.
+- Simulator now exposes set/clear roleplay memory controls and displays only
+  memory status/count.
+- Updated protocol, internal-test4 plan, current control state, and project
+  state machine.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/plans/2026-06-04-roleplay-memory-control-surface.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not durable long-term memory, account memory sync, document upload,
+  personal workspace indexing, V21 ACL enforcement, or physical StackChan
+  roleplay evidence.
+- Persona quality review, prompt examples, wake/touch entry into roleplay
+  memory, and voice-clone runtime evidence remain follow-up work.
+
+Known risks/blockers:
+
+- Runtime hints are intentionally in-process only; a Gateway restart clears
+  them.
+- Environment-provided `A21_MEMORY_*` hints still exist as operator/runtime
+  configuration and are not cleared by `clear_memory`.
+- Physical acceptance remains blocked until roleplay turns are exercised on the
+  actual StackChan path.
+
+Recommended next action:
+
+- Keep monitoring the pending hardware MCP/status parity worker and V21 native
+  query-scope worker.
+- Then schedule the next roleplay cut for persona-quality examples plus
+  wake/touch entry evidence, or integrate the hardware MCP/status worker result
+  if it lands first.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway ./internal/personality -run 'SimulatorPageServed|RoleplayProfile|FastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary|PersonalityMemory' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this round.

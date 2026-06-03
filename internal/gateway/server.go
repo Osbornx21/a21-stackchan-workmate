@@ -78,6 +78,9 @@ type Server struct {
 	voiceModeConfig              string
 	roleplayProfileConfig        string
 	roleplayScenarioConfig       string
+	roleplayMemoryConfigured     bool
+	roleplayMemoryHintsConfig    []string
+	roleplayMemoryFindings       []personality.MemoryFinding
 	professionalUserIDConfig     string
 	professionalWorkspaceConfig  string
 	professionalQueryScopeConfig string
@@ -212,9 +215,11 @@ type RoleplayProfileOption struct {
 }
 
 type RoleplayProfileSelectionRequest struct {
-	RoleplayProfile   string `json:"roleplay_profile,omitempty"`
-	Scenario          string `json:"scenario,omitempty"`
-	VoiceCloneProfile string `json:"voice_clone_profile,omitempty"`
+	RoleplayProfile   string   `json:"roleplay_profile,omitempty"`
+	Scenario          string   `json:"scenario,omitempty"`
+	VoiceCloneProfile string   `json:"voice_clone_profile,omitempty"`
+	MemoryHints       []string `json:"memory_hints,omitempty"`
+	ClearMemory       bool     `json:"clear_memory,omitempty"`
 }
 
 type RoleplayProfileResponse struct {
@@ -1192,6 +1197,13 @@ func (s *Server) setRoleplayProfile(req RoleplayProfileSelectionRequest) error {
 	if err != nil {
 		return err
 	}
+	memoryConfigured := false
+	memoryHints := []string(nil)
+	memoryFindings := []personality.MemoryFinding(nil)
+	updateMemory := req.ClearMemory || req.MemoryHints != nil
+	if req.MemoryHints != nil {
+		memoryHints, memoryFindings, memoryConfigured = sanitizeRoleplayMemoryHints(req.MemoryHints)
+	}
 	if strings.TrimSpace(req.VoiceCloneProfile) != "" {
 		if err := s.setVoiceChainProfile(VoiceChainProfileSelectionRequest{VoiceCloneProfile: voiceClone}); err != nil {
 			return err
@@ -1201,6 +1213,11 @@ func (s *Server) setRoleplayProfile(req RoleplayProfileSelectionRequest) error {
 	defer s.mu.Unlock()
 	s.roleplayProfileConfig = profile
 	s.roleplayScenarioConfig = scenario
+	if updateMemory {
+		s.roleplayMemoryConfigured = memoryConfigured
+		s.roleplayMemoryHintsConfig = memoryHints
+		s.roleplayMemoryFindings = memoryFindings
+	}
 	return nil
 }
 
@@ -1209,8 +1226,9 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 	if err != nil {
 		return RoleplayRuntimeSummary{}, personality.MemoryState{}, err
 	}
-	env := s.roleplayRuntimeEnv()
+	env, runtimeMemoryConfigured, runtimeMemoryFindings := s.roleplayRuntimeEnv()
 	memory, hints := personality.MemoryStateFromEnv(env)
+	memory = mergeRoleplayRuntimeMemoryFindings(memory, runtimeMemoryConfigured, runtimeMemoryFindings)
 	promptComposed := false
 	if _, err := personality.Compose(personality.Options{
 		Mode:             personality.ModeRoleplay,
@@ -1269,12 +1287,60 @@ func (s *Server) resolveRoleplaySelection(override RoleplayProfileSelectionReque
 	return profile, scenario, voiceClone, nil
 }
 
-func (s *Server) roleplayRuntimeEnv() []string {
+func (s *Server) roleplayRuntimeEnv() ([]string, bool, []personality.MemoryFinding) {
 	env := os.Environ()
 	s.mu.Lock()
 	env = append(env, s.cloudVoiceEnv...)
+	runtimeMemoryConfigured := s.roleplayMemoryConfigured
+	runtimeMemoryHints := append([]string(nil), s.roleplayMemoryHintsConfig...)
+	runtimeMemoryFindings := append([]personality.MemoryFinding(nil), s.roleplayMemoryFindings...)
 	s.mu.Unlock()
-	return env
+	if len(runtimeMemoryHints) > 0 {
+		env = append(env, personality.MemorySessionNotesEnv+"="+strings.Join(runtimeMemoryHints, "\n"))
+	}
+	return env, runtimeMemoryConfigured, runtimeMemoryFindings
+}
+
+func sanitizeRoleplayMemoryHints(raw []string) ([]string, []personality.MemoryFinding, bool) {
+	configured := false
+	values := make([]string, 0, len(raw))
+	for _, value := range raw {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		configured = true
+		values = append(values, value)
+	}
+	if len(values) == 0 {
+		return nil, nil, configured
+	}
+	state, hints := personality.MemoryStateFromEnv([]string{
+		personality.MemorySessionNotesEnv + "=" + strings.Join(values, "\n"),
+	})
+	safe := make([]string, 0, len(hints))
+	for _, hint := range hints {
+		if hint.Scope == personality.MemoryScopeSessionMemory {
+			safe = append(safe, hint.Text)
+		}
+	}
+	return safe, append([]personality.MemoryFinding(nil), state.Findings...), configured
+}
+
+func mergeRoleplayRuntimeMemoryFindings(memory personality.MemoryState, runtimeConfigured bool, findings []personality.MemoryFinding) personality.MemoryState {
+	if runtimeConfigured {
+		memory.Configured = true
+		if !memory.PromptInputReady && len(findings) > 0 {
+			memory.Status = "blocked"
+		}
+	}
+	if len(findings) > 0 {
+		merged := make([]personality.MemoryFinding, 0, len(findings)+len(memory.Findings))
+		merged = append(merged, findings...)
+		merged = append(merged, memory.Findings...)
+		memory.Findings = merged
+	}
+	return memory
 }
 
 func defaultRoleplayProfile(profile string) string {

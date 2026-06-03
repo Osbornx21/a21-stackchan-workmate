@@ -222,9 +222,19 @@ Acceptance:
 
 - A roleplay turn can select a voice-clone profile without changing
   professional/V21 scope.
+- `/v1/roleplay-profile` can set and clear bounded runtime memory hints for
+  roleplay. Responses and simulator readouts show only readiness/counts and
+  finding codes, not memory text.
 - Reports include profile IDs and counts only, not user text, memory content,
   prompt bodies, or cloned voice samples.
 - Barge-in timing remains within the internal test 3 acceptance envelope.
+
+Implementation slice:
+
+- `T-ROLEPLAY-MEMORY-CONTROL-SURFACE-001` adds `memory_hints` and
+  `clear_memory` to the existing roleplay profile contract. Runtime hints are
+  sanitized with the personality memory policy, stored only in Gateway memory,
+  and reused by fast-companion roleplay summaries without V21 execution.
 
 ### A21-3: Professional Cloud Workspace Route
 

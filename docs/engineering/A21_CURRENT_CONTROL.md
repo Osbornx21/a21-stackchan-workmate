@@ -619,6 +619,33 @@ Current conclusion:
 - Cloud upload/index/query-scope and hardware professional consult remain
   planned work, not readiness claims.
 
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Roleplay Memory Control
+
+The roleplay runtime now has a product-visible memory control surface without
+turning memory into persisted logs or V21 context.
+
+Current implementation state:
+
+- `POST`/`PUT /v1/roleplay-profile` accepts `memory_hints` and
+  `clear_memory`.
+- Runtime hints are sanitized through the existing personality memory policy:
+  unsafe URLs, local paths, and credential-looking strings are rejected; long
+  hints are bounded before prompt use.
+- Gateway stores only sanitized runtime hint text in memory and returns only
+  readiness, counts, and finding codes.
+- Fast companion roleplay turns can use the configured hint count while still
+  reporting `prompt_stored=false`, `memory_text_stored=false`,
+  `professional_route_allowed=false`, and `v21_executed=false`.
+- Simulator exposes a one-hint roleplay memory control and clear button, but
+  displays only memory status/count.
+
+Current conclusion:
+
+- Roleplay now covers the PRD's first user-visible persona/memory/voice-clone
+  control loop.
+- This is not durable long-term memory, document upload, personal workspace
+  indexing, provider transcript storage, or V21 professional retrieval.
+
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Professional Workspace Contract
 
 The next internal test 4 cut gives professional mode an explicit workspace and

@@ -339,6 +339,10 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="registryMode"`,
 		`id="voiceMode"`,
 		`id="roleplayScenario"`,
+		`id="roleplayMemoryHint"`,
+		`id="saveRoleplayMemory"`,
+		`id="clearRoleplayMemory"`,
+		`id="roleplayMemoryReadout"`,
 		`id="professionalQueryScope"`,
 		`id="workspaceDocumentLabel"`,
 		`id="workspaceJob"`,
@@ -992,6 +996,89 @@ func TestRoleplayProfileEndpointPersistsScenarioVoiceCloneAndRedactsMemory(t *te
 	if !strings.Contains(chainRec.Body.String(), `"selected_voice_clone_profile":"a21_voice_clone_default"`) ||
 		!strings.Contains(chainRec.Body.String(), `"selected_tts_profile":"voice_clone_cli"`) {
 		t.Fatalf("voice clone selection did not reach voice chain: %s", chainRec.Body.String())
+	}
+}
+
+func TestRoleplayProfileEndpointSetsRuntimeMemoryHintsForFastCompanion(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{
+		"scenario":"desk_mouthpiece",
+		"voice_clone_profile":"a21_voice_clone_default",
+		"memory_hints":["只用短句接话","http://secret.example/leak","/Users/me/a21-secret.txt"]
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var profile RoleplayProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &profile); err != nil {
+		t.Fatal(err)
+	}
+	if profile.Runtime.MemoryHintCount != 1 || !profile.Memory.Configured || !profile.Memory.PromptInputReady {
+		t.Fatalf("memory = %+v runtime=%+v, want one safe runtime hint", profile.Memory, profile.Runtime)
+	}
+	if len(profile.Memory.Findings) == 0 {
+		t.Fatalf("memory findings = none, want unsafe hint finding")
+	}
+	for _, forbidden := range []string{"只用短句接话", "secret.example", "/Users/me", "http://", "https://"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("roleplay profile leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+
+	turnReq := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"roleplay",
+		"trace_id":"a21-trace-runtime-memory-001",
+		"session_id":"a21-session-runtime-memory-001",
+		"local_audio":{"asr_provider":"mock_asr","first_partial_ms":33,"final_transcript_chars":9}
+	}`))
+	turnRec := httptest.NewRecorder()
+	handler.ServeHTTP(turnRec, turnReq)
+	if turnRec.Code != http.StatusOK {
+		t.Fatalf("fast companion status = %d, want 200: %s", turnRec.Code, turnRec.Body.String())
+	}
+	var turn struct {
+		Roleplay RoleplayRuntimeSummary `json:"roleplay"`
+	}
+	if err := json.Unmarshal(turnRec.Body.Bytes(), &turn); err != nil {
+		t.Fatal(err)
+	}
+	if turn.Roleplay.MemoryHintCount != 1 || !turn.Roleplay.MemoryPromptInputReady || turn.Roleplay.V21Executed {
+		t.Fatalf("fast companion roleplay = %+v, want one ready memory hint and no V21", turn.Roleplay)
+	}
+	if strings.Contains(turnRec.Body.String(), "只用短句接话") {
+		t.Fatalf("fast companion response leaked memory hint: %s", turnRec.Body.String())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-runtime-memory-001", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	if !strings.Contains(traceRec.Body.String(), "roleplay.memory.ready") {
+		t.Fatalf("trace missing roleplay.memory.ready: %s", traceRec.Body.String())
+	}
+	if strings.Contains(traceRec.Body.String(), "只用短句接话") {
+		t.Fatalf("trace leaked memory hint: %s", traceRec.Body.String())
+	}
+
+	clearReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"clear_memory":true}`))
+	clearRec := httptest.NewRecorder()
+	handler.ServeHTTP(clearRec, clearReq)
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, want 200: %s", clearRec.Code, clearRec.Body.String())
+	}
+	var cleared RoleplayProfileResponse
+	if err := json.Unmarshal(clearRec.Body.Bytes(), &cleared); err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Runtime.MemoryHintCount != 0 || cleared.Memory.Configured || cleared.Memory.PromptInputReady {
+		t.Fatalf("cleared memory = %+v runtime=%+v, want empty runtime memory", cleared.Memory, cleared.Runtime)
 	}
 }
 

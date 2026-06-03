@@ -427,6 +427,9 @@ const simulatorHTML = `<!doctype html>
             <option value="boss_challenge">boss_challenge</option>
             <option value="engineer_pushback">engineer_pushback</option>
           </select>
+          <input id="roleplayMemoryHint" placeholder="session hint" aria-label="roleplay memory hint">
+          <button id="saveRoleplayMemory">Memory</button>
+          <button id="clearRoleplayMemory">Clear Memory</button>
           <select id="professionalQueryScope" aria-label="professional query scope">
             <option value="public_only">public_only</option>
             <option value="personal_only">personal_only</option>
@@ -447,6 +450,7 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>TTS</label><div id="selectedTTSProfileReadout">dashscope_qwen_tts_realtime</div></div>
           <div class="metric"><label>Realtime</label><div id="realtimeProviderReadout">doubao_realtime</div></div>
           <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">A21 natural voice</div></div>
+          <div class="metric"><label>Memory</label><div id="roleplayMemoryReadout">empty / 0</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -565,6 +569,7 @@ const simulatorHTML = `<!doctype html>
       selectedTTSProfileReadout: document.getElementById('selectedTTSProfileReadout'),
       realtimeProviderReadout: document.getElementById('realtimeProviderReadout'),
       voiceCloneProfileReadout: document.getElementById('voiceCloneProfileReadout'),
+      roleplayMemoryReadout: document.getElementById('roleplayMemoryReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -627,6 +632,9 @@ const simulatorHTML = `<!doctype html>
       realtimeProvider: document.getElementById('realtimeProvider'),
       voiceCloneProfile: document.getElementById('voiceCloneProfile'),
       roleplayScenario: document.getElementById('roleplayScenario'),
+      roleplayMemoryHint: document.getElementById('roleplayMemoryHint'),
+      saveRoleplayMemory: document.getElementById('saveRoleplayMemory'),
+      clearRoleplayMemory: document.getElementById('clearRoleplayMemory'),
       professionalQueryScope: document.getElementById('professionalQueryScope'),
       workspaceDocumentLabel: document.getElementById('workspaceDocumentLabel'),
       utterance: document.getElementById('utterance')
@@ -717,6 +725,9 @@ const simulatorHTML = `<!doctype html>
         ui.voiceCloneProfile.value = catalog.selected_voice_clone_profile;
         ui.voiceCloneProfileReadout.textContent = catalog.selected_voice_clone_profile;
       }
+      const memory = catalog.memory || {};
+      const count = (memory.user_preference_count || 0) + (memory.session_memory_count || 0);
+      ui.roleplayMemoryReadout.textContent = (memory.status || 'empty') + ' / ' + count;
     }
     function setProfessionalWorkspace(catalog) {
       const selectedScope = catalog.selected_query_scope || 'public_only';
@@ -1117,15 +1128,24 @@ const simulatorHTML = `<!doctype html>
         log('voice mode save unavailable');
       }
     }
-    async function saveRoleplayProfile() {
+    async function saveRoleplayProfile(options) {
+      options = options || {};
       try {
+        const body = {
+          scenario: ui.roleplayScenario.value,
+          voice_clone_profile: ui.voiceCloneProfile.value
+        };
+        if (options.includeMemory) {
+          const hint = ui.roleplayMemoryHint.value.trim();
+          body.memory_hints = hint ? [hint] : [];
+        }
+        if (options.clearMemory) {
+          body.clear_memory = true;
+        }
         const response = await fetch('/v1/roleplay-profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            scenario: ui.roleplayScenario.value,
-            voice_clone_profile: ui.voiceCloneProfile.value
-          })
+          body: JSON.stringify(body)
         });
         if (!response.ok) {
           log('roleplay save failed ' + response.status);
@@ -1133,6 +1153,9 @@ const simulatorHTML = `<!doctype html>
           return;
         }
         setRoleplayProfile(await response.json());
+        if (options.includeMemory || options.clearMemory) {
+          ui.roleplayMemoryHint.value = '';
+        }
         refreshVoiceChainProfiles();
         refreshRegistry();
       } catch (err) {
@@ -1523,6 +1546,8 @@ const simulatorHTML = `<!doctype html>
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
     ui.roleplayScenario.addEventListener('change', saveRoleplayProfile);
+    ui.saveRoleplayMemory.addEventListener('click', () => saveRoleplayProfile({ includeMemory: true }));
+    ui.clearRoleplayMemory.addEventListener('click', () => saveRoleplayProfile({ clearMemory: true }));
     ui.professionalQueryScope.addEventListener('change', saveProfessionalWorkspace);
     ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
     ui.cloudVoiceProfile.addEventListener('change', saveCloudVoiceProfile);
