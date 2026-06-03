@@ -7271,6 +7271,22 @@ Current validation request:
   - audio frame count: 0
   - mic/downlink/playback/barge-in evidence: missing
   - `prd_accepted=false`
+- Local full verification passed:
+  `make verify`。
+- Commit created and pushed:
+  `e8c9427 feat(xiaozhi): add stock half-duplex acceptance` on
+  `codex/a21-hardware-window-20260603-wifi-provisioning-flash`。
+- ECS `47.103.57.217` deployed from a `git archive` of commit `e8c9427`:
+  - remote focused test passed:
+    `go test ./internal/app -run 'XiaozhiPhysicalEvidence|XiaozhiHalfDuplex|StackChanHalfDuplex|StackChanAccept' -count=1`
+  - remote `go build -o /opt/a21/bin/a21 ./cmd/a21` passed
+  - `a21-gateway` restarted and stayed `active`
+  - public `/healthz` OK
+  - public `/v1/gateway-profiles` still selected `public_wss`, with `mac_local` available
+  - `/xiaozhi/ota/` still returns `ws://47.103.57.217/v1/xiaozhi`
+- Remote deployed binary ran the new gate and correctly blocked because the
+  post-restart physical trace was still hello-only:
+  `/tmp/a21-provider-smoke/a21-xiaozhi-half-duplex-acceptance-20260603-162242.676505054.json`。
 
 未完成事项 / blockers:
 
