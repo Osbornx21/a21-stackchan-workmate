@@ -24,6 +24,7 @@ Active child transitions:
 - `T-XIAOZHI-SHERPA-STREAMING-ASR-RUNTIME-001`
 - `T-XIAOZHI-STREAMING-ASR-PROVIDER-001`
 - `T-XIAOZHI-STALE-OPUS-INGRESS-SUPPRESSION-001`
+- `T-XIAOZHI-LISTEN-SPEAK-BOUNDARY-001`
 - `T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE`
 - `T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY`
 - `T-XIAOZHI-STOCK-HALF-DUPLEX-ACCEPTANCE-001`
@@ -110,6 +111,16 @@ are suppressed before decode, audio ingress, VAD, or streaming ASR append. This
 keeps abort/wake-as-abort/listen-start barge-in from letting old queued audio
 pollute the next listening turn. It is unit/Gateway evidence only, not real
 provider execution or physical PRD acceptance.
+`T-XIAOZHI-LISTEN-SPEAK-BOUNDARY-001` is now the active hotfix for the
+post-wake "speaks before the user finishes" physical symptom. A21 no longer
+lets ASR partial text start an audible Xiaozhi answer: partials now record
+`xiaozhi.voice_pipeline.partial_prewarm_deferred` and keep the device in
+listening until device `listen.stop`, trusted turn end, or max-duration safety
+stop closes the turn. For stock physical MAC devices, Gateway-side RMS
+`vad.speech.end` is also deferred and no longer triggers
+`xiaozhi.listen.auto_stop`, because the two-frame RMS hangover can mistake a
+natural short pause for speech end. This preserves streaming ASR partial
+observability without allowing pre-stop `tts.first_audio` or Opus downlink.
 `T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE` is active as the mode
 contraction slice: user-facing product modes converge to `dialogue` and
 `professional`; legacy labels such as `workmate`, `companion`, `co_creation`,

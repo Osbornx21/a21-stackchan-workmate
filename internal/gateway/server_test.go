@@ -4964,7 +4964,7 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 	}
 }
 
-func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal(t *testing.T) {
+func TestXiaozhiWebSocketASRPartialDoesNotSpeakBeforeListenStop(t *testing.T) {
 	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
 	asr, ok := streamingASR.(providers.ASRAdapter)
 	if !ok {
@@ -5008,27 +5008,28 @@ func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFi
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		traces = server.traceEvents("a21-trace-xiaozhi-partial-bridge")
-		if traceContains(traces, "provider.first_content") && traceContains(traces, "tts.first_audio") {
+		if traceContains(traces, "asr.first_partial") && traceContains(traces, "xiaozhi.voice_pipeline.partial_prewarm_deferred") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for _, want := range []string{"asr.first_partial", "xiaozhi.voice_pipeline.start", "provider.first_content", "tts.first_audio"} {
+	for _, want := range []string{"asr.first_partial", "xiaozhi.voice_pipeline.partial_prewarm_deferred"} {
 		if !traceContains(traces, want) {
 			t.Fatalf("trace before listen stop missing %q: %+v", want, traces)
 		}
 	}
-	for _, want := range []string{"xiaozhi.voice_pipeline.llm.mock_blocked", "xiaozhi.voice_pipeline.tts.mock_blocked"} {
-		if !traceContains(traces, want) {
-			t.Fatalf("trace before listen stop missing mock blocker %q: %+v", want, traces)
-		}
-	}
-	for _, forbidden := range []string{"xiaozhi.voice_pipeline.llm.real_streaming", "xiaozhi.voice_pipeline.tts.real_streaming"} {
-		if traceContains(traces, forbidden) {
-			t.Fatalf("mock pipeline trace must not contain %q: %+v", forbidden, traces)
-		}
-	}
-	for _, forbidden := range []string{"xiaozhi.listen.stop", "vad.speech.end", "asr.final"} {
+	for _, forbidden := range []string{
+		"xiaozhi.listen.stop",
+		"vad.speech.end",
+		"asr.final",
+		"xiaozhi.voice_pipeline.start",
+		"provider.first_content",
+		"tts.first_audio",
+		"audio.downlink.first_frame",
+		"xiaozhi.tts.opus_frame.downlink",
+		"xiaozhi.voice_pipeline.llm.real_streaming",
+		"xiaozhi.voice_pipeline.tts.real_streaming",
+	} {
 		if traceContains(traces, forbidden) {
 			t.Fatalf("trace should not contain %q before explicit stop: %+v", forbidden, traces)
 		}
@@ -5045,7 +5046,7 @@ func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFi
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for _, want := range []string{"xiaozhi.listen.stop", "asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.completed"} {
+	for _, want := range []string{"xiaozhi.listen.stop", "asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.start", "provider.first_content", "tts.first_audio", "xiaozhi.voice_pipeline.completed"} {
 		if !traceContains(traces, want) {
 			t.Fatalf("trace after listen stop missing %q: %+v", want, traces)
 		}
@@ -5074,17 +5075,107 @@ func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFi
 	if !ok {
 		t.Fatalf("missing xiaozhi.voice_pipeline.completed: %+v", traces)
 	}
-	if pipelineStartAt >= stopAt {
-		t.Fatalf("pipeline start at %d, want before listen.stop at %d", pipelineStartAt, stopAt)
+	if pipelineStartAt < stopAt {
+		t.Fatalf("pipeline start at %d, want after listen.stop at %d", pipelineStartAt, stopAt)
 	}
-	if providerAt >= finalAt {
-		t.Fatalf("provider.first_content at %d, want before asr.final at %d", providerAt, finalAt)
+	if providerAt < finalAt {
+		t.Fatalf("provider.first_content at %d, want after asr.final at %d", providerAt, finalAt)
 	}
 	if ttsAt >= completedAt {
 		t.Fatalf("tts.first_audio at %d, want before pipeline completed at %d", ttsAt, completedAt)
 	}
 	if got := traceEventCount(traces, "xiaozhi.voice_pipeline.start"); got != 1 {
-		t.Fatalf("voice pipeline start count = %d, want exactly one partial-driven task: %+v", got, traces)
+		t.Fatalf("voice pipeline start count = %d, want exactly one final-driven task: %+v", got, traces)
+	}
+}
+
+func TestXiaozhiWebSocketStockPhysicalDefersGatewayVADStopUntilListenStop(t *testing.T) {
+	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
+	asr, ok := streamingASR.(providers.ASRAdapter)
+	if !ok {
+		t.Fatal("mock streaming ASR adapter must also satisfy batch ASR fallback")
+	}
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        asr,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-stock-vad-defer",
+		"session_id": "a21-session-xiaozhi-stock-vad-defer",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestOpusPacket(t)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var traces []TraceEvent
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-stock-vad-defer")
+		if traceContains(traces, "vad.speech.end") && traceContains(traces, "xiaozhi.listen.gateway_vad_stop_deferred_stock_physical") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"vad.speech.end", "xiaozhi.listen.gateway_vad_stop_deferred_stock_physical", "asr.first_partial"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace before listen stop missing %q: %+v", want, traces)
+		}
+	}
+	for _, forbidden := range []string{"xiaozhi.listen.auto_stop", "xiaozhi.voice_pipeline.start", "provider.first_content", "tts.first_audio", "xiaozhi.tts.opus_frame.downlink"} {
+		if traceContains(traces, forbidden) {
+			t.Fatalf("stock physical trace should not contain %q before device listen.stop: %+v", forbidden, traces)
+		}
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	stt := readXiaozhiJSON(t, ctx, conn)
+	if stt["type"] != "stt" {
+		t.Fatalf("post-stop stt = %#v", stt)
+	}
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("post-stop tts start = %#v", ttsStart)
+	}
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-stock-vad-defer")
+		if traceContains(traces, "asr.final") && traceContains(traces, "xiaozhi.voice_pipeline.start") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"xiaozhi.listen.stop", "asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.start"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace after listen stop missing %q: %+v", want, traces)
+		}
 	}
 }
 

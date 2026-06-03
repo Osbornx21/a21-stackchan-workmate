@@ -2735,17 +2735,10 @@ func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *web
 		session.mu.Unlock()
 		return
 	}
-	session.streamingASRPartialBridgeStarted = true
 	session.voicePipelineHasSpeech = true
-	turn := session.currentTurn
 	session.mu.Unlock()
 
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.partial_bridge_start", s.now().UnixMilli())
-	task := s.newXiaozhiTurnTask(session, turn)
-	task.streamingASRPartialText = partialText
-	task.streamingASRPartialDriven = true
-	task.voicePipelineHasSpeech = true
-	s.startXiaozhiTurnTask(ctx, conn, session, task)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.partial_prewarm_deferred", s.now().UnixMilli())
 }
 
 func (session *xiaozhiSession) xiaozhiPartialVoicePipelineStarted() bool {
@@ -3664,6 +3657,10 @@ func (s *Server) maybeAutoStopXiaozhiTurnOnIngress(ctx context.Context, conn *we
 	if autoStopReason == "" || !session.voicePipelineHasSpeech || !session.listening {
 		return
 	}
+	if autoStopReason == "speech_end" && session.xiaozhiUsesStockPhysicalStop() {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.gateway_vad_stop_deferred_stock_physical", s.now().UnixMilli())
+		return
+	}
 	turn := session.currentXiaozhiTurn()
 	if turn == nil {
 		return
@@ -3689,6 +3686,13 @@ func (s *Server) xiaozhiListenMaxDurationReached(session *xiaozhiSession, nowMS 
 		return false
 	}
 	return nowMS-session.listenStartedAtMS >= s.xiaozhiListenMaxDurationMS
+}
+
+func (session *xiaozhiSession) xiaozhiUsesStockPhysicalStop() bool {
+	if session == nil {
+		return false
+	}
+	return hardwareMACDeviceID(session.deviceID) && xiaozhiClientProfile(session.features) == "stock"
 }
 
 func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason string, hadTurn bool) {

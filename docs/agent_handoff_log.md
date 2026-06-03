@@ -8302,3 +8302,69 @@ Recommended next action:
    Opus ingress -> ASR -> TTS downlink.
 4. Immediately test barge-in during speaking and verify no downlink frames are
    emitted for the cancelled turn after `abort`.
+
+## 2026-06-03 22:xx CST - Xiaozhi Listen/Speak Boundary Hotfix
+
+Round goal:
+
+- Fix the physical symptom where StackChan can begin speaking before the user
+  finishes after the custom wake word, while preserving low-latency ASR partial
+  evidence and barge-in cancellation.
+
+Actual completed work:
+
+- Rechecked the Xiaozhi stock state-machine boundary: `asr.first_partial` may
+  arrive while the device is still listening, but user-audible `tts start` and
+  binary Opus downlink must not begin until the listen turn is closed by
+  device `listen.stop`, trusted VAD end, or a max-duration safety stop.
+- Found two A21-side causes of the “抢答” behavior:
+  1. `startXiaozhiPartialVoicePipeline` treated the first ASR partial as a
+     complete answer trigger and started the audible TTS path.
+  2. The Gateway RMS VAD default hangover is only two 60 ms Opus frames; on a
+     physical stock StackChan this can turn a natural short pause into
+     `vad.speech.end` and `xiaozhi.listen.auto_stop` before the endpoint sends
+     its own `listen.stop`.
+- Changed ASR partial handling to record
+  `xiaozhi.voice_pipeline.partial_prewarm_deferred` and keep the turn in
+  listening; it no longer starts `tts`, LLM/TTS output, or Opus downlink.
+- Changed stock physical MAC-device handling so Gateway-side `vad.speech.end`
+  is recorded but does not auto-stop the turn; the stock endpoint `listen.stop`
+  remains the authoritative speech-end signal. Max-duration safety auto-stop
+  remains available.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused Gateway tests passed:
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocket(ASRPartialDoesNotSpeakBeforeListenStop|StockPhysicalDefersGatewayVADStopUntilListenStop|StreamingASRStartsBeforeListenStop|StreamingASRFinalStartsPipelineWithoutBatchFallback|StreamingASRFinalSendsStockSTTBeforeTTS|VADSpeechEndAutoStopsRealtimeTurn|MaxListenDurationAutoStopsAfterSpeech|ListenStopDoesNotBlockAbortWhileStreamingASRCommitPending)' -count=1`.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Pre-deploy live trace scan on `47.103.57.217` showed the old runtime still
+  had many Gateway VAD-driven endings (`vad.speech.end=27`,
+  `listen.stop=8`), confirming the physical symptom is plausible before this
+  fix is deployed.
+
+Unfinished items:
+
+- `make verify`, commit, public ECS deployment, and fresh physical trace scan
+  still need to run for this hotfix.
+- Full physical acceptance still needs operator confirmation that the device no
+  longer speaks over unfinished wake-word utterances.
+- Device-level `playback.stop_done` remains optional/stock-limited evidence;
+  Gateway barge-in stop/downlink suppression is not the same as device queue
+  acknowledgement.
+
+Recommended next action:
+
+1. Run `make verify`.
+2. Commit the hotfix.
+3. Deploy the committed Gateway to `47.103.57.217`.
+4. Run a fresh wake -> speak -> interrupt physical trace and require:
+   no `tts.first_audio` before `listen.stop` or max-duration stop, no old
+   downlink after `playback.stop`, and operator audible confirmation.
