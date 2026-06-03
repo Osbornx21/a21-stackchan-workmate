@@ -10366,3 +10366,65 @@ Dispatch status:
 - Pending worker creation from current pushed main-control branch
   `codex/a21-hardware-window-20260603-wifi-provisioning-flash` after this
   dispatch record is committed and pushed.
+
+## 2026-06-04 06:06 CST - Main Control Dispatch Prepared For V21 A21 v2 Native Scope
+
+Round goal:
+
+- Prepare the V21-side worker needed by internal test 4 so V21 can natively
+  accept and report A21 v2 professional workspace/query-scope metadata, while
+  preserving A21/V21 separation and the existing dirty V21 LAN discovery work.
+
+Detailed plan path:
+
+- A21 control plan:
+  `docs/plans/2026-06-04-v21-a21-v2-workspace-query-scope-native-contract.md`
+- Required V21 worker plan:
+  `/Users/jiyurun/Documents/v21-knowledge-platform/docs/plans/2026-06-04-a21-v2-workspace-query-scope-native-contract.md`
+
+Worker execution task:
+
+- Execute `T-V21-A21-V2-WORKSPACE-QUERY-SCOPE-NATIVE-001` in the V21 repository.
+- Make V21 `/internal/v1/knowledge/voice-query` accept A21 v2 additive request
+  fields `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- Add safe response metadata `source_scope_counts` and `workspace_status`.
+- If V21 cannot yet prove personal/public ACL enforcement with the current
+  schema, return or document a stable pending/blocker status instead of
+  claiming `personal_plus_public` is searchable.
+
+Worker boundary conditions:
+
+- V21 repo path: `/Users/jiyurun/Documents/v21-knowledge-platform`.
+- Existing V21 working tree is dirty on branch `feat/consumer-lan-discovery-ui`
+  with LAN discovery / desktop connector changes. Worker must not revert,
+  overwrite, stage, or reformat those files.
+- No A21 code edits in this worker.
+- No A21 Gateway runtime start, no StackChan hardware, no firmware build, no
+  flash, no serial, no NVS, no provider API execution.
+- No deletion, prune, report cleanup, or rewrite of existing V21 reports or
+  worktrees.
+- No query text, answer text, evidence body, credential, full URL, local path,
+  transcript, raw audio, or provider output may be written to reports/docs/chat.
+
+Required worker summary format:
+
+- Transition
+- What changed
+- Files changed
+- Tests run and results
+- Runtime evidence
+- Deviations from plan
+- Remaining issues
+- Next suggested action
+- Forbidden actions avoided
+- Commit and push status
+
+Dispatch status:
+
+- Pending V21 scoped worker creation after this A21 dispatch record is
+  committed and pushed.
+
+Test/build/runtime results:
+
+- `git diff --check`: passed before commit.
+- `GOMAXPROCS=2 make verify`: passed.
