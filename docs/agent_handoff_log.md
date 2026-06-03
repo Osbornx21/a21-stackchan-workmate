@@ -7300,3 +7300,113 @@ Current validation request:
 - Trigger a real physical StackChan turn on the public Gateway, then rerun:
   `go run ./cmd/a21 stackchan-accept --check xiaozhi-half-duplex --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --output-dir reports`
 - If that report moves to `physical_review_required`, pair it with operator/instrument listening evidence and then refresh product readiness without marking full PRD green until wake-word proof exists.
+
+## 2026-06-03 17:3x CST - StackChan Voice/Firmware Recovery Audit After No-Sound Report
+
+目标:
+
+- 回答用户关于“语音链路、Xiaozhi 协议/音频、唤醒词、级联优化是否在干净 Xiaozhi 重拉后丢失”的问题。
+- 逐层区分 repo/overlay、clean build workdir、最新 bin/config、物理 Gateway runtime。
+- 复盘构建/刷机路径错误，不把“应该还在”当作证据。
+
+实际完成内容:
+
+- 当前分支/版本:
+  - branch `codex/a21-hardware-window-20260603-wifi-provisioning-flash`;
+  - HEAD `4c4178a fix(stackchan): keep official dependency cache clean`;
+  - ahead of origin by 1 commit;
+  - unrelated/untracked only `.DS_Store` and `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`.
+- 确认最新产品 flash 是 product lane:
+  - report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-170812-1780477692092580000.json`;
+  - clean guard worktree `/private/tmp/a21-flash-clean`;
+  - guard commit `4c4178af579d`;
+  - app file `a21-stackchan-official-xiaozhi-compatible.bin`;
+  - app sha `85e46b26c98b1c8c1d6f73be5e50be2149573623af7db1816851336be62c6389`.
+- 确认产品 clean build config 实际包含:
+  - `BOARD_TYPE_M5STACK_STACK_CHAN=true`;
+  - `A21_STACKCHAN_KEEP_CONTROL_CHANNEL=true`;
+  - `USE_CUSTOM_WAKE_WORD=true`;
+  - `CUSTOM_WAKE_WORD="zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue"`;
+  - `CUSTOM_WAKE_WORD_DISPLAY="紫悦"`;
+  - `CUSTOM_WAKE_WORD_THRESHOLD=20`;
+  - `SR_MN_CN_MULTINET7_QUANT=true`;
+  - `SR_WN_WN9_HISTACKCHAN_TTS3=false`;
+  - `USE_HOTSPOT_WIFI_PROVISIONING=true`;
+  - `USE_ESP_BLUFI_WIFI_PROVISIONING=false`;
+  - `USE_ACOUSTIC_WIFI_PROVISIONING=false`;
+  - `OTA_URL="http://47.103.57.217/xiaozhi/ota/"`.
+- 确认 clean workdir 里存在端侧代码:
+  - custom wake word split code in `firmware/xiaozhi-esp32/main/audio/wake_words/custom_wake_word.cc`;
+  - log marker `Loaded %d A21 custom wake command(s) for %s`;
+  - VAD/no-speech/listen guards in `firmware/xiaozhi-esp32/main/application.cc`;
+  - `A21_VAD_STOP_DEBOUNCE_MS=520`;
+  - `A21_VAD_MIN_LISTENING_MS=1200`;
+  - `A21_NO_SPEECH_LISTENING_TIMEOUT_MS=7000`;
+  - `CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL` guarded logic.
+- 确认当前 HEAD 祖先链仍包含核心语音/端侧改动:
+  - `f0603f5 fix(firmware): set official xiaozhi codec volume`;
+  - `060d2bb fix(audio): accept stackchan xiaozhi playback hotfix`;
+  - `5242349 fix(voice): bound xiaozhi listen and tune zi yue wake`;
+  - `8e4df0b fix(firmware): split zi yue wake commands`;
+  - `9ba8bc1 fix(firmware): skip welcome after stackchan app preload`;
+  - `e694550 fix(firmware): park after stackchan xiaozhi autostart`;
+  - `fc79156 feat(a21): queue xiaozhi opus ingress`;
+  - `2f8a63f feat(xiaozhi): suppress stale opus ingress after abort`;
+  - `d15a7b4 feat: promote public voice gateway and wifi provisioning`;
+  - `face173 feat: enable public edge dashscope voice downlink`;
+  - `e8c9427 feat(xiaozhi): add stock half-duplex acceptance`.
+- 发现一个 superseded/missing commit:
+  - `b25b8b7 fix(firmware): raise stackchan xiaozhi volume candidate` is not an ancestor of current HEAD.
+  - 当前 overlay 仍有 `SetOutputVolume(92)` from `f0603f5`;需要后续确认 `b25b8b7` 是否只被 `f0603f5/060d2bb` 取代，还是有未带入的体感音量细节。
+- 确认构建/刷机错误:
+  - 2026-06-03 02:13 有一次真实 product-affecting 错刷:
+    `reports/a21-xiaozhi-firmware-flash-20260603-021354-1780424034336886000.json`;
+    command `xiaozhi-firmware-flash --execute`;
+    app `xiaozhi.bin`;
+    sha `1815bda17a9ec5dcd0052e86526670ab17f3c5bff1e11944f5ac3731ea8e349b`;
+    commit `8f36a95e86d4`.
+  - 该错刷后来被 product lane 覆盖:
+    `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260603-021849-1780424329771759000.json`;
+    app `a21-stackchan-official-xiaozhi-compatible.bin`;
+    sha `2b42e91226a4e21538999a283312d1754882e1654cbf6fc20115f6210ce4864e`.
+  - 17:08 又被当前 clean product package 覆盖，见最新 flash report。
+  - 另一个路径错误是审计误读 `/tmp/a21-stackchan-official-build/sdkconfig`;正确路径是 `/tmp/a21-stackchan-official-build/config/sdkconfig.json` and `config/sdkconfig.h`。
+- 确认主公网 Gateway runtime 断点:
+  - ECS `47.103.57.217` 的 systemd `ExecStart` 仍是
+    `/opt/a21/bin/a21 gateway --addr 127.0.0.1:21081 --public-gateway-url http://47.103.57.217 --product-chain host_local --voice-text-max-tokens 32`;
+  - `/etc/a21/secrets/provider.env` 有 DashScope TTS / DeepSeek text / voice clone env names, but no ASR env;
+  - `applyXiaozhiProductChainEnvDefaults` will default missing ASR to `A21_ASR_LOCAL_PROFILE=sherpa_onnx`;
+  - ECS was intentionally chosen not to run local ASR/TTS, so this product-chain mode conflicts with the current public Gateway role.
+- 远端 runtime evidence:
+  - `a21-gateway` active;
+  - device `44:1b:f6:e2:6a:60` present but currently stale;
+  - device current mode/expression `local_fallback`;
+  - `/v1/providers/voice/health` returns `a21-mock-voice`;
+  - current trace `a21-trace-44-1b-f6-e2-6a-60` has:
+    - `xiaozhi.opus_frame.received=124`;
+    - `xiaozhi.opus_frame.decoded=124`;
+    - `audio.ingress.buffered=124`;
+    - `xiaozhi.opus_ingress.queued=124`;
+    - `xiaozhi.wake_preroll.opus_frame.buffered=119`;
+    - `xiaozhi.listen.auto_stop=8`;
+    - `barge_in.detected=8`;
+    - `playback.stop=8`;
+    - `audio.downlink.first_frame=8`;
+    - `xiaozhi.tts.opus_frame.downlink=8`;
+    - but also `xiaozhi.voice_pipeline.unavailable=8`;
+    - `local_fallback.entered=8`;
+    - `xiaozhi.fast_ack.downlink=8`.
+
+结论:
+
+- 不是“只剩 avatar”。大量端侧/网关链路代码还在 repo、clean build、latest product config 里。
+- 也不是“已经有效”。公网主 Gateway 当前普通 `/v1/xiaozhi` 对话路径实际掉进 `host_local` ASR 缺失和 local fallback，因此用户体感会像唤醒/点屏/声音链路都没了。
+- 唤醒词的固件 config 已进 latest product build，但物理 wake 仍失败，必须用串口或设备日志确认是否加载了 `Loaded 4 A21 custom wake command(s) for 紫悦`，以及是否是 phrase/threshold/model issue。
+- 三种配网诉求目前只完成了 product Hotspot default；BluFi/acoustic 只是被命名为 build alternatives 且 disabled，尚未满足“像 Xiaozhi 启动那三种方式”。
+
+推荐下一步:
+
+- 先修 public Gateway product chain: 公网 ECS 不应继续以 `host_local` + missing ASR 作为主产品链路。必须接入云 ASR adapter or explicit public-cloud ASR profile，再跑真实 physical `/v1/xiaozhi` turn。
+- 同步补齐三种 Wi-Fi provisioning product config/option，避免只支持硬写或单 Hotspot。
+- 单独打开串口/日志验证 wake load/detect，不用 Gateway `/v1/wake-word` 作为固件真相。
+- 在修 provider chain 前，不再重复刷固件；当前 latest product app 已是正确 lane。

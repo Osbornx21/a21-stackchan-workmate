@@ -170,6 +170,20 @@ device `44:1b:f6:e2:6a:60` was online with stock Xiaozhi transport, but the
 latest trace was hello-only with zero audio frames, no downlink, no playback
 ack, and no barge-in stop evidence, so status correctly remained `blocked` and
 `prd_accepted=false`.
+The 2026-06-03 post-rebuild/no-sound audit found that the endpoint and
+Gateway voice changes were not broadly erased by the clean Xiaozhi refresh:
+the current HEAD still contains the wake/listen/VAD, Opus queue, stale ingress
+suppression, public Gateway, DashScope downlink, and stock half-duplex
+acceptance commits; the latest clean product build/flash still used
+`a21-stackchan-official-xiaozhi-compatible.bin` with custom `紫悦` wake config
+and A21 control-channel guards. The current runtime break is on the public
+Gateway product chain: ECS `47.103.57.217` is still launched with
+`--product-chain host_local`, has TTS/text env keys but no ASR env, defaults
+missing ASR to `A21_ASR_LOCAL_PROFILE=sherpa_onnx`, and therefore drives real
+physical `/v1/xiaozhi` turns into `xiaozhi.voice_pipeline.unavailable` and
+`local_fallback`. This keeps physical dialogue and audible acceptance blocked
+until the public Gateway has a cloud-compatible ASR/LLM/TTS chain and a fresh
+physical trace proves real provider execution.
 `T-STACKCHAN-WIFI-PROVISIONING-001-XIAOZHI-STYLE` is active as the endpoint
 provisioning contract: A21 no longer treats missing Wi-Fi credentials in the
 self-owned firmware state model as local fallback; it enters
