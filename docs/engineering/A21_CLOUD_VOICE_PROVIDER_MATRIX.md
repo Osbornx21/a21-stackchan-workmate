@@ -30,7 +30,7 @@ runtime-ready.
 
 Prior A21 work already gives this branch a stable landing zone:
 
-- `voice_mode` is only `dialogue` or `professional`. Cloud voice provider
+- `voice_mode` is only `roleplay` or `professional`. Cloud voice provider
   selection must not create hidden product modes.
 - `gateway_profile` is separate from `voice_mode` and selects `public_wss` or
   `mac_local`; provider selection must not change where StackChan connects.
@@ -93,7 +93,7 @@ Add a new frontend/operator concept: `cloud_voice_profile`.
 
 It is separate from:
 
-- `voice_mode`: product behavior, only `dialogue` or `professional`.
+- `voice_mode`: product behavior, only `roleplay` or `professional`.
 - `gateway_profile`: device transport target, `public_wss` or `mac_local`.
 - `A21_PROVIDER_PRIMARY`: text or realtime provider spine selection.
 

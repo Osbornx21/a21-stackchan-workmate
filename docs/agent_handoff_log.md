@@ -19,6 +19,95 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-04 - T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001 - Start Roleplay/Professional v2
+
+Goal:
+
+- Start internal test 4 without regressing internal test 3 voice-main-chain
+  acceptance.
+- Promote `roleplay` and `professional` to the two user-facing modes.
+- Preserve `professional` as the only A21/V21 evidence path.
+- Define the A21 Cloud/Web/App plus V21 Knowledge Service/Adapter product form
+  for upload, public-only query, personal-only query, personal+public query,
+  and A21 hardware professional consultation.
+
+Actual completed work:
+
+- Created the internal test 4 plan:
+  `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`.
+- Updated PRD v0.5 to make `roleplay` the default embodied/personality/memory/
+  voice-clone mode and `professional` the explicit evidence mode.
+- Updated protocol documentation and V21 integration notes for adapter v2
+  direction with workspace/query-scope fields.
+- Updated Gateway mode contract:
+  - `/v1/voice-modes` lists `roleplay` and `professional`;
+  - default selected voice mode is `roleplay`;
+  - old `dialogue` input is accepted as a backwards-compatible alias and
+    returns selected `roleplay`;
+  - fast-companion accepts `roleplay` while still rejecting selected
+    `professional` before provider or V21 execution.
+- Updated simulator defaults/readouts to `roleplay`.
+- Updated project state and evidence manifest to treat internal test 4 as the
+  active build direction while keeping internal test 3 as the latest accepted
+  package.
+
+Files changed:
+
+- `internal/protocol/message.go`
+- `internal/protocol/message_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/prd/A21_PRD.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/V21_INTEGRATION.md`
+- `docs/engineering/VOICE_MODE_SELECTION.md`
+- `docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- A21 Cloud/Web/App upload/index/device-binding implementation is not built
+  yet.
+- V21 upload/index/query-scope implementation is not verified yet.
+- Adapter v2 code fields are planned but not yet implemented.
+- Physical StackChan internal test 4 professional consult evidence remains
+  pending.
+
+Known risks or blockers:
+
+- Do not rename or rewrite all legacy `workmate`/`companion` runtime states in
+  this cut; they are still part of internal test 3 compatibility.
+- Do not let `roleplay` call V21 just because memory/persona hints exist.
+- Do not claim cloud workspace readiness from the v1 local adapter smoke.
+- Git may continue to warn about historical loose objects/gc; no prune/gc
+  action is authorized.
+
+Recommended next action:
+
+- Implement adapter v2 request/response fields for `workspace_id`, `user_id`,
+  and `query_scope` behind redacted tests.
+- Dispatch a V21-side worker for upload/index/query-scope support without
+  importing V21 internals into A21.
+- Then wire web/app workspace controls and hardware professional consult
+  evidence.
+
+Test, build, or runtime results:
+
+- `go test ./internal/protocol -run 'ProductModes|Envelope|DeviceEvent' -count=1`: passed.
+- `go test ./internal/gateway -run 'VoiceModes|FastCompanion|SimulatorPageServed|ProfessionalMode|OrdinaryOfficeModes' -count=1`: passed.
+- `go test ./internal/protocol ./internal/gateway ./internal/personality ./internal/v21adapter -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location and reason:
+
+- None so far.
+
 ## 2026-06-02 - T-GOV-001 - Establish Repo-Carried Workflow State
 
 Goal:

@@ -475,6 +475,7 @@ const (
 	DeviceRegistryServiceName      = "a21-gateway"
 	VoiceModeSchemaVersion         = "a21.gateway.voice_modes.v1"
 	VoiceModeDialogue              = "dialogue"
+	VoiceModeRoleplay              = "roleplay"
 	VoiceModeProfessional          = "professional"
 	VoiceChainProfileSchemaVersion = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade          = "cascade"
@@ -743,7 +744,7 @@ func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !validVoiceMode(req.VoiceMode) {
-			http.Error(w, "voice_mode must be dialogue or professional", http.StatusBadRequest)
+			http.Error(w, "voice_mode must be roleplay or professional", http.StatusBadRequest)
 			return
 		}
 		s.setVoiceMode(req.VoiceMode)
@@ -826,11 +827,11 @@ func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
 		SelectedVoiceMode: s.selectedVoiceMode(),
 		Modes: []VoiceModeOption{
 			{
-				ID:          VoiceModeDialogue,
-				Label:       "Dialogue",
+				ID:          VoiceModeRoleplay,
+				Label:       "Roleplay",
 				Status:      "available",
 				Default:     true,
-				Description: "low-latency local ASR, streaming text, streaming TTS, and stock Xiaozhi playback",
+				Description: "role personality, memory hints, voice clone, low-latency speech, and stock Xiaozhi playback",
 			},
 			{
 				ID:          VoiceModeProfessional,
@@ -843,11 +844,17 @@ func (s *Server) voiceModeCatalog() VoiceModeCatalogResponse {
 }
 
 func validVoiceMode(mode string) bool {
-	switch mode {
-	case VoiceModeDialogue, VoiceModeProfessional:
-		return true
+	return canonicalVoiceMode(mode) != ""
+}
+
+func canonicalVoiceMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case VoiceModeDialogue, VoiceModeRoleplay:
+		return VoiceModeRoleplay
+	case VoiceModeProfessional:
+		return VoiceModeProfessional
 	default:
-		return false
+		return ""
 	}
 }
 
@@ -858,23 +865,24 @@ func (s *Server) selectedVoiceMode() string {
 }
 
 func (s *Server) setVoiceMode(mode string) {
-	if !validVoiceMode(mode) {
+	canonical := canonicalVoiceMode(mode)
+	if canonical == "" {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.voiceModeConfig = mode
+	s.voiceModeConfig = canonical
 }
 
 func defaultVoiceMode(mode string) string {
-	if validVoiceMode(mode) {
-		return mode
+	if canonical := canonicalVoiceMode(mode); canonical != "" {
+		return canonical
 	}
-	return VoiceModeDialogue
+	return VoiceModeRoleplay
 }
 
 func voiceModeAvailableForFastCompanion(mode string) bool {
-	return defaultVoiceMode(mode) == VoiceModeDialogue
+	return defaultVoiceMode(mode) == VoiceModeRoleplay
 }
 
 func plannedVoiceModeError(mode string) string {
@@ -6342,8 +6350,8 @@ func (s *Server) handleFastCompanionTurn(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "professional mode must use the professional path with V21 evidence", http.StatusBadRequest)
 		return
 	}
-	if req.Mode != protocol.ModeWorkmate && req.Mode != protocol.ModeCompanion {
-		http.Error(w, "fast companion mode must be companion or workmate", http.StatusBadRequest)
+	if req.Mode != protocol.ModeRoleplay && req.Mode != protocol.ModeWorkmate && req.Mode != protocol.ModeCompanion {
+		http.Error(w, "fast companion mode must be roleplay, companion, or workmate", http.StatusBadRequest)
 		return
 	}
 	selectedVoiceMode := s.selectedVoiceMode()

@@ -93,6 +93,55 @@ Response:
 }
 ```
 
+## Internal Test 4 Adapter v2 Direction
+
+Internal test 4 keeps the v1 adapter smoke as accepted local boundary evidence,
+but the cloud workspace product needs a scoped v2 professional query contract.
+A21 should remain ignorant of V21 internals while carrying enough user/workspace
+context for V21 to enforce permissions.
+
+Additional request fields:
+
+```json
+{
+  "device_id": "stackchan-example",
+  "user_id": "redacted-user-label",
+  "workspace_id": "redacted-workspace-label",
+  "query_scope": "personal_plus_public"
+}
+```
+
+Allowed `query_scope` values:
+
+- `public_only`
+- `personal_only`
+- `personal_plus_public`
+
+Additional response fields:
+
+```json
+{
+  "source_scope_counts": {
+    "public": 2,
+    "personal": 3
+  },
+  "workspace_status": "searchable"
+}
+```
+
+Rules:
+
+- `roleplay` mode must not call V21, even when user memory or persona hints are
+  available.
+- `professional` mode must be user-confirmed before A21 sends a V21 query.
+- `public_only` must never return personal source IDs.
+- V21 reports may include scope labels and counts, but not uploaded document
+  text, evidence bodies, full source paths, credentials, local private URLs,
+  prompts, transcripts, or provider output.
+- A21 hardware may initiate a professional consult only through Gateway/Core;
+  StackChan does not store workspace documents, embeddings, provider keys, or
+  V21 credentials.
+
 ## Failure Behavior
 
 If V21 is unavailable:

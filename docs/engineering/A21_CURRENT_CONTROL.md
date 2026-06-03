@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `20d11a0 docs(control): record stepfun cloud-edge evidence`
+  `900264e docs(control): record v21 adapter evidence`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -75,17 +75,18 @@ Evidence truth:
 
 Current active plan:
 
-- `docs/plans/2026-06-04-v21-professional-execution-validation.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
 
 Transition:
 
-- `T-V21-PROFESSIONAL-EXECUTION-001`
+- `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001`
 
 Target:
 
-- Close the server-side V21 professional execution gate through the explicit
-  A21/V21 adapter boundary, without importing V21 internals into A21 or
-  weakening the remaining physical StackChan PRD gates.
+- Advance internal test 4 without regressing internal test 3: make `roleplay`
+  and `professional` the two user-facing modes, keep `dialogue` as a
+  compatibility alias, and define the A21 Cloud/Web/App plus V21 Knowledge
+  Service/Adapter shape for public-only and personal+public professional query.
 
 ## Current Evidence Manifest
 
@@ -507,3 +508,45 @@ Current conclusion:
   Gateway V21 topology.
 - Full PRD remains blocked by physical StackChan acceptance and current live
   Gateway/wake/selector evidence refresh.
+
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Start
+
+The active product direction has moved from internal test 3 evidence closure to
+internal test 4 PRD completion.
+
+Current internal test 4 decisions:
+
+- User-facing modes are now `roleplay` and `professional`.
+- `roleplay` is the default embodied mode for personality, memory hints,
+  role-play playbooks, voice-clone selection, low-latency speech, and Xiaozhi
+  playback.
+- `professional` remains the only mode allowed to call the A21/V21 adapter.
+- `dialogue`, `workmate`, `companion`, and `co_creation` are compatibility
+  aliases or lower-level playbook labels under `roleplay`.
+- Mode switching must be user-initiated by voice, touch, app, or web control.
+- A21 Cloud/Web/App is the target workspace surface for upload, indexing,
+  public-only query, personal-only query, personal+public query, and device
+  binding.
+- V21 should evolve into a Knowledge Service/Adapter boundary with scoped
+  `workspace_id`, `user_id`, and `query_scope` fields; A21 must not read V21
+  internals or store uploaded documents on StackChan.
+
+First code/doc cut in progress:
+
+- Plan:
+  `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`.
+- PRD v0.5 mode/workspace update.
+- Protocol mode contract update.
+- Gateway `/v1/voice-modes` catalog defaults to `roleplay`, lists
+  `roleplay`/`professional`, and accepts old `dialogue` input as a
+  compatibility alias.
+- Fast companion accepts `roleplay` while still rejecting selected
+  `professional` before provider or V21 execution.
+
+Guardrails:
+
+- Do not regress internal test 3 Xiaozhi audio state machine, StepFun/DashScope
+  selector evidence, V21 adapter evidence, or product firmware lane.
+- Do not claim internal test 4 cloud workspace readiness until upload/index
+  scope, adapter v2, and hardware professional consult evidence are separately
+  proven.

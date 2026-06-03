@@ -307,9 +307,10 @@ by the xiaozhi runtime. Responses may include control events and audio playback
 chunks, but must not echo transcripts, provider text, raw audio, base64 input
 audio, full URLs, credentials, proxy values, or local paths.
 
-Fast companion accepts only `dialogue`. If the selected `voice_mode` is
-`professional`, the endpoint returns `409` before provider or V21 execution and
-points the caller to the professional path.
+Fast companion accepts the `roleplay` product mode and the legacy
+`workmate`/`companion` runtime labels used by internal test 3. If the selected
+`voice_mode` is `professional`, the endpoint returns `409` before provider or
+V21 execution and points the caller to the professional path.
 
 ### Xiaozhi MCP And Expression Contract
 
@@ -454,7 +455,7 @@ evidence.
 A21 mode values are semantic product and office-state signals, not provider names.
 The launch product modes are only:
 
-- `dialogue`
+- `roleplay`
 - `professional`
 
 Compatibility and state labels may still appear on lower-level runtime/control
@@ -463,7 +464,7 @@ surfaces:
 - `workmate`
 - `companion`
 - `co_creation`
-- `roleplay`
+- `dialogue`
 - `focus`
 - `public`
 - `private`
@@ -475,16 +476,17 @@ Only `professional` with `professional_only` privacy is allowed to trigger the V
 
 `voice_mode` is the operator-visible product-mode selector for the converged
 launch surface. `GET /v1/voice-modes` returns `a21.gateway.voice_modes.v1` with
-only `dialogue` and `professional`. `dialogue` is the default low-latency spoken
-chain. `professional` is the evidence-first V21 adapter path and must be
-rejected by dialogue-only endpoints instead of silently switching provider,
-V21, or firmware behavior. Legacy labels such as `workmate`, `companion`,
-`co_creation`, and `roleplay` normalize to `dialogue` at product-contract
+only `roleplay` and `professional`. `roleplay` is the default low-latency
+embodied role/personality chain with memory hints and voice-clone selection.
+`professional` is the evidence-first V21 adapter path and must be rejected by
+roleplay/dialogue-only endpoints instead of silently switching provider, V21,
+or firmware behavior. Legacy labels such as `dialogue`, `workmate`,
+`companion`, and `co_creation` normalize to `roleplay` at product-contract
 surfaces; visibility/privacy states remain separate policy fields.
 
 `gateway_profile` is the operator/frontend transport selector for where the
 StackChan product connects. It is independent from `voice_mode`: selecting
-`public_wss` must not turn dialogue into professional mode, and selecting
+`public_wss` must not turn roleplay into professional mode, and selecting
 `professional` must not silently move the device to a public Gateway.
 `GET /v1/gateway-profiles` returns `a21.gateway.profiles.v1` with `mac_local`
 and `public_wss`. `public_wss` is the default profile when
@@ -663,7 +665,8 @@ Request fields:
 
 - `device_id`: required A21 device ID
 - `state`: optional expression state, default `listening`
-- `mode`: optional A21 mode, default `dialogue`
+- `mode`: optional legacy control label, default `workmate`; user-facing
+  `voice_mode` defaults to `roleplay`
 - `text`: optional short screen/status text
 - `trace_id` and `session_id`: optional explicit trace/session IDs
 - `stream_id`: required when the caller wants a stable speaking stream; generated only for simple speaking validation

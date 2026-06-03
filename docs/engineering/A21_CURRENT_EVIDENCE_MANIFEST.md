@@ -14,8 +14,8 @@ child reports from becoming the launch decision source.
 - `launch_ready`: false
 - `prd_accepted`: false
 - `demo_ready`: true for internal test 3 voice-main-chain testing
-- `current_status`: `server_side_blocked`
-- `current_release_level`: internal test 3
+- `current_status`: `internal_test4_mode_contract_cut_in_progress_physical_pending`
+- `current_release_level`: internal test 3 accepted; internal test 4 active build
 - `host_only_evidence_use`: gap reduction only
 - `candidate_physical_evidence_use`: Gateway/downlink diagnosis only
 - `requires_physical_acceptance`: true
@@ -318,6 +318,37 @@ Evidence decision:
 - This control Mac still receives empty HTTP replies from direct public curls,
   and a later ECS tcpdump did not observe the Mac curl reaching the host. Treat
   this as a source-path/network issue, not as current A21 runtime health
+
+## 2026-06-04 Internal Test 4 Mode And Workspace Evidence Direction
+
+Internal test 4 is now the active build direction, but no internal test 4
+release package exists yet.
+
+Accepted as source/control evidence in this cut:
+
+- PRD v0.5 names `roleplay` and `professional` as the two user-facing modes.
+- `roleplay` is the default embodied mode for role/personality, memory hints,
+  playbooks, voice-clone selection, and the existing low-latency Xiaozhi speech
+  path.
+- `professional` remains the user-confirmed V21 evidence path.
+- `dialogue` is a backwards-compatible alias under `roleplay`, not a launch
+  mode.
+- The A21 Cloud/Web/App target shape is documented for upload, indexing,
+  device binding, public-only query, personal-only query, and
+  personal+public query.
+- V21 adapter v2 direction is documented with `workspace_id`, `user_id`, and
+  `query_scope` fields while preserving the A21/V21 boundary.
+
+Evidence not yet claimed:
+
+- No A21 Cloud/Web/App upload implementation exists in this repository.
+- No V21 upload/index/query-scope implementation has been verified.
+- No permanent public Gateway V21 topology is claimed from the local bridge
+  smoke.
+- No physical StackChan internal test 4 professional consult evidence is
+  claimed.
+- Internal test 3 package evidence remains the accepted release evidence until
+  an internal test 4 package is built and verified.
   evidence.
 
 ## Source-Only Or Blocked Evidence

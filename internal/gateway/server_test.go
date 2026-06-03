@@ -861,7 +861,7 @@ func stringSliceContains(values []string, want string) bool {
 	return false
 }
 
-func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {
+func TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/voice-modes", nil)
 	rec := httptest.NewRecorder()
@@ -883,7 +883,7 @@ func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "dialogue" {
+	if response.SchemaVersion != "a21.gateway.voice_modes.v1" || response.Selected != "roleplay" {
 		t.Fatalf("catalog = %+v", response)
 	}
 	seen := map[string]string{}
@@ -894,8 +894,11 @@ func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {
 			defaults++
 		}
 	}
-	if seen["dialogue"] != "available" || seen["professional"] != "available" || defaults != 1 {
+	if seen["roleplay"] != "available" || seen["professional"] != "available" || defaults != 1 {
 		t.Fatalf("voice modes = %+v, statuses=%v defaults=%d", response.Modes, seen, defaults)
+	}
+	if _, ok := seen["dialogue"]; ok {
+		t.Fatalf("catalog still exposes dialogue as a user product mode: %+v", response.Modes)
 	}
 	if _, ok := seen["edge_cloud"]; ok {
 		t.Fatalf("catalog still exposes old route selector as product mode: %+v", response.Modes)
@@ -905,7 +908,7 @@ func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {
 	}
 }
 
-func TestVoiceModeSelectionPersistsDialogueInDeviceRegistryWithoutChangingLegacyTransportMode(t *testing.T) {
+func TestVoiceModeSelectionAcceptsDialogueAliasAsRoleplayWithoutChangingLegacyTransportMode(t *testing.T) {
 	server := NewServer()
 	selectReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"dialogue"}`))
 	selectRec := httptest.NewRecorder()
@@ -934,8 +937,8 @@ func TestVoiceModeSelectionPersistsDialogueInDeviceRegistryWithoutChangingLegacy
 		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
 	}
 	device := registry.Devices[0]
-	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "dialogue" {
-		t.Fatalf("device state = %+v, want legacy transport mode workmate and voice_mode dialogue", device)
+	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "roleplay" {
+		t.Fatalf("device state = %+v, want legacy transport mode workmate and voice_mode roleplay", device)
 	}
 	if strings.Contains(devicesRec.Body.String(), "selected voice mode must not rewrite product mode") {
 		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
@@ -1378,7 +1381,7 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	handler := server.Handler()
 	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(`{
 		"device_id":"stackchan-sim-001",
-		"mode":"companion",
+		"mode":"roleplay",
 		"trace_id":"a21-trace-fast-hybrid-001",
 		"session_id":"a21-session-fast-hybrid-001",
 		"local_audio":{"asr_provider":"mock_asr","first_partial_ms":42,"final_transcript_chars":11}
@@ -1409,7 +1412,7 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	if response.TraceID != "a21-trace-fast-hybrid-001" || response.SessionID != "a21-session-fast-hybrid-001" || response.DeviceID != "stackchan-sim-001" {
 		t.Fatalf("response identity = %+v", response)
 	}
-	if response.Mode != protocol.ModeCompanion || response.Status != "boundary_ready" || response.Route != "fast_companion_hybrid" {
+	if response.Mode != protocol.ModeRoleplay || response.Status != "boundary_ready" || response.Route != "fast_companion_hybrid" {
 		t.Fatalf("response route = %+v", response)
 	}
 	if response.AudioFrontend != "local_audio" || response.ProviderFamily != "text_stream" || response.TextStreamProvider != "mock_text_stream" || response.TextStreamExecuted {
@@ -1422,7 +1425,7 @@ func TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary(t *test
 	if err := json.Unmarshal(response.Events[2].Payload, &speaking); err != nil {
 		t.Fatal(err)
 	}
-	if speaking.State != protocol.ExpressionSpeaking || speaking.Mode != protocol.ModeCompanion || speaking.StreamID != "a21-fast-companion-placeholder-stream" {
+	if speaking.State != protocol.ExpressionSpeaking || speaking.Mode != protocol.ModeRoleplay || speaking.StreamID != "a21-fast-companion-placeholder-stream" {
 		t.Fatalf("speaking payload = %+v", speaking)
 	}
 	if provider.startCalls != 0 {
@@ -1748,7 +1751,7 @@ func TestFastCompanionHybridRejectsUnsupportedModesAndMissingLocalAudio(t *testi
 	}{
 		{
 			name: "unsupported mode",
-			body: `{"device_id":"stackchan-sim-001","mode":"roleplay","local_audio":{"asr_provider":"mock_asr"}}`,
+			body: `{"device_id":"stackchan-sim-001","mode":"public","local_audio":{"asr_provider":"mock_asr"}}`,
 		},
 		{
 			name: "missing local audio provider",

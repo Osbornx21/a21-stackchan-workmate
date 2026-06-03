@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-V21-ADAPTER-EVIDENCE-READY-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-MODE-CONTRACT-V2-READY-CLOUD-KNOWLEDGE-WORKSPACE-PLANNED-PHYSICAL-PENDING`
 
 Active child transitions:
 
@@ -37,6 +37,7 @@ Active child transitions:
 - `T-PUBLIC-GATEWAY-002-CODE-SYNC-BEFORE-STEPFUN`
 - `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
 - `T-V21-PROFESSIONAL-EXECUTION-001`
+- `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -244,14 +245,21 @@ stop closes the turn. For stock physical MAC devices, Gateway-side RMS
 `xiaozhi.listen.auto_stop`, because the two-frame RMS hangover can mistake a
 natural short pause for speech end. This preserves streaming ASR partial
 observability without allowing pre-stop `tts.first_audio` or Opus downlink.
-`T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE` is active as the mode
-contraction slice: user-facing product modes converge to `dialogue` and
-`professional`; legacy labels such as `workmate`, `companion`, `co_creation`,
-and `roleplay` normalize to `dialogue` at product-contract surfaces. The
-dialogue readiness report now identifies the static `dialogue_low_latency`
-chain and accepts Doubao realtime TTS configuration via env-name-only
-`A21_DOUBAO_API_KEY` or `A21_DOUBAO_ACCESS_TOKEN`, while keeping
-`professional` on the V21 adapter boundary and `prd_accepted=false`.
+`T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE` is preserved as the internal
+test 3 low-latency spoken-chain history. Internal test 4 supersedes its
+user-facing mode contraction: product modes now converge to `roleplay` and
+`professional`, while `dialogue`, `workmate`, `companion`, and `co_creation`
+remain compatibility aliases or playbook labels under `roleplay`. The
+underlying low-latency Xiaozhi/ASR/text/TTS chain remains intact, and
+`professional` stays on the V21 adapter boundary with `prd_accepted=false`.
+`T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001` is active as the
+mode-contract v2 and cloud knowledge workspace transition. The plan is
+`docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`.
+Its first cut makes `roleplay` the default user-facing `voice_mode`, keeps
+`dialogue` as a backwards-compatible alias, leaves internal test 3 Xiaozhi
+audio/barge-in behavior untouched, and defines the A21 Cloud/Web/App plus V21
+Knowledge Service/Adapter roadmap for public-only, personal-only, and
+personal+public professional query scopes.
 `T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY` is active as the main public
 transport profile slice: with a valid `A21_PUBLIC_GATEWAY_URL`, `public_wss`
 is the default product voice-edge Gateway, while `mac_local` remains
@@ -2328,7 +2336,8 @@ Next state:
 | T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001: Xiaozhi nonblocking ASR commit | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md` scoped the cut. `listen.stop` and VAD auto-stop now start async streaming-ASR commit/final handling instead of blocking the `/v1/xiaozhi` WebSocket read loop. Focused Gateway tests prove abort can be processed while commit remains pending and that a streaming ASR final starts the voice pipeline without calling batch `Transcribe`. This keeps A21 closer to Xiaozhi's responsive control/media state machine while remaining below full PRD acceptance. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 | T-XIAOZHI-OFFICIAL-PROTOCOL-SOURCE-READ-AND-NEXT-CUT-001: Stock STT and wake preroll | Completed host-local stock fidelity cut | Plan `docs/plans/2026-06-03-xiaozhi-official-protocol-source-read-and-next-cut.md` scoped source-read workers plus a narrow red/green implementation. A21 now sends stock `stt` before `tts/start` when streaming ASR text exists, and buffers up to five true-idle wake pre-roll Opus frames for the next `listen/start` while preserving cooldown/current-turn `ignored_not_listening` behavior. Focused Gateway tests, full Gateway package tests, and focused app realtime parity/readiness tests passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime acceptance, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 | T-XIAOZHI-OPUS-INGRESS-QUEUE-001: Xiaozhi Opus ingress queue | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-opus-ingress-queue.md` scoped the cut. Listening Opus frames now enter a bounded per-session queue before decode/VAD/streaming-ASR append, and `listen.stop` finalization waits asynchronously for queued ingress to catch up. Focused Gateway tests, full Gateway package tests, focused app parity/readiness tests, `git diff --check`, and `make verify` passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime acceptance, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
-| T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE: Dialogue-first product mode and readiness gate | Active host-local convergence | Plan `docs/plans/2026-06-03-dialogue-first-low-latency-prd-convergence.md` scopes the cut. Product mode surfaces converge on `dialogue` plus `professional`; `dialogue` is the low-latency Xiaozhi/ASR/text/TTS chain and `professional` remains V21-only. Doubao realtime TTS static readiness accepts env-name-only access-token configuration without storing credential/model/voice values. No provider/V21 execution, Gateway restart, firmware, flash, hardware, or audio playback occurred in this transition. |
+| T-DIALOGUE-001-LOW-LATENCY-CHAIN-CONVERGENCE: Dialogue-first product mode and readiness gate | Superseded by internal test 4 mode contract | Plan `docs/plans/2026-06-03-dialogue-first-low-latency-prd-convergence.md` scoped the internal test 3 cut. The low-latency Xiaozhi/ASR/text/TTS chain remains valid, but user-facing product mode surfaces now converge on `roleplay` plus `professional` through `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001`. `dialogue` remains a backwards-compatible alias under `roleplay`; `professional` remains V21-only. |
+| T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001: Roleplay/professional v2 and cloud workspace | Active mode-contract cut | Plan `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md` scopes the work. A21 internal test 4 makes `roleplay` the default user-facing embodied mode with role/personality, memory hints, and voice-clone selection, keeps `professional` as the explicit evidence/V21 path, and defines the cloud workspace product form: upload documents, query public-only or personal+public resources, and consult through web/app or A21 hardware without putting provider/V21 secrets or documents on StackChan. |
 | T-ALIYUN-001-XIAOZHI-PUBLIC-VOICE-GATEWAY: Main public Gateway profile | Active main-edge running | Plan `docs/plans/2026-06-03-aliyun-xiaozhi-public-voice-gateway.md` scopes the cut. Gateway now separates `gateway_profile` from `voice_mode`: valid `A21_PUBLIC_GATEWAY_URL` selects `public_wss` as the main product public path, while `mac_local` remains available for Mac/local-model switching. Product deployment targets trusted `443`/`wss`; IP-only bring-up can use public `http/ws`. `/v1/gateway-profiles`, simulator selection, env `A21_PUBLIC_GATEWAY_URL`, CLI `--public-gateway-url`, and OTA public URL behavior are implemented. The earlier `101.132.117.182` SWAS path is experimental/backup. New ECS `47.103.57.217` is active behind Caddy, returns `ws://47.103.57.217/v1/xiaozhi` from OTA, and passed remote `make verify`; host-only bench remains blocked below PRD because no real provider/V21/hardware execution was injected. |
 | T-VOICE-CHAIN-SELECTOR-001-CASCADE-REALTIME-HOTSWITCH: Product voice-chain selector | Completed host-local selector cut | Plan `docs/plans/2026-06-03-voice-chain-product-selector-hot-switch.md` scoped the cut. Gateway now exposes `GET/POST/PUT /v1/voice-chain-profiles` for the frontend to choose `cascade` or `realtime` independently from `voice_mode`, `gateway_profile`, and catalog-only `cloud_voice_profile`. Cascade exposes ASR and LLM choices, recommends StepFun, keeps DeepSeek as fallback, and fixes default TTS at DashScope realtime TTS unless voice clone maps the effective TTS to `voice_clone_cli`. Realtime selection updates the existing `A21_GATEWAY_VOICE_PROVIDER=selected` gate plus `A21_PROVIDER_PRIMARY`. Simulator and device registry now display chain mode, ASR, LLM, effective TTS, realtime provider, and voice/clone profile. Focused Gateway tests passed; no provider execution, deployment, firmware, hardware, or audio playback occurred. |
 | T-XIAOZHI-FAST-ACK-CONTINUITY-001: Fast ack cannot block main answer | Completed host-local runtime fix | Public bench against `47.103.57.217` showed the chain reached Opus ingress/decode, streaming ASR append/commit, ASR partial/final, and stock `stt`, but then stopped at `xiaozhi.fast_ack.unavailable` without running the full answer pipeline. Gateway now treats fast ack as optional: if fast-ack TTS fails and the turn is not aborted, the full ASR -> LLM -> TTS answer pipeline continues. Focused Gateway tests, related package tests, `git diff --check`, and `make verify` passed. This is not yet deployed/bench-verified in the public Gateway at the time of this state entry, and it does not claim physical PRD acceptance. |

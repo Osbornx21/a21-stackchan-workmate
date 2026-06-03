@@ -50,21 +50,23 @@ const (
 
 func NormalizeProductMode(mode Mode) Mode {
 	switch mode {
+	case ModeRoleplay:
+		return ModeRoleplay
 	case ModeProfessional:
 		return ModeProfessional
 	case ModeLocalFallback:
 		return ModeLocalFallback
 	case ModeError:
 		return ModeError
-	case ModeDialogue, ModeWorkmate, ModeCompanion, ModeCoCreation, ModeRoleplay, ModeFocus, ModePublic, ModePrivate, ModeMuted, "":
-		return ModeDialogue
+	case ModeDialogue, ModeWorkmate, ModeCompanion, ModeCoCreation, ModeFocus, ModePublic, ModePrivate, ModeMuted, "":
+		return ModeRoleplay
 	default:
-		return ModeDialogue
+		return ModeRoleplay
 	}
 }
 
 func CanonicalProductModes() []Mode {
-	return []Mode{ModeDialogue, ModeProfessional}
+	return []Mode{ModeRoleplay, ModeProfessional}
 }
 
 type ExpressionState string

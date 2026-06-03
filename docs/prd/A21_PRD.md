@@ -1,8 +1,8 @@
 # A21 Product Requirements Document
 
-版本：v0.4  
-状态：Provider Spine / Mainland Latency Revision  
-更新时间：2026-05-31  
+版本：v0.5
+状态：Internal Test 4 / Cloud Knowledge Workspace Revision
+更新时间：2026-06-04
 资料来源：用户 A21 产品方向、A21 Go-first 主线、2026-05-30/31 provider 选型讨论、5080 大陆网络延迟测量、A21 外部采购/延迟实验室  
 适用范围：A21 桌面实体 AI 伙计、StackChan/CoreS3 端侧、A21 Gateway/Core、Provider Spine、V21 专业知识桥接、外部延迟实验室
 
@@ -31,7 +31,7 @@ A21 是用户主导的新项目，不是 X21/V21 的改名，也不是把 V21 �
 
 ### Proposed Solution
 
-A21 是基于 StackChan/CoreS3 的桌面实体 AI 伙计。它用低延迟语音、表情、屏幕、舵机、RGB、触摸和语义状态提供工位陪伴、情绪承接、共创整理和办公室小剧场；当用户显式进入专业模式时，通过 A21 Gateway 调用 V21 adapter，切换为可引用、可追溯、可观测的证据型产品副驾。
+A21 是基于 StackChan/CoreS3 的桌面实体 AI 伙计。它用低延迟语音、表情、屏幕、舵机、RGB、触摸和语义状态提供角色扮演、工位陪伴、情绪承接、共创整理和办公室小剧场；当用户显式进入专业模式时，通过 A21 Gateway 调用 V21 adapter，切换为可引用、可追溯、可观测的证据型产品副驾。
 
 工程上，A21 采用“本地语音前端 + 热插拔云/本地 provider + 专业 V21 adapter”的编排：
 
@@ -86,13 +86,16 @@ A21 是“桌面实体 AI 伙计”。它不是普通语音助手、恋爱模拟
 
 | Mode | 目标 | 典型触发 | 输出形态 |
 | --- | --- | --- | --- |
-| `dialogue` | 默认低延迟对话态 | 开机、空闲、吐槽、共创、日常办公表达 | 短语音、眼神、呼吸感、轻反馈、可打断整理 |
-| `professional` | 证据型专业模式 | “专业模式”“给我证据” | V21 检索、结论、证据卡片、置信度 |
+| `roleplay` | 默认角色扮演/桌面伙计态 | 开机、空闲、吐槽、共创、日常办公表达、用户选择角色 | 人格、记忆提示、音色克隆、短语音、眼神、呼吸感、轻反馈、可打断整理 |
+| `professional` | 证据型专业模式 | “专业模式”“认真查一下”“给我证据” | V21 检索、结论、证据卡片、置信度 |
 
-Legacy labels such as `workmate`, `companion`, `co_creation`, and `roleplay`
-are compatibility aliases for `dialogue`, not separate launch modes. Privacy,
-focus, public/private visibility, local fallback, and error remain state or
-policy fields, not extra product modes.
+`dialogue`, `workmate`, `companion`, and `co_creation` remain compatibility
+aliases or playbook labels under `roleplay`, not separate user-facing launch
+modes. Privacy, focus, public/private visibility, local fallback, and error
+remain state or policy fields, not extra product modes. Mode switching must be
+initiated by the user through voice, touch, app, or web control; A21 must not
+silently switch from roleplay to professional because it detects a serious
+topic.
 
 ### User Stories
 
@@ -170,7 +173,7 @@ A21 必须把 provider 能力拆成 lane，而不是用一个“万能主脑”�
 
 | Lane | 目标 | 推荐编排 | 当前优先级 |
 | --- | --- | --- | --- |
-| `dialogue` | 低延迟自然对话主链 | 本地 VAD/ASR -> 流式文本 provider -> 流式 TTS -> stock Xiaozhi Opus | P0 |
+| `roleplay` | 低延迟角色扮演/自然对话主链 | 本地 VAD/ASR -> 流式文本 provider -> 流式 TTS/音色克隆 -> stock Xiaozhi Opus | P0 |
 | `realtime_voice` | 端到端 speech-to-speech | provider realtime session，显式 opt-in | P1 |
 | `professional` | 证据型专业模式 | V21 adapter -> 证据/置信度 -> TTS/readout | P0 |
 | `local_fallback` | 网络坏时仍可回应 | 本地 VAD/ASR/TTS + Ollama/llama.cpp/vLLM | P0 |
@@ -353,6 +356,23 @@ type AgentTaskEvent struct {
 
 ## 4. Technical Specifications
 
+### Cloud Knowledge Workspace
+
+Internal test 4 introduces the target cloud product form:
+
+- A21 Cloud/Web/App provides account, device binding, document upload, indexing
+  status, source visibility, query scope, delete/export, and professional
+  evidence review surfaces.
+- Users can query `public_only`, `personal_only`, or `personal_plus_public`.
+- Public resources and personal uploaded documents must remain distinguishable
+  in evidence metadata and redacted reports.
+- A21 hardware can wake, enter professional mode, and consult the same
+  workspace through Gateway/Core, but it never stores provider keys, V21 keys,
+  uploaded documents, embeddings, or private indexes.
+- V21 may keep heavy local inference or private document processing behind its
+  own service boundary. A21 calls only the A21/V21 adapter contract and never
+  reads V21 internals.
+
 ### Architecture Overview
 
 当前批准方向是 Go-first A21 spine。StackChan 是感知与表达端；A21 Gateway/Core 是唯一实时中枢；Provider Spine 负责热插拔供应商/本地模型/agent；V21 只通过 adapter 进入专业模式。
@@ -446,7 +466,7 @@ sent_at_ms
 payload
 ```
 
-Provider 事件进入 Gateway 前必须转换为 A21 provider-neutral event，不允许供应商事件穿透到 firmware。Professional evidence 必须保留显式 evidence/card 字段，不得伪装成普通聊天文本。
+Provider 事件进入 Gateway 前必须转换为 A21 provider-neutral event，不允许供应商事件穿透到 firmware。Professional evidence 必须保留显式 evidence/card 字段，不得伪装成普通聊天文本。Internal test 4 professional requests must be ready to carry `workspace_id`, `user_id`, and `query_scope` while keeping reports redacted.
 
 ### Ports And Naming
 
@@ -470,7 +490,7 @@ IP-only bring-up 可临时使用 `http/ws`；`mac_local` 保持 Mac Gateway 对�
 `mac_local` 时必须支持通过 `A21_MAC_LOCAL_GATEWAY_URL` 配置真实 Mac/local
 WebSocket 地址；未配置时才回退到请求主机。这个选择不得变成第三个
 product mode，也不得改变
-`dialogue` / `professional` 的职责边界。
+`roleplay` / `professional` 的职责边界。
 
 Provider HTTP/WebSocket client 必须：
 
@@ -534,7 +554,9 @@ a21_fallback_total
 - Provider API key 只存在 Gateway/Core runtime env、operator secret storage 或未来 secret manager。
 - 明文 key 不得进入 PRD、reports、logs、trace、firmware、PlatformIO build flags、Git。
 - V21 专业资料不得在公共模式下外放。
-- 陪伴吐槽不得自动进入 V21 query 上下文。
+- 角色扮演/陪伴吐槽不得自动进入 V21 query 上下文。
+- 用户上传资料只能在用户选择的 `personal_only` 或
+  `personal_plus_public` scope 中进入 professional 检索。
 - 私密模式内容不得作为专业检索上下文，除非用户显式确认。
 - 原始音频默认不持久化：`A21_RECORD_RAW_AUDIO=false`。
 - 长期记忆必须确认保存、显示范围、支持删除。

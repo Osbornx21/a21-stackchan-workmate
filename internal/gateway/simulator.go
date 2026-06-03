@@ -391,11 +391,11 @@ const simulatorHTML = `<!doctype html>
         </div>
         <div class="fields">
           <select id="mode" aria-label="mode">
-            <option value="dialogue">dialogue</option>
+            <option value="roleplay">roleplay</option>
             <option value="professional">professional</option>
           </select>
           <select id="voiceMode" aria-label="voice mode">
-            <option value="dialogue">dialogue</option>
+            <option value="roleplay">roleplay</option>
             <option value="professional">professional</option>
           </select>
           <select id="gatewayProfile" aria-label="gateway profile">
@@ -425,8 +425,8 @@ const simulatorHTML = `<!doctype html>
         </div>
         <div class="readout">
           <div class="metric"><label>State</label><div id="state">idle</div></div>
-          <div class="metric"><label>Mode</label><div id="modeReadout">dialogue</div></div>
-          <div class="metric"><label>Voice</label><div id="voiceModeReadout">dialogue</div></div>
+          <div class="metric"><label>Mode</label><div id="modeReadout">roleplay</div></div>
+          <div class="metric"><label>Voice</label><div id="voiceModeReadout">roleplay</div></div>
           <div class="metric"><label>Gateway</label><div id="gatewayProfileReadout">mac_local</div></div>
           <div class="metric"><label>Cloud Voice</label><div id="cloudVoiceProfileReadout">a21_doubao_tts_realtime</div></div>
           <div class="metric"><label>Chain</label><div id="voiceChainModeReadout">cascade</div></div>
@@ -976,7 +976,7 @@ const simulatorHTML = `<!doctype html>
           return;
         }
         const catalog = await response.json();
-        setVoiceMode(catalog.selected_voice_mode || 'dialogue');
+        setVoiceMode(catalog.selected_voice_mode || 'roleplay');
       } catch (err) {
         log('voice mode catalog unavailable');
       }

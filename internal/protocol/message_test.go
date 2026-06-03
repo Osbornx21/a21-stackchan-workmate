@@ -121,18 +121,18 @@ func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
 	}
 }
 
-func TestProductModesConvergeToDialogueAndProfessional(t *testing.T) {
+func TestProductModesConvergeToRoleplayAndProfessional(t *testing.T) {
 	tests := map[Mode]Mode{
-		"":                ModeDialogue,
-		ModeDialogue:      ModeDialogue,
-		ModeWorkmate:      ModeDialogue,
-		ModeCompanion:     ModeDialogue,
-		ModeCoCreation:    ModeDialogue,
-		ModeRoleplay:      ModeDialogue,
-		ModeFocus:         ModeDialogue,
-		ModePublic:        ModeDialogue,
-		ModePrivate:       ModeDialogue,
-		ModeMuted:         ModeDialogue,
+		"":                ModeRoleplay,
+		ModeDialogue:      ModeRoleplay,
+		ModeWorkmate:      ModeRoleplay,
+		ModeCompanion:     ModeRoleplay,
+		ModeCoCreation:    ModeRoleplay,
+		ModeRoleplay:      ModeRoleplay,
+		ModeFocus:         ModeRoleplay,
+		ModePublic:        ModeRoleplay,
+		ModePrivate:       ModeRoleplay,
+		ModeMuted:         ModeRoleplay,
 		ModeProfessional:  ModeProfessional,
 		ModeLocalFallback: ModeLocalFallback,
 		ModeError:         ModeError,
@@ -143,8 +143,8 @@ func TestProductModesConvergeToDialogueAndProfessional(t *testing.T) {
 		}
 	}
 	catalog := CanonicalProductModes()
-	if len(catalog) != 2 || catalog[0] != ModeDialogue || catalog[1] != ModeProfessional {
-		t.Fatalf("canonical product modes = %#v, want dialogue/professional", catalog)
+	if len(catalog) != 2 || catalog[0] != ModeRoleplay || catalog[1] != ModeProfessional {
+		t.Fatalf("canonical product modes = %#v, want roleplay/professional", catalog)
 	}
 }
 

@@ -5,23 +5,26 @@ converged launch surface.
 
 Current catalog:
 
-- `dialogue`: available default. Uses A21 local audio front end, streaming ASR
+- `roleplay`: available default. Uses A21 local audio front end, role/persona
+  prompts, memory hints, voice-clone selection where configured, streaming ASR
   where available, streaming text, streaming TTS, and stock Xiaozhi playback.
 - `professional`: available V21 evidence path. It is explicit, evidence-first,
-  and rejected by dialogue-only endpoints.
+  and rejected by roleplay/dialogue-only endpoints.
 
 Gateway exposes the catalog at `GET /v1/voice-modes` and accepts selection by
-`POST /v1/voice-modes` with `{"voice_mode":"dialogue"}` or
-`{"voice_mode":"professional"}`. The device registry includes
+`POST /v1/voice-modes` with `{"voice_mode":"roleplay"}` or
+`{"voice_mode":"professional"}`. For internal test 3 compatibility,
+`{"voice_mode":"dialogue"}` is accepted and normalized to selected
+`roleplay`. The device registry includes
 `current_voice_mode` so operators can see the active product mode next to the
 legacy transport/runtime `current_mode`.
 
-Launch rule: `dialogue` and `professional` are the only user-facing product
-modes. Legacy labels such as `workmate`, `companion`, `co_creation`, and
-`roleplay` normalize to `dialogue`; privacy, focus, local fallback, and error
+Launch rule: `roleplay` and `professional` are the only user-facing product
+modes. Legacy labels such as `dialogue`, `workmate`, `companion`, and
+`co_creation` normalize to `roleplay`; privacy, focus, local fallback, and error
 remain state/policy fields rather than additional product modes. Professional
 work must stay on the V21 adapter path and must not be routed through the
-dialogue realtime chain.
+roleplay realtime chain.
 
 ## Gateway Profile Is Separate
 
