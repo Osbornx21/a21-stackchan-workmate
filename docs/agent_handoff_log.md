@@ -9919,3 +9919,96 @@ Recommended next action:
   `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` first as a docs-only/read-only
   worker. After it lands, schedule the low-risk Gateway MCP/status worker
   before any firmware or high-risk hardware work.
+
+## 2026-06-04 05:18 CST - StackChan Official Hardware Parity Gap Map Frozen
+
+Round goal:
+
+- Execute `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` as a docs-only/read-only
+  scoped worker and freeze the official-vs-A21 hardware/control/status parity
+  gap map for later low-risk MCP/status, display/action, and physical evidence
+  workers.
+
+Actual completed work:
+
+- Read the required control inputs:
+  `AGENTS.md`,
+  `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`,
+  the latest handoff entries, `docs/project_state_machine.md` next candidates,
+  and current git status/diff.
+- Recorded official source identity:
+  StackChan root remote `https://github.com/m5stack/StackChan.git`, branch
+  `main...origin/main`, HEAD
+  `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483`, dirty working tree with
+  modified firmware files and untracked `firmware/sources/`; references from
+  this tree are working-tree references, not clean upstream HEAD.
+- Recorded Xiaozhi sub-tree identity:
+  remote `https://gitclone.com/github.com/78/xiaozhi-esp32.git`, detached
+  clean `HEAD` at `e77dedb1309153bb63fed285772962c920c97dd4`; references from
+  this tree are HEAD references.
+- Recorded A21 worker source identity:
+  detached worker checkout
+  `/Users/jiyurun/.codex/worktrees/be17/New project`, HEAD
+  `15757cad5e7cbcf2df5f2601ffa3904dd766e0ac`, initially clean.
+- Added `## Official StackChan Parity Gap Map` to the capability charter with
+  official inventory, A21 current inventory, parity rows, landing classes,
+  owner transitions, acceptance evidence, rollback paths, and explicit
+  `available` / `diagnostic` / `planned` / `blocked` / `product-accepted`
+  distinctions.
+- Updated current control with the scoped transition status and next operator
+  action.
+- Updated the project state machine with the completed docs/state baseline and
+  changed the next parity action to the low-risk MCP/status worker.
+
+Changed files:
+
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No Gateway MCP/status endpoints were implemented in this round.
+- No display-state registry, action/motion/RGB/servo mapping, sensor/battery
+  diagnostics, physical touch evidence, camera/video/NFC/infrared spike, or app
+  lifecycle reconciliation was implemented.
+- Physical StackChan PRD acceptance remains open.
+
+Known risks/blockers:
+
+- The official StackChan root tree is dirty and must remain reference material
+  only until a clean upstream/source-control decision is made.
+- A21's current stock Xiaozhi microphone/speaker transport evidence is not full
+  product acceptance; playback-start/stop, trusted audible evidence, and final
+  PRD physical evidence remain required.
+- High-risk camera/video/NFC/infrared/app-lifecycle work must not be folded
+  into the next low-risk MCP/status worker.
+
+Test/build/runtime results:
+
+- `git diff --check`: passed before handoff append.
+- `GOMAXPROCS=2 make verify`: passed.
+- Final `git diff --check` after handoff append: passed.
+
+Recommended next action:
+
+- Dispatch `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` for low-risk Gateway
+  MCP/status parity only: `self.get_device_status`,
+  `self.screen.set_brightness`, `self.screen.set_theme`, and
+  `self.screen.get_info`.
+- Keep reboot, firmware upgrade, camera/photo, screen snapshot, camera stream,
+  video, NFC, infrared, app lifecycle, firmware build, flash, serial, and NVS
+  out of the next worker.
+
+Forbidden actions avoided:
+
+- No Gateway start.
+- No provider or V21 execution.
+- No firmware build.
+- No flash.
+- No serial access.
+- No NVS write.
+- No product-code edits.
+- No unguarded upload command.
+- No official capability was promoted to A21 product acceptance.
