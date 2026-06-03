@@ -8368,3 +8368,21 @@ Recommended next action:
 4. Run a fresh wake -> speak -> interrupt physical trace and require:
    no `tts.first_audio` before `listen.stop` or max-duration stop, no old
    downlink after `playback.stop`, and operator audible confirmation.
+
+Post-deploy update:
+
+- Committed as `27d8a34 fix(gateway): defer xiaozhi speech until listen stop`.
+- `make verify` passed before deploy.
+- Deployed to main public ECS Gateway `47.103.57.217`; remote focused Gateway
+  tests passed, `go build ./cmd/a21` passed, `a21-gateway` restarted active,
+  and `http://127.0.0.1:21081/healthz` returned ok.
+- Public host-loopback Xiaozhi bench passed after deploy:
+  `reports/a21-xiaozhi-voice-bench-20260603-214135.199644000.json`.
+  It remains host-only/candidate evidence, not physical PRD green.
+- Post-deploy barge-in trace
+  `a21-trace-xiaozhi-bench-1780494081208-barge-01` had
+  `stop_plus_500ms_violations=0`; latest downlink preceded playback stop.
+- Physical device `44:1b:f6:e2:6a:60` reconnected to the public Gateway after
+  deploy as stock Xiaozhi Opus transport, but the latest post-deploy physical
+  event is hello-only. A fresh operator wake/speak trace is still needed to
+  confirm the audible "no speaking before I finish" fix on hardware.
