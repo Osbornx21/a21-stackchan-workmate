@@ -5566,7 +5566,16 @@ func TestXiaozhiVoicePipelineUnavailableEmitsLocalFallbackState(t *testing.T) {
 	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-local-fallback", nil)
 	traceRec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(traceRec, traceReq)
-	for _, want := range []string{"xiaozhi.voice_pipeline.unavailable", "local_fallback.entered", "xiaozhi.local_fallback.sent"} {
+	for _, want := range []string{
+		"xiaozhi.voice_pipeline.llm.real_streaming",
+		"xiaozhi.voice_pipeline.failed.text_stream_adapter_failed",
+		"xiaozhi.voice_pipeline.failed.no_llm_first_content",
+		"xiaozhi.voice_pipeline.failed.no_tts_first_audio",
+		"xiaozhi.voice_pipeline.failed.empty_audio",
+		"xiaozhi.voice_pipeline.unavailable",
+		"local_fallback.entered",
+		"xiaozhi.local_fallback.sent",
+	} {
 		if !strings.Contains(traceRec.Body.String(), want) {
 			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
 		}
@@ -10164,8 +10173,40 @@ func (fallbackReportingXiaozhiPipelineRunner) Run(ctx context.Context, req provi
 type unavailableXiaozhiPipelineRunner struct{}
 
 func (unavailableXiaozhiPipelineRunner) Run(ctx context.Context, req providers.VoicePipelineRequest) (providers.VoicePipelineResult, error) {
+	return unavailableXiaozhiPipelineResult(req), errors.New("a21 provider unavailable")
+}
+
+func (unavailableXiaozhiPipelineRunner) RunStream(ctx context.Context, req providers.VoicePipelineRequest) (<-chan providers.VoicePipelineStreamEvent, error) {
+	events := make(chan providers.VoicePipelineStreamEvent, 1)
+	go func() {
+		defer close(events)
+		select {
+		case <-ctx.Done():
+			return
+		case events <- providers.VoicePipelineStreamEvent{
+			Kind:   providers.VoicePipelineStreamDone,
+			Result: unavailableXiaozhiPipelineResult(req),
+			Err:    errors.New("a21 provider unavailable"),
+		}:
+		}
+	}()
+	return events, nil
+}
+
+func unavailableXiaozhiPipelineResult(req providers.VoicePipelineRequest) providers.VoicePipelineResult {
 	return providers.VoicePipelineResult{
 		Status: providers.VoicePipelineStatusFailed,
+		Timing: providers.VoicePipelineTiming{
+			ASRFirstPartialMS:       -1,
+			ASRFinalMS:              -1,
+			LLMFirstContentMS:       -1,
+			TTSFirstAudioMS:         -1,
+			AudioDownlinkFirstMS:    -1,
+			ProviderCancelMS:        -1,
+			BargeInStopMS:           -1,
+			SpeechEndToFinalASRMS:   -1,
+			SpeechEndToFirstTokenMS: -1,
+		},
 		Report: providers.VoicePipelineReport{
 			SchemaVersion: "a21.voice_pipeline.fixture.v1",
 			Status:        string(providers.VoicePipelineStatusFailed),
@@ -10180,7 +10221,7 @@ func (unavailableXiaozhiPipelineRunner) Run(ctx context.Context, req providers.V
 			},
 			Findings: []string{"text stream adapter failed"},
 		},
-	}, errors.New("a21 provider unavailable")
+	}
 }
 
 type failingXiaozhiTTSAdapter struct{}

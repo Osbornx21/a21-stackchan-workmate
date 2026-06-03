@@ -4112,6 +4112,8 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
 			return true
 		}
+		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, result.Report)
+		s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, result.Report, result, err)
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
 		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
@@ -4247,6 +4249,8 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
 			return true
 		}
+		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
+		s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report, finalResult, err)
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
 		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
@@ -4393,6 +4397,69 @@ func (s *Server) recordXiaozhiVoicePipelineProfileMarkers(traceID string, sessio
 	}
 }
 
+func (s *Server) recordXiaozhiVoicePipelineFailureMarkers(traceID string, sessionID string, deviceID string, report providers.VoicePipelineReport, result providers.VoicePipelineResult, err error) {
+	now := s.now().UnixMilli()
+	markers := xiaozhiVoicePipelineFailureMarkers(report, result, err)
+	for _, marker := range markers {
+		s.recordTrace(traceID, sessionID, deviceID, marker, now)
+	}
+}
+
+func xiaozhiVoicePipelineFailureMarkers(report providers.VoicePipelineReport, result providers.VoicePipelineResult, err error) []string {
+	markers := make([]string, 0, 4)
+	if report.Status != "" && report.Status != string(providers.VoicePipelineStatusCompleted) {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.status_"+safeGatewayFallbackToken(report.Status, "failed"))
+	}
+	if result.Status != "" && result.Status != providers.VoicePipelineStatusCompleted {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.result_"+safeGatewayFallbackToken(string(result.Status), "failed"))
+	}
+	for _, finding := range report.Findings {
+		marker := xiaozhiVoicePipelineFindingMarker(finding)
+		if marker != "" && !gatewayStringSliceHas(markers, marker) {
+			markers = append(markers, marker)
+		}
+	}
+	if result.Timing.LLMFirstContentMS < 0 {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.no_llm_first_content")
+	}
+	if result.Timing.TTSFirstAudioMS < 0 {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.no_tts_first_audio")
+	}
+	if len(result.AudioChunks) == 0 {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.empty_audio")
+	}
+	if err != nil {
+		markers = append(markers, "xiaozhi.voice_pipeline.failed.err")
+	}
+	return markers
+}
+
+func xiaozhiVoicePipelineFindingMarker(finding string) string {
+	finding = strings.ToLower(strings.TrimSpace(finding))
+	switch finding {
+	case "asr adapter failed":
+		return "xiaozhi.voice_pipeline.failed.asr_adapter_failed"
+	case "text stream adapter failed":
+		return "xiaozhi.voice_pipeline.failed.text_stream_adapter_failed"
+	case "text stream adapter http status was not successful":
+		return "xiaozhi.voice_pipeline.failed.text_stream_http_status"
+	case "text stream adapter parse failed":
+		return "xiaozhi.voice_pipeline.failed.text_stream_parse_failed"
+	case "text stream adapter read failed":
+		return "xiaozhi.voice_pipeline.failed.text_stream_read_failed"
+	case "tts adapter failed":
+		return "xiaozhi.voice_pipeline.failed.tts_adapter_failed"
+	case "provider_fallback_used":
+		return "xiaozhi.voice_pipeline.provider_fallback_used"
+	case "streaming_asr_partial_reused":
+		return "xiaozhi.voice_pipeline.streaming_asr_partial_reused"
+	case "streaming_asr_final_reused":
+		return "xiaozhi.voice_pipeline.streaming_asr_final_reused"
+	default:
+		return ""
+	}
+}
+
 func xiaozhiVoicePipelineProfileMarkers(report providers.VoicePipelineReport) []string {
 	markers := make([]string, 0, 3)
 	if xiaozhiVoicePipelineASRRealStreaming(report) {
@@ -4419,7 +4486,12 @@ func xiaozhiVoicePipelineProfileMarkers(report providers.VoicePipelineReport) []
 
 func xiaozhiVoicePipelineASRRealStreaming(report providers.VoicePipelineReport) bool {
 	profile := strings.ToLower(strings.TrimSpace(report.Selection.ASRProfile))
-	return (profile == "sherpa_onnx_streaming" || profile == "local_sherpa_onnx_streaming" || profile == "streaming_zipformer") &&
+	return (profile == "sherpa_onnx_streaming" ||
+		profile == "local_sherpa_onnx_streaming" ||
+		profile == "streaming_zipformer" ||
+		profile == "dashscope_qwen_asr_realtime" ||
+		profile == "doubao_asr_realtime" ||
+		profile == "qwen_asr_realtime") &&
 		(gatewayStringSliceHas(report.Findings, "streaming_asr_partial_reused") || gatewayStringSliceHas(report.Findings, "streaming_asr_final_reused"))
 }
 
@@ -4430,7 +4502,7 @@ func xiaozhiVoicePipelineLLMRealStreaming(profile string) bool {
 
 func xiaozhiVoicePipelineTTSRealStreaming(profile string) bool {
 	switch strings.ToLower(strings.TrimSpace(profile)) {
-	case "doubao_tts_realtime", "doubao_realtime_tts":
+	case "doubao_tts_realtime", "doubao_realtime_tts", "dashscope_qwen_tts_realtime", "dashscope_tts_realtime", "qwen_tts_realtime", "qwen3_tts_realtime":
 		return true
 	default:
 		return false
