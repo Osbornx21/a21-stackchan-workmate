@@ -7897,6 +7897,52 @@ Follow-up result:
 - This proves the public cloud-edge Gateway candidate chain, not physical
   StackChan wake/mic/audible/barge-in acceptance.
 
+Physical run result:
+
+- User requested direct real-device validation. Physical StackChan
+  `44:1b:f6:e2:6a:60` was online on public Gateway
+  `http://47.103.57.217` with stock Xiaozhi websocket profile.
+- Operator/device activity produced real physical trace
+  `a21-trace-44-1b-f6-e2-6a-60` /
+  `a21-session-44-1b-f6-e2-6a-60`.
+- Trace counters observed on the public Gateway:
+  - `xiaozhi.opus_frame.received=66`
+  - `xiaozhi.opus_frame.decoded=66`
+  - `audio.ingress.buffered=66`
+  - `vad.speech.start=5`
+  - `vad.speech.end=5`
+  - `xiaozhi.listen.auto_stop=5`
+  - `asr.first_partial=11`
+  - `asr.final=11`
+  - `provider.first_content=5`
+  - `tts.first_audio=5`
+  - `xiaozhi.tts.opus_frame.downlink=506`
+  - `audio.downlink.first_frame=10`
+  - `xiaozhi.voice_pipeline.completed=3`
+  - `barge_in.detected=5`
+  - `playback.stop=5`
+- Generated physical report:
+  `reports/a21-xiaozhi-physical-evidence-20260603-201623.594517000.json`.
+  It records `physical_device_online=true`, `audio_frame_count=64`,
+  `mic.available=true`, `frames_delivered=64`, `delivery_ratio=1`,
+  stock profile available, Opus decode available, VAD speech end available,
+  listen auto-stop available, TTS downlink available, and
+  `answer.first_downlink=571 ms`.
+- Generated stock half-duplex report:
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260603-201623.946467000.json`.
+  It records `half_duplex_acceptance_status=candidate_gateway_trace`,
+  `mic_available=true`, `downlink_available=true`,
+  `barge_in_detected_available=true`, and `barge_in_stop_available=true`.
+- Remaining physical blockers are explicit and narrow:
+  `device.playback.ack` / trusted runtime playback start is unavailable,
+  operator or instrumented audible observation is not recorded, and
+  `device.playback.stop_done` is not exposed by the stock firmware. Therefore
+  both reports correctly keep `prd_accepted=false`.
+- `stackchan-accept --check touch --case top_barge_in` was attempted and
+  blocked with `device audio websocket is not connected`; this control path is
+  not the stock Xiaozhi audio socket, while trace-level barge-in evidence is
+  present.
+
 ## 2026-06-03 18:24 CST - Voice Chain Selector Hot Switch
 
 Round goal:
