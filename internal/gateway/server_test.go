@@ -4464,6 +4464,60 @@ func TestXiaozhiWebSocketListenStopDoesNotBlockAbortWhileStreamingASRCommitPendi
 	t.Fatalf("abort was not processed while streaming ASR commit was pending: %+v", server.traceEvents("a21-trace-xiaozhi-nonblocking-commit"))
 }
 
+func TestXiaozhiWebSocketOpusAppendDoesNotBlockAbortControlFrame(t *testing.T) {
+	streamingASR := newBlockingAppendStreamingASRAdapter()
+	defer streamingASR.releaseAppend()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-opus-ingress-queue",
+		"session_id": "a21-session-xiaozhi-opus-ingress-queue",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.appendEntered:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR append did not start")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if traceContains(server.traceEvents("a21-trace-xiaozhi-opus-ingress-queue"), "xiaozhi.abort.received") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("abort was not processed while Opus append was blocked: %+v", server.traceEvents("a21-trace-xiaozhi-opus-ingress-queue"))
+}
+
 func TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWithoutBatchFallback(t *testing.T) {
 	streamingASR := newBlockingCommitStreamingASRAdapter()
 	defer streamingASR.releaseCommit()
@@ -8956,6 +9010,67 @@ func (a *blockingCommitStreamingASRAdapter) Cancel(error) {
 func (a *blockingCommitStreamingASRAdapter) releaseCommit() {
 	a.releaseOnce.Do(func() {
 		close(a.release)
+	})
+}
+
+type blockingAppendStreamingASRAdapter struct {
+	events        chan providers.ASRAdapterEvent
+	appendEntered chan struct{}
+	release       chan struct{}
+	appendOnce    sync.Once
+	releaseOnce   sync.Once
+}
+
+func newBlockingAppendStreamingASRAdapter() *blockingAppendStreamingASRAdapter {
+	return &blockingAppendStreamingASRAdapter{
+		events:        make(chan providers.ASRAdapterEvent),
+		appendEntered: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+}
+
+func (a *blockingAppendStreamingASRAdapter) Name() string {
+	return "a21-blocking-append-streaming-asr"
+}
+
+func (a *blockingAppendStreamingASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	out := make(chan providers.ASRAdapterEvent)
+	close(out)
+	return out, nil
+}
+
+func (a *blockingAppendStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
+	return a, nil
+}
+
+func (a *blockingAppendStreamingASRAdapter) AppendFrame(ctx context.Context, frame providers.VoicePipelinePCMFrame) error {
+	a.appendOnce.Do(func() {
+		close(a.appendEntered)
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-a.release:
+		return nil
+	}
+}
+
+func (a *blockingAppendStreamingASRAdapter) Events() <-chan providers.ASRAdapterEvent {
+	return a.events
+}
+
+func (a *blockingAppendStreamingASRAdapter) Commit(ctx context.Context) error {
+	return nil
+}
+
+func (a *blockingAppendStreamingASRAdapter) Cancel(error) {
+	a.releaseAppend()
+}
+
+func (a *blockingAppendStreamingASRAdapter) releaseAppend() {
+	a.releaseOnce.Do(func() {
+		close(a.release)
+		close(a.events)
 	})
 }
 

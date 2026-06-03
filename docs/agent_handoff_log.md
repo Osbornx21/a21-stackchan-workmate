@@ -6463,3 +6463,78 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No unresolved failure. The failures above were intentional red tests.
+
+## 2026-06-03 10:32 CST - Xiaozhi Opus Ingress Queue
+
+本轮目标:
+
+- Continue the persistent Xiaozhi realtime convergence goal by adding the
+  explicit Opus frame queue boundary requested by the target chain.
+- Keep the cut host-local and stock-protocol aligned: no provider/V21
+  execution, no Gateway lifecycle change, no `/v1/xiaozhi/say`, no
+  host-loopback runtime acceptance, no firmware/hardware/audio playback.
+
+实际完成内容:
+
+- Added plan `docs/plans/2026-06-03-xiaozhi-opus-ingress-queue.md`.
+- Spawned read-only explorers:
+  - Explorer Goodall confirmed the current A21 read loop decoded Opus, pushed
+    VAD/audio ingress, and called streaming-ASR `AppendFrame` inline; this can
+    block `abort`, `listen.stop`, heartbeat/device events, and later stock
+    control frames.
+  - Explorer Boole confirmed the next stock behavior to prove after queueing:
+    wake-as-abort plus playback queue drain before fresh listening.
+- Added a bounded per-session Opus ingress queue for listening `/v1/xiaozhi`
+  frames.
+- `handleXiaozhiBinary` now records receipt/enqueue and returns to the
+  WebSocket read loop before Opus decode, VAD/audio ingress, or streaming ASR
+  append.
+- Added a queue worker that preserves frame order, decodes Opus, pushes
+  audio-ingress/VAD evidence, appends to streaming ASR, and records
+  `xiaozhi.opus_ingress.queue_dropped` when the bounded queue is full.
+- `listen.stop` now starts an async finalize path that waits briefly for
+  queued ingress to catch up, then commits streaming ASR or starts the voice
+  pipeline; the control read loop stays free to process `abort`.
+- Updated `docs/project_state_machine.md` with the completed transition and
+  remaining PRD blockers.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-opus-ingress-queue.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance remains incomplete.
+- Real streaming provider execution is still not done.
+- Physical stock `/v1/xiaozhi` trace still needs wake or labeled tap trigger,
+  real streaming ASR/LLM/TTS profile markers, audible playback,
+  touch/barge-in, and idle recovery.
+- Next useful transition: host-test stock wake-as-abort/playback-drain ordering
+  or, with explicit authorization, collect a physical stock `/v1/xiaozhi`
+  trace / run real streaming TTS runtime proof.
+
+测试/构建/运行结果:
+
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketOpusAppendDoesNotBlockAbortControlFrame -count=1`
+  failed because `xiaozhi.abort.received` was not recorded while streaming ASR
+  `AppendFrame` was blocked.
+- Focused Gateway tests passed:
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocket(OpusAppendDoesNotBlockAbortControlFrame|WakePrerollOpusFeedsNextTurn|StreamingASRFinalSendsStockSTTBeforeTTS|StreamingASRFinalStartsPipelineWithoutBatchFallback|ListenStopDoesNotBlockAbortWhileStreamingASRCommitPending|ListenStopRunsVoicePipelineAndSendsPacedOpus|StreamingASRStartsBeforeListenStop|ASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal)' -count=1`.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Focused app parity/readiness tests passed:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity|TestXiaozhiStreamingProviderReadiness' -count=1`.
+- `git diff --check` passed.
+- `make verify` passed.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`,
+  host-loopback runtime acceptance, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The initial failure was the intentional red test.

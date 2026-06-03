@@ -35,6 +35,7 @@ const xiaozhiHostSayInputCooldownMS int64 = 1200
 const xiaozhiNoSpeechInputCooldownMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
+const maxXiaozhiOpusIngressQueueFrames = 16
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
@@ -1467,6 +1468,7 @@ type xiaozhiSession struct {
 	opusDecodedFrameCount            int
 	opusDecodedSampleCount           int
 	opusDecodeErrorCount             int
+	opusIngressProcessedFrameCount   int
 	voicePipelineFrames              []providers.VoicePipelinePCMFrame
 	voicePipelineHasSpeech           bool
 	ttsStopSent                      bool
@@ -1487,6 +1489,9 @@ type xiaozhiSession struct {
 	wakePrerollFrames                []providers.VoicePipelinePCMFrame
 	wakePrerollPayloadBytes          []int
 	wakePrerollHasSpeech             bool
+	opusIngressQueue                 chan xiaozhiOpusIngressFrame
+	opusIngressCtx                   context.Context
+	opusIngressCancel                context.CancelFunc
 }
 
 type xiaozhiTurn struct {
@@ -1504,6 +1509,14 @@ type xiaozhiTurnDownlinkCodec struct {
 	channels     int
 	durationMS   int
 	codec        *opuscodec.Codec
+}
+
+type xiaozhiOpusIngressFrame struct {
+	ctx   context.Context
+	conn  *websocket.Conn
+	frame xiaozhitransport.Frame
+	turn  *xiaozhiTurn
+	seq   uint64
 }
 
 type xiaozhiVoicePipelineRunner interface {
@@ -1804,6 +1817,7 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.opusDecodedFrameCount = 0
 	session.opusDecodedSampleCount = 0
 	session.opusDecodeErrorCount = 0
+	session.opusIngressProcessedFrameCount = 0
 	session.voicePipelineFrames = nil
 	session.voicePipelineHasSpeech = false
 	if session.streamingASRSession != nil && !session.streamingASRClosed {
@@ -1816,6 +1830,15 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
 	session.streamingASRPartialBridgeStarted = false
+}
+
+func (session *xiaozhiSession) xiaozhiOpusIngressQueue() chan xiaozhiOpusIngressFrame {
+	if session == nil {
+		return nil
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.opusIngressQueue
 }
 
 func (session *xiaozhiSession) resetXiaozhiWakePreroll() {
@@ -2086,6 +2109,7 @@ func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() {
 		s.cancelXiaozhiStreamingASR(session, "socket_closed")
+		s.cancelXiaozhiOpusIngressQueue(session, "socket_closed")
 		s.unregisterXiaozhiSocket(session.deviceID, conn)
 	}()
 	for {
@@ -2178,6 +2202,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			session.listening = true
 			session.listenStartedAtMS = nowMS
 			session.resetXiaozhiOpusIngress()
+			s.startXiaozhiOpusIngressQueue(ctx, session)
 			s.startXiaozhiStreamingASR(ctx, conn, session, mode)
 			s.attachXiaozhiWakePreroll(ctx, session)
 			session.resetXiaozhiTTSStop()
@@ -2203,11 +2228,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				session.setCurrentXiaozhiTurnMode(mode)
 			}
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
-			if s.startXiaozhiStreamingASRCommit(ctx, conn, session, session.currentXiaozhiTurn()) {
-				return true
-			}
-			task := s.newXiaozhiTurnTask(session, session.currentXiaozhiTurn())
-			s.startXiaozhiTurnTask(ctx, conn, session, task)
+			s.startXiaozhiListenStopAfterIngressDrain(ctx, conn, session, session.currentXiaozhiTurn())
 		}
 	case xiaozhitransport.MessageTypeAbort:
 		if !session.helloReceived {
@@ -2319,16 +2340,151 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	session.opusFrameCount++
 	session.opusByteCount += frame.Opus.PayloadBytes
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.received", s.now().UnixMilli())
+	seq := uint64(session.opusFrameCount)
+	turn := session.currentXiaozhiTurn()
+	if s.enqueueXiaozhiOpusIngressFrame(ctx, conn, session, frame, turn, seq) {
+		return true
+	}
+	s.processXiaozhiOpusIngressFrame(ctx, conn, session, frame, seq)
+	return true
+}
+
+func (s *Server) startXiaozhiOpusIngressQueue(ctx context.Context, session *xiaozhiSession) {
+	if session == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	queueCtx, cancel := context.WithCancel(ctx)
+	queue := make(chan xiaozhiOpusIngressFrame, maxXiaozhiOpusIngressQueueFrames)
+	session.mu.Lock()
+	if session.opusIngressCancel != nil {
+		session.opusIngressCancel()
+	}
+	session.opusIngressCtx = queueCtx
+	session.opusIngressCancel = cancel
+	session.opusIngressQueue = queue
+	session.mu.Unlock()
+	go s.runXiaozhiOpusIngressQueue(queueCtx, session, queue)
+}
+
+func (s *Server) cancelXiaozhiOpusIngressQueue(session *xiaozhiSession, reason string) {
+	if session == nil {
+		return
+	}
+	session.mu.Lock()
+	cancel := session.opusIngressCancel
+	session.opusIngressCancel = nil
+	session.opusIngressCtx = nil
+	session.opusIngressQueue = nil
+	session.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queue_cancelled."+safeGatewayFallbackToken(reason, "unknown"), s.now().UnixMilli())
+	}
+}
+
+func (s *Server) enqueueXiaozhiOpusIngressFrame(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, frame xiaozhitransport.Frame, turn *xiaozhiTurn, seq uint64) bool {
+	queue := session.xiaozhiOpusIngressQueue()
+	if queue == nil {
+		return false
+	}
+	item := xiaozhiOpusIngressFrame{
+		ctx:   firstNonNilContext(xiaozhiTurnContext(turn), ctx),
+		conn:  conn,
+		frame: frame,
+		turn:  turn,
+		seq:   seq,
+	}
+	select {
+	case queue <- item:
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queued", s.now().UnixMilli())
+	default:
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queue_dropped", s.now().UnixMilli())
+	}
+	return true
+}
+
+func (s *Server) runXiaozhiOpusIngressQueue(ctx context.Context, session *xiaozhiSession, queue <-chan xiaozhiOpusIngressFrame) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case item := <-queue:
+			s.processXiaozhiOpusIngressFrame(item.ctx, item.conn, session, item.frame, item.seq)
+		}
+	}
+}
+
+func (s *Server) startXiaozhiListenStopAfterIngressDrain(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn) {
+	if session == nil || turn == nil {
+		return
+	}
+	go func() {
+		waitCtx, cancel := context.WithTimeout(firstNonNilContext(turn.ctx, ctx), 300*time.Millisecond)
+		defer cancel()
+		if !s.waitXiaozhiOpusIngressDrained(waitCtx, session) {
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.drain_timeout", s.now().UnixMilli())
+		}
+		if session.shouldAbortXiaozhiTurn(turn) {
+			return
+		}
+		if s.startXiaozhiStreamingASRCommit(ctx, conn, session, turn) {
+			return
+		}
+		task := s.newXiaozhiTurnTask(session, turn)
+		s.startXiaozhiTurnTask(ctx, conn, session, task)
+	}()
+}
+
+func (s *Server) waitXiaozhiOpusIngressDrained(ctx context.Context, session *xiaozhiSession) bool {
+	for {
+		session.mu.Lock()
+		received := session.opusFrameCount
+		processed := session.opusIngressProcessedFrameCount
+		session.mu.Unlock()
+		if processed >= received {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+func xiaozhiTurnContext(turn *xiaozhiTurn) context.Context {
+	if turn == nil {
+		return nil
+	}
+	return turn.ctx
+}
+
+func firstNonNilContext(contexts ...context.Context) context.Context {
+	for _, ctx := range contexts {
+		if ctx != nil {
+			return ctx
+		}
+	}
+	return context.Background()
+}
+
+func (s *Server) processXiaozhiOpusIngressFrame(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, frame xiaozhitransport.Frame, seq uint64) {
+	defer func() {
+		session.opusIngressProcessedFrameCount++
+	}()
 	if session.opusCodec == nil {
 		session.opusDecodeErrorCount++
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
-		return true
+		return
 	}
 	pcm, err := session.opusCodec.DecodePCM16(frame.Opus.Payload)
 	if err != nil {
 		session.opusDecodeErrorCount++
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
-		return true
+		return
 	}
 	session.opusDecodedFrameCount++
 	session.opusDecodedSampleCount += len(pcm)
@@ -2336,8 +2492,7 @@ func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, 
 	s.recordXiaozhiDeviceActivity(session, "xiaozhi.opus_frame.decoded", map[string]string{
 		"microphone": "available_xiaozhi_opus_ingress",
 	})
-	s.observeXiaozhiDecodedIngress(ctx, conn, session, pcm)
-	return true
+	s.observeXiaozhiDecodedIngress(ctx, conn, session, pcm, seq)
 }
 
 func (s *Server) bufferXiaozhiWakePreroll(session *xiaozhiSession, frame xiaozhitransport.Frame) bool {
@@ -2437,7 +2592,7 @@ func (s *Server) attachXiaozhiWakePreroll(ctx context.Context, session *xiaozhiS
 	}
 }
 
-func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, pcm []int16) {
+func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, pcm []int16, seq uint64) {
 	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
 		return
 	}
@@ -2453,7 +2608,7 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 		Protocol:  protocol.ProtocolVersion,
 		DeviceID:  session.deviceID,
 		Kind:      protocol.KindAudioFrame,
-		Seq:       uint64(session.opusFrameCount),
+		Seq:       seq,
 		TraceID:   session.traceID,
 		SessionID: session.sessionID,
 		SentAtMS:  s.now().UnixMilli(),
