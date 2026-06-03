@@ -294,6 +294,27 @@ Fresh local control-shell reports:
 Use the 04:02 ECS StepFun/cloud-edge reports as the current canonical
 provider/host-voice evidence. Use the 04:16/04:17 local reports only to explain
 why V21 execution cannot run from this shell yet.
+
+## 2026-06-04 V21 Local Adapter Execution Evidence
+
+V21 was confirmed through its own control thread as a local/LAN Docker Compose
+service. The active local backend was brought up on `18081`, and A21 used a
+temporary bridge on `21121` to preserve the explicit adapter boundary.
+
+Accepted V21 evidence:
+
+| Scope | Report | Status | Launch Use |
+| --- | --- | --- | --- |
+| V21 adapter execution | `reports/a21-v21-adapter-smoke-20260604-043456.json` | `passed`, `configured=true`, `executed=true`, `redaction_ok=true`, evidence `5`, speech `1`, card `1`, follow-up `1` | V21 professional adapter-boundary evidence |
+| Product readiness with V21 evidence | `reports/a21-product-readiness-20260604-043528.json` | `server_side_blocked`; provider, V21, and host voice ready; missing local Gateway/wake/selector/physical | Gap-reduction only, not physical PRD |
+| Server-side readiness with V21 evidence | `reports/a21-server-side-readiness-bundle-20260604-043528.json` | `server_side_blocked`; provider ready, V21 ready, host voice ready; missing `gateway`, `wake_word`, `voice_chain_selector` | Current server-side rollup for local-control context |
+
+Evidence decision:
+
+- `v21_professional_execution` is closed for the A21 adapter contract.
+- Do not claim permanent ECS Gateway V21 topology from this local bridge run.
+- Do not claim full PRD readiness; physical StackChan acceptance remains
+  required.
 - This control Mac still receives empty HTTP replies from direct public curls,
   and a later ECS tcpdump did not observe the Mac curl reaching the host. Treat
   this as a source-path/network issue, not as current A21 runtime health

@@ -9663,3 +9663,101 @@ Recommended next action:
 - Operator needs to provide either `A21_V21_ADAPTER_URL` for a running adapter
   boundary or `A21_V21_BACKEND_URL` plus optional `A21_V21_COLLECTION_ID` for
   the A21 bridge; do not provide raw V21 evidence or document contents.
+
+## 2026-06-04 04:36 CST - V21 Local Adapter Evidence Closed
+
+Round goal:
+
+- Use the user-supplied V21 control thread to determine whether V21 is local,
+  then close the A21 V21 professional evidence gate through the explicit
+  adapter boundary.
+
+Actual completed work:
+
+- Read V21 thread
+  `codex://threads/019e68bc-4fb6-7ce0-ad67-5b1dd0de478f`.
+- Confirmed V21 current operating shape from that thread and repo state:
+  local/LAN Docker Compose backend, demo backend on `18081`, old loopback
+  history on `18080`.
+- Checked `/Users/jiyurun/Documents/v21-knowledge-platform`; the V21 worktree
+  already had uncommitted LAN discovery/UI edits. Those edits were not modified
+  or reverted.
+- Started Docker Desktop because Docker daemon was initially unavailable.
+- Started the V21 LAN demo Docker Compose stack with `make lan-demo-up`; the
+  script later timed out on its LAN self-check, but the compose services were
+  healthy and manual direct checks succeeded.
+- Verified V21 health:
+  `127.0.0.1:18081/api/v1/healthz` and
+  `192.168.1.20:18081/api/v1/healthz` both returned ok.
+- Verified V21 runtime config had retrieval and LLM configured.
+- Verified V21 active collection discovery returned an active release.
+- Started A21 bridge temporarily:
+  `go run ./cmd/a21 v21-adapter-bridge --addr 127.0.0.1:21121 --v21-url http://127.0.0.1:18081`.
+- Verified bridge health.
+- Ran real V21 adapter smoke with execution:
+  `A21_V21_ADAPTER_URL=http://127.0.0.1:21121 go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports`.
+- Reran product/server-side readiness with the fresh V21 report and latest
+  StepFun/cloud-edge report pointers.
+- Stopped the temporary A21 bridge process on `21121`.
+- Left the V21 Docker Compose backend running on `18081` for follow-up work.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/plans/2026-06-04-v21-professional-execution-validation.md`
+- `docs/project_state_machine.md`
+
+Fresh reports:
+
+- `reports/a21-v21-adapter-smoke-20260604-043456.json`:
+  `passed`, `configured=true`, `executed=true`, `redaction_ok=true`,
+  evidence count `5`, speech block count `1`, screen card count `1`,
+  follow-up count `1`, duration `726.483 ms`.
+- `reports/a21-product-readiness-20260604-043528.json`:
+  `server_side_blocked`; provider, V21, and host voice are ready; local
+  missing evidence is Gateway, physical StackChan, wake word, and voice-chain
+  selector.
+- `reports/a21-server-side-readiness-bundle-20260604-043528.json`:
+  `server_side_blocked`; provider ready, V21 ready, host voice ready; missing
+  `gateway`, `wake_word`, and `voice_chain_selector`.
+
+Unfinished items:
+
+- Physical StackChan PRD acceptance remains open.
+- Current local readiness collector has no live A21 Gateway/wake/selector
+  context.
+- ECS/public Gateway was not reconfigured to call the local V21 bridge; this
+  run proves adapter-contract execution only.
+
+Known risks/blockers:
+
+- Do not claim full launch readiness from this V21 smoke.
+- Do not treat the temporary Mac-local bridge as permanent ECS topology.
+- V21 Docker Compose remains running on `18081`; stop it only with an explicit
+  V21/LAN demo decision, not as A21 cleanup.
+- V21 worktree remains dirty from its own LAN discovery/UI work; do not revert
+  those changes from A21.
+
+Test/build/runtime results:
+
+- `docker info`: passed after starting Docker Desktop.
+- `make lan-demo-up` in V21: compose services started; script exited with LAN
+  self-check timeout after manual kill of the waiting script, but health checks
+  independently passed.
+- `docker compose -p v21air-lan-demo ... ps`: V21 app healthy on `18081`.
+- V21 health checks on localhost and LAN IP: passed.
+- V21 runtime config check: retrieval and LLM configured.
+- V21 collections check: active release present.
+- A21 bridge `/healthz`: passed.
+- V21 adapter smoke execute: passed.
+- Product/server-side readiness reruns: V21 evidence ready, still blocked on
+  non-V21 gates.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Refresh live A21 Gateway/voice-chain/wake evidence against the current
+  StepFun cloud-edge chain, then collect physical StackChan PRD playback/stop
+  or trusted audible evidence.

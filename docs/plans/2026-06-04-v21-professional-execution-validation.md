@@ -1,6 +1,7 @@
 # 2026-06-04 - V21 Professional Execution Validation
 
-Status: current control plan.
+Status: accepted for local adapter-boundary execution; public Gateway topology
+and physical PRD gates remain open.
 Owner: A21 control tower.
 Transition: `T-V21-PROFESSIONAL-EXECUTION-001`.
 Created: 2026-06-04 CST.
@@ -38,6 +39,39 @@ provider-selector, Xiaozhi protocol, or physical-audio acceptance transition.
   - No process is listening on local `127.0.0.1:21121`.
   - Existing V21 reports are from 2026-06-01/02 and are not current evidence
     for the 2026-06-04 launch sprint.
+
+## Execution Update - 2026-06-04 04:36 CST
+
+- User supplied the V21 control thread
+  `codex://threads/019e68bc-4fb6-7ce0-ad67-5b1dd0de478f`.
+- Thread evidence confirmed V21 is a local/LAN Docker Compose service, with
+  the demo backend intended on `18081` and old loopback backend history on
+  `18080`.
+- Docker Desktop was not running; it was started and the V21 LAN demo stack was
+  brought up from `/Users/jiyurun/Documents/v21-knowledge-platform`.
+- V21 local health passed at `127.0.0.1:18081` and LAN health passed at
+  `192.168.1.20:18081`.
+- V21 runtime config reported retrieval and LLM configured.
+- V21 active collection discovery returned one collection with an active
+  release.
+- A21 bridge was started temporarily at `127.0.0.1:21121` pointing to
+  `http://127.0.0.1:18081`.
+- Adapter health passed.
+- Fresh executed adapter smoke:
+  `reports/a21-v21-adapter-smoke-20260604-043456.json`, `passed`,
+  `configured=true`, `executed=true`, `redaction_ok=true`, evidence count `5`,
+  speech block count `1`, screen card count `1`, follow-up count `1`,
+  duration `726.483 ms`.
+- Fresh readiness collectors with the latest StepFun/cloud-edge evidence and
+  V21 report:
+  `reports/a21-product-readiness-20260604-043528.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-043528.json`.
+- The server-side bundle now marks provider, V21, and host voice evidence ready;
+  remaining local-shell missing evidence is `gateway`, `wake_word`, and
+  `voice_chain_selector`.
+- The temporary A21 bridge process was stopped after evidence collection.
+- V21 Docker containers remain running; V21 repository dirty worktree was not
+  modified or reverted.
 
 ## Target State
 
@@ -139,6 +173,12 @@ Next suggested action:
 - Product/server-side readiness source fields point to the fresh V21 report.
 - V21 is no longer a server-side blocker.
 - Physical StackChan PRD evidence remains a separate blocker.
+
+Acceptance status:
+
+- Accepted for V21 local adapter-boundary execution evidence.
+- Not accepted as permanent public-Gateway V21 topology.
+- Not accepted for physical StackChan PRD launch.
 
 ## Failure States
 

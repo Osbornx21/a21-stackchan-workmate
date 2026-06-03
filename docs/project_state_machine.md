@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-SERVER-SIDE-EVIDENCE-READY-V21-BOUNDARY-BLOCKED-PHYSICAL-PENDING`
+Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-V21-ADAPTER-EVIDENCE-READY-PHYSICAL-PENDING`
 
 Active child transitions:
 
@@ -168,6 +168,21 @@ Fresh control-shell reports
 `reports/a21-server-side-readiness-bundle-20260604-041710.json` are
 boundary-missing/operator-ask evidence only. They must not supersede the 04:02
 ECS StepFun/cloud-edge provider and host-voice evidence.
+The user then supplied V21 control thread
+`codex://threads/019e68bc-4fb6-7ce0-ad67-5b1dd0de478f`. That thread confirmed
+V21 is a local/LAN Docker Compose service. Docker Desktop was started, the V21
+LAN demo backend was brought up on `18081`, and A21 temporarily bridged
+`127.0.0.1:21121` to `127.0.0.1:18081`. Fresh adapter evidence
+`reports/a21-v21-adapter-smoke-20260604-043456.json` passed with
+`configured=true`, `executed=true`, `redaction_ok=true`, evidence count `5`,
+speech count `1`, screen-card count `1`, and follow-up count `1`. Fresh
+readiness reports
+`reports/a21-product-readiness-20260604-043528.json` and
+`reports/a21-server-side-readiness-bundle-20260604-043528.json` now mark
+provider, V21, and host voice evidence ready in the local control context; they
+remain blocked by local Gateway/wake/selector and physical PRD evidence. This
+closes V21 adapter-contract execution evidence, not permanent ECS Gateway V21
+topology.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

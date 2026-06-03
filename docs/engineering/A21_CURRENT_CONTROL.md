@@ -462,3 +462,48 @@ Current conclusion:
 
 - Server-side readiness is ready for V21 adapter evidence, but V21 is blocked
   on a missing adapter/backend boundary from this control shell.
+
+## Latest Control-Tower Result - 2026-06-04 04:36 CST
+
+The V21 professional execution gate is closed for local adapter-boundary
+evidence.
+
+What happened:
+
+- Read V21 control thread
+  `codex://threads/019e68bc-4fb6-7ce0-ad67-5b1dd0de478f`.
+- Confirmed V21 is currently operated as a local/LAN Docker Compose service.
+- Started Docker Desktop and brought up the V21 LAN demo backend from
+  `/Users/jiyurun/Documents/v21-knowledge-platform`.
+- Verified V21 health:
+  - `127.0.0.1:18081/api/v1/healthz`: ok.
+  - `192.168.1.20:18081/api/v1/healthz`: ok.
+- Verified V21 runtime is configured for retrieval and LLM.
+- Verified V21 active collection discovery has an active release.
+- Temporarily started A21 adapter bridge:
+  `127.0.0.1:21121 -> 127.0.0.1:18081`.
+- Ran fresh executed adapter smoke:
+  `reports/a21-v21-adapter-smoke-20260604-043456.json`, `passed`,
+  `executed=true`, `redaction_ok=true`.
+- Ran fresh readiness collectors:
+  `reports/a21-product-readiness-20260604-043528.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-043528.json`.
+
+Current evidence truth:
+
+- Provider evidence: ready from
+  `reports/a21-provider-smoke-20260604-035200-977132343.json`.
+- V21 professional evidence: ready from
+  `reports/a21-v21-adapter-smoke-20260604-043456.json`.
+- Host voice evidence: ready as cloud-edge candidate from
+  `reports/a21-xiaozhi-voice-bench-20260604-035502.222374820.json`.
+- The local collector remains `server_side_blocked` because this shell has no
+  live A21 Gateway, wake-word status, or voice-chain selector context.
+
+Current conclusion:
+
+- V21 is no longer the active server-side evidence blocker.
+- This is local adapter-boundary execution evidence, not a permanent ECS
+  Gateway V21 topology.
+- Full PRD remains blocked by physical StackChan acceptance and current live
+  Gateway/wake/selector evidence refresh.
