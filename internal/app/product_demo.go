@@ -2960,7 +2960,8 @@ func productXiaozhiProviderExecutionAllowed(execution productXiaozhiReportExecut
 }
 
 func productXiaozhiHostProductChainReady(execution providerLatencyBenchExecution, explicit *bool) bool {
-	derived := providerLatencySafeExecutionMode(execution.VoicePipelineExecutionMode) == "host_local" &&
+	mode := providerLatencySafeExecutionMode(execution.VoicePipelineExecutionMode)
+	hostLocal := mode == "host_local" &&
 		execution.VoicePipelineObserved &&
 		execution.HostLocalASRExecuted &&
 		execution.HostLocalTextExecuted &&
@@ -2968,10 +2969,28 @@ func productXiaozhiHostProductChainReady(execution providerLatencyBenchExecution
 		providerLatencySafeIdentifier(execution.ASRProfile, false) != "" &&
 		providerLatencySafeIdentifier(execution.LLMProfile, false) != "" &&
 		providerLatencySafeIdentifier(execution.TTSProfile, false) != ""
+	cloudEdge := mode == "cloud_edge" &&
+		execution.ProviderExecuted &&
+		execution.VoicePipelineObserved &&
+		!execution.V21Executed &&
+		!execution.HardwareExecuted &&
+		productXiaozhiNonMockStageProfile(execution.ASRProfile) &&
+		productXiaozhiNonMockStageProfile(execution.LLMProfile) &&
+		productXiaozhiNonMockStageProfile(execution.TTSProfile)
+	derived := hostLocal || cloudEdge
 	if explicit != nil {
 		return *explicit && derived
 	}
 	return derived
+}
+
+func productXiaozhiNonMockStageProfile(profile string) bool {
+	profile = strings.ToLower(strings.TrimSpace(providerLatencySafeIdentifier(profile, false)))
+	return profile != "" &&
+		profile != "mock" &&
+		!strings.HasPrefix(profile, "mock-") &&
+		!strings.HasPrefix(profile, "mock_") &&
+		!strings.Contains(profile, "fixture")
 }
 
 func productXiaozhiReportHasSufficientRounds(fixture productXiaozhiReportFixture) bool {

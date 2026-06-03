@@ -726,6 +726,12 @@ func providerLatencyHostLoopbackExecution(source providerLatencyBenchExecution) 
 		execution.HostLocalTextExecuted = source.HostLocalTextExecuted && execution.LLMProfile != ""
 		execution.HostLocalTTSExecuted = source.HostLocalTTSExecuted && execution.TTSProfile != ""
 	}
+	if execution.VoicePipelineExecutionMode == "cloud_edge" {
+		execution.ProviderExecuted = source.ProviderExecuted &&
+			execution.ASRProfile != "" &&
+			execution.LLMProfile != "" &&
+			execution.TTSProfile != ""
+	}
 	return execution
 }
 
@@ -735,6 +741,8 @@ func providerLatencySafeExecutionMode(mode string) string {
 		return "fixture"
 	case "host_local":
 		return "host_local"
+	case "cloud_edge":
+		return "cloud_edge"
 	case "mixed":
 		return "mixed"
 	default:

@@ -3558,6 +3558,57 @@ func TestProductReadinessAcceptsProductChainXiaozhiReportWithoutPromotingProvide
 	}
 }
 
+func TestProductReadinessAcceptsCloudEdgeXiaozhiReportAsCandidate(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	data := productReadinessXiaozhiHostReportFixtureJSON()
+	replacements := map[string]string{
+		`"provider_executed": false`:                    `"provider_executed": true`,
+		`"voice_pipeline_execution_mode": "host_local"`: `"voice_pipeline_execution_mode": "cloud_edge"`,
+		`"asr_profile": "sherpa_onnx"`:                  `"asr_profile": "dashscope_qwen_asr_realtime"`,
+		`"asr_profile_env": "A21_ASR_LOCAL_PROFILE"`:    `"asr_profile_env": "A21_ASR_CLOUD_PROFILE"`,
+		`"llm_profile": "ollama_local"`:                 `"llm_profile": "stepfun"`,
+		`"tts_profile": "sherpa_onnx_tts"`:              `"tts_profile": "dashscope_qwen_tts_realtime"`,
+		`"host_local_asr_executed": true`:               `"host_local_asr_executed": false`,
+		`"host_local_text_executed": true`:              `"host_local_text_executed": false`,
+		`"host_local_tts_executed": true`:               `"host_local_tts_executed": false,` + "\n" + `    "host_product_chain_ready": true`,
+	}
+	for old, replacement := range replacements {
+		data = strings.Replace(data, old, replacement, 1)
+	}
+	fixture := writeProductReadinessXiaozhiHostReportFixtureFromData(t, data)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:    server.URL,
+		DeviceID:      "stackchan-001",
+		XiaozhiReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=stepfun",
+		"A21_ASR_CLOUD_PROFILE=dashscope_qwen_asr_realtime",
+		"A21_TEXT_STREAM_PROFILE=stepfun",
+		"A21_TTS_FAST_PROFILE=dashscope_qwen_tts_realtime",
+	})
+
+	pipeline := report.Voice.VoicePipeline
+	if !pipeline.HostLoopbackCandidateReady || !pipeline.HostProductChainReady || !report.Voice.ContinuousVoiceReady {
+		t.Fatalf("voice pipeline = %+v, voice = %+v, findings = %#v, want cloud-edge candidate product-chain evidence absorbed", pipeline, report.Voice, report.Findings)
+	}
+	if pipeline.ExecutionMode != "cloud_edge" ||
+		pipeline.ASRProfile != "dashscope_qwen_asr_realtime" ||
+		pipeline.TextStreamProfile != "stepfun" ||
+		pipeline.TTSProfile != "dashscope_qwen_tts_realtime" {
+		t.Fatalf("voice pipeline = %+v, want cloud-edge provider profiles preserved", pipeline)
+	}
+	if pipeline.HostLocalASRReady || pipeline.HostLocalTextReady || pipeline.HostLocalTTSReady {
+		t.Fatalf("voice pipeline = %+v, cloud-edge evidence must not masquerade as host-local execution", pipeline)
+	}
+	if report.LaunchReady || report.CanonicalDecision.LaunchReady || report.CanonicalDecision.PRDAccepted {
+		t.Fatalf("canonical decision = %+v, launch = %v; cloud-edge host bench must stay below PRD acceptance", report.CanonicalDecision, report.LaunchReady)
+	}
+	if containsProductFinding(report.Findings, "xiaozhi_report_invalid", "") {
+		t.Fatalf("findings = %#v, want cloud-edge xiaozhi report accepted", report.Findings)
+	}
+}
+
 func TestProductReadinessRejectsFixtureXiaozhiReportClaimingProviderExecution(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	data := strings.Replace(productReadinessXiaozhiHostReportFixtureJSON(), `"provider_executed": false`, `"provider_executed": true`, 1)
