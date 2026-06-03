@@ -553,6 +553,81 @@ func TestVoicePipelineAdaptersFromEnvWiresSherpaStreamingSubprocessHelper(t *tes
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvDiscoversCanonicalSherpaStreamingCache(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	logPath := filepath.Join(root, "helper-commands.jsonl")
+	helperPath := filepath.Join(root, "scripts", "a21_sherpa_onnx_streaming_asr_session.py")
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	helper := `#!/bin/sh
+set -eu
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "` + logPath + `"
+  case "$line" in
+    *'"type":"start"'*) printf '%s\n' '{"type":"ready"}' ;;
+    *'"type":"append"'*) printf '%s\n' '{"type":"partial","text":"partial-from-canonical-helper"}' ;;
+    *'"type":"commit"'*) printf '%s\n' '{"type":"final","text":"final-from-canonical-helper"}'; exit 0 ;;
+  esac
+done
+`
+	if err := os.WriteFile(helperPath, []byte(helper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pythonPath := filepath.Join(root, ".a21-tools", "sherpa-onnx-venv", "bin", "python")
+	if err := os.MkdirAll(filepath.Dir(pythonPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pythonPath, []byte("#!/bin/sh\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelDir := filepath.Join(root, ".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30")
+	createProviderStreamingASRModelFiles(t, modelDir)
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming",
+	}, VoicePipelineAdapterOptions{
+		ASRRunner: func(ctx context.Context, options audio.LocalASROptions) (audio.LocalASRResult, error) {
+			t.Fatal("canonical streaming ASR runtime must not call batch WAV runner")
+			return audio.LocalASRResult{}, nil
+		},
+	})
+	streaming, ok := adapters.ASR.(StreamingASRAdapter)
+	if adapters.ExecutionMode != "host_local" || adapters.ASR.Name() != "sherpa_onnx_streaming" || !ok {
+		t.Fatalf("ASR adapter = %T/%s mode=%s, want streaming sherpa host_local", adapters.ASR, adapters.ASR.Name(), adapters.ExecutionMode)
+	}
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{Mode: "workmate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.AppendFrame(context.Background(), VoicePipelinePCMFrame{
+		Seq:          1,
+		Codec:        "pcm_s16le",
+		SampleRateHz: 16000,
+		Channels:     1,
+		DurationMS:   60,
+		ByteCount:    2,
+		PCM16LE:      []byte{1, 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if event := receiveASREvent(t, session.Events()); event.Final || event.Text != "partial-from-canonical-helper" {
+		t.Fatalf("partial = %+v, want canonical helper partial", event)
+	}
+	if err := session.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if event := receiveASREvent(t, session.Events()); !event.Final || event.Text != "final-from-canonical-helper" {
+		t.Fatalf("final = %+v, want canonical helper final", event)
+	}
+	rendered := eventuallyReadFile(t, logPath)
+	for _, forbidden := range []string{root, ".wav"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("helper command log leaked or used forbidden value %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
 	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
@@ -609,6 +684,18 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 		captured.VoiceClonePersona != "A21 Workmate" ||
 		captured.VoiceCloneStyle != "Warm-Pro" {
 		t.Fatalf("captured TTS options = %+v", captured)
+	}
+}
+
+func createProviderStreamingASRModelFiles(t *testing.T, modelDir string) {
+	t.Helper()
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt"} {
+		if err := os.WriteFile(filepath.Join(modelDir, name), []byte("a21"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

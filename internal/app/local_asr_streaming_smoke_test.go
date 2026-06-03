@@ -156,6 +156,88 @@ func TestRunLocalASRStreamingSmokeRecordsSherpaPackageBlocker(t *testing.T) {
 	}
 }
 
+func TestRunLocalASRStreamingSmokeDiscoversCanonicalLocalModelCache(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	outputDir := filepath.Join(root, "reports")
+	logPath := filepath.Join(root, "helper-commands.jsonl")
+	helperPath := filepath.Join(root, "scripts", "a21_sherpa_onnx_streaming_asr_session.py")
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	helperScript := `#!/bin/sh
+while IFS= read line; do
+  printf '%s\n' "$line" >> "$A21_FAKE_STREAMING_HELPER_LOG"
+  case "$line" in
+    *'"type":"start"'*) printf '{"type":"ready"}\n' ;;
+    *'"type":"append"'*) printf '{"type":"partial","text":"private partial"}\n' ;;
+    *'"type":"commit"'*) printf '{"type":"final","text":"private final"}\n'; exit 0 ;;
+  esac
+done
+`
+	if err := os.WriteFile(helperPath, []byte(helperScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pythonPath := filepath.Join(root, ".a21-tools", "sherpa-onnx-venv", "bin", "python")
+	if err := os.MkdirAll(filepath.Dir(pythonPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pythonPath, []byte("#!/bin/sh\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelDir := filepath.Join(root, ".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30")
+	createStreamingASRModelFiles(t, modelDir)
+	t.Setenv("A21_FAKE_STREAMING_HELPER_LOG", logPath)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{
+		"local-asr-streaming-smoke",
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: %s\nstdout=%s", code, stderr.String(), stdout.String())
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"helper": "a21_sherpa_onnx_streaming_asr_session.py"`,
+		`"python": "python"`,
+		`"model_dir": "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"`,
+		`"model_files_present": true`,
+		`"frames_appended": 1`,
+		`"final_events": 1`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(outputDir, "a21-local-asr-streaming-smoke-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1: %v", len(matches), matches)
+	}
+	reportData, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := stdout.String() + string(reportData)
+	for _, forbidden := range []string{root, "private partial", "private final", "pcm16le_b64", ".wav"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("canonical streaming ASR smoke leaked %q: %s", forbidden, rendered)
+		}
+	}
+	commands := eventuallyReadAppTestFile(t, logPath)
+	startIndex := strings.Index(commands, `"type":"start"`)
+	appendIndex := strings.Index(commands, `"type":"append"`)
+	commitIndex := strings.Index(commands, `"type":"commit"`)
+	if startIndex < 0 || appendIndex < 0 || commitIndex < 0 || !(startIndex < appendIndex && appendIndex < commitIndex) {
+		t.Fatalf("helper commands out of order:\n%s", commands)
+	}
+}
+
 func createStreamingASRModelFiles(t *testing.T, modelDir string) {
 	t.Helper()
 	if err := os.MkdirAll(modelDir, 0o755); err != nil {

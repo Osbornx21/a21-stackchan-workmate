@@ -320,8 +320,13 @@ func xiaozhiStreamingTextProfileConfigured(env []string, profile string) bool {
 }
 
 func xiaozhiSherpaStreamingASRConfigured(env []string) bool {
-	return strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")) != "" &&
-		strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")) != ""
+	options := applyLocalASRStreamingSmokeDefaults(localASRStreamingSmokeOptions{
+		HelperPath: strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")),
+		ModelDir:   strings.TrimSpace(appEnvValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")),
+	})
+	return pathExists(options.HelperPath) &&
+		dirExists(options.ModelDir) &&
+		len(missingSherpaStreamingModelFiles(options.ModelDir)) == 0
 }
 
 func xiaozhiDoubaoRealtimeTTSConfigured(env []string) bool {

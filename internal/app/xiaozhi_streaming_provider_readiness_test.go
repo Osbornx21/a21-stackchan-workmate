@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,6 +62,7 @@ func TestXiaozhiStreamingProviderReadinessBlocksSherpaAndIflytekWAVBoundaries(t 
 }
 
 func TestXiaozhiStreamingProviderReadinessBlocksSherpaStreamingWhenHelperMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
 	t.Setenv("A21_TTS_FAST_PROFILE", "iflytek_tts")
@@ -88,13 +90,57 @@ func TestXiaozhiStreamingProviderReadinessBlocksSherpaStreamingWhenHelperMissing
 }
 
 func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredSherpaStreamingASRStageOnly(t *testing.T) {
+	helperPath := filepath.Join(t.TempDir(), "a21-sherpa-streaming-helper")
+	if err := os.WriteFile(helperPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelDir := filepath.Join(t.TempDir(), "a21-sherpa-model")
+	createStreamingASRModelFiles(t, modelDir)
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
-	t.Setenv("A21_SHERPA_ONNX_STREAMING_HELPER", "/redacted/a21-sherpa-streaming-helper")
-	t.Setenv("A21_SHERPA_ONNX_ASR_MODEL_DIR", "/redacted/a21-sherpa-model")
+	t.Setenv("A21_SHERPA_ONNX_STREAMING_HELPER", helperPath)
+	t.Setenv("A21_SHERPA_ONNX_ASR_MODEL_DIR", modelDir)
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
 	t.Setenv("A21_TTS_FAST_PROFILE", "iflytek_tts")
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("code=%d, want blocked by TTS stdout=%s", code, stdout.String())
+	}
+	for _, want := range []string{
+		`"asr":{"profile":"sherpa_onnx_streaming","profile_env":"A21_ASR_LOCAL_PROFILE","adapter":"local_sherpa_onnx_streaming_asr","capability":"streaming_asr_session","ready":true,"real_provider":true,"streaming":true`,
+		`"tts_wav_file_boundary_not_xiaozhi_streaming"`,
+		`"gate_status":"blocked"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{helperPath, modelDir, "/Users/", "a21-sherpa-streaming-helper", "a21-sherpa-model"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestXiaozhiStreamingProviderReadinessAcceptsCanonicalSherpaStreamingCache(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	helperPath := filepath.Join(root, "scripts", "a21_sherpa_onnx_streaming_asr_session.py")
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helperPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelDir := filepath.Join(root, ".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30")
+	createStreamingASRModelFiles(t, modelDir)
+	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
+	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
+	t.Setenv("A21_TTS_FAST_PROFILE", "iflytek_tts")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"xiaozhi-streaming-provider-readiness", "--output-dir", ""}, &stdout, &stderr)
+
 	if code == 0 {
 		t.Fatalf("code=%d, want blocked by TTS stdout=%s", code, stdout.String())
 	}
@@ -110,10 +156,13 @@ func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredSherpaStreamingASRSta
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"/redacted/", "/Users/", "a21-sherpa-streaming-helper", "a21-sherpa-model"} {
+	for _, forbidden := range []string{root, "a21_sherpa_onnx_streaming_asr_session.py", "sherpa-onnx-streaming-zipformer"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked %q: %s", forbidden, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), "asr_sherpa_streaming_helper_or_model_missing") {
+		t.Fatalf("canonical streaming ASR cache was still reported missing: %s", stdout.String())
 	}
 }
 
@@ -145,6 +194,7 @@ func TestXiaozhiStreamingProviderReadinessBlocksDoubaoRealtimeTTSWhenConfigMissi
 }
 
 func TestXiaozhiStreamingProviderReadinessAcceptsConfiguredDoubaoRealtimeTTSStageOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
 	t.Setenv("A21_ASR_LOCAL_PROFILE", "sherpa_onnx_streaming")
 	t.Setenv("A21_TEXT_STREAM_PROFILE", "stepfun")
 	t.Setenv("A21_TTS_FAST_PROFILE", "doubao_tts_realtime")

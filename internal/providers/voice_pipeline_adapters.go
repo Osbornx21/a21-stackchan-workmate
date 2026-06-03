@@ -1075,7 +1075,7 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 		ExecutionMode: "fixture",
 	}
 	if isLocalSherpaStreamingASRProfile(selection.ASRProfile) {
-		asrModelDir := firstNonEmptyPipelineValue(strings.TrimSpace(options.ASRModelDir), strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")))
+		asrModelDir := firstNonEmptyPipelineValue(strings.TrimSpace(options.ASRModelDir), strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_ASR_MODEL_DIR")), defaultSherpaStreamingASRModelDir())
 		asrFamily := firstNonEmptyPipelineValue(strings.TrimSpace(options.ASRFamily), strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_ASR_FAMILY")), "streaming_zipformer")
 		adapters.ASR = NewLocalSherpaONNXStreamingASRAdapter(LocalSherpaONNXStreamingASRAdapterOptions{
 			LocalSherpaONNXASRAdapterOptions: LocalSherpaONNXASRAdapterOptions{
@@ -1085,8 +1085,8 @@ func VoicePipelineAdaptersFromEnv(env []string, optionList ...VoicePipelineAdapt
 				Runner:   options.ASRRunner,
 			},
 			StreamingSessionFactory: options.StreamingASRSessionFactory,
-			StreamingHelperPath:     strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")),
-			StreamingPythonPath:     strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_PYTHON")),
+			StreamingHelperPath:     firstNonEmptyPipelineValue(strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_HELPER")), defaultSherpaStreamingASRHelperPath()),
+			StreamingPythonPath:     firstNonEmptyPipelineValue(strings.TrimSpace(envValue(env, "A21_SHERPA_ONNX_STREAMING_PYTHON")), defaultSherpaStreamingASRPythonPath()),
 		})
 		adapters.ExecutionMode = "host_local"
 	} else if isLocalSherpaASRProfile(selection.ASRProfile) {
@@ -1295,4 +1295,44 @@ func firstNonEmptyPipelineValue(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func defaultSherpaStreamingASRHelperPath() string {
+	candidate := filepath.Join("scripts", "a21_sherpa_onnx_streaming_asr_session.py")
+	if pipelinePathExists(candidate) {
+		return candidate
+	}
+	return ""
+}
+
+func defaultSherpaStreamingASRPythonPath() string {
+	candidate := filepath.Join(".a21-tools", "sherpa-onnx-venv", "bin", "python")
+	if pipelinePathExists(candidate) {
+		return candidate
+	}
+	return ""
+}
+
+func defaultSherpaStreamingASRModelDir() string {
+	candidate := filepath.Join(".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30")
+	if pipelineDirExists(candidate) {
+		return candidate
+	}
+	return ""
+}
+
+func pipelinePathExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func pipelineDirExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }

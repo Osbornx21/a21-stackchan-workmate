@@ -136,6 +136,7 @@ func runLocalASRStreamingSmoke(args []string, stdout io.Writer, stderr io.Writer
 		fmt.Fprintf(stderr, "local ASR streaming report dir invalid: %v\n", err)
 		return 1
 	}
+	options = applyLocalASRStreamingSmokeDefaults(options)
 	report := runSherpaONNXStreamingASRSmoke(context.Background(), options)
 	reportPath, err := writeLocalASRStreamingSmokeReport(options.OutputDir, report)
 	if err != nil {
@@ -151,6 +152,25 @@ func runLocalASRStreamingSmoke(args []string, stdout io.Writer, stderr io.Writer
 		return 1
 	}
 	return 0
+}
+
+func applyLocalASRStreamingSmokeDefaults(options localASRStreamingSmokeOptions) localASRStreamingSmokeOptions {
+	if strings.TrimSpace(options.HelperPath) == "" {
+		if candidate := filepath.Join("scripts", "a21_sherpa_onnx_streaming_asr_session.py"); pathExists(candidate) {
+			options.HelperPath = candidate
+		}
+	}
+	if strings.TrimSpace(options.PythonPath) == "" {
+		if candidate := filepath.Join(".a21-tools", "sherpa-onnx-venv", "bin", "python"); pathExists(candidate) {
+			options.PythonPath = candidate
+		}
+	}
+	if strings.TrimSpace(options.ModelDir) == "" {
+		if candidate := filepath.Join(".a21-tools", "sherpa-onnx-asr-models", "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"); dirExists(candidate) {
+			options.ModelDir = candidate
+		}
+	}
+	return options
 }
 
 func runSherpaONNXStreamingASRSmoke(ctx context.Context, options localASRStreamingSmokeOptions) localASRStreamingSmokeReport {

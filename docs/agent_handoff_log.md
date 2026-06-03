@@ -6152,3 +6152,85 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No unresolved integration failure.
+
+## 2026-06-03 08:52 CST - Control Unblocks Real Sherpa Streaming ASR Smoke
+
+本轮目标:
+
+- Continue the full Xiaozhi realtime convergence after the host-side ASR
+  partial bridge.
+- Replace the stale `model_dir_missing` ASR blocker with current local evidence
+  if the repo-local streaming Zipformer cache is usable.
+- Keep the work host-local: no provider/V21, no Gateway restart, no hardware,
+  no firmware, no `/v1/xiaozhi/say`, no audio playback.
+
+实际完成内容:
+
+- Verified the canonical local assets exist:
+  - `scripts/a21_sherpa_onnx_streaming_asr_session.py`
+  - `.a21-tools/sherpa-onnx-venv/bin/python`
+  - `.a21-tools/sherpa-onnx-asr-models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30`
+- Confirmed the helper can load the real model and emit `ready`/`final` for an
+  in-memory PCM16 frame.
+- Added default canonical discovery to:
+  - `a21 local-asr-streaming-smoke`
+  - `VoicePipelineAdaptersFromEnv` when `A21_ASR_LOCAL_PROFILE` explicitly
+    selects `sherpa_onnx_streaming`
+  - `xiaozhi-streaming-provider-readiness`
+- `make local-asr-streaming-smoke` now passes without extra env on this
+  machine and writes
+  `reports/a21-local-asr-streaming-smoke-20260603-085636-1780448196060587000.json`.
+- `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming a21
+  xiaozhi-streaming-provider-readiness` now marks ASR ready from the canonical
+  cache and remains blocked only on mock LLM/TTS in the default env; latest
+  report:
+  `reports/a21-xiaozhi-streaming-provider-readiness-20260603-085641-1780448201880789000.json`.
+
+修改过的文件:
+
+- `internal/app/local_asr_streaming_smoke.go`
+- `internal/app/local_asr_streaming_smoke_test.go`
+- `internal/app/xiaozhi_streaming_provider_readiness.go`
+- `internal/app/xiaozhi_streaming_provider_readiness_test.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance is still incomplete.
+- Real streaming TTS provider runtime execution remains blocked until explicit
+  authorization and complete env.
+- Physical stock `/v1/xiaozhi` evidence still needs wake or labeled tap
+  trigger, real trace ordering, audible device playback, touch/barge-in, and
+  idle recovery.
+
+测试/构建/运行结果:
+
+- Red test first:
+  `go test ./internal/app -run TestRunLocalASRStreamingSmokeDiscoversCanonicalLocalModelCache -count=1`
+  failed before implementation with `streaming_helper_missing`.
+- Red provider test first:
+  `go test ./internal/providers -run TestVoicePipelineAdaptersFromEnvDiscoversCanonicalSherpaStreamingCache -count=1`
+  failed before implementation with `sherpa-onnx streaming ASR helper is not configured`.
+- Red readiness test first:
+  `go test ./internal/app -run TestXiaozhiStreamingProviderReadinessAcceptsCanonicalSherpaStreamingCache -count=1`
+  failed before implementation because ASR was still reported missing.
+- Focused tests passed:
+  `go test ./internal/app -run 'TestRunLocalASRStreamingSmoke(DiscoversCanonicalLocalModelCache|WritesRedactedPassReport|RecordsMissingModelBlocker|RecordsSherpaPackageBlocker)' -count=1`;
+  `go test ./internal/providers -run 'TestVoicePipelineAdaptersFromEnv(DiscoversCanonicalSherpaStreamingCache|WiresSherpaStreamingSubprocessHelper|SelectsSherpaONNXStreamingASR)|TestLocalSherpaONNXStreamingASRAdapterRequiresConfiguredSession' -count=1`;
+  `go test ./internal/app -run 'TestXiaozhiStreamingProviderReadiness' -count=1`.
+- Runtime host-local smoke:
+  `make local-asr-streaming-smoke` passed.
+- Static readiness:
+  `A21_ASR_LOCAL_PROFILE=sherpa_onnx_streaming go run ./cmd/a21 xiaozhi-streaming-provider-readiness --output-dir reports`
+  returned blocked as expected, with ASR ready and default LLM/TTS still mock.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host
+  loopback, WAV/file acceptance path, firmware build, flash, NVS/serial access,
+  hardware action, or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only failures were intentional red tests and the
+  expected readiness block on mock LLM/TTS.
