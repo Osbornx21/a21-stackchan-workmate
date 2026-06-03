@@ -353,6 +353,7 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 		`HandleVadStopTimeoutEvent`,
 		`protocol_->OpenAudioChannel()`,
 		`ContinueOpenAudioChannel(mode);`,
+		`state != kDeviceStateConnecting && !(state == kDeviceStateIdle && protocol_->IsAudioChannelOpened())`,
 		`SetListeningMode(GetDefaultListeningMode());`,
 		`mode != kListeningModeRealtime`,
 		`listening_mode_ != kListeningModeAutoStop`,

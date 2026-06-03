@@ -8237,3 +8237,68 @@ Recommended next action:
    `MODEL_LOADER: Can not find model in partition table`,
    model/MultiNet load evidence, and the A21 custom wake override markers.
 4. Physically test `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle.
+
+## 2026-06-03 21:1x CST - Xiaozhi Wake State Machine Alignment
+
+Round goal:
+
+- Compare the A21 official-compatible wake/listen state machine against the
+  Xiaozhi baseline and fix why custom wake detection still did not enter a
+  usable conversation turn.
+
+Actual completed work:
+
+- Confirmed the device now loads assets and MultiNet, and serial evidence
+  showed `Custom wake word detected` plus `Wake word detected: 紫悦`.
+- Pulled the public Gateway trace and found the server still only saw repeated
+  `xiaozhi.hello.received` after the wake event; it did not receive
+  `listen.detect`, `listen.start`, or wake-triggered Opus ingress.
+- Compared Xiaozhi baseline `HandleWakeWordDetectedEvent`,
+  `ContinueWakeWordInvoke`, `HandleStateChangedEvent`, and protocol
+  `SendAbortSpeaking` / `SendWakeWordDetected` / `SendStartListening`.
+- Root cause: Xiaozhi baseline assumes `ContinueWakeWordInvoke` is reached
+  through `kDeviceStateConnecting`. A21 added an idle quiet-control WebSocket,
+  so wake can reach `ContinueWakeWordInvoke` while still in
+  `kDeviceStateIdle` with `protocol_->IsAudioChannelOpened()==true`; the old
+  guard returned immediately and swallowed the wake transition.
+- Fixed the A21 overlay so `ContinueWakeWordInvoke` accepts the Xiaozhi
+  `Connecting` path and the A21 `Idle + open channel` fast path.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused tests passed:
+  `go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|ZiYueCustomWake' -count=1`.
+- `make verify`: passed.
+- Product build passed:
+  `reports/a21-stackchan-official-baseline-20260603-211451-1780492491468577000.json`.
+- New product app SHA-256:
+  `7674e98af738ade2e3653b46598093a135611cf8f6a4746a689bf0b447ef66c8`.
+- Partition table and assets stayed on the previously verified fixed hashes:
+  `704b0cc2d29d95d8429450e3d379c903c77864042d0bc3050f669c2c244bdb8d`
+  and
+  `d0a20f925364d33e75694dd07b4897ba9a1689728949d45a2987d6551cbc8b8e`.
+
+Unfinished items:
+
+- The fixed wake state-machine build still needs guarded flash and physical
+  trace proof.
+- Barge-in still needs a dedicated post-wake proof: while Xiaozhi protocol
+  sends `abort` and clears the send queue, Gateway/device downlink
+  cancellation must be verified after the wake path starts producing turns.
+
+Recommended next action:
+
+1. Commit the wake state-machine fix.
+2. Guarded-flash the new product app SHA
+   `7674e98af738ade2e3653b46598093a135611cf8f6a4746a689bf0b447ef66c8`.
+3. Capture serial and Gateway trace evidence for wake -> `listen.start` ->
+   Opus ingress -> ASR -> TTS downlink.
+4. Immediately test barge-in during speaking and verify no downlink frames are
+   emitted for the cancelled turn after `abort`.

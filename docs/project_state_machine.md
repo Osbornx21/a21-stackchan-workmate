@@ -2232,11 +2232,22 @@ Next state:
      `704b0cc2d29d95d8429450e3d379c903c77864042d0bc3050f669c2c244bdb8d`,
      and assets SHA-256
      `d0a20f925364d33e75694dd07b4897ba9a1689728949d45a2987d6551cbc8b8e`.
-   - Next action: commit the partition guard/fix, guarded-flash only
-     `a21-stackchan-official-xiaozhi-compatible.bin`, capture serial boot logs
-     proving assets/model load plus `A21 overriding asset multinet commands...`
-     and `Loaded ... A21 sdkconfig custom wake command(s)`, then physically
-     retry `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle.
+   - Latest update: serial evidence after the assets fix proved MultiNet and
+     custom wake did load and detected `紫悦`, but the public Gateway trace
+     still only saw `xiaozhi.hello.received`. Xiaozhi baseline review found
+     that `ContinueWakeWordInvoke` assumes the `kDeviceStateConnecting` path;
+     A21's quiet idle WebSocket creates a new valid path,
+     `kDeviceStateIdle && protocol_->IsAudioChannelOpened()`, which the old
+     guard returned from before sending `listen.start`. The overlay now accepts
+     that A21 fast path. Product build
+     `reports/a21-stackchan-official-baseline-20260603-211451-1780492491468577000.json`
+     passed with app SHA-256
+     `7674e98af738ade2e3653b46598093a135611cf8f6a4746a689bf0b447ef66c8`.
+   - Next action: commit the wake state-machine fix, guarded-flash only
+     `a21-stackchan-official-xiaozhi-compatible.bin`, capture serial plus
+     Gateway trace proving wake -> `listen.start` -> Opus ingress -> ASR ->
+     TTS downlink, then physically retry `紫悦`, `紫悦紫悦`, `你好紫悦`, and
+     `小紫悦` from idle.
 
 2. `T-ASR-GREEN-LATENCY-001: Xiaozhi Listen Auto-Stop`
    - Current phase: product app flashed, firmware no-speech timer is present,

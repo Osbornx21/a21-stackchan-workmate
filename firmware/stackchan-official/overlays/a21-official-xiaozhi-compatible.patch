@@ -232,6 +232,12 @@ index 3b6f07e..396b23a 100644
 +        display->SetChatMessage("system", "正在连接紫悦服务...");
 +        audio_service_.EnableWakeWordDetection(true);
          return;
+@@ -823,3 +905,4 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
+     // Check state again in case it was changed during scheduling
+-    if (GetDeviceState() != kDeviceStateConnecting) {
++    auto state = GetDeviceState();
++    if (state != kDeviceStateConnecting && !(state == kDeviceStateIdle && protocol_->IsAudioChannelOpened())) {
+         return;
 @@ -833,2 +915,5 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
              audio_service_.EnableWakeWordDetection(true);
 +            auto display = Board::GetInstance().GetDisplay();
