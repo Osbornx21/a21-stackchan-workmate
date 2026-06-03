@@ -5503,6 +5503,66 @@ func TestXiaozhiWebSocketLateStreamingASRFinalStillStartsPipeline(t *testing.T) 
 	}
 }
 
+func TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWhenGatewayVADMisses(t *testing.T) {
+	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
+	asr, ok := streamingASR.(providers.ASRAdapter)
+	if !ok {
+		t.Fatal("mock streaming ASR adapter must also satisfy batch ASR fallback")
+	}
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        asr,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-vad-miss-final",
+		"session_id": "a21-session-xiaozhi-vad-miss-final",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	stt := readXiaozhiJSON(t, ctx, conn)
+	if stt["type"] != "stt" {
+		t.Fatalf("stt = %#v", stt)
+	}
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	traces := server.traceEvents("a21-trace-xiaozhi-vad-miss-final")
+	for _, want := range []string{"asr.final", "xiaozhi.voice_pipeline.start"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q after streaming final despite VAD miss: %+v", want, traces)
+		}
+	}
+	if traceContains(traces, "vad.speech.start") {
+		t.Fatalf("test must prove VAD-miss path, got vad.speech.start: %+v", traces)
+	}
+}
+
 func TestXiaozhiWebSocketStreamingASRFinalSendsStockSTTBeforeTTS(t *testing.T) {
 	streamingASR := newBlockingCommitStreamingASRAdapter()
 	defer streamingASR.releaseCommit()

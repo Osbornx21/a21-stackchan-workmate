@@ -8434,3 +8434,67 @@ Unfinished items:
 - Re-run the same physical long-speech test and require `asr.stream.final_timeout`
   followed by `asr.final` and then `xiaozhi.voice_pipeline.start` / downlink,
   or no timeout at all with normal final-driven reply.
+
+Post-deploy update:
+
+- Committed as `0161d84 fix(gateway): answer after late streaming asr final`.
+- Deployed to main public ECS Gateway `47.103.57.217`; remote focused tests
+  passed, `go build ./cmd/a21` passed, `a21-gateway` restarted active, and
+  `healthz` returned ok.
+- Public host-loopback bench passed after deploy:
+  `reports/a21-xiaozhi-voice-bench-20260603-215804.962203000.json`.
+- Fresh physical trace `a21-trace-44-1b-f6-e2-6a-60` after user long-speech
+  repro showed the late-final recovery working: `asr.stream.final_timeout=2`,
+  `asr.final=5`, `xiaozhi.voice_pipeline.start=2`,
+  `provider.first_content=2`, `tts.first_audio=2`, and
+  `xiaozhi.tts.opus_frame.downlink=267`.
+- The same trace included `barge_in.detected=1` and `playback.stop=1` with
+  `stop_plus_500ms_violations=0`. Stock firmware still does not expose
+  `device.playback.stop_done`, so Gateway-side stop/downlink suppression is
+  verified, but device queue acknowledgement remains unavailable.
+
+## 2026-06-03 22:xx CST - Xiaozhi VAD Miss ASR Final Recovery
+
+Round goal:
+
+- Investigate the user's report that long-speech replies still occasionally do
+  not happen after the late-final fix.
+
+Actual completed work:
+
+- Pulled live device state and trace for `44:1b:f6:e2:6a:60`.
+- Found a distinct no-reply path after barge/new listen: the turn had
+  `listen.stop`, `asr.stream.commit`, `asr.first_partial`, and `asr.final`, but
+  no `xiaozhi.voice_pipeline.start`.
+- Root cause: `writeXiaozhiVoicePipelineTTS` still required
+  `voicePipelineHasSpeech=true`, which comes from Gateway-side RMS/VAD. In the
+  failing segment the cloud ASR produced final text, but Gateway VAD had not
+  raised `vad.speech.start`, so the valid ASR final was blocked before the
+  answer pipeline.
+- Fixed the contract so non-empty streaming ASR final text is speech evidence:
+  final text marks the turn as speech-bearing, and the voice pipeline can start
+  when `streamingASRFinalText` is present even if local Gateway VAD missed.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Added regression:
+  `TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWhenGatewayVADMisses`.
+- Focused Xiaozhi listen/final/barge tests passed.
+- Full Gateway package passed:
+  `go test ./internal/gateway -count=1`.
+- Related packages passed:
+  `go test ./internal/app ./internal/providers -count=1`.
+- `make verify` passed.
+
+Recommended next action:
+
+1. Commit and deploy to `47.103.57.217`.
+2. Re-run physical long utterance plus interruption and require:
+   `asr.final -> xiaozhi.voice_pipeline.start -> tts.first_audio/downlink`
+   even when `vad.speech.start` is absent for that segment.

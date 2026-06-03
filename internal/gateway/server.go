@@ -2715,6 +2715,9 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 			session.mu.Lock()
 			session.streamingASRHasFinal = true
 			session.streamingASRFinalText = event.Text
+			if strings.TrimSpace(event.Text) != "" {
+				session.voicePipelineHasSpeech = true
+			}
 			session.mu.Unlock()
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.final", s.now().UnixMilli())
 			s.maybeStartXiaozhiStreamingASRFinalAnswer(ctx, conn, session)
@@ -4076,7 +4079,8 @@ func (s *Server) writeXiaozhiWAVAudioDownlink(ctx context.Context, conn *websock
 
 func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) bool {
 	turn := task.turn
-	if session.shouldAbortXiaozhiTurn(turn) || len(task.voicePipelineFrames) == 0 || !task.voicePipelineHasSpeech {
+	hasStreamingFinal := strings.TrimSpace(task.streamingASRFinalText) != ""
+	if session.shouldAbortXiaozhiTurn(turn) || len(task.voicePipelineFrames) == 0 || (!task.voicePipelineHasSpeech && !hasStreamingFinal) {
 		return false
 	}
 	startAtMS := s.now().UnixMilli()
