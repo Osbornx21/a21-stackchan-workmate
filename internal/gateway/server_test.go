@@ -3884,6 +3884,199 @@ func TestXiaozhiSpeakerVolumeUsesStockMCPToolCall(t *testing.T) {
 	}
 }
 
+func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		toolName string
+		marker   string
+		argKey   string
+		argValue any
+	}{
+		{
+			name:     "device status",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","trace_id":"a21-trace-mcp-device-status","session_id":"a21-session-mcp-device-status"}`,
+			toolName: xiaozhiMCPGetDeviceStatusToolName,
+			marker:   "xiaozhi.mcp.device_status.sent",
+		},
+		{
+			name:     "screen brightness",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":72,"trace_id":"a21-trace-mcp-brightness","session_id":"a21-session-mcp-brightness"}`,
+			toolName: xiaozhiMCPScreenSetBrightnessToolName,
+			marker:   "xiaozhi.mcp.screen_brightness.sent",
+			argKey:   "brightness",
+			argValue: float64(72),
+		},
+		{
+			name:     "screen theme",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"dark","trace_id":"a21-trace-mcp-theme","session_id":"a21-session-mcp-theme"}`,
+			toolName: xiaozhiMCPScreenSetThemeToolName,
+			marker:   "xiaozhi.mcp.screen_theme.sent",
+			argKey:   "theme",
+			argValue: "dark",
+		},
+		{
+			name:     "screen info",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","trace_id":"a21-trace-mcp-info","session_id":"a21-session-mcp-info"}`,
+			toolName: xiaozhiMCPScreenGetInfoToolName,
+			marker:   "xiaozhi.mcp.screen_info.sent",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer()
+			httpServer := httptest.NewServer(server.Handler())
+			t.Cleanup(httpServer.Close)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			t.Cleanup(cancel)
+
+			conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+			writeXiaozhiHello(t, ctx, conn, map[string]any{
+				"device_id": "44:1b:f6:e2:6a:60",
+			})
+			readXiaozhiJSON(t, ctx, conn)
+
+			resp, err := http.Post(httpServer.URL+"/v1/xiaozhi/mcp-control", "application/json", bytes.NewBufferString(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("mcp control status = %d: %s", resp.StatusCode, string(body))
+			}
+
+			var response XiaozhiMCPControlResponse
+			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				t.Fatal(err)
+			}
+			if response.DeliveredTransport != "xiaozhi_mcp" || response.ToolName != tc.toolName {
+				t.Fatalf("mcp control response = %+v", response)
+			}
+			if response.TraceID == "" || response.SessionID == "" || response.DeviceID != "44:1b:f6:e2:6a:60" {
+				t.Fatalf("mcp control identity = %+v", response)
+			}
+
+			message := readXiaozhiJSON(t, ctx, conn)
+			if message["type"] != "mcp" || message["trace_id"] == "" || message["session_id"] == "" || message["device_id"] != "44:1b:f6:e2:6a:60" {
+				t.Fatalf("mcp wrapper = %#v", message)
+			}
+			payload, ok := message["payload"].(map[string]any)
+			if !ok {
+				t.Fatalf("mcp payload = %#v", message["payload"])
+			}
+			params, ok := payload["params"].(map[string]any)
+			if !ok {
+				t.Fatalf("mcp params = %#v", payload["params"])
+			}
+			if params["name"] != tc.toolName {
+				t.Fatalf("mcp tool name = %#v", params["name"])
+			}
+			args, ok := params["arguments"].(map[string]any)
+			if tc.argKey == "" {
+				if ok && len(args) != 0 {
+					t.Fatalf("mcp args = %#v, want none", args)
+				}
+			} else {
+				if !ok || args[tc.argKey] != tc.argValue {
+					t.Fatalf("mcp args = %#v, want %s=%#v", args, tc.argKey, tc.argValue)
+				}
+			}
+
+			traceURL := httpServer.URL + "/v1/traces?trace_id=" + response.TraceID
+			traceResp, err := http.Get(traceURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer traceResp.Body.Close()
+			var traces TraceResponse
+			if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+				t.Fatal(err)
+			}
+			if !traceContains(traces.Events, tc.marker) {
+				t.Fatalf("trace missing %q: %+v", tc.marker, traces.Events)
+			}
+			traceBody, _ := json.Marshal(traces)
+			for _, forbidden := range []string{"raw_result", "provider_output", "transcript", "data_base64", "full_url", "local_path"} {
+				if strings.Contains(string(traceBody), forbidden) {
+					t.Fatalf("trace leaked forbidden token %q: %s", forbidden, string(traceBody))
+				}
+			}
+		})
+	}
+}
+
+func TestXiaozhiMCPStatusParityBlocksHighRiskTools(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id": "44:1b:f6:e2:6a:60",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	blockedTools := []string{
+		"self.reboot",
+		"self.upgrade_firmware",
+		"self.camera.take_photo",
+		"self.screen.snapshot",
+		"self.camera.start_stream",
+		"self.nfc.read",
+		"self.infrared.send",
+		"self.app.launch",
+	}
+	for _, tool := range blockedTools {
+		body := fmt.Sprintf(`{"device_id":"44:1b:f6:e2:6a:60","tool_name":%q,"trace_id":"a21-trace-blocked-mcp","session_id":"a21-session-blocked-mcp"}`, tool)
+		resp, err := http.Post(httpServer.URL+"/v1/xiaozhi/mcp-control", "application/json", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			t.Fatalf("%s status = %d: %s", tool, resp.StatusCode, string(body))
+		}
+		_ = resp.Body.Close()
+	}
+	assertNoXiaozhiWebSocketMessage(t, conn, 120*time.Millisecond)
+}
+
+func TestXiaozhiMCPStatusParityRequiresSafeArguments(t *testing.T) {
+	tests := []string{
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":101}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"http://example.test/theme"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"../../theme"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","theme":"dark"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","brightness":10}`,
+	}
+	for _, body := range tests {
+		req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/mcp-control", bytes.NewBufferString(body))
+		rec := httptest.NewRecorder()
+		NewServer().Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d, want 400", body, rec.Code)
+		}
+	}
+}
+
 func TestXiaozhiSayDeliversTextAsStockTTSDownlink(t *testing.T) {
 	adapters := providers.VoicePipelineAdapters{
 		ASR:        providers.NewMockASRAdapter("mock-local-asr"),

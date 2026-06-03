@@ -10366,3 +10366,87 @@ Dispatch status:
 - Pending worker creation from current pushed main-control branch
   `codex/a21-hardware-window-20260603-wifi-provisioning-flash` after this
   dispatch record is committed and pushed.
+
+## 2026-06-04 06:07 CST - Worker Completed MCP Status Parity
+
+Round goal:
+
+- Execute `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` as a scoped low-risk
+  Gateway/Xiaozhi MCP status/control parity worker.
+
+Actual completed work:
+
+- Created detailed transition plan
+  `docs/plans/2026-06-04-stackchan-official-mcp-status-parity.md` with current
+  state, target state, non-goals, impact scope, steps, acceptance, failure
+  state, rollback, and human confirmation points.
+- Added `POST /v1/xiaozhi/mcp-control` for only:
+  `self.get_device_status`, `self.screen.set_brightness`,
+  `self.screen.set_theme`, and `self.screen.get_info`.
+- Kept `self.audio_speaker.set_volume` on its existing endpoint and did not
+  change its behavior.
+- Added strict argument validation: brightness `0..100`, bounded safe theme
+  tokens, and no user arguments for status/info.
+- Rejected non-whitelisted high-risk tools before websocket write, including
+  reboot, firmware upgrade, camera/photo, screen snapshot, camera stream/video,
+  NFC, infrared, and app lifecycle examples.
+- Recorded only redacted trace/device markers after successful MCP delivery:
+  `xiaozhi.mcp.device_status.sent`,
+  `xiaozhi.mcp.screen_brightness.sent`,
+  `xiaozhi.mcp.screen_theme.sent`, and `xiaozhi.mcp.screen_info.sent`.
+- Updated protocol, observability, capability charter, and project state docs
+  to keep this as control-contract parity only, not product or physical
+  acceptance.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-stackchan-official-mcp-status-parity.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No physical StackChan screen/status evidence was collected.
+- No raw MCP response parsing or result correlation is implemented.
+- No firmware, reboot, OTA, camera/photo, snapshot, camera stream/video, NFC,
+  infrared, or app lifecycle parity was attempted.
+
+Known risks/blockers:
+
+- Delivery of an MCP `tools/call` proves only that Gateway sent the request to
+  a connected stock MCP-capable `/v1/xiaozhi` socket. It does not prove the
+  device applied brightness/theme or returned status/info.
+- Future result correlation must remain redacted and must not store raw MCP
+  response bodies, screenshots, images, provider output, URLs, paths,
+  transcripts, secrets, or raw/base64 audio.
+- Product acceptance remains blocked on physical evidence and main-control
+  review.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'XiaozhiMCPStatusParity|XiaozhiSpeakerVolumeUsesStockMCPToolCall' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Main control should review/merge this worker branch, then choose the next
+  medium-risk display, avatar/action, touch, or diagnostic-sensor parity slice
+  with a fresh plan and evidence gate.
+
+Forbidden actions avoided:
+
+- No firmware build, firmware flash, serial access, NVS write, Gateway start,
+  provider API execution, V21 execution, or physical hardware action occurred.
+- No `self.reboot`, `self.upgrade_firmware`, `self.camera.take_photo`,
+  `self.screen.snapshot`, camera stream/video, NFC, infrared, or app lifecycle
+  tool was exposed.
+- No internal test 3 Xiaozhi voice/protocol work or internal test 4
+  roleplay/professional/workspace job work was reverted.

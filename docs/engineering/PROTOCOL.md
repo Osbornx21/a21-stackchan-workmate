@@ -323,8 +323,8 @@ Gateway records `roleplay.profile.ready` for accepted turns and
 ### Xiaozhi MCP And Expression Contract
 
 The xiaozhi transport package now carries a host-only WS-5 contract for future
-device-control integration and the Gateway exposes one stock-safe live control
-surface:
+device-control integration and the Gateway exposes stock-safe live control
+surfaces:
 
 - MCP JSON-RPC envelopes are limited to `initialize`, `tools/list`, and
   `tools/call` request shapes. The transport package builds and parses the
@@ -336,6 +336,20 @@ surface:
   `0..100`, an online socket, and `hello.features.mcp=true`. Delivery proves the
   MCP command was sent to the device socket; physical loudness acceptance still
   requires operator or instrument evidence.
+- `POST /v1/xiaozhi/mcp-control` is the low-risk official MCP status/control
+  parity surface. It sends only whitelisted stock `tools/call` messages for
+  `self.get_device_status`, `self.screen.set_brightness`,
+  `self.screen.set_theme`, and `self.screen.get_info` to an already connected
+  `/v1/xiaozhi` WebSocket. It requires a valid `device_id`, an online socket,
+  `hello.features.mcp=true`, and trace/session/device identity. Missing
+  `trace_id` or `session_id` is filled with A21 IDs. Brightness is bounded to
+  `0..100`; theme is a bounded token without URL/path characters; status and
+  info requests accept no user arguments. The endpoint rejects non-whitelisted
+  tools, including reboot, firmware upgrade, camera/photo, screen snapshot,
+  camera stream/video, NFC, infrared, and app lifecycle controls, before any
+  MCP websocket write. Delivery proves only that the MCP request was sent; it
+  does not capture raw MCP responses and is not physical screen/status product
+  acceptance.
 - `POST /v1/xiaozhi/say` is an operator foreground test path for an already
   connected stock Xiaozhi device. It validates `device_id` and exactly one
   playable source: either `text` or `wav_path`. `text` uses the configured
