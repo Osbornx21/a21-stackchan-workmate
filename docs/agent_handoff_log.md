@@ -7410,3 +7410,200 @@ Current validation request:
 - 同步补齐三种 Wi-Fi provisioning product config/option，避免只支持硬写或单 Hotspot。
 - 单独打开串口/日志验证 wake load/detect，不用 Gateway `/v1/wake-word` 作为固件真相。
 - 在修 provider chain 前，不再重复刷固件；当前 latest product app 已是正确 lane。
+## 2026-06-03 - T-CLOUD-VOICE-001 - Pure Cloud Voice Provider Matrix
+
+本轮目标:
+
+- 开一条不干扰当前硬件/公网 Gateway 主线的支线任务。
+- 找回过往对话中的 provider/API 决策，并重新查官方文档，形成
+  Bailian Qwen-TTS / CosyVoice、Doubao、MiniMax 的 A21 接入方案。
+- 明确“完全支持、前端可配置、可下发、低延迟”的 A21 语义，但不把
+  未执行供应商链路标成 ready。
+
+实际完成内容:
+
+- 在独立 worktree 创建分支
+  `codex/a21-pure-cloud-voice-matrix`，基线 HEAD `d15a7b4`。
+- 读取 A21 当前 `voice_mode`、`gateway_profile`、provider spine、latency、
+  protocol、observability、voice clone、Doubao realtime TTS、CosyVoice 5080
+  candidate plan 和 provider-memory 线索。
+- 查官方文档并落成
+  `docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`：
+  - Bailian Qwen-TTS-Realtime / Qwen3-TTS-VC-Realtime；
+  - Bailian CosyVoice realtime and clone/custom voice；
+  - Bailian Qwen Omni Realtime as separate S2S lane；
+  - Doubao realtime TTS and voice clone model families；
+  - MiniMax realtime/sync TTS and voice clone；
+  - frontend-visible `cloud_voice_profile` concept；
+  - safe env names, profile statuses, redaction rules, latency gates, and
+    implementation slices.
+- Added transition plan
+  `docs/plans/2026-06-03-pure-cloud-voice-provider-matrix.md`.
+- Updated `docs/project_state_machine.md` with active
+  `T-CLOUD-VOICE-001-PURE-CLOUD-PROVIDER-MATRIX`.
+
+修改过的文件:
+
+- `docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`
+- `docs/plans/2026-06-03-pure-cloud-voice-provider-matrix.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- No runtime code was added in this transition.
+- No real provider execution was performed.
+- No Gateway restart, V21 execution, firmware build/flash, NVS/serial/hardware,
+  or audio playback occurred.
+- Frontend endpoints such as `GET/POST /v1/cloud-voice-profiles` are still
+  planned, not implemented.
+- Doubao existing adapter still needs reconciliation against the current
+  Volcengine endpoint/auth docs before live execution.
+- Bailian Qwen-TTS, CosyVoice, and MiniMax adapters are not implemented yet.
+
+已知风险和阻塞点:
+
+- Catalog visibility must not be mistaken for runtime readiness.
+- `voice_mode` stays `dialogue` / `professional`; cloud voice profile selection
+  must remain separate and user/operator explicit.
+- `professional` remains V21 adapter only; opaque realtime or S2S provider
+  cannot replace the evidence path.
+- Clone reference audio/text privacy needs an explicit consent and storage
+  policy before any live voice-clone run.
+
+推荐下一步:
+
+1. Implement `GET/POST /v1/cloud-voice-profiles` as a no-execute safe catalog
+   and selector, returning only profile IDs, statuses, capabilities, and
+   missing env names.
+2. Reconcile `doubao_tts_realtime` against current Volcengine docs and extend
+   `streaming-tts-runtime-smoke` to support the official endpoint/auth shape.
+3. Add fake-event adapters for Bailian Qwen-TTS realtime and CosyVoice using
+   the shared 60 ms PCM16 chunking contract.
+4. Add MiniMax WebSocket/HTTP TTS and voice-clone plan/smoke commands.
+5. Add frontend selector only after the no-execute catalog contract is green.
+6. Run real provider smoke on 5080/mainland lab and import redacted reports
+   before any physical StackChan A/B.
+
+测试/构建/运行结果:
+
+- `git diff --check`: passed.
+- `git diff --no-index --check /dev/null docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`: passed for the new document.
+- `git diff --no-index --check /dev/null docs/plans/2026-06-03-pure-cloud-voice-provider-matrix.md`: passed for the new plan.
+- Secret/redaction scan over the two new docs found no key values, bearer
+  tokens, local paths, or public Gateway URLs.
+
+如果中途失败，记录失败位置和原因:
+
+- Initial file creation briefly landed two new docs in the main hardware
+  checkout because the patch tool had no workdir parameter. The files were
+  moved into this branch worktree with an absolute-path patch. Existing main
+  hardware-line modifications were left untouched.
+
+## 2026-06-03 - T-CLOUD-VOICE-001 - No-Execute Cloud Voice Profile Control Surface
+
+本轮目标:
+
+- 在支线里把纯云端声音矩阵推进到可测的控制面：
+  `cloud_voice_profile` 后端 catalog/selector、模拟器前端配置入口、doctor
+  可见性和设备 registry 安全下发字段。
+- 保持 no-execute：不跑真实供应商、不重启 Gateway、不碰 V21/firmware/
+  hardware/audio playback。
+- 完成验证后再把支线状态同步给主控制线。
+
+实际完成内容:
+
+- 新增 provider-neutral cloud voice catalog：
+  - Bailian Qwen-TTS realtime；
+  - Bailian Qwen3-TTS-VC realtime；
+  - Bailian CosyVoice realtime；
+  - Bailian CosyVoice clone TTS；
+  - Bailian Qwen Omni realtime；
+  - Doubao realtime TTS；
+  - Doubao voice clone TTS；
+  - MiniMax T2A websocket；
+  - MiniMax T2A HTTP；
+  - MiniMax voice clone TTS。
+- 新增 `GET /v1/cloud-voice-profiles`：
+  - schema: `a21.gateway.cloud_voice_profiles.v1`；
+  - 只返回 safe profile IDs、status、capabilities、present/missing env names；
+  - 不返回 key/model/voice 值、URL、prompt、transcript、provider output 或
+    audio payload。
+- 新增 `POST`/`PUT /v1/cloud-voice-profiles`：
+  - 只接受已知 safe `cloud_voice_profile` ID；
+  - unknown / legacy / blocked values 返回 400 且不回显输入；
+  - 不改变 `voice_mode` 或 `gateway_profile`。
+- 设备 registry 新增安全字段：
+  `current_cloud_voice_profile`。
+- Simulator 新增 cloud voice profile select、readout 和 registry 显示。
+- `a21 doctor` 的 `voice` 段新增 `cloud_voice` catalog，使用
+  `a21.cloud_voice_profiles.v1` schema。
+- 更新矩阵文档、计划和状态机，把 T-CLOUD-VOICE-001 从 docs-only 推进到
+  no-execute control-ready。
+
+修改过的文件:
+
+- `internal/providers/cloud_voice.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/doctor.go`
+- `docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`
+- `docs/plans/2026-06-03-pure-cloud-voice-provider-matrix.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+测试/验证结果:
+
+- Red tests observed:
+  - Gateway failed on missing `CloudVoiceEnv`, missing
+    `CurrentCloudVoiceProfile`, and missing helper.
+  - Doctor failed because `"cloud_voice"` was absent from report.
+- Focused gateway tests passed:
+  `go test ./internal/gateway -run 'TestCloudVoice|TestSimulatorPageServed|TestVoiceModes|TestGatewayProfiles|TestFastCompanionRejectsProfessional' -count=1 -v`
+- Focused app doctor/env tests passed with A21 direct NO_PROXY:
+  `go test ./internal/app -run 'TestGatewayServerFromEnvExposesCloudVoiceProfileWithoutSecrets|TestRunDoctorIncludesCloudVoiceProfilesWithoutSecrets|TestRunDoctorVoiceHealthFollowsSelectedProviderWithoutSecrets|TestRunDoctorVoiceHealthReportsDoubaoRealtimeDegradedWithoutSecrets|TestRunDoctorReportsExplicitGatewayVoiceProviderRuntime|TestRunDoctorReportsExplicitGatewayDoubaoRealtimeRuntimeAsDegraded' -count=1 -v`
+- Provider adjacent tests passed:
+  `go test ./internal/providers -run 'TestProviderCatalog|TestDoubaoRealtime|TestRealtime|TestVoicePipelineSelection' -count=1`
+- Related package tests passed:
+  `go test ./internal/gateway ./internal/app ./internal/providers -count=1`
+- Production/docs redaction scan found no key values, bearer/auth headers,
+  public Gateway URLs, or local paths in the new production/docs surfaces.
+- `git diff --check`: passed.
+- Untracked file whitespace checks produced no output:
+  - `docs/engineering/A21_CLOUD_VOICE_PROVIDER_MATRIX.md`
+  - `docs/plans/2026-06-03-pure-cloud-voice-provider-matrix.md`
+  - `internal/providers/cloud_voice.go`
+- Full verification passed:
+  `make verify`
+  - `go test ./...`: passed.
+  - `git diff --check`: passed.
+
+未完成事项 / blockers:
+
+- No real provider execution was performed.
+- No runtime dispatch endpoint was added.
+- Bailian Qwen-TTS, Qwen3-TTS-VC, CosyVoice, Qwen Omni, Doubao voice clone,
+  MiniMax T2A, and MiniMax voice clone adapters remain planned.
+- Doubao realtime TTS still needs reconciliation against current Volcengine
+  endpoint/auth docs before live smoke.
+- No 5080 lab smoke or physical StackChan A/B evidence exists for these cloud
+  voice profiles.
+
+推荐下一步:
+
+1. Reconcile Doubao realtime TTS against current Volcengine docs and extend
+   the fake/runtime smoke contract without changing product defaults.
+2. Add provider-neutral streaming TTS fixture/chunker tests reusable by
+   Bailian Qwen/CosyVoice, Doubao, and MiniMax.
+3. Implement Bailian Qwen-TTS realtime fixture adapter.
+4. Add planned readiness endpoint and server-side safe dispatch only after
+   fixture tests are green.
+5. Run 5080 redacted smoke matrix before any physical StackChan acceptance.
+
+如果中途失败，记录失败位置和原因:
+
+- No failure remains in this round. The only observed red states were the
+  expected TDD red tests before implementation.

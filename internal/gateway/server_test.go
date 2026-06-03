@@ -336,9 +336,12 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="registryMode"`,
 		`id="voiceMode"`,
 		`id="gatewayProfile"`,
+		`id="cloudVoiceProfile"`,
 		`id="registryVoiceMode"`,
+		`id="registryCloudVoiceProfile"`,
 		`id="registryExpression"`,
 		`id="gatewayProfileReadout"`,
+		`id="cloudVoiceProfileReadout"`,
 		"Waterfall",
 		"Latency Summary",
 		"Professional Evidence",
@@ -384,6 +387,9 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/gateway-profiles",
 		"refreshGatewayProfiles",
 		"saveGatewayProfile",
+		"/v1/cloud-voice-profiles",
+		"refreshCloudVoiceProfiles",
+		"saveCloudVoiceProfile",
 		"handleAudioPlaybackChunk",
 		"decodePCM16Base64",
 		"schedulePCMPlayback",
@@ -398,6 +404,238 @@ func TestSimulatorPageServed(t *testing.T) {
 			t.Fatalf("body missing %q", want)
 		}
 	}
+}
+
+func TestCloudVoiceProfilesCatalogListsPureCloudProfilesWithoutSecrets(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		CloudVoiceEnv: []string{
+			"A21_DASHSCOPE_API_KEY=sk-a21-bailian-secret",
+			"A21_BAILIAN_QWEN_TTS_MODEL=qwen-tts-secret-model",
+			"A21_BAILIAN_QWEN_TTS_VOICE_ID=voice-secret-id",
+			"A21_DOUBAO_API_KEY=sk-a21-doubao-secret",
+			"A21_DOUBAO_TTS_MODEL=doubao-secret-model",
+			"A21_DOUBAO_TTS_VOICE=zh_female_secret_voice",
+			"A21_MINIMAX_API_KEY=sk-a21-minimax-secret",
+			"A21_MINIMAX_GROUP_ID=minimax-secret-group",
+			"A21_MINIMAX_TTS_MODEL=minimax-secret-model",
+			"A21_MINIMAX_VOICE_ID=minimax-secret-voice",
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/cloud-voice-profiles", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		SchemaVersion string `json:"schema_version"`
+		Service       string `json:"service"`
+		Selected      string `json:"selected_cloud_voice_profile"`
+		Profiles      []struct {
+			ID          string   `json:"id"`
+			Vendor      string   `json:"vendor"`
+			Family      string   `json:"family"`
+			Status      string   `json:"status"`
+			Configured  bool     `json:"configured"`
+			Default     bool     `json:"default"`
+			Realtime    bool     `json:"realtime"`
+			RequiredEnv []string `json:"required_env"`
+			PresentEnv  []string `json:"present_env"`
+			MissingEnv  []string `json:"missing_env"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.cloud_voice_profiles.v1" || response.Service != "a21-gateway" {
+		t.Fatalf("response metadata = %+v", response)
+	}
+	if response.Selected != "a21_doubao_tts_realtime" {
+		t.Fatalf("selected cloud voice profile = %q, want a21_doubao_tts_realtime", response.Selected)
+	}
+	seen := map[string]struct {
+		status     string
+		configured bool
+		realtime   bool
+		present    []string
+		missing    []string
+	}{}
+	defaults := 0
+	for _, profile := range response.Profiles {
+		seen[profile.ID] = struct {
+			status     string
+			configured bool
+			realtime   bool
+			present    []string
+			missing    []string
+		}{status: profile.Status, configured: profile.Configured, realtime: profile.Realtime, present: profile.PresentEnv, missing: profile.MissingEnv}
+		if profile.Default {
+			defaults++
+		}
+	}
+	for _, want := range []string{
+		"a21_doubao_tts_realtime",
+		"a21_doubao_voice_clone_tts",
+		"a21_bailian_qwen_tts_realtime",
+		"a21_bailian_qwen3_tts_vc_realtime",
+		"a21_bailian_cosyvoice_realtime",
+		"a21_bailian_cosyvoice_clone_tts",
+		"a21_bailian_qwen_omni_realtime",
+		"a21_minimax_t2a_ws",
+		"a21_minimax_t2a_http",
+		"a21_minimax_voice_clone_tts",
+	} {
+		if _, ok := seen[want]; !ok {
+			t.Fatalf("catalog missing %q: %+v", want, response.Profiles)
+		}
+	}
+	doubao := seen["a21_doubao_tts_realtime"]
+	if !doubao.configured || !doubao.realtime || doubao.status != "static_ready" || len(doubao.missing) != 0 {
+		t.Fatalf("doubao realtime profile = %+v, want configured static_ready realtime without missing env", doubao)
+	}
+	for _, wantEnv := range []string{"A21_DOUBAO_API_KEY", "A21_DOUBAO_TTS_MODEL", "A21_DOUBAO_TTS_VOICE"} {
+		if !stringSliceContains(doubao.present, wantEnv) {
+			t.Fatalf("doubao present env missing %q: %+v", wantEnv, doubao.present)
+		}
+	}
+	bailian := seen["a21_bailian_qwen_tts_realtime"]
+	if !bailian.configured || bailian.status != "catalog_only" {
+		t.Fatalf("bailian qwen profile = %+v, want configured catalog_only until adapter lands", bailian)
+	}
+	if defaults != 1 {
+		t.Fatalf("defaults = %d, want exactly one default", defaults)
+	}
+	for _, forbidden := range []string{
+		"sk-a21-bailian-secret",
+		"sk-a21-doubao-secret",
+		"sk-a21-minimax-secret",
+		"qwen-tts-secret-model",
+		"voice-secret-id",
+		"doubao-secret-model",
+		"zh_female_secret_voice",
+		"minimax-secret-group",
+		"minimax-secret-model",
+		"minimax-secret-voice",
+		"Authorization",
+		"Bearer",
+		"http://",
+		"https://",
+		"/Users/",
+	} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("cloud voice catalog leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func TestCloudVoiceProfileSelectionDoesNotChangeVoiceModeOrGatewayProfile(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		PublicGatewayURL: "https://a21.example.com",
+	})
+	handler := server.Handler()
+
+	voiceReq := httptest.NewRequest(http.MethodPost, "/v1/voice-modes", bytes.NewBufferString(`{"voice_mode":"professional"}`))
+	voiceRec := httptest.NewRecorder()
+	handler.ServeHTTP(voiceRec, voiceReq)
+	if voiceRec.Code != http.StatusOK {
+		t.Fatalf("voice select status = %d, want 200: %s", voiceRec.Code, voiceRec.Body.String())
+	}
+
+	gatewayReq := httptest.NewRequest(http.MethodPost, "/v1/gateway-profiles", bytes.NewBufferString(`{"gateway_profile":"public_wss"}`))
+	gatewayRec := httptest.NewRecorder()
+	handler.ServeHTTP(gatewayRec, gatewayReq)
+	if gatewayRec.Code != http.StatusOK {
+		t.Fatalf("gateway select status = %d, want 200: %s", gatewayRec.Code, gatewayRec.Body.String())
+	}
+
+	cloudReq := httptest.NewRequest(http.MethodPost, "/v1/cloud-voice-profiles", bytes.NewBufferString(`{"cloud_voice_profile":"a21_minimax_t2a_ws"}`))
+	cloudRec := httptest.NewRecorder()
+	handler.ServeHTTP(cloudRec, cloudReq)
+	if cloudRec.Code != http.StatusOK {
+		t.Fatalf("cloud voice select status = %d, want 200: %s", cloudRec.Code, cloudRec.Body.String())
+	}
+	if !bytes.Contains(cloudRec.Body.Bytes(), []byte(`"selected_cloud_voice_profile":"a21_minimax_t2a_ws"`)) {
+		t.Fatalf("cloud voice selection missing: %s", cloudRec.Body.String())
+	}
+
+	checkVoiceReq := httptest.NewRequest(http.MethodGet, "/v1/voice-modes", nil)
+	checkVoiceRec := httptest.NewRecorder()
+	handler.ServeHTTP(checkVoiceRec, checkVoiceReq)
+	if !bytes.Contains(checkVoiceRec.Body.Bytes(), []byte(`"selected_voice_mode":"professional"`)) {
+		t.Fatalf("cloud voice selection changed voice mode: %s", checkVoiceRec.Body.String())
+	}
+
+	checkGatewayReq := httptest.NewRequest(http.MethodGet, "/v1/gateway-profiles", nil)
+	checkGatewayRec := httptest.NewRecorder()
+	handler.ServeHTTP(checkGatewayRec, checkGatewayReq)
+	if !bytes.Contains(checkGatewayRec.Body.Bytes(), []byte(`"selected_gateway_profile":"public_wss"`)) {
+		t.Fatalf("cloud voice selection changed gateway profile: %s", checkGatewayRec.Body.String())
+	}
+
+	server.controlSequence("stackchan-sim-001", "a21-trace-cloud-voice", "a21-session-cloud-voice", []protocol.ControlEventPayload{{
+		State: protocol.ExpressionListening,
+		Mode:  protocol.ModeWorkmate,
+		Text:  "cloud voice profile must not leak this user text",
+	}})
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	handler.ServeHTTP(devicesRec, devicesReq)
+	if devicesRec.Code != http.StatusOK {
+		t.Fatalf("devices status = %d, want 200: %s", devicesRec.Code, devicesRec.Body.String())
+	}
+	var registry DeviceRegistryResponse
+	if err := json.Unmarshal(devicesRec.Body.Bytes(), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
+	}
+	device := registry.Devices[0]
+	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "professional" || device.CurrentCloudVoiceProfile != "a21_minimax_t2a_ws" {
+		t.Fatalf("device state = %+v, want transport mode workmate, voice_mode professional, cloud voice profile minimax", device)
+	}
+	if strings.Contains(devicesRec.Body.String(), "cloud voice profile must not leak this user text") {
+		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
+	}
+}
+
+func TestCloudVoiceProfilesRejectUnknownAndLegacyValuesWithoutEcho(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+	for _, body := range []string{
+		`{"cloud_voice_profile":"x21_voice"}`,
+		`{"cloud_voice_profile":"pure_cloud"}`,
+		`{"cloud_voice_profile":"unknown-secret-profile"}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/v1/cloud-voice-profiles", bytes.NewBufferString(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for %s: %s", rec.Code, body, rec.Body.String())
+		}
+		for _, forbidden := range []string{"x21_voice", "pure_cloud", "unknown-secret-profile", "secret"} {
+			if strings.Contains(rec.Body.String(), forbidden) {
+				t.Fatalf("error body leaked %q for %s: %s", forbidden, body, rec.Body.String())
+			}
+		}
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/cloud-voice-profiles", nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+	if !bytes.Contains(getRec.Body.Bytes(), []byte(`"selected_cloud_voice_profile":"a21_doubao_tts_realtime"`)) {
+		t.Fatalf("invalid selection changed default profile: %s", getRec.Body.String())
+	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestVoiceModesCatalogDefaultsToDialogueAndListsProfessional(t *testing.T) {

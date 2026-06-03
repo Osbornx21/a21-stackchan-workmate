@@ -31,6 +31,7 @@ Active child transitions:
 - `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
 - `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - `T-COSYVOICE-5080-LOCAL-CLONE-CANDIDATE-CHECK`
+- `T-CLOUD-VOICE-001-PURE-CLOUD-PROVIDER-MATRIX`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -202,6 +203,23 @@ with app SHA-256
 is `status=passed`, `official_avatar_action_preserved=true`, and
 `official_xiaozhi_start_preserved=true`. This is still below physical
 acceptance until flashed and observed through a guarded hardware window.
+`T-CLOUD-VOICE-001-PURE-CLOUD-PROVIDER-MATRIX` is active as a side-branch
+research/control transition for the newly deployed public Gateway era. It
+creates the provider-neutral contract for fully supporting Bailian Qwen-TTS
+Realtime and CosyVoice, Doubao realtime/clone voice families, and MiniMax TTS
+and clone families without changing A21 defaults. The contract keeps
+`cloud_voice_profile` separate from `voice_mode` and `gateway_profile`, keeps
+`professional` on the V21 adapter path, and requires frontend/operator
+selection, server-side dispatch, A21 latency reports, redacted provider smoke,
+and physical StackChan evidence before any cloud voice profile can become
+accepted. The side branch now also implements the first no-execute control
+surface: `GET/POST /v1/cloud-voice-profiles`, simulator selector/readout,
+device-registry `current_cloud_voice_profile`, and `a21 doctor`
+`voice.cloud_voice` report. The implemented surface returns only safe profile
+IDs, statuses, capabilities, present env names, and missing env names; it does
+not execute providers, does not change `voice_mode` or `gateway_profile`, and
+does not expose provider keys, model values, voice IDs, URLs, prompt text,
+transcripts, or audio payloads.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write

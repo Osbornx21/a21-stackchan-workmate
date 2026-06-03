@@ -73,6 +73,8 @@ type Server struct {
 	wakeWordConfigPath         string
 	voiceModeConfig            string
 	gatewayProfileConfig       string
+	cloudVoiceProfileConfig    string
+	cloudVoiceEnv              []string
 	macLocalGatewayURL         string
 	publicGatewayURL           string
 }
@@ -87,6 +89,8 @@ type ServerOptions struct {
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
 	GatewayProfile               string
+	CloudVoiceProfile            string
+	CloudVoiceEnv                []string
 	MacLocalGatewayURL           string
 	PublicGatewayURL             string
 }
@@ -301,25 +305,26 @@ type DeviceFirmwareIdentity struct {
 }
 
 type DeviceRecord struct {
-	DeviceID         string                   `json:"device_id"`
-	Firmware         DeviceFirmwareIdentity   `json:"firmware,omitempty"`
-	Capabilities     map[string]string        `json:"capabilities,omitempty"`
-	RuntimeEcho      map[string]string        `json:"runtime_echo,omitempty"`
-	IdentityStatus   string                   `json:"identity_status"`
-	IdentityError    string                   `json:"identity_error,omitempty"`
-	ConnectionStatus string                   `json:"connection_status,omitempty"`
-	DeviceAgeMS      int64                    `json:"device_age_ms,omitempty"`
-	CurrentMode      protocol.Mode            `json:"current_mode,omitempty"`
-	CurrentVoiceMode string                   `json:"current_voice_mode,omitempty"`
-	CurrentExpr      protocol.ExpressionState `json:"current_expression,omitempty"`
-	PlaybackStream   string                   `json:"playback_stream_id,omitempty"`
-	LastEvent        protocol.DeviceEventKind `json:"last_event,omitempty"`
-	LastTouchSource  protocol.TouchSource     `json:"last_touch_source,omitempty"`
-	LastSeq          uint64                   `json:"last_seq,omitempty"`
-	LastTraceID      string                   `json:"last_trace_id,omitempty"`
-	LastSessionID    string                   `json:"last_session_id,omitempty"`
-	FirstSeenMS      int64                    `json:"first_seen_ms"`
-	LastSeenMS       int64                    `json:"last_seen_ms"`
+	DeviceID                 string                   `json:"device_id"`
+	Firmware                 DeviceFirmwareIdentity   `json:"firmware,omitempty"`
+	Capabilities             map[string]string        `json:"capabilities,omitempty"`
+	RuntimeEcho              map[string]string        `json:"runtime_echo,omitempty"`
+	IdentityStatus           string                   `json:"identity_status"`
+	IdentityError            string                   `json:"identity_error,omitempty"`
+	ConnectionStatus         string                   `json:"connection_status,omitempty"`
+	DeviceAgeMS              int64                    `json:"device_age_ms,omitempty"`
+	CurrentMode              protocol.Mode            `json:"current_mode,omitempty"`
+	CurrentVoiceMode         string                   `json:"current_voice_mode,omitempty"`
+	CurrentCloudVoiceProfile string                   `json:"current_cloud_voice_profile,omitempty"`
+	CurrentExpr              protocol.ExpressionState `json:"current_expression,omitempty"`
+	PlaybackStream           string                   `json:"playback_stream_id,omitempty"`
+	LastEvent                protocol.DeviceEventKind `json:"last_event,omitempty"`
+	LastTouchSource          protocol.TouchSource     `json:"last_touch_source,omitempty"`
+	LastSeq                  uint64                   `json:"last_seq,omitempty"`
+	LastTraceID              string                   `json:"last_trace_id,omitempty"`
+	LastSessionID            string                   `json:"last_session_id,omitempty"`
+	FirstSeenMS              int64                    `json:"first_seen_ms"`
+	LastSeenMS               int64                    `json:"last_seen_ms"`
 }
 
 type DeviceRegistryResponse struct {
@@ -367,6 +372,18 @@ type GatewayProfileSelectionRequest struct {
 	GatewayProfile string `json:"gateway_profile"`
 }
 
+type CloudVoiceProfileCatalogResponse struct {
+	SchemaVersion             string                                      `json:"schema_version"`
+	Service                   string                                      `json:"service"`
+	SelectedCloudVoiceProfile string                                      `json:"selected_cloud_voice_profile"`
+	Profiles                  []providers.CloudVoiceProfileReadiness      `json:"profiles"`
+	Findings                  []providers.CloudVoiceProfileCatalogFinding `json:"findings,omitempty"`
+}
+
+type CloudVoiceProfileSelectionRequest struct {
+	CloudVoiceProfile string `json:"cloud_voice_profile"`
+}
+
 type XiaozhiOTAResponse struct {
 	ServerTime XiaozhiOTAServerTime      `json:"server_time"`
 	WebSocket  XiaozhiOTAWebSocketConfig `json:"websocket"`
@@ -386,17 +403,18 @@ type XiaozhiOTAWebSocketConfig struct {
 }
 
 const (
-	DeviceRegistrySchemaVersion = "a21.gateway.devices.v1"
-	DeviceRegistryServiceName   = "a21-gateway"
-	VoiceModeSchemaVersion      = "a21.gateway.voice_modes.v1"
-	VoiceModeDialogue           = "dialogue"
-	VoiceModeProfessional       = "professional"
-	GatewayProfileSchemaVersion = "a21.gateway.profiles.v1"
-	GatewayProfileMacLocal      = "mac_local"
-	GatewayProfilePublicWSS     = "public_wss"
-	AudioRecentSchemaVersion    = "a21.gateway.audio_recent.v1"
-	maxAudioCaptureFrames       = 512
-	xiaozhiOTAWebSocketVersion  = 1
+	DeviceRegistrySchemaVersion    = "a21.gateway.devices.v1"
+	DeviceRegistryServiceName      = "a21-gateway"
+	VoiceModeSchemaVersion         = "a21.gateway.voice_modes.v1"
+	VoiceModeDialogue              = "dialogue"
+	VoiceModeProfessional          = "professional"
+	GatewayProfileSchemaVersion    = "a21.gateway.profiles.v1"
+	GatewayProfileMacLocal         = "mac_local"
+	GatewayProfilePublicWSS        = "public_wss"
+	CloudVoiceProfileSchemaVersion = "a21.gateway.cloud_voice_profiles.v1"
+	AudioRecentSchemaVersion       = "a21.gateway.audio_recent.v1"
+	maxAudioCaptureFrames          = 512
+	xiaozhiOTAWebSocketVersion     = 1
 )
 
 const (
@@ -554,6 +572,8 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiListenMaxDurationMS: xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:         wakeWordConfigPath(options.WakeWordConfigPath),
 		gatewayProfileConfig:       defaultGatewayProfile(options.GatewayProfile, options.PublicGatewayURL),
+		cloudVoiceProfileConfig:    strings.TrimSpace(options.CloudVoiceProfile),
+		cloudVoiceEnv:              append([]string(nil), options.CloudVoiceEnv...),
 		macLocalGatewayURL:         strings.TrimSpace(options.MacLocalGatewayURL),
 		publicGatewayURL:           strings.TrimSpace(options.PublicGatewayURL),
 	}
@@ -579,6 +599,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
+	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
 	mux.HandleFunc("/v1/audio/recent", s.handleAudioRecent)
 	mux.HandleFunc("/v1/traces", s.handleTraces)
 	mux.HandleFunc("/v1/providers/voice/health", s.handleVoiceProviderHealth)
@@ -654,6 +675,27 @@ func (s *Server) handleGatewayProfiles(w http.ResponseWriter, r *http.Request) {
 		}
 		s.setGatewayProfile(req.GatewayProfile)
 		writeJSON(w, http.StatusOK, s.gatewayProfileCatalog(r))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleCloudVoiceProfiles(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.cloudVoiceProfileCatalog())
+	case http.MethodPost, http.MethodPut:
+		var req CloudVoiceProfileSelectionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if !providers.ValidCloudVoiceProfile(req.CloudVoiceProfile) {
+			http.Error(w, "cloud_voice_profile must be a known A21 cloud voice profile", http.StatusBadRequest)
+			return
+		}
+		s.setCloudVoiceProfile(req.CloudVoiceProfile)
+		writeJSON(w, http.StatusOK, s.cloudVoiceProfileCatalog())
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -775,6 +817,36 @@ func (s *Server) setGatewayProfile(profile string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.gatewayProfileConfig = profile
+}
+
+func (s *Server) cloudVoiceProfileCatalog() CloudVoiceProfileCatalogResponse {
+	s.mu.Lock()
+	selected := s.cloudVoiceProfileConfig
+	env := append([]string(nil), s.cloudVoiceEnv...)
+	s.mu.Unlock()
+	catalog := providers.CloudVoiceCatalogFromEnv(env, selected)
+	return CloudVoiceProfileCatalogResponse{
+		SchemaVersion:             CloudVoiceProfileSchemaVersion,
+		Service:                   DeviceRegistryServiceName,
+		SelectedCloudVoiceProfile: catalog.SelectedCloudVoiceProfile,
+		Profiles:                  catalog.Profiles,
+		Findings:                  catalog.Findings,
+	}
+}
+
+func (s *Server) selectedCloudVoiceProfile() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
+}
+
+func (s *Server) setCloudVoiceProfile(profile string) {
+	if !providers.ValidCloudVoiceProfile(profile) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cloudVoiceProfileConfig = strings.ToLower(strings.TrimSpace(profile))
 }
 
 func defaultGatewayProfile(profile string, publicGatewayURL string) string {
@@ -5111,6 +5183,7 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 		record.CurrentMode = payload.Mode
 	}
 	record.CurrentVoiceMode = defaultVoiceMode(s.voiceModeConfig)
+	record.CurrentCloudVoiceProfile = providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
 	if payload.State != "" {
 		record.CurrentExpr = payload.State
 	}
@@ -5401,9 +5474,11 @@ func (s *Server) deviceRecords() []DeviceRecord {
 	defer s.mu.Unlock()
 	nowMS := s.now().UnixMilli()
 	voiceMode := defaultVoiceMode(s.voiceModeConfig)
+	cloudVoiceProfile := providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
 	records := make([]DeviceRecord, 0, len(s.devices))
 	for _, record := range s.devices {
 		record.CurrentVoiceMode = voiceMode
+		record.CurrentCloudVoiceProfile = cloudVoiceProfile
 		records = append(records, withDeviceFreshness(record, nowMS))
 	}
 	sort.Slice(records, func(i, j int) bool {

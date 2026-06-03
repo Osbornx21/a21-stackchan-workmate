@@ -402,6 +402,9 @@ const simulatorHTML = `<!doctype html>
             <option value="mac_local">mac_local</option>
             <option value="public_wss">public_wss</option>
           </select>
+          <select id="cloudVoiceProfile" aria-label="cloud voice profile">
+            <option value="a21_doubao_tts_realtime">a21_doubao_tts_realtime</option>
+          </select>
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -409,6 +412,7 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>Mode</label><div id="modeReadout">dialogue</div></div>
           <div class="metric"><label>Voice</label><div id="voiceModeReadout">dialogue</div></div>
           <div class="metric"><label>Gateway</label><div id="gatewayProfileReadout">mac_local</div></div>
+          <div class="metric"><label>Cloud Voice</label><div id="cloudVoiceProfileReadout">a21_doubao_tts_realtime</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -476,6 +480,7 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Connection</label><div id="registryConnection">none</div></div>
             <div class="metric"><label>Mode</label><div id="registryMode">none</div></div>
             <div class="metric"><label>Voice</label><div id="registryVoiceMode">none</div></div>
+            <div class="metric"><label>Cloud Voice</label><div id="registryCloudVoiceProfile">none</div></div>
             <div class="metric"><label>Expression</label><div id="registryExpression">none</div></div>
             <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
             <div class="metric"><label>Commit</label><div id="registryCommit">none</div></div>
@@ -513,6 +518,7 @@ const simulatorHTML = `<!doctype html>
       modeReadout: document.getElementById('modeReadout'),
       voiceModeReadout: document.getElementById('voiceModeReadout'),
       gatewayProfileReadout: document.getElementById('gatewayProfileReadout'),
+      cloudVoiceProfileReadout: document.getElementById('cloudVoiceProfileReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -536,6 +542,7 @@ const simulatorHTML = `<!doctype html>
       registryConnection: document.getElementById('registryConnection'),
       registryMode: document.getElementById('registryMode'),
       registryVoiceMode: document.getElementById('registryVoiceMode'),
+      registryCloudVoiceProfile: document.getElementById('registryCloudVoiceProfile'),
       registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
       registryCommit: document.getElementById('registryCommit'),
@@ -561,6 +568,7 @@ const simulatorHTML = `<!doctype html>
       mode: document.getElementById('mode'),
       voiceMode: document.getElementById('voiceMode'),
       gatewayProfile: document.getElementById('gatewayProfile'),
+      cloudVoiceProfile: document.getElementById('cloudVoiceProfile'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -641,6 +649,10 @@ const simulatorHTML = `<!doctype html>
     function setGatewayProfile(profile) {
       ui.gatewayProfile.value = profile || 'mac_local';
       ui.gatewayProfileReadout.textContent = ui.gatewayProfile.value;
+    }
+    function setCloudVoiceProfile(profile) {
+      ui.cloudVoiceProfile.value = profile || 'a21_doubao_tts_realtime';
+      ui.cloudVoiceProfileReadout.textContent = ui.cloudVoiceProfile.value;
     }
     function rememberEnvelope(envelope) {
       if (envelope.trace_id) {
@@ -847,6 +859,7 @@ const simulatorHTML = `<!doctype html>
         ui.registryConnection.textContent = (device.connection_status || 'none') + age;
         ui.registryMode.textContent = device.current_mode || 'none';
         ui.registryVoiceMode.textContent = device.current_voice_mode || 'none';
+        ui.registryCloudVoiceProfile.textContent = device.current_cloud_voice_profile || 'none';
         ui.registryExpression.textContent = device.current_expression || 'none';
         ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';
         ui.registryCommit.textContent = firmware.commit || 'none';
@@ -891,6 +904,29 @@ const simulatorHTML = `<!doctype html>
         log('gateway profile catalog unavailable');
       }
     }
+    async function refreshCloudVoiceProfiles() {
+      try {
+        const response = await fetch('/v1/cloud-voice-profiles', { cache: 'no-store' });
+        if (!response.ok) {
+          log('cloud voice catalog error ' + response.status);
+          return;
+        }
+        const catalog = await response.json();
+        const selected = catalog.selected_cloud_voice_profile || 'a21_doubao_tts_realtime';
+        const profiles = catalog.profiles || [];
+        if (profiles.length) {
+          ui.cloudVoiceProfile.innerHTML = profiles.map((profile) => {
+            const id = escapeText(profile.id || '');
+            const status = profile.status || 'unknown';
+            const selectedAttr = (profile.id || '') === selected ? ' selected' : '';
+            return '<option value="' + id + '"' + selectedAttr + '>' + id + ' [' + escapeText(status) + ']</option>';
+          }).join('');
+        }
+        setCloudVoiceProfile(selected);
+      } catch (err) {
+        log('cloud voice catalog unavailable');
+      }
+    }
     async function saveVoiceMode() {
       try {
         const response = await fetch('/v1/voice-modes', {
@@ -926,6 +962,25 @@ const simulatorHTML = `<!doctype html>
         refreshRegistry();
       } catch (err) {
         log('gateway profile save unavailable');
+      }
+    }
+    async function saveCloudVoiceProfile() {
+      try {
+        const response = await fetch('/v1/cloud-voice-profiles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cloud_voice_profile: ui.cloudVoiceProfile.value })
+        });
+        if (!response.ok) {
+          log('cloud voice save failed ' + response.status);
+          refreshCloudVoiceProfiles();
+          return;
+        }
+        const catalog = await response.json();
+        setCloudVoiceProfile(catalog.selected_cloud_voice_profile || ui.cloudVoiceProfile.value);
+        refreshRegistry();
+      } catch (err) {
+        log('cloud voice save unavailable');
       }
     }
     async function refreshWaterfall() {
@@ -1203,9 +1258,11 @@ const simulatorHTML = `<!doctype html>
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
     ui.gatewayProfile.addEventListener('change', saveGatewayProfile);
+    ui.cloudVoiceProfile.addEventListener('change', saveCloudVoiceProfile);
     refreshRegistry();
     refreshVoiceModes();
     refreshGatewayProfiles();
+    refreshCloudVoiceProfiles();
     refreshWakeWordConfig();
     setMode(ui.mode.value);
     updateVisibilityBadges();

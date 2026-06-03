@@ -1026,6 +1026,8 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		XiaozhiStockProfessional:     appEnvBool(env, "A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE"),
 		MacLocalGatewayURL:           appEnvValue(env, "A21_MAC_LOCAL_GATEWAY_URL"),
 		PublicGatewayURL:             appEnvValue(env, "A21_PUBLIC_GATEWAY_URL"),
+		CloudVoiceProfile:            appEnvValue(env, "A21_CLOUD_VOICE_PROFILE"),
+		CloudVoiceEnv:                append([]string(nil), env...),
 	}
 	if listenMaxMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_XIAOZHI_LISTEN_MAX_MS"))); err == nil && listenMaxMS > 0 {
 		options.XiaozhiListenMaxDuration = time.Duration(listenMaxMS) * time.Millisecond

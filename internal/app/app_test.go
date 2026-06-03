@@ -4525,6 +4525,48 @@ func TestGatewayServerFromEnvExposesConfiguredPublicGatewayProfile(t *testing.T)
 	}
 }
 
+func TestGatewayServerFromEnvExposesCloudVoiceProfileWithoutSecrets(t *testing.T) {
+	server := newGatewayServerFromEnv([]string{
+		"A21_CLOUD_VOICE_PROFILE=a21_minimax_t2a_ws",
+		"A21_MINIMAX_API_KEY=sk-a21-minimax-secret",
+		"A21_MINIMAX_GROUP_ID=minimax-secret-group",
+		"A21_MINIMAX_TTS_MODEL=minimax-secret-model",
+		"A21_MINIMAX_VOICE_ID=minimax-secret-voice",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/v1/cloud-voice-profiles", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"schema_version":"a21.gateway.cloud_voice_profiles.v1"`,
+		`"selected_cloud_voice_profile":"a21_minimax_t2a_ws"`,
+		`"id":"a21_minimax_t2a_ws"`,
+		`"configured":true`,
+		`"A21_MINIMAX_API_KEY"`,
+		`"A21_MINIMAX_GROUP_ID"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("cloud voice catalog missing %q: %s", want, rec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"sk-a21-minimax-secret",
+		"minimax-secret-group",
+		"minimax-secret-model",
+		"minimax-secret-voice",
+		"Authorization",
+		"Bearer",
+	} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("cloud voice catalog leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresSileroVADConfig(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_VAD_PREFERENCE=silero",
@@ -4932,6 +4974,57 @@ func TestRunDoctorIncludesProviderCatalogWithoutSecrets(t *testing.T) {
 	for _, forbidden := range []string{"sk-a21-secret", "deepseek-chat"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked provider value %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
+func TestRunDoctorIncludesCloudVoiceProfilesWithoutSecrets(t *testing.T) {
+	setA21DirectProxyBypassForTest(t)
+	t.Setenv("A21_CLOUD_VOICE_PROFILE", "a21_bailian_qwen_tts_realtime")
+	t.Setenv("A21_DASHSCOPE_API_KEY", "sk-a21-bailian-secret")
+	t.Setenv("A21_BAILIAN_QWEN_TTS_MODEL", "qwen-tts-secret-model")
+	t.Setenv("A21_BAILIAN_QWEN_TTS_VOICE_ID", "voice-secret-id")
+	t.Setenv("A21_MINIMAX_API_KEY", "sk-a21-minimax-secret")
+	t.Setenv("A21_MINIMAX_GROUP_ID", "minimax-secret-group")
+	t.Setenv("A21_MINIMAX_TTS_MODEL", "minimax-secret-model")
+	t.Setenv("A21_MINIMAX_VOICE_ID", "minimax-secret-voice")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"doctor", "--output-dir", t.TempDir()}, &stdout, &stderr)
+
+	if code != 0 && code != 1 {
+		t.Fatalf("code = %d, want 0 or 1: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		`"cloud_voice"`,
+		`"schema_version": "a21.cloud_voice_profiles.v1"`,
+		`"selected_cloud_voice_profile": "a21_bailian_qwen_tts_realtime"`,
+		`"id": "a21_bailian_qwen_tts_realtime"`,
+		`"id": "a21_minimax_t2a_ws"`,
+		`"status": "catalog_only"`,
+		`"configured": true`,
+		`"A21_DASHSCOPE_API_KEY"`,
+		`"A21_BAILIAN_QWEN_TTS_MODEL"`,
+		`"A21_MINIMAX_GROUP_ID"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"sk-a21-bailian-secret",
+		"sk-a21-minimax-secret",
+		"qwen-tts-secret-model",
+		"voice-secret-id",
+		"minimax-secret-group",
+		"minimax-secret-model",
+		"minimax-secret-voice",
+		"Authorization",
+		"Bearer",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("doctor leaked %q: %s", forbidden, stdout.String())
 		}
 	}
 }

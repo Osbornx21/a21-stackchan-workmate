@@ -78,19 +78,20 @@ type v21DoctorReport struct {
 }
 
 type voiceDoctorReport struct {
-	Provider        string                          `json:"provider"`
-	GatewayProvider string                          `json:"gateway_provider"`
-	Status          string                          `json:"status"`
-	Healthy         bool                            `json:"healthy"`
-	Configured      bool                            `json:"configured"`
-	Realtime        bool                            `json:"realtime"`
-	Network         providers.NetworkReport         `json:"network"`
-	Providers       providers.ProviderCatalogReport `json:"providers"`
-	Smoke           providers.ProviderSmokeReport   `json:"smoke"`
-	RealtimePlan    providers.ProviderSmokeReport   `json:"realtime_plan"`
-	ActiveProvider  string                          `json:"active_provider,omitempty"`
-	Detail          string                          `json:"detail,omitempty"`
-	Findings        []runtimeguard.Finding          `json:"findings"`
+	Provider        string                            `json:"provider"`
+	GatewayProvider string                            `json:"gateway_provider"`
+	Status          string                            `json:"status"`
+	Healthy         bool                              `json:"healthy"`
+	Configured      bool                              `json:"configured"`
+	Realtime        bool                              `json:"realtime"`
+	Network         providers.NetworkReport           `json:"network"`
+	Providers       providers.ProviderCatalogReport   `json:"providers"`
+	CloudVoice      providers.CloudVoiceCatalogReport `json:"cloud_voice"`
+	Smoke           providers.ProviderSmokeReport     `json:"smoke"`
+	RealtimePlan    providers.ProviderSmokeReport     `json:"realtime_plan"`
+	ActiveProvider  string                            `json:"active_provider,omitempty"`
+	Detail          string                            `json:"detail,omitempty"`
+	Findings        []runtimeguard.Finding            `json:"findings"`
 }
 
 type wakeWordDoctorReport struct {
@@ -135,6 +136,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 	health, err := probeVoiceProviderHealth(ctx)
 	_, network := providers.NetworkPolicyFromEnv(os.Environ())
 	catalog := providers.ProviderCatalogFromEnv(os.Environ())
+	cloudVoice := providers.CloudVoiceCatalogFromEnv(os.Environ(), "")
 	smoke := providers.ProviderSmokeFromEnv(ctx, os.Environ(), "", false, nil)
 	realtimePlan := providers.RealtimeWebSocketPlanFromEnv(os.Environ(), "")
 	report := voiceDoctorReport{
@@ -146,6 +148,7 @@ func buildVoiceDoctorReport() voiceDoctorReport {
 		Realtime:        health.Realtime,
 		Network:         network,
 		Providers:       catalog,
+		CloudVoice:      cloudVoice,
 		Smoke:           smoke,
 		RealtimePlan:    realtimePlan,
 		ActiveProvider:  health.ActiveProvider,
