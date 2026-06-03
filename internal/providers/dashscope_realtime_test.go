@@ -49,6 +49,7 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeCloudStreamingASR(t *testin
 	if types := realtimeEventTypes(conn.messages); strings.Join(types, ",") != "session.update,input_audio_buffer.append,input_audio_buffer.commit,session.finish" {
 		t.Fatalf("client event types = %#v", types)
 	}
+	assertDashScopeRealtimeEventIDs(t, conn.messages)
 }
 
 func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
@@ -85,5 +86,16 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
 	}
 	if types := realtimeEventTypes(conn.messages); strings.Join(types, ",") != "session.update,input_text_buffer.append,input_text_buffer.commit,session.finish" {
 		t.Fatalf("client event types = %#v", types)
+	}
+	assertDashScopeRealtimeEventIDs(t, conn.messages)
+}
+
+func assertDashScopeRealtimeEventIDs(t *testing.T, messages []map[string]any) {
+	t.Helper()
+	for _, message := range messages {
+		eventID, ok := message["event_id"].(string)
+		if !ok || !strings.HasPrefix(eventID, "a21_") {
+			t.Fatalf("dashscope event missing A21 event_id: %#v", message)
+		}
 	}
 }

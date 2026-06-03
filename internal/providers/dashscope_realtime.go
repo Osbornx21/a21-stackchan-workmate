@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 const (
@@ -15,6 +17,8 @@ const (
 	dashscopeASRDefaultModel    = "qwen3-asr-flash-realtime"
 	dashscopeTTSDefaultModel    = "qwen3-tts-flash-realtime"
 )
+
+var dashScopeRealtimeEventSeq atomic.Uint64
 
 type DashScopeRealtimeASRAdapterOptions struct {
 	Name   string
@@ -108,7 +112,8 @@ func (a *dashScopeRealtimeASRAdapter) StartStreamingASR(ctx context.Context, _ S
 	}
 	session := &RealtimeWebSocketSession{provider: a.name, conn: conn}
 	if err := session.conn.WriteJSON(ctx, map[string]any{
-		"type": "session.update",
+		"event_id": dashScopeRealtimeEventID("asr_session_update"),
+		"type":     "session.update",
 		"session": map[string]any{
 			"modalities":         []string{"text"},
 			"input_audio_format": "pcm",
@@ -133,18 +138,19 @@ func (s *dashScopeRealtimeASRSession) AppendFrame(ctx context.Context, frame Voi
 		return nil
 	}
 	return s.session.conn.WriteJSON(ctx, map[string]any{
-		"type":  "input_audio_buffer.append",
-		"audio": base64.StdEncoding.EncodeToString(frame.PCM16LE),
+		"event_id": dashScopeRealtimeEventID("asr_audio_append"),
+		"type":     "input_audio_buffer.append",
+		"audio":    base64.StdEncoding.EncodeToString(frame.PCM16LE),
 	})
 }
 
 func (s *dashScopeRealtimeASRSession) Events() <-chan ASRAdapterEvent { return s.events }
 
 func (s *dashScopeRealtimeASRSession) Commit(ctx context.Context) error {
-	if err := s.session.conn.WriteJSON(ctx, map[string]any{"type": "input_audio_buffer.commit"}); err != nil {
+	if err := s.session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("asr_audio_commit"), "type": "input_audio_buffer.commit"}); err != nil {
 		return err
 	}
-	return s.session.conn.WriteJSON(ctx, map[string]any{"type": "session.finish"})
+	return s.session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("asr_session_finish"), "type": "session.finish"})
 }
 
 func (s *dashScopeRealtimeASRSession) Cancel(err error) {
@@ -208,15 +214,15 @@ func (a *dashScopeRealtimeTTSAdapter) Synthesize(ctx context.Context, req TTSAda
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS session update failed")
 	}
-	if err := session.conn.WriteJSON(ctx, map[string]any{"type": "input_text_buffer.append", "text": req.Text}); err != nil {
+	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_append"), "type": "input_text_buffer.append", "text": req.Text}); err != nil {
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text append failed")
 	}
-	if err := session.conn.WriteJSON(ctx, map[string]any{"type": "input_text_buffer.commit"}); err != nil {
+	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_text_commit"), "type": "input_text_buffer.commit"}); err != nil {
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS text commit failed")
 	}
-	if err := session.conn.WriteJSON(ctx, map[string]any{"type": "session.finish"}); err != nil {
+	if err := session.conn.WriteJSON(ctx, map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_finish"), "type": "session.finish"}); err != nil {
 		_ = conn.Close(ctx)
 		return nil, fmt.Errorf("dashscope realtime TTS session finish failed")
 	}
@@ -263,7 +269,15 @@ func dashScopeTTSUpdateEvent(env []string) map[string]any {
 	if voice := strings.TrimSpace(firstNonEmptyPipelineValue(envValue(env, "A21_DASHSCOPE_TTS_VOICE"), envValue(env, "A21_BAILIAN_QWEN_TTS_VOICE_ID"))); voice != "" {
 		session["voice"] = voice
 	}
-	return map[string]any{"type": "session.update", "session": session}
+	return map[string]any{"event_id": dashScopeRealtimeEventID("tts_session_update"), "type": "session.update", "session": session}
+}
+
+func dashScopeRealtimeEventID(prefix string) string {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "event"
+	}
+	return "a21_" + prefix + "_" + strconv.FormatUint(dashScopeRealtimeEventSeq.Add(1), 10)
 }
 
 func mustChunkDashScopeAudio(chunker *pcm16Mono60MSChunker, raw map[string]any) []VoiceAudioChunk {
