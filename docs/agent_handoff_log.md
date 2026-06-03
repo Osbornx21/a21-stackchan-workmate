@@ -6325,3 +6325,65 @@ Current validation request:
 如果中途失败，记录失败位置和原因:
 
 - No unresolved failure. The only failures were intentional red tests.
+
+## 2026-06-03 09:19 CST - Xiaozhi Nonblocking ASR Commit
+
+本轮目标:
+
+- Continue the persistent Xiaozhi realtime convergence goal after real-profile
+  parity hardening.
+- Implement the next state-machine cut from the runtime read-only audit:
+  streaming ASR commit/final handling must not block the `/v1/xiaozhi`
+  WebSocket read loop.
+- Keep this host-local: no provider/V21, no Gateway lifecycle, no
+  `/v1/xiaozhi/say`, no firmware/hardware/audio playback.
+
+实际完成内容:
+
+- Added plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md`.
+- Replaced synchronous `listen.stop` / VAD auto-stop ASR commit handling with
+  async streaming-ASR commit/final handling.
+- While commit is pending, the WebSocket read loop can process abort/barge-in.
+- If a streaming ASR final arrives and no partial-driven answer already
+  started, the async path starts the voice pipeline from the streaming final.
+- Removed the unused synchronous commit helper so future code is less likely to
+  reintroduce the blocking path.
+- Updated `docs/project_state_machine.md` with the completed transition and the
+  next live evidence direction.
+
+修改过的文件:
+
+- `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+当前未完成事项:
+
+- Full Xiaozhi realtime PRD acceptance remains incomplete.
+- Real streaming TTS provider execution still needs explicit authorization and
+  complete env.
+- Physical stock `/v1/xiaozhi` trace still needs wake or labeled tap trigger,
+  real profile markers, audible playback, touch/barge-in, and idle recovery.
+- Next useful transition: feed the canonical real Sherpa streaming ASR helper
+  through a stock `/v1/xiaozhi` host-local trace, then keep realtime parity
+  blocked until real streaming LLM/TTS and physical evidence exist.
+
+测试/构建/运行结果:
+
+- Red Gateway test first:
+  `go test ./internal/gateway -run TestXiaozhiWebSocketListenStopDoesNotBlockAbortWhileStreamingASRCommitPending -count=1`
+  failed because `xiaozhi.abort.received` was not recorded while ASR commit was
+  pending.
+- Focused Gateway tests passed after implementation:
+  `go test ./internal/gateway -run 'TestXiaozhiWebSocket(ListenStopDoesNotBlockAbortWhileStreamingASRCommitPending|StreamingASRFinalStartsPipelineWithoutBatchFallback|StreamingASRStartsBeforeListenStop|ASRPartialStartsStreamingAnswerBeforeListenStopAndASRFinal)|TestXiaozhiVoicePipeline' -count=1`.
+- Focused app parity tests passed:
+  `go test ./internal/app -run 'TestXiaozhiRealtimeParity' -count=1`.
+- No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host
+  loopback runtime, firmware build, flash, NVS/serial access, hardware action,
+  or audio playback was performed.
+
+如果中途失败，记录失败位置和原因:
+
+- No unresolved failure. The only failure was the intentional red test.

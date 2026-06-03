@@ -4342,6 +4342,141 @@ func TestXiaozhiWebSocketASRPartialStartsStreamingAnswerBeforeListenStopAndASRFi
 	}
 }
 
+func TestXiaozhiWebSocketListenStopDoesNotBlockAbortWhileStreamingASRCommitPending(t *testing.T) {
+	streamingASR := newBlockingCommitStreamingASRAdapter()
+	defer streamingASR.releaseCommit()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-nonblocking-commit",
+		"session_id": "a21-session-xiaozhi-nonblocking-commit",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.appended:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR did not receive an audio frame")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.commitEntered:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR commit did not start")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "abort", "reason": "barge_in"}); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(150 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if traceContains(server.traceEvents("a21-trace-xiaozhi-nonblocking-commit"), "xiaozhi.abort.received") {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("abort was not processed while streaming ASR commit was pending: %+v", server.traceEvents("a21-trace-xiaozhi-nonblocking-commit"))
+}
+
+func TestXiaozhiWebSocketStreamingASRFinalStartsPipelineWithoutBatchFallback(t *testing.T) {
+	streamingASR := newBlockingCommitStreamingASRAdapter()
+	defer streamingASR.releaseCommit()
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-streaming-final-no-batch",
+		"session_id": "a21-session-xiaozhi-streaming-final-no-batch",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.appended:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR did not receive an audio frame")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.commitEntered:
+	case <-time.After(time.Second):
+		t.Fatal("streaming ASR commit did not start")
+	}
+	streamingASR.releaseCommit()
+
+	var traces []TraceEvent
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-streaming-final-no-batch")
+		if traceContains(traces, "asr.final") && traceContains(traces, "xiaozhi.voice_pipeline.start") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"asr.stream.commit", "asr.final", "xiaozhi.voice_pipeline.start"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q after streaming final: %+v", want, traces)
+		}
+	}
+	select {
+	case <-streamingASR.transcribe:
+		t.Fatalf("batch Transcribe was called despite streaming ASR final: %+v", traces)
+	default:
+	}
+}
+
 func TestXiaozhiVoicePipelineRecordsProviderFallbackObservability(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{
 		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
@@ -8624,6 +8759,80 @@ func (gatewayFinalASRAdapter) Transcribe(ctx context.Context, req providers.ASRA
 		}
 	}()
 	return out, nil
+}
+
+type blockingCommitStreamingASRAdapter struct {
+	events        chan providers.ASRAdapterEvent
+	appended      chan struct{}
+	commitEntered chan struct{}
+	release       chan struct{}
+	appendOnce    sync.Once
+	commitOnce    sync.Once
+	releaseOnce   sync.Once
+	transcribe    chan struct{}
+}
+
+func newBlockingCommitStreamingASRAdapter() *blockingCommitStreamingASRAdapter {
+	return &blockingCommitStreamingASRAdapter{
+		events:        make(chan providers.ASRAdapterEvent, 2),
+		appended:      make(chan struct{}),
+		commitEntered: make(chan struct{}),
+		release:       make(chan struct{}),
+		transcribe:    make(chan struct{}, 1),
+	}
+}
+
+func (a *blockingCommitStreamingASRAdapter) Name() string {
+	return "a21-blocking-commit-streaming-asr"
+}
+
+func (a *blockingCommitStreamingASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	select {
+	case a.transcribe <- struct{}{}:
+	default:
+	}
+	out := make(chan providers.ASRAdapterEvent)
+	close(out)
+	return out, nil
+}
+
+func (a *blockingCommitStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
+	return a, nil
+}
+
+func (a *blockingCommitStreamingASRAdapter) AppendFrame(ctx context.Context, frame providers.VoicePipelinePCMFrame) error {
+	a.appendOnce.Do(func() {
+		close(a.appended)
+	})
+	return nil
+}
+
+func (a *blockingCommitStreamingASRAdapter) Events() <-chan providers.ASRAdapterEvent {
+	return a.events
+}
+
+func (a *blockingCommitStreamingASRAdapter) Commit(ctx context.Context) error {
+	a.commitOnce.Do(func() {
+		close(a.commitEntered)
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-a.release:
+		a.events <- providers.ASRAdapterEvent{Text: "streaming final after async commit", Final: true}
+		close(a.events)
+		return nil
+	}
+}
+
+func (a *blockingCommitStreamingASRAdapter) Cancel(error) {
+	a.releaseCommit()
+}
+
+func (a *blockingCommitStreamingASRAdapter) releaseCommit() {
+	a.releaseOnce.Do(func() {
+		close(a.release)
+	})
 }
 
 type scriptedProfessionalASRAdapter struct {

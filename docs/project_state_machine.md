@@ -78,6 +78,11 @@ downgraded from `xiaozhi_realtime_candidate` and receives
 category markers such as `llm.mock_blocked`, `tts.file_boundary_blocked`, or
 `tts.real_streaming`; it does not store raw provider names, transcripts,
 provider outputs, URLs, credentials, paths, or audio payloads.
+`T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001` now moves `listen.stop` and VAD
+auto-stop off the blocking ASR commit path: streaming ASR commit/finalization
+runs asynchronously, the WebSocket read loop can process abort/barge-in while
+commit is pending, and final-driven voice-pipeline startup uses the streaming
+ASR final without falling back to batch `Transcribe`.
 The fixed
 official codec output-volume candidate is already prepared in the repo-owned
 Xiaozhi-compatible overlay. The no-write
@@ -721,6 +726,65 @@ Next state:
 - `S-XIAOZHI-REALTIME-PARITY-REQUIRES-REAL-PROFILE-EVIDENCE`
 - Next transition: non-blocking turn reducer/queue hardening so streaming ASR
   commit/final handling cannot stall the Xiaozhi WebSocket read loop.
+
+### Completed T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001: Xiaozhi Nonblocking ASR Commit
+
+Current state:
+
+- `S-XIAOZHI-ASR-COMMIT-NONBLOCKING-HOST-TESTED`
+
+Trigger:
+
+- Runtime read-only audit found `commitXiaozhiStreamingASR` was called
+  synchronously from `listen.stop` and VAD auto-stop, which could hold the
+  `/v1/xiaozhi` WebSocket read loop while commit/final polling waited.
+- Xiaozhi-style voice requires the control channel to remain responsive to
+  abort/barge-in while ASR finalization is pending.
+
+Target state:
+
+- `S-XIAOZHI-ASR-COMMIT-ASYNC-CONTROL-LOOP-RESPONSIVE`
+
+Action:
+
+- Added plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md`.
+- Replaced synchronous stop/auto-stop ASR commit with an async commit task.
+- The async task records `asr.stream.commit`, waits briefly for a streaming
+  ASR final, starts the voice-pipeline task from the streaming final when no
+  partial-driven answer already started, and records truthful timeout/error
+  markers instead of silently promoting missing final evidence.
+- Removed the unused synchronous commit helper to avoid future regression.
+
+Acceptance conditions:
+
+- Red test first proved abort was not processed while streaming ASR commit was
+  pending.
+- New Gateway tests prove abort is recorded during pending commit and that a
+  streaming ASR final starts the pipeline without calling batch `Transcribe`.
+- Existing Xiaozhi streaming ASR, partial bridge, voice-pipeline, and parity
+  tests continue to pass.
+
+Failure states:
+
+- `F-XIAOZHI-ASR-COMMIT-BLOCKS-WS` if abort/barge-in cannot be read during ASR
+  commit.
+- `F-XIAOZHI-ASR-COMMIT-BATCH-REGRESSION` if a streaming ASR final path calls
+  batch `Transcribe` or writes a WAV.
+- `F-XIAOZHI-ASR-COMMIT-DOUBLE-TURN` if partial-driven and final-driven paths
+  start duplicate voice-pipeline tasks.
+
+Rollback path:
+
+- Revert the async commit helper, stop/auto-stop call-site changes, tests, plan,
+  and state/log entries. Existing stock `/v1/xiaozhi` transport, ASR partial
+  bridge, real-profile gate, Sherpa smoke, and TTS adapter seam remain intact.
+
+Next state:
+
+- `S-XIAOZHI-ASR-COMMIT-ASYNC-CONTROL-LOOP-RESPONSIVE`
+- Next transition: feed the real Sherpa streaming ASR session through a stock
+  `/v1/xiaozhi` host-local trace, then keep realtime parity blocked until real
+  streaming LLM/TTS profile evidence and physical playback are present.
 
 ### Active T-XIAOZHI-STREAMING-ASR-001: Stock Xiaozhi Streaming ASR Session
 
@@ -1858,6 +1922,7 @@ Next state:
 | T-STREAMING-TTS-RUNTIME-PROOF-001: Streaming TTS runtime smoke | Completed truthful blocker | Added redacted `a21 streaming-tts-runtime-smoke` plus `make streaming-tts-runtime-smoke`. Without `--execute`, local report `reports/a21-streaming-tts-runtime-smoke-20260603-074721-1780444041851710000.json` is `status=blocked`, finding `execute_flag_required`. Tests use a fake realtime dialer/session to prove `tts_session.update`, `input_text.append`, and `input_text.done` are sent, the first provider audio delta is observed while the stream is open, and at least one exact 60 ms PCM16 mono chunk is counted without WAV/file boundary. No real provider execution or physical Xiaozhi/StackChan path was used. |
 | T-XIAOZHI-ASR-PARTIAL-TO-LLM-REALTIME-BRIDGE-001: ASR partial to LLM realtime bridge | Completed host-side candidate | Added a partial transcript source for `VoicePipelineRequest`, a stock `/v1/xiaozhi` partial bridge that starts exactly one workmate streaming answer from the first ASR partial before `listen.stop`/`asr.final`, and parity gates that require ordered `asr.stream.commit` while blocking host-loopback fake markers. Focused provider/Gateway/app tests passed. This does not execute real providers/V21, start Gateway, flash firmware, play audio, or claim physical PRD acceptance. |
 | T-XIAOZHI-REALTIME-PARITY-REAL-PROFILE-EVIDENCE-001: Realtime parity real profile evidence | Completed evidence hardening | Plan `docs/plans/2026-06-03-xiaozhi-realtime-parity-real-profile-evidence.md` scoped the no-execute/no-hardware cut. Gateway now records redacted profile-class markers for Xiaozhi voice-pipeline turns, distinguishing real streaming ASR/LLM/TTS from mock, batch, and file-boundary stages without storing raw provider names, transcripts, provider outputs, URLs, credentials, paths, or audio payloads. `xiaozhi-realtime-parity` now requires all three real streaming profile markers and no profile blockers before returning `xiaozhi_realtime_candidate`; ordered traces without those markers downgrade to `turn_buffered_xiaozhi_candidate` with `xiaozhi_realtime_real_profile_evidence_missing`. Focused app/Gateway tests passed. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
+| T-XIAOZHI-NONBLOCKING-ASR-COMMIT-001: Xiaozhi nonblocking ASR commit | Completed host-local control-loop hardening | Plan `docs/plans/2026-06-03-xiaozhi-nonblocking-asr-commit.md` scoped the cut. `listen.stop` and VAD auto-stop now start async streaming-ASR commit/final handling instead of blocking the `/v1/xiaozhi` WebSocket read loop. Focused Gateway tests prove abort can be processed while commit remains pending and that a streaming ASR final starts the voice pipeline without calling batch `Transcribe`. This keeps A21 closer to Xiaozhi's responsive control/media state machine while remaining below full PRD acceptance. No provider/V21 execution, Gateway start/stop, `/v1/xiaozhi/say`, host-loopback runtime, firmware build/flash, NVS/serial/hardware action, or audio playback was performed. |
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
 

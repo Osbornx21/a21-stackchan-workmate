@@ -1481,6 +1481,7 @@ type xiaozhiSession struct {
 	streamingASRHasFinal             bool
 	streamingASRFinalText            string
 	streamingASRClosed               bool
+	streamingASRCommitStarted        bool
 	streamingASRPartialBridgeStarted bool
 }
 
@@ -1860,6 +1861,7 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	session.streamingASRHasFinal = false
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
+	session.streamingASRCommitStarted = false
 	session.streamingASRPartialBridgeStarted = false
 	session.mu.Unlock()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start", s.now().UnixMilli())
@@ -1951,17 +1953,29 @@ func (s *Server) appendXiaozhiStreamingASRFrame(ctx context.Context, session *xi
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.audio.append", s.now().UnixMilli())
 }
 
-func (s *Server) commitXiaozhiStreamingASR(ctx context.Context, session *xiaozhiSession) {
-	if session == nil {
-		return
+func (s *Server) startXiaozhiStreamingASRCommit(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn) bool {
+	if session == nil || conn == nil || turn == nil {
+		return false
 	}
 	session.mu.Lock()
 	stream := session.streamingASRSession
 	closed := session.streamingASRClosed
+	started := session.streamingASRCommitStarted
+	if stream != nil && !closed && !started {
+		session.streamingASRCommitStarted = true
+	}
 	session.mu.Unlock()
 	if stream == nil || closed {
-		return
+		return false
 	}
+	if started {
+		return true
+	}
+	go s.finishXiaozhiStreamingASRCommit(ctx, conn, session, turn, stream)
+	return true
+}
+
+func (s *Server) finishXiaozhiStreamingASRCommit(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, stream providers.StreamingASRSession) {
 	commitCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.commit", s.now().UnixMilli())
@@ -1969,13 +1983,33 @@ func (s *Server) commitXiaozhiStreamingASR(ctx context.Context, session *xiaozhi
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.commit_error", s.now().UnixMilli())
 		return
 	}
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for time.Now().Before(deadline) {
+	if !s.waitXiaozhiStreamingASRFinal(session, 200*time.Millisecond) {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_timeout", s.now().UnixMilli())
+		return
+	}
+	if session.xiaozhiPartialVoicePipelineStarted() || session.shouldAbortXiaozhiTurn(turn) {
+		return
+	}
+	task := s.newXiaozhiTurnTask(session, turn)
+	if strings.TrimSpace(task.streamingASRFinalText) == "" {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_empty", s.now().UnixMilli())
+		return
+	}
+	s.startXiaozhiTurnTask(ctx, conn, session, task)
+}
+
+func (s *Server) waitXiaozhiStreamingASRFinal(session *xiaozhiSession, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
 		session.mu.Lock()
-		done := session.streamingASRHasFinal || session.streamingASRClosed
+		hasFinal := session.streamingASRHasFinal && strings.TrimSpace(session.streamingASRFinalText) != ""
+		closed := session.streamingASRClosed
 		session.mu.Unlock()
-		if done {
-			return
+		if hasFinal {
+			return true
+		}
+		if closed || time.Now().After(deadline) {
+			return false
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -2141,8 +2175,7 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				session.setCurrentXiaozhiTurnMode(mode)
 			}
 			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
-			s.commitXiaozhiStreamingASR(ctx, session)
-			if session.xiaozhiPartialVoicePipelineStarted() {
+			if s.startXiaozhiStreamingASRCommit(ctx, conn, session, session.currentXiaozhiTurn()) {
 				return true
 			}
 			task := s.newXiaozhiTurnTask(session, session.currentXiaozhiTurn())
@@ -2580,8 +2613,7 @@ func (s *Server) maybeAutoStopXiaozhiTurnOnIngress(ctx context.Context, conn *we
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.max_duration_auto_stop", s.now().UnixMilli())
 	}
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
-	s.commitXiaozhiStreamingASR(ctx, session)
-	if session.xiaozhiPartialVoicePipelineStarted() {
+	if s.startXiaozhiStreamingASRCommit(ctx, conn, session, turn) {
 		return
 	}
 	task := s.newXiaozhiTurnTask(session, turn)
