@@ -8161,3 +8161,79 @@ Recommended next action:
 3. Capture boot serial logs showing the A21 override and loaded command count.
 4. Test `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle and then regenerate
    wake/physical evidence.
+
+## 2026-06-03 21:0x CST - Zi Yue Wake Assets Partition Fix
+
+Round goal:
+
+- Explain and fix why the freshly flashed custom wake build still did not wake
+  on `紫悦`, without switching to the bare `xiaozhi.bin` lane or relying on
+  external source-cache dirty changes.
+
+Actual completed work:
+
+- Re-read the post-flash serial boot log and confirmed the runtime failure was
+  below the custom wake command override:
+  `Assets: The index.json file is not found`, followed by
+  `MODEL_LOADER: Can not find model in partition table`, and only the
+  `VAD(WebRTC)` AFE pipeline. That means MultiNet was not loaded, so
+  `CustomWakeWord` could not initialize even though the app binary contained
+  the A21 wake strings.
+- Confirmed the bad build had `generated_assets.bin` at 4,688,623 bytes while
+  the emitted partition table still had `assets,data,spiffs,0xa00000,4M`.
+  The external StackChan source cache had a local dirty `5M` partition edit,
+  but A21 correctly exports source `HEAD`, so that dirty change was not in the
+  product build.
+- Updated the A21 official-compatible overlay to patch
+  `firmware/partitions.csv` from `assets ... 4M` to `assets ... 5M`.
+- Added a build/flash guard that parses ESP-IDF `partition-table.bin` and
+  rejects a package when `generated_assets.bin` exceeds the actual `assets`
+  partition size.
+- Added regression coverage for the overlay `5M` contract and for rejecting a
+  correctly named but oversized product flash package.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- Focused tests passed:
+  `go test ./internal/app -run 'ZiYueCustomWake|OversizedAssetsPartition|XiaozhiCompatibleFlashPlan|XiaozhiCompatibleFlashExecute' -count=1`.
+- `go test ./internal/app -count=1`: passed.
+- `make verify`: passed.
+- Product build passed:
+  `reports/a21-stackchan-official-baseline-20260603-210122-1780491682047937000.json`.
+- New product app SHA-256:
+  `7c2b0f8e72e43bf3296638faba9667c557f8f732b19f7b22da7805e6b8597af9`.
+- New partition table SHA-256:
+  `704b0cc2d29d95d8429450e3d379c903c77864042d0bc3050f669c2c244bdb8d`.
+- New assets SHA-256:
+  `d0a20f925364d33e75694dd07b4897ba9a1689728949d45a2987d6551cbc8b8e`.
+- Verified generated partition table:
+  `assets,data,spiffs,0xa00000,5M`; `generated_assets.bin` remains
+  4,688,623 bytes and now fits.
+- Verified `generated_assets.bin` contains `index.json`, `srmodels.bin`,
+  MultiNet model config, and
+  `zi yue|zi yue zi yue|ni hao zi yue|xiao zi yue`.
+
+Unfinished items:
+
+- The fixed build is not yet reflashed in this round.
+- Custom wake remains unaccepted until the device boot log shows assets/model
+  load plus the A21 custom wake override markers, then a physical idle wake
+  test passes.
+- Barge-in still remains a separate Gateway/device queue cancellation issue.
+
+Recommended next action:
+
+1. Commit this assets partition guard/fix.
+2. Run product-lane flash plan and guarded flash on `/dev/cu.usbmodem101`.
+3. Capture boot serial and require: no `index.json file is not found`, no
+   `MODEL_LOADER: Can not find model in partition table`,
+   model/MultiNet load evidence, and the A21 custom wake override markers.
+4. Physically test `紫悦`, `紫悦紫悦`, `你好紫悦`, and `小紫悦` from idle.

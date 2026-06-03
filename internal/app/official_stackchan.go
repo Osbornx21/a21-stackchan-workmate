@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -1518,7 +1519,82 @@ func collectOfficialFlashPartsForApp(buildDir string, expectedAppName string) ([
 			return nil, fmt.Errorf("flash_args missing required %s at %s", name, offset)
 		}
 	}
+	if err := validateOfficialAssetsPartitionCapacity(buildDir); err != nil {
+		return nil, err
+	}
 	return parts, nil
+}
+
+type officialBinaryPartitionEntry struct {
+	Label  string
+	Offset uint32
+	Size   uint32
+}
+
+func validateOfficialAssetsPartitionCapacity(buildDir string) error {
+	entries, parsed, err := readOfficialBinaryPartitionTable(filepath.Join(buildDir, "partition_table", "partition-table.bin"))
+	if err != nil {
+		return err
+	}
+	if !parsed {
+		return nil
+	}
+	var assets *officialBinaryPartitionEntry
+	for i := range entries {
+		if entries[i].Label == "assets" {
+			assets = &entries[i]
+			break
+		}
+	}
+	if assets == nil {
+		return fmt.Errorf("partition table missing assets partition")
+	}
+	assetsPath := filepath.Join(buildDir, "generated_assets.bin")
+	stat, err := os.Stat(assetsPath)
+	if err != nil {
+		return fmt.Errorf("generated assets image missing: %w", err)
+	}
+	if stat.Size() > int64(assets.Size) {
+		return fmt.Errorf("generated assets image size %d exceeds assets partition size %d at 0x%x", stat.Size(), assets.Size, assets.Offset)
+	}
+	return nil
+}
+
+func readOfficialBinaryPartitionTable(path string) ([]officialBinaryPartitionEntry, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("read partition table: %w", err)
+	}
+	if len(data) < 32 || data[0] != 0xaa || data[1] != 0x50 {
+		return nil, false, nil
+	}
+	entries := make([]officialBinaryPartitionEntry, 0, 8)
+	for offset := 0; offset+32 <= len(data); offset += 32 {
+		entry := data[offset : offset+32]
+		if entry[0] == 0xeb && entry[1] == 0xeb {
+			break
+		}
+		if entry[0] != 0xaa || entry[1] != 0x50 {
+			break
+		}
+		labelBytes := entry[12:28]
+		labelEnd := len(labelBytes)
+		for i, b := range labelBytes {
+			if b == 0 {
+				labelEnd = i
+				break
+			}
+		}
+		entries = append(entries, officialBinaryPartitionEntry{
+			Label:  string(labelBytes[:labelEnd]),
+			Offset: binary.LittleEndian.Uint32(entry[4:8]),
+			Size:   binary.LittleEndian.Uint32(entry[8:12]),
+		})
+	}
+	return entries, true, nil
 }
 
 func validateOfficialPCMBridgeDeviceID(deviceID string) error {
@@ -2467,6 +2543,10 @@ func executeStackChanOfficialBaseline(ctx context.Context, options stackChanOffi
 	report.Build.Artifacts = collectOfficialStackChanBuildArtifacts(options.BuildDir)
 	if len(report.Build.Artifacts) == 0 {
 		report.fail("build_artifacts_missing", "official build completed without expected artifacts")
+		return
+	}
+	if err := validateOfficialAssetsPartitionCapacity(options.BuildDir); err != nil {
+		report.fail("assets_partition_capacity_failed", err.Error())
 		return
 	}
 }

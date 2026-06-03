@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -291,6 +292,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 
 	for _, required := range []string{
 		`project(a21-stackchan-official-xiaozhi-compatible)`,
+		`diff --git a/firmware/partitions.csv b/firmware/partitions.csv`,
+		`+assets,   data, spiffs,  0xA00000,  5M,`,
 		`CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y`,
 		`CONFIG_SEND_WAKE_WORD_DATA=n`,
 		`# CONFIG_USE_AFE_WAKE_WORD is not set`,
@@ -872,6 +875,40 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsWrongAppCandidateW
 	}
 	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
 		t.Fatalf("wrong-app rejection leaked full build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsOversizedAssetsPartition(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	writeTestOfficialPartitionTable(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), 0x400000)
+	writeTestSizedFile(t, filepath.Join(buildDir, "generated_assets.bin"), 0x400001)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("oversized assets unexpectedly passed: %s", stdout.String())
+	}
+	for _, want := range []string{"generated assets image size", "exceeds assets partition size"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %s", want, stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("oversized-assets rejection leaked full build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 }
 
@@ -1908,6 +1945,51 @@ func writeTestXiaozhiFirmwareBuildAt(t *testing.T, buildDir string) string {
 		"0x800000 generated_assets.bin",
 	}, "\n")+"\n")
 	return buildDir
+}
+
+func writeTestOfficialPartitionTable(t *testing.T, path string, assetsSize uint32) {
+	t.Helper()
+	data := make([]byte, 0, 32*8)
+	appendPartition := func(label string, partitionType byte, subtype byte, offset uint32, size uint32) {
+		entry := make([]byte, 32)
+		entry[0] = 0xaa
+		entry[1] = 0x50
+		entry[2] = partitionType
+		entry[3] = subtype
+		binary.LittleEndian.PutUint32(entry[4:8], offset)
+		binary.LittleEndian.PutUint32(entry[8:12], size)
+		copy(entry[12:28], []byte(label))
+		data = append(data, entry...)
+	}
+	appendPartition("nvs", 0x01, 0x02, 0x9000, 0x4000)
+	appendPartition("otadata", 0x01, 0x00, 0xd000, 0x2000)
+	appendPartition("phy_init", 0x01, 0x01, 0xf000, 0x1000)
+	appendPartition("ota_0", 0x00, 0x10, 0x20000, 0x4f0000)
+	appendPartition("ota_1", 0x00, 0x11, 0x510000, 0x4f0000)
+	appendPartition("assets", 0x01, 0x82, 0xa00000, assetsSize)
+	appendPartition("coredump", 0x01, 0x03, 0xe00000, 0x10000)
+	data = append(data, bytes.Repeat([]byte{0xff}, 32)...)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write partition table %s: %v", path, err)
+	}
+}
+
+func writeTestSizedFile(t *testing.T, path string, size int) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	defer file.Close()
+	if err := file.Truncate(int64(size)); err != nil {
+		t.Fatalf("truncate %s: %v", path, err)
+	}
 }
 
 func frozenLegacyXiaozhiFirmwareBuildDirFixture(t *testing.T) string {
