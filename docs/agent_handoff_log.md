@@ -10302,3 +10302,67 @@ Recommended next action:
 - Commit this main-control integration note and push the current branch.
 - Then schedule `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` as the next
   low-risk hardware parity implementation slice.
+
+## 2026-06-04 06:01 CST - Main Control Dispatch Prepared For MCP Status Parity
+
+Round goal:
+
+- Prepare the next scoped worker dispatch after integrating the official
+  hardware parity gap map, keeping the low-risk MCP/status work separate from
+  firmware, flash, camera, app lifecycle, and other high-risk surfaces.
+
+Detailed plan path:
+
+- `docs/plans/2026-06-04-stackchan-official-mcp-status-parity.md`
+  - Worker must create or update this plan before implementation.
+  - The plan must reference the parent parity plan
+    `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+    and the frozen parity matrix in
+    `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`.
+
+Worker execution task:
+
+- Execute `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001`.
+- Add only low-risk Gateway/Xiaozhi MCP status parity for official tools:
+  `self.get_device_status`, `self.screen.set_brightness`,
+  `self.screen.set_theme`, and `self.screen.get_info`.
+- Add tests and docs/state/handoff updates proving the new surface is
+  redacted, A21-namespaced, trace/session/device-ready, and does not promote
+  official-only capability to product acceptance.
+
+Worker boundary conditions:
+
+- May inspect `internal/gateway/server.go`,
+  `internal/gateway/server_test.go`, `internal/gateway/simulator.go`,
+  `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/OBSERVABILITY.md`,
+  `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`,
+  `docs/project_state_machine.md`, and `docs/agent_handoff_log.md`.
+- Must not build firmware, flash firmware, touch serial, write NVS, start
+  Gateway, execute provider APIs, execute V21, or touch physical hardware.
+- Must not expose or implement `self.reboot`, `self.upgrade_firmware`,
+  `self.camera.take_photo`, `self.screen.snapshot`, camera stream/video, NFC,
+  infrared, or app-lifecycle work.
+- Must not store or log raw MCP response bodies, screenshots, images, provider
+  output, secrets, full URLs, local paths, transcripts, or raw/base64 audio.
+- Must not revert internal test 4 roleplay/professional/workspace job changes
+  or internal test 3 voice/protocol changes.
+
+Required worker summary format:
+
+- Transition
+- What changed
+- Files changed
+- Tests run and results
+- Runtime or physical evidence
+- Deviations from plan
+- Remaining issues
+- Next suggested action
+- Forbidden actions avoided
+- Commit and push status
+
+Dispatch status:
+
+- Pending worker creation from current pushed main-control branch
+  `codex/a21-hardware-window-20260603-wifi-provisioning-flash` after this
+  dispatch record is committed and pushed.
