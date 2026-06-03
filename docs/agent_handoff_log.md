@@ -9349,3 +9349,66 @@ Recommended next action:
 - Commit the workspace audit/control cleanup, then continue only from the
   current active plan. Do not spawn new workers or delete old branches until the
   current route-promotion/ECS evidence path is closed or explicitly paused.
+
+## 2026-06-04 03:36 CST - Internal Test 3 Integration Audit
+
+Round goal:
+
+- Verify that the internal test 3 commits and accepted endpoint-side protocol
+  progress are still included in current `HEAD`.
+- Distinguish local mainline inclusion from remote tracking branch inclusion.
+- Avoid any broad revert or cleanup that could erase accepted protocol work.
+
+Actual completed work:
+
+- Added integration audit:
+  `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`.
+- Confirmed internal test 3 package/source, release-doc, and handoff commits
+  are all ancestors of current `HEAD`.
+- Confirmed those internal test 3 commits are also present on
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`.
+- Confirmed follow-up commits `765ed41`, `3741c4a`, and `8396261` are included
+  locally but not yet present on the remote tracking branch.
+- Confirmed high-signal Gateway protocol, firmware lane, wake/socket, and
+  voice-chain selector commits remain ancestors of current `HEAD`.
+- Checked that there is no diff from `221c153..HEAD` in
+  `internal/gateway/server.go`, `internal/transport/xiaozhi`, or `firmware`.
+- Updated current control and workspace audit to point at the integration
+  audit as the no-broad-revert reference.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`
+- `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`
+
+Unfinished items:
+
+- Push or otherwise integrate the three newest local commits after the user
+  chooses the remote/PR path.
+- ECS deploy remains blocked by SSH/control-plane access; no remote mutation was
+  attempted during this audit.
+
+Known risks/blockers:
+
+- Do not assume local-only commits are already on the remote tracking branch.
+- Do not use branch/worktree cleanup as a route to discard internal test 3
+  progress.
+- Do not revert Gateway protocol, transport, firmware, or endpoint-side
+  acceptance changes without a named reviewed transition.
+
+Test/build/runtime results:
+
+- `git merge-base --is-ancestor` checks passed for the listed commits.
+- `git branch -r --contains` confirms internal test 3 baseline commits are on
+  the remote tracking branch, while the three newest local commits are not.
+- `git diff --stat 221c153..HEAD -- firmware internal/transport internal/gateway/server.go`:
+  no output.
+- `git diff --check`: passed.
+
+Recommended next action:
+
+- Keep current `HEAD` as the control mainline. Next operational step remains
+  ECS control-plane recovery and deployment of the local route-eligibility
+  commit chain; do not start cleanup-driven reverts.

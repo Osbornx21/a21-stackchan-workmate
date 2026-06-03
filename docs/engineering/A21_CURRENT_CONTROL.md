@@ -27,6 +27,8 @@ execution plan.
   `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`.
 - Current workspace audit:
   `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`.
+- Current integration audit:
+  `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`.
 
 ## Current Product State
 
@@ -344,3 +346,7 @@ Current conclusion:
   mainline noise and stale registrations only; do not delete real branches,
   existing worker worktrees, stashes, reports, firmware artifacts, or evidence
   during launch-critical work.
+- Integration cleanup/review is constrained by
+  `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`: internal test 3 commits
+  are confirmed ancestors of current `HEAD`; do not perform broad revert or
+  branch cleanup that could erase accepted endpoint-side protocol progress.

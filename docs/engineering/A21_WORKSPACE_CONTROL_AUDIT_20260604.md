@@ -22,6 +22,8 @@ branches, worktrees, stashes, firmware artifacts, or hardware evidence.
   `docs/engineering/A21_CURRENT_CONTROL.md`
 - Current evidence manifest:
   `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- Current integration audit:
+  `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`
 - Current active plan:
   `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
 - Source-only remediation backlog:
@@ -167,8 +169,9 @@ When a new thread resumes A21 work, it should start from:
 1. `AGENTS.md`
 2. `docs/engineering/A21_CURRENT_CONTROL.md`
 3. `docs/engineering/A21_WORKSPACE_CONTROL_AUDIT_20260604.md`
-4. `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
-5. The active plan named in current control
+4. `docs/engineering/A21_INTEGRATION_AUDIT_20260604.md`
+5. `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+6. The active plan named in current control
 
 Then run:
 
