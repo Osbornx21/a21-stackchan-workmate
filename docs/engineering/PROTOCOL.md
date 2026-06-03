@@ -617,6 +617,16 @@ registry exposes only selected profile IDs and safe names:
 `current_tts_profile`, `current_realtime_provider`, and
 `current_voice_clone_profile`.
 
+For roleplay voice turns, the selected safe `voice_clone_profile` is carried as
+runtime-only provider-neutral metadata on `VoicePipelineRequest` and
+`TTSAdapterRequest`. `VoicePipelineReport.input.voice_clone_profile` may expose
+only the safe A21 profile ID, and the report redaction policy must include
+`voice_clone_sample_not_recorded`. Trace output may record
+`roleplay.voice_clone_profile.used` when a clone profile is selected, but must
+not record voice samples, reference audio/text, local paths, URLs, raw model
+IDs, credentials, prompt text, transcripts, provider output, or raw/base64
+audio.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or

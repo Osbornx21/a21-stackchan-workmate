@@ -105,6 +105,10 @@ Status:
 - This is a docs/state baseline only. It does not expose new Gateway controls,
   start Gateway, execute providers or V21, build firmware, flash firmware,
   touch serial, or write NVS.
+- Low-risk MCP/status parity has also landed as a Gateway contract through
+  `POST /v1/xiaozhi/mcp-control` for only `self.get_device_status`,
+  `self.screen.set_brightness`, `self.screen.set_theme`, and
+  `self.screen.get_info`.
 - Official StackChan/Xiaozhi capabilities remain reference material. A21
   product availability still requires A21 evidence and the promotion gates in
   the capability charter.
@@ -120,11 +124,11 @@ Current official-source reference:
 
 Next operator/control action:
 
-- Dispatch `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` for low-risk
-  `self.get_device_status`, screen brightness/theme, and screen info parity.
+- Dispatch `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` for
+  Gateway/protocol device-registry status-display parity.
 - Keep reboot, upgrade, camera/photo, screen snapshot, camera stream/video,
-  NFC, infrared, app lifecycle, firmware, flash, serial, and NVS out of that
-  low-risk worker.
+  NFC, infrared, app lifecycle, firmware, flash, serial, and NVS out of the
+  next worker.
 
 ## Current Evidence Manifest
 
@@ -674,6 +678,36 @@ Current conclusion:
 - This is still host/runtime evidence. Physical StackChan roleplay acceptance
   requires an operator-triggered stock `/v1/xiaozhi` turn and audible/provider
   evidence.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Voice Clone Enters TTS Boundary
+
+The roleplay lane now carries the selected safe voice-clone profile into the
+provider-neutral voice pipeline and TTS adapter request instead of stopping at
+the selector/catalog layer.
+
+Current implementation state:
+
+- `VoicePipelineRequest` has a redacted runtime-only `VoiceCloneProfile`.
+- `TTSAdapterRequest` carries the same safe A21 voice profile ID.
+- Local TTS adapters pass the safe profile through `LocalTTSOptions.Voice`, so
+  `voice_clone_cli` can bind the turn to the selected voice identity without
+  exposing reference audio/text paths.
+- `VoicePipelineReport.input.voice_clone_profile` exposes only safe A21
+  profile IDs, and report redaction includes
+  `voice_clone_sample_not_recorded`.
+- Fast-companion roleplay turns with PCM frames and stock `/v1/xiaozhi`
+  roleplay turns both pass the selected profile to the voice pipeline.
+- Gateway traces only `roleplay.voice_clone_profile.used` when a clone profile
+  is selected; it does not trace samples, prompt bodies, memory text,
+  transcripts, provider output, local paths, URLs, or credentials.
+
+Current conclusion:
+
+- Roleplay voice selection now has runtime evidence at the TTS boundary:
+  selected profile -> voice pipeline request -> TTS request -> redacted report.
+- This still does not execute a real clone provider or prove physical
+  StackChan roleplay audio. Provider execution and physical acceptance remain
+  separate gates.
 
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Professional Workspace Contract
 

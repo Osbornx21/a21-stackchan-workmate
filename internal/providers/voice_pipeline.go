@@ -36,6 +36,7 @@ type VoicePipelineRequest struct {
 	Mode                string
 	Frames              []VoicePipelinePCMFrame
 	TextPrompt          string `json:"-"`
+	VoiceCloneProfile   string `json:"-"`
 	ASRTranscript       string `json:"-"`
 	ASRTranscriptSource string `json:"-"`
 }
@@ -102,13 +103,14 @@ type VoicePipelineFallbackReport struct {
 }
 
 type VoicePipelineInputReport struct {
-	FrameCount       int    `json:"frame_count"`
-	TotalBytes       int    `json:"total_bytes"`
-	Codec            string `json:"codec,omitempty"`
-	SampleRateHz     int    `json:"sample_rate_hz,omitempty"`
-	Channels         int    `json:"channels,omitempty"`
-	FrameDurationMS  int    `json:"frame_duration_ms,omitempty"`
-	PromptInputReady bool   `json:"prompt_input_ready,omitempty"`
+	FrameCount        int    `json:"frame_count"`
+	TotalBytes        int    `json:"total_bytes"`
+	Codec             string `json:"codec,omitempty"`
+	SampleRateHz      int    `json:"sample_rate_hz,omitempty"`
+	Channels          int    `json:"channels,omitempty"`
+	FrameDurationMS   int    `json:"frame_duration_ms,omitempty"`
+	PromptInputReady  bool   `json:"prompt_input_ready,omitempty"`
+	VoiceCloneProfile string `json:"voice_clone_profile,omitempty"`
 }
 
 type VoicePipelineOutputReport struct {
@@ -125,13 +127,14 @@ type VoicePipelineOutputReport struct {
 }
 
 type VoicePipelineRedactionPolicies struct {
-	PromptPolicy         string `json:"prompt_policy"`
-	TranscriptPolicy     string `json:"transcript_policy"`
-	ProviderOutputPolicy string `json:"provider_output_policy"`
-	AudioPayloadPolicy   string `json:"audio_payload_policy"`
-	URLPolicy            string `json:"url_policy"`
-	ProxyPolicy          string `json:"proxy_policy"`
-	LocalPathPolicy      string `json:"local_path_policy"`
+	PromptPolicy           string `json:"prompt_policy"`
+	TranscriptPolicy       string `json:"transcript_policy"`
+	ProviderOutputPolicy   string `json:"provider_output_policy"`
+	AudioPayloadPolicy     string `json:"audio_payload_policy"`
+	VoiceCloneSamplePolicy string `json:"voice_clone_sample_policy"`
+	URLPolicy              string `json:"url_policy"`
+	ProxyPolicy            string `json:"proxy_policy"`
+	LocalPathPolicy        string `json:"local_path_policy"`
 }
 
 type ASRAdapter interface {
@@ -191,9 +194,10 @@ type StreamingTTSAdapter interface {
 }
 
 type TTSAdapterRequest struct {
-	Session VoiceSession
-	Mode    string
-	Text    string
+	Session           VoiceSession
+	Mode              string
+	Text              string
+	VoiceCloneProfile string
 }
 
 type VoicePipelineAdapters struct {
@@ -448,7 +452,12 @@ func (r *VoicePipelineRunner) synthesizeVoicePipelineSegment(ctx context.Context
 	if strings.TrimSpace(segment) == "" {
 		return nil
 	}
-	ttsChunks, err := r.adapters.TTS.Synthesize(ctx, TTSAdapterRequest{Session: req.Session, Mode: req.Mode, Text: segment})
+	ttsChunks, err := r.adapters.TTS.Synthesize(ctx, TTSAdapterRequest{
+		Session:           req.Session,
+		Mode:              req.Mode,
+		Text:              segment,
+		VoiceCloneProfile: safeVoiceCloneProfileName(req.VoiceCloneProfile),
+	})
 	if err != nil {
 		report.Status = string(VoicePipelineStatusFailed)
 		report.Findings = appendUniqueVoicePipelineFindings(report.Findings, "tts adapter failed", voicePipelineTTSAdapterFailureFinding(err))
@@ -615,9 +624,19 @@ func safeVoicePipelineProfileName(value string) string {
 	return "unknown_provider"
 }
 
+func safeVoiceCloneProfileName(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "a21_voice_default_dashscope", "a21_voice_clone_default", "a21_voice_clone_cosyvoice", "a21_voice_clone_minimax":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
+}
+
 func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSelection, executionMode string) VoicePipelineReport {
 	input := VoicePipelineInputReport{FrameCount: len(req.Frames)}
 	input.PromptInputReady = strings.TrimSpace(req.TextPrompt) != ""
+	input.VoiceCloneProfile = safeVoiceCloneProfileName(req.VoiceCloneProfile)
 	for i, frame := range req.Frames {
 		input.TotalBytes += frame.ByteCount
 		if i == 0 {
@@ -652,13 +671,14 @@ func newVoicePipelineReport(req VoicePipelineRequest, selection VoicePipelineSel
 		Input:         input,
 		Findings:      findings,
 		Redaction: VoicePipelineRedactionPolicies{
-			PromptPolicy:         "prompt_input_not_recorded",
-			TranscriptPolicy:     "transcript_not_recorded",
-			ProviderOutputPolicy: "provider_output_not_recorded",
-			AudioPayloadPolicy:   "audio_payload_not_recorded",
-			URLPolicy:            "full_url_not_recorded",
-			ProxyPolicy:          "proxy_value_not_recorded",
-			LocalPathPolicy:      "local_path_not_recorded",
+			PromptPolicy:           "prompt_input_not_recorded",
+			TranscriptPolicy:       "transcript_not_recorded",
+			ProviderOutputPolicy:   "provider_output_not_recorded",
+			AudioPayloadPolicy:     "audio_payload_not_recorded",
+			VoiceCloneSamplePolicy: "voice_clone_sample_not_recorded",
+			URLPolicy:              "full_url_not_recorded",
+			ProxyPolicy:            "proxy_value_not_recorded",
+			LocalPathPolicy:        "local_path_not_recorded",
 		},
 	}
 }

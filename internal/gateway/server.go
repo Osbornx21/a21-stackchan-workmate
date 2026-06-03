@@ -2195,6 +2195,19 @@ func defaultVoiceCloneProfile(profile string) string {
 	return DefaultVoiceCloneProfile
 }
 
+func (s *Server) currentVoiceCloneProfile() string {
+	if s == nil {
+		return DefaultVoiceCloneProfile
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
+}
+
+func voiceCloneProfileUsesClone(profile string) bool {
+	return defaultVoiceCloneProfile(profile) != DefaultVoiceCloneProfile
+}
+
 func validVoiceCloneProfile(profile string) bool {
 	switch strings.ToLower(strings.TrimSpace(profile)) {
 	case "a21_voice_default_dashscope", "a21_voice_clone_default", "a21_voice_clone_cosyvoice", "a21_voice_clone_minimax":
@@ -5381,6 +5394,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		},
 		Mode:                string(protocol.ModeWorkmate),
 		Frames:              append([]providers.VoicePipelinePCMFrame(nil), task.voicePipelineFrames...),
+		VoiceCloneProfile:   s.currentVoiceCloneProfile(),
 		ASRTranscript:       asrTranscript,
 		ASRTranscriptSource: asrTranscriptSource,
 	}
@@ -5388,6 +5402,9 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		if prompt, err := s.roleplayPromptInput(RoleplayProfileSelectionRequest{}, roleplayPromptUserText(asrTranscript)); err == nil && strings.TrimSpace(prompt) != "" {
 			request.TextPrompt = prompt
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "roleplay.prompt_input.used", s.now().UnixMilli())
+		}
+		if voiceCloneProfileUsesClone(request.VoiceCloneProfile) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "roleplay.voice_clone_profile.used", s.now().UnixMilli())
 		}
 	}
 	if streamer, ok := runner.(xiaozhiVoicePipelineStreamer); ok {
@@ -7654,12 +7671,16 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 			SessionID: sessionID,
 			DeviceID:  req.DeviceID,
 		},
-		Mode:   string(req.Mode),
-		Frames: append([]providers.VoicePipelinePCMFrame(nil), frames...),
+		Mode:              string(req.Mode),
+		Frames:            append([]providers.VoicePipelinePCMFrame(nil), frames...),
+		VoiceCloneProfile: roleplay.VoiceCloneProfile,
 	}
 	if prompt, err := s.roleplayPromptInput(req.Roleplay, "我在。"); err == nil && strings.TrimSpace(prompt) != "" {
 		request.TextPrompt = prompt
 		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.prompt_input.used", s.now().UnixMilli())
+	}
+	if voiceCloneProfileUsesClone(roleplay.VoiceCloneProfile) {
+		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.voice_clone_profile.used", s.now().UnixMilli())
 	}
 	result, err := runner.Run(ctx, request)
 	s.recordVoicePipelineFallback(traceID, sessionID, req.DeviceID, result.Report)

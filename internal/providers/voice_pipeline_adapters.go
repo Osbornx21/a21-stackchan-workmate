@@ -882,6 +882,9 @@ func (a *localTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest)
 	}
 	options := a.baseOptions
 	options.Text = req.Text
+	if voiceCloneProfile := safeVoiceCloneProfileName(req.VoiceCloneProfile); voiceCloneProfile != "" {
+		options.Voice = voiceCloneProfile
+	}
 	options.OutputSampleRateHz = 24000
 	cleanupDir := ""
 	if strings.TrimSpace(options.OutputDir) == "" {

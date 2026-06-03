@@ -143,6 +143,56 @@ func TestVoicePipelineRunnerUsesPromptInputWithoutRecordingPromptText(t *testing
 	}
 }
 
+func TestVoicePipelineRunnerPassesVoiceCloneProfileToTTSAndReport(t *testing.T) {
+	textStream := &recordingPipelineTextStreamAdapter{
+		events: []TextStreamEvent{{Kind: TextStreamDeltaContent, Text: "收到。"}, {Kind: TextStreamDeltaDone}},
+	}
+	tts := &recordingPipelineTTSAdapter{}
+	runner := NewVoicePipelineRunner(VoicePipelineAdapters{
+		ASR:        scriptedPipelineASRAdapter{text: "raw transcript should stay out"},
+		TextStream: textStream,
+		TTS:        tts,
+		Selection: VoicePipelineSelection{
+			ASRMode:       "cloud",
+			ASRProfile:    "dashscope_qwen_asr_realtime",
+			ASRProfileEnv: "A21_ASR_CLOUD_PROFILE",
+			LLMProfile:    "stepfun",
+			LLMProfileEnv: "A21_TEXT_STREAM_PROFILE",
+			TTSMode:       "fast",
+			TTSProfile:    "voice_clone_cli",
+			TTSProfileEnv: "A21_TTS_FAST_PROFILE",
+		},
+	})
+
+	result, err := runner.Run(context.Background(), VoicePipelineRequest{
+		Session:           VoiceSession{TraceID: "a21-trace-voice-clone", SessionID: "a21-session-voice-clone", DeviceID: "stackchan-sim-001"},
+		Mode:              "roleplay",
+		TextPrompt:        "# A21 roleplay prompt",
+		VoiceCloneProfile: "a21_voice_clone_default",
+		Frames:            []VoicePipelinePCMFrame{{Seq: 1, Codec: "pcm_s16le", SampleRateHz: 16000, Channels: 1, DurationMS: 60, ByteCount: 1920}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != VoicePipelineStatusCompleted {
+		t.Fatalf("status = %q, want completed", result.Status)
+	}
+	requests := tts.capturedRequests()
+	if len(requests) != 1 || requests[0].VoiceCloneProfile != "a21_voice_clone_default" {
+		t.Fatalf("tts requests = %+v, want selected voice clone profile", requests)
+	}
+	if result.Report.Input.VoiceCloneProfile != "a21_voice_clone_default" ||
+		result.Report.Redaction.VoiceCloneSamplePolicy != "voice_clone_sample_not_recorded" {
+		t.Fatalf("voice clone report = input %+v redaction %+v", result.Report.Input, result.Report.Redaction)
+	}
+	rendered := mustProviderJSON(t, result.Report)
+	for _, forbidden := range []string{"raw transcript should stay out", "reference.wav", "/Users/", "data_base64"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("voice pipeline report leaked %q: %s", forbidden, rendered)
+		}
+	}
+}
+
 func TestMockStreamingASRAdapterEmitsPartialOnFrameAndFinalOnCommit(t *testing.T) {
 	adapter := NewMockStreamingASRAdapter("mock-streaming-asr")
 	session, err := adapter.StartStreamingASR(context.Background(), StreamingASRStartRequest{
@@ -586,7 +636,7 @@ func (a *recordingPipelineTextStreamAdapter) StreamText(ctx context.Context, req
 
 type recordingPipelineTTSAdapter struct {
 	mu       sync.Mutex
-	requests []string
+	requests []TTSAdapterRequest
 }
 
 func (a *recordingPipelineTTSAdapter) Name() string {
@@ -595,7 +645,7 @@ func (a *recordingPipelineTTSAdapter) Name() string {
 
 func (a *recordingPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAdapterRequest) (<-chan VoiceAudioChunk, error) {
 	a.mu.Lock()
-	a.requests = append(a.requests, req.Text)
+	a.requests = append(a.requests, req)
 	a.mu.Unlock()
 	out := make(chan VoiceAudioChunk, 1)
 	out <- VoiceAudioChunk{
@@ -612,7 +662,17 @@ func (a *recordingPipelineTTSAdapter) Synthesize(ctx context.Context, req TTSAda
 func (a *recordingPipelineTTSAdapter) texts() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]string(nil), a.requests...)
+	out := make([]string, 0, len(a.requests))
+	for _, req := range a.requests {
+		out = append(out, req.Text)
+	}
+	return out
+}
+
+func (a *recordingPipelineTTSAdapter) capturedRequests() []TTSAdapterRequest {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]TTSAdapterRequest(nil), a.requests...)
 }
 
 type clippingPipelineTTSAdapter struct{}

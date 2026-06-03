@@ -55,6 +55,9 @@ StackChan hardware.
   `roleplay.profile.ready` plus `roleplay.memory.ready` trace markers without
   storing prompt text, memory text, transcripts, provider output, voice-clone
   samples, or V21 evidence.
+- Roleplay voice-pipeline turns now carry the selected safe
+  `voice_clone_profile` into the provider-neutral request and TTS boundary;
+  reports expose only the profile ID and `voice_clone_sample_not_recorded`.
 - Gateway now exposes `GET/POST/PUT /v1/professional-workspace` for the
   professional no-execute workspace contract. It selects redacted `user_id`,
   `workspace_id`, and `query_scope` (`public_only`, `personal_only`, or
@@ -228,6 +231,9 @@ Acceptance:
 - Fast-companion and stock `/v1/xiaozhi` roleplay turns pass the composed
   personality/scenario/memory prompt into the voice pipeline text provider
   while reports expose only readiness/redaction metadata.
+- Fast-companion and stock `/v1/xiaozhi` roleplay turns pass the selected safe
+  voice-clone profile into the TTS request, and trace only
+  `roleplay.voice_clone_profile.used` when a clone profile is selected.
 - Reports include profile IDs and counts only, not user text, memory content,
   prompt bodies, or cloned voice samples.
 - Barge-in timing remains within the internal test 3 acceptance envelope.
@@ -241,6 +247,10 @@ Implementation slice:
 - `T-ROLEPLAY-PROMPT-VOICE-PIPELINE-001` carries the composed roleplay prompt
   into the provider-neutral voice pipeline through a runtime-only prompt field;
   prompt bodies remain out of reports, traces, and API responses.
+- `T-ROLEPLAY-VOICE-CLONE-PIPELINE-CONTRACT-001` carries the selected safe
+  `voice_clone_profile` through the provider-neutral voice pipeline and TTS
+  adapter request. Reports expose only the selected profile ID and the
+  `voice_clone_sample_not_recorded` policy.
 
 ### A21-3: Professional Cloud Workspace Route
 

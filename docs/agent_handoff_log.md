@@ -10742,3 +10742,89 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this round.
+
+## 2026-06-04 06:47 CST - Roleplay Voice Clone Pipeline Contract
+
+Round goal:
+
+- Close the remaining internal test 4 roleplay gap where selecting a
+  `voice_clone_profile` updated the selector/TTS profile but was not carried
+  as per-turn evidence into the provider-neutral voice pipeline and TTS
+  request.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-roleplay-voice-clone-pipeline-contract.md`.
+- Added runtime-only `VoicePipelineRequest.VoiceCloneProfile`.
+- Added `TTSAdapterRequest.VoiceCloneProfile` and passed the safe A21 voice
+  profile ID from voice pipeline synthesis into TTS adapters.
+- Updated local TTS adapters to place the safe profile ID in
+  `LocalTTSOptions.Voice`, so `voice_clone_cli` can bind a turn to the selected
+  voice identity without exposing reference audio/text configuration.
+- Added `VoicePipelineReport.input.voice_clone_profile` and
+  `voice_clone_sample_not_recorded` redaction metadata.
+- Fast-companion roleplay turns with PCM frames and stock `/v1/xiaozhi`
+  roleplay voice-pipeline turns now carry the selected clone profile into the
+  voice pipeline and trace only `roleplay.voice_clone_profile.used`.
+- Updated protocol/current-control/internal-test4/state-machine docs.
+- Corrected the hardware parity next action in current-control/state-machine:
+  gap-map and low-risk MCP/status are already completed, so the next hardware
+  slice is `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001`, not another
+  gap-map or MCP worker.
+
+Changed files:
+
+- `internal/providers/voice_pipeline.go`
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_test.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-roleplay-voice-clone-pipeline-contract.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This does not execute a real clone provider and does not prove physical
+  StackChan roleplay audio.
+- Durable account voice/persona binding, provider-specific clone profile
+  routing, and voice sample management remain separate product/security gates.
+- Hardware parity status-display/device-registry work remains the next scoped
+  hardware worker.
+
+Known risks/blockers:
+
+- Selecting a clone profile still relies on the existing `voice_clone_cli`
+  configuration for actual reference audio/model behavior. The runtime contract
+  now carries the selected safe profile ID, but missing clone provider/env
+  configuration must be reported truthfully by provider/runtime evidence.
+- Prompt bodies, memory text, transcripts, provider output, reference
+  audio/text, local paths, URLs, credentials, voice samples, and raw/base64
+  audio must remain out of reports, traces, docs, and API responses.
+
+Recommended next action:
+
+- Run broad provider/Gateway tests, `git diff --check`, and `GOMAXPROCS=2 make
+  verify`, then commit/push this scoped runtime-contract cut.
+- Then dispatch `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` as the next
+  hardware parity worker with no firmware/flash/serial/NVS/camera/video/NFC/IR
+  scope.
+
+Test/build/runtime results:
+
+- `go test ./internal/providers ./internal/gateway -run 'VoicePipelineRunnerPassesVoiceCloneProfile|VoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI|FastCompanionHybridRunsVoicePipelineWhenFramesProvided|XiaozhiWebSocketListenStopRunsVoicePipelineAndSendsPacedOpus|RoleplayProfileEndpointPersistsScenarioVoiceClone' -count=1`:
+  passed.
+- `go test ./internal/providers ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this round.

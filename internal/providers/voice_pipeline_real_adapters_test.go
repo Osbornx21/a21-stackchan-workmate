@@ -666,7 +666,7 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	if adapters.ExecutionMode != "host_local" || adapters.TTS.Name() != "voice_clone_cli" {
 		t.Fatalf("adapters execution/TTS = %q/%q", adapters.ExecutionMode, adapters.TTS.Name())
 	}
-	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "用户原文不进报告"})
+	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "用户原文不进报告", VoiceCloneProfile: "a21_voice_clone_default"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -675,6 +675,7 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 		t.Fatalf("chunks = %+v, want one 24k 60ms chunk", collected)
 	}
 	if captured.Text != "用户原文不进报告" ||
+		captured.Voice != "a21_voice_clone_default" ||
 		captured.OutputSampleRateHz != 24000 ||
 		captured.VoiceCloneCommand != command ||
 		captured.VoiceCloneModel != "Index-TTS2" ||
