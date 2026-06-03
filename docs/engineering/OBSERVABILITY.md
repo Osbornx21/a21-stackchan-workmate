@@ -24,6 +24,14 @@ Gateway now also exposes `GET /v1/devices` for the current in-memory device regi
 
 `runtime_echo` is emitted by firmware after it applies screen, motion, RGB, audio, and diagnostic sensor runtime state. Current stable visible keys are `screen`, `servo_y`, and `rgb`. Diagnostic mic-probe firmware also emits string counters for capture/send debugging, including mic frame count, driver errors, skip reasons, queue depth, queue drops, audio-WebSocket sent frame count, last absolute peak, and last nonzero sample count. The speaker/downlink lane emits playback buffer and speaker pump counters: queued chunks, accepted chunks, dropped chunks, clear count, played frames, busy ticks, driver errors, and last stream ID. The sensor-probe lane emits availability, sample/error counters, raw LTR553 ambient/proximity values, and INA226 battery voltage/current values. This is useful for capability evidence derivation and driver-state debugging, but physical office acceptance still needs separate visible/audible/operator or instrument observations.
 
+Official StackChan action relay metadata also appears in `runtime_echo` with
+`official_stackchan_` prefixes after `POST /v1/stackchan/official/control`
+delivery. These keys include packet count, semantic avatar/motion/pitch/yaw/RGB
+labels, and `official_stackchan_physical_accepted=false`. They are redacted
+delivery metadata only; RGB currently records `*_no_rgb_frame` because no
+official RGB packet is emitted by this adapter, and yaw/`servo_x` remains a
+candidate surface until a hardware evidence window verifies the motion.
+
 Gateway also exposes `GET /v1/traces?trace_id=<trace_id>` for an in-memory mock waterfall. It currently records HTTP mock turn/interrupt receipts, control WebSocket device events, audio frames, audio ingress buffering, VAD adapter start/end markers, microphone probe acceptance markers, mock playback chunk sends, audio-path barge-in markers, realtime provider commit/downlink markers, V21 adapter markers, and outgoing control events with millisecond offsets. The response includes a summary for audio-frame-to-playback, V21 first result, barge-in stop, provider-commit-to-first-audio, event count, and last offset. This is a development observability surface, not the final durable trace backend.
 
 The Gateway VAD path exposes detector-labelled Prometheus counters for each frame decision. This keeps the current deterministic RMS detector visible while allowing future mature VAD/AEC adapters to be compared without changing the audio WebSocket or barge-in contracts.

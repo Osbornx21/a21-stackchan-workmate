@@ -10908,3 +10908,92 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this round.
+
+## 2026-06-04 07:34 CST - Official Avatar Action Semantic Mapping
+
+Round goal:
+
+- Land `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001` as a host/Gateway transport
+  mapping cut after status-display parity, without starting Gateway, touching
+  providers/V21, building firmware, flashing, using serial, writing NVS, or
+  claiming physical action/RGB/servo acceptance.
+
+Actual completed work:
+
+- Added `BuildOfficialActionPlan` in the official StackChan transport adapter.
+  It returns the normalized A21 device extension event, official binary packet
+  sequence, packet count, semantic surface metadata, and
+  `physical_accepted=false`.
+- Preserved the existing official frame types only:
+  `ControlAvatar` (`0x03`), `ControlMotion` (`0x04`), and `DanceSequence`
+  (`0x14`).
+- Added deterministic tests for all semantic states: idle, listening,
+  thinking, speaking, and error all emit avatar + pitch motion packets with
+  stable metadata.
+- Marked yaw/`servo_x` movement as `servo_x_candidate_yaw_sequence`, added an
+  explicit yaw clamp helper, and tested yaw keyframes remain within
+  `-180..180`.
+- Marked RGB as semantic `*_no_rgb_frame` metadata because this adapter does
+  not emit an official RGB packet yet.
+- Kept display, heartbeat, camera, video, and call frame classes outside the
+  avatar/action adapter.
+- Updated `POST /v1/stackchan/official/control` to return packet count,
+  official action surfaces, and `official_action_physical_accepted=false`.
+- Mirrored the same action metadata into `/v1/devices.runtime_echo` with
+  `official_stackchan_` keys.
+- Updated protocol, observability, hardware capability charter, current
+  control, hardware parity plan, project state machine, and this handoff.
+
+Changed files:
+
+- `internal/transport/stackchan/official_avatar.go`
+- `internal/transport/stackchan/official_avatar_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not physical avatar, servo, or RGB evidence. It only proves packet
+  shape, Gateway response metadata, and registry metadata.
+- RGB still needs a future official packet/evidence cut before any physical LED
+  claim.
+- `servo_x` yaw remains candidate-only until mechanical safety and visible
+  motion evidence are collected in a foreground hardware window.
+
+Known risks/blockers:
+
+- `/v1/stackchan/official/control` delivery only proves websocket packet write
+  to a connected official StackChan socket; it does not prove the physical
+  device moved or rendered.
+- Future official frame classes such as text/call/video/camera/audio stream
+  still require separate privacy/safety scopes and must not be smuggled into
+  this adapter.
+
+Recommended next action:
+
+- Dispatch `T-STACKCHAN-OFFICIAL-ACTION-PHYSICAL-EVIDENCE-001` only after an
+  approved hardware window is open. It should collect touch, barge-in, visible
+  avatar/motion, RGB, and servo evidence with trace/session/device IDs.
+
+Test/build/runtime results:
+
+- `go test ./internal/transport/stackchan -count=1`: passed.
+- `go test ./internal/gateway -run 'Test.*Official.*Control|Test.*StackChan.*Action' -count=1`:
+  passed.
+- `go test ./internal/transport/stackchan ./internal/gateway -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this round.

@@ -663,7 +663,7 @@ motion.dance -> official DanceSequence packet
 motion.stop -> neutral motion stop
 ```
 
-- [ ] Step 1: Write failing transport tests.
+- [x] Step 1: Write failing transport tests.
 
 Test cases:
 
@@ -683,7 +683,7 @@ Expected:
 
 - Tests fail for missing mapping or metadata.
 
-- [ ] Step 2: Implement semantic mapping.
+- [x] Step 2: Implement semantic mapping.
 
 Implementation requirements:
 
@@ -693,7 +693,7 @@ Implementation requirements:
 - Return a structured unsupported result for hardware that is not available
   or not accepted.
 
-- [ ] Step 3: Add Gateway control tests.
+- [x] Step 3: Add Gateway control tests.
 
 Test cases:
 
@@ -712,7 +712,7 @@ Expected:
 
 - Tests fail before Gateway mapping updates, then pass after implementation.
 
-- [ ] Step 4: Verify.
+- [x] Step 4: Verify.
 
 Run:
 

@@ -2363,6 +2363,7 @@ Next state:
 | T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001: Official hardware parity gap map | Completed docs/state baseline | Worker froze the official-vs-A21 hardware/control/status gap map in `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md` using the local official StackChan root `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483` as a dirty working-tree reference and the Xiaozhi sub-tree `e77dedb1309153bb63fed285772962c920c97dd4` as a clean detached-HEAD reference. The map distinguishes `available`, `diagnostic`, `planned`, `blocked`, and `product-accepted`, assigns owner transitions, acceptance evidence, and rollback paths for every surface in the parity plan, and updates `docs/engineering/A21_CURRENT_CONTROL.md`. No Gateway start, provider/V21 execution, firmware build, flash, serial, or NVS write occurred. Next candidate is the low-risk MCP/status worker, not firmware or high-risk hardware. |
 | T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001: Official MCP status/control parity | Completed low-risk Gateway contract | Worker added `POST /v1/xiaozhi/mcp-control` for only `self.get_device_status`, `self.screen.set_brightness`, `self.screen.set_theme`, and `self.screen.get_info`. Requests require A21 `device_id`, carry or generate `trace_id` and `session_id`, require an online `/v1/xiaozhi` socket with `hello.features.mcp=true`, and record only redacted send markers after delivery. High-risk tools such as reboot, firmware upgrade, camera/photo, screen snapshot, stream/video, NFC, infrared, and app lifecycle are rejected before websocket write. This is not firmware work, physical evidence, or product acceptance. |
 | T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001: Official status-display registry parity | Completed Gateway/protocol registry contract | A21 protocol now has stable `DisplayState` values for official Xiaozhi/StackChan status words and normalizes unknown or legacy-looking states to `error`. Gateway records latest status-display metadata in `/v1/devices` with source, trace/session IDs, update timestamp, and `display_state_physical_accepted=false`; stock Xiaozhi turn state writes and A21 device events update the registry without erasing capabilities or runtime echo. Trace markers `stackchan.display_state.received`, `stackchan.display_state.normalized`, and `stackchan.display_state.registry_updated` are redacted state markers only. No Gateway service start, provider/V21 execution, firmware build, flash, serial, NVS write, or physical screen acceptance occurred. |
+| T-STACKCHAN-OFFICIAL-ACTION-PARITY-001: Official avatar/action semantic mapping | Completed Gateway/transport mapping contract | `BuildOfficialActionPlan` now returns official `ControlAvatar`, `ControlMotion`, or `DanceSequence` packets plus redacted metadata for packet count, semantic surfaces, and `physical_accepted=false`. Transport tests cover all semantic states, dance, yaw candidate clamping, unsupported display/heartbeat/camera/video/call frame classes, and no RGB-frame overclaim. Gateway `POST /v1/stackchan/official/control` returns action metadata and mirrors it into `/v1/devices.runtime_echo` with `official_stackchan_` prefixes. No Gateway service start, provider/V21 execution, firmware build, flash, serial, NVS write, or physical action acceptance occurred. |
 
 ## Blocked Transitions
 
@@ -2387,9 +2388,9 @@ Priority candidate added from the 2026-06-04 hardware parity comparison:
   - Plan:
     `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
   - Next action: main control should dispatch
-    `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001` for official avatar, motion,
-    RGB, and servo semantic mapping, with simulator/Gateway tests before any
-    physical hardware window.
+    `T-STACKCHAN-OFFICIAL-ACTION-PHYSICAL-EVIDENCE-001` only in an approved
+    foreground hardware window for touch, barge-in, visible action, RGB, and
+    servo evidence.
   - Boundary for next worker: no firmware build, flash, serial, NVS write,
     reboot/upgrade exposure, camera/photo, screen snapshot, video stream,
     NFC, infrared, or app-lifecycle changes.

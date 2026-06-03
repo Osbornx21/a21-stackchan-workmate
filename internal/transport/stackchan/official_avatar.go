@@ -24,6 +24,18 @@ type OfficialPacket struct {
 	Payload []byte
 }
 
+type OfficialActionPlan struct {
+	Event    xiaozhi.DeviceExtensionEvent
+	Packets  []OfficialPacket
+	Metadata OfficialActionMetadata
+}
+
+type OfficialActionMetadata struct {
+	PacketCount      int
+	PhysicalAccepted bool
+	Surfaces         map[string]string
+}
+
 func (packet OfficialPacket) Bytes() []byte {
 	wire := make([]byte, 5+len(packet.Payload))
 	wire[0] = packet.Type
@@ -33,11 +45,30 @@ func (packet OfficialPacket) Bytes() []byte {
 }
 
 func BuildOfficialPackets(event xiaozhi.DeviceExtensionEvent) ([]OfficialPacket, error) {
-	normalized, err := xiaozhi.NormalizeDeviceExtensionEvent(event)
+	plan, err := BuildOfficialActionPlan(event)
 	if err != nil {
 		return nil, err
 	}
+	return plan.Packets, nil
+}
 
+func BuildOfficialActionPlan(event xiaozhi.DeviceExtensionEvent) (OfficialActionPlan, error) {
+	normalized, err := xiaozhi.NormalizeDeviceExtensionEvent(event)
+	if err != nil {
+		return OfficialActionPlan{}, err
+	}
+	packets, err := buildOfficialPacketsForNormalized(normalized)
+	if err != nil {
+		return OfficialActionPlan{}, err
+	}
+	return OfficialActionPlan{
+		Event:    normalized,
+		Packets:  packets,
+		Metadata: officialActionMetadata(normalized, len(packets)),
+	}, nil
+}
+
+func buildOfficialPacketsForNormalized(normalized xiaozhi.DeviceExtensionEvent) ([]OfficialPacket, error) {
 	switch normalized.Kind {
 	case xiaozhi.DeviceEventKindFace:
 		packet, err := buildAvatarPacket(normalized.Value)
@@ -59,6 +90,53 @@ func BuildOfficialPackets(event xiaozhi.DeviceExtensionEvent) ([]OfficialPacket,
 		return buildMotionPackets(normalized)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedOfficialEvent, normalized.Kind)
+	}
+}
+
+func officialActionMetadata(normalized xiaozhi.DeviceExtensionEvent, packetCount int) OfficialActionMetadata {
+	surfaces := map[string]string{
+		"packet_contract": "official_stackchan_binary",
+		"rgb":             "unchanged_no_rgb_frame",
+	}
+	switch normalized.Kind {
+	case xiaozhi.DeviceEventKindFace:
+		surfaces["avatar"] = normalized.Value
+		surfaces["servo_y"] = "unchanged"
+		surfaces["servo_x"] = "unchanged"
+	case xiaozhi.DeviceEventKindState:
+		surfaces["avatar"] = faceForState(normalized.Value)
+		surfaces["servo_y"] = servoYForState(normalized.Value)
+		surfaces["servo_x"] = "not_used"
+		surfaces["rgb"] = rgbForState(normalized.Value)
+	case xiaozhi.DeviceEventKindMotion:
+		switch normalized.Value {
+		case "look_up":
+			surfaces["motion"] = "look_up"
+			surfaces["servo_y"] = "pitch_clamped"
+			surfaces["servo_x"] = "not_used"
+		case "stop":
+			surfaces["motion"] = "stop"
+			surfaces["servo_y"] = "pitch_center_stop"
+			surfaces["servo_x"] = "not_used"
+		case "nod":
+			surfaces["motion"] = "official_pitch_sequence"
+			surfaces["servo_y"] = "pitch_sequence"
+			surfaces["servo_x"] = "not_used"
+		case "shake":
+			surfaces["motion"] = "official_yaw_sequence"
+			surfaces["servo_y"] = "not_used"
+			surfaces["servo_x"] = "servo_x_candidate_yaw_sequence"
+		case "dance":
+			surfaces["motion"] = "official_dance_sequence"
+			surfaces["avatar"] = "dance_sequence"
+			surfaces["servo_y"] = "pitch_sequence"
+			surfaces["servo_x"] = "servo_x_candidate_yaw_sequence"
+		}
+	}
+	return OfficialActionMetadata{
+		PacketCount:      packetCount,
+		PhysicalAccepted: false,
+		Surfaces:         surfaces,
 	}
 }
 
@@ -223,6 +301,34 @@ func yAngleForState(state string) int {
 	}
 }
 
+func servoYForState(state string) string {
+	switch state {
+	case "listening":
+		return "pitch_slight_up"
+	case "thinking":
+		return "pitch_small_nod"
+	case "speaking":
+		return "pitch_speaking_candidate"
+	default:
+		return "pitch_center"
+	}
+}
+
+func rgbForState(state string) string {
+	switch state {
+	case "listening":
+		return "listening_semantic_no_rgb_frame"
+	case "thinking":
+		return "thinking_semantic_no_rgb_frame"
+	case "speaking":
+		return "speaking_semantic_no_rgb_frame"
+	case "error":
+		return "error_semantic_no_rgb_frame"
+	default:
+		return "soft_idle_semantic_no_rgb_frame"
+	}
+}
+
 func nodSequence() []officialDanceKeyframe {
 	return []officialDanceKeyframe{
 		{PitchServo: &officialServo{Angle: 380, Speed: 450}, DurationMS: 120},
@@ -233,9 +339,9 @@ func nodSequence() []officialDanceKeyframe {
 
 func shakeSequence() []officialDanceKeyframe {
 	return []officialDanceKeyframe{
-		{YawServo: &officialServo{Angle: -120, Speed: 450}, DurationMS: 120},
-		{YawServo: &officialServo{Angle: 120, Speed: 450}, DurationMS: 120},
-		{YawServo: &officialServo{Angle: 0, Speed: 350}, DurationMS: 160},
+		{YawServo: yawServo(-120, 450), DurationMS: 120},
+		{YawServo: yawServo(120, 450), DurationMS: 120},
+		{YawServo: yawServo(0, 350), DurationMS: 160},
 	}
 }
 
@@ -244,8 +350,22 @@ func danceSequence() []officialDanceKeyframe {
 	speaking := officialAvatarForFace("speaking")
 	return []officialDanceKeyframe{
 		{LeftEye: &happy.LeftEye, RightEye: &happy.RightEye, Mouth: &happy.Mouth, PitchServo: &officialServo{Angle: 420, Speed: 500}, DurationMS: 140},
-		{YawServo: &officialServo{Angle: -180, Speed: 600}, PitchServo: &officialServo{Angle: 540, Speed: 500}, DurationMS: 160},
-		{LeftEye: &speaking.LeftEye, RightEye: &speaking.RightEye, Mouth: &speaking.Mouth, YawServo: &officialServo{Angle: 180, Speed: 600}, DurationMS: 160},
-		{YawServo: &officialServo{Angle: 0, Speed: 450}, PitchServo: &officialServo{Angle: 450, Speed: 350}, DurationMS: 180},
+		{YawServo: yawServo(-180, 600), PitchServo: &officialServo{Angle: 540, Speed: 500}, DurationMS: 160},
+		{LeftEye: &speaking.LeftEye, RightEye: &speaking.RightEye, Mouth: &speaking.Mouth, YawServo: yawServo(180, 600), DurationMS: 160},
+		{YawServo: yawServo(0, 450), PitchServo: &officialServo{Angle: 450, Speed: 350}, DurationMS: 180},
 	}
+}
+
+func yawServo(angle int, speed int) *officialServo {
+	return &officialServo{Angle: clampYawAngle(angle), Speed: speed}
+}
+
+func clampYawAngle(angle int) int {
+	if angle < -180 {
+		return -180
+	}
+	if angle > 180 {
+		return 180
+	}
+	return angle
 }

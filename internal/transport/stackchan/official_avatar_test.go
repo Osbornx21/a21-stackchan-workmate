@@ -94,6 +94,68 @@ func TestOfficialPacketsMapStateToAvatarAndMotion(t *testing.T) {
 	}
 }
 
+func TestOfficialActionPlanMapsSemanticStatesDeterministically(t *testing.T) {
+	tests := map[string]struct {
+		wantPitch int
+		wantRGB   string
+	}{
+		"idle": {
+			wantPitch: 450,
+			wantRGB:   "soft_idle_semantic_no_rgb_frame",
+		},
+		"listening": {
+			wantPitch: 380,
+			wantRGB:   "listening_semantic_no_rgb_frame",
+		},
+		"thinking": {
+			wantPitch: 520,
+			wantRGB:   "thinking_semantic_no_rgb_frame",
+		},
+		"speaking": {
+			wantPitch: 480,
+			wantRGB:   "speaking_semantic_no_rgb_frame",
+		},
+		"error": {
+			wantPitch: 450,
+			wantRGB:   "error_semantic_no_rgb_frame",
+		},
+	}
+
+	for state, tc := range tests {
+		t.Run(state, func(t *testing.T) {
+			plan, err := BuildOfficialActionPlan(xiaozhi.DeviceExtensionEvent{
+				Kind:  xiaozhi.DeviceEventKindState,
+				Value: state,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Packets) != 2 || plan.Metadata.PacketCount != 2 {
+				t.Fatalf("packets=%d metadata=%+v, want exactly avatar + motion", len(plan.Packets), plan.Metadata)
+			}
+			if plan.Packets[0].Type != DataTypeControlAvatar || plan.Packets[1].Type != DataTypeControlMotion {
+				t.Fatalf("packet types = %#x %#x, want avatar then motion", plan.Packets[0].Type, plan.Packets[1].Type)
+			}
+			var motion map[string]map[string]int
+			if err := json.Unmarshal(plan.Packets[1].Payload, &motion); err != nil {
+				t.Fatal(err)
+			}
+			if motion["pitchServo"]["angle"] != tc.wantPitch {
+				t.Fatalf("pitchServo = %#v, want angle %d", motion["pitchServo"], tc.wantPitch)
+			}
+			if plan.Metadata.PhysicalAccepted {
+				t.Fatalf("metadata = %+v, must not claim physical acceptance", plan.Metadata)
+			}
+			if plan.Metadata.Surfaces["rgb"] != tc.wantRGB {
+				t.Fatalf("rgb metadata = %q, want %q", plan.Metadata.Surfaces["rgb"], tc.wantRGB)
+			}
+			if plan.Metadata.Surfaces["packet_contract"] != "official_stackchan_binary" {
+				t.Fatalf("metadata = %+v, want official packet contract", plan.Metadata)
+			}
+		})
+	}
+}
+
 func TestOfficialPacketsMapDanceToOfficialDanceSequence(t *testing.T) {
 	packets, err := BuildOfficialPackets(xiaozhi.DeviceExtensionEvent{
 		Kind:  xiaozhi.DeviceEventKindMotion,
@@ -115,6 +177,43 @@ func TestOfficialPacketsMapDanceToOfficialDanceSequence(t *testing.T) {
 	}
 }
 
+func TestOfficialActionPlanMarksYawCandidateWithoutPhysicalAcceptance(t *testing.T) {
+	plan, err := BuildOfficialActionPlan(xiaozhi.DeviceExtensionEvent{
+		Kind:  xiaozhi.DeviceEventKindMotion,
+		Value: "shake",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Packets) != 1 || plan.Packets[0].Type != DataTypeDanceSequence {
+		t.Fatalf("packets = %+v, want one official DanceSequence for shake", plan.Packets)
+	}
+	if plan.Metadata.PhysicalAccepted {
+		t.Fatalf("metadata = %+v, must not claim physical acceptance", plan.Metadata)
+	}
+	if plan.Metadata.Surfaces["servo_x"] != "servo_x_candidate_yaw_sequence" {
+		t.Fatalf("metadata = %+v, want yaw candidate marker", plan.Metadata)
+	}
+	if plan.Metadata.Surfaces["rgb"] != "unchanged_no_rgb_frame" {
+		t.Fatalf("metadata = %+v, want no RGB frame marker", plan.Metadata)
+	}
+
+	var sequence []struct {
+		YawServo *officialServo `json:"yawServo,omitempty"`
+	}
+	if err := json.Unmarshal(plan.Packets[0].Payload, &sequence); err != nil {
+		t.Fatal(err)
+	}
+	for _, keyframe := range sequence {
+		if keyframe.YawServo == nil {
+			continue
+		}
+		if keyframe.YawServo.Angle < -180 || keyframe.YawServo.Angle > 180 {
+			t.Fatalf("yaw keyframe = %+v, want clamped -180..180", keyframe.YawServo)
+		}
+	}
+}
+
 func TestOfficialPacketsRejectDisplayEventsOutsideAvatarActionAdapter(t *testing.T) {
 	_, err := BuildOfficialPackets(xiaozhi.DeviceExtensionEvent{
 		Kind:  xiaozhi.DeviceEventKindDisplay,
@@ -122,5 +221,18 @@ func TestOfficialPacketsRejectDisplayEventsOutsideAvatarActionAdapter(t *testing
 	})
 	if err == nil {
 		t.Fatal("expected unsupported event error")
+	}
+}
+
+func TestOfficialActionPlanKeepsUnsupportedFrameClassesOut(t *testing.T) {
+	for _, kind := range []xiaozhi.DeviceEventKind{
+		xiaozhi.DeviceEventKindHeartbeat,
+		xiaozhi.DeviceEventKind("camera"),
+		xiaozhi.DeviceEventKind("video"),
+		xiaozhi.DeviceEventKind("call"),
+	} {
+		if _, err := BuildOfficialActionPlan(xiaozhi.DeviceExtensionEvent{Kind: kind}); err == nil {
+			t.Fatalf("BuildOfficialActionPlan(%q) succeeded, want unsupported", kind)
+		}
 	}
 }

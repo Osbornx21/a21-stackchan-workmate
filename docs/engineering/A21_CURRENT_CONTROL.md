@@ -114,6 +114,11 @@ Status:
   trace/session linkage from stock Xiaozhi turn states or A21 device events.
   This is not physical screen acceptance; `display_state_physical_accepted`
   remains false until a separate hardware evidence report exists.
+- Official avatar/action parity has landed as a host/Gateway mapping contract:
+  `BuildOfficialActionPlan` maps state/face/motion to official
+  `ControlAvatar`, `ControlMotion`, or `DanceSequence` packets plus redacted
+  action metadata. `servo_x` remains candidate-only and RGB is
+  `*_no_rgb_frame` metadata until a hardware evidence window proves more.
 - Official StackChan/Xiaozhi capabilities remain reference material. A21
   product availability still requires A21 evidence and the promotion gates in
   the capability charter.
@@ -129,8 +134,9 @@ Current official-source reference:
 
 Next operator/control action:
 
-- Dispatch `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001` for official avatar,
-  motion, RGB, and servo semantic mapping with simulator/Gateway tests first.
+- Dispatch `T-STACKCHAN-OFFICIAL-ACTION-PHYSICAL-EVIDENCE-001` only in an
+  approved foreground hardware window for touch/barge-in/visible action
+  evidence.
 - Keep reboot, upgrade, camera/photo, screen snapshot, camera stream/video,
   NFC, infrared, app lifecycle, firmware, flash, serial, and NVS out of the
   next worker.

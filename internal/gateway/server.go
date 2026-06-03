@@ -427,13 +427,16 @@ type XiaozhiDeviceControlRequest struct {
 }
 
 type XiaozhiDeviceControlResponse struct {
-	TraceID            string `json:"trace_id"`
-	SessionID          string `json:"session_id"`
-	DeviceID           string `json:"device_id"`
-	Status             string `json:"status"`
-	DeliveredTransport string `json:"delivered_transport"`
-	Event              string `json:"event"`
-	Value              string `json:"value"`
+	TraceID                        string            `json:"trace_id"`
+	SessionID                      string            `json:"session_id"`
+	DeviceID                       string            `json:"device_id"`
+	Status                         string            `json:"status"`
+	DeliveredTransport             string            `json:"delivered_transport"`
+	Event                          string            `json:"event"`
+	Value                          string            `json:"value"`
+	PacketCount                    int               `json:"packet_count,omitempty"`
+	OfficialActionPhysicalAccepted *bool             `json:"official_action_physical_accepted,omitempty"`
+	OfficialActionSurfaces         map[string]string `json:"official_action_surfaces,omitempty"`
 }
 
 type XiaozhiSpeakerVolumeRequest struct {
@@ -3058,11 +3061,12 @@ func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.R
 		http.Error(w, "invalid official stackchan event", http.StatusBadRequest)
 		return
 	}
-	packets, err := stackchantransport.BuildOfficialPackets(event)
+	plan, err := stackchantransport.BuildOfficialActionPlan(event)
 	if err != nil {
 		http.Error(w, "unsupported official stackchan event", http.StatusBadRequest)
 		return
 	}
+	event = plan.Event
 	socket, ok := s.officialStackChanSocket(req.DeviceID)
 	if !ok {
 		http.Error(w, "official stackchan websocket is not connected", http.StatusConflict)
@@ -3070,7 +3074,7 @@ func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.R
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	socket.writeMu.Lock()
-	for _, packet := range packets {
+	for _, packet := range plan.Packets {
 		err = socket.conn.Write(r.Context(), websocket.MessageBinary, packet.Bytes())
 		if err != nil {
 			break
@@ -3081,15 +3085,18 @@ func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.R
 		http.Error(w, "official stackchan command delivery failed", http.StatusBadGateway)
 		return
 	}
-	s.recordOfficialStackChanControlDelivered(req.DeviceID, traceID, sessionID, event, len(packets))
+	s.recordOfficialStackChanControlDelivered(req.DeviceID, traceID, sessionID, event, plan.Metadata)
 	writeJSON(w, http.StatusOK, XiaozhiDeviceControlResponse{
-		TraceID:            traceID,
-		SessionID:          sessionID,
-		DeviceID:           req.DeviceID,
-		Status:             "delivered",
-		DeliveredTransport: "stackchan_official_ws",
-		Event:              string(event.Kind),
-		Value:              event.Value,
+		TraceID:                        traceID,
+		SessionID:                      sessionID,
+		DeviceID:                       req.DeviceID,
+		Status:                         "delivered",
+		DeliveredTransport:             "stackchan_official_ws",
+		Event:                          string(event.Kind),
+		Value:                          event.Value,
+		PacketCount:                    plan.Metadata.PacketCount,
+		OfficialActionPhysicalAccepted: boolValue(plan.Metadata.PhysicalAccepted),
+		OfficialActionSurfaces:         plan.Metadata.Surfaces,
 	})
 }
 
@@ -7428,7 +7435,7 @@ func (s *Server) recordXiaozhiDeviceControlDelivered(deviceID string, traceID st
 	s.devices[deviceID] = record
 }
 
-func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, packetCount int) {
+func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, metadata stackchantransport.OfficialActionMetadata) {
 	nowMS := s.now().UnixMilli()
 	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_control."+string(event.Kind), nowMS)
 	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_control.delivered", nowMS)
@@ -7453,8 +7460,19 @@ func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceI
 	case xiaozhitransport.DeviceEventKindMotion:
 		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"official_stackchan_last_motion": event.Value})
 	}
-	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"official_stackchan_packets": strconv.Itoa(packetCount)})
+	echo := map[string]string{
+		"official_stackchan_packets":           strconv.Itoa(metadata.PacketCount),
+		"official_stackchan_physical_accepted": strconv.FormatBool(metadata.PhysicalAccepted),
+	}
+	for key, value := range metadata.Surfaces {
+		echo["official_stackchan_"+key] = value
+	}
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, echo)
 	s.devices[deviceID] = record
+}
+
+func boolValue(value bool) *bool {
+	return &value
 }
 
 func (s *Server) deviceRecords() []DeviceRecord {

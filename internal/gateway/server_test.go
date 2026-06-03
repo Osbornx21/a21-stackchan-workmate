@@ -3423,6 +3423,26 @@ func TestOfficialStackChanControlEndpointDeliversOfficialMotionFrame(t *testing.
 		if response.Status != "delivered" || response.DeliveredTransport != "stackchan_official_ws" {
 			t.Fatalf("response = %+v, want official delivery", response)
 		}
+		if response.PacketCount != 1 ||
+			response.OfficialActionPhysicalAccepted == nil ||
+			*response.OfficialActionPhysicalAccepted ||
+			response.OfficialActionSurfaces["servo_y"] != "pitch_clamped" ||
+			response.OfficialActionSurfaces["servo_x"] != "not_used" ||
+			response.OfficialActionSurfaces["rgb"] != "unchanged_no_rgb_frame" {
+			t.Fatalf("response = %+v, want official action metadata without physical acceptance", response)
+		}
+		registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+		runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+		if !ok {
+			t.Fatalf("registry = %#v, want runtime_echo", registry)
+		}
+		if runtimeEcho["official_stackchan_packets"] != "1" ||
+			runtimeEcho["official_stackchan_physical_accepted"] != "false" ||
+			runtimeEcho["official_stackchan_servo_y"] != "pitch_clamped" ||
+			runtimeEcho["official_stackchan_servo_x"] != "not_used" ||
+			runtimeEcho["official_stackchan_rgb"] != "unchanged_no_rgb_frame" {
+			t.Fatalf("runtime_echo = %#v, want official action metadata without physical acceptance", runtimeEcho)
+		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}

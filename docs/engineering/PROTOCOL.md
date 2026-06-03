@@ -404,14 +404,24 @@ surfaces:
   `ControlMotion` (`0x04`), or `DanceSequence` (`0x14`), with a 1-byte type,
   4-byte big-endian payload length, and official JSON payload consumed by
   `updateAvatarFromJson`, `updateMotionFromJson`, or `DanceModifier`.
-  `display`, `heartbeat`, and playback diagnostics remain outside this
-  avatar/action adapter.
+  The adapter exposes an `OfficialActionPlan` with `packet_count`,
+  `official_action_surfaces`, and
+  `official_action_physical_accepted=false` metadata so operator tools can see
+  which avatar, pitch, yaw, and RGB semantic surfaces were requested without
+  treating delivery as physical acceptance. `servo_x` yaw sequences are marked
+  as candidate-only and clamped before frame construction. RGB is currently a
+  semantic `*_no_rgb_frame` marker because this adapter does not emit an
+  official RGB packet. `display`, `heartbeat`, camera, video, call, and
+  playback diagnostics remain outside this avatar/action adapter.
 - Gateway exposes `/stackChan/ws` as the official StackChan avatar/action relay
   path for upstream-compatible clients. A21 validation may send semantic
   commands through `POST /v1/stackchan/official/control`; Gateway then writes
   official binary avatar/action packets to the connected `/stackChan/ws`
-  socket. This relay is separate from the stock Xiaozhi voice socket and must
-  not add A21 visual semantics to Xiaozhi stock audio messages.
+  socket and returns only redacted action metadata: packet count, semantic
+  surface labels, and physical-accepted false. The same metadata is mirrored
+  into `/v1/devices.runtime_echo` with `official_stackchan_` keys. This relay
+  is separate from the stock Xiaozhi voice socket and must not add A21 visual
+  semantics to Xiaozhi stock audio messages.
 
 ### A21 StackChan Device Extension
 
