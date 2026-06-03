@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `d9362a7 feat(readiness): accept cloud-edge xiaozhi evidence`
+  `20d11a0 docs(control): record stepfun cloud-edge evidence`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -75,17 +75,17 @@ Evidence truth:
 
 Current active plan:
 
-- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
+- `docs/plans/2026-06-04-v21-professional-execution-validation.md`
 
 Transition:
 
-- `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
+- `T-V21-PROFESSIONAL-EXECUTION-001`
 
 Target:
 
-- Deploy the committed StepFun route-eligibility promotion, run fresh remote
-  StepFun provider smoke, and rerun readiness without changing internal test 3
-  `/v1/xiaozhi` protocol behavior or firmware flash state.
+- Close the server-side V21 professional execution gate through the explicit
+  A21/V21 adapter boundary, without importing V21 internals into A21 or
+  weakening the remaining physical StackChan PRD gates.
 
 ## Current Evidence Manifest
 
@@ -98,15 +98,18 @@ launch truth from raw report directory mtime.
 
 ## Active Workers
 
-Workers are scoped by `docs/plans/2026-06-04-full-launch-protocol-adaptation.md`.
-They must not broaden write sets silently.
+No active worker writer is currently authorized.
 
-| Worker | Scope | Write boundary |
-| --- | --- | --- |
-| A | Gateway Xiaozhi product protocol regression | `internal/gateway/*`, narrow `docs/engineering/PROTOCOL.md` clarification only |
-| B | Readiness and physical evidence adaptation | `internal/app/product_demo.go`, `internal/app/server_side_readiness_bundle.go`, `internal/app/xiaozhi_physical_evidence.go`, `internal/app/app_stackchan_xiaozhi_half_duplex.go`, focused app tests |
-| C | Official-compatible firmware evidence pointer | `internal/app/doctor.go`, `internal/app/app_office_preflight.go`, `internal/app/official_stackchan.go`, focused app tests, narrow firmware/doctor docs |
-| D | Provider selector and StepFun switch plan | `internal/providers/*`, provider app files, narrow provider/voice-selection docs, Gateway selector tests only if contract is wrong |
+Recent thread control snapshot:
+
+- A21 server mainline control thread:
+  `019e7f81-e218-7df1-8743-1ed66e7ddd37`, status `idle`.
+- A21 hardware control thread:
+  `019e8873-52f0-7570-8efd-04b899db7d4e`, status `notLoaded`.
+- Historical worktrees remain registered for evidence and branch history, but
+  they are not the active write surface for this transition.
+- Do not delete old worktrees, prune loose objects, or reinterpret old worker
+  outputs as current evidence during the launch-critical path.
 
 ## Allowed Commands For This Transition
 
@@ -138,9 +141,10 @@ NO_PROXY=47.103.57.217 no_proxy=47.103.57.217 curl -sS http://47.103.57.217/xiao
 
 - No bare `xiaozhi.bin` product flash.
 - No generic `xiaozhi-firmware-flash-*` product StackChan flashing.
-- No provider execute from Mac.
-- No V21 execute unless explicitly scoped in a later professional validation
-  task.
+- No provider execute from Mac except the already scoped StepFun evidence
+  recorded in the manifest.
+- No V21 execute unless the adapter boundary is configured and this active
+  professional validation plan's redaction/contract rules are followed.
 - No ECS root secret edits until the StepFun switch has its own guarded
   runtime task.
 - No hardware write or NVS write from this sprint unless a foreground hardware
@@ -238,11 +242,6 @@ Fresh readiness evidence:
 Current conclusion:
 
 - Public Gateway and ECS service health are good.
-- StepFun switch is blocked by missing remote StepFun env names, not by local
-  code or Gateway availability.
-- Next action is operator-side secret provisioning in
-  `/etc/a21/secrets/provider.env`, then guarded service restart and fresh
-  snapshots/evidence collection.
 
 ## Latest Control-Tower Result - 2026-06-04 02:28 CST
 
@@ -424,3 +423,42 @@ Current conclusion:
   replies, while ECS loopback and 5080lab public HTTP are healthy. Treat this as
   a source-path/network issue to inspect in Aliyun/network tooling, not as an
   A21 Gateway runtime blocker.
+
+## Latest Control-Tower Result - 2026-06-04 04:14 CST
+
+The StepFun cloud-edge server-side slice is accepted at source and ECS runtime,
+and the active server-side gap is now V21 professional execution.
+
+Current control facts:
+
+- Current branch is clean and synced to
+  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash` at
+  `20d11a0`.
+- A21 thread inspection shows no active worker writer.
+- Registered historical worktrees are not being cleaned or pruned.
+- Fresh StepFun provider and cloud-edge host voice reports remain the current
+  server-side evidence.
+- `A21_V21_ADAPTER_URL`, `A21_V21_BACKEND_URL`, and
+  `A21_V21_ADAPTER_TOKEN` are missing in the current shell.
+- Local `127.0.0.1:21121` is not listening.
+- Existing V21 reports are old 2026-06-01/02 evidence and must not be used to
+  close the 2026-06-04 V21 gate without a fresh adapter run.
+- Fresh V21 dry-run report:
+  `reports/a21-v21-adapter-smoke-20260604-041657.json`, `skipped`,
+  `configured=false`, `executed=false`, `redaction_ok=true`.
+- Fresh local collector reports
+  `reports/a21-product-readiness-20260604-041710.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-041710.json` are
+  control-shell blocker evidence only; they do not supersede the 04:02 ECS
+  StepFun/cloud-edge canonical evidence because the local shell has no live
+  Gateway/provider selector context.
+
+Active transition:
+
+- `docs/plans/2026-06-04-v21-professional-execution-validation.md`
+- `T-V21-PROFESSIONAL-EXECUTION-001`
+
+Current conclusion:
+
+- Server-side readiness is ready for V21 adapter evidence, but V21 is blocked
+  on a missing adapter/backend boundary from this control shell.

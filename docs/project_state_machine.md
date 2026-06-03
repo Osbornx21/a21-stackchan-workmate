@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-SERVER-SIDE-EVIDENCE-READY-V21-AND-PHYSICAL-PENDING`
+Current total state: `S-PUBLIC-GATEWAY-STEPFUN-CLOUD-EDGE-SERVER-SIDE-EVIDENCE-READY-V21-BOUNDARY-BLOCKED-PHYSICAL-PENDING`
 
 Active child transitions:
 
@@ -36,6 +36,7 @@ Active child transitions:
 - `T-ECS-STEPFUN-001-CONTROL-PLANE-AND-RUNTIME-SWITCH`
 - `T-PUBLIC-GATEWAY-002-CODE-SYNC-BEFORE-STEPFUN`
 - `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
+- `T-V21-PROFESSIONAL-EXECUTION-001`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -153,6 +154,20 @@ host, so this is tracked as a source-path/network issue rather than an A21
 runtime blocker. Do not use the Mac direct-curl symptom to invalidate the fresh
 ECS/5080lab runtime evidence, and do not claim launch readiness without the
 remaining V21 and physical evidence gates.
+`T-V21-PROFESSIONAL-EXECUTION-001` is now the active server-side transition
+after the StepFun cloud-edge evidence cut. The current control shell has no
+`A21_V21_ADAPTER_URL`, no `A21_V21_BACKEND_URL`, no `A21_V21_ADAPTER_TOKEN`,
+and no local `127.0.0.1:21121` listener. Historical V21 reports from
+2026-06-01/02 must not be used to close the current gate. The plan is
+`docs/plans/2026-06-04-v21-professional-execution-validation.md`; it allows a
+fresh redacted adapter-boundary smoke only after the boundary is configured and
+keeps physical StackChan PRD acceptance separate.
+Fresh control-shell reports
+`reports/a21-v21-adapter-smoke-20260604-041657.json`,
+`reports/a21-product-readiness-20260604-041710.json`, and
+`reports/a21-server-side-readiness-bundle-20260604-041710.json` are
+boundary-missing/operator-ask evidence only. They must not supersede the 04:02
+ECS StepFun/cloud-edge provider and host-voice evidence.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

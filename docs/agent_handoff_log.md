@@ -9573,3 +9573,93 @@ Recommended next action:
   the adapter evidence without leaking query text or provider outputs.
 - In a foreground hardware window, collect physical playback/stop/audible
   evidence for the current StepFun cloud-edge chain.
+
+## 2026-06-04 04:14 CST - V21 Professional Execution Transition Opened
+
+Round goal:
+
+- Keep control over active A21 threads/worktrees after the ECS StepFun
+  recovery.
+- Move the next server-side launch blocker from an implicit missing item into
+  an explicit V21 professional execution transition.
+- Avoid reusing stale 2026-06-01/02 V21 reports or broad-resetting internal
+  test 3 protocol work.
+
+Actual completed work:
+
+- Inspected A21 thread status: the server mainline control thread is `idle`,
+  and the hardware control thread is `notLoaded`; no active worker writer is
+  currently authorized.
+- Confirmed the current branch is clean and synced to the remote at
+  `20d11a0`.
+- Confirmed historical worktrees remain registered but are not the active write
+  surface for this transition.
+- Added scoped plan
+  `docs/plans/2026-06-04-v21-professional-execution-validation.md`.
+- Updated current control, evidence manifest, and state machine so V21
+  professional execution is the active server-side transition.
+- Ran safe V21 discovery only: CLI help, env-name presence, local adapter
+  listener check, and report-age listing.
+- Generated fresh local V21 dry-run report
+  `reports/a21-v21-adapter-smoke-20260604-041657.json`.
+- Reran local product/server-side readiness collectors with the fresh V21
+  dry-run and latest StepFun/cloud-edge report pointers:
+  `reports/a21-product-readiness-20260604-041710.json` and
+  `reports/a21-server-side-readiness-bundle-20260604-041710.json`.
+- Marked those local collector reports as boundary-missing/operator-ask
+  evidence only, not canonical launch evidence superseding the 04:02 ECS
+  StepFun/cloud-edge reports.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/plans/2026-06-04-v21-professional-execution-validation.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- No fresh executed V21 adapter smoke has run yet.
+- No product/server-side readiness rerun has absorbed V21 evidence yet.
+- Physical StackChan PRD acceptance remains open.
+
+Known risks/blockers:
+
+- Current shell has no `A21_V21_ADAPTER_URL`, no `A21_V21_BACKEND_URL`, no
+  `A21_V21_ADAPTER_TOKEN`, and no local `127.0.0.1:21121` listener.
+- Local default V21 backend `127.0.0.1:18080` is not reachable, so the A21
+  adapter bridge cannot be started against a local backend from this shell.
+- Historical V21 reports are from 2026-06-01/02 and must not close the current
+  2026-06-04 V21 gate.
+- Do not execute V21 until the A21 adapter boundary or approved V21 backend
+  boundary is configured.
+
+Test/build/runtime results:
+
+- `go run ./cmd/a21 v21-adapter-smoke --help`: passed.
+- `go run ./cmd/a21 xiaozhi-professional-bench --help`: passed.
+- `go run ./cmd/a21 v21-adapter-bridge --help`: passed.
+- Env-name presence check: V21 adapter/backend/token missing in current shell.
+- Local `21121` listener check: no listener.
+- `go run ./cmd/a21 v21-adapter-smoke --output-dir reports`: passed with
+  `status=skipped`, `configured=false`, `executed=false`, `redaction_ok=true`.
+- Local `18080` backend check: connection refused.
+- Local product readiness collector:
+  `reports/a21-product-readiness-20260604-041710.json`,
+  `server_side_blocked` from local shell missing Gateway/provider/selector/V21.
+- Local server-side readiness collector:
+  `reports/a21-server-side-readiness-bundle-20260604-041710.json`,
+  `server_side_blocked` from local shell missing Gateway/provider/selector/V21,
+  redaction flags false for payloads/prompts/transcripts/provider outputs/
+  evidence bodies/full URLs/local paths/credentials.
+- `git diff --check`: passed after the first control-doc update.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- If an A21/V21 adapter boundary or V21 backend boundary is provided, run one
+  redacted `v21-adapter-smoke --execute`, then rerun server-side readiness.
+- Operator needs to provide either `A21_V21_ADAPTER_URL` for a running adapter
+  boundary or `A21_V21_BACKEND_URL` plus optional `A21_V21_COLLECTION_ID` for
+  the A21 bridge; do not provide raw V21 evidence or document contents.

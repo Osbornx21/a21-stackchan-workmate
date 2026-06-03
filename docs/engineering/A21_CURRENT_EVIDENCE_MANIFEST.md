@@ -258,6 +258,42 @@ Current decision:
 Network note:
 
 - ECS loopback, Caddy, 5080lab public checks, and Gateway selector are healthy.
+
+## 2026-06-04 V21 Professional Evidence Transition
+
+The next server-side transition is
+`docs/plans/2026-06-04-v21-professional-execution-validation.md`.
+
+Current V21 adapter state from the control shell:
+
+- `A21_V21_ADAPTER_URL`: missing.
+- `A21_V21_BACKEND_URL`: missing.
+- `A21_V21_ADAPTER_TOKEN`: missing.
+- Local adapter boundary `127.0.0.1:21121`: not listening.
+- Historical V21 reports under `reports/` are from 2026-06-01/02 and are not
+  current launch evidence for this 2026-06-04 sprint.
+
+Evidence decision:
+
+- Do not close `v21_professional_execution` from old reports or adapter health
+  alone.
+- Required evidence is a fresh redacted `v21-adapter-smoke --execute` report
+  through the explicit A21/V21 adapter boundary.
+- If no adapter/backend boundary is available, readiness remains
+  `server_side_blocked` with a precise operator ask rather than an inferred
+  failure of the A21 runtime.
+
+Fresh local control-shell reports:
+
+| Scope | Report | Status | Launch Use |
+| --- | --- | --- | --- |
+| V21 adapter dry-run | `reports/a21-v21-adapter-smoke-20260604-041657.json` | `skipped`, `configured=false`, `executed=false`, `redaction_ok=true` | Operator ask / boundary-missing evidence only |
+| Local product readiness collector | `reports/a21-product-readiness-20260604-041710.json` | `server_side_blocked` from local shell missing Gateway/provider/selector/V21 | Not canonical launch evidence; do not supersede ECS 04:02 reports |
+| Local server-side readiness collector | `reports/a21-server-side-readiness-bundle-20260604-041710.json` | `server_side_blocked` from local shell missing Gateway/provider/selector/V21 | Not canonical launch evidence; do not supersede ECS 04:02 reports |
+
+Use the 04:02 ECS StepFun/cloud-edge reports as the current canonical
+provider/host-voice evidence. Use the 04:16/04:17 local reports only to explain
+why V21 execution cannot run from this shell yet.
 - This control Mac still receives empty HTTP replies from direct public curls,
   and a later ECS tcpdump did not observe the Mac curl reaching the host. Treat
   this as a source-path/network issue, not as current A21 runtime health
