@@ -8713,3 +8713,59 @@ Recommended next action:
 - Use the internal test 3 package for team testing on the public Gateway, then
   separately cut the StepFun remote switch and trusted physical playback/stop
   acknowledgement evidence.
+
+## 2026-06-03 23:5x CST - Internal Test 3 Master Handoff Document
+
+Round goal:
+
+- Create a complete repo-carried handoff for the current long control thread so
+  the next control/worker thread can resume without relying on chat memory.
+- Tie the handoff to the committed internal test 3 release state, public
+  Gateway state, package SHA, firmware lane guardrails, commit ledger,
+  validation evidence, and remaining blockers.
+
+Actual completed work:
+
+- Added `docs/handoffs/2026-06-03-a21-internal-test3-master-handoff.md`.
+- Captured the current branch/HEAD split: repo HEAD is
+  `221c153 docs(release): publish internal test 3`, while the internal test 3
+  package source archive remains pinned to `074e3d877d33`.
+- Re-verified the package tarball SHA check.
+- Re-queried the live public Gateway `47.103.57.217` for health, device,
+  voice-chain profile, and OTA snapshots while writing the handoff.
+- Recorded the current truth that live runtime still reports
+  `stepfun_not_selected` and selected LLM `deepseek`.
+- Preserved the release framing: internal test 3 voice main-chain accepted for
+  team testing, but not full PRD launch green.
+
+Changed files:
+
+- `docs/handoffs/2026-06-03-a21-internal-test3-master-handoff.md`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Test/build/runtime results:
+
+- `curl http://47.103.57.217/healthz`: ok.
+- `curl http://47.103.57.217/v1/devices`: product device
+  `44:1b:f6:e2:6a:60` online.
+- `curl http://47.103.57.217/v1/voice-chain-profiles`: cascade mode,
+  DashScope realtime ASR, DeepSeek LLM, DashScope realtime TTS,
+  `stepfun_not_selected`.
+- `curl http://47.103.57.217/xiaozhi/ota/`: returns
+  `ws://47.103.57.217/v1/xiaozhi`.
+- `shasum -c dist/a21-internal-test3-20260603-233245.tar.gz.sha256`: passed.
+
+Known risks/blockers:
+
+- The handoff is documentation-only and does not switch StepFun, restart
+  Gateway, rebuild firmware, or collect new physical playback ack/stop_done.
+- Existing untracked noise remains untouched:
+  `.DS_Store`, `internal/.DS_Store`,
+  `docs/engineering/A21_GOVERNANCE_REMEDIATION_PLAN.md`.
+
+Recommended next action:
+
+- Commit this handoff document, then use it as the first-read file for the next
+  control-thread continuation. The next product work should be the StepFun
+  remote switch or trusted physical playback/stop acknowledgement evidence.

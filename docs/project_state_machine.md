@@ -71,7 +71,11 @@ runtime snapshot shows `cascade` with ASR `dashscope_qwen_asr_realtime`, LLM
 `deepseek`, fixed TTS `dashscope_qwen_tts_realtime`, hot switch enabled, and
 `stepfun_not_selected` still present. Machine-readable physical evidence is
 still `candidate_gateway_downlink`, so this is an internal voice-main-chain
-release rather than full PRD launch readiness.
+release rather than full PRD launch readiness. The detailed recovery surface
+for this long control thread is
+`docs/handoffs/2026-06-03-a21-internal-test3-master-handoff.md`; read it before
+continuing Gateway, provider, firmware, or physical StackChan work from this
+state.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL
