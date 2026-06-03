@@ -7868,6 +7868,35 @@ Recommended next action:
 4. Only after public host bench has binary downlink, test the physical
    StackChan against `ws://47.103.57.217/v1/xiaozhi`.
 
+Follow-up result:
+
+- Deployed commits through `8752b8d` to main public Gateway `47.103.57.217`.
+- Root cause after provider-state-machine fix was remote env mismatch:
+  `A21_DASHSCOPE_TTS_MODEL`/`A21_DASHSCOPE_TTS_VOICE` pointed at a CosyVoice
+  model/voice family while the selected adapter was Qwen-TTS Realtime. The
+  service rejected `session.update`, which showed in trace as
+  `xiaozhi.voice_pipeline.failed.tts_session_update_failed`.
+- Backed up `/etc/a21/secrets/provider.env`, then changed only root-only ECS
+  env values to Qwen-TTS Realtime family. No provider key was printed or
+  written to repo/firmware.
+- Public host-loopback product-chain bench passed:
+  `reports/a21-xiaozhi-voice-bench-20260603-201052.155507000.json`.
+- Evidence from that report:
+  - `acceptance_status=candidate_host_only`
+  - `prd_accepted=false`
+  - `provider_executed=true`
+  - `voice_pipeline_execution_mode=cloud_edge`
+  - answer binary downlink frames: `127`
+  - answer first-audio total p95: `806 ms`
+  - trace ASR first partial/final: `158 ms`
+  - LLM first content: `517 ms`
+  - TTS first audio: `556 ms`
+  - audio downlink first frame: `523 ms`
+  - barge-in stop p95: `12 ms`
+  - downlink audio quality: `passed`
+- This proves the public cloud-edge Gateway candidate chain, not physical
+  StackChan wake/mic/audible/barge-in acceptance.
+
 ## 2026-06-03 18:24 CST - Voice Chain Selector Hot Switch
 
 Round goal:
