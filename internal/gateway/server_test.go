@@ -3496,10 +3496,70 @@ func TestXiaozhiTurnLifecycleFansOutToOfficialStackChanState(t *testing.T) {
 	for _, want := range []string{
 		"stackchan.official_auto.state",
 		"stackchan.official_auto.delivered",
+		"stackchan.display_state.received",
+		"stackchan.display_state.normalized",
+		"stackchan.display_state.registry_updated",
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["display_state"] != string(protocol.DisplayStateListening) ||
+		registry["display_state_source"] != "xiaozhi" ||
+		registry["display_state_trace_id"] != "a21-trace-xiaozhi-official-state" ||
+		registry["display_state_session_id"] != "a21-session-xiaozhi-official-state" ||
+		registry["display_state_physical_accepted"] != false {
+		t.Fatalf("display registry = %#v, want listening xiaozhi non-accepted state", registry)
+	}
+	if updated, ok := registry["display_state_updated_at_ms"].(float64); !ok || updated <= 0 {
+		t.Fatalf("display updated_at = %#v, want positive ms", registry["display_state_updated_at_ms"])
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok || capabilities["xiaozhi_feature_mcp"] != "true" {
+		t.Fatalf("display update erased xiaozhi capabilities: %#v", registry)
+	}
+}
+
+func TestDeviceEventDisplayStateRegistryNormalizesAndPreservesState(t *testing.T) {
+	server := NewServer()
+	event := protocol.Envelope{
+		Protocol:  protocol.ProtocolVersion,
+		DeviceID:  "stackchan-display-001",
+		Kind:      protocol.KindDeviceEvent,
+		Seq:       1,
+		TraceID:   "a21-trace-display-device-event",
+		SessionID: "a21-session-display-device-event",
+	}
+	server.recordDeviceEvent(event, protocol.DeviceEventPayload{
+		Event:        protocol.DeviceEventRuntimeEcho,
+		DisplayState: protocol.NormalizeOfficialDisplayState("x21-render"),
+		Capabilities: map[string]string{
+			"screen": "available",
+		},
+		RuntimeEcho: map[string]string{
+			"battery": "planned_diagnostic",
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["display_state"] != string(protocol.DisplayStateError) ||
+		registry["display_state_source"] != "device_event" ||
+		registry["display_state_trace_id"] != "a21-trace-display-device-event" ||
+		registry["display_state_session_id"] != "a21-session-display-device-event" ||
+		registry["display_state_physical_accepted"] != false {
+		t.Fatalf("display registry = %#v, want normalized error device_event state", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok || capabilities["screen"] != "available" {
+		t.Fatalf("capabilities erased by display state update: %#v", registry)
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok || runtimeEcho["battery"] != "planned_diagnostic" {
+		t.Fatalf("runtime_echo erased by display state update: %#v", registry)
 	}
 }
 

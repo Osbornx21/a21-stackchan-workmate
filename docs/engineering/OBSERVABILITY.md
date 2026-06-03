@@ -20,7 +20,7 @@ The current CLI preflight/doctor report emits:
 
 The current gateway also exposes `GET /metrics` for Phase 3A mock runtime metrics.
 
-Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, StackChan capability map, firmware `runtime_echo` map, identity validation status, current mode, current expression, active playback stream, last trace/session IDs, first/last seen timestamps, and read-time freshness (`connection_status` plus `device_age_ms`). The registry is intentionally transcript-free: it must not persist utterance text, professional answer text, evidence body, or screen-card body.
+Gateway now also exposes `GET /v1/devices` for the current in-memory device registry. It records the latest control WebSocket device event, firmware identity, StackChan capability map, firmware `runtime_echo` map, identity validation status, current mode, current expression, current normalized status-display state, active playback stream, last trace/session IDs, first/last seen timestamps, and read-time freshness (`connection_status` plus `device_age_ms`). The registry is intentionally transcript-free: it must not persist utterance text, professional answer text, evidence body, or screen-card body.
 
 `runtime_echo` is emitted by firmware after it applies screen, motion, RGB, audio, and diagnostic sensor runtime state. Current stable visible keys are `screen`, `servo_y`, and `rgb`. Diagnostic mic-probe firmware also emits string counters for capture/send debugging, including mic frame count, driver errors, skip reasons, queue depth, queue drops, audio-WebSocket sent frame count, last absolute peak, and last nonzero sample count. The speaker/downlink lane emits playback buffer and speaker pump counters: queued chunks, accepted chunks, dropped chunks, clear count, played frames, busy ticks, driver errors, and last stream ID. The sensor-probe lane emits availability, sample/error counters, raw LTR553 ambient/proximity values, and INA226 battery voltage/current values. This is useful for capability evidence derivation and driver-state debugging, but physical office acceptance still needs separate visible/audible/operator or instrument observations.
 
@@ -268,6 +268,16 @@ Gateway does not store raw MCP response bodies, screenshots, image data,
 provider output, secrets, full URLs, local paths, transcripts, or raw/base64
 audio for these controls, and the markers are not physical screen/status
 acceptance evidence.
+Official status-display registry parity records only stable state labels and
+identity metadata. The trace markers are `stackchan.display_state.received`,
+`stackchan.display_state.normalized`, and
+`stackchan.display_state.registry_updated`. `/v1/devices` may expose
+`display_state`, `display_state_source`, `display_state_trace_id`,
+`display_state_session_id`, `display_state_updated_at_ms`, and
+`display_state_physical_accepted=false`. These markers do not prove a physical
+screen render and must not store raw screen text, screenshots, image data,
+provider output, transcripts, prompts, URLs, paths, secrets, or raw/base64
+audio.
 When a debug Xiaozhi client negotiates `features.device_events=true`, Gateway
 returns the debug-only A21 server-hello allowance `a21.profile=debug` and
 `a21.device_events=true`. A `type=device`, `kind=playback`, `playback=start`

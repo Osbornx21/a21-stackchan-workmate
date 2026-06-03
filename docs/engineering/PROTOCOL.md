@@ -350,6 +350,20 @@ surfaces:
   MCP websocket write. Delivery proves only that the MCP request was sent; it
   does not capture raw MCP responses and is not physical screen/status product
   acceptance.
+- Official StackChan/Xiaozhi status-display parity is recorded as A21 device
+  registry state, not as custom firmware drawing. Gateway normalizes official
+  state words into the stable A21 `display_state` vocabulary: `starting`,
+  `wifi_configuring`, `idle`, `connecting`, `listening`, `thinking`,
+  `speaking`, `upgrading`, `audio_testing`, `error`, and `fatal_error`.
+  Official aliases such as `activating` normalize to `connecting`; unknown,
+  legacy-looking, X21-looking, or V21-looking state names normalize to `error`.
+  Registry updates carry `display_state_source`, `display_state_trace_id`,
+  `display_state_session_id`, `display_state_updated_at_ms`, and
+  `display_state_physical_accepted=false` until a separate physical screen or
+  runtime echo acceptance report proves the device actually rendered the state.
+  The required trace markers are `stackchan.display_state.received`,
+  `stackchan.display_state.normalized`, and
+  `stackchan.display_state.registry_updated`.
 - `POST /v1/xiaozhi/say` is an operator foreground test path for an already
   connected stock Xiaozhi device. It validates `device_id` and exactly one
   playable source: either `text` or `wav_path`. `text` uses the configured
@@ -746,6 +760,16 @@ Gateway also records the device's current control state for office acceptance:
 - `current_mode`: latest semantic mode from A21 `control.event`
 - `current_voice_mode`: current explicit operator voice-mode selection
 - `current_expression`: latest expression/render state from A21 `control.event`
+- `display_state`: latest stable A21 status-display state normalized from
+  official Xiaozhi/StackChan state words or A21 device events
+- `display_state_source`: `xiaozhi`, `device_event`, `official_stackchan`, or
+  `unknown`
+- `display_state_trace_id` and `display_state_session_id`: trace/session that
+  caused the latest display-state update
+- `display_state_updated_at_ms`: Gateway timestamp for the latest
+  display-state update
+- `display_state_physical_accepted`: always false until a separate physical
+  screen/status acceptance report exists
 - `playback_stream_id`: active speaking stream when one is present
 - `capabilities`: latest semantic device capability map reported by firmware or simulator
 - `runtime_echo`: latest device-applied screen/servo/RGB echo reported by firmware

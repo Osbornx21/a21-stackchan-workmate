@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 const ProtocolVersion = "a21.device.v1"
@@ -82,6 +83,67 @@ const (
 	ExpressionError         ExpressionState = "error"
 )
 
+type DisplayState string
+
+const (
+	DisplayStateStarting        DisplayState = "starting"
+	DisplayStateWiFiConfiguring DisplayState = "wifi_configuring"
+	DisplayStateIdle            DisplayState = "idle"
+	DisplayStateConnecting      DisplayState = "connecting"
+	DisplayStateListening       DisplayState = "listening"
+	DisplayStateThinking        DisplayState = "thinking"
+	DisplayStateSpeaking        DisplayState = "speaking"
+	DisplayStateUpgrading       DisplayState = "upgrading"
+	DisplayStateAudioTesting    DisplayState = "audio_testing"
+	DisplayStateError           DisplayState = "error"
+	DisplayStateFatalError      DisplayState = "fatal_error"
+)
+
+func CanonicalDisplayStates() []DisplayState {
+	return []DisplayState{
+		DisplayStateStarting,
+		DisplayStateWiFiConfiguring,
+		DisplayStateIdle,
+		DisplayStateConnecting,
+		DisplayStateListening,
+		DisplayStateThinking,
+		DisplayStateSpeaking,
+		DisplayStateUpgrading,
+		DisplayStateAudioTesting,
+		DisplayStateError,
+		DisplayStateFatalError,
+	}
+}
+
+func NormalizeOfficialDisplayState(state string) DisplayState {
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "starting":
+		return DisplayStateStarting
+	case "wifi_configuring":
+		return DisplayStateWiFiConfiguring
+	case "idle", "standby":
+		return DisplayStateIdle
+	case "connecting", "activating":
+		return DisplayStateConnecting
+	case "listening":
+		return DisplayStateListening
+	case "thinking":
+		return DisplayStateThinking
+	case "speaking":
+		return DisplayStateSpeaking
+	case "upgrading":
+		return DisplayStateUpgrading
+	case "audio_testing":
+		return DisplayStateAudioTesting
+	case "fatal_error":
+		return DisplayStateFatalError
+	case "error":
+		return DisplayStateError
+	default:
+		return DisplayStateError
+	}
+}
+
 type ControlEventPayload struct {
 	State                    ExpressionState `json:"state"`
 	Mode                     Mode            `json:"mode"`
@@ -155,6 +217,7 @@ type DeviceEventPayload struct {
 	Event           DeviceEventKind   `json:"event"`
 	Mode            Mode              `json:"mode,omitempty"`
 	Text            string            `json:"text,omitempty"`
+	DisplayState    DisplayState      `json:"display_state,omitempty"`
 	TouchSource     TouchSource       `json:"touch_source,omitempty"`
 	FirmwareID      string            `json:"firmware_id,omitempty"`
 	FirmwareVersion string            `json:"firmware_version,omitempty"`

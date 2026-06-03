@@ -99,6 +99,70 @@ func TestExpressionStatesCoverLocalFallback(t *testing.T) {
 	}
 }
 
+func TestDisplayStatesNormalizeOfficialStatusDisplay(t *testing.T) {
+	tests := map[string]DisplayState{
+		"starting":         DisplayStateStarting,
+		"wifi_configuring": DisplayStateWiFiConfiguring,
+		"idle":             DisplayStateIdle,
+		"connecting":       DisplayStateConnecting,
+		"activating":       DisplayStateConnecting,
+		"listening":        DisplayStateListening,
+		"thinking":         DisplayStateThinking,
+		"speaking":         DisplayStateSpeaking,
+		"upgrading":        DisplayStateUpgrading,
+		"audio_testing":    DisplayStateAudioTesting,
+		"fatal_error":      DisplayStateFatalError,
+		"unknown":          DisplayStateError,
+		"x21-render":       DisplayStateError,
+		"v21-status":       DisplayStateError,
+	}
+	for input, want := range tests {
+		if got := NormalizeOfficialDisplayState(input); got != want {
+			t.Fatalf("NormalizeOfficialDisplayState(%q) = %q, want %q", input, got, want)
+		}
+	}
+	states := CanonicalDisplayStates()
+	if len(states) != 11 || states[0] != DisplayStateStarting || states[len(states)-1] != DisplayStateFatalError {
+		t.Fatalf("display states = %#v", states)
+	}
+}
+
+func TestDeviceEventPayloadCarriesDisplayStateWithA21Identity(t *testing.T) {
+	payload := DeviceEventPayload{
+		Event:        DeviceEventRuntimeEcho,
+		DisplayState: NormalizeOfficialDisplayState("listening"),
+	}
+	msg := Envelope{
+		Protocol:  ProtocolVersion,
+		DeviceID:  "stackchan-display-001",
+		Kind:      KindDeviceEvent,
+		Seq:       7,
+		TraceID:   "a21-trace-display-state",
+		SessionID: "a21-session-display-state",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg.Payload = body
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, want := range []string{
+		`"protocol":"a21.device.v1"`,
+		`"device_id":"stackchan-display-001"`,
+		`"trace_id":"a21-trace-display-state"`,
+		`"session_id":"a21-session-display-state"`,
+		`"display_state":"listening"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("display state envelope missing %q: %s", want, rendered)
+		}
+	}
+}
+
 func TestModesCoverA21OfficeAndProductStates(t *testing.T) {
 	tests := map[string]Mode{
 		"dialogue":       ModeDialogue,

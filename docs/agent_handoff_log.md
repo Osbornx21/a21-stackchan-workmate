@@ -10828,3 +10828,83 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this round.
+
+## 2026-06-04 07:09 CST - Official Status Display Registry Parity
+
+Round goal:
+
+- Land `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` as the next hardware
+  parity slice after the gap map and low-risk MCP/status worker, without
+  touching firmware, serial, NVS, providers, V21, or physical hardware.
+
+Actual completed work:
+
+- Added stable A21 `DisplayState` protocol values for official
+  StackChan/Xiaozhi status-display states:
+  `starting`, `wifi_configuring`, `idle`, `connecting`, `listening`,
+  `thinking`, `speaking`, `upgrading`, `audio_testing`, `error`, and
+  `fatal_error`.
+- Added official-to-A21 state normalization. Official aliases such as
+  `activating` normalize to `connecting`; unknown or legacy-looking names
+  normalize to `error`.
+- Added optional `display_state` to A21 device events.
+- Added `/v1/devices` registry display-state fields:
+  `display_state`, `display_state_source`, `display_state_trace_id`,
+  `display_state_session_id`, `display_state_updated_at_ms`, and
+  `display_state_physical_accepted`.
+- Updated stock Xiaozhi turn-state fanout and A21 device-event ingestion to
+  record display state without erasing device capabilities or `runtime_echo`.
+- Added trace markers `stackchan.display_state.received`,
+  `stackchan.display_state.normalized`, and
+  `stackchan.display_state.registry_updated`.
+- Updated protocol, observability, current-control, hardware parity plan, and
+  state-machine docs. Next hardware candidate is now
+  `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001`.
+
+Changed files:
+
+- `internal/protocol/message.go`
+- `internal/protocol/message_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is registry/status parity only. It does not prove physical screen
+  rendering, avatar behavior, RGB output, servo motion, or product acceptance.
+- `display_state_physical_accepted` remains false until a separate physical
+  screen/status report proves rendering on the device.
+- Official avatar/motion/RGB/servo semantic mapping remains the next scoped
+  Gateway/transport worker.
+
+Known risks/blockers:
+
+- Official display words that A21 does not recognize intentionally collapse to
+  `error`; future official aliases must be added through protocol tests before
+  being treated as product states.
+- Trace markers are state-label metadata only. They must not be used as
+  screen-rendering, camera, provider, V21, transcript, or audio evidence.
+
+Recommended next action:
+
+- Dispatch `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001` for official avatar,
+  motion, RGB, and servo semantic mapping with simulator/Gateway tests first.
+  Keep physical hardware control behind a separate foreground hardware window.
+
+Test/build/runtime results:
+
+- `go test ./internal/protocol ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or V21 execution occurred, and
+  no firmware build, flash, serial, NVS, or physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this round.

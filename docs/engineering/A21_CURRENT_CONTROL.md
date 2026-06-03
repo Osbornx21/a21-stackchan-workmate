@@ -109,6 +109,11 @@ Status:
   `POST /v1/xiaozhi/mcp-control` for only `self.get_device_status`,
   `self.screen.set_brightness`, `self.screen.set_theme`, and
   `self.screen.get_info`.
+- Status-display registry parity has landed as Gateway/protocol state:
+  `/v1/devices` now carries normalized `display_state` metadata and
+  trace/session linkage from stock Xiaozhi turn states or A21 device events.
+  This is not physical screen acceptance; `display_state_physical_accepted`
+  remains false until a separate hardware evidence report exists.
 - Official StackChan/Xiaozhi capabilities remain reference material. A21
   product availability still requires A21 evidence and the promotion gates in
   the capability charter.
@@ -124,8 +129,8 @@ Current official-source reference:
 
 Next operator/control action:
 
-- Dispatch `T-STACKCHAN-OFFICIAL-STATUS-DISPLAY-PARITY-001` for
-  Gateway/protocol device-registry status-display parity.
+- Dispatch `T-STACKCHAN-OFFICIAL-ACTION-PARITY-001` for official avatar,
+  motion, RGB, and servo semantic mapping with simulator/Gateway tests first.
 - Keep reboot, upgrade, camera/photo, screen snapshot, camera stream/video,
   NFC, infrared, app lifecycle, firmware, flash, serial, and NVS out of the
   next worker.

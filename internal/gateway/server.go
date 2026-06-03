@@ -534,6 +534,12 @@ type DeviceRecord struct {
 	CurrentVoiceCloneProfile string                   `json:"current_voice_clone_profile,omitempty"`
 	CurrentCloudVoiceProfile string                   `json:"current_cloud_voice_profile,omitempty"`
 	CurrentExpr              protocol.ExpressionState `json:"current_expression,omitempty"`
+	DisplayState             protocol.DisplayState    `json:"display_state,omitempty"`
+	DisplayStateSource       string                   `json:"display_state_source,omitempty"`
+	DisplayStateTraceID      string                   `json:"display_state_trace_id,omitempty"`
+	DisplayStateSessionID    string                   `json:"display_state_session_id,omitempty"`
+	DisplayStateUpdatedAtMS  int64                    `json:"display_state_updated_at_ms,omitempty"`
+	DisplayStateAccepted     bool                     `json:"display_state_physical_accepted"`
 	PlaybackStream           string                   `json:"playback_stream_id,omitempty"`
 	LastEvent                protocol.DeviceEventKind `json:"last_event,omitempty"`
 	LastTouchSource          protocol.TouchSource     `json:"last_touch_source,omitempty"`
@@ -4772,6 +4778,57 @@ func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event stri
 	s.devices[session.deviceID] = record
 }
 
+func (s *Server) recordDeviceDisplayState(deviceID string, traceID string, sessionID string, source string, rawState string) bool {
+	deviceID = strings.TrimSpace(deviceID)
+	rawState = strings.TrimSpace(rawState)
+	if deviceID == "" || rawState == "" {
+		return false
+	}
+	source = normalizeDisplayStateSource(source)
+	state := protocol.NormalizeOfficialDisplayState(rawState)
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	changed := record.DisplayState != state ||
+		record.DisplayStateSource != source ||
+		record.DisplayStateTraceID != traceID ||
+		record.DisplayStateSessionID != sessionID
+	record.DisplayState = state
+	record.DisplayStateSource = source
+	record.DisplayStateTraceID = traceID
+	record.DisplayStateSessionID = sessionID
+	record.DisplayStateUpdatedAtMS = nowMS
+	record.DisplayStateAccepted = false
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = nowMS
+	s.devices[deviceID] = record
+	s.mu.Unlock()
+	if !changed {
+		return false
+	}
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.display_state.received", nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.display_state.normalized", nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.display_state.registry_updated", nowMS)
+	return true
+}
+
+func normalizeDisplayStateSource(source string) string {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "xiaozhi", "device_event", "official_stackchan":
+		return strings.ToLower(strings.TrimSpace(source))
+	default:
+		return "unknown"
+	}
+}
+
 func (s *Server) recordXiaozhiPlaybackStart(session *xiaozhiSession, streamID string) {
 	s.recordXiaozhiPlaybackEvent(session, "device.playback.start", streamID)
 }
@@ -7036,7 +7093,6 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	record := s.devices[event.DeviceID]
 	if record.DeviceID == "" {
 		record.DeviceID = event.DeviceID
@@ -7058,6 +7114,15 @@ func (s *Server) recordDeviceEvent(event protocol.Envelope, payload protocol.Dev
 	record.LastSessionID = event.SessionID
 	record.LastSeenMS = nowMS
 	s.devices[event.DeviceID] = record
+	displayState := payload.DisplayState
+	s.mu.Unlock()
+	if displayState != "" {
+		s.recordDeviceDisplayState(event.DeviceID, event.TraceID, event.SessionID, "device_event", string(displayState))
+		s.mu.Lock()
+		record = s.devices[event.DeviceID]
+		s.mu.Unlock()
+		return record
+	}
 	return record
 }
 
@@ -7256,6 +7321,7 @@ func (s *Server) writeXiaozhiOfficialStackChanState(ctx context.Context, session
 		Kind:  xiaozhitransport.DeviceEventKindState,
 		Value: state,
 	}
+	s.recordDeviceDisplayState(session.deviceID, session.traceID, session.sessionID, "xiaozhi", state)
 	packets, err := stackchantransport.BuildOfficialPackets(event)
 	if err != nil {
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.unsupported", s.now().UnixMilli())

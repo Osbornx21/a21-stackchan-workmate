@@ -541,7 +541,7 @@ audio_testing -> audio_testing
 fatal_error -> fatal_error
 ```
 
-- [ ] Step 1: Write failing protocol tests.
+- [x] Step 1: Write failing protocol tests.
 
 Test cases:
 
@@ -560,7 +560,7 @@ Expected:
 
 - Tests fail before schema/mapping exists.
 
-- [ ] Step 2: Write Gateway registry tests.
+- [x] Step 2: Write Gateway registry tests.
 
 Test cases:
 
@@ -579,7 +579,7 @@ Expected:
 
 - Tests fail before registry support exists.
 
-- [ ] Step 3: Implement registry fields and trace markers.
+- [x] Step 3: Implement registry fields and trace markers.
 
 Required trace markers:
 
@@ -602,11 +602,11 @@ Registry response shape:
 }
 ```
 
-- [ ] Step 4: Update docs.
+- [x] Step 4: Update docs.
 
 Document that this is registry/status parity, not physical screen acceptance.
 
-- [ ] Step 5: Verify.
+- [x] Step 5: Verify.
 
 Run:
 
