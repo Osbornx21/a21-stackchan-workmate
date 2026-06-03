@@ -115,6 +115,7 @@ func BuiltinProviderProfiles() []ProviderProfile {
 			BaseURLEnv:     "A21_STEPFUN_BASE_URL",
 			DefaultBaseURL: "https://api.stepfun.com/v1",
 			EndpointPath:   "/chat/completions",
+			RouteEligible:  true,
 		},
 		{
 			Name:           "bailian_dashscope",

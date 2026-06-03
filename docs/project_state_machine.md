@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-PUBLIC-GATEWAY-HEALTHY-STEPFUN-SWITCH-BLOCKED-BY-ENV`
+Current total state: `S-PUBLIC-GATEWAY-STEPFUN-SELECTED-ROUTE-PROMOTION-IN-PROGRESS`
 
 Active child transitions:
 
@@ -35,6 +35,7 @@ Active child transitions:
 - `T-CLOUD-VOICE-001-PURE-CLOUD-PROVIDER-MATRIX`
 - `T-ECS-STEPFUN-001-CONTROL-PLANE-AND-RUNTIME-SWITCH`
 - `T-PUBLIC-GATEWAY-002-CODE-SYNC-BEFORE-STEPFUN`
+- `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
@@ -116,6 +117,23 @@ missing. Therefore
 readiness/provider-selector code to ECS before the StepFun selector switch.
 This sync must not edit secrets, execute providers, flash firmware, write NVS,
 or POST the selector to StepFun.
+The current control thread then re-read the master handoff and live runtime
+before continuing: public `/v1/voice-chain-profiles` now reports selected LLM
+`stepfun`, `/v1/devices` shows product StackChan `44:1b:f6:e2:6a:60` online on
+the selected StepFun cascade chain, and host bench
+`reports/a21-xiaozhi-voice-bench-20260604-023616.742713000.json` executed the
+cloud-edge DashScope ASR + StepFun LLM + DashScope TTS path. The remaining
+server-side blocker is no longer `stepfun_not_selected`; it is that the
+executed StepFun provider-smoke report
+`reports/a21-provider-smoke-20260604-023711-678466985.json` was produced before
+StepFun was promoted and therefore has `route_eligible=false`. Active
+transition `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION` promotes the built-in
+StepFun profile to explicit route-eligible launch-policy status, then requires
+a fresh executed provider-smoke report and readiness rerun. It must not change
+internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash state, or
+endpoint-side voice acceptance evidence. Full PRD remains blocked until
+physical playback ack, stop_done, or trusted audible/instrument observation is
+present.
 `T-SHERPA-REALMODEL-NO-AUDIO-SMOKE-001` is now a passed real-model no-audio
 smoke: the repo-local canonical helper, sherpa-onnx Python environment, and
 streaming Zipformer model cache were discovered automatically, the JSONL

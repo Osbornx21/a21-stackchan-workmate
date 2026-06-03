@@ -71,10 +71,12 @@ Runtime hot-plug selection is separate from product readiness promotion. When
 the operator or frontend explicitly sets `A21_TEXT_STREAM_PROFILE`,
 `A21_PROVIDER_PRIMARY`, `A21_TTS_FAST_PROFILE`, or `A21_LOCAL_TTS_ENGINE`, the
 host voice path may execute that configured candidate if it matches the A21
-text-stream/TTS adapter contract. `route_eligible=false` candidates such as
-StepFun can be used for an explicit contest/listening run, but that does not
-make them product-ready. Product readiness still requires the separate
-route/evidence gates. Current host-side TTS selectors include
+text-stream/TTS adapter contract. The built-in StepFun text-stream profile is
+now an explicit route-eligible launch-policy LLM; other
+`route_eligible=false` candidates can still be used for explicit
+contest/listening runs, but those runs do not make them product-ready. Product
+readiness still requires the separate route/evidence gates. Current host-side
+TTS selectors include
 `iflytek_tts` for the immediate real-time cloud TTS candidate and
 `voice_clone_cli` for the retained voice-clone seam. `sherpa_onnx` remains
 available as an emergency/diagnostic local path but is not the desired contest

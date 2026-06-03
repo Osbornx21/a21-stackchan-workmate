@@ -9128,3 +9128,87 @@ Recommended next action:
   `git archive HEAD`, run focused remote tests/build, swap `/opt/a21`, and
   prove the remote binary now blocks StepFun readiness until the missing env
   names are provisioned.
+
+## 2026-06-04 03:08 CST - StepFun Route Eligibility Promotion Started
+
+Round goal:
+
+- Continue after re-reading the internal test 3 master handoff and current
+  code/reports without repeating already completed StepFun runtime switch work.
+- Treat internal test 3 endpoint-side voice acceptance and protocol changes as
+  immutable baseline for this slice.
+- Promote StepFun only at the provider route-evidence contract layer.
+
+Actual completed work:
+
+- Re-read the master handoff, active plans, current control entry, evidence
+  manifest, state machine, public Gateway snapshots, and latest reports.
+- Confirmed public runtime already selects LLM `stepfun`; product device
+  `44:1b:f6:e2:6a:60` is online; OTA still returns the public Xiaozhi
+  WebSocket route.
+- Confirmed latest host bench executed the cloud-edge DashScope ASR + StepFun
+  LLM + DashScope TTS chain.
+- Identified the current non-duplicate blocker: the executed StepFun provider
+  smoke passed but was generated with `route_eligible=false`, so readiness
+  rejects it as `provider_smoke`.
+- Added focused control plan
+  `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`.
+- Promoted built-in StepFun to explicit `route_eligible=true` in the provider
+  catalog and updated the explicit route-eligible catalog test.
+- Updated provider/readiness docs and current control documents to stop
+  describing StepFun as compatibility-only for the current launch policy.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/engineering/A21_DEVELOPMENT_MAINLINE.md`
+- `docs/engineering/A21_PROVIDER_BENCHMARKS.md`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
+- `internal/providers/catalog.go`
+- `internal/providers/catalog_test.go`
+
+Unfinished items:
+
+- Run full verification after doc/control updates.
+- Commit the route-eligibility promotion patch.
+- Deploy the committed patch to ECS.
+- Run fresh redacted StepFun provider smoke from the synced remote binary.
+- Re-run product readiness and server-side readiness with the fresh report.
+- Physical playback ack, playback stop_done, or trusted audible/instrument
+  observation remains required before full PRD launch can be claimed.
+
+Known risks/blockers:
+
+- Do not reinterpret older provider-smoke reports; the old StepFun smoke is
+  valid execution evidence but not route-eligible readiness evidence.
+- Do not touch internal test 3 `/v1/xiaozhi` protocol behavior, firmware flash
+  state, NVS, or endpoint-side accepted voice behavior in this route-only
+  promotion.
+- Do not record provider secret values or model values in repo, reports, logs,
+  traces, stdout, or chat.
+
+Test/build/runtime results:
+
+- `go test ./internal/providers -run 'ProviderCatalog|ProviderSmoke' -count=1`:
+  passed.
+- `go test ./internal/app -run 'ProductReadiness|ServerSideReadinessBundle|XiaozhiStreamingProviderReadiness' -count=1`:
+  passed.
+- First `GOMAXPROCS=2 make verify` found one stale test assumption:
+  `TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent`
+  still used StepFun as the compatibility-only candidate. The test was moved to
+  SiliconFlow so StepFun stays promoted while compatibility-only coverage
+  remains intact.
+- `go test ./internal/app -run 'LocalVoiceLoopbackCanUseCompatibilityTextStream|ProductReadiness|ServerSideReadinessBundle|XiaozhiStreamingProviderReadiness' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Recommended next action:
+
+- Commit and deploy the small StepFun route-eligibility promotion patch before
+  collecting fresh provider/readiness evidence.

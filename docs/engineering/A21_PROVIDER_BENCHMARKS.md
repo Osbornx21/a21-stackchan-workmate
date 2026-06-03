@@ -101,6 +101,9 @@ PRD launch acceptance by itself.
 candidates that are not route-eligible. This is compatibility testing only:
 the report keeps `route_eligible=false`, `product-readiness` rejects it for
 launch closure, and promotion still requires an explicit A21 route decision.
+StepFun is the current explicit route decision for the launch-policy LLM, so a
+fresh executed StepFun smoke can close only the provider evidence gap when the
+public selector is also set to `stepfun`.
 
 The public Gateway StepFun runtime switch is covered by
 `docs/engineering/A21_STEPFUN_REMOTE_SWITCH_RUNBOOK.md`. That runbook is the
@@ -195,8 +198,8 @@ control machine.
 contain only `A21_` variables such as `A21_PROVIDER_PRIMARY`, the selected
 provider key env, model env when required, optional base-url env, and optional
 `A21_PROVIDER_PROFILES_PATH` for valid `a21_`-namespaced loaded profiles. Built
-in candidates that are not route-eligible must be loaded as explicit
-route-eligible `a21_` profiles before they can close this package.
+in candidates other than the explicit route-eligible set must be loaded as
+explicit route-eligible `a21_` profiles before they can close this package.
 
 The dry-run `provider-smoke` must report `configured=true`,
 `route_eligible=true`, `stream=true`, `executed=false`, and safe env names. The

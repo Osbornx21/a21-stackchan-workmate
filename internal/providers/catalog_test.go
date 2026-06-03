@@ -156,13 +156,13 @@ func TestProviderCatalogKeepsRouteEligibleProfilesExplicit(t *testing.T) {
 			routeEligible = append(routeEligible, provider.Name)
 		}
 	}
-	for _, want := range []string{"mock", "deepseek", "local_ollama"} {
+	for _, want := range []string{"mock", "deepseek", "stepfun", "local_ollama"} {
 		if !stringSliceContains(routeEligible, want) {
 			t.Fatalf("route eligible providers = %#v, missing %q", routeEligible, want)
 		}
 	}
-	if len(routeEligible) != 3 {
-		t.Fatalf("route eligible providers = %#v, want explicit mock, deepseek, and local_ollama only", routeEligible)
+	if len(routeEligible) != 4 {
+		t.Fatalf("route eligible providers = %#v, want explicit mock, deepseek, stepfun, and local_ollama only", routeEligible)
 	}
 }
 

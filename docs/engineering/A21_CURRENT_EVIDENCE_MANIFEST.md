@@ -171,14 +171,41 @@ Manifest decision remains unchanged:
 - `current_status`: `server_side_blocked`
 - `runtime_switch_blocker`: `stepfun_env_missing`
 
+## 2026-06-04 StepFun Runtime And Route Eligibility Update
+
+The public Gateway runtime has moved beyond the earlier env/code-sync blocker.
+Use the following as the current routing truth until superseded by newer named
+reports:
+
+- Public `/v1/voice-chain-profiles`: selected LLM `stepfun`.
+- Public `/v1/devices`: product device `44:1b:f6:e2:6a:60` online with
+  cascade DashScope ASR, StepFun LLM, and fixed DashScope TTS.
+- Public `/xiaozhi/ota/`: `ws://47.103.57.217/v1/xiaozhi`.
+- Host bench:
+  `reports/a21-xiaozhi-voice-bench-20260604-023616.742713000.json` executed
+  the cloud-edge chain with StepFun selected, but remains host-loopback
+  evidence only.
+- Provider smoke:
+  `reports/a21-provider-smoke-20260604-023711-678466985.json` passed execution
+  and streaming checks, but records `route_eligible=false` from the pre-promotion
+  catalog and cannot close provider readiness.
+
+New route decision:
+
+- Built-in `stepfun` is being promoted to explicit route-eligible
+  launch-policy LLM status by
+  `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`.
+- After that commit is deployed, readiness must use a fresh executed StepFun
+  provider-smoke report with `route_eligible=true`; do not rewrite or
+  reinterpret older reports.
+
 ## Missing Real Evidence
 
 Current full-launch gaps:
 
-- StepFun remote switch evidence if StepFun is the selected launch LLM.
-- Fresh post-switch `/v1/voice-chain-profiles` snapshot.
-- Fresh post-switch host bench.
-- Fresh post-switch physical Xiaozhi evidence.
+- Fresh route-eligible executed StepFun provider-smoke report.
+- Fresh product/server-side readiness reports after that provider-smoke report.
+- Fresh physical Xiaozhi evidence after the current selected chain.
 - Trusted physical audible/playback observation or debug playback
   acknowledgement.
 - `device.playback.stop_done` or trusted stop observation for barge-in.

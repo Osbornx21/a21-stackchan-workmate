@@ -265,10 +265,44 @@ Current execution order:
 4. Resume StepFun env provisioning and switch only after the remote binary is
    synced.
 
+## Latest Control-Tower Result - 2026-06-04 03:07 CST
+
+The control thread re-read the internal test 3 master handoff, current plans,
+code, public Gateway snapshots, and latest reports before continuing.
+
+Runtime truth has moved beyond the 02:28 env/code-sync blocker:
+
+- Public `http://47.103.57.217/healthz`: healthy.
+- Public `/v1/voice-chain-profiles`: selected LLM `stepfun`.
+- Public `/v1/devices`: product device `44:1b:f6:e2:6a:60` online with
+  cascade DashScope ASR, StepFun LLM, and fixed DashScope TTS.
+- Public `/xiaozhi/ota/`: still returns
+  `ws://47.103.57.217/v1/xiaozhi`.
+- Host bench `reports/a21-xiaozhi-voice-bench-20260604-023616.742713000.json`
+  executed the cloud-edge chain with ASR `dashscope_qwen_asr_realtime`, LLM
+  `stepfun`, and TTS `dashscope_qwen_tts_realtime`.
+- Remote provider smoke
+  `reports/a21-provider-smoke-20260604-023711-678466985.json` passed execution
+  and streaming checks but still has `route_eligible=false`, so readiness
+  rejects it as `provider_smoke`.
+
+New active control plan:
+
+- `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`
+
+Current conclusion:
+
+- Do not repeat the DeepSeek-to-StepFun runtime switch work; it is already
+  reflected in the public selector snapshot.
+- The current server-side blocker is StepFun route-eligibility promotion and a
+  fresh route-eligible provider smoke report.
+- Full PRD launch still remains blocked by physical playback ack, stop_done, or
+  trusted audible/instrument observation.
+
 ## One Recommended Next Action
 
-Use `docs/plans/2026-06-04-ecs-control-plane-and-stepfun-switch.md` for the
-next runtime transition: recover/confirm ECS control-plane access, verify
-StepFun env names on the remote host without exposing values, then switch
-voice-chain state and collect fresh Gateway, host bench, physical evidence,
-product readiness, and server-side readiness.
+Execute `docs/plans/2026-06-04-stepfun-route-eligibility-promotion.md`: promote
+the built-in StepFun profile to explicit route-eligible launch-policy status,
+deploy the committed patch to ECS, run fresh redacted StepFun provider smoke,
+and then re-run product/server-side readiness. Do not touch internal test 3
+Gateway protocol, firmware flash state, or endpoint-side voice acceptance.

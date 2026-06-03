@@ -8594,7 +8594,7 @@ func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent
 	var ttsInput string
 	synthesizeMacOSSay = func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
 		ttsInput = options.Text
-		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-stepfun-test.wav")
+		outputPath := filepath.Join(options.OutputDir, "a21-local-voice-loopback-compat-test.wav")
 		if err := os.WriteFile(outputPath, []byte("RIFF-a21"), 0o644); err != nil {
 			return audio.LocalTTSReport{}, err
 		}
@@ -8622,8 +8622,8 @@ func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Model != "step-1-8k" {
-			t.Fatalf("model = %q, want step-1-8k", body.Model)
+		if body.Model != "Qwen/Qwen3.5-9B" {
+			t.Fatalf("model = %q, want Qwen/Qwen3.5-9B", body.Model)
 		}
 		if len(body.Messages) != 1 || !strings.Contains(body.Messages[0].Content, "a21 mock transcript") {
 			t.Fatalf("fast companion prompt not applied: %+v", body.Messages)
@@ -8636,14 +8636,14 @@ func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent
 		}, "\n")))
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("A21_LAB_STEPFUN_API_KEY", "sk-a21-stepfun-secret")
-	t.Setenv("A21_STEPFUN_MODEL", "step-1-8k")
-	t.Setenv("A21_STEPFUN_BASE_URL", server.URL)
+	t.Setenv("A21_LAB_SILICONFLOW_API_KEY", "sk-a21-siliconflow-secret")
+	t.Setenv("A21_SILICONFLOW_MODEL", "Qwen/Qwen3.5-9B")
+	t.Setenv("A21_SILICONFLOW_BASE_URL", server.URL)
 	dir := t.TempDir()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "stepfun", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
+	code := Run([]string{"local-voice-loopback", "--engine", "macos_say", "--text-provider", "siliconflow", "--execute-text-provider", "--text", "用户原文不要进报告", "--output-dir", dir}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
@@ -8653,7 +8653,7 @@ func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent
 	}
 	for _, want := range []string{
 		`"status": "passed"`,
-		`"text_stream_provider": "stepfun"`,
+		`"text_stream_provider": "siliconflow"`,
 		`"text_stream_executed": true`,
 		`"text_stream_content_delta_count": 1`,
 		`"tts_provider": "macos_say"`,
@@ -8674,7 +8674,7 @@ func TestRunLocalVoiceLoopbackCanUseCompatibilityTextStreamWithoutLeakingContent
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"sk-a21-stepfun-secret", "step-1-8k", "用户原文不要进报告", "收到我会帮你稳住", "Authorization", "Bearer"} {
+	for _, forbidden := range []string{"sk-a21-siliconflow-secret", "Qwen/Qwen3.5-9B", "用户原文不要进报告", "收到我会帮你稳住", "Authorization", "Bearer"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(string(reportData), forbidden) {
 			t.Fatalf("loopback report leaked %q: stdout=%s report=%s", forbidden, stdout.String(), reportData)
 		}
