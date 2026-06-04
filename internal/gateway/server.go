@@ -9809,6 +9809,7 @@ func (s *Server) xiaozhiListenMode(raw string, features xiaozhitransport.HelloFe
 
 func (s *Server) xiaozhiStockProfessionalRouteSelected(raw string, features xiaozhitransport.HelloFeatures) bool {
 	return s.xiaozhiStockProfessional &&
+		s.selectedVoiceMode() == VoiceModeProfessional &&
 		xiaozhiClientProfile(features) == "stock" &&
 		strings.TrimSpace(strings.ToLower(raw)) != string(protocol.ModeProfessional)
 }

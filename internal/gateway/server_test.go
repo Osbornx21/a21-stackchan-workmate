@@ -11204,6 +11204,7 @@ func TestXiaozhiWebSocketStockProfessionalRouteUsesRealtimeListenMode(t *testing
 			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
 		},
 	})
+	server.setVoiceMode(VoiceModeProfessional)
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -11304,6 +11305,7 @@ func TestXiaozhiWebSocketStockProfessionalRouteSendsProfessionalOpusDownlink(t *
 			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
 		},
 	})
+	server.setVoiceMode(VoiceModeProfessional)
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -11386,6 +11388,7 @@ func TestXiaozhiWebSocketStockProfessionalRouteFallbackDoesNotQueryV21OnEmptyASR
 			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
 		},
 	})
+	server.setVoiceMode(VoiceModeProfessional)
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -11437,8 +11440,12 @@ func TestXiaozhiWebSocketStockProfessionalRouteFallbackDoesNotQueryV21OnEmptyASR
 
 func TestXiaozhiStockProfessionalRouteDoesNotApplyToDebugProfile(t *testing.T) {
 	server := NewServerWithOptions(ServerOptions{XiaozhiStockProfessional: true})
+	if got := server.xiaozhiListenMode("realtime", xiaozhitransport.HelloFeatures{MCP: true, AEC: true}); got != protocol.ModeWorkmate {
+		t.Fatalf("default roleplay stock mode = %q, want workmate", got)
+	}
+	server.setVoiceMode(VoiceModeProfessional)
 	if got := server.xiaozhiListenMode("realtime", xiaozhitransport.HelloFeatures{MCP: true, AEC: true}); got != protocol.ModeProfessional {
-		t.Fatalf("stock mode = %q, want professional", got)
+		t.Fatalf("professional stock mode = %q, want professional", got)
 	}
 	if got := server.xiaozhiListenMode("realtime", xiaozhitransport.HelloFeatures{DeviceEvents: true}); got != protocol.ModeWorkmate {
 		t.Fatalf("debug mode = %q, want workmate", got)
