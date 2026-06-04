@@ -2416,25 +2416,50 @@ func executeStackChanOfficialXiaozhiCompatibleFlash(ctx context.Context, options
 		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
 		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
 	}
+	flashPortArg := shellSingleQuote(options.Port)
 	if report.WaitROM {
 		waitTimeout := report.WaitROMTimeoutSeconds
 		if waitTimeout <= 0 {
 			waitTimeout = stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds
 		}
+		flashPortArg = `"${A21_FLASH_PORT}"`
 		scriptLines = append(scriptLines,
+			fmt.Sprintf("A21_FLASH_PORT=%s", shellSingleQuote(options.Port)),
+			`A21_WAIT_ROM_PROBE_LOG="$(mktemp -t a21-wait-rom-probe.XXXXXX)"`,
+			`trap 'rm -f "${A21_WAIT_ROM_PROBE_LOG:-}"' EXIT`,
 			fmt.Sprintf("A21_WAIT_ROM_DEADLINE=$((SECONDS + %d))", waitTimeout),
 			fmt.Sprintf("echo %s", shellSingleQuote("Waiting for ESP32-S3 ROM download mode on "+options.Port)),
-			fmt.Sprintf("until python -m esptool --chip esp32s3 --port %s -b 115200 --before no_reset --after no_reset --no-stub chip_id >/dev/null 2>&1; do", shellSingleQuote(options.Port)),
+			"A21_WAIT_ROM_ATTEMPT=0",
+			"while true; do",
+			"  A21_WAIT_ROM_ATTEMPT=$((A21_WAIT_ROM_ATTEMPT + 1))",
+			`  A21_WAIT_ROM_CANDIDATES=("${A21_FLASH_PORT}")`,
+			"  for candidate in /dev/cu.usbmodem*; do",
+			`    [ -e "$candidate" ] || continue`,
+			`    [ "$candidate" = "$A21_FLASH_PORT" ] || A21_WAIT_ROM_CANDIDATES+=("$candidate")`,
+			"  done",
+			`  for candidate in "${A21_WAIT_ROM_CANDIDATES[@]}"; do`,
+			`    [ -e "$candidate" ] || continue`,
+			`    if python -m esptool --chip esp32s3 --port "$candidate" -b 115200 --before no_reset --after no_reset --no-stub chip_id >"${A21_WAIT_ROM_PROBE_LOG}" 2>&1; then`,
+			`      A21_FLASH_PORT="$candidate"`,
+			`      echo "ESP32-S3 ROM download mode detected on ${A21_FLASH_PORT}; starting guarded product app flash."`,
+			"      break 2",
+			"    fi",
+			"  done",
 			"  if (( SECONDS >= A21_WAIT_ROM_DEADLINE )); then",
 			fmt.Sprintf("    echo %s >&2", shellSingleQuote("Timed out waiting for ESP32-S3 ROM download mode; hold BOOT, press/release RESET, keep holding BOOT, then retry.")),
+			`    echo "ROM candidates checked: ${A21_WAIT_ROM_CANDIDATES[*]}" >&2`,
+			`    echo "Last esptool probe output:" >&2`,
+			`    tail -n 12 "${A21_WAIT_ROM_PROBE_LOG}" >&2 || true`,
 			"    exit 1",
+			"  fi",
+			`  if (( A21_WAIT_ROM_ATTEMPT % 10 == 0 )); then`,
+			`    echo "Still waiting for ESP32-S3 ROM download mode; candidates: ${A21_WAIT_ROM_CANDIDATES[*]}"`,
 			"  fi",
 			"  sleep 1",
 			"done",
-			fmt.Sprintf("echo %s", shellSingleQuote("ESP32-S3 ROM download mode detected; starting guarded product app flash.")),
 		)
 	}
-	scriptLines = append(scriptLines, fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before %s --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port), shellSingleQuote(esptoolBefore)))
+	scriptLines = append(scriptLines, fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before %s --after hard_reset write_flash @flash_args", flashPortArg, shellSingleQuote(esptoolBefore)))
 	script := strings.Join(scriptLines, "\n")
 	if err := runStackChanOfficialXiaozhiCompatibleFlashCommand(ctx, flashLogPath, script); err != nil {
 		return err

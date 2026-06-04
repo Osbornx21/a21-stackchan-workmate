@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD after the latest manual-ROM flash guard remediation:
-  current branch tip for `fix(firmware): wait for manual rom before product flash`
+- Current source HEAD after the latest ROM flash guard/diagnostic remediation:
+  current branch tip for the latest ROM flash guard/diagnostic transition.
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +70,34 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 07:18 CST ROM diagnostic flash attempt:
+
+- A guarded wait-ROM product flash execute was attempted after commit
+  `1e8022a`, using the official product artifact and confirmation token. The
+  T7 control guard passed, but the command timed out before writing flash:
+  `flash_executed=false`.
+- A second guarded product flash execute using `default_reset` was attempted
+  for comparison. It also failed before writing flash:
+  `flash_executed=false`.
+- Both failure paths converge on the same root evidence: esptool can see
+  `/dev/cu.usbmodem1101`, but cannot synchronize with ESP32-S3 ROM/bootloader
+  and reports `No serial data received`.
+- macOS USB enumeration still identifies the product device as Espressif
+  `USB JTAG/serial debug unit`, serial `44:1B:F6:E2:6A:60`, so the product is
+  present on USB but not in a flashable ROM/download state.
+- OpenOCD USB-JTAG identify/reset was tried read-only and did not acquire a
+  target; it failed at USB descriptor/JTAG setup before any flash action.
+- The wait-ROM tool has been enhanced to scan all `/dev/cu.usbmodem*`
+  candidates during the wait window, switch to the port where ROM `chip_id`
+  succeeds, print periodic candidate status, and include the last esptool
+  probe output on timeout.
+- Verification passed: focused wait-ROM flash tests, `git diff --check`, and
+  `GOMAXPROCS=2 make verify`.
+- Next physical action remains: put the product StackChan into true
+  ESP32-S3 ROM/download mode. The next software retry should use the enhanced
+  wait-ROM product lane so the log shows candidate ports and exact probe
+  errors instead of a silent wait.
 
 Live truth after the 2026-06-05 07:07 CST manual-ROM flash guard:
 

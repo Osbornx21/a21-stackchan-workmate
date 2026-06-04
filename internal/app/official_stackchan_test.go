@@ -1243,8 +1243,13 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteCanWaitForManualROM(t 
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	for _, want := range []string{
+		"A21_FLASH_PORT='/dev/cu.usbmodemA21'",
 		"A21_WAIT_ROM_DEADLINE=$((SECONDS + 75))",
-		"until python -m esptool --chip esp32s3 --port '/dev/cu.usbmodemA21' -b 115200 --before no_reset --after no_reset --no-stub chip_id",
+		"for candidate in /dev/cu.usbmodem*; do",
+		`python -m esptool --chip esp32s3 --port "$candidate" -b 115200 --before no_reset --after no_reset --no-stub chip_id`,
+		`ROM candidates checked: ${A21_WAIT_ROM_CANDIDATES[*]}`,
+		`Last esptool probe output:`,
+		`--port "${A21_FLASH_PORT}"`,
 		"--before 'no_reset'",
 		"write_flash @flash_args",
 	} {

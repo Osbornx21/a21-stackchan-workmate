@@ -17569,6 +17569,90 @@ Forbidden actions avoided:
   flash, no camera/NFC/IR expansion, no Git prune/gc, and no internal-test3
   voice/protocol rollback.
 
+## 2026-06-05 07:18 CST - Product Flash ROM Diagnostic Enhancement
+
+Round goal:
+
+- Turn the failed physical product flash attempt into actionable diagnostics
+  and reduce the chance of missing ROM/download mode because the USB serial
+  port re-enumerates.
+
+Actual completed work:
+
+- Ran guarded product flash execute with wait-ROM/no-reset on commit
+  `1e8022a`. T7 control guard passed, but no flash write occurred.
+- Ran guarded product flash execute with default-reset as a comparison. T7
+  control guard passed, but no flash write occurred.
+- Confirmed both attempts failed before writing because esptool could not
+  synchronize with ESP32-S3 ROM/bootloader on `/dev/cu.usbmodem1101`.
+- Confirmed macOS still enumerates Espressif product USB serial
+  `44:1B:F6:E2:6A:60`.
+- Tried read-only OpenOCD USB-JTAG identify/reset; it did not acquire the
+  target before USB descriptor/JTAG setup failed.
+- Enhanced wait-ROM product flash execution to scan all
+  `/dev/cu.usbmodem*` candidates, switch to the candidate where ROM `chip_id`
+  succeeds, print periodic candidate status, and include the last esptool
+  probe output on timeout.
+
+Changed files:
+
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Focused test passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleFlash.*WaitROM|OfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand|OfficialXiaozhiCompatibleFlashPlanBuildsNoFlashReceipt|OfficialXiaozhiCompatibleFlashPlanRejectsUnsupportedBeforeMode' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+
+Runtime or physical evidence:
+
+- Wait-ROM/no-reset execute report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-071410-1780614850091901000.json`,
+  `status=failed`, `flash_executed=false`,
+  `wait_rom_download_mode=true`, `wait_rom_timeout_seconds=180`.
+- Wait-ROM flash log:
+  `/tmp/a21-stackchan-official-build/a21-official-xiaozhi-compatible-flash-20260605-071105.log`,
+  timeout before ROM detection.
+- Default-reset execute report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-071531-1780614931519308000.json`,
+  `status=failed`, `flash_executed=false`, `esptool_before=default_reset`.
+- Default-reset flash log:
+  `/tmp/a21-stackchan-official-build/a21-official-xiaozhi-compatible-flash-20260605-071522.log`,
+  `Failed to connect to ESP32-S3: No serial data received`.
+- USB enumeration: product Espressif USB JTAG/serial debug unit,
+  serial `44:1B:F6:E2:6A:60`, current `/dev/cu.usbmodem1101`.
+
+Remaining issues:
+
+- The product device still has not entered a flashable ESP32-S3 ROM/download
+  state.
+- The safe delayed-relay product artifact SHA
+  `6c2ba13982efc7570ad0ac9ec0329232af6bedc58cd5ad9b18cc06b7f8f5b8b9` is not
+  yet flashed to the product device.
+- Official `/stackChan/ws` relay/body acceptance, physical wake acceptance,
+  natural microphone voice acceptance, playback, and barge-in evidence remain
+  uncollected after the pending flash.
+
+Recommended next action:
+
+- Put the product StackChan into true ESP32-S3 ROM/download mode, then rerun
+  the enhanced guarded product flash with wait-ROM enabled. If it times out,
+  use the printed candidate ports and final esptool probe output to decide
+  whether the device is not in ROM mode, the USB port re-enumerated, or a
+  lower-level USB/JTAG issue remains.
+
+Forbidden actions avoided:
+
+- No successful firmware flash, no NVS write, no provider secret printing, no
+  provider or V21 execution, no generic product flash lane, no `xiaozhi.bin`
+  product flash, no camera/NFC/IR expansion, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 04:10 CST - No-Cable Power/Lifecycle Recovery and WDT-Safe Product Reflash
 
 Round goal:
