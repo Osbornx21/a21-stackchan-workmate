@@ -34,6 +34,15 @@ Latest control update, 2026-06-05 07:51 CST:
 - Public direct Gateway access from this host was still unstable during the
   precheck (`EOF` via the CLI direct client, `502` via shell curl), so Gateway
   reachability remains a finding rather than accepted product-online evidence.
+- Commit `5ee89f4 feat(app): add stackchan product recovery precheck` was
+  pushed and deployed to ECS using Aliyun Cloud Assistant through the 5080lab
+  SOCKS path. Remote `/opt/a21.next` app tests and build passed, then the host
+  was safe-swapped to `/opt/a21` and `a21-gateway` restarted active.
+- Remote post-deploy smoke passed: `/opt/a21/bin/a21
+  stackchan-product-recovery --help`, loopback `/healthz` on
+  `127.0.0.1:21081`, Caddy `/healthz` on port 80, loopback official status,
+  and loopback `/v1/devices`. Product state remains
+  `official.connected=false` and `devices=[]`.
 - Next transition remains physical: enter ESP32-S3 ROM/download mode, execute
   the guarded product flash if needed, then verify product Xiaozhi,
   official `/stackChan/ws`, power-key startup, wake/listen/playback,

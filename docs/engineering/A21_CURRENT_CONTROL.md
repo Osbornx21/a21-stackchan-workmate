@@ -98,6 +98,16 @@ transition:
   during the run (`EOF` from the CLI direct client and `502` from shell curl),
   so the report keeps Gateway reachability as a finding instead of pretending
   public device state is proven.
+- Commit `5ee89f4 feat(app): add stackchan product recovery precheck` was
+  pushed and deployed to ECS through Aliyun Cloud Assistant over the 5080lab
+  SOCKS path. The source archive was chunked with `SendFile`, SHA-verified on
+  the host, tested in `/opt/a21.next`, built, safe-swapped to `/opt/a21`, and
+  `a21-gateway` was restarted.
+- Remote smoke after deployment passed on the real service port
+  `127.0.0.1:21081` and through Caddy on port 80. `/opt/a21/bin/a21
+  stackchan-product-recovery --help` exposes the new command. Loopback
+  official status still reports `connected=false` and `/v1/devices` still
+  reports `devices=[]`.
 - Next physical action remains unchanged: put the product StackChan into true
   ESP32-S3 ROM/download mode, rerun the guarded wait-ROM official-compatible
   product flash if needed, then verify product Xiaozhi, official

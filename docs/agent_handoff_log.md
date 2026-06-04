@@ -18514,3 +18514,69 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider/V21 execution, no device control
   command, no generic `xiaozhi.bin` product lane, no camera/NFC/IR expansion,
   no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 07:58 CST - Product Recovery Precheck Deployed To ECS
+
+Round goal:
+
+- Deploy the pushed product recovery precheck commit to the public ECS host so
+  the server-side source and `/opt/a21/bin/a21` CLI are aligned with the local
+  repository.
+
+Actual completed work:
+
+- Confirmed Aliyun ECS instance `i-uf63f4ymqc2dxtljxz2n` is running through
+  the 5080lab SOCKS path.
+- Sent the current `5ee89f4` source archive to the host as Cloud Assistant
+  `SendFile` chunks, reassembled it remotely, and verified the SHA-256 before
+  extraction.
+- Ran the focused product recovery app tests in `/opt/a21.next`.
+- Built `/opt/a21.next/bin/a21`.
+- Safe-swapped `/opt/a21.next` to `/opt/a21` and restarted `a21-gateway`.
+- Confirmed the earlier deployment command's failure was a stale smoke URL:
+  it curled `127.0.0.1:21080`, while the systemd service correctly listens on
+  `127.0.0.1:21081` behind Caddy port 80.
+
+Changed files:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Remote `go test ./internal/app -run 'ProductRecovery|StackChanAccept'
+  -count=1` passed.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- Remote smoke passed:
+  `/opt/a21/bin/a21 stackchan-product-recovery --help`,
+  `systemctl is-active a21-gateway`, `http://127.0.0.1:21081/healthz`,
+  `http://127.0.0.1/healthz`,
+  `http://127.0.0.1:21081/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60`,
+  and `http://127.0.0.1:21081/v1/devices`.
+
+Runtime or physical evidence:
+
+- ECS now serves `5ee89f4` runtime/CLI.
+- Official status remains `connected=false` with
+  `next_action=connect_official_stackchan_ws`.
+- Device registry still reports `devices=[]`.
+
+Known risks/blockers:
+
+- Product physical recovery remains pending: the device must enter true
+  ESP32-S3 ROM/download mode before the guarded product flash retry can write.
+- Post-recovery physical acceptance is still required for power-key startup,
+  wake/listen/playback, barge-in, and visible body behavior.
+
+Recommended next action:
+
+- Before the next flash attempt, rerun
+  `a21 stackchan-accept --check product-recovery`; after ROM/download entry,
+  rerun the guarded wait-ROM official-compatible product flash and immediately
+  verify Gateway device status plus official relay status.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product lane, no Git prune/gc, and no internal-test3 voice/protocol rollback.
