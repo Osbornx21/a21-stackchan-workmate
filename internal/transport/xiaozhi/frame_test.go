@@ -399,6 +399,9 @@ func TestBuildAndParseMCPJSONRPCEnvelope(t *testing.T) {
 	if initEnvelope.JSONRPC != "2.0" || initEnvelope.Method != MCPMethodInitialize {
 		t.Fatalf("initialize envelope = %+v, want jsonrpc 2.0 initialize", initEnvelope)
 	}
+	if strings.Contains(string(initData), `"id":"`) || initEnvelope.ID == "" {
+		t.Fatalf("initialize id should be an official numeric JSON-RPC id: %s", string(initData))
+	}
 
 	listData, err := BuildMCPToolsListRequest("a21-mcp-002")
 	if err != nil {
@@ -410,6 +413,9 @@ func TestBuildAndParseMCPJSONRPCEnvelope(t *testing.T) {
 	}
 	if listEnvelope.Method != MCPMethodToolsList {
 		t.Fatalf("tools/list method = %q, want %q", listEnvelope.Method, MCPMethodToolsList)
+	}
+	if strings.Contains(string(listData), `"id":"`) || listEnvelope.ID == "" {
+		t.Fatalf("tools/list id should be an official numeric JSON-RPC id: %s", string(listData))
 	}
 
 	callData, err := BuildMCPToolsCallRequest("a21-mcp-003", "display.set_emotion", map[string]any{
@@ -431,11 +437,14 @@ func TestBuildAndParseMCPJSONRPCEnvelope(t *testing.T) {
 	if !strings.Contains(callPayload, `"safe_metadata":"visible"`) {
 		t.Fatalf("tools/call dropped safe metadata: %s", callPayload)
 	}
+	if strings.Contains(callPayload, `"id":"`) {
+		t.Fatalf("tools/call id should be an official numeric JSON-RPC id: %s", callPayload)
+	}
 	callEnvelope, err := ParseMCPEnvelope(callData)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if callEnvelope.Method != MCPMethodToolsCall || callEnvelope.ToolName != "display.set_emotion" {
+	if callEnvelope.Method != MCPMethodToolsCall || callEnvelope.ToolName != "display.set_emotion" || callEnvelope.ID == "" {
 		t.Fatalf("tools/call envelope = %+v, want sanitized tool call", callEnvelope)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"strconv"
 	"strings"
 )
 
@@ -32,14 +34,14 @@ type MCPEnvelope struct {
 
 type mcpRequestWire struct {
 	JSONRPC string    `json:"jsonrpc"`
-	ID      string    `json:"id,omitempty"`
+	ID      int       `json:"id"`
 	Method  MCPMethod `json:"method"`
 	Params  any       `json:"params,omitempty"`
 }
 
 type mcpParseWire struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      string          `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
 	Method  MCPMethod       `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
 }
@@ -122,7 +124,7 @@ func BuildMCPInitializeRequest(id string, clientName string) ([]byte, error) {
 	}
 	return json.Marshal(mcpRequestWire{
 		JSONRPC: "2.0",
-		ID:      id,
+		ID:      numericMCPRequestID(id),
 		Method:  MCPMethodInitialize,
 		Params: mcpInitializeParamsWire{
 			ProtocolVersion: "2024-11-05",
@@ -145,7 +147,7 @@ func BuildMCPToolsListRequest(id string) ([]byte, error) {
 	}
 	return json.Marshal(mcpRequestWire{
 		JSONRPC: "2.0",
-		ID:      id,
+		ID:      numericMCPRequestID(id),
 		Method:  MCPMethodToolsList,
 		Params:  map[string]any{},
 	})
@@ -165,7 +167,7 @@ func BuildMCPToolsCallRequest(id string, toolName string, arguments map[string]a
 	}
 	return json.Marshal(mcpRequestWire{
 		JSONRPC: "2.0",
-		ID:      id,
+		ID:      numericMCPRequestID(id),
 		Method:  MCPMethodToolsCall,
 		Params: mcpToolsCallParamsWire{
 			Name:      toolName,
@@ -182,7 +184,11 @@ func ParseMCPEnvelope(data []byte) (MCPEnvelope, error) {
 	if wire.JSONRPC != "2.0" {
 		return MCPEnvelope{}, fmt.Errorf("%w: jsonrpc", ErrInvalidMCPEnvelope)
 	}
-	if containsLegacyIdentity(wire.ID) {
+	id, err := parseMCPWireID(wire.ID)
+	if err != nil {
+		return MCPEnvelope{}, err
+	}
+	if containsLegacyIdentity(id) {
 		return MCPEnvelope{}, ErrLegacyIdentity
 	}
 	if !supportedMCPMethod(wire.Method) {
@@ -190,7 +196,7 @@ func ParseMCPEnvelope(data []byte) (MCPEnvelope, error) {
 	}
 	envelope := MCPEnvelope{
 		JSONRPC: wire.JSONRPC,
-		ID:      wire.ID,
+		ID:      id,
 		Method:  wire.Method,
 		Params:  append(json.RawMessage(nil), wire.Params...),
 	}
@@ -205,6 +211,30 @@ func ParseMCPEnvelope(data []byte) (MCPEnvelope, error) {
 		envelope.ToolName = params.Name
 	}
 	return envelope, nil
+}
+
+func numericMCPRequestID(token string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(strings.TrimSpace(token)))
+	return int(hash.Sum32()%2147483646) + 1
+}
+
+func parseMCPWireID(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text), nil
+	}
+	var number int64
+	if err := json.Unmarshal(raw, &number); err == nil {
+		if number <= 0 {
+			return "", fmt.Errorf("%w: id", ErrInvalidMCPEnvelope)
+		}
+		return strconv.FormatInt(number, 10), nil
+	}
+	return "", fmt.Errorf("%w: id", ErrInvalidMCPEnvelope)
 }
 
 func BuildLLMEmotionMessage(identity Identity, state string) ([]byte, error) {
