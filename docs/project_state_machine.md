@@ -108,16 +108,23 @@ Official robot MCP body-control update, 2026-06-04 20:36 CST:
 
 Screen/status MCP operation-surface update, 2026-06-04:
 
-- `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` now has local named endpoint
-  implementation for `POST /v1/xiaozhi/device-status`,
+- `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` now has named endpoint
+  implementation deployed on ECS for `POST /v1/xiaozhi/device-status`,
   `POST /v1/xiaozhi/screen-brightness`,
   `POST /v1/xiaozhi/screen-theme`, and
   `GET /v1/xiaozhi/mcp-capabilities?device_id=<device_id>`.
 - The endpoints reuse the same stock MCP delivery, whitelist, numeric
   JSON-RPC id, and redacted response behavior as the unified
-  `/v1/xiaozhi/mcp-control` path. This is not physical screen visual
-  acceptance and still needs ECS deployment plus live device evidence before it
-  becomes public runtime truth.
+  `/v1/xiaozhi/mcp-control` path.
+- Fresh live evidence on device `44:1b:f6:e2:6a:60` recorded public capability
+  response, command traces for device status, screen brightness, and screen
+  theme, device-session MCP responses, `/v1/devices` registry values
+  `screen_theme=dark` and `screen_brightness=55`, and serial logs
+  `StackChanAvatarDisplay: SetTheme: dark` plus
+  `Backlight: Set brightness to 55`.
+- This is not full physical screen visual acceptance. Gateway-restart
+  auto-reconnect remains open because the device did not reconnect after the
+  ECS safe-swap until a hard reset.
 
 Active child transitions:
 

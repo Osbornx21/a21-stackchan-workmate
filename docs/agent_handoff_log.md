@@ -14544,3 +14544,114 @@ Forbidden actions avoided:
   provider secret printing, no provider key in firmware, no prune/gc, no V21
   internal execution, no internal-test3 rollback, and no false PRD acceptance
   claim occurred.
+
+## 2026-06-04 20:48 CST - Named Screen/Status MCP Endpoints Deployed And Physically Executed
+
+Round goal:
+
+- Continue the official hardware parity path by turning the low-risk
+  screen/status MCP tools into product-operation endpoints for Web/App/operator
+  use, then verify them against the live product StackChan without flashing or
+  rewriting NVS.
+
+Actual completed work:
+
+- Added named Gateway endpoints:
+  - `POST /v1/xiaozhi/device-status`
+  - `POST /v1/xiaozhi/screen-brightness`
+  - `POST /v1/xiaozhi/screen-theme`
+  - `GET /v1/xiaozhi/mcp-capabilities?device_id=<device_id>`
+- Reused the existing official MCP delivery path, whitelist, numeric JSON-RPC
+  id behavior, and redacted device-side MCP response handling.
+- Kept high-risk classes blocked: reboot, firmware upgrade, camera/photo,
+  screen snapshot, camera stream/video, NFC, infrared, and app lifecycle.
+- Added endpoint tests for successful tool mapping, missing `device_id`,
+  brightness bounds, strict named theme values, non-MCP device rejection, and
+  capabilities redaction/allowed/blocked lists.
+- Deployed commit `4df52b3` to ECS through the existing `/opt/a21.next` safe
+  swap. Remote focused Gateway tests passed, the binary built, and
+  `a21-gateway` restarted active with loopback health ok.
+- Verified public `mcp-capabilities` through the TUN-safe source-bound path;
+  it returned the allowed official tools and blocked classes with
+  `result_redacted=true` and `physical_accepted=false`.
+- Reconfirmed the lifecycle gap: after Gateway restart, `/v1/devices` was empty
+  until the product device was hard-reset. The reset used repo-local esptool
+  `chip_id` with `--after hard_reset`; it did not flash firmware or write NVS.
+- Verified live product device execution after reconnect:
+  - `screen-theme` response delivered `self.screen.set_theme` with theme
+    `dark`; serial logged `StackChanAvatarDisplay: SetTheme: dark`.
+  - `screen-brightness` response delivered `self.screen.set_brightness` with
+    brightness `55`; serial logged `Backlight: Set brightness to 55`.
+  - `device-status` response delivered `self.get_device_status` with
+    `result_redacted=true`.
+- Verified command traces:
+  `a21-trace-live-named-device-status-ready`,
+  `a21-trace-live-named-brightness-ready`, and
+  `a21-trace-live-named-theme`.
+- Verified device session trace `a21-trace-44-1b-f6-e2-6a-60` had
+  `xiaozhi.mcp.response.received=3` after this evidence window.
+- Verified `/v1/devices` recorded `screen_theme=dark` and
+  `screen_brightness=55`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Full physical screen visual acceptance is still open; this is MCP execution
+  evidence, not a photographed/operator-accepted screen UX proof.
+- Gateway-restart auto-reconnect remains open and should become the next
+  firmware/app-lifecycle transition.
+- Touch acceptance still needs an operator window because the existing
+  `stackchan-accept --check touch` cases require real taps/swipes.
+- Camera, NFC, infrared, no-cable boot/power behavior, and full app lifecycle
+  parity remain open.
+
+Known risks/blockers:
+
+- The product device does not reliably reconnect by itself after a public
+  Gateway safe-swap restart.
+- A just-reset device can have short-lived socket/registry timing edges during
+  boot. The stable evidence was therefore collected after reconnect, with
+  explicit `*-ready` trace ids.
+- Continue using `curl --interface 192.168.1.20 --noproxy '*' ...` while the
+  Mac TUN route is active.
+
+Recommended next action:
+
+- Fix the Gateway-restart/device auto-reconnect lifecycle gap, then run a
+  foreground touch/action acceptance window for screen touch, top tap/swipe,
+  top barge-in, and visible action/RGB/servo behavior. Do not flash again
+  unless that lifecycle fix explicitly requires a guarded product firmware
+  window.
+
+Test/build/runtime results:
+
+- Local focused test:
+  `go test ./internal/gateway -run 'TestXiaozhiNamedMCP|TestXiaozhiMCPStatusParity|TestXiaozhiMCPResponse' -count=1`
+  passed.
+- Local `go test ./internal/gateway -count=1` passed.
+- Local `git diff --check` passed.
+- Local `GOMAXPROCS=2 make verify` passed.
+- Remote focused Gateway test during deployment passed.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- Remote `systemctl is-active a21-gateway` returned active and loopback
+  `/healthz` returned ok.
+- Live public `/v1/xiaozhi/mcp-capabilities` returned the expected safe
+  capability response.
+- Live serial evidence showed `SetTheme: dark` and
+  `Backlight: Set brightness to 55`.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no firmware flash, no NVS write, no
+  provider secret printing, no provider key in firmware, no prune/gc, no V21
+  internal execution, no internal-test3 rollback, and no false screen/product
+  acceptance claim occurred.

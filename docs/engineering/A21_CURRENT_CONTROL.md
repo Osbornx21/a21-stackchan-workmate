@@ -129,10 +129,10 @@ Live truth after the 2026-06-04 20:36 CST official robot MCP body-control cut:
   online for this evidence window. Treat that as a firmware/app-lifecycle
   follow-up, not as a reason to roll back internal-test3 voice changes.
 
-Local implementation update after the robot MCP cut:
+Live truth after the 2026-06-04 20:48 CST named screen/status MCP endpoint cut:
 
-- The next low-risk screen/status operation surface is implemented locally as
-  named Gateway endpoints:
+- Gateway commit `4df52b3` is deployed on ECS. The low-risk screen/status
+  operation surface now has named public Gateway endpoints:
   `POST /v1/xiaozhi/device-status`,
   `POST /v1/xiaozhi/screen-brightness`,
   `POST /v1/xiaozhi/screen-theme`, and
@@ -140,10 +140,26 @@ Local implementation update after the robot MCP cut:
 - These endpoints reuse the same official MCP whitelist and redaction path as
   `/v1/xiaozhi/mcp-control`; they do not expose reboot, upgrade, camera,
   snapshot, stream/video, NFC, infrared, or app-lifecycle controls.
-- This is a product-operation convenience cut for Web/App/operator tools. It
-  still needs ECS deployment plus live screen/status MCP evidence before it is
-  recorded as public runtime truth, and it is not physical screen visual
-  acceptance.
+- Public `mcp-capabilities` returned the allowed official tools and blocked
+  high-risk classes with `result_redacted=true` and
+  `physical_accepted=false`.
+- Physical serial evidence on `/dev/cu.usbmodem1101` showed official screen
+  execution after the product device reconnected:
+  `StackChanAvatarDisplay: SetTheme: dark` and
+  `Backlight: Set brightness to 55`.
+- Command traces `a21-trace-live-named-device-status-ready`,
+  `a21-trace-live-named-brightness-ready`, and
+  `a21-trace-live-named-theme` recorded the corresponding
+  `xiaozhi.mcp.*.sent` markers. Device session trace
+  `a21-trace-44-1b-f6-e2-6a-60` recorded three
+  `xiaozhi.mcp.response.received` events after this window.
+- `/v1/devices` recorded `screen_theme=dark` and `screen_brightness=55`.
+- This is screen/status MCP physical execution evidence, not full visual
+  screen product acceptance.
+- Reconfirmed lifecycle gap: after the public Gateway safe-swap restart,
+  `/v1/devices` was empty until a hardware reset of the product device. The
+  reset used repo-local esptool `chip_id` with `--after hard_reset` only; no
+  firmware flash or NVS write occurred.
 
 ## Active Transition
 
