@@ -71,7 +71,52 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 02:30 CST paced full body check deployment:
+Live truth after the 2026-06-05 02:50 CST body-scene physical acceptance
+surface deployment:
+
+- Commit `98700ab feat(gateway): record body scene physical acceptance` is
+  pushed and deployed to ECS `47.103.57.217` through `/opt/a21.next` safe
+  swap.
+- Gateway now exposes `POST /v1/xiaozhi/body-scene-acceptance` for
+  foreground acceptance of the latest delivered `full_check` only. The endpoint
+  requires matching `trace_id` and `session_id`, `screen_visible=true`,
+  `rgb_visible=true`, `servo_visible=true`, and `observer=operator` or
+  `observer=instrument`; otherwise it rejects instead of overclaiming.
+- `/workspace` Hardware Scenes now includes `Accept Visible Full Check` and an
+  `operator_pending` acceptance status. The button posts only after a
+  `full_check` trace/session is present.
+- Local verification before deploy:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyScenePhysicalAcceptance|TestXiaozhiBodySceneReportsAndAppliesStepPacing|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence' -count=1`
+  passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests passed and
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`
+  passed. ECS `a21-gateway.service` restarted active, loopback `/healthz`
+  passed, and public `/healthz` passed.
+- Public `/workspace` smoke confirmed `Accept Visible Full Check`,
+  `acceptHardwareScenePhysical`, `hardwareSceneAcceptanceStatus`, and
+  `/v1/xiaozhi/body-scene-acceptance`.
+- Public negative acceptance smoke without matching scene evidence returned
+  HTTP 409 with
+  `matching body scene evidence is required before physical acceptance`.
+- Product trace
+  `a21-trace-hardware-full-check-acceptance-ready-98700ab-202606050250`
+  returned HTTP 200 `scene=full_check`, `step_delay_ms=180`,
+  `total_planned_delay_ms=2700`, and 16 redacted steps. The trace endpoint
+  recorded 32 ordered markers with `summary.last_offset_ms=2710`.
+- `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_trace_id` and `last_body_scene_session_id` for the latest
+  scene, final `screen_theme=auto`, `screen_brightness=55`, final head
+  `yaw=0,pitch=18,speed=200`, final RGB `0/0/32`, and product device
+  `44:1b:f6:e2:6a:60` stayed online after a follow-up heartbeat check.
+- This deployment does not record physical acceptance by itself. The operator
+  still needs to observe screen/RGB/head movement and then click
+  `Accept Visible Full Check` or provide explicit confirmation.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred in this code deployment.
+
+Previous live truth after the 2026-06-05 02:30 CST paced full body check deployment:
 
 - Commit `6f43646 feat(gateway): pace hardware body scenes` is pushed and
   deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.

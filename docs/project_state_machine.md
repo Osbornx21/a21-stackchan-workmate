@@ -9,9 +9,56 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-BODY-SCENE-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 02:30 CST:
+Latest control update, 2026-06-05 02:50 CST:
+
+- `T-WORKSPACE-HARDWARE-BODY-SCENE-PHYSICAL-ACCEPTANCE-001` is pushed and
+  deployed on ECS. Commit `98700ab` adds
+  `POST /v1/xiaozhi/body-scene-acceptance` plus the `/workspace`
+  `Accept Visible Full Check` control.
+- The acceptance endpoint is intentionally narrow: it accepts only
+  `scene=full_check`, requires matching delivered `trace_id` and `session_id`,
+  requires `screen_visible=true`, `rgb_visible=true`,
+  `servo_visible=true`, and requires `observer=operator` or
+  `observer=instrument`. Missing matching evidence returns HTTP 409.
+- Successful acceptance records schema
+  `a21.gateway.xiaozhi_body_scene_acceptance.v1`, trace marker
+  `xiaozhi.body_scene.full_check.physical_acceptance.accepted`, and redacted
+  registry fields such as `body_scene_physical_accepted=true`,
+  `body_scene_screen_physical_accepted=true`,
+  `body_scene_rgb_physical_accepted=true`, and
+  `body_scene_servo_physical_accepted=true`.
+- Local TDD evidence: before implementation,
+  `TestWorkspaceConsolePageServed` missed
+  `/v1/xiaozhi/body-scene-acceptance` and
+  `TestXiaozhiBodyScenePhysicalAcceptanceRecordsOperatorEvidence` returned
+  HTTP 404. After implementation, focused Gateway tests passed and
+  `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests and build passed, then
+  `a21-gateway.service` safe-swapped active. Loopback and public `/healthz`
+  passed, and public `/workspace` smoke found
+  `Accept Visible Full Check`, `acceptHardwareScenePhysical`,
+  `hardwareSceneAcceptanceStatus`, and `/v1/xiaozhi/body-scene-acceptance`.
+- Public negative smoke proved the acceptance guard: a request without matching
+  delivered body-scene evidence returned HTTP 409
+  `matching body scene evidence is required before physical acceptance`.
+- Live product trace
+  `a21-trace-hardware-full-check-acceptance-ready-98700ab-202606050250`
+  returned HTTP 200 `scene=full_check`, `step_delay_ms=180`,
+  `total_planned_delay_ms=2700`, and trace summary
+  `last_offset_ms=2710`. `/v1/devices` recorded
+  `last_body_scene_trace_id` and `last_body_scene_session_id`, so the
+  operator can now record physical acceptance from `/workspace`.
+- Physical acceptance has not been recorded in this round because no operator
+  or instrument confirmation was provided. The body-scene acceptance surface is
+  ready; `PHYSICAL-PENDING` remains.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred.
+
+Previous control update, 2026-06-05 02:30 CST:
 
 - `T-WORKSPACE-HARDWARE-BODY-SCENE-PACING-001` is pushed and deployed on ECS.
   Commit `6f43646` adds bounded inter-step pacing to

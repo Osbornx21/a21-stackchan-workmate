@@ -16694,3 +16694,95 @@ Forbidden actions avoided:
   printing, no provider or V21 execution, no generic product flash lane, no
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 02:50 CST - Body Scene Physical Acceptance Surface Deployed
+
+Round goal:
+
+- Move paced `full_check` from machine evidence toward product acceptance by
+  adding a controlled operator/instrument acceptance recording path, without
+  pretending physical acceptance occurred automatically.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-body-scene-physical-acceptance-surface.md`.
+- Added `POST /v1/xiaozhi/body-scene-acceptance`.
+- Added `/workspace` `Accept Visible Full Check` control and
+  `hardwareSceneAcceptanceStatus`.
+- Body-scene delivery now records `last_body_scene_trace_id` and
+  `last_body_scene_session_id` so acceptance can require matching scene
+  evidence.
+- Documented the acceptance contract in `docs/engineering/PROTOCOL.md`.
+- Committed and pushed:
+  `98700ab feat(gateway): record body scene physical acceptance`.
+- Deployed `98700ab` to ECS through `/opt/a21.next` safe-swap.
+
+Changed files:
+
+- `docs/plans/2026-06-05-body-scene-physical-acceptance-surface.md`
+- `docs/engineering/PROTOCOL.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red tests first failed as expected:
+  `TestWorkspaceConsolePageServed` missed
+  `/v1/xiaozhi/body-scene-acceptance`; the body-scene acceptance endpoint
+  returned HTTP 404.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyScenePhysicalAcceptance|TestXiaozhiBodySceneReportsAndAppliesStepPacing|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway tests passed.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback and public `/healthz`
+  passed.
+
+Runtime or physical evidence:
+
+- Public `/workspace` smoke found `Accept Visible Full Check`,
+  `acceptHardwareScenePhysical`, `hardwareSceneAcceptanceStatus`, and
+  `/v1/xiaozhi/body-scene-acceptance`.
+- Public negative acceptance smoke without matching delivered scene evidence
+  returned HTTP 409:
+  `matching body scene evidence is required before physical acceptance`.
+- Product `full_check` trace
+  `a21-trace-hardware-full-check-acceptance-ready-98700ab-202606050250`
+  returned HTTP 200 with `status=delivered`, `scene=full_check`,
+  `step_delay_ms=180`, `total_planned_delay_ms=2700`, and 16 redacted steps.
+- Trace endpoint recorded 32 ordered markers with
+  `summary.last_offset_ms=2710`.
+- Public `/v1/devices` recorded the latest `last_body_scene_trace_id` and
+  `last_body_scene_session_id` for that trace, final screen/head/RGB state,
+  and the device remained online after a follow-up heartbeat check.
+- No body-scene physical acceptance was recorded in this round; the operator
+  has not yet confirmed visible screen/RGB/head movement.
+
+Remaining issues:
+
+- Operator or instrument confirmation is still required before calling the new
+  acceptance endpoint and promoting body-scene physical acceptance.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+- Automatic `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false` remains off on ECS for
+  stability.
+
+Next suggested action:
+
+- Have the operator watch `/workspace` Full Check. If screen theme/brightness,
+  RGB, and head movement are all visible, click `Accept Visible Full Check`
+  or provide explicit confirmation so the acceptance marker can be recorded.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
