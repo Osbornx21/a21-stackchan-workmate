@@ -1029,6 +1029,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		XiaozhiProductTouchEvents:    appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
 		XiaozhiProductTouchReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS"),
 		XiaozhiProductStateReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_STATE_REACTIONS"),
+		BodySceneStepDelay:           180 * time.Millisecond,
 		MacLocalGatewayURL:           appEnvValue(env, "A21_MAC_LOCAL_GATEWAY_URL"),
 		PublicGatewayURL:             appEnvValue(env, "A21_PUBLIC_GATEWAY_URL"),
 		CloudVoiceProfile:            appEnvValue(env, "A21_CLOUD_VOICE_PROFILE"),
@@ -1037,6 +1038,9 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 	}
 	if listenMaxMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_XIAOZHI_LISTEN_MAX_MS"))); err == nil && listenMaxMS > 0 {
 		options.XiaozhiListenMaxDuration = time.Duration(listenMaxMS) * time.Millisecond
+	}
+	if bodySceneStepDelayMS, err := strconv.Atoi(strings.TrimSpace(appEnvValue(env, "A21_BODY_SCENE_STEP_DELAY_MS"))); err == nil && bodySceneStepDelayMS > 0 {
+		options.BodySceneStepDelay = time.Duration(bodySceneStepDelayMS) * time.Millisecond
 	}
 	if uploadMaxBytes, err := strconv.ParseInt(strings.TrimSpace(appEnvValue(env, "A21_WORKSPACE_DOCUMENT_MAX_BYTES")), 10, 64); err == nil && uploadMaxBytes > 0 {
 		options.WorkspaceDocumentMaxBytes = uploadMaxBytes

@@ -440,15 +440,19 @@ surfaces:
   while `focus` and `reset` provide shorter bounded workspace states.
   `full_check` combines the same bounded screen, RGB, left/right head, focus,
   and reset poses into a longer operator-visible hardware diagnostic sequence.
-  Delivery records generic MCP
+  The `gateway` command applies a visible inter-step delay of 180 ms by
+  default so screen/RGB/servo transitions can be observed by an operator;
+  positive `A21_BODY_SCENE_STEP_DELAY_MS` values override that runtime default,
+  while the server caps body-scene step delays at 1000 ms. Delivery records generic MCP
   markers plus ordered body-scene markers such as
   `xiaozhi.body_scene.showtime.step1.screen_theme.sent`; the device registry
   records safe echo fields including `last_body_scene`, `screen_theme`,
   `screen_brightness`, `robot_led_*`, and `robot_head_*`. Responses carry only
-  redacted step metadata and `physical_accepted=false`. This is a live product
-  socket demo/control surface for foreground operator checks, not official
-  avatar/action relay acceptance and not physical proof until visible or
-  instrumented evidence confirms the screen, RGB, and servo movement.
+  redacted step metadata, `step_delay_ms`, `total_planned_delay_ms`, and
+  `physical_accepted=false`. This is a live product socket demo/control
+  surface for foreground operator checks, not official avatar/action relay
+  acceptance and not physical proof until visible or instrumented evidence
+  confirms the screen, RGB, and servo movement.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

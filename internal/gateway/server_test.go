@@ -7296,6 +7296,66 @@ func TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence(t *testing.T) {
 	}
 }
 
+func TestXiaozhiBodySceneReportsAndAppliesStepPacing(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-scene-paced-hello",
+		"session_id": "a21-session-body-scene-paced-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-scene",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"showtime","trace_id":"a21-trace-body-scene-paced","session_id":"a21-session-body-scene-paced"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	stepDelay, ok := response["step_delay_ms"].(float64)
+	if !ok || stepDelay < 10 {
+		t.Fatalf("step_delay_ms = %#v, want visible pacing", response["step_delay_ms"])
+	}
+	totalDelay, ok := response["total_planned_delay_ms"].(float64)
+	if !ok || totalDelay < 70 {
+		t.Fatalf("total_planned_delay_ms = %#v, want planned scene pacing", response["total_planned_delay_ms"])
+	}
+	for i := 0; i < 8; i++ {
+		readXiaozhiJSON(t, ctx, conn)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-scene-paced")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if traces.Summary.EventCount < 16 || traces.Summary.LastOffsetMS < int64(totalDelay)-20 {
+		t.Fatalf("trace summary = %+v, want paced offsets near total planned delay %v", traces.Summary, totalDelay)
+	}
+}
+
 func TestXiaozhiBodySceneRejectsUnknownScene(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/body-scene", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"camera"}`))
 	rec := httptest.NewRecorder()

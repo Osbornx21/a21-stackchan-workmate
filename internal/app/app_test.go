@@ -6059,6 +6059,27 @@ func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) 
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresBodySceneStepDelay(t *testing.T) {
+	defaultOptions := newGatewayServerOptionsFromEnv(nil)
+	if defaultOptions.BodySceneStepDelay != 180*time.Millisecond {
+		t.Fatalf("default body scene step delay = %s, want 180ms", defaultOptions.BodySceneStepDelay)
+	}
+
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_BODY_SCENE_STEP_DELAY_MS=240",
+	})
+	if options.BodySceneStepDelay != 240*time.Millisecond {
+		t.Fatalf("body scene step delay = %s, want 240ms", options.BodySceneStepDelay)
+	}
+
+	zeroOptions := newGatewayServerOptionsFromEnv([]string{
+		"A21_BODY_SCENE_STEP_DELAY_MS=0",
+	})
+	if zeroOptions.BodySceneStepDelay != 180*time.Millisecond {
+		t.Fatalf("zero body scene step delay = %s, want default 180ms", zeroOptions.BodySceneStepDelay)
+	}
+}
+
 func TestGatewayServerFromEnvExposesConfiguredPublicGatewayProfile(t *testing.T) {
 	server := newGatewayServerFromEnv([]string{
 		"A21_MAC_LOCAL_GATEWAY_URL=ws://192.168.1.20:21081/v1/xiaozhi",

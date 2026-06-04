@@ -44,6 +44,8 @@ const xiaozhiSuppressedListenDrainMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
 const maxXiaozhiOpusIngressQueueFrames = 16
+const defaultBodySceneStepDelay = 20 * time.Millisecond
+const maxBodySceneStepDelay = 1000 * time.Millisecond
 const defaultWorkspaceDocumentMaxBytes int64 = 16 << 20
 const workspaceDocumentMultipartOverheadBytes int64 = 1 << 20
 const defaultOfficialStackChanDeviceID = "stackchan-official"
@@ -83,6 +85,7 @@ type Server struct {
 	xiaozhiProductTouchReactions bool
 	xiaozhiProductStateReactions bool
 	xiaozhiListenMaxDurationMS   int64
+	bodySceneStepDelay           time.Duration
 	wakeWordConfigPath           string
 	voiceModeConfig              string
 	roleplayProfileConfig        string
@@ -132,6 +135,7 @@ type ServerOptions struct {
 	XiaozhiProductTouchReactions bool
 	XiaozhiProductStateReactions bool
 	XiaozhiListenMaxDuration     time.Duration
+	BodySceneStepDelay           time.Duration
 	WakeWordConfigPath           string
 	WorkspaceDocumentStoreDir    string
 	WorkspaceDocumentMaxBytes    int64
@@ -941,16 +945,18 @@ type XiaozhiBodyMotionResponse struct {
 }
 
 type XiaozhiBodySceneResponse struct {
-	SchemaVersion      string                          `json:"schema_version"`
-	TraceID            string                          `json:"trace_id"`
-	SessionID          string                          `json:"session_id"`
-	DeviceID           string                          `json:"device_id"`
-	Status             string                          `json:"status"`
-	DeliveredTransport string                          `json:"delivered_transport"`
-	Scene              string                          `json:"scene"`
-	Steps              []XiaozhiBodyPresetStepResponse `json:"steps"`
-	ResultRedacted     bool                            `json:"result_redacted"`
-	PhysicalAccepted   bool                            `json:"physical_accepted"`
+	SchemaVersion       string                          `json:"schema_version"`
+	TraceID             string                          `json:"trace_id"`
+	SessionID           string                          `json:"session_id"`
+	DeviceID            string                          `json:"device_id"`
+	Status              string                          `json:"status"`
+	DeliveredTransport  string                          `json:"delivered_transport"`
+	Scene               string                          `json:"scene"`
+	Steps               []XiaozhiBodyPresetStepResponse `json:"steps"`
+	StepDelayMS         int64                           `json:"step_delay_ms"`
+	TotalPlannedDelayMS int64                           `json:"total_planned_delay_ms"`
+	ResultRedacted      bool                            `json:"result_redacted"`
+	PhysicalAccepted    bool                            `json:"physical_accepted"`
 }
 
 type XiaozhiMCPCapabilitiesResponse struct {
@@ -1327,6 +1333,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	if options.XiaozhiListenMaxDuration > 0 {
 		xiaozhiListenMaxDurationMS = int64(options.XiaozhiListenMaxDuration / time.Millisecond)
 	}
+	bodySceneStepDelay := normalizedBodySceneStepDelay(options.BodySceneStepDelay)
 	xiaozhiRunnerFactory := defaultXiaozhiVoicePipelineRunner
 	xiaozhiPipelineMeta := xiaozhiVoicePipelineMeta{
 		Selection:     providers.VoicePipelineSelectionFromEnv(nil),
@@ -1399,6 +1406,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiProductTouchReactions: options.XiaozhiProductTouchReactions || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS"),
 		xiaozhiProductStateReactions: options.XiaozhiProductStateReactions || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_STATE_REACTIONS"),
 		xiaozhiListenMaxDurationMS:   xiaozhiListenMaxDurationMS,
+		bodySceneStepDelay:           bodySceneStepDelay,
 		wakeWordConfigPath:           wakeWordConfigPath(options.WakeWordConfigPath),
 		roleplayProfileConfig:        DefaultRoleplayProfile,
 		roleplayScenarioConfig:       DefaultRoleplayScenario,
@@ -5847,7 +5855,15 @@ func (s *Server) handleXiaozhiBodyScene(w http.ResponseWriter, r *http.Request) 
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	steps := make([]XiaozhiBodyPresetStepResponse, 0, len(plans))
+	stepDelay := s.bodySceneStepDelay
 	for index, plan := range plans {
+		if index > 0 && stepDelay > 0 {
+			if err := sleepBodySceneStep(r.Context(), stepDelay); err != nil {
+				s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.body_scene."+scene+".cancelled", s.now().UnixMilli())
+				http.Error(w, "xiaozhi body scene delivery cancelled", http.StatusBadGateway)
+				return
+			}
+		}
 		plan.TraceID = traceID
 		plan.SessionID = sessionID
 		delivery, status, message := s.sendXiaozhiMCPControl(r.Context(), plan)
@@ -5878,17 +5894,50 @@ func (s *Server) handleXiaozhiBodyScene(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	writeJSON(w, http.StatusOK, XiaozhiBodySceneResponse{
-		SchemaVersion:      "a21.gateway.xiaozhi_body_scene.v1",
-		TraceID:            traceID,
-		SessionID:          sessionID,
-		DeviceID:           req.DeviceID,
-		Status:             "delivered",
-		DeliveredTransport: "xiaozhi_mcp_sequence",
-		Scene:              scene,
-		Steps:              steps,
-		ResultRedacted:     true,
-		PhysicalAccepted:   false,
+		SchemaVersion:       "a21.gateway.xiaozhi_body_scene.v1",
+		TraceID:             traceID,
+		SessionID:           sessionID,
+		DeviceID:            req.DeviceID,
+		Status:              "delivered",
+		DeliveredTransport:  "xiaozhi_mcp_sequence",
+		Scene:               scene,
+		Steps:               steps,
+		StepDelayMS:         int64(stepDelay / time.Millisecond),
+		TotalPlannedDelayMS: bodySceneTotalPlannedDelayMS(stepDelay, len(steps)),
+		ResultRedacted:      true,
+		PhysicalAccepted:    false,
 	})
+}
+
+func normalizedBodySceneStepDelay(delay time.Duration) time.Duration {
+	if delay < 0 {
+		return 0
+	}
+	if delay == 0 {
+		return defaultBodySceneStepDelay
+	}
+	if delay > maxBodySceneStepDelay {
+		return maxBodySceneStepDelay
+	}
+	return delay
+}
+
+func sleepBodySceneStep(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func bodySceneTotalPlannedDelayMS(delay time.Duration, stepCount int) int64 {
+	if delay <= 0 || stepCount <= 1 {
+		return 0
+	}
+	return int64(delay/time.Millisecond) * int64(stepCount-1)
 }
 
 func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {
