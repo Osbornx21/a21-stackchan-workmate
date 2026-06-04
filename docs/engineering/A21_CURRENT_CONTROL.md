@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this roleplay immersion readiness cut:
-  `bc35339 feat(readiness): ingest selected voice-chain capability evidence`
+- Current source HEAD before this roleplay voice runtime evidence cut:
+  `bd7c5dd feat(readiness): surface roleplay immersion readiness`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,16 +90,16 @@ Target:
 
 Current focused cut:
 
-- Roleplay immersion product-readiness plan:
-  `docs/plans/2026-06-04-roleplay-immersion-product-readiness.md`
+- Roleplay voice runtime evidence ingress plan:
+  `docs/plans/2026-06-04-roleplay-voice-runtime-evidence-ingress.md`
 - Transition:
-  `T-ROLEPLAY-IMMERSION-READINESS-001`
+  `T-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-001`
 - Target:
-  let product readiness expose whether selected role soul, scenario, memory,
-  voice-clone profile, prompt composition, and official expression planning are
-  ready for roleplay immersion while avoiding provider/V21 execution, Gateway
-  protocol changes, ECS changes, firmware build, serial, NVS, or physical
-  hardware action.
+  let product readiness ingest a safe roleplay voice probe report proving the
+  selected role soul, scenario, memory prompt, voice-clone profile, and prompt
+  input reached a roleplay voice turn and audio downlink boundary, while
+  avoiding provider/V21 execution, Gateway protocol changes, ECS changes,
+  firmware build, serial, NVS, or physical hardware action.
 
 ## Scoped Hardware Parity Transition
 
@@ -1361,3 +1361,37 @@ Current conclusion:
 - This is not provider execution, real voice-clone audio, V21 execution,
   Gateway deployment, ECS runtime acceptance, firmware, serial, NVS, or
   physical StackChan roleplay acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Voice Runtime Evidence
+
+Product readiness now has a safe ingress for roleplay voice runtime evidence
+instead of only static roleplay profile readiness.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-voice-runtime-evidence-ingress.md`.
+- `a21 product-readiness` accepts
+  `--roleplay-voice-report <report.json>`.
+- `a21 product-readiness --use-latest-reports` can discover the newest safe
+  `a21-roleplay-voice-probe-*.json` report.
+- `a21 server-side-readiness-bundle` passes the same report path through to the
+  underlying product-readiness report.
+- The product report's top-level `roleplay` object now shows whether runtime
+  evidence is available, matched to the current Gateway roleplay profile, and
+  ready.
+- Accepted evidence exposes only safe route/status/execution mode, source
+  basename, marker count, and booleans for text-stream execution, prompt input
+  use, voice-clone profile use, audio downlink, and playback-start observation.
+- Unsafe roleplay voice reports become `roleplay_voice_report_invalid`; matched
+  but incomplete reports become `roleplay_voice_runtime_not_ready`.
+
+Current conclusion:
+
+- This closes the reporting gap between workspace Voice Probe / fast-companion
+  roleplay runtime behavior and product readiness: the reviewer can now see
+  whether role soul, memory, and voice-clone selection reached the roleplay
+  voice path.
+- This is not a real provider execution, voice-clone audio quality acceptance,
+  real V21 execution, Gateway deployment, ECS runtime acceptance, firmware,
+  serial, NVS, or physical StackChan roleplay acceptance.

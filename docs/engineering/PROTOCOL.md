@@ -827,6 +827,26 @@ URLs, paths, or credentials. This readiness surface proves product-report
 visibility of the roleplay contract; it is not provider execution, voice-clone
 audio execution, hardware expression delivery, or physical roleplay acceptance.
 
+`product-readiness` and `server-side-readiness-bundle` can also ingest a
+redacted roleplay voice runtime probe report through
+`--roleplay-voice-report` or `--use-latest-reports`. The report schema is
+`a21.roleplay_voice_probe.v1`, selected from
+`a21-roleplay-voice-probe-*.json`. It may prove only that the selected
+roleplay profile, scenario, bounded memory prompt, voice-clone profile, prompt
+input, and voice turn route reached a roleplay voice pipeline and produced an
+audio downlink/playback-start boundary. Ingestion must match the report's
+profile/scenario/voice-clone IDs against the current
+`GET /v1/roleplay-profile` response before marking
+`voice_runtime_ready=true`. The product report surfaces only source basename,
+route/status/execution mode, marker count, and booleans for text-stream
+execution, prompt-input use, voice-clone profile use, audio downlink, and
+playback-start observation. It must not store prompt bodies, memory text, ASR
+text, provider output, audio payloads, voice samples, evidence bodies, URLs,
+paths, credentials, or physical acceptance claims. This runtime evidence closes
+the roleplay voice-path reporting gap; it is still not provider quality
+acceptance, real voice-clone audio acceptance, hardware expression delivery, or
+physical StackChan PRD acceptance.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or

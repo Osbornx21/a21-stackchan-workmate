@@ -29,6 +29,7 @@ type productReadinessOptions struct {
 	ProviderSmokeReport        string
 	ProviderRealtimeReport     string
 	VoiceChainReadinessReport  string
+	RoleplayVoiceReport        string
 	XiaozhiReport              string
 	V21ProfessionalReport      string
 	V21AdapterSmokeReport      string
@@ -232,6 +233,19 @@ type productRoleplayReadiness struct {
 	V21Executed                bool     `json:"v21_executed"`
 	ExpressionRedactionOK      bool     `json:"expression_redaction_ok"`
 	RuntimeRedactionOK         bool     `json:"runtime_redaction_ok"`
+	VoiceRuntimeEvidence       bool     `json:"voice_runtime_evidence_available"`
+	VoiceRuntimeMatched        bool     `json:"voice_runtime_evidence_matched"`
+	VoiceRuntimeReady          bool     `json:"voice_runtime_ready"`
+	VoiceRuntimeStatus         string   `json:"voice_runtime_status,omitempty"`
+	VoiceRuntimeSourceReport   string   `json:"voice_runtime_source_report,omitempty"`
+	VoiceRuntimeRoute          string   `json:"voice_runtime_route,omitempty"`
+	VoiceRuntimeExecutionMode  string   `json:"voice_runtime_execution_mode,omitempty"`
+	VoiceRuntimeTraceMarkers   int      `json:"voice_runtime_trace_marker_count"`
+	VoiceRuntimeTextExecuted   bool     `json:"voice_runtime_text_stream_executed"`
+	VoiceRuntimePromptUsed     bool     `json:"voice_runtime_prompt_input_used"`
+	VoiceRuntimeVoiceCloneUsed bool     `json:"voice_runtime_voice_clone_used"`
+	VoiceRuntimeAudioDownlink  bool     `json:"voice_runtime_audio_downlink_observed"`
+	VoiceRuntimePlaybackStart  bool     `json:"voice_runtime_playback_start_observed"`
 	Findings                   []string `json:"findings,omitempty"`
 }
 
@@ -368,7 +382,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--voice-chain-readiness-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--voice-chain-readiness-report report.json] [--roleplay-voice-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -392,6 +406,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--voice-chain-readiness-report":
 			if !readStringOption(args, &i, stderr, "--voice-chain-readiness-report", &options.VoiceChainReadinessReport) {
+				return 2
+			}
+		case "--roleplay-voice-report":
+			if !readStringOption(args, &i, stderr, "--roleplay-voice-report", &options.RoleplayVoiceReport) {
 				return 2
 			}
 		case "--xiaozhi-report":
@@ -530,6 +548,13 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 		}, productLatestVoiceChainReadinessReportAccepted)
 		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
+	if strings.TrimSpace(options.RoleplayVoiceReport) == "" {
+		var findings []productReadinessFinding
+		options.RoleplayVoiceReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "roleplay_voice_runtime", []string{
+			"a21-roleplay-voice-probe-*.json",
+		}, productLatestRoleplayVoiceReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
+	}
 	if strings.TrimSpace(options.XiaozhiReport) == "" {
 		var findings []productReadinessFinding
 		options.XiaozhiReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "xiaozhi_voice", []string{
@@ -648,6 +673,11 @@ func productLatestProviderRealtimeFixtureReportAccepted(path string) bool {
 func productLatestVoiceChainReadinessReportAccepted(path string) bool {
 	evidence, _ := loadProductVoiceChainReadinessReportEvidence(path)
 	return evidence.Valid
+}
+
+func productLatestRoleplayVoiceReportAccepted(path string) bool {
+	evidence, _ := loadProductRoleplayVoiceReportEvidence(path)
+	return evidence.Valid && evidence.VoiceRuntimeReady
 }
 
 func productLatestXiaozhiReportAccepted(path string) bool {
@@ -855,6 +885,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	roleplay, roleplayFindings := fetchProductRoleplayReadiness(ctx, gatewayURL)
 	report.Roleplay = roleplay
 	report.Findings = append(report.Findings, roleplayFindings...)
+	roleplayVoiceEvidence, roleplayVoiceFindings := loadProductRoleplayVoiceReportEvidence(options.RoleplayVoiceReport)
+	report.Findings = append(report.Findings, roleplayVoiceFindings...)
+	if roleplayVoiceEvidence.Valid {
+		report.Findings = append(report.Findings, attachProductRoleplayVoiceEvidence(&report.Roleplay, roleplayVoiceEvidence)...)
+	}
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
@@ -3164,6 +3199,436 @@ func productRoleplayReadinessFindings(runtime gateway.RoleplayRuntimeSummary, pl
 	return findings
 }
 
+const productRoleplayVoiceReportSchemaVersion = "a21.roleplay_voice_probe.v1"
+
+type productRoleplayVoiceReportEvidence struct {
+	Valid                       bool
+	SourceReport                string
+	Status                      string
+	Mode                        string
+	Route                       string
+	ExecutionMode               string
+	RoleplayProfile             string
+	Scenario                    string
+	VoiceCloneProfile           string
+	VoiceRuntimeReady           bool
+	TraceMarkerCount            int
+	TextStreamExecuted          bool
+	PromptInputUsed             bool
+	VoiceCloneProfileUsed       bool
+	AudioDownlinkObserved       bool
+	DevicePlaybackStartObserved bool
+	PhysicalAccepted            bool
+	PRDAccepted                 bool
+}
+
+type productRoleplayVoiceReportFixture struct {
+	SchemaVersion    string                              `json:"schema_version"`
+	GeneratedAtMS    *int64                              `json:"generated_at_ms"`
+	Status           string                              `json:"status"`
+	Mode             string                              `json:"mode"`
+	Route            string                              `json:"route"`
+	ExecutionMode    string                              `json:"execution_mode"`
+	DeviceID         string                              `json:"device_id"`
+	TraceID          string                              `json:"trace_id"`
+	SessionID        string                              `json:"session_id"`
+	Runtime          gateway.RoleplayRuntimeSummary      `json:"runtime"`
+	VoicePipeline    productRoleplayVoicePipelineFixture `json:"voice_pipeline"`
+	TraceMarkers     []string                            `json:"trace_markers"`
+	Redaction        productRoleplayVoiceRedaction       `json:"redaction"`
+	PhysicalAccepted bool                                `json:"physical_accepted"`
+	PRDAccepted      bool                                `json:"prd_accepted"`
+}
+
+type productRoleplayVoicePipelineFixture struct {
+	Observed                bool     `json:"observed"`
+	Status                  string   `json:"status"`
+	TextStreamProvider      string   `json:"text_stream_provider"`
+	ProviderFamily          string   `json:"provider_family"`
+	TextStreamExecuted      bool     `json:"text_stream_executed"`
+	PromptInputUsed         bool     `json:"prompt_input_used"`
+	VoiceCloneProfileUsed   bool     `json:"voice_clone_profile_used"`
+	AudioDownlinkFirstFrame bool     `json:"audio_downlink_first_frame_observed"`
+	DevicePlaybackStart     bool     `json:"device_playback_start_observed"`
+	AudioChunkCount         int      `json:"audio_chunk_count"`
+	Findings                []string `json:"findings,omitempty"`
+}
+
+type productRoleplayVoiceRedaction struct {
+	PromptStored           bool `json:"prompt_stored"`
+	MemoryTextStored       bool `json:"memory_text_stored"`
+	ASRTextStored          bool `json:"asr_text_stored"`
+	ProviderOutputStored   bool `json:"provider_output_stored"`
+	AudioStored            bool `json:"audio_stored"`
+	VoiceCloneSampleStored bool `json:"voice_clone_sample_stored"`
+	FullURLsStored         bool `json:"full_urls_stored"`
+	LocalPathsStored       bool `json:"local_paths_stored"`
+	CredentialValuesStored bool `json:"credential_values_stored"`
+}
+
+func loadProductRoleplayVoiceReportEvidence(path string) (productRoleplayVoiceReportEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productRoleplayVoiceReportEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productRoleplayVoiceReportContainsForbiddenValue(raw) {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	var fixture productRoleplayVoiceReportFixture
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	if missingField := missingProductRoleplayVoiceReportField(fixture); missingField != "" {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{missingProductRoleplayVoiceReportFieldFinding(missingField)}
+	}
+	evidence, ok := productRoleplayVoiceReportEvidenceFromFixture(path, fixture)
+	if !ok {
+		return productRoleplayVoiceReportEvidence{}, []productReadinessFinding{invalidProductRoleplayVoiceReportFinding()}
+	}
+	return evidence, nil
+}
+
+func productRoleplayVoiceReportEvidenceFromFixture(path string, fixture productRoleplayVoiceReportFixture) (productRoleplayVoiceReportEvidence, bool) {
+	mode := strings.TrimSpace(fixture.Mode)
+	route := strings.TrimSpace(fixture.Route)
+	executionMode := strings.TrimSpace(fixture.ExecutionMode)
+	runtime := fixture.Runtime
+	pipeline := fixture.VoicePipeline
+	profile := strings.TrimSpace(runtime.RoleplayProfile)
+	scenario := strings.TrimSpace(runtime.Scenario)
+	voiceClone := strings.TrimSpace(runtime.VoiceCloneProfile)
+	if fixture.SchemaVersion != productRoleplayVoiceReportSchemaVersion ||
+		fixture.GeneratedAtMS == nil ||
+		*fixture.GeneratedAtMS <= 0 ||
+		!productRoleplayVoiceStatusSafe(fixture.Status) ||
+		mode != "roleplay" ||
+		!productRoleplayVoiceRouteSafe(route) ||
+		!productRoleplayVoiceExecutionModeSafe(executionMode) ||
+		!productRoleplayRuntimeSafe(runtime) ||
+		!productRoleplayVoicePipelineSafe(pipeline) ||
+		!productRoleplayVoiceTraceMarkersSafe(fixture.TraceMarkers) ||
+		!productRoleplayVoiceRedactionOK(fixture.Redaction) ||
+		!productVoiceChainSafeID(profile) ||
+		!productVoiceChainSafeID(scenario) ||
+		!productVoiceChainSafeID(voiceClone) ||
+		!productRoleplayVoiceSafeOptionalID(fixture.DeviceID) ||
+		!productRoleplayVoiceSafeOptionalID(fixture.TraceID) ||
+		!productRoleplayVoiceSafeOptionalID(fixture.SessionID) ||
+		fixture.PRDAccepted {
+		return productRoleplayVoiceReportEvidence{}, false
+	}
+	memoryReady := !runtime.MemoryConfigured || runtime.MemoryPromptInputReady
+	runtimeRedactionOK := !runtime.PromptStored &&
+		!runtime.MemoryTextStored &&
+		!runtime.TranscriptStored &&
+		!runtime.ProviderOutputStored &&
+		!runtime.VoiceCloneSampleStored &&
+		!runtime.ProfessionalRouteAllowed &&
+		!runtime.V21Executed
+	voiceRuntimeReady := strings.TrimSpace(fixture.Status) == "passed" &&
+		pipeline.Observed &&
+		pipeline.Status == "pipeline_completed" &&
+		pipeline.TextStreamExecuted &&
+		pipeline.PromptInputUsed &&
+		pipeline.VoiceCloneProfileUsed &&
+		pipeline.AudioDownlinkFirstFrame &&
+		pipeline.DevicePlaybackStart &&
+		pipeline.AudioChunkCount > 0 &&
+		runtime.SoulPromptInputReady &&
+		runtime.PromptComposed &&
+		memoryReady &&
+		runtimeRedactionOK &&
+		productRoleplayVoiceHasMarker(fixture.TraceMarkers, "roleplay.profile.ready") &&
+		productRoleplayVoiceHasMarker(fixture.TraceMarkers, "roleplay.prompt_input.used") &&
+		productRoleplayVoiceHasMarker(fixture.TraceMarkers, "roleplay.voice_clone_profile.used") &&
+		productRoleplayVoiceHasMarker(fixture.TraceMarkers, "audio.downlink.first_frame") &&
+		productRoleplayVoiceHasMarker(fixture.TraceMarkers, "device.playback.start") &&
+		!fixture.PhysicalAccepted
+	return productRoleplayVoiceReportEvidence{
+		Valid:                       true,
+		SourceReport:                filepath.Base(filepath.Clean(path)),
+		Status:                      strings.TrimSpace(fixture.Status),
+		Mode:                        mode,
+		Route:                       route,
+		ExecutionMode:               executionMode,
+		RoleplayProfile:             profile,
+		Scenario:                    scenario,
+		VoiceCloneProfile:           voiceClone,
+		VoiceRuntimeReady:           voiceRuntimeReady,
+		TraceMarkerCount:            len(fixture.TraceMarkers),
+		TextStreamExecuted:          pipeline.TextStreamExecuted,
+		PromptInputUsed:             pipeline.PromptInputUsed,
+		VoiceCloneProfileUsed:       pipeline.VoiceCloneProfileUsed,
+		AudioDownlinkObserved:       pipeline.AudioDownlinkFirstFrame,
+		DevicePlaybackStartObserved: pipeline.DevicePlaybackStart,
+		PhysicalAccepted:            fixture.PhysicalAccepted,
+		PRDAccepted:                 fixture.PRDAccepted,
+	}, true
+}
+
+func attachProductRoleplayVoiceEvidence(readiness *productRoleplayReadiness, evidence productRoleplayVoiceReportEvidence) []productReadinessFinding {
+	if readiness == nil || !evidence.Valid {
+		return nil
+	}
+	readiness.VoiceRuntimeEvidence = true
+	readiness.VoiceRuntimeMatched = false
+	readiness.VoiceRuntimeReady = false
+	readiness.VoiceRuntimeStatus = evidence.Status
+	readiness.VoiceRuntimeSourceReport = evidence.SourceReport
+	readiness.VoiceRuntimeRoute = evidence.Route
+	readiness.VoiceRuntimeExecutionMode = evidence.ExecutionMode
+	readiness.VoiceRuntimeTraceMarkers = evidence.TraceMarkerCount
+	readiness.VoiceRuntimeTextExecuted = evidence.TextStreamExecuted
+	readiness.VoiceRuntimePromptUsed = evidence.PromptInputUsed
+	readiness.VoiceRuntimeVoiceCloneUsed = evidence.VoiceCloneProfileUsed
+	readiness.VoiceRuntimeAudioDownlink = evidence.AudioDownlinkObserved
+	readiness.VoiceRuntimePlaybackStart = evidence.DevicePlaybackStartObserved
+	if !readiness.Available {
+		readiness.Findings = appendProductFindingCode(readiness.Findings, "roleplay_profile_unavailable")
+		return []productReadinessFinding{{
+			Code:    "roleplay_voice_report_mismatch",
+			Message: "Roleplay voice runtime report cannot be matched because the Gateway roleplay profile is unavailable",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	if readiness.SelectedRoleplayProfile != evidence.RoleplayProfile ||
+		readiness.SelectedScenario != evidence.Scenario ||
+		readiness.SelectedVoiceCloneProfile != evidence.VoiceCloneProfile {
+		readiness.Findings = appendProductFindingCode(readiness.Findings, "roleplay_voice_report_mismatch")
+		return []productReadinessFinding{{
+			Code:    "roleplay_voice_report_mismatch",
+			Message: "Roleplay voice runtime report does not match the current Gateway roleplay profile",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	readiness.VoiceRuntimeMatched = true
+	readiness.VoiceRuntimeReady = evidence.VoiceRuntimeReady
+	if !evidence.VoiceRuntimeReady {
+		readiness.Findings = appendProductFindingCode(readiness.Findings, "roleplay_voice_runtime_not_ready")
+		return []productReadinessFinding{{
+			Code:    "roleplay_voice_runtime_not_ready",
+			Message: "Roleplay voice runtime evidence is available but not ready",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	return nil
+}
+
+func productRoleplayVoiceStatusSafe(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "passed", "blocked":
+		return true
+	default:
+		return false
+	}
+}
+
+func productRoleplayVoiceRouteSafe(route string) bool {
+	switch strings.TrimSpace(route) {
+	case "fast_companion_hybrid", "xiaozhi_roleplay_voice_pipeline":
+		return true
+	default:
+		return false
+	}
+}
+
+func productRoleplayVoiceExecutionModeSafe(mode string) bool {
+	switch strings.TrimSpace(mode) {
+	case "host_local", "cloud_edge", "gateway_fast_companion":
+		return true
+	default:
+		return false
+	}
+}
+
+func productRoleplayVoiceSafeOptionalID(value string) bool {
+	return productVoiceChainSafeOptionalID(value)
+}
+
+func productRoleplayVoicePipelineSafe(pipeline productRoleplayVoicePipelineFixture) bool {
+	if pipeline.AudioChunkCount < 0 ||
+		!productVoiceChainSafeOptionalID(pipeline.TextStreamProvider) ||
+		!productVoiceChainSafeOptionalID(pipeline.ProviderFamily) ||
+		len(pipeline.Findings) > 12 {
+		return false
+	}
+	for _, finding := range pipeline.Findings {
+		if !productVoiceChainSafeID(finding) {
+			return false
+		}
+	}
+	switch pipeline.Status {
+	case "pipeline_completed", "boundary_ready", "blocked":
+	default:
+		return false
+	}
+	return true
+}
+
+func productRoleplayVoiceTraceMarkersSafe(markers []string) bool {
+	if len(markers) > 64 {
+		return false
+	}
+	for _, marker := range markers {
+		if !productRoleplayVoiceMarkerAllowed(marker) {
+			return false
+		}
+	}
+	return true
+}
+
+func productRoleplayVoiceMarkerAllowed(marker string) bool {
+	switch strings.TrimSpace(marker) {
+	case "roleplay.profile.ready",
+		"roleplay.memory.ready",
+		"fast_companion.local_audio.frontend.accepted",
+		"asr.first_partial",
+		"provider.first_byte",
+		"provider.first_content",
+		"tts.first_audio",
+		"audio.downlink.first_frame",
+		"device.playback.start",
+		"fast_companion.voice_pipeline.start",
+		"roleplay.prompt_input.used",
+		"roleplay.voice_clone_profile.used",
+		"fast_companion.voice_pipeline.completed",
+		"control.listening.sent",
+		"control.thinking.sent",
+		"control.speaking.sent",
+		"audio.playback.chunk.sent":
+		return true
+	default:
+		return false
+	}
+}
+
+func productRoleplayVoiceHasMarker(markers []string, want string) bool {
+	for _, marker := range markers {
+		if strings.TrimSpace(marker) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func productRoleplayVoiceRedactionOK(redaction productRoleplayVoiceRedaction) bool {
+	return !redaction.PromptStored &&
+		!redaction.MemoryTextStored &&
+		!redaction.ASRTextStored &&
+		!redaction.ProviderOutputStored &&
+		!redaction.AudioStored &&
+		!redaction.VoiceCloneSampleStored &&
+		!redaction.FullURLsStored &&
+		!redaction.LocalPathsStored &&
+		!redaction.CredentialValuesStored
+}
+
+func productRoleplayVoiceReportContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productRoleplayVoiceReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productRoleplayVoiceReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		if productRoleplayVoiceMarkerAllowed(typed) {
+			return false
+		}
+		lower := strings.ToLower(typed)
+		if containsLegacyIdentity(typed) {
+			return true
+		}
+		for _, forbidden := range []string{
+			"http://",
+			"https://",
+			"/users/",
+			"bearer ",
+			"sk-",
+			"raw prompt",
+			"prompt text",
+			"memory text",
+			"raw transcript",
+			"transcript text",
+			"raw provider output",
+			"provider output",
+			"raw reasoning",
+			"reasoning text",
+			"raw audio",
+			"data_base64",
+			"audio_base64",
+			"secret-value",
+		} {
+			if strings.Contains(lower, forbidden) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func missingProductRoleplayVoiceReportField(fixture productRoleplayVoiceReportFixture) string {
+	switch {
+	case strings.TrimSpace(fixture.SchemaVersion) == "":
+		return "schema_version"
+	case fixture.GeneratedAtMS == nil:
+		return "generated_at_ms"
+	case strings.TrimSpace(fixture.Status) == "":
+		return "status"
+	case strings.TrimSpace(fixture.Mode) == "":
+		return "mode"
+	case strings.TrimSpace(fixture.Route) == "":
+		return "route"
+	case strings.TrimSpace(fixture.ExecutionMode) == "":
+		return "execution_mode"
+	case strings.TrimSpace(fixture.Runtime.RoleplayProfile) == "":
+		return "runtime.roleplay_profile"
+	case strings.TrimSpace(fixture.Runtime.Scenario) == "":
+		return "runtime.scenario"
+	case strings.TrimSpace(fixture.Runtime.VoiceCloneProfile) == "":
+		return "runtime.voice_clone_profile"
+	default:
+		return ""
+	}
+}
+
+func missingProductRoleplayVoiceReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "roleplay_voice_report_missing_field",
+		Message: "Roleplay voice runtime report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductRoleplayVoiceReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "roleplay_voice_report_invalid",
+		Message: "Roleplay voice runtime report is invalid or unsafe",
+	}
+}
+
 func invalidProductRoleplayProfileFinding() productReadinessFinding {
 	return productReadinessFinding{
 		Code:    "roleplay_profile_invalid",
@@ -3212,6 +3677,9 @@ func productMissingRealEvidence(report productReadinessReport) []string {
 	if !report.Voice.ContinuousVoiceReady {
 		missing = append(missing, "continuous_voice_pipeline")
 	}
+	if !report.Roleplay.VoiceRuntimeReady {
+		missing = append(missing, "roleplay_voice_runtime")
+	}
 	if !report.WakeWord.ProductReady {
 		missing = append(missing, "wake_word_product_ready")
 	}
@@ -3247,6 +3715,8 @@ func productMissingReportFieldPrefix(code string) string {
 		return "provider_realtime_fixture"
 	case "xiaozhi_report_missing_field":
 		return "xiaozhi_report"
+	case "roleplay_voice_report_missing_field":
+		return "roleplay_voice_report"
 	case "wake_word_firmware_plan_missing_field":
 		return "wake_word_firmware_plan"
 	case "wake_word_firmware_package_missing_field":

@@ -18,6 +18,7 @@ type serverSideReadinessBundleOptions struct {
 	OutputDir                  string
 	ProviderSmokeReport        string
 	VoiceChainReadinessReport  string
+	RoleplayVoiceReport        string
 	XiaozhiReport              string
 	V21ProfessionalReport      string
 	V21AdapterSmokeReport      string
@@ -101,7 +102,7 @@ func runServerSideReadinessBundle(args []string, stdout io.Writer, stderr io.Wri
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 server-side-readiness-bundle [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--voice-chain-readiness-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--collect-missing] [--execute-provider-smoke] [--execute-v21-smoke] [--collect-repeat 3] [--require-candidate] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 server-side-readiness-bundle [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--voice-chain-readiness-report report.json] [--roleplay-voice-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--collect-missing] [--execute-provider-smoke] [--execute-v21-smoke] [--collect-repeat 3] [--require-candidate] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -121,6 +122,10 @@ func runServerSideReadinessBundle(args []string, stdout io.Writer, stderr io.Wri
 			}
 		case "--voice-chain-readiness-report":
 			if !readStringOption(args, &i, stderr, "--voice-chain-readiness-report", &options.VoiceChainReadinessReport) {
+				return 2
+			}
+		case "--roleplay-voice-report":
+			if !readStringOption(args, &i, stderr, "--roleplay-voice-report", &options.RoleplayVoiceReport) {
 				return 2
 			}
 		case "--xiaozhi-report":
@@ -203,6 +208,7 @@ func serverSideProductReadinessOptions(options serverSideReadinessBundleOptions)
 		OutputDir:                  options.OutputDir,
 		ProviderSmokeReport:        options.ProviderSmokeReport,
 		VoiceChainReadinessReport:  options.VoiceChainReadinessReport,
+		RoleplayVoiceReport:        options.RoleplayVoiceReport,
 		XiaozhiReport:              options.XiaozhiReport,
 		V21ProfessionalReport:      options.V21ProfessionalReport,
 		V21AdapterSmokeReport:      options.V21AdapterSmokeReport,

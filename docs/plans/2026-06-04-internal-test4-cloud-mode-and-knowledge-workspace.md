@@ -208,6 +208,16 @@ StackChan hardware.
   makes roleplay immersion measurable in the launch report while still not
   executing providers, V21, voice-clone CLI, Gateway deployment, ECS, firmware,
   serial, NVS, or physical StackChan roleplay acceptance.
+- Product readiness and server-side readiness now also accept
+  `--roleplay-voice-report` and latest
+  `a21-roleplay-voice-probe-*.json` evidence. Matched safe reports mark
+  `roleplay.voice_runtime_ready=true` only when the selected role soul,
+  scenario, bounded memory prompt, voice-clone profile, prompt input,
+  text-stream execution, audio downlink, and playback-start boundary reached a
+  roleplay voice turn. This closes a reporting gap between workspace Voice
+  Probe and launch readiness while still not executing providers/V21, accepting
+  voice-clone audio quality, deploying Gateway/ECS, touching firmware, serial,
+  NVS, or claiming physical StackChan roleplay acceptance.
 
 ## Product Form
 

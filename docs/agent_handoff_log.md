@@ -12791,6 +12791,87 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 14:05 CST - Roleplay Voice Runtime Evidence Ingress
+
+Round goal:
+
+- Complete `T-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-001` so product readiness can
+  ingest safe roleplay voice runtime evidence instead of only static roleplay
+  profile readiness.
+
+Actual completed work:
+
+- Added `--roleplay-voice-report <report.json>` to `a21 product-readiness`.
+- Added latest-report discovery for safe `a21-roleplay-voice-probe-*.json`
+  reports when `--use-latest-reports` is used.
+- Passed the same report path through `a21 server-side-readiness-bundle`.
+- Extended the top-level product-readiness `roleplay` object with runtime
+  evidence availability, match, readiness, source basename, route/status,
+  execution mode, marker count, text-stream execution, prompt-input use,
+  voice-clone profile use, audio downlink, and playback-start booleans.
+- Matched roleplay voice reports against the current Gateway-selected role
+  soul, scenario, and voice-clone profile before `voice_runtime_ready=true`.
+- Unsafe reports now become `roleplay_voice_report_invalid`; safe but incomplete
+  matched reports become `roleplay_voice_runtime_not_ready`.
+- Added `roleplay_voice_runtime` to canonical missing real evidence until a
+  matched ready runtime report is present.
+- Updated protocol, current-control, internal-test4 plan, project state, and
+  this handoff log.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-roleplay-voice-runtime-evidence-ingress.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is evidence ingress and readiness reporting only. It does not execute a
+  real provider, V21, voice-clone CLI, ECS deployment, firmware, serial, NVS,
+  or physical hardware.
+- Roleplay voice runtime evidence still does not prove audible voice-clone
+  quality, operator-perceived role immersion, official action delivery, or
+  physical StackChan PRD acceptance.
+
+Known risks/blockers:
+
+- The new report schema proves the roleplay voice path can be audited; a fresh
+  live Gateway/Voice Probe report still needs to be collected in the target
+  runtime before the current product-readiness report will show the gap closed.
+
+Recommended next action:
+
+- Generate a fresh `a21-roleplay-voice-probe-*.json` from the live Gateway
+  roleplay voice path, then rerun
+  `a21 product-readiness --use-latest-reports`. After that, move to the
+  foreground StackChan window for physical wake/roleplay/professional
+  acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestProductReadiness(SurfacesRoleplayImmersionReadiness|RejectsUnsafeRoleplayProfile|SurfacesRoleplayVoiceRuntimeEvidence|RejectsUnsafeRoleplayVoiceRuntimeEvidence)|TestRunProductReadinessUsesLatestRoleplayVoiceRuntimeReport' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadiness(SurfacesRoleplayImmersionReadiness|RejectsUnsafeRoleplayProfile|SurfacesRoleplayVoiceRuntimeEvidence|RejectsUnsafeRoleplayVoiceRuntimeEvidence|IngestsSelectedVoiceChainStaticReadiness|RejectsVoiceChainStaticReadinessMismatch|BlocksServerSideCandidateWhenStepFunNotSelected|CanReachRealLaunchReadyWhenInputsArePresent|ReportsServerSideCandidateWhenEvidenceSlicesPass|ReportsServerSideCandidateWithoutPhysicalPRD|IngestsXiaozhiHostLoopbackCandidateEvidence|ClosesContinuousVoiceGapForHostProductChain|KeepsContinuousVoiceGapForFixtureOnlyXiaozhi|AcceptsCloudEdgeXiaozhiReportAsCandidate)|TestRunProductReadiness(UsesLatestRoleplayVoiceRuntimeReport|UsesLatestVoiceChainReadinessReport|AcceptsXiaozhiReportAndRedactsOutput|UsesLatestRealtimeFixtureWithoutPathLeak)|TestServerSideReadinessBundle(AcceptsVoiceChainStaticReadinessReport|SurfacesStepFunNotSelected)' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- None.
+
+Forbidden actions avoided:
+
+- No provider execution, V21 execution, ECS/root-secret/runtime change, Gateway
+  protocol change, firmware build, flash, serial, NVS, report deletion,
+  prune/gc, or physical hardware action occurred.
+
 ## 2026-06-04 13:18 CST - Roleplay Immersion Product Readiness
 
 Round goal:
