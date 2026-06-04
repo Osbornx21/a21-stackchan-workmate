@@ -526,6 +526,34 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Body presets">
+        <div class="panel-head">
+          <h2>Body Presets</h2>
+          <div class="tagline">
+            <span class="tag ready" id="bodyPresetStatus">preset=idle</span>
+            <span class="tag warn" id="bodyPresetPhysicalStatus">physical_accepted=false</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="actions" id="bodyPresetActions">
+            <button class="secondary" data-body-preset="ready">Ready</button>
+            <button class="secondary" data-body-preset="listening">Listen</button>
+            <button class="secondary" data-body-preset="thinking">Think</button>
+            <button class="secondary" data-body-preset="speaking">Speak</button>
+            <button data-body-preset="celebrate">Celebrate</button>
+            <button class="secondary" data-body-preset="reset_idle">Reset</button>
+            <button class="secondary" id="refreshBodyPresetTrace">Trace markers</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Trace</span><strong id="bodyPresetTraceStatus">trace=none</strong></div>
+            <div class="metric"><span>LED</span><strong id="bodyPresetLEDStatus">rgb=none</strong></div>
+            <div class="metric"><span>Head</span><strong id="bodyPresetHeadStatus">pose=none</strong></div>
+            <div class="metric"><span>Transport</span><strong id="bodyPresetTransportStatus">xiaozhi_mcp_sequence</strong></div>
+          </div>
+          <div class="row-list" id="bodyPresetTraceList" aria-label="Body preset trace markers"></div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -561,6 +589,7 @@ const workspaceConsoleHTML = `<!doctype html>
       wakeWord: null,
       voiceModes: null,
       voiceProbe: null,
+      bodyPreset: null,
       lastExport: null
     };
     const ui = {
@@ -631,6 +660,15 @@ const workspaceConsoleHTML = `<!doctype html>
       voiceProbeProfessionalStatus: document.getElementById('voiceProbeProfessionalStatus'),
       voiceProbeTraceList: document.getElementById('voiceProbeTraceList'),
       voiceProbeReadList: document.getElementById('voiceProbeReadList'),
+      bodyPresetActions: document.getElementById('bodyPresetActions'),
+      refreshBodyPresetTrace: document.getElementById('refreshBodyPresetTrace'),
+      bodyPresetStatus: document.getElementById('bodyPresetStatus'),
+      bodyPresetPhysicalStatus: document.getElementById('bodyPresetPhysicalStatus'),
+      bodyPresetTraceStatus: document.getElementById('bodyPresetTraceStatus'),
+      bodyPresetLEDStatus: document.getElementById('bodyPresetLEDStatus'),
+      bodyPresetHeadStatus: document.getElementById('bodyPresetHeadStatus'),
+      bodyPresetTransportStatus: document.getElementById('bodyPresetTransportStatus'),
+      bodyPresetTraceList: document.getElementById('bodyPresetTraceList'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -847,6 +885,13 @@ const workspaceConsoleHTML = `<!doctype html>
         session_id: 'a21-session-workspace-probe-' + mode + '-' + stamp
       };
     }
+    function nextBodyPresetIDs(preset) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-body-' + preset + '-' + stamp,
+        session_id: 'a21-session-workspace-body-' + preset + '-' + stamp
+      };
+    }
     function probeCue(mode) {
       const value = ui.voiceProbeInput.value.trim();
       if (value) return value;
@@ -908,6 +953,64 @@ const workspaceConsoleHTML = `<!doctype html>
       const payload = await fetchJSON('/v1/professional-read-records?trace_id=' + encodeURIComponent(state.voiceProbe.trace_id), { cache: 'no-store' });
       renderProbeReadRecords(payload);
       return payload;
+    }
+    function bodyPresetArgs(response, marker) {
+      const step = ((response && response.steps) || []).find((item) => item.marker === marker) || {};
+      return step.arguments || {};
+    }
+    function renderBodyPresetResponse(response) {
+      const led = bodyPresetArgs(response, 'robot_led_color');
+      const head = bodyPresetArgs(response, 'robot_head_angles_set');
+      setText(ui.bodyPresetStatus, 'preset=' + ((response && response.preset) || 'idle'));
+      setText(ui.bodyPresetPhysicalStatus, 'physical_accepted=' + String(!!(response && response.physical_accepted)));
+      setText(ui.bodyPresetTraceStatus, 'trace=' + ((response && response.trace_id) || 'none'));
+      setText(ui.bodyPresetTransportStatus, (response && response.delivered_transport) || 'xiaozhi_mcp_sequence');
+      setText(ui.bodyPresetLEDStatus, 'rgb=' + [led.red, led.green, led.blue].map((value) => value == null ? 'none' : value).join('/'));
+      setText(ui.bodyPresetHeadStatus, 'pose=' + ['yaw:' + (head.yaw == null ? 'none' : head.yaw), 'pitch:' + (head.pitch == null ? 'none' : head.pitch), 'speed:' + (head.speed == null ? 'none' : head.speed)].join(' / '));
+    }
+    function renderBodyPresetTrace(payload) {
+      const events = (payload && payload.events) || [];
+      const summary = (payload && payload.summary) || {};
+      ui.bodyPresetTraceList.textContent = '';
+      setText(ui.bodyPresetTraceStatus, 'trace=' + (payload && payload.trace_id ? payload.trace_id : 'none') + ' / events=' + (summary.event_count || events.length));
+      if (!events.length) {
+        ui.bodyPresetTraceList.append(row('No body trace markers', 'preset idle', 'none', 'warn'));
+        return;
+      }
+      events.slice(-8).forEach((event) => {
+        ui.bodyPresetTraceList.append(row(event.name, 'offset_ms=' + String(event.offset_ms || 0), event.session_id || 'session', 'ready', event.device_id || 'device'));
+      });
+    }
+    async function refreshBodyPresetTrace() {
+      if (!state.bodyPreset || !state.bodyPreset.trace_id) {
+        renderBodyPresetTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        return;
+      }
+      const payload = await fetchJSON('/v1/traces?trace_id=' + encodeURIComponent(state.bodyPreset.trace_id), { cache: 'no-store' });
+      state.bodyPreset.trace_markers = traceNameList(payload);
+      renderBodyPresetTrace(payload);
+      log('body trace ' + ((payload.summary || {}).event_count || 0));
+    }
+    async function runBodyPreset(preset) {
+      const ids = nextBodyPresetIDs(preset);
+      const payload = await postJSON('/v1/xiaozhi/body-preset', {
+        device_id: currentDeviceID(),
+        preset: preset,
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      });
+      state.bodyPreset = {
+        preset: payload.preset || preset,
+        trace_id: payload.trace_id || ids.trace_id,
+        session_id: payload.session_id || ids.session_id,
+        status: payload.status || '',
+        delivered_transport: payload.delivered_transport || '',
+        physical_accepted: !!payload.physical_accepted,
+        steps: payload.steps || []
+      };
+      renderBodyPresetResponse(payload);
+      await refreshBodyPresetTrace();
+      log('body preset ' + (payload.preset || preset) + ' ' + (payload.status || 'sent'));
     }
     async function runRoleplayProbe() {
       const ids = nextProbeIDs('roleplay');
@@ -1336,6 +1439,13 @@ const workspaceConsoleHTML = `<!doctype html>
         voice_probe_roleplay_profile: (state.voiceProbe && state.voiceProbe.roleplay_profile) || '',
         voice_probe_voice_profile: (state.voiceProbe && state.voiceProbe.voice_profile) || '',
         voice_probe_professional_status: (state.voiceProbe && state.voiceProbe.professional_status) || '',
+        body_preset: (state.bodyPreset && state.bodyPreset.preset) || '',
+        body_preset_trace_id: (state.bodyPreset && state.bodyPreset.trace_id) || '',
+        body_preset_session_id: (state.bodyPreset && state.bodyPreset.session_id) || '',
+        body_preset_status: (state.bodyPreset && state.bodyPreset.status) || '',
+        body_preset_transport: (state.bodyPreset && state.bodyPreset.delivered_transport) || '',
+        body_preset_physical_accepted: !!(state.bodyPreset && state.bodyPreset.physical_accepted),
+        body_preset_trace_markers: (state.bodyPreset && state.bodyPreset.trace_markers) || [],
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -1376,6 +1486,7 @@ const workspaceConsoleHTML = `<!doctype html>
         await refreshWakeWord();
         renderProbeTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         renderProbeReadRecords({ records: [] });
+        renderBodyPresetTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -1405,6 +1516,12 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.runRoleplayProbe.addEventListener('click', () => runRoleplayProbe().catch((err) => log('probe roleplay ' + err.message)));
     ui.runProfessionalProbe.addEventListener('click', () => runProfessionalProbe().catch((err) => log('probe professional ' + err.message)));
     ui.refreshVoiceProbeTrace.addEventListener('click', () => refreshVoiceProbeTrace().catch((err) => log('probe trace ' + err.message)));
+    ui.bodyPresetActions.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-body-preset]');
+      if (!button) return;
+      runBodyPreset(button.dataset.bodyPreset).catch((err) => log('body preset ' + err.message));
+    });
+    ui.refreshBodyPresetTrace.addEventListener('click', () => refreshBodyPresetTrace().catch((err) => log('body trace ' + err.message)));
     ui.voiceProbeModeSelect.addEventListener('change', () => {
       if (ui.voiceProbeModeSelect.value === 'professional') {
         ui.voiceProbeInput.placeholder = 'safe evidence cue';
