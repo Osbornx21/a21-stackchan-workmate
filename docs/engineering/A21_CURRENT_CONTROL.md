@@ -162,7 +162,8 @@ Live truth after the 2026-06-04 20:48 CST named screen/status MCP endpoint cut:
   firmware flash or NVS write occurred. The first product keepalive repair is
   now implemented locally but not yet deployed/flashed.
 
-Live truth after the 2026-06-04 21:02 CST Xiaozhi control-channel keepalive cut:
+Live truth after the 2026-06-04 21:48 CST Xiaozhi control-channel keepalive
+physical cut:
 
 - `T-STACKCHAN-XIAOZHI-CONTROL-KEEPALIVE-001` adds a product-only idle
   control-channel liveness contract for the official-compatible Xiaozhi path.
@@ -173,17 +174,24 @@ Live truth after the 2026-06-04 21:02 CST Xiaozhi control-channel keepalive cut:
   and `motion` device events.
 - The official-compatible product overlay now advertises
   `features.keepalive_events=true`, parses the product allowance, sends
-  `type=device, kind=heartbeat` while the idle websocket is open, and closes the
-  stale channel when heartbeat send fails so the existing 10 second A21
-  reconnect loop can open a fresh websocket.
-- No-flash product build passed through the guarded lane with
+  `type=device, kind=heartbeat` through a protocol-layer keepalive timer while
+  the product websocket is open, and starts a protocol-layer reconnect task when
+  heartbeat send fails after a Gateway restart.
+- ECS runtime was updated to include
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` in `/etc/a21/runtime.env`; provider
+  secrets were not printed.
+- Final no-flash product build passed through the guarded lane with
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
   at app sha256
-  `f6bf04d007d6531112403a0c8518105201222b88c5cc052f2172f84bf3875fc9`.
-- This is a local code/build candidate. Product acceptance still requires ECS
-  deploy, guarded product flash of the official-compatible app artifact, and a
-  foreground Gateway restart window proving the product device reconnects
-  without hard reset.
+  `d43989209ee1be056f8d59b539bc48c6cdd2821fd9645793c18f134b6dee9179`.
+- Guarded product flash passed on device `44:1b:f6:e2:6a:60` with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-214705-1780580825810604000.json`.
+- Foreground restart evidence passed without device hard reset: Gateway
+  restarted at `2026-06-04 21:47:49 CST`; `/v1/devices` was empty for the
+  restart window, then device `44:1b:f6:e2:6a:60` reappeared with
+  `xiaozhi.hello` at `21:47:57` and resumed `device.heartbeat` at `21:48:08`.
+  A later public snapshot recorded `last_event=device.heartbeat` and
+  `device_age_ms=1909`.
 
 ## Active Transition
 

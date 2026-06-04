@@ -14746,3 +14746,73 @@ Forbidden actions avoided:
   provider secret printing, no provider key in firmware, no prune/gc, no V21
   internal execution, no internal-test3 rollback, and no false reconnect
   product-acceptance claim occurred.
+
+## 2026-06-04 21:48 CST - Xiaozhi Control Channel Keepalive Physical Proof
+
+Round goal:
+
+- Finish `T-STACKCHAN-XIAOZHI-CONTROL-KEEPALIVE-001`: deploy the keepalive
+  Gateway contract, flash only the official-compatible product app lane, and
+  prove the product device reconnects after a Gateway restart without a device
+  hard reset.
+
+Actual completed work:
+
+- Deployed the keepalive-capable Gateway to ECS and enabled the product runtime
+  gate `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` in `/etc/a21/runtime.env`
+  without printing provider secrets.
+- Flashed the product device `44:1b:f6:e2:6a:60` through the guarded
+  `a21-stackchan-official-xiaozhi-compatible` product lane only.
+- Found two firmware lifecycle gaps during physical proof and fixed both:
+  heartbeat was initially behind the app idle-state guard, then heartbeat send
+  failure closed the protocol without a reliable reopen path.
+- Final firmware overlay runs keepalive in `WebsocketProtocol` and starts a
+  protocol-layer reconnect task after heartbeat send failure.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Runtime or physical evidence:
+
+- Final no-flash build passed with app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  sha256 `d43989209ee1be056f8d59b539bc48c6cdd2821fd9645793c18f134b6dee9179`,
+  report
+  `reports/a21-stackchan-official-baseline-20260604-214350-1780580630173242000.json`.
+- Final guarded product flash passed with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-214705-1780580825810604000.json`.
+- After final flash, public `/v1/devices` showed `device.heartbeat` with
+  `xiaozhi_product_keepalive_events=true`.
+- Gateway was restarted at `2026-06-04 21:47:49 CST`; without device hard reset,
+  `/v1/devices` was empty during the restart window, then device
+  `44:1b:f6:e2:6a:60` reappeared with `xiaozhi.hello` at `21:47:57` and resumed
+  `device.heartbeat` at `21:48:08`.
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay|TestOfficialStackChan|TestXiaozhi' -count=1` passed.
+- `go test ./internal/gateway -run 'TestXiaozhiProduct(Playback|Keepalive)' -count=1` passed.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed before each committed firmware lifecycle
+  repair.
+- ECS remote focused tests/build passed during the earlier keepalive deployment.
+
+Unfinished items:
+
+- This closes Gateway-restart control-channel recovery evidence, not full
+  physical screen/touch/servo/RGB/camera/NFC/IR PRD acceptance.
+- Next highest-value hardware parity work remains touch/action foreground
+  acceptance plus official StackChan body surface alignment beyond MCP command
+  delivery.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no provider secret printing, no Git prune/gc, no V21 internal
+  execution, and no internal-test3 voice/protocol rollback occurred.

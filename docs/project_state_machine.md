@@ -126,25 +126,27 @@ Screen/status MCP operation-surface update, 2026-06-04:
   auto-reconnect remains open because the device did not reconnect after the
   ECS safe-swap until a hard reset.
 
-Xiaozhi control-channel keepalive candidate, 2026-06-04:
+Xiaozhi control-channel keepalive physical evidence, 2026-06-04:
 
-- `T-STACKCHAN-XIAOZHI-CONTROL-KEEPALIVE-001` is implemented locally as the
-  first repair for the Gateway-restart auto-reconnect gap.
+- `T-STACKCHAN-XIAOZHI-CONTROL-KEEPALIVE-001` has product-lane physical
+  evidence for the Gateway-restart auto-reconnect gap.
 - Gateway now parses `hello.features.keepalive_events`, returns product
   `a21.keepalive_events=true` only for hardware-MAC Xiaozhi clients under the
   existing product playback-events runtime gate, records `device.heartbeat`,
   and still blocks product debug-only `state`, `face`, `display`, and `motion`
   device events.
-- The official-compatible product overlay now sends an idle
-  `type=device, kind=heartbeat` and closes a stale quiet control websocket when
-  heartbeat send fails, allowing the existing A21 reconnect loop to reopen it.
-- Guarded no-flash product build passed with app artifact
+- The official-compatible product overlay now sends
+  `type=device, kind=heartbeat` through a protocol-layer keepalive timer and
+  starts a protocol-layer reconnect task when heartbeat send fails.
+- Final guarded no-flash product build passed with app artifact
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
   and sha256
-  `f6bf04d007d6531112403a0c8518105201222b88c5cc052f2172f84bf3875fc9`.
-- Current state: code/build candidate only. Next state requires ECS deploy,
-  guarded product flash, and a foreground Gateway restart proof without hard
-  reset.
+  `d43989209ee1be056f8d59b539bc48c6cdd2821fd9645793c18f134b6dee9179`.
+- Guarded product flash passed on device `44:1b:f6:e2:6a:60` with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-214705-1780580825810604000.json`.
+- Foreground restart proof passed without device hard reset: Gateway restarted
+  at `2026-06-04 21:47:49 CST`; the device reappeared with `xiaozhi.hello` at
+  `21:47:57` and resumed `device.heartbeat` at `21:48:08`.
 
 Active child transitions:
 

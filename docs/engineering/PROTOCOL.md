@@ -528,8 +528,9 @@ now adds the product-side minimum: `CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
 `type=device, kind=heartbeat`, playback `start` after the official Xiaozhi
 audio task reaches `AudioOutputTask()`, and `stop_done` after server TTS stop
 or local abort clears the decoder queue. If the idle heartbeat send fails, the
-overlay closes the stale control channel so the existing A21 reconnect loop can
-open a fresh websocket. It does not advertise `features.device_events`, does
+overlay stops the keepalive timer and runs a protocol-layer reconnect task that
+closes the stale channel and opens a fresh websocket. It does not advertise
+`features.device_events`, does
 not enable debug display/motion events, and does not store provider keys in
 firmware.
 
