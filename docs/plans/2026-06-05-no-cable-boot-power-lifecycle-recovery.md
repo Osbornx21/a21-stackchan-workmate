@@ -1,6 +1,6 @@
 # 2026-06-05 - No-Cable Boot Power Lifecycle Recovery
 
-Status: active, lifecycle request path rejected by serial evidence.
+Status: active, PMIC power-key parity flashed, physical cold boot pending.
 Transition: `T-NO-CABLE-BOOT-POWER-LIFECYCLE-001`.
 
 ## Problem
@@ -34,6 +34,15 @@ close that acceptance.
 - The product lane must therefore preserve the WDT-safe direct
   `GetHAL().startXiaozhi()` path until a separate lifecycle-teardown transition
   can prove a non-regressing official app shutdown.
+- A later official-source comparison found that the A21 overlay had preserved
+  direct Xiaozhi start but did not preserve the full StackChan PMIC power-key
+  configuration. Commit `fda7769` restored AXP2101 PWRON/OFFLEVEL source
+  handling and the 4s hardware power-key long-press register in the product
+  overlay.
+- The `fda7769` product build and guarded flash passed on
+  `/dev/cu.usbmodem1101`, and the product device reconnected to the public
+  Gateway afterward. This is necessary PMIC parity evidence, but it is not yet
+  physical no-cable cold-boot acceptance.
 
 ## Target State
 
@@ -56,6 +65,7 @@ close that acceptance.
 - Guarded flash execute passes on `/dev/cu.usbmodem1101`.
 - After flash, product device reconnects to the public Gateway and can receive
   `mode_ritual` and `full_check` commands.
+- The product overlay preserves StackChan PMIC power-key lifecycle registers.
 - Operator confirms whether physical power button cold boot succeeds without
   USB. Until then, `physical_accepted=false` remains honest.
 

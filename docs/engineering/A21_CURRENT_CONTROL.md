@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD after the latest product direct-start recovery flash:
-  `eeeb699 fix(firmware): avoid unsafe mooncake teardown autostart`
+- Current source HEAD at the latest product PMIC power-key parity flash:
+  `fda7769 fix(firmware): restore stackchan power key pmic config`
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +70,53 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 05:31 CST StackChan PMIC power-key parity
+product flash:
+
+- Code-review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read after
+  the Gateway review-remediation commit. Its remaining power/hardware finding
+  was mapped to the product firmware overlay and official StackChan PMIC setup.
+- Commit `fda7769 fix(firmware): restore stackchan power key pmic config` is
+  pushed to
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- The product overlay now preserves the WDT-safe direct Xiaozhi start path but
+  restores AXP2101 PMIC parity for the physical power-key lifecycle:
+  PWRON/OFFLEVEL power-off source handling and 4s hardware power-key
+  long-press behavior.
+- Focused product-overlay tests passed, including the new PMIC power-key
+  lifecycle guard.
+- Product build passed with report
+  `reports/a21-stackchan-official-baseline-20260605-052214-1780608134186430000.json`.
+- Guarded product flash plan and execute passed on `/dev/cu.usbmodem1101`.
+  Execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-052359-1780608239212784000.json`.
+- The flash report records clean worktree commit `fda7769b23da`,
+  `flash_executed=true`, product candidate artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`, and app SHA
+  `b665af4e78fae0c4dea10db04a2ea90502d88f26322dcca3c234abb8f355fc3e`.
+- Product device `44:1b:f6:e2:6a:60` reconnected to public Gateway with fresh
+  `device.heartbeat` after flash.
+- Public live `full_check` trace
+  `a21-trace-full-check-pmic-key-fda7769-20260605` returned HTTP 200
+  `status=delivered` with 16 steps.
+- Public live roleplay ritual trace
+  `a21-trace-mode-ritual-pmic-key-fda7769-20260605` returned HTTP 200
+  `status=delivered`, `selected_voice_mode=roleplay`, and 4 steps.
+- Public `GET /v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60` still returns
+  `overall_status=physical_pending`, `xiaozhi_ws_online=true`, and
+  `battery_telemetry=missing`. This is intentional: the flashed PMIC parity
+  fix must still be confirmed by a no-USB physical power-button boot.
+- Public `GET /v1/hardware-acceptance?device_id=44:1b:f6:e2:6a:60` returns
+  `overall_status=physical_pending` for `mode_ritual`, `full_check`, and
+  `power_lifecycle`.
+- Public `GET /v1/xiaozhi/mcp-capabilities?device_id=44:1b:f6:e2:6a:60`
+  reports only the low-risk status/screen/speaker/head/LED MCP tools as
+  allowed, with power shutdown/sleep, reboot, firmware upgrade, camera, NFC,
+  infrared, and app lifecycle blocked.
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider/V21
+  execution, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred.
 
 Live truth after the 2026-06-05 05:13 CST review remediation and power
 lifecycle state-machine deployment:

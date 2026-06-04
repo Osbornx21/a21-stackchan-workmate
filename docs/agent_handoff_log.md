@@ -19,6 +19,108 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 05:31 CST - StackChan PMIC Power-Key Parity Product Flash
+
+Round goal:
+
+- Close the code-review thread's power/hardware lifecycle findings as far as
+  software and firmware can act, compare the product overlay against the
+  official StackChan PMIC setup, flash only the guarded product lane, and keep
+  no-cable power truth physically gated.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and mapped its
+  remaining findings against the post-`56a0fcb` implementation.
+- Compared the A21 official-compatible StackChan overlay with the local
+  official StackChan board implementation and Xiaozhi AXP2101 examples.
+- Restored StackChan PMIC power-key parity in the product overlay by enabling
+  PWRON/OFFLEVEL power-off source handling and the 4s hardware power-key
+  long-press register before the direct Xiaozhi product start path.
+- Added a focused product-overlay test to prevent losing the PMIC power-key
+  lifecycle registers again.
+- Built and flashed the product app through the guarded
+  `a21-stackchan-official-xiaozhi-compatible` product lane on
+  `/dev/cu.usbmodem1101`.
+- Replayed live product `full_check` and roleplay mode ritual after the flash.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/plans/2026-06-05-no-cable-boot-power-lifecycle-recovery.md`
+
+Tests/build/runtime results:
+
+- Focused product-overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle|TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTeardown|TestStackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed before the firmware commit and again after the
+  control-document update.
+- Product build passed:
+  `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-052214-1780608134186430000.json`.
+- Guarded flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-052252-1780608172150417000.json`.
+- Guarded flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-052359-1780608239212784000.json`.
+
+Runtime or physical evidence:
+
+- Flash execution recorded clean worktree commit `fda7769b23da`, branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`,
+  `flash_executed=true`, and app artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+- Flashed app SHA:
+  `b665af4e78fae0c4dea10db04a2ea90502d88f26322dcca3c234abb8f355fc3e`.
+- Product device `44:1b:f6:e2:6a:60` reconnected to public Gateway with fresh
+  `device.heartbeat` after the flash.
+- Public `POST /v1/xiaozhi/body-scene` with trace
+  `a21-trace-full-check-pmic-key-fda7769-20260605` returned
+  `status=delivered`, 16 steps, and `physical_accepted=false`.
+- Public `POST /v1/voice-mode-ritual` with trace
+  `a21-trace-mode-ritual-pmic-key-fda7769-20260605` returned
+  `status=delivered`, `selected_voice_mode=roleplay`, 4 steps, and
+  `physical_accepted=false`.
+- Public `GET /v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60` returned
+  `overall_status=physical_pending`, `xiaozhi_ws_online=true`,
+  `battery_telemetry=missing`, and no-cable/power-button acceptance still
+  false.
+- Public `GET /v1/xiaozhi/mcp-capabilities?device_id=44:1b:f6:e2:6a:60`
+  returned 8 allowed low-risk MCP tools and 10 blocked classes, including
+  `power_shutdown`, `power_sleep`, `reboot`, `firmware_upgrade`, `camera_*`,
+  `nfc`, `infrared`, and `app_lifecycle`.
+
+Remaining issues:
+
+- The PMIC parity fix is flashed, but physical no-cable cold boot and the
+  physical power button are still awaiting foreground operator or instrument
+  acceptance.
+- Battery telemetry remains missing from product runtime echo.
+- Official `/stackChan/ws` Avatar/Motion/Dance relay remains not product
+  accepted; current body feedback is still Xiaozhi MCP-backed.
+- Launch readiness still needs real provider smoke, roleplay voice runtime,
+  and physical StackChan PRD acceptance evidence.
+
+Next suggested action:
+
+- Have the operator disconnect USB/power, wait for the unit to be fully off,
+  hold the physical power button for about 4s, and report whether the product
+  boots and reconnects. If it does, record
+  `/v1/power-lifecycle-acceptance`; if it does not, open a battery/PMIC
+  diagnostic transition against the physical board.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash.
+- No NVS write.
+- No provider/V21 execution.
+- No Git prune/gc.
+- No internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 05:13 CST - Review Remediation, Gateway Stabilization, And Power Lifecycle State Machine
 
 Round goal:
