@@ -9,7 +9,49 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-BUILT-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-PHYSICAL-PENDING`
+
+Latest control update, 2026-06-05 02:08 CST:
+
+- `T-FIRMWARE-QUIET-RECONNECT-PRODUCT-FLASH-001` is executed on the product
+  device through the guarded official-compatible product lane. The flashed app
+  artifact was
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  with SHA-256
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Flash plan report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020621-1780596381380115000.json`
+  returned `status=ready`; flash execution report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020726-1780596446779669000.json`
+  returned `status=passed`, `flash_allowed=true`, and
+  `flash_executed=true`.
+- The flash guard verified branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`, commit
+  `dc8c752f9fee`, non-detached HEAD, and zero dirty tracked files before
+  writing. No NVS write and no generic `xiaozhi.bin` product flash path were
+  used.
+- After reboot, public `/v1/devices` showed product device
+  `44:1b:f6:e2:6a:60` returning from
+  `connection_status=xiaozhi_ws_disconnected` to `connection_status=online`
+  with heartbeat updates. Capabilities kept product keepalive/playback/touch
+  and touch reaction gates; `xiaozhi_product_state_reactions` stayed absent
+  per the current ECS runtime safety gate.
+- Product body scene trace
+  `a21-trace-hardware-showtime-flash-b9c0baa-202606050208` returned HTTP 200
+  `status=delivered` through `xiaozhi_mcp_sequence`. The scene emitted 8
+  bounded screen/RGB/head MCP steps and 16 trace markers. `/v1/devices`
+  recorded `last_body_scene=showtime`, `screen_theme=dark`,
+  `screen_brightness=72`, final head `yaw=0,pitch=24,speed=220`, and final
+  RGB `0/36/96`.
+- A follow-up public `/v1/devices` check about 12 seconds later still showed
+  the device online with heartbeat updates and the showtime registry state.
+- This closes the previous socket absence blocker for machine-readable
+  hardware-scene delivery after Gateway restart. It is not yet physical
+  acceptance: `physical_accepted=false` remains until operator or instrument
+  evidence confirms visible screen/RGB/head movement.
+- No provider/V21 execution, no camera/NFC/IR expansion, no reboot/OTA/
+  snapshot/video/app-lifecycle exposure, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback occurred.
 
 Latest control update, 2026-06-05 02:00 CST:
 

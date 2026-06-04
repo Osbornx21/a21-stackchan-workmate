@@ -1,7 +1,7 @@
 # A21 Current Evidence Manifest
 
 Status: current evidence manifest.
-Date: 2026-06-04 CST.
+Date: 2026-06-05 CST.
 Owner: A21 control tower.
 Schema intent: `a21.current_evidence_manifest.v1` human-readable first cut.
 
@@ -87,6 +87,26 @@ These are accepted for their stated scope only.
   evidence.
 - Local `make preflight` and `make doctor` still warn about firmware/wake
   surfaces; those warnings must be classified, not hidden.
+
+## 2026-06-05 Hardware Body Machine Evidence
+
+This evidence is accepted for product-socket delivery and reconnect routing. It
+does not by itself prove physical PRD acceptance.
+
+| Scope | Evidence | Status | Launch Use |
+| --- | --- | --- | --- |
+| Product reconnect flash plan | `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020621-1780596381380115000.json` | `status=ready`, product artifact SHA `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac` | Product-lane flash guard evidence |
+| Product reconnect flash execute | `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020726-1780596446779669000.json` | `status=passed`, `flash_allowed=true`, `flash_executed=true` | Product-lane flash execution evidence |
+| Public device reconnect | `/v1/devices`, device `44:1b:f6:e2:6a:60` | moved from disconnected to online with heartbeat after flash | Product socket recovery evidence |
+| Product body scene | trace `a21-trace-hardware-showtime-flash-b9c0baa-202606050208` | HTTP 200 `status=delivered`, 8 body-scene steps, 16 trace markers | Machine-readable screen/RGB/servo delivery evidence |
+
+Current decision after this evidence:
+
+- `launch_ready`: false
+- `prd_accepted`: false
+- `hardware_body_machine_evidence`: ready for showtime scene
+- `hardware_body_physical_acceptance`: pending operator/instrument
+  confirmation
 
 ## 2026-06-04 Protocol Adaptation Verification
 

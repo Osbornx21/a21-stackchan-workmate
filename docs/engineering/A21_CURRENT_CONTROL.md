@@ -1,7 +1,7 @@
 # A21 Current Control
 
 Status: current control entry.
-Date: 2026-06-04 CST.
+Date: 2026-06-05 CST.
 Owner: A21 control tower.
 
 This is the short first-read entry for the active launch sprint. It does not
@@ -70,6 +70,50 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 02:08 CST guarded product-lane reconnect
+flash and hardware scene run:
+
+- The reconnect firmware candidate from commit
+  `b9c0baa fix(firmware): tick quiet xiaozhi reconnect checks` was flashed to
+  product device `44:1b:f6:e2:6a:60` through the guarded
+  `a21-stackchan-official-xiaozhi-compatible` product lane only.
+- Flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020621-1780596381380115000.json`
+  returned `status=ready`, app artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`, and app SHA-256
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Flash execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-020726-1780596446779669000.json`
+  returned `status=passed`, `flash_allowed=true`, and
+  `flash_executed=true`; its control guard verified branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`, commit
+  `dc8c752f9fee`, and a clean worktree before the write.
+- No NVS write occurred. No generic `xiaozhi.bin` or
+  `xiaozhi-firmware-flash-*` product-device flash path was used.
+- Public `/v1/devices` changed from `connection_status=xiaozhi_ws_disconnected`
+  to `connection_status=online` after reboot and kept heartbeat updates for
+  device `44:1b:f6:e2:6a:60`.
+- Product `showtime` scene trace
+  `a21-trace-hardware-showtime-flash-b9c0baa-202606050208` returned HTTP 200
+  with `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`, and 8
+  redacted steps: screen theme, screen brightness, RGB, head yaw/pitch,
+  RGB, head yaw/pitch, head reset, and final RGB.
+- The trace endpoint recorded 16 sent markers for the 8 body-scene steps, and
+  `/v1/devices` recorded `last_body_scene=showtime`,
+  `last_body_scene_status=delivered`, `screen_theme=dark`,
+  `screen_brightness=72`, final head `yaw=0,pitch=24,speed=220`, and final
+  RGB `0/36/96`.
+- A follow-up public `/v1/devices` check about 12 seconds later still showed
+  the device online with heartbeat updates and the same body-scene registry
+  state.
+- This is strong product-socket and machine-readable MCP delivery evidence for
+  the body scene after the reconnect flash. It is not yet physical acceptance:
+  `physical_accepted=false` remains until an operator or instrument confirms
+  visible screen/RGB/head movement on the device.
+- No provider/V21 execution, no camera/NFC/IR expansion, no reboot/OTA/
+  snapshot/video/app-lifecycle exposure, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback occurred.
 
 Live truth after the 2026-06-05 02:00 CST listen-start state-reaction
 suppression and reconnect-candidate cut:

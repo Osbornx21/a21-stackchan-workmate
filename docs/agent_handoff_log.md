@@ -19,6 +19,90 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 - T-FIRMWARE-QUIET-RECONNECT-PRODUCT-FLASH-001 - Product Reconnect Flash and Showtime Machine Evidence
+
+Goal:
+
+- Move the body-capability track from disconnected contract evidence to live
+  product-socket delivery without redoing or rolling back internal-test3 voice
+  protocol acceptance.
+- Flash only the official-compatible A21 product lane candidate that adds
+  periodic quiet Xiaozhi reconnect checks.
+
+Actual completed work:
+
+- Confirmed USB product device `44:1B:F6:E2:6A:60` on
+  `/dev/cu.usbmodem1101`.
+- Confirmed product app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  with SHA-256
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Ran guarded product flash plan and execute through
+  `a21-stackchan-official-xiaozhi-compatible`; execute returned
+  `status=passed`, `flash_allowed=true`, and `flash_executed=true`.
+- Confirmed no NVS write and no generic `xiaozhi.bin` product flash path.
+- After reboot, public `/v1/devices` showed product device
+  `44:1b:f6:e2:6a:60` online with heartbeat updates.
+- Ran public product `showtime` scene via
+  `POST /v1/xiaozhi/body-scene` using trace
+  `a21-trace-hardware-showtime-flash-b9c0baa-202606050208`; it returned HTTP
+  200 `status=delivered` and `delivered_transport=xiaozhi_mcp_sequence`.
+- Trace recorded 16 sent markers for 8 bounded scene steps; `/v1/devices`
+  recorded `last_body_scene=showtime`, `screen_theme=dark`,
+  `screen_brightness=72`, final head `yaw=0,pitch=24,speed=220`, and final
+  RGB `0/36/96`.
+- A follow-up public `/v1/devices` check about 12 seconds later still showed
+  the device online.
+
+Files changed:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Physical acceptance remains pending until an operator or instrument confirms
+  visible screen/RGB/head movement from the showtime scene.
+- The separate official `/stackChan/ws` avatar/action relay remains
+  disconnected; current successful body delivery is through the product
+  Xiaozhi MCP path.
+- Camera, NFC, IR, IMU, ambient/proximity, and battery parity remain scoped
+  follow-up transitions.
+
+Known risks or blockers:
+
+- Keep `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false` until foreground hardware
+  stability proves automatic listen/start body reactions are safe again.
+- Do not mark the showtime scene `physical_accepted=true` from machine
+  delivery alone.
+- Git may continue to warn about historical loose objects/gc; no prune/gc is
+  authorized.
+
+Recommended next action:
+
+- Ask the operator to confirm visible showtime screen/RGB/head movement, then
+  promote the scene acceptance evidence if confirmed.
+- Next code transition should add richer operator-visible body/evidence
+  controls or continue official parity gaps such as touch-driven gestures,
+  battery/status diagnostics, and the official avatar relay reconciliation.
+
+Test, build, or runtime results:
+
+- `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 make a21-stackchan-official-xiaozhi-compatible-flash-plan`:
+  passed with `status=ready`.
+- `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP make a21-stackchan-official-xiaozhi-compatible-flash-execute`:
+  passed with `status=passed`.
+- Public `/v1/devices`: product device returned online and stayed online in a
+  follow-up check after showtime.
+- Public `/v1/xiaozhi/body-scene`: showtime returned HTTP 200 delivered.
+
+Failure location and reason:
+
+- None in this round. Remaining physical acceptance is evidence-gated, not a
+  runtime failure.
+
 ## 2026-06-04 - T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001 - Start Roleplay/Professional v2
 
 Goal:
