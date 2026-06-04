@@ -1128,6 +1128,17 @@ type VoiceModeRitualRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+type VoiceModeRitualAcceptanceRequest struct {
+	DeviceID      string `json:"device_id"`
+	VoiceMode     string `json:"voice_mode"`
+	TraceID       string `json:"trace_id"`
+	SessionID     string `json:"session_id"`
+	ScreenVisible bool   `json:"screen_visible"`
+	RGBVisible    bool   `json:"rgb_visible"`
+	ServoVisible  bool   `json:"servo_visible"`
+	Observer      string `json:"observer"`
+}
+
 type VoiceModeRitualResponse struct {
 	SchemaVersion        string                          `json:"schema_version"`
 	TraceID              string                          `json:"trace_id"`
@@ -1147,6 +1158,20 @@ type VoiceModeRitualResponse struct {
 	OfficialRelayClaimed bool                            `json:"official_relay_claimed"`
 	ResultRedacted       bool                            `json:"result_redacted"`
 	PhysicalAccepted     bool                            `json:"physical_accepted"`
+}
+
+type VoiceModeRitualAcceptanceResponse struct {
+	SchemaVersion     string   `json:"schema_version"`
+	TraceID           string   `json:"trace_id"`
+	SessionID         string   `json:"session_id"`
+	DeviceID          string   `json:"device_id"`
+	Status            string   `json:"status"`
+	SelectedVoiceMode string   `json:"selected_voice_mode"`
+	Observer          string   `json:"observer"`
+	AcceptedSurfaces  []string `json:"accepted_surfaces"`
+	PhysicalAccepted  bool     `json:"physical_accepted"`
+	ResultRedacted    bool     `json:"result_redacted"`
+	AcceptanceEventMS int64    `json:"acceptance_event_ms"`
 }
 
 type VoiceChainProfileOption struct {
@@ -1528,6 +1553,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/voice-mode-ritual", s.handleVoiceModeRitual)
+	mux.HandleFunc("/v1/voice-mode-ritual-acceptance", s.handleVoiceModeRitualAcceptance)
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
@@ -1689,6 +1715,67 @@ func (s *Server) handleVoiceModeRitual(w http.ResponseWriter, r *http.Request) {
 		OfficialRelayClaimed: false,
 		ResultRedacted:       true,
 		PhysicalAccepted:     false,
+	})
+}
+
+func (s *Server) handleVoiceModeRitualAcceptance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req VoiceModeRitualAcceptanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	mode := canonicalVoiceMode(req.VoiceMode)
+	if mode == "" {
+		http.Error(w, "voice_mode must be roleplay or professional", http.StatusBadRequest)
+		return
+	}
+	traceID := strings.TrimSpace(req.TraceID)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if traceID == "" || sessionID == "" {
+		http.Error(w, "trace_id and session_id are required", http.StatusBadRequest)
+		return
+	}
+	observer := strings.ToLower(strings.TrimSpace(req.Observer))
+	if observer == "" {
+		observer = "operator"
+	}
+	if observer != "operator" && observer != "instrument" {
+		http.Error(w, "observer must be operator or instrument", http.StatusBadRequest)
+		return
+	}
+	if !req.ScreenVisible || !req.RGBVisible || !req.ServoVisible {
+		http.Error(w, "screen_visible, rgb_visible, and servo_visible must be true", http.StatusBadRequest)
+		return
+	}
+	if !s.hasMatchingVoiceModeRitualEvidence(req.DeviceID, mode, traceID, sessionID) {
+		http.Error(w, "matching voice mode ritual evidence is required before physical acceptance", http.StatusConflict)
+		return
+	}
+
+	nowMS := s.now().UnixMilli()
+	marker := "voice_mode.ritual." + mode + ".physical_acceptance.accepted"
+	s.recordTrace(traceID, sessionID, req.DeviceID, marker, nowMS)
+	s.recordVoiceModeRitualPhysicalAcceptance(req.DeviceID, mode, traceID, sessionID, observer, nowMS, marker)
+	writeJSON(w, http.StatusOK, VoiceModeRitualAcceptanceResponse{
+		SchemaVersion:     "a21.gateway.voice_mode_ritual_acceptance.v1",
+		TraceID:           traceID,
+		SessionID:         sessionID,
+		DeviceID:          req.DeviceID,
+		Status:            "accepted",
+		SelectedVoiceMode: mode,
+		Observer:          observer,
+		AcceptedSurfaces:  []string{"screen", "rgb", "servo"},
+		PhysicalAccepted:  true,
+		ResultRedacted:    true,
+		AcceptanceEventMS: nowMS,
 	})
 }
 
@@ -2145,6 +2232,57 @@ func (s *Server) recordVoiceModeRitualCompleted(deviceID string, mode string, tr
 	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
 	record.CurrentVoiceMode = mode
 	record.LastEvent = protocol.DeviceEventKind("voice_mode.ritual." + mode + ".completed")
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = atMS
+	s.devices[deviceID] = record
+}
+
+func (s *Server) hasMatchingVoiceModeRitualEvidence(deviceID string, mode string, traceID string, sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" || record.Capabilities == nil {
+		return false
+	}
+	return record.Capabilities["last_voice_mode_ritual"] == mode &&
+		record.Capabilities["last_voice_mode_ritual_status"] == "delivered" &&
+		record.Capabilities["last_voice_mode_ritual_completed"] == "true" &&
+		record.Capabilities["last_voice_mode_ritual_trace_id"] == traceID &&
+		record.Capabilities["last_voice_mode_ritual_session_id"] == sessionID
+}
+
+func (s *Server) recordVoiceModeRitualPhysicalAcceptance(deviceID string, mode string, traceID string, sessionID string, observer string, atMS int64, event string) {
+	capabilities := map[string]string{
+		"voice_mode_ritual_physical_accepted":          "true",
+		"voice_mode_ritual_screen_physical_accepted":   "true",
+		"voice_mode_ritual_rgb_physical_accepted":      "true",
+		"voice_mode_ritual_servo_physical_accepted":    "true",
+		"last_voice_mode_ritual_acceptance_status":     "operator_visible_accepted",
+		"last_voice_mode_ritual_acceptance_mode":       mode,
+		"last_voice_mode_ritual_acceptance_trace_id":   traceID,
+		"last_voice_mode_ritual_acceptance_session_id": sessionID,
+		"last_voice_mode_ritual_acceptance_observer":   observer,
+		"last_voice_mode_ritual_acceptance_at_ms":      strconv.FormatInt(atMS, 10),
+	}
+	if observer == "instrument" {
+		capabilities["last_voice_mode_ritual_acceptance_status"] = "instrument_visible_accepted"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = atMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
+	record.CurrentVoiceMode = mode
+	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
+		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
+	}
 	record.LastTraceID = traceID
 	record.LastSessionID = sessionID
 	record.LastSeenMS = atMS

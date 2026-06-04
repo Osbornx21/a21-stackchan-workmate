@@ -493,6 +493,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/wake-word",
 		"/v1/voice-modes",
 		"/v1/voice-mode-ritual",
+		"/v1/voice-mode-ritual-acceptance",
 		"/v1/fast-companion/turn",
 		"/v1/professional-query",
 		"/v1/xiaozhi/body-preset",
@@ -623,10 +624,12 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`id="modeRitualStatus"`,
 		`id="modeRitualTraceStatus"`,
 		`id="modeRitualPhysicalStatus"`,
+		`id="acceptModeRitualPhysical"`,
 		`data-mode-ritual="roleplay"`,
 		`data-mode-ritual="professional"`,
 		`Run Roleplay Ritual`,
 		`Run Professional Ritual`,
+		`Accept Visible Mode Ritual`,
 		`data-body-preset="ready"`,
 		`data-body-preset="listening"`,
 		`data-body-preset="thinking"`,
@@ -1415,6 +1418,111 @@ func TestVoiceModeRitualRejectsUnknownModeAndDoesNotFallbackToProvider(t *testin
 	NewServer().Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("voice mode ritual status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVoiceModeRitualPhysicalAcceptanceRecordsOperatorEvidence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-mode-ritual-acceptance-hello",
+		"session_id": "a21-session-mode-ritual-acceptance-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	ritualResp, err := http.Post(
+		httpServer.URL+"/v1/voice-mode-ritual",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","voice_mode":"professional","trace_id":"a21-trace-mode-ritual-acceptance","session_id":"a21-session-mode-ritual-acceptance"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ritualResp.Body.Close()
+	if ritualResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(ritualResp.Body)
+		t.Fatalf("mode ritual status = %d: %s", ritualResp.StatusCode, string(body))
+	}
+	for i := 0; i < 4; i++ {
+		readXiaozhiJSON(t, ctx, conn)
+	}
+
+	acceptResp, err := http.Post(
+		httpServer.URL+"/v1/voice-mode-ritual-acceptance",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","voice_mode":"professional","trace_id":"a21-trace-mode-ritual-acceptance","session_id":"a21-session-mode-ritual-acceptance","screen_visible":true,"rgb_visible":true,"servo_visible":true,"observer":"operator"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acceptResp.Body.Close()
+	if acceptResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(acceptResp.Body)
+		t.Fatalf("mode ritual acceptance status = %d: %s", acceptResp.StatusCode, string(body))
+	}
+	var response map[string]any
+	if err := json.NewDecoder(acceptResp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":      "a21.gateway.voice_mode_ritual_acceptance.v1",
+		"status":              "accepted",
+		"selected_voice_mode": "professional",
+		"physical_accepted":   true,
+		"result_redacted":     true,
+	} {
+		if response[key] != want {
+			t.Fatalf("response[%s] = %#v, want %#v in %#v", key, response[key], want, response)
+		}
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-mode-ritual-acceptance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "voice_mode.ritual.professional.physical_acceptance.accepted") {
+		t.Fatalf("trace missing mode ritual physical acceptance marker: %+v", traces.Events)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	for key, want := range map[string]any{
+		"voice_mode_ritual_physical_accepted":        "true",
+		"voice_mode_ritual_screen_physical_accepted": "true",
+		"voice_mode_ritual_rgb_physical_accepted":    "true",
+		"voice_mode_ritual_servo_physical_accepted":  "true",
+		"last_voice_mode_ritual_acceptance_status":   "operator_visible_accepted",
+		"last_voice_mode_ritual_acceptance_mode":     "professional",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestVoiceModeRitualPhysicalAcceptanceRequiresMatchingEvidence(t *testing.T) {
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-mode-ritual-acceptance", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","voice_mode":"professional","trace_id":"a21-trace-missing-mode-ritual","session_id":"a21-session-missing-mode-ritual","screen_visible":true,"rgb_visible":true,"servo_visible":true,"observer":"operator"}`))
+	NewServer().Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("mode ritual acceptance status = %d, want 409: %s", resp.Code, resp.Body.String())
 	}
 }
 

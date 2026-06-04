@@ -764,6 +764,22 @@ and the server caps the delay at 1000 ms. Responses record
 `v21_executed=false`, `official_relay_claimed=false`, and
 `physical_accepted=false` until operator or instrument evidence proves the
 visible mode switch.
+`POST /v1/voice-mode-ritual-acceptance` records that foreground physical
+acceptance. The request must include `device_id`, `voice_mode`, the matching
+`trace_id` / `session_id` from the delivered ritual,
+`screen_visible=true`, `rgb_visible=true`, `servo_visible=true`, and
+`observer=operator` or `observer=instrument`. Gateway rejects acceptance
+without matching delivered ritual evidence. A successful response uses schema
+`a21.gateway.voice_mode_ritual_acceptance.v1`, records the trace marker
+`voice_mode.ritual.<mode>.physical_acceptance.accepted`, and updates the
+device registry with redacted fields such as
+`voice_mode_ritual_physical_accepted=true`,
+`voice_mode_ritual_screen_physical_accepted=true`,
+`voice_mode_ritual_rgb_physical_accepted=true`, and
+`voice_mode_ritual_servo_physical_accepted=true`. This closes only the
+screen/RGB/servo visibility evidence for the explicit mode switch; it is not
+voice-chain, provider, V21, wake, official avatar/action relay, or full PRD
+acceptance.
 
 Server-side launch readiness treats this ritual as a distinct evidence gate:
 `professional_ritual_ready` is true only when `a21 product-readiness` ingests a

@@ -1,6 +1,6 @@
 # Voice Mode Hardware Ritual
 
-Status: deployed; physical acceptance pending.
+Status: acceptance surface implemented; foreground physical confirmation pending.
 Date: 2026-06-05 CST.
 
 ## Goal
@@ -19,7 +19,10 @@ ritual over the existing safe Xiaozhi MCP product path.
   ritual buttons.
 - Acceptance: focused tests prove the endpoint sends only approved MCP tools,
   records trace/registry evidence, does not execute provider/V21, and keeps
-  `physical_accepted=false` until operator evidence.
+  `physical_accepted=false` until operator evidence. A separate
+  `/v1/voice-mode-ritual-acceptance` endpoint records physical acceptance only
+  after matching delivered ritual trace/session evidence and explicit
+  screen/RGB/servo visible confirmation.
 
 ## Boundaries
 
@@ -57,6 +60,12 @@ ritual over the existing safe Xiaozhi MCP product path.
   `screen_theme=auto`, `screen_brightness=58`, RGB `120/48/96`, head
   `yaw=0,pitch=24,speed=180`, and
   `voice_mode_ritual_physical_accepted=false`.
+- Follow-up commit implements
+  `POST /v1/voice-mode-ritual-acceptance` plus the `/workspace`
+  `Accept Visible Mode Ritual` control. The endpoint requires matching
+  delivered `trace_id` / `session_id`, visible screen/RGB/servo booleans, and
+  an `operator` or `instrument` observer; missing matching evidence returns
+  HTTP 409.
 
 This transition is machine-readable product-socket evidence for the PRD mode
 switch body feedback. It is not physical acceptance until the operator or an

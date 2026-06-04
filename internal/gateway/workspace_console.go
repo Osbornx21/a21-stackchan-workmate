@@ -686,6 +686,7 @@ const workspaceConsoleHTML = `<!doctype html>
           <div class="actions" id="modeRitualActions">
             <button class="secondary" data-mode-ritual="roleplay">Run Roleplay Ritual</button>
             <button data-mode-ritual="professional">Run Professional Ritual</button>
+            <button class="secondary" id="acceptModeRitualPhysical">Accept Visible Mode Ritual</button>
           </div>
           <div class="mode-band">
             <div class="metric"><span>Roleplay expression</span><strong id="roleplayExpression">no_send_plan_only</strong></div>
@@ -854,6 +855,7 @@ const workspaceConsoleHTML = `<!doctype html>
       roleplayExpression: document.getElementById('roleplayExpression'),
       professionalCue: document.getElementById('professionalCue'),
       modeRitualActions: document.getElementById('modeRitualActions'),
+      acceptModeRitualPhysical: document.getElementById('acceptModeRitualPhysical'),
       modeRitualStatus: document.getElementById('modeRitualStatus'),
       modeRitualTraceStatus: document.getElementById('modeRitualTraceStatus'),
       modeRitualPhysicalStatus: document.getElementById('modeRitualPhysicalStatus'),
@@ -1964,6 +1966,29 @@ const workspaceConsoleHTML = `<!doctype html>
       log('mode ritual ' + ((payload && payload.selected_voice_mode) || mode) + ' ' + ((payload && payload.status) || 'sent'));
       return payload;
     }
+    async function acceptModeRitualPhysical() {
+      if (!state.modeRitual || !state.modeRitual.trace_id || !state.modeRitual.session_id) {
+        throw new Error('run mode ritual first');
+      }
+      const mode = state.modeRitual.selected_voice_mode || 'roleplay';
+      const payload = await postJSON('/v1/voice-mode-ritual-acceptance', {
+        device_id: currentDeviceID(),
+        voice_mode: mode,
+        trace_id: state.modeRitual.trace_id,
+        session_id: state.modeRitual.session_id,
+        screen_visible: true,
+        rgb_visible: true,
+        servo_visible: true,
+        observer: 'operator'
+      });
+      setModeRitual(Object.assign({}, state.modeRitual, {
+        physical_accepted: !!payload.physical_accepted,
+        acceptance_status: payload.status || '',
+        accepted_surfaces: payload.accepted_surfaces || []
+      }));
+      log('mode ritual physical ' + mode + ' ' + (payload.status || 'accepted'));
+      return payload;
+    }
     function wakeWordRequestBody(mode) {
       const body = {
         mode: mode || ui.wakeWordModeSelect.value,
@@ -2226,6 +2251,7 @@ const workspaceConsoleHTML = `<!doctype html>
       if (!button) return;
       runModeRitual(button.dataset.modeRitual).catch((err) => log('mode ritual ' + err.message));
     });
+    ui.acceptModeRitualPhysical.addEventListener('click', () => acceptModeRitualPhysical().catch((err) => log('mode ritual physical ' + err.message)));
     ui.saveWakeWordSetup.addEventListener('click', () => saveWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.resetWakeWordSetup.addEventListener('click', () => resetWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.runRoleplayProbe.addEventListener('click', () => runRoleplayProbe().catch((err) => log('probe roleplay ' + err.message)));
