@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this V21 scope-guard control-doc sync:
-  `6a63e71 feat(gateway): track workspace index requests`
+- Current source HEAD before this A21 native voice-query bridge cut:
+  `731d4d8 docs(control): record v21 source scope guard`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -1142,3 +1142,37 @@ Current conclusion:
   storage, provider/V21 execution, durable auth/ACL, Gateway service startup,
   ECS deployment, firmware, serial, NVS, or physical StackChan professional
   consult acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 A21 Native V21 Voice-Query Bridge
+
+The local A21 `v21-adapter-bridge` now consumes V21's native A21 v2
+`/internal/v1/knowledge/voice-query` contract as its primary professional
+query path.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-a21-v21-native-voice-query-bridge.md`.
+- Bridge requests now pass safe A21 v2 fields into V21 native voice-query:
+  `device_id`, `user_id`, `workspace_id`, `query_scope`, trace/session IDs,
+  and the active collection ID.
+- Native voice-query success mirrors V21-returned `source_scope_counts` and
+  `workspace_status`; A21 no longer fabricates counts from `query_scope` on the
+  green path.
+- Direct retrieval remains only as a controlled no-evidence expansion fallback,
+  and fallback counts are derived only from V21 result `source_scope` labels.
+- Focused httptest coverage proves the bridge calls native voice-query on the
+  green path, avoids direct retrieval there, preserves explicit
+  `personal_plus_public` workspace scope metadata, and still retries the
+  child-lock ASR fragment through the legacy retrieval fallback after a
+  native `no_evidence` response.
+
+Current conclusion:
+
+- A21 is now wired to the V21 source-scope guard worker contract instead of
+  silently bypassing it through direct retrieval for normal professional
+  queries.
+- This is adapter-boundary contract evidence only. It is not V21 merge/release,
+  real personal upload indexing, durable tenant/account ACL, cloud storage,
+  provider execution, Gateway service startup, ECS deployment, firmware,
+  serial, NVS, or physical StackChan professional consult acceptance.

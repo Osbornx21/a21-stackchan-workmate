@@ -19,12 +19,13 @@ const ProfessionalMaxFirstResponseMS = 1200
 const ProfessionalCheckingFeedbackText = "我在查，先把证据和置信度拉出来。"
 
 const (
-	DefaultUserID       = "a21_local_user"
-	DefaultWorkspaceID  = "a21_local_workspace"
-	QueryScopePublic    = "public_only"
-	QueryScopePersonal  = "personal_only"
-	QueryScopeCombined  = "personal_plus_public"
-	WorkspaceSearchable = "searchable"
+	DefaultUserID         = "a21_local_user"
+	DefaultWorkspaceID    = "a21_local_workspace"
+	QueryScopePublic      = "public_only"
+	QueryScopePersonal    = "personal_only"
+	QueryScopeCombined    = "personal_plus_public"
+	WorkspaceSearchable   = "searchable"
+	WorkspaceScopePending = "scope_contract_ready_acl_pending"
 )
 
 type QueryFailureClass string
@@ -659,7 +660,7 @@ func redactedWorkspaceStatus(status string) string {
 	switch strings.TrimSpace(status) {
 	case "", "unknown":
 		return ""
-	case WorkspaceSearchable, "uploaded", "indexing", "failed", "unavailable":
+	case WorkspaceSearchable, WorkspaceScopePending, "uploaded", "indexing", "failed", "unavailable":
 		return strings.TrimSpace(status)
 	default:
 		return ""

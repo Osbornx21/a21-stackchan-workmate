@@ -134,6 +134,14 @@ StackChan hardware.
   `scope_contract_ready_acl_pending`. This is source-scope guard evidence, not
   full tenant/account ACL, real personal upload indexing, V21 merge/release, or
   physical StackChan professional consult acceptance.
+- A21 local `v21-adapter-bridge` now uses V21 native
+  `/internal/v1/knowledge/voice-query` as its primary professional query path,
+  passes `device_id`/`user_id`/`workspace_id`/`query_scope`, mirrors
+  V21-returned `source_scope_counts` and `workspace_status`, and keeps direct
+  retrieval only as a controlled no-evidence expansion fallback. This prevents
+  A21 from bypassing the V21 source-scope guard on the normal professional
+  consult path, but it is still adapter-boundary contract evidence rather than
+  V21 merge/release, real indexing, or physical consult acceptance.
 
 ## Product Form
 

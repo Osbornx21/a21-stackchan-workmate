@@ -612,6 +612,16 @@ private document contents. V21 adapter responses may include redacted
 `source_scope_counts` and `workspace_status`; these are counts/status only, not
 retrieved document bodies.
 
+A21's local `v21-adapter-bridge` must call V21 native
+`/internal/v1/knowledge/voice-query` as the primary professional query path and
+must pass `device_id`, `user_id`, `workspace_id`, and `query_scope` through
+that native request. Direct
+`/api/v1/collections/{collection}/retrieval/query` is permitted only as a
+controlled no-evidence expansion fallback. The fallback may report
+`source_scope_counts` only when V21 retrieval results carry safe
+`source_scope=public|personal`; it must not infer counts from the requested
+`query_scope`.
+
 `professional_read_records` is the Gateway-owned read ledger for professional
 queries. `GET /v1/professional-read-records` returns
 `a21.gateway.professional_read_records.v1` with memory-only records that can be

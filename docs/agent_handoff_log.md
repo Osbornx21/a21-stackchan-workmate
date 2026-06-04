@@ -11077,6 +11077,91 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 10:50 CST - A21 Native V21 Voice-Query Bridge
+
+Round goal:
+
+- Make A21's local `v21-adapter-bridge` use V21 native
+  `/internal/v1/knowledge/voice-query` as the primary professional query path
+  so internal test 4 no longer bypasses the V21 source-scope guard through
+  direct retrieval on normal professional consults.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-a21-v21-native-voice-query-bridge.md`.
+- Extended the bridge DTOs for V21 voice-query and retrieval fallback with safe
+  `source_scope`, `source_scope_counts`, and `workspace_status` metadata.
+- The bridge now sends safe A21 v2 fields into native V21 voice-query:
+  `device_id`, `user_id`, `workspace_id`, `query_scope`, trace/session IDs,
+  and the active collection ID.
+- Native voice-query success now mirrors V21-returned `source_scope_counts`
+  and `workspace_status` instead of fabricating counts from requested
+  `query_scope`.
+- Direct retrieval remains only as a controlled no-evidence expansion fallback;
+  fallback counts are derived only from result `source_scope` labels.
+- Added httptest coverage proving the green path calls native voice-query, does
+  not call direct retrieval, preserves explicit `personal_plus_public`
+  workspace scope metadata, and still retries the child-lock ASR fragment only
+  after native `no_evidence`.
+- Documented the new bridge contract in current control, V21 integration,
+  protocol, internal test 4 plan, and project state.
+
+Changed files:
+
+- `internal/app/professional_adapter_bridge.go`
+- `internal/app/app_test.go`
+- `internal/v21adapter/client.go`
+- `docs/plans/2026-06-04-a21-v21-native-voice-query-bridge.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/V21_INTEGRATION.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- V21 worker branch `origin/codex/a21-v2-workspace-scope-retrieval-guard` still
+  needs merge/release before this is active against the normal local V21
+  service.
+- Durable tenant/account ACL, real personal upload indexing, cloud storage,
+  provider execution, and physical StackChan professional consult acceptance
+  remain open.
+- Direct retrieval fallback is retained only for controlled no-evidence
+  expansion; it must not become the normal professional query path again.
+
+Known risks/blockers:
+
+- A V21 deployment that lacks `/internal/v1/knowledge/voice-query` will return
+  no-evidence/404 and use fallback behavior, so release ordering matters.
+- Product readiness should continue treating adapter-boundary smoke as below
+  full PRD acceptance until a real V21 merge/release and physical consult
+  evidence exist.
+- Git may still warn about historical loose objects/gc; no prune/gc action was
+  taken.
+
+Recommended next action:
+
+- Continue internal test 4 along two parallel mainline cuts: roleplay
+  persona/memory/voice-clone runtime reflection toward the actual StackChan
+  experience, and approved V21 merge/release plus real indexing adapter work.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'V21AdapterBridge|V21AdapterSmoke|ProductReadiness.*V21|RunProductReadiness.*V21' -count=1`:
+  passed.
+- `go test ./internal/v21adapter -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, prune/gc, or physical
+  hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
+
 ## 2026-06-04 10:37 CST - V21 Source-Scope Retrieval Guard
 
 Round goal:

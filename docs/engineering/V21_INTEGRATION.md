@@ -143,6 +143,13 @@ Rules:
   closed for unclassified evidence in scoped A21 responses, and can return
   `workspace_status=searchable` with nonzero classified counts. This is not yet
   durable tenant/account ACL or real personal upload indexing.
+- A21 local `v21-adapter-bridge` uses V21 native
+  `/internal/v1/knowledge/voice-query` as the primary professional query path.
+  It sends the same redacted A21 v2 scope fields and mirrors V21-returned
+  `source_scope_counts` / `workspace_status`. Direct
+  `/api/v1/collections/{collection}/retrieval/query` is now only a controlled
+  no-evidence expansion fallback; fallback counts may be derived only from
+  result `source_scope` labels, never from `query_scope` plus evidence count.
 - V21 reports may include scope labels and counts, but not uploaded document
   text, evidence bodies, full source paths, credentials, local private URLs,
   prompts, transcripts, or provider output.

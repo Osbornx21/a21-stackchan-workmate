@@ -10183,9 +10183,19 @@ func TestRunV21ProfessionalReadinessReportsMisconfigurationWithoutLeak(t *testin
 	}
 }
 
-func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
+func TestV21AdapterBridgeExecutesNativeVoiceQueryScopeContract(t *testing.T) {
 	activeReleaseID := "rel_active"
+	var sawNativeVoiceQuery bool
 	var sawRetrievalQuery bool
+	var voiceRequest struct {
+		DeviceID      string   `json:"device_id"`
+		UserID        string   `json:"user_id"`
+		WorkspaceID   string   `json:"workspace_id"`
+		QueryScope    string   `json:"query_scope"`
+		CollectionIDs []string `json:"collection_ids"`
+		Question      string   `json:"question"`
+		Mode          string   `json:"mode"`
+	}
 	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/healthz":
@@ -10199,24 +10209,30 @@ func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 				Name:            "Vehicle Knowledge",
 				ActiveReleaseID: &activeReleaseID,
 			}})
-		case "/api/v1/collections/col_vehicle/retrieval/query":
-			var request struct {
-				Query string `json:"query"`
-				Limit int    `json:"limit"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		case "/internal/v1/knowledge/voice-query":
+			if err := json.NewDecoder(r.Body).Decode(&voiceRequest); err != nil {
 				t.Fatal(err)
 			}
-			sawRetrievalQuery = request.Query == "哪些车有儿童锁" && request.Limit == 5
-			writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
-				CollectionID: "col_vehicle",
-				Results: []v21RetrievalResult{{
-					AnchorID:    "ca_child_lock",
+			sawNativeVoiceQuery = true
+			writeV21BridgeJSON(w, http.StatusOK, v21VoiceQueryResponse{
+				QueryRunID:   "qr_child_lock",
+				SpokenAnswer: "G02ES 和 G02ESVR 支持座椅儿童锁。",
+				FullAnswer:   "G02ES、G02ESVR 支持座椅儿童锁，证据来自儿童锁证据。",
+				Confidence:   0.91,
+				Evidence: []v21VoiceEvidence{{
+					AnchorID:    "anchor_child_lock",
+					ChunkID:     "chunk_child_lock",
 					SourceLabel: "儿童锁证据",
+					SourceScope: "public",
 					Excerpt:     "G02ES、G02ESVR 支持座椅儿童锁。",
 					Score:       0.91,
 				}},
+				SourceScopeCounts: map[string]int{"public": 1},
+				WorkspaceStatus:   v21adapter.WorkspaceSearchable,
 			})
+		case "/api/v1/collections/col_vehicle/retrieval/query":
+			sawRetrievalQuery = true
+			http.Error(w, "direct retrieval should not be called on native voice-query success", http.StatusInternalServerError)
 		default:
 			http.NotFound(w, r)
 		}
@@ -10236,13 +10252,156 @@ func TestV21AdapterBridgeExecutesRealBackendRetrievalContract(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
 	}
-	if !sawRetrievalQuery {
-		t.Fatal("bridge did not call V21 retrieval query with the adapter contract")
+	if !sawNativeVoiceQuery {
+		t.Fatal("bridge did not call V21 native voice-query")
 	}
-	for _, want := range []string{`"status": "passed"`, `"evidence_count": 1`, `"follow_up_count": 1`, `"confidence": 0.91`} {
+	if sawRetrievalQuery {
+		t.Fatal("bridge called direct retrieval on native voice-query success")
+	}
+	if voiceRequest.DeviceID != "" {
+		t.Fatalf("device_id = %q, want smoke default empty", voiceRequest.DeviceID)
+	}
+	if voiceRequest.UserID != v21adapter.DefaultUserID {
+		t.Fatalf("user_id = %q, want default", voiceRequest.UserID)
+	}
+	if voiceRequest.WorkspaceID != v21adapter.DefaultWorkspaceID {
+		t.Fatalf("workspace_id = %q, want default", voiceRequest.WorkspaceID)
+	}
+	if voiceRequest.QueryScope != v21adapter.QueryScopePublic {
+		t.Fatalf("query_scope = %q, want public_only", voiceRequest.QueryScope)
+	}
+	if !reflect.DeepEqual(voiceRequest.CollectionIDs, []string{"col_vehicle"}) {
+		t.Fatalf("collection_ids = %#v, want col_vehicle", voiceRequest.CollectionIDs)
+	}
+	if voiceRequest.Question != "哪些车有儿童锁" || voiceRequest.Mode != "grounded_qa" {
+		t.Fatalf("voice request = %+v, want question and grounded_qa", voiceRequest)
+	}
+	for _, want := range []string{
+		`"status": "passed"`,
+		`"evidence_count": 1`,
+		`"follow_up_count": 1`,
+		`"confidence": 0.91`,
+		`"query_scope": "public_only"`,
+		`"workspace_status": "searchable"`,
+		`"source_scope_counts": {`,
+		`"public": 1`,
+	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
+	}
+}
+
+func TestV21AdapterBridgePassesExplicitWorkspaceScopeToNativeVoiceQuery(t *testing.T) {
+	activeReleaseID := "rel_active"
+	var retrievalCalls int
+	var voiceRequest struct {
+		DeviceID      string   `json:"device_id"`
+		UserID        string   `json:"user_id"`
+		WorkspaceID   string   `json:"workspace_id"`
+		QueryScope    string   `json:"query_scope"`
+		CollectionIDs []string `json:"collection_ids"`
+		Question      string   `json:"question"`
+		TraceID       string   `json:"trace_id"`
+		SessionID     string   `json:"session_id"`
+	}
+	v21Backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/healthz":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/api/v1/collections":
+			writeV21BridgeJSON(w, http.StatusOK, []v21CollectionView{{
+				ID:              "col_vehicle",
+				Name:            "Vehicle Knowledge",
+				ActiveReleaseID: &activeReleaseID,
+			}})
+		case "/internal/v1/knowledge/voice-query":
+			if err := json.NewDecoder(r.Body).Decode(&voiceRequest); err != nil {
+				t.Fatal(err)
+			}
+			writeV21BridgeJSON(w, http.StatusOK, v21VoiceQueryResponse{
+				QueryRunID:   "qr_scope_combined",
+				SpokenAnswer: "公共资料和个人资料各有一条可引用证据。",
+				FullAnswer:   "公共资料和个人资料各有一条可引用证据，已按来源范围返回计数。",
+				Confidence:   0.86,
+				Evidence: []v21VoiceEvidence{
+					{
+						AnchorID:    "anchor_public",
+						ChunkID:     "chunk_public",
+						SourceLabel: "公共资料",
+						SourceScope: "public",
+						Excerpt:     "公共资料里记录了儿童锁配置。",
+						Score:       0.86,
+					},
+					{
+						AnchorID:    "anchor_personal",
+						ChunkID:     "chunk_personal",
+						SourceLabel: "个人资料",
+						SourceScope: "personal",
+						Excerpt:     "个人资料里记录了本次标注。",
+						Score:       0.84,
+					},
+				},
+				SourceScopeCounts: map[string]int{"public": 1, "personal": 1},
+				WorkspaceStatus:   v21adapter.WorkspaceSearchable,
+			})
+		case "/api/v1/collections/col_vehicle/retrieval/query":
+			retrievalCalls++
+			http.Error(w, "direct retrieval should not be called on native voice-query success", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer v21Backend.Close()
+	handler, err := newV21AdapterBridgeHandler(context.Background(), v21AdapterBridgeOptions{V21URL: v21Backend.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := httptest.NewServer(handler)
+	defer adapter.Close()
+
+	resp, err := http.Post(adapter.URL+v21adapter.QueryPath, "application/json", strings.NewReader(`{
+		"trace_id":"a21-trace-v21-explicit",
+		"session_id":"a21-session-v21-explicit",
+		"device_id":"stackchan-sim-001",
+		"user_id":"a21_user_test",
+		"workspace_id":"a21_workspace_test",
+		"mode":"professional",
+		"privacy_scope":"professional_only",
+		"query_scope":"personal_plus_public",
+		"utterance":"查儿童锁并结合我的标注"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var response v21adapter.QueryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %+v", resp.StatusCode, response)
+	}
+	if voiceRequest.DeviceID != "stackchan-sim-001" || voiceRequest.UserID != "a21_user_test" || voiceRequest.WorkspaceID != "a21_workspace_test" {
+		t.Fatalf("voice request ids = %+v, want explicit A21 workspace scope labels", voiceRequest)
+	}
+	if voiceRequest.QueryScope != v21adapter.QueryScopeCombined {
+		t.Fatalf("query_scope = %q, want personal_plus_public", voiceRequest.QueryScope)
+	}
+	if !reflect.DeepEqual(voiceRequest.CollectionIDs, []string{"col_vehicle"}) {
+		t.Fatalf("collection_ids = %#v, want col_vehicle", voiceRequest.CollectionIDs)
+	}
+	if voiceRequest.Question != "查儿童锁并结合我的标注" {
+		t.Fatalf("question = %q, want explicit utterance", voiceRequest.Question)
+	}
+	if retrievalCalls != 0 {
+		t.Fatalf("retrieval calls = %d, want 0", retrievalCalls)
+	}
+	if !reflect.DeepEqual(response.SourceScopeCounts, map[string]int{"public": 1, "personal": 1}) {
+		t.Fatalf("source_scope_counts = %#v, want public+personal from V21", response.SourceScopeCounts)
+	}
+	if response.WorkspaceStatus != v21adapter.WorkspaceSearchable {
+		t.Fatalf("workspace_status = %q, want searchable", response.WorkspaceStatus)
 	}
 }
 
@@ -10259,6 +10418,11 @@ func TestV21AdapterBridgeRetriesChildLockASRFragmentWithoutLeakingQuery(t *testi
 				Name:            "Vehicle Knowledge",
 				ActiveReleaseID: &activeReleaseID,
 			}})
+		case "/internal/v1/knowledge/voice-query":
+			writeV21BridgeJSON(w, http.StatusFailedDependency, v21BridgeQueryError{
+				Code:        "no_evidence",
+				StatusClass: "status_4xx",
+			})
 		case "/api/v1/collections/col_vehicle/retrieval/query":
 			var request struct {
 				Query string `json:"query"`
@@ -10280,6 +10444,7 @@ func TestV21AdapterBridgeRetriesChildLockASRFragmentWithoutLeakingQuery(t *testi
 				Results: []v21RetrievalResult{{
 					AnchorID:    "ca_child_lock",
 					SourceLabel: "儿童锁证据",
+					SourceScope: "public",
 					Excerpt:     "G02ES、G02ESVR 支持座椅儿童锁。",
 					Score:       0.91,
 				}},
@@ -10377,6 +10542,11 @@ func TestV21AdapterBridgeNoResultsReturnsControlledRedactedFailure(t *testing.T)
 				Name:            "Vehicle Knowledge",
 				ActiveReleaseID: &activeReleaseID,
 			}})
+		case "/internal/v1/knowledge/voice-query":
+			writeV21BridgeJSON(w, http.StatusFailedDependency, v21BridgeQueryError{
+				Code:        "no_evidence",
+				StatusClass: "status_4xx",
+			})
 		case "/api/v1/collections/col_vehicle/retrieval/query":
 			writeV21BridgeJSON(w, http.StatusOK, v21RetrievalQueryResponse{
 				CollectionID: "col_vehicle",

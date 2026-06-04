@@ -29,13 +29,15 @@ type v21CollectionView struct {
 }
 
 type v21VoiceQueryResponse struct {
-	QueryRunID   string                 `json:"query_run_id"`
-	SpokenAnswer string                 `json:"spoken_answer"`
-	FullAnswer   string                 `json:"full_answer"`
-	Confidence   float64                `json:"confidence"`
-	Evidence     []v21VoiceEvidence     `json:"evidence"`
-	LatencyMS    map[string]int64       `json:"latency_ms,omitempty"`
-	ToolResults  map[string]interface{} `json:"tool_results,omitempty"`
+	QueryRunID        string                 `json:"query_run_id"`
+	SpokenAnswer      string                 `json:"spoken_answer"`
+	FullAnswer        string                 `json:"full_answer"`
+	Confidence        float64                `json:"confidence"`
+	Evidence          []v21VoiceEvidence     `json:"evidence"`
+	LatencyMS         map[string]int64       `json:"latency_ms,omitempty"`
+	ToolResults       map[string]interface{} `json:"tool_results,omitempty"`
+	SourceScopeCounts map[string]int         `json:"source_scope_counts,omitempty"`
+	WorkspaceStatus   string                 `json:"workspace_status,omitempty"`
 }
 
 type v21VoiceEvidence struct {
@@ -44,6 +46,7 @@ type v21VoiceEvidence struct {
 	VersionID    string  `json:"version_id"`
 	SourceUnitID string  `json:"source_unit_id"`
 	SourceLabel  string  `json:"source_label"`
+	SourceScope  string  `json:"source_scope,omitempty"`
 	Excerpt      string  `json:"excerpt"`
 	Score        float64 `json:"score"`
 }
@@ -59,6 +62,7 @@ type v21RetrievalResult struct {
 	AnchorID     string  `json:"anchor_id"`
 	SourceUnitID string  `json:"source_unit_id"`
 	SourceLabel  string  `json:"source_label"`
+	SourceScope  string  `json:"source_scope,omitempty"`
 	Excerpt      string  `json:"excerpt"`
 	Score        float64 `json:"score"`
 }
@@ -158,7 +162,7 @@ func newV21AdapterBridgeHandler(ctx context.Context, options v21AdapterBridgeOpt
 			http.Error(w, "invalid professional query request", http.StatusBadRequest)
 			return
 		}
-		response, err := executeV21RetrievalQuery(r.Context(), client, v21Base, collectionID, request)
+		response, err := executeV21BridgeQuery(r.Context(), client, v21Base, collectionID, request)
 		if err != nil {
 			writeV21BridgeQueryError(w, err)
 			return
@@ -231,21 +235,25 @@ func probeV21BackendHealth(ctx context.Context, client *http.Client, v21Base str
 }
 
 func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+	utterance := strings.TrimSpace(request.Utterance)
+	if utterance == "" {
+		return v21adapter.QueryResponse{}, fmt.Errorf("utterance is required")
+	}
 	body := map[string]interface{}{
-		"workspace_id":     "ws_air",
+		"device_id":        strings.TrimSpace(request.DeviceID),
+		"user_id":          firstNonEmpty(strings.TrimSpace(request.UserID), v21adapter.DefaultUserID),
+		"workspace_id":     firstNonEmpty(strings.TrimSpace(request.WorkspaceID), v21adapter.DefaultWorkspaceID),
+		"query_scope":      firstNonEmpty(strings.TrimSpace(request.QueryScope), v21adapter.QueryScopePublic),
 		"agent_id":         "a21",
 		"session_id":       firstNonEmpty(strings.TrimSpace(request.SessionID), "a21-session-v21-adapter"),
 		"turn_id":          firstNonEmpty(strings.TrimSpace(request.TraceID), "a21-turn-v21-adapter"),
 		"trace_id":         firstNonEmpty(strings.TrimSpace(request.TraceID), "a21-trace-v21-adapter"),
 		"collection_ids":   []string{collectionID},
-		"question":         strings.TrimSpace(request.Utterance),
+		"question":         utterance,
 		"mode":             "grounded_qa",
 		"response_style":   "short_spoken",
 		"max_spoken_chars": 180,
 		"allow_style_wrap": false,
-	}
-	if strings.TrimSpace(request.Utterance) == "" {
-		return v21adapter.QueryResponse{}, fmt.Errorf("utterance is required")
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -263,7 +271,11 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return v21adapter.QueryResponse{}, fmt.Errorf("v21 voice query returned status %d", resp.StatusCode)
+		return v21adapter.QueryResponse{}, v21BridgeQueryError{
+			Status:      v21BridgeAdapterStatus(resp.StatusCode),
+			Code:        v21BridgeVoiceQueryErrorCode(resp.StatusCode),
+			StatusClass: v21BridgeStatusClass(resp.StatusCode),
+		}
 	}
 	var v21Response v21VoiceQueryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&v21Response); err != nil {
@@ -289,15 +301,23 @@ func executeV21VoiceQuery(ctx context.Context, client *http.Client, v21Base stri
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
 	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
-	response.SourceScopeCounts = v21BridgeSourceScopeCounts(request.QueryScope, len(response.Evidence))
-	response.WorkspaceStatus = v21adapter.WorkspaceSearchable
+	response.SourceScopeCounts = copyV21BridgeSourceScopeCounts(v21Response.SourceScopeCounts)
+	response.WorkspaceStatus = v21BridgeWorkspaceStatus(v21Response.WorkspaceStatus)
 	return response, nil
 }
 
-func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
+func executeV21BridgeQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
 	if err := v21adapter.ValidateProfessionalQueryRequest(request); err != nil {
 		return v21adapter.QueryResponse{}, err
 	}
+	response, err := executeV21VoiceQuery(ctx, client, v21Base, collectionID, request)
+	if err == nil || !isV21BridgeNoEvidence(err) {
+		return response, err
+	}
+	return executeV21RetrievalQuery(ctx, client, v21Base, collectionID, request)
+}
+
+func executeV21RetrievalQuery(ctx context.Context, client *http.Client, v21Base string, collectionID string, request v21adapter.QueryRequest) (v21adapter.QueryResponse, error) {
 	utterance := strings.TrimSpace(request.Utterance)
 	response, err := executeV21RetrievalQueryText(ctx, client, v21Base, collectionID, request, utterance)
 	if err == nil || !isV21BridgeNoEvidence(err) {
@@ -379,23 +399,74 @@ func executeV21RetrievalQueryText(ctx context.Context, client *http.Client, v21B
 		response.ScreenCards = []v21adapter.ScreenCard{{Label: "V21 Evidence", Text: response.Evidence[0].Title}}
 	}
 	response.FollowUps = buildV21BridgeFollowUps(response.Evidence)
-	response.SourceScopeCounts = v21BridgeSourceScopeCounts(request.QueryScope, len(response.Evidence))
-	response.WorkspaceStatus = v21adapter.WorkspaceSearchable
+	response.SourceScopeCounts = v21BridgeSourceScopeCountsFromRetrieval(retrieval.Results)
+	response.WorkspaceStatus = v21BridgeWorkspaceStatusForFallback(response.SourceScopeCounts)
 	return response, nil
 }
 
-func v21BridgeSourceScopeCounts(queryScope string, evidenceCount int) map[string]int {
-	if evidenceCount <= 0 {
+func copyV21BridgeSourceScopeCounts(counts map[string]int) map[string]int {
+	if len(counts) == 0 {
 		return nil
 	}
-	switch queryScope {
-	case v21adapter.QueryScopePersonal:
-		return map[string]int{"personal": evidenceCount}
-	case v21adapter.QueryScopeCombined:
-		return map[string]int{"public": evidenceCount, "personal": 0}
-	default:
-		return map[string]int{"public": evidenceCount}
+	out := make(map[string]int, len(counts))
+	for scope, count := range counts {
+		if count < 0 {
+			return nil
+		}
+		switch strings.TrimSpace(scope) {
+		case "public", "personal":
+			out[strings.TrimSpace(scope)] = count
+		default:
+			return nil
+		}
 	}
+	return out
+}
+
+func v21BridgeSourceScopeCountsFromRetrieval(results []v21RetrievalResult) map[string]int {
+	counts := make(map[string]int, 2)
+	for _, result := range results {
+		switch strings.TrimSpace(result.SourceScope) {
+		case "public":
+			counts["public"]++
+		case "personal":
+			counts["personal"]++
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	return counts
+}
+
+func v21BridgeWorkspaceStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case v21adapter.WorkspaceSearchable, v21adapter.WorkspaceScopePending, "uploaded", "indexing", "failed", "unavailable":
+		return strings.TrimSpace(status)
+	default:
+		return ""
+	}
+}
+
+func v21BridgeWorkspaceStatusForFallback(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "unavailable"
+	}
+	return v21adapter.WorkspaceSearchable
+}
+
+func v21BridgeAdapterStatus(status int) int {
+	if status == http.StatusFailedDependency {
+		return http.StatusFailedDependency
+	}
+	return http.StatusBadGateway
+}
+
+func v21BridgeVoiceQueryErrorCode(status int) string {
+	if status == http.StatusFailedDependency || status == http.StatusNotFound {
+		return "no_evidence"
+	}
+	return "upstream_status"
 }
 
 func isV21BridgeNoEvidence(err error) bool {
