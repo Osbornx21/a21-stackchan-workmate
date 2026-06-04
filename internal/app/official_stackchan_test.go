@@ -376,6 +376,11 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 			t.Fatalf("A21 overlay must not reintroduce unbounded manual listening path %q", forbidden)
 		}
 	}
+	heartbeatBeforeIdleGuard := strings.Index(overlay, `if (protocol_->IsAudioChannelOpened()) {`)
+	idleGuard := strings.Index(overlay, `if (GetDeviceState() != kDeviceStateIdle) {`)
+	if heartbeatBeforeIdleGuard < 0 || idleGuard < 0 || heartbeatBeforeIdleGuard > idleGuard {
+		t.Fatalf("official Xiaozhi-compatible overlay must heartbeat an already-open control channel before applying the idle-only open guard")
+	}
 	for _, line := range strings.Split(overlay, "\n") {
 		if !strings.HasPrefix(line, "+") {
 			continue

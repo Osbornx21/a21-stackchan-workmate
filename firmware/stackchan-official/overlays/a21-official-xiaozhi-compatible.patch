@@ -216,15 +216,15 @@ index 3b6f07e..396b23a 100644
 +    if (!protocol_) {
 +        return;
 +    }
-+    if (GetDeviceState() != kDeviceStateIdle) {
-+        return;
-+    }
 +    if (protocol_->IsAudioChannelOpened()) {
 +        if (!protocol_->SendA21Keepalive()) {
 +            ESP_LOGW(TAG, "A21 quiet control websocket heartbeat failed");
 +            protocol_->CloseAudioChannel(false);
 +            a21_ready_notified_ = false;
 +        }
++        return;
++    }
++    if (GetDeviceState() != kDeviceStateIdle) {
 +        return;
 +    }
 +
