@@ -71,7 +71,62 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 03:45 CST voice-mode ritual physical
+Live truth after the 2026-06-05 04:05 CST hardware acceptance summary board
+deployment:
+
+- Commit `5d786ef feat(gateway): summarize hardware acceptance` is pushed and
+  deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- Gateway now exposes read-only
+  `GET /v1/hardware-acceptance?device_id=<device>`, schema
+  `a21.gateway.hardware_acceptance.v1`.
+- `/workspace` now includes an `Acceptance Board` with
+  `Refresh Acceptance`, `hardwareAcceptanceStatus`, and
+  `hardwareAcceptanceItems`. It summarizes `mode_ritual` and `full_check`
+  delivery state, physical acceptance booleans, matching acceptance endpoints,
+  and next operator actions.
+- This summary does not send hardware commands and does not upgrade delivered
+  evidence to physical acceptance. It is a control/recovery surface.
+- Local red/green evidence: before implementation,
+  `TestWorkspaceConsolePageServed` missed `/v1/hardware-acceptance`, and the
+  endpoint returned HTTP 404. After implementation:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual|TestXiaozhiBodyScenePhysicalAcceptance|TestXiaozhiBodySceneReportsAndAppliesStepPacing' -count=1`
+  passed, `git diff --check` passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual' -count=1`.
+  Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+  `a21-gateway.service` restarted active; loopback `/healthz` and public
+  direct `/healthz` passed.
+- Public `/workspace` smoke found `Acceptance Board`, `Refresh Acceptance`,
+  `hardwareAcceptanceStatus`, `hardwareAcceptanceItems`, and
+  `/v1/hardware-acceptance`.
+- First public summary after restart returned
+  `overall_status=machine_evidence_pending`, which was correct because the
+  in-memory registry had restarted.
+- Live roleplay ritual trace
+  `a21-trace-mode-ritual-summary-ready-5d786ef-202606050405`
+  returned HTTP 200 with `step_delay_ms=180` and
+  `total_planned_delay_ms=540`.
+- Live `full_check` trace
+  `a21-trace-full-check-summary-ready-5d786ef-202606050405`
+  returned HTTP 200 with `step_delay_ms=180`,
+  `total_planned_delay_ms=2700`, and trace summary
+  `last_offset_ms=2713`.
+- Final public hardware-acceptance summary for product device
+  `44:1b:f6:e2:6a:60` returned `overall_status=physical_pending`; both
+  `mode_ritual` and `full_check` were `delivery_status=delivered`,
+  `physical_accepted=false`, with next actions
+  `accept_visible_mode_ritual` and `accept_visible_full_check`.
+- Final public `/v1/devices` check showed product device online and
+  `current_voice_mode=roleplay`. The final body state was the full-check reset
+  pose: `screen_theme=auto`, `screen_brightness=55`, RGB `0/0/32`, head
+  `yaw=0,pitch=18,speed=200`.
+- No physical acceptance was recorded in this round because no operator or
+  instrument confirmation was provided.
+- Git still emits the historical loose objects/gc warning during commits; no
+  `git prune` or manual cleanup was run.
+
+Previous live truth after the 2026-06-05 03:45 CST voice-mode ritual physical
 acceptance surface deployment:
 
 - Commit `87625a2 feat(gateway): record mode ritual physical acceptance` is

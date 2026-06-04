@@ -16806,6 +16806,114 @@ Forbidden actions avoided:
   exposure, no Git prune/gc despite the historical loose-object warning, and
   no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 04:05 CST - Hardware Acceptance Summary Board Deployed
+
+Round goal:
+
+- Make current body evidence recoverable and operator-readable by adding a
+  single acceptance summary surface for mode ritual and full-check evidence.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-hardware-acceptance-summary-board.md`.
+- Added read-only `GET /v1/hardware-acceptance?device_id=<device>`.
+- Added `/workspace` `Acceptance Board` with `Refresh Acceptance`.
+- The summary reports `mode_ritual` and `full_check` delivery status,
+  physical acceptance state, trace/session IDs, acceptance endpoints, and next
+  operator actions.
+- Documented the contract in `docs/engineering/PROTOCOL.md`.
+- Committed and pushed:
+  `5d786ef feat(gateway): summarize hardware acceptance`.
+- Deployed `5d786ef` to ECS through `/opt/a21.next` safe-swap.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-05-hardware-acceptance-summary-board.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red tests first failed as expected:
+  `TestWorkspaceConsolePageServed` missed `/v1/hardware-acceptance`, and the
+  endpoint returned HTTP 404.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual|TestXiaozhiBodyScenePhysicalAcceptance|TestXiaozhiBodySceneReportsAndAppliesStepPacing' -count=1`.
+- `git diff --check` passed.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback and public direct
+  `/healthz` passed.
+
+Runtime or physical evidence:
+
+- Public `/workspace` smoke found `Acceptance Board`, `Refresh Acceptance`,
+  `hardwareAcceptanceStatus`, `hardwareAcceptanceItems`, and
+  `/v1/hardware-acceptance`.
+- First public summary after service restart returned
+  `overall_status=machine_evidence_pending`, correctly reflecting the fresh
+  in-memory registry.
+- Live roleplay ritual trace
+  `a21-trace-mode-ritual-summary-ready-5d786ef-202606050405`
+  returned HTTP 200 with `step_delay_ms=180` and
+  `total_planned_delay_ms=540`.
+- Live `full_check` trace
+  `a21-trace-full-check-summary-ready-5d786ef-202606050405`
+  returned HTTP 200 with `step_delay_ms=180`,
+  `total_planned_delay_ms=2700`, and trace summary `last_offset_ms=2713`.
+- Final public `/v1/hardware-acceptance?device_id=44:1b:f6:e2:6a:60`
+  returned `overall_status=physical_pending`; both `mode_ritual` and
+  `full_check` were `delivery_status=delivered`,
+  `physical_accepted=false`, with next actions
+  `accept_visible_mode_ritual` and `accept_visible_full_check`.
+- Final public `/v1/devices` check showed product device online and
+  `current_voice_mode=roleplay`; final visible state was the full-check reset
+  pose: `screen_theme=auto`, `screen_brightness=55`, RGB `0/0/32`, head
+  `yaw=0,pitch=18,speed=200`.
+- No physical acceptance was recorded in this round because no operator or
+  instrument confirmation was provided.
+
+Deviations from plan:
+
+- None for this scoped transition. The summary endpoint is read-only and does
+  not send hardware commands or accept physical evidence.
+
+Remaining issues:
+
+- The operator still needs to watch the delivered mode ritual and full-check
+  body sequence, then click the two acceptance buttons to persist accepted
+  physical evidence.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+- Natural microphone-triggered voice-chain physical PRD acceptance remains a
+  separate foreground evidence path; it was not reopened in this round.
+
+Next suggested action:
+
+- Use the `Acceptance Board` as the foreground operator checklist: confirm
+  `mode_ritual` and `full_check` visually, click their acceptance buttons, and
+  verify the summary flips from `physical_pending` to `accepted`. After that,
+  continue with official avatar/action relay parity or high-risk camera/NFC/IR
+  spikes under explicit gates.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite the historical loose-object warning, and
+  no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 03:45 CST - Mode Ritual Physical Acceptance Surface Deployed
 
 Round goal:
