@@ -5668,6 +5668,87 @@ func TestXiaozhiProductTouchEventsAllowanceRecordsTouch(t *testing.T) {
 	}
 }
 
+func TestXiaozhiProductTouchBargeInCancelsActiveTurnAndStopsPlayback(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{XiaozhiProductTouchEvents: true})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-touch-barge",
+		"session_id": "a21-session-xiaozhi-touch-barge",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":          true,
+			"aec":          true,
+			"touch_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	socket, ok := server.xiaozhiSocket("44:1b:f6:e2:6a:60")
+	if !ok || socket.session == nil {
+		t.Fatal("xiaozhi session missing after hello")
+	}
+	turn := socket.session.startXiaozhiTurn(ctx, protocol.ModeWorkmate)
+	socket.session.resetXiaozhiTTSStop()
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "touch",
+		"touch":      "screen_barge_in",
+		"source":     "screen",
+		"trace_id":   "a21-trace-xiaozhi-touch-barge",
+		"session_id": "a21-session-xiaozhi-touch-barge",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "touch_barge_in" || stop["turn_id"] != xiaozhiTurnID(turn) {
+		t.Fatalf("touch barge stop = %#v", stop)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-touch-barge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"device.touch.barge_in.received",
+		"xiaozhi.touch.barge_in",
+		"barge_in.detected",
+		"turn_cancelled",
+		"downlink_queue_cleared",
+		"playback.stop",
+		"xiaozhi.tts.stop",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	if traces.Summary.BargeInStopMS == nil || *traces.Summary.BargeInStopMS != 0 {
+		t.Fatalf("barge summary = %+v, want zero-ms touch stop request", traces.Summary)
+	}
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "touch.barge_in" || registry["last_touch_source"] != "screen" {
+		t.Fatalf("registry touch barge = %#v", registry)
+	}
+}
+
 func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
 	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
 		XiaozhiProductTouchEvents:    true,

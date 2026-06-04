@@ -307,6 +307,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 		`Loaded %d A21 sdkconfig custom wake command(s) for %s`,
 		`CONFIG_SR_MN_CN_MULTINET7_QUANT=y`,
 		`# CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3 is not set`,
+		`keep wake detection available while speaking for barge-in`,
+		`audio_service_.EnableWakeWordDetection(true);`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing custom wake contract %q", required)

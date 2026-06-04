@@ -7346,6 +7346,14 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi touch event"))
 			return true
 		}
+		if xiaozhiTouchEventIsBargeIn(event) {
+			nowMS := s.now().UnixMilli()
+			bargeTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn("touch_barge_in", nowMS, xiaozhiPlaybackInterruptWindowMS)
+			if shouldStopPlayback {
+				s.recordXiaozhiTouchBargeInMarkers(session, bargeTask.turn != nil)
+				s.writeXiaozhiTTSStopForce(ctx, conn, session, bargeTask.turn, bargeTask, "touch_barge_in")
+			}
+		}
 		s.maybeSendXiaozhiTouchReaction(ctx, session, event)
 		return true
 	default:
@@ -7908,6 +7916,15 @@ func xiaozhiTouchEventKindAndSource(event xiaozhitransport.DeviceExtensionEvent)
 	return deviceEvent, source, true
 }
 
+func xiaozhiTouchEventIsBargeIn(event xiaozhitransport.DeviceExtensionEvent) bool {
+	switch event.Value {
+	case "screen_barge_in", "top_barge_in":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) {
 	if !s.xiaozhiProductTouchReactionsAllowed(session) {
 		return
@@ -8455,6 +8472,24 @@ func (s *Server) recordXiaozhiListenBargeInMarkers(session *xiaozhiSession, hadA
 	now := s.now().UnixMilli()
 	s.metrics.bargeInTotal.Inc()
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.barge_in", now)
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	if hadActiveTurn {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
+	} else {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop.recent_downlink", now)
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+}
+
+func (s *Server) recordXiaozhiTouchBargeInMarkers(session *xiaozhiSession, hadActiveTurn bool) {
+	now := s.now().UnixMilli()
+	s.metrics.bargeInTotal.Inc()
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.touch.barge_in", now)
 	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
 	if hadActiveTurn {
 		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
