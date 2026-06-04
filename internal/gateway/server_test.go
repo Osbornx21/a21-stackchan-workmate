@@ -6711,6 +6711,117 @@ func TestXiaozhiNamedMCPStatusEndpointsUseScopedTools(t *testing.T) {
 	}
 }
 
+func TestXiaozhiBodyPresetSendsBoundedMCPSequence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-preset-hello",
+		"session_id": "a21-session-body-preset-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-preset",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","preset":"celebrate","trace_id":"a21-trace-body-preset","session_id":"a21-session-body-preset"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("body preset status = %d: %s", resp.StatusCode, string(body))
+	}
+	var response XiaozhiBodyPresetResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.xiaozhi_body_preset.v1" ||
+		response.Status != "delivered" ||
+		response.DeliveredTransport != "xiaozhi_mcp_sequence" ||
+		response.Preset != "celebrate" ||
+		!response.ResultRedacted ||
+		response.PhysicalAccepted ||
+		len(response.Steps) != 2 {
+		t.Fatalf("body preset response = %+v", response)
+	}
+	if response.Steps[0].ToolName != xiaozhiMCPRobotSetLEDColorToolName || response.Steps[0].Marker != "robot_led_color" {
+		t.Fatalf("first step = %+v", response.Steps[0])
+	}
+	if response.Steps[1].ToolName != xiaozhiMCPRobotSetHeadAnglesToolName || response.Steps[1].Marker != "robot_head_angles_set" {
+		t.Fatalf("second step = %+v", response.Steps[1])
+	}
+
+	ledMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, ledMessage, xiaozhiMCPRobotSetLEDColorToolName, map[string]any{
+		"red":   float64(0),
+		"green": float64(168),
+		"blue":  float64(80),
+	})
+	headMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, headMessage, xiaozhiMCPRobotSetHeadAnglesToolName, map[string]any{
+		"yaw":   float64(18),
+		"pitch": float64(36),
+		"speed": float64(260),
+	})
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-preset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.body_preset.celebrate.robot_led_color.sent",
+		"xiaozhi.body_preset.celebrate.robot_head_angles_set.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("capabilities = %#v", registry["capabilities"])
+	}
+	for key, want := range map[string]any{
+		"last_body_preset":        "celebrate",
+		"last_body_preset_status": "delivered",
+		"robot_led_green":         "168",
+		"robot_head_yaw":          "18",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiBodyPresetRejectsUnknownPreset(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/body-preset", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","preset":"camera"}`))
+	rec := httptest.NewRecorder()
+	NewServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("body preset status = %d, want 400", rec.Code)
+	}
+}
+
 func TestXiaozhiNamedMCPEndpointsValidateAndRequireMCP(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -13831,6 +13942,36 @@ func traceContains(events []TraceEvent, name string) bool {
 		}
 	}
 	return false
+}
+
+func assertXiaozhiMCPMessage(t *testing.T, message map[string]any, toolName string, wantArgs map[string]any) {
+	t.Helper()
+	if message["type"] != "mcp" {
+		t.Fatalf("mcp message type = %#v in %#v", message["type"], message)
+	}
+	payload, ok := message["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp payload = %#v", message["payload"])
+	}
+	params, ok := payload["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp params = %#v", payload["params"])
+	}
+	if params["name"] != toolName {
+		t.Fatalf("mcp tool name = %#v, want %q", params["name"], toolName)
+	}
+	args, ok := params["arguments"].(map[string]any)
+	if !ok {
+		t.Fatalf("mcp arguments = %#v", params["arguments"])
+	}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("mcp args = %#v, want %#v", args, wantArgs)
+	}
+	for key, want := range wantArgs {
+		if args[key] != want {
+			t.Fatalf("mcp args = %#v, want %s=%#v", args, key, want)
+		}
+	}
 }
 
 func containsString(values []string, want string) bool {

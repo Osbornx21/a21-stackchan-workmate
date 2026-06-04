@@ -874,6 +874,13 @@ type XiaozhiScreenThemeRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+type XiaozhiBodyPresetRequest struct {
+	DeviceID  string `json:"device_id"`
+	Preset    string `json:"preset"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
 	SessionID          string         `json:"session_id"`
@@ -884,6 +891,26 @@ type XiaozhiMCPControlResponse struct {
 	MCPID              string         `json:"mcp_id"`
 	Arguments          map[string]any `json:"arguments,omitempty"`
 	ResultRedacted     bool           `json:"result_redacted"`
+}
+
+type XiaozhiBodyPresetStepResponse struct {
+	ToolName  string         `json:"tool_name"`
+	MCPID     string         `json:"mcp_id"`
+	Marker    string         `json:"marker"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+}
+
+type XiaozhiBodyPresetResponse struct {
+	SchemaVersion      string                          `json:"schema_version"`
+	TraceID            string                          `json:"trace_id"`
+	SessionID          string                          `json:"session_id"`
+	DeviceID           string                          `json:"device_id"`
+	Status             string                          `json:"status"`
+	DeliveredTransport string                          `json:"delivered_transport"`
+	Preset             string                          `json:"preset"`
+	Steps              []XiaozhiBodyPresetStepResponse `json:"steps"`
+	ResultRedacted     bool                            `json:"result_redacted"`
+	PhysicalAccepted   bool                            `json:"physical_accepted"`
 }
 
 type XiaozhiMCPCapabilitiesResponse struct {
@@ -1426,6 +1453,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/xiaozhi/device-status", s.handleXiaozhiDeviceStatus)
 	mux.HandleFunc("/v1/xiaozhi/screen-brightness", s.handleXiaozhiScreenBrightness)
 	mux.HandleFunc("/v1/xiaozhi/screen-theme", s.handleXiaozhiScreenTheme)
+	mux.HandleFunc("/v1/xiaozhi/body-preset", s.handleXiaozhiBodyPreset)
 	mux.HandleFunc("/v1/xiaozhi/mcp-capabilities", s.handleXiaozhiMCPCapabilities)
 	mux.HandleFunc("/v1/xiaozhi/mcp-control", s.handleXiaozhiMCPControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
@@ -5627,6 +5655,70 @@ func (s *Server) handleXiaozhiScreenTheme(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (s *Server) handleXiaozhiBodyPreset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiBodyPresetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	preset, plans, err := xiaozhiBodyPresetPlans(req.DeviceID, req.Preset)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	steps := make([]XiaozhiBodyPresetStepResponse, 0, len(plans))
+	for _, plan := range plans {
+		plan.TraceID = traceID
+		plan.SessionID = sessionID
+		delivery, status, message := s.sendXiaozhiMCPControl(r.Context(), plan)
+		if status != 0 {
+			s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.body_preset."+preset+".failed", s.now().UnixMilli())
+			http.Error(w, message, status)
+			return
+		}
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		presetMarker := "xiaozhi.body_preset." + preset + "." + delivery.Marker + ".sent"
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, presetMarker, s.now().UnixMilli())
+		activity := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
+		activity["last_body_preset"] = preset
+		activity["last_body_preset_status"] = "delivered"
+		activity["last_body_preset_tool"] = delivery.Marker
+		s.recordXiaozhiDeviceActivity(&xiaozhiSession{
+			deviceID:  delivery.Response.DeviceID,
+			traceID:   delivery.Response.TraceID,
+			sessionID: delivery.Response.SessionID,
+		}, presetMarker, activity)
+		steps = append(steps, XiaozhiBodyPresetStepResponse{
+			ToolName:  delivery.Response.ToolName,
+			MCPID:     delivery.Response.MCPID,
+			Marker:    delivery.Marker,
+			Arguments: delivery.Response.Arguments,
+		})
+	}
+	writeJSON(w, http.StatusOK, XiaozhiBodyPresetResponse{
+		SchemaVersion:      "a21.gateway.xiaozhi_body_preset.v1",
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_mcp_sequence",
+		Preset:             preset,
+		Steps:              steps,
+		ResultRedacted:     true,
+		PhysicalAccepted:   false,
+	})
+}
+
 func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -5882,6 +5974,68 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 	default:
 		return "", nil, "", errors.New("xiaozhi mcp tool is not allowed by A21 status parity")
 	}
+}
+
+func xiaozhiBodyPresetPlans(deviceID string, preset string) (string, []XiaozhiMCPControlRequest, error) {
+	preset = strings.ToLower(strings.TrimSpace(preset))
+	if preset == "" {
+		return "", nil, errors.New("body_preset is required")
+	}
+	base := XiaozhiMCPControlRequest{DeviceID: deviceID}
+	led := func(red, green, blue int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetLEDColorToolName
+		req.Red = xiaozhiPresetInt(red)
+		req.Green = xiaozhiPresetInt(green)
+		req.Blue = xiaozhiPresetInt(blue)
+		return req
+	}
+	head := func(yaw, pitch, speed int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetHeadAnglesToolName
+		req.Yaw = xiaozhiPresetInt(yaw)
+		req.Pitch = xiaozhiPresetInt(pitch)
+		req.Speed = xiaozhiPresetInt(speed)
+		return req
+	}
+	switch preset {
+	case "ready":
+		return preset, []XiaozhiMCPControlRequest{
+			led(0, 36, 96),
+			head(0, 22, 180),
+		}, nil
+	case "listening":
+		return preset, []XiaozhiMCPControlRequest{
+			led(0, 120, 88),
+			head(0, 35, 220),
+		}, nil
+	case "thinking":
+		return preset, []XiaozhiMCPControlRequest{
+			led(120, 72, 0),
+			head(-12, 28, 180),
+		}, nil
+	case "speaking":
+		return preset, []XiaozhiMCPControlRequest{
+			led(20, 24, 168),
+			head(12, 30, 220),
+		}, nil
+	case "celebrate":
+		return preset, []XiaozhiMCPControlRequest{
+			led(0, 168, 80),
+			head(18, 36, 260),
+		}, nil
+	case "reset_idle":
+		return preset, []XiaozhiMCPControlRequest{
+			led(0, 0, 32),
+			head(0, 18, 180),
+		}, nil
+	default:
+		return "", nil, errors.New("body_preset must be ready, listening, thinking, speaking, celebrate, or reset_idle")
+	}
+}
+
+func xiaozhiPresetInt(value int) *int {
+	return &value
 }
 
 func xiaozhiMCPAllowedTools() []string {

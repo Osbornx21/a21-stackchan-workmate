@@ -406,6 +406,18 @@ surfaces:
   `physical_accepted=false`. Named endpoints require the connected device to
   advertise `hello.features.mcp=true`, return redacted metadata only, and do
   not persist raw MCP result bodies.
+- `POST /v1/xiaozhi/body-preset` is the product-operation alias for bounded
+  visible body-expression sequences. The request accepts `device_id`, a
+  `preset` of `ready`, `listening`, `thinking`, `speaking`, `celebrate`, or
+  `reset_idle`, and optional `trace_id` / `session_id`. Gateway expands the
+  preset into exactly two official MCP writes on the live Xiaozhi socket:
+  `self.robot.set_led_color` followed by `self.robot.set_head_angles`, using
+  the same RGB, yaw, pitch, and speed bounds as `/v1/xiaozhi/mcp-control`.
+  Delivery records both generic MCP markers and preset markers such as
+  `xiaozhi.body_preset.celebrate.robot_led_color.sent`; responses carry only
+  redacted step metadata and `physical_accepted=false`. This endpoint is a
+  stable control/evidence handle for operator body checks, not proof that the
+  LED or servos visibly moved.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,
