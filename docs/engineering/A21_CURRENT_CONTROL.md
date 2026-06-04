@@ -114,6 +114,27 @@ Live truth after the 2026-06-05 07:30 CST official relay status transition:
   StackChan into a state where official `/stackChan/ws`, power-key startup,
   wake/listen/playback/barge-in, and visible body behavior can be accepted.
 
+Live truth after the 2026-06-05 07:42 CST guarded flash retry:
+
+- Public Gateway deployment is live, but product device registry is empty:
+  5080lab public `/v1/devices` returned `devices=[]`.
+- A short guarded wait-ROM product flash execute was retried on
+  `/dev/cu.usbmodem1101` with `--esptool-before no_reset`,
+  `--wait-rom`, and a 30 second wait window.
+- The T7 flash guard passed on clean HEAD `f6be66d`, but no flash write
+  occurred: `flash_executed=false`.
+- Report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json`.
+- Log:
+  `/tmp/a21-stackchan-official-build/a21-official-xiaozhi-compatible-flash-20260605-074141.log`.
+- Root evidence remains unchanged:
+  `Failed to connect to ESP32-S3: No serial data received`. The product is not
+  in ESP32-S3 ROM/download mode.
+- Next physical action: manually enter ROM/download mode before retrying
+  flash. Hold BOOT/download, press and release RESET, keep holding BOOT until
+  the wait-ROM log reports a successful ESP32-S3 `chip_id`, then allow the
+  guarded product flash lane to proceed.
+
 Live truth after the 2026-06-05 07:18 CST ROM diagnostic flash attempt:
 
 - A guarded wait-ROM product flash execute was attempted after commit

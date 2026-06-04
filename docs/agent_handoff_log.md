@@ -18364,3 +18364,64 @@ Forbidden actions avoided:
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc despite historical loose-object warnings, and no
   internal-test3 voice/protocol rollback.
+
+## 2026-06-05 07:42 CST - Guarded Product Flash Retry Still Needs ROM Download Mode
+
+Round goal:
+
+- After deploying the official relay status surface, check whether the product
+  is online and retry the guarded product flash only if the device reaches true
+  ESP32-S3 ROM/download mode.
+
+Actual completed work:
+
+- Confirmed via 5080lab public smoke that `/v1/devices` currently returns
+  `devices=[]`; product Xiaozhi is not online on the public Gateway.
+- Retried a short guarded product flash execute on `/dev/cu.usbmodem1101` with
+  `--esptool-before no_reset`, `--wait-rom`, and a 30 second wait window.
+- T7 control guard passed on clean HEAD `f6be66d`.
+- No flash write occurred: `flash_executed=false`.
+- Updated `docs/engineering/A21_CURRENT_CONTROL.md` and
+  `docs/project_state_machine.md` with the retry result.
+
+Changed files:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- ECS official relay status deployment was already live before this retry.
+- Flash retry report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json`.
+- Flash retry log:
+  `/tmp/a21-stackchan-official-build/a21-official-xiaozhi-compatible-flash-20260605-074141.log`.
+- Root evidence in log:
+  `Failed to connect to ESP32-S3: No serial data received`.
+
+Runtime or physical evidence:
+
+- Product device is not currently online in Gateway registry.
+- USB serial node `/dev/cu.usbmodem1101` exists, but the chip is not in
+  ROM/download mode.
+
+Known risks/blockers:
+
+- Physical action is required now: hold BOOT/download, press/release RESET,
+  keep holding BOOT until the wait-ROM log reports ESP32-S3 `chip_id`, then
+  allow the guarded product flash lane to proceed.
+- Do not use generic `xiaozhi.bin` or unguarded flash commands.
+
+Recommended next action:
+
+- With the operator physically holding the device in ROM/download mode, rerun
+  the same guarded wait-ROM product flash execute. After flash, verify public
+  `/v1/devices`, official `/v1/stackchan/official/status`, power-key startup,
+  wake/listen/playback, barge-in, and visible body behavior.
+
+Forbidden actions avoided:
+
+- No firmware write occurred, no NVS write, no provider/V21 execution, no
+  generic product flash lane, no camera/NFC/IR expansion, no Git prune/gc, and
+  no internal-test3 voice/protocol rollback.
