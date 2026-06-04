@@ -71,6 +71,39 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 01:43 CST workspace hardware-scene cut:
+
+- Commit `88e1549 feat(gateway): add xiaozhi hardware scene sequences` is
+  pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- Gateway now exposes `POST /v1/xiaozhi/body-scene` for bounded one-click
+  `showtime`, `focus`, and `reset` scenes. `showtime` combines screen
+  theme/brightness plus RGB/head MCP writes; `focus` and `reset` provide
+  shorter bounded workspace states. Responses keep redacted step metadata and
+  `physical_accepted=false`.
+- `/workspace` now exposes a Hardware Scenes section with Showtime, Focus, and
+  Reset controls, safe trace/status display, and `hardware_scene_*` metadata
+  export fields. Existing Body Presets, Hardware Screen, and Official Actions
+  controls remain available.
+- Local focused tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset|TestXiaozhiBodyMotion|TestXiaozhiBodyScene' -count=1`.
+  Full local `GOMAXPROCS=2 make verify` passed. Remote focused Gateway tests
+  and build passed in `/opt/a21.next`; `a21-gateway` restarted active;
+  loopback and public direct-source `/healthz` returned ok.
+- Public `/workspace` HTML smoke found `Hardware Scenes`,
+  `/v1/xiaozhi/body-scene`, `runHardwareScene`,
+  `refreshHardwareSceneTrace`, `hardware_scene_trace_id`, and
+  `data-hardware-scene="showtime"`.
+- Public `showtime` scene execution against product device
+  `44:1b:f6:e2:6a:60` returned HTTP 409 `xiaozhi websocket is not connected`,
+  and public `/v1/devices` remained empty for the immediate post-deploy poll.
+  This is device socket absence after Gateway restart, not a voice-chain
+  rollback. Product-socket/physical evidence for the scene remains pending
+  until the product device reconnects.
+- This cut did not build or flash firmware, write NVS, execute providers/V21,
+  expose reboot/OTA/snapshot/video/camera/NFC/IR/app lifecycle, run Git
+  prune/gc, or renew internal-test3 voice-chain acceptance.
+
 Live truth after the 2026-06-05 01:32 CST workspace official-action fallback cut:
 
 - Commit `7dfbb10 feat(gateway): fallback official actions to body motion` is

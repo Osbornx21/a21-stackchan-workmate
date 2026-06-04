@@ -15807,6 +15807,102 @@ Forbidden actions avoided:
   prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
   rollback.
 
+## 2026-06-05 01:43 CST - Workspace Hardware Scene Console Deployed
+
+Round goal:
+
+- Move the hardware/body work from scattered screen/body buttons into a
+  one-click foreground product scene surface, without reopening internal-test3
+  voice acceptance or weakening the physical acceptance boundary.
+
+Actual completed work:
+
+- Added `POST /v1/xiaozhi/body-scene`.
+- Added bounded `showtime`, `focus`, and `reset` scene plans.
+- `showtime` combines screen theme/brightness plus RGB/head official MCP
+  writes; `focus` and `reset` provide shorter bounded workspace states.
+- Added ordered `xiaozhi.body_scene.<scene>.stepN.<marker>.sent` trace
+  markers and safe device registry fields including `last_body_scene`,
+  `screen_theme`, `screen_brightness`, `robot_led_*`, and `robot_head_*`.
+- Added a Hardware Scenes section to `/workspace` with Showtime, Focus, Reset,
+  scene trace display, and safe `hardware_scene_*` export metadata.
+- Extended workspace and Gateway tests to lock the new endpoint, UI controls,
+  ordered MCP sequence, trace markers, and registry evidence.
+- Updated `docs/engineering/PROTOCOL.md` with the new scene contract.
+- Committed and pushed
+  `88e1549 feat(gateway): add xiaozhi hardware scene sequences`.
+- Deployed `88e1549` to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset|TestXiaozhiBodyMotion|TestXiaozhiBodyScene' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- `git diff --check` passed before the feature commit.
+- Remote focused Gateway tests passed in `/opt/a21.next`:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyScene' -count=1`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+- Public `/workspace` HTML smoke found `Hardware Scenes`,
+  `/v1/xiaozhi/body-scene`, `runHardwareScene`,
+  `refreshHardwareSceneTrace`, `hardware_scene_trace_id`, and
+  `data-hardware-scene="showtime"`.
+
+Runtime or physical evidence:
+
+- Public `showtime` body-scene execution against product device
+  `44:1b:f6:e2:6a:60` returned HTTP 409
+  `xiaozhi websocket is not connected`.
+- Public `/v1/devices` was empty during a six-poll post-deploy window after
+  the Gateway service restart. This means the product Xiaozhi socket was not
+  online at the moment of the scene smoke; it is not evidence of a voice-chain
+  rollback or protocol regression.
+- Scene product-socket delivery and physical screen/RGB/servo acceptance remain
+  pending until the product device reconnects and the scene is run in a
+  foreground hardware window.
+
+Remaining issues:
+
+- Product device `44:1b:f6:e2:6a:60` must reconnect to
+  `ws://47.103.57.217/v1/xiaozhi` before live scene smoke can prove
+  product-socket delivery.
+- Physical acceptance for hardware scenes remains pending operator or
+  instrument evidence that screen theme/brightness, RGB, and servo movement
+  visibly occur.
+- Official `/stackChan/ws` avatar/action relay remains disconnected; Hardware
+  Scenes use the current Xiaozhi MCP product path.
+- Camera, NFC, infrared, reboot, firmware upgrade, snapshot, video, and app
+  lifecycle remain blocked/planned high-risk controls.
+
+Next suggested action:
+
+- Reconnect or power-cycle the product StackChan into the public Xiaozhi
+  Gateway, then run `/workspace` Showtime and record the trace plus visible
+  screen/RGB/servo evidence. If the device does not auto-reconnect after
+  Gateway restart, promote firmware/app lifecycle reconnection resilience as
+  the next foreground hardware transition.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 01:14 CST - Workspace Hardware Screen Console Deployed
 
 Round goal:
@@ -16198,3 +16294,21 @@ Forbidden actions avoided:
   printing, no provider or V21 execution, no generic product flash lane, no Git
   prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
   rollback.
+
+## 2026-06-05 01:44 CST - Latest Handoff Pointer
+
+- Latest full handoff entry:
+  `2026-06-05 01:43 CST - Workspace Hardware Scene Console Deployed`.
+- Commit `88e1549 feat(gateway): add xiaozhi hardware scene sequences` is
+  pushed and deployed to ECS.
+- `/workspace` now has Hardware Scenes and `POST /v1/xiaozhi/body-scene` for
+  bounded `showtime`, `focus`, and `reset` screen/RGB/servo MCP scenes.
+- Local focused tests, full `GOMAXPROCS=2 make verify`, remote focused tests,
+  remote build, ECS safe-swap, public `/healthz`, and public `/workspace`
+  smoke passed.
+- Live product scene smoke is pending because product device
+  `44:1b:f6:e2:6a:60` was not connected to `/v1/xiaozhi` after the Gateway
+  restart; `/v1/devices` was empty in the immediate post-deploy poll window.
+- This is not a voice/protocol rollback. No firmware build/flash, NVS write,
+  provider/V21 execution, camera/NFC/IR expansion, reboot/OTA/snapshot/video/
+  app lifecycle exposure, or Git prune/gc occurred.
