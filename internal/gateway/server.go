@@ -1139,6 +1139,8 @@ type VoiceModeRitualResponse struct {
 	ScreenLabel          string                          `json:"screen_label"`
 	WorkspacePolicy      string                          `json:"workspace_policy"`
 	Steps                []XiaozhiBodyPresetStepResponse `json:"steps"`
+	StepDelayMS          int64                           `json:"step_delay_ms"`
+	TotalPlannedDelayMS  int64                           `json:"total_planned_delay_ms"`
 	ModeSwitchVisible    bool                            `json:"mode_switch_visible"`
 	ProviderExecuted     bool                            `json:"provider_executed"`
 	V21Executed          bool                            `json:"v21_executed"`
@@ -1623,7 +1625,15 @@ func (s *Server) handleVoiceModeRitual(w http.ResponseWriter, r *http.Request) {
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	steps := make([]XiaozhiBodyPresetStepResponse, 0, len(plans))
+	stepDelay := s.bodySceneStepDelay
 	for index, plan := range plans {
+		if index > 0 && stepDelay > 0 {
+			if err := sleepBodySceneStep(r.Context(), stepDelay); err != nil {
+				s.recordTrace(traceID, sessionID, req.DeviceID, "voice_mode.ritual."+mode+".cancelled", s.now().UnixMilli())
+				http.Error(w, "voice mode ritual delivery cancelled", http.StatusBadGateway)
+				return
+			}
+		}
 		plan.TraceID = traceID
 		plan.SessionID = sessionID
 		delivery, status, message := s.sendXiaozhiMCPControl(r.Context(), plan)
@@ -1671,6 +1681,8 @@ func (s *Server) handleVoiceModeRitual(w http.ResponseWriter, r *http.Request) {
 		ScreenLabel:          ritual.ScreenLabel,
 		WorkspacePolicy:      ritual.WorkspacePolicy,
 		Steps:                steps,
+		StepDelayMS:          int64(stepDelay / time.Millisecond),
+		TotalPlannedDelayMS:  bodySceneTotalPlannedDelayMS(stepDelay, len(steps)),
 		ModeSwitchVisible:    true,
 		ProviderExecuted:     false,
 		V21Executed:          false,

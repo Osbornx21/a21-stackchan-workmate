@@ -755,7 +755,12 @@ nearby listening pose. The endpoint uses only
 `self.screen.set_theme`, `self.screen.set_brightness`,
 `self.robot.set_led_color`, and `self.robot.set_head_angles`; it does not
 execute providers, V21, camera, NFC, infrared, official avatar relay,
-firmware, or NVS work. Responses record `provider_executed=false`,
+firmware, or NVS work. Delivery uses the same visible pacing policy as
+body-scene operations so the four-step screen/RGB/head mode switch is not sent
+as an imperceptible burst: `gateway` defaults this to 180 ms between steps,
+positive `A21_BODY_SCENE_STEP_DELAY_MS` values override that runtime default,
+and the server caps the delay at 1000 ms. Responses record
+`step_delay_ms`, `total_planned_delay_ms`, `provider_executed=false`,
 `v21_executed=false`, `official_relay_claimed=false`, and
 `physical_accepted=false` until operator or instrument evidence proves the
 visible mode switch.

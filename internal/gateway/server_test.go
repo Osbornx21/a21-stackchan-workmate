@@ -1342,6 +1342,12 @@ func TestVoiceModeRitualProfessionalSendsHardwareSequence(t *testing.T) {
 			t.Fatalf("response[%s] = %#v, want %#v in %#v", key, response[key], want, response)
 		}
 	}
+	if response["step_delay_ms"] != float64(20) {
+		t.Fatalf("step_delay_ms = %#v, want 20 in %#v", response["step_delay_ms"], response)
+	}
+	if response["total_planned_delay_ms"] != float64(60) {
+		t.Fatalf("total_planned_delay_ms = %#v, want 60 in %#v", response["total_planned_delay_ms"], response)
+	}
 	steps, ok := response["steps"].([]any)
 	if !ok || len(steps) != 4 {
 		t.Fatalf("steps = %#v, want 4 redacted hardware steps", response["steps"])
@@ -1378,6 +1384,9 @@ func TestVoiceModeRitualProfessionalSendsHardwareSequence(t *testing.T) {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
 		}
+	}
+	if traces.Summary.LastOffsetMS < 55 {
+		t.Fatalf("trace last offset = %dms, want visible ritual pacing: %+v", traces.Summary.LastOffsetMS, traces.Events)
 	}
 
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
