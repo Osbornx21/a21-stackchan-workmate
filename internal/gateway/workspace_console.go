@@ -683,9 +683,16 @@ const workspaceConsoleHTML = `<!doctype html>
           </div>
         </div>
         <div class="panel-body">
+          <div class="actions" id="modeRitualActions">
+            <button class="secondary" data-mode-ritual="roleplay">Run Roleplay Ritual</button>
+            <button data-mode-ritual="professional">Run Professional Ritual</button>
+          </div>
           <div class="mode-band">
             <div class="metric"><span>Roleplay expression</span><strong id="roleplayExpression">no_send_plan_only</strong></div>
             <div class="metric"><span>Professional cue</span><strong id="professionalCue">PRO / checking</strong></div>
+            <div class="metric"><span>Mode ritual</span><strong id="modeRitualStatus">ritual=idle</strong></div>
+            <div class="metric"><span>Ritual trace</span><strong id="modeRitualTraceStatus">trace=none</strong></div>
+            <div class="metric"><span>Physical</span><strong id="modeRitualPhysicalStatus">physical_accepted=false</strong></div>
           </div>
           <div class="log" id="eventLog" aria-label="Workspace event log">workspace console ready</div>
         </div>
@@ -846,6 +853,10 @@ const workspaceConsoleHTML = `<!doctype html>
       readList: document.getElementById('readList'),
       roleplayExpression: document.getElementById('roleplayExpression'),
       professionalCue: document.getElementById('professionalCue'),
+      modeRitualActions: document.getElementById('modeRitualActions'),
+      modeRitualStatus: document.getElementById('modeRitualStatus'),
+      modeRitualTraceStatus: document.getElementById('modeRitualTraceStatus'),
+      modeRitualPhysicalStatus: document.getElementById('modeRitualPhysicalStatus'),
       eventLog: document.getElementById('eventLog'),
       serviceStatus: document.getElementById('serviceStatus')
     };
@@ -1045,6 +1056,13 @@ const workspaceConsoleHTML = `<!doctype html>
       return {
         trace_id: 'a21-trace-workspace-probe-' + mode + '-' + stamp,
         session_id: 'a21-session-workspace-probe-' + mode + '-' + stamp
+      };
+    }
+    function nextModeRitualIDs(mode) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-mode-ritual-' + mode + '-' + stamp,
+        session_id: 'a21-session-workspace-mode-ritual-' + mode + '-' + stamp
       };
     }
     function nextBodyPresetIDs(preset) {
@@ -1756,6 +1774,16 @@ const workspaceConsoleHTML = `<!doctype html>
       const ritual = (payload && payload.selected_ritual) || {};
       setText(ui.professionalCue, (ritual.screen_label || 'PRO') + ' / ' + (ritual.cue_text || 'checking'));
     }
+    function setModeRitual(payload) {
+      state.modeRitual = payload || null;
+      const mode = (payload && payload.selected_voice_mode) || 'idle';
+      setText(ui.modeRitualStatus, 'ritual=' + mode + ' / ' + ((payload && payload.status) || 'idle'));
+      setText(ui.modeRitualTraceStatus, 'trace=' + ((payload && payload.trace_id) || 'none'));
+      setText(ui.modeRitualPhysicalStatus, 'physical_accepted=' + String(!!(payload && payload.physical_accepted)));
+      if (payload && payload.screen_label) {
+        setText(ui.professionalCue, payload.screen_label + ' / mode ritual');
+      }
+    }
     async function refreshWorkspace() {
       const payload = await fetchJSON('/v1/professional-workspace', { cache: 'no-store' });
       setWorkspace(payload);
@@ -1922,6 +1950,20 @@ const workspaceConsoleHTML = `<!doctype html>
       setRoleplay(roleplay);
       log('voice chain ' + (payload.selected_voice_chain_mode || 'saved'));
     }
+    async function runModeRitual(mode) {
+      const ids = nextModeRitualIDs(mode);
+      const payload = await postJSON('/v1/voice-mode-ritual', {
+        device_id: currentDeviceID(),
+        voice_mode: mode,
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      });
+      setModeRitual(payload);
+      const modes = await fetchJSON('/v1/voice-modes', { cache: 'no-store' });
+      setVoiceModes(modes);
+      log('mode ritual ' + ((payload && payload.selected_voice_mode) || mode) + ' ' + ((payload && payload.status) || 'sent'));
+      return payload;
+    }
     function wakeWordRequestBody(mode) {
       const body = {
         mode: mode || ui.wakeWordModeSelect.value,
@@ -2040,6 +2082,12 @@ const workspaceConsoleHTML = `<!doctype html>
         roleplay_voice_profile: ui.roleplayVoiceStatus.textContent,
         roleplay_memory_status: ui.roleplayMemoryStatus.textContent,
         roleplay_expression: ui.roleplayExpression.textContent,
+        mode_ritual_mode: (state.modeRitual && state.modeRitual.selected_voice_mode) || '',
+        mode_ritual_trace_id: (state.modeRitual && state.modeRitual.trace_id) || '',
+        mode_ritual_session_id: (state.modeRitual && state.modeRitual.session_id) || '',
+        mode_ritual_status: (state.modeRitual && state.modeRitual.status) || '',
+        mode_ritual_transport: (state.modeRitual && state.modeRitual.delivered_transport) || '',
+        mode_ritual_physical_accepted: !!(state.modeRitual && state.modeRitual.physical_accepted),
         voice_chain_mode: ui.voiceChainModeStatus.textContent,
         voice_chain_asr_profile: ui.voiceChainASRStatus.textContent,
         voice_chain_llm_profile: ui.voiceChainLLMStatus.textContent,
@@ -2173,6 +2221,11 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.saveRoleplaySetup.addEventListener('click', () => saveRoleplaySetup({ includeMemory: true }).catch((err) => log('roleplay ' + err.message)));
     ui.clearRoleplayMemory.addEventListener('click', () => saveRoleplaySetup({ clearMemory: true }).catch((err) => log('roleplay ' + err.message)));
     ui.saveVoiceChainSetup.addEventListener('click', () => saveVoiceChainSetup().catch((err) => log('voice chain ' + err.message)));
+    ui.modeRitualActions.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-mode-ritual]');
+      if (!button) return;
+      runModeRitual(button.dataset.modeRitual).catch((err) => log('mode ritual ' + err.message));
+    });
     ui.saveWakeWordSetup.addEventListener('click', () => saveWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.resetWakeWordSetup.addEventListener('click', () => resetWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.runRoleplayProbe.addEventListener('click', () => runRoleplayProbe().catch((err) => log('probe roleplay ' + err.message)));

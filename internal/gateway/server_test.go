@@ -492,6 +492,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/voice-chain-profiles",
 		"/v1/wake-word",
 		"/v1/voice-modes",
+		"/v1/voice-mode-ritual",
 		"/v1/fast-companion/turn",
 		"/v1/professional-query",
 		"/v1/xiaozhi/body-preset",
@@ -618,6 +619,14 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`id="officialActionTransportStatus"`,
 		`id="officialActionSurfaceStatus"`,
 		`id="officialActionTraceList"`,
+		`id="modeRitualActions"`,
+		`id="modeRitualStatus"`,
+		`id="modeRitualTraceStatus"`,
+		`id="modeRitualPhysicalStatus"`,
+		`data-mode-ritual="roleplay"`,
+		`data-mode-ritual="professional"`,
+		`Run Roleplay Ritual`,
+		`Run Professional Ritual`,
 		`data-body-preset="ready"`,
 		`data-body-preset="listening"`,
 		`data-body-preset="thinking"`,
@@ -1274,6 +1283,129 @@ func TestVoiceModeSelectionProfessionalReturnsRitualContract(t *testing.T) {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("professional ritual leaked %q: %s", forbidden, rec.Body.String())
 		}
+	}
+}
+
+func TestVoiceModeRitualProfessionalSendsHardwareSequence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-mode-ritual-hello",
+		"session_id": "a21-session-mode-ritual-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/voice-mode-ritual",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","voice_mode":"professional","trace_id":"a21-trace-mode-ritual-professional","session_id":"a21-session-mode-ritual-professional"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("voice mode ritual status = %d: %s", resp.StatusCode, string(body))
+	}
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":         "a21.gateway.voice_mode_ritual.v1",
+		"selected_voice_mode":    "professional",
+		"status":                 "delivered",
+		"delivered_transport":    "xiaozhi_mcp_sequence",
+		"screen_label":           "PRO",
+		"physical_accepted":      false,
+		"provider_executed":      false,
+		"v21_executed":           false,
+		"result_redacted":        true,
+		"workspace_policy":       "professional_only",
+		"mode_switch_visible":    true,
+		"official_relay_claimed": false,
+	} {
+		if response[key] != want {
+			t.Fatalf("response[%s] = %#v, want %#v in %#v", key, response[key], want, response)
+		}
+	}
+	steps, ok := response["steps"].([]any)
+	if !ok || len(steps) != 4 {
+		t.Fatalf("steps = %#v, want 4 redacted hardware steps", response["steps"])
+	}
+
+	expected := []struct {
+		tool string
+		args map[string]any
+	}{
+		{tool: xiaozhiMCPScreenSetThemeToolName, args: map[string]any{"theme": "dark"}},
+		{tool: xiaozhiMCPScreenSetBrightnessToolName, args: map[string]any{"brightness": float64(78)}},
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(0), "green": float64(84), "blue": float64(168)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(0), "pitch": float64(32), "speed": float64(220)}},
+	}
+	for _, want := range expected {
+		message := readXiaozhiJSON(t, ctx, conn)
+		assertXiaozhiMCPMessage(t, message, want.tool, want.args)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-mode-ritual-professional")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"voice_mode.ritual.professional.step1.screen_theme.sent",
+		"voice_mode.ritual.professional.step4.robot_head_angles_set.sent",
+		"voice_mode.ritual.professional.completed",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["current_voice_mode"] != "professional" {
+		t.Fatalf("current_voice_mode = %#v, want professional", registry["current_voice_mode"])
+	}
+	capabilities := registry["capabilities"].(map[string]any)
+	for key, want := range map[string]any{
+		"last_voice_mode_ritual":        "professional",
+		"last_voice_mode_ritual_status": "delivered",
+		"last_voice_mode_ritual_step":   "4",
+		"screen_theme":                  "dark",
+		"screen_brightness":             "78",
+		"robot_head_pitch":              "32",
+		"robot_led_blue":                "168",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestVoiceModeRitualRejectsUnknownModeAndDoesNotFallbackToProvider(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/voice-mode-ritual", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","voice_mode":"camera"}`))
+	rec := httptest.NewRecorder()
+	NewServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("voice mode ritual status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
 }
 

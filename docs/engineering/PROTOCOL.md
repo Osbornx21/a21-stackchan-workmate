@@ -744,6 +744,21 @@ cue text is the same checking acknowledgement used before V21 query execution:
 "我在查，先把证据和置信度拉出来。" The ritual contract must not include user
 utterances, workspace text, evidence bodies, provider output, URLs, paths,
 credentials, or raw audio.
+`POST /v1/voice-mode-ritual` is the hardware-visible active switch for those
+two product modes. The request accepts `device_id`, `voice_mode`, and optional
+`trace_id` / `session_id`. Gateway normalizes `dialogue` to `roleplay`, selects
+the mode only after a bounded Xiaozhi MCP sequence is delivered, and returns
+schema `a21.gateway.voice_mode_ritual.v1`. The professional ritual uses dark
+screen theme, brighter screen level, blue RGB, and a focused head pose; the
+roleplay ritual uses auto screen theme, softer brightness, warmer RGB, and a
+nearby listening pose. The endpoint uses only
+`self.screen.set_theme`, `self.screen.set_brightness`,
+`self.robot.set_led_color`, and `self.robot.set_head_angles`; it does not
+execute providers, V21, camera, NFC, infrared, official avatar relay,
+firmware, or NVS work. Responses record `provider_executed=false`,
+`v21_executed=false`, `official_relay_claimed=false`, and
+`physical_accepted=false` until operator or instrument evidence proves the
+visible mode switch.
 
 Server-side launch readiness treats this ritual as a distinct evidence gate:
 `professional_ritual_ready` is true only when `a21 product-readiness` ingests a

@@ -1121,6 +1121,32 @@ type VoiceModeSelectionRequest struct {
 	VoiceMode string `json:"voice_mode"`
 }
 
+type VoiceModeRitualRequest struct {
+	DeviceID  string `json:"device_id"`
+	VoiceMode string `json:"voice_mode"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type VoiceModeRitualResponse struct {
+	SchemaVersion        string                          `json:"schema_version"`
+	TraceID              string                          `json:"trace_id"`
+	SessionID            string                          `json:"session_id"`
+	DeviceID             string                          `json:"device_id"`
+	Status               string                          `json:"status"`
+	SelectedVoiceMode    string                          `json:"selected_voice_mode"`
+	DeliveredTransport   string                          `json:"delivered_transport"`
+	ScreenLabel          string                          `json:"screen_label"`
+	WorkspacePolicy      string                          `json:"workspace_policy"`
+	Steps                []XiaozhiBodyPresetStepResponse `json:"steps"`
+	ModeSwitchVisible    bool                            `json:"mode_switch_visible"`
+	ProviderExecuted     bool                            `json:"provider_executed"`
+	V21Executed          bool                            `json:"v21_executed"`
+	OfficialRelayClaimed bool                            `json:"official_relay_claimed"`
+	ResultRedacted       bool                            `json:"result_redacted"`
+	PhysicalAccepted     bool                            `json:"physical_accepted"`
+}
+
 type VoiceChainProfileOption struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -1499,6 +1525,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
+	mux.HandleFunc("/v1/voice-mode-ritual", s.handleVoiceModeRitual)
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
@@ -1573,6 +1600,84 @@ func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleVoiceModeRitual(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req VoiceModeRitualRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	mode, ritual, plans, err := voiceModeRitualPlans(req.DeviceID, req.VoiceMode)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	steps := make([]XiaozhiBodyPresetStepResponse, 0, len(plans))
+	for index, plan := range plans {
+		plan.TraceID = traceID
+		plan.SessionID = sessionID
+		delivery, status, message := s.sendXiaozhiMCPControl(r.Context(), plan)
+		if status != 0 {
+			s.recordTrace(traceID, sessionID, req.DeviceID, "voice_mode.ritual."+mode+".failed", s.now().UnixMilli())
+			http.Error(w, message, status)
+			return
+		}
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		modeMarker := "voice_mode.ritual." + mode + ".step" + strconv.Itoa(index+1) + "." + delivery.Marker + ".sent"
+		nowMS := s.now().UnixMilli()
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, nowMS)
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, modeMarker, nowMS)
+		activity := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
+		activity["last_voice_mode_ritual"] = mode
+		activity["last_voice_mode_ritual_status"] = "delivered"
+		activity["last_voice_mode_ritual_step"] = strconv.Itoa(index + 1)
+		activity["last_voice_mode_ritual_tool"] = delivery.Marker
+		activity["last_voice_mode_ritual_trace_id"] = delivery.Response.TraceID
+		activity["last_voice_mode_ritual_session_id"] = delivery.Response.SessionID
+		s.recordXiaozhiDeviceActivity(&xiaozhiSession{
+			deviceID:  delivery.Response.DeviceID,
+			traceID:   delivery.Response.TraceID,
+			sessionID: delivery.Response.SessionID,
+		}, modeMarker, activity)
+		steps = append(steps, XiaozhiBodyPresetStepResponse{
+			ToolName:  delivery.Response.ToolName,
+			MCPID:     delivery.Response.MCPID,
+			Marker:    delivery.Marker,
+			Arguments: delivery.Response.Arguments,
+		})
+	}
+	s.setVoiceMode(mode)
+	completedAt := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, req.DeviceID, "voice_mode.ritual."+mode+".completed", completedAt)
+	s.recordVoiceModeRitualCompleted(req.DeviceID, mode, traceID, sessionID, completedAt)
+	writeJSON(w, http.StatusOK, VoiceModeRitualResponse{
+		SchemaVersion:        "a21.gateway.voice_mode_ritual.v1",
+		TraceID:              traceID,
+		SessionID:            sessionID,
+		DeviceID:             req.DeviceID,
+		Status:               "delivered",
+		SelectedVoiceMode:    mode,
+		DeliveredTransport:   "xiaozhi_mcp_sequence",
+		ScreenLabel:          ritual.ScreenLabel,
+		WorkspacePolicy:      ritual.WorkspacePolicy,
+		Steps:                steps,
+		ModeSwitchVisible:    true,
+		ProviderExecuted:     false,
+		V21Executed:          false,
+		OfficialRelayClaimed: false,
+		ResultRedacted:       true,
+		PhysicalAccepted:     false,
+	})
 }
 
 func (s *Server) handleRoleplayProfile(w http.ResponseWriter, r *http.Request) {
@@ -1952,6 +2057,86 @@ func voiceModeRitual(mode string) VoiceModeRitual {
 			PhysicalAccepted: false,
 		}
 	}
+}
+
+func voiceModeRitualPlans(deviceID string, mode string) (string, VoiceModeRitual, []XiaozhiMCPControlRequest, error) {
+	canonical := canonicalVoiceMode(mode)
+	if canonical == "" {
+		return "", VoiceModeRitual{}, nil, errors.New("voice_mode must be roleplay or professional")
+	}
+	base := XiaozhiMCPControlRequest{DeviceID: deviceID}
+	brightness := func(value int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPScreenSetBrightnessToolName
+		req.Brightness = xiaozhiPresetInt(value)
+		return req
+	}
+	theme := func(value string) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPScreenSetThemeToolName
+		req.Theme = value
+		return req
+	}
+	led := func(red, green, blue int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetLEDColorToolName
+		req.Red = xiaozhiPresetInt(red)
+		req.Green = xiaozhiPresetInt(green)
+		req.Blue = xiaozhiPresetInt(blue)
+		return req
+	}
+	head := func(yaw, pitch, speed int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetHeadAnglesToolName
+		req.Yaw = xiaozhiPresetInt(yaw)
+		req.Pitch = xiaozhiPresetInt(pitch)
+		req.Speed = xiaozhiPresetInt(speed)
+		return req
+	}
+	switch canonical {
+	case VoiceModeProfessional:
+		return canonical, voiceModeRitual(canonical), []XiaozhiMCPControlRequest{
+			theme("dark"),
+			brightness(78),
+			led(0, 84, 168),
+			head(0, 32, 220),
+		}, nil
+	default:
+		return canonical, voiceModeRitual(canonical), []XiaozhiMCPControlRequest{
+			theme("auto"),
+			brightness(58),
+			led(120, 48, 96),
+			head(0, 24, 180),
+		}, nil
+	}
+}
+
+func (s *Server) recordVoiceModeRitualCompleted(deviceID string, mode string, traceID string, sessionID string, atMS int64) {
+	capabilities := map[string]string{
+		"last_voice_mode_ritual":              mode,
+		"last_voice_mode_ritual_status":       "delivered",
+		"last_voice_mode_ritual_completed":    "true",
+		"last_voice_mode_ritual_trace_id":     traceID,
+		"last_voice_mode_ritual_session_id":   sessionID,
+		"voice_mode_ritual_physical_accepted": "false",
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = atMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
+	record.CurrentVoiceMode = mode
+	record.LastEvent = protocol.DeviceEventKind("voice_mode.ritual." + mode + ".completed")
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = atMS
+	s.devices[deviceID] = record
 }
 
 func professionalVoiceTriggerModeAllowed(mode protocol.Mode) bool {
