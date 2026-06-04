@@ -91,6 +91,23 @@ Live truth after the 2026-06-05 07:30 CST official relay status transition:
   race subset,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
+- Commit `a139987 feat(gateway): expose official stackchan relay status` was
+  pushed and deployed to ECS `47.103.57.217`.
+- ECS deployment used Aliyun Cloud Assistant via the 5080lab SOCKS path because
+  direct root SSH still closes from this control Mac. Source was transferred
+  as chunked Cloud Assistant `SendFile` payloads, reassembled with matching
+  SHA-256
+  `edaebb34278562f93586bc6487ef46bac6b965c014f9a2b05d29556fcb9eeff5`, then
+  deployed through the existing `/opt/a21.next` safe-swap pattern.
+- Remote focused Gateway tests passed in `/opt/a21.next`, remote build passed,
+  `a21-gateway` restarted active, loopback `/healthz` passed, and loopback
+  official status returned
+  `connected=false`, `physical_accepted=false`,
+  `next_action=connect_official_stackchan_ws`.
+- 5080lab public smoke passed for `/healthz`,
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60`, and
+  `/workspace` containing both `/v1/stackchan/official/status` and
+  `Relay status`.
 - This transition did not flash firmware, write NVS, execute provider/V21,
   trigger camera/NFC/IR, or promote physical acceptance.
 - Remaining product blocker is still physical: recover/flash the product

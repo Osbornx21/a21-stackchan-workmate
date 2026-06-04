@@ -34,6 +34,16 @@ Latest control update, 2026-06-05 07:30 CST:
   `git diff --check`, Gateway review race subset,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
+- Commit `a139987 feat(gateway): expose official stackchan relay status` was
+  pushed and deployed to ECS `47.103.57.217` using Aliyun Cloud Assistant via
+  the 5080lab SOCKS path, chunked `SendFile` transfer, remote SHA-256
+  reassembly verification, and the existing `/opt/a21.next` safe-swap
+  pattern.
+- Remote focused Gateway tests and remote build passed before swap;
+  `a21-gateway` restarted active; loopback `/healthz` and loopback
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60` passed.
+- 5080lab public smoke confirmed `/healthz`, the official status endpoint,
+  and `/workspace` with `Relay status` are live.
 - No firmware build, flash, NVS write, provider/V21 execution, or physical
   acceptance promotion occurred in this transition.
 - Next transition remains physical recovery and acceptance: enter ESP32-S3
