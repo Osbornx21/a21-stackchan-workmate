@@ -106,9 +106,16 @@ suppression and reconnect-candidate cut:
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
   with SHA-256
   `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
-- Public `/v1/devices` stayed empty during the post-deploy poll, so physical
-  hardware-scene acceptance is still pending device reconnection or a
-  foreground guarded product-lane firmware flash/power-cycle window.
+- Final public `/v1/devices` check showed product device `44:1b:f6:e2:6a:60`
+  had reappeared but remained `connection_status=xiaozhi_ws_disconnected`.
+  Its capabilities no longer included `xiaozhi_product_state_reactions`, which
+  proves the runtime gate rollback took effect. The refreshed trace had no
+  `xiaozhi.state_reaction.*` MCP markers; it still showed `listen.start`
+  followed by `asr.stream.error`, `asr.stream.cancelled`, and
+  `xiaozhi.opus_ingress.queue_cancelled.socket_closed`. Physical
+  hardware-scene acceptance is therefore still pending device reconnect
+  resilience or a foreground guarded product-lane firmware flash/power-cycle
+  window.
 - No firmware flash, no NVS write, no provider/V21 execution, no camera/NFC/IR
   expansion, no reboot/OTA/snapshot/video/app-lifecycle exposure, no Git
   prune/gc, and no internal-test3 voice/protocol rollback occurred.

@@ -37,9 +37,13 @@ Latest control update, 2026-06-05 02:00 CST:
   `make a21-stackchan-official-xiaozhi-compatible-build`, producing
   `a21-stackchan-official-xiaozhi-compatible.bin` with app SHA-256
   `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
-- Post-deploy public `/healthz` and `/workspace` smoke passed. Public
-  `/v1/devices` remained empty for the immediate post-deploy poll, so live
-  scene physical acceptance is still pending product device reconnection or a
+- Post-deploy public `/healthz` and `/workspace` smoke passed. Final public
+  `/v1/devices` showed product device `44:1b:f6:e2:6a:60` had reappeared but
+  remained `connection_status=xiaozhi_ws_disconnected`. Its capabilities no
+  longer included `xiaozhi_product_state_reactions`, and the refreshed trace
+  had no `xiaozhi.state_reaction.*` MCP markers; it still showed
+  `listen.start` followed by ASR/socket-close cancellation. Live scene physical
+  acceptance is still pending product device reconnect resilience or a
   foreground guarded firmware flash/power-cycle window.
 - No firmware flash, no NVS write, no provider/V21 execution, no camera/NFC/IR
   expansion, no reboot/OTA/snapshot/video/app-lifecycle exposure, no Git

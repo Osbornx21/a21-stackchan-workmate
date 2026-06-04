@@ -16390,9 +16390,18 @@ Runtime or physical evidence:
   `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
 - Build report:
   `reports/a21-stackchan-official-baseline-20260605-020021-1780596021736181000.json`.
-- Public `/v1/devices` remained empty during the post-deploy poll, so the
-  product device still needs reconnection or a foreground guarded
-  flash/power-cycle window before scene physical acceptance can be collected.
+- Final public `/v1/devices` check showed product device
+  `44:1b:f6:e2:6a:60` had reappeared but remained
+  `connection_status=xiaozhi_ws_disconnected`.
+- The final device capabilities no longer included
+  `xiaozhi_product_state_reactions`, proving the runtime state-reaction gate
+  rollback took effect.
+- The refreshed trace no longer contained `xiaozhi.state_reaction.*` MCP
+  markers; it still showed `listen.start` followed by `asr.stream.error`,
+  `asr.stream.cancelled`, and
+  `xiaozhi.opus_ingress.queue_cancelled.socket_closed`. The product device
+  still needs reconnect resilience or a foreground guarded flash/power-cycle
+  window before scene physical acceptance can be collected.
 
 Remaining issues:
 
