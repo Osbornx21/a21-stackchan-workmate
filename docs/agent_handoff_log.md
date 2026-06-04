@@ -14816,3 +14816,101 @@ Forbidden actions avoided:
 - No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
   firmware, no provider secret printing, no Git prune/gc, no V21 internal
   execution, and no internal-test3 voice/protocol rollback occurred.
+
+## 2026-06-04 22:29 CST - StackChan Product Touch Physical Evidence
+
+Round goal:
+
+- Continue hardware parity after keepalive closure by moving screen/top touch
+  from contract/plan to product-lane physical evidence, without regressing the
+  internal-test3 voice/protocol path.
+
+Actual completed work:
+
+- Added `hello.features.touch_events` parsing and a product-only Gateway gate
+  `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS`.
+- Gateway now accepts product `type=device, kind=touch` only for hardware-MAC
+  stock Xiaozhi clients that advertise `touch_events` and do not request debug
+  device events or debug metrics.
+- Mapped firmware touch values to A21 trace/registry events:
+  `screen_tap` -> `device.touch.wake_or_listen.received`,
+  `top_tap` -> `device.touch.top.tap.received`,
+  `top_swipe_forward/backward` -> corresponding directional events, and
+  `top_barge_in` / `screen_barge_in` -> `device.touch.barge_in.received`.
+- Updated the official-compatible product overlay so screen touch and official
+  top-touch HAL gestures send product-safe touch events only after
+  `a21.profile=product` / `a21.touch_events=true`.
+- Deployed commit `f16e71b` to ECS `47.103.57.217`, enabled root-only
+  `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true`, and restarted `a21-gateway`.
+- Flashed only the guarded official-compatible product lane on
+  `/dev/cu.usbmodem1101`.
+
+Changed files:
+
+- `internal/transport/xiaozhi/frame.go`
+- `internal/transport/xiaozhi/frame_test.go`
+- `internal/transport/xiaozhi/device_extension.go`
+- `internal/transport/xiaozhi/device_extension_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/app_stackchan_touch.go`
+- `internal/app/official_stackchan_test.go`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Runtime or physical evidence:
+
+- Guarded no-flash product build passed:
+  `reports/a21-stackchan-official-baseline-20260604-221937-1780582777246064000.json`,
+  app sha256
+  `9b8366e387b10ffa784394e965f702734753f1c4c68192f17a11135e3b713216`.
+- Guarded product flash passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-222334-1780583014061627000.json`.
+- Public `/v1/devices` after flash showed
+  `xiaozhi_feature_touch_events=true` and
+  `xiaozhi_product_touch_events=true`.
+- Physical touch acceptance passed:
+  - `reports/a21-stackchan-touch-acceptance-20260604-222700.json`
+    (`screen_touch`, source `screen`).
+  - `reports/a21-stackchan-touch-acceptance-20260604-222708.json`
+    (`top_tap`, source `top_sensor`).
+  - `reports/a21-stackchan-touch-acceptance-20260604-222719.json`
+    (`top_swipe_forward`, source `top_sensor`).
+  - `reports/a21-stackchan-touch-acceptance-20260604-222744.json`
+    (`top_swipe_backward`, source `top_sensor`).
+  - `reports/a21-stackchan-touch-acceptance-20260604-222818.json`
+    (`top_barge_in`, trace `a21-trace-touch-barge-in-20260604`, source
+    `top_sensor`).
+
+Tests/build/runtime results:
+
+- Focused local tests passed for Xiaozhi transport touch parsing, Gateway
+  product touch allowance, app env wiring, official overlay contracts, and
+  touch acceptance CLI.
+- `git diff --check` passed before build and commit.
+- `A21_STACKCHAN_OFFICIAL_DEP_CACHE='/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan' GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`
+  passed after fixing overlay apply and C++ include boundaries.
+- `GOMAXPROCS=2 make verify` passed before commit.
+- ECS remote focused Gateway/App tests passed, remote `go build` passed,
+  `a21-gateway` restarted active, and local health returned ok.
+
+Unfinished items:
+
+- Directional top swipes are physically accepted as guided directional touch
+  but still need product affordance, labeling, or screen guidance before they
+  are frictionless everyday UX.
+- Full PRD physical acceptance remains open for broader audio/playback
+  evidence, custom wake/no-cable boot/power, screen visual acceptance, richer
+  servo/RGB expression, camera, NFC, infrared, and app lifecycle.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider secret
+  printing, no provider key in firmware, no Git prune/gc, no V21 internal
+  execution, and no internal-test3 voice/protocol rollback occurred.

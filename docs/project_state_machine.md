@@ -148,6 +148,46 @@ Xiaozhi control-channel keepalive physical evidence, 2026-06-04:
   at `2026-06-04 21:47:49 CST`; the device reappeared with `xiaozhi.hello` at
   `21:47:57` and resumed `device.heartbeat` at `21:48:08`.
 
+StackChan product touch physical evidence, 2026-06-04:
+
+- `T-STACKCHAN-OFFICIAL-TOUCH-ACTION-EVIDENCE-001` has product-lane physical
+  evidence for the first official touch/body slice.
+- Gateway commit `f16e71b` adds `hello.features.touch_events` parsing,
+  product-only `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS` allowance, Gateway trace /
+  registry mapping for screen/top touch events, and stock Xiaozhi touch
+  acceptance observation mode.
+- The official-compatible product overlay advertises
+  `features.touch_events=true`, only sends touch events after
+  `a21.profile=product` / `a21.touch_events=true`, bridges screen touch and
+  official top-touch HAL gestures, and keeps debug `features.device_events`
+  disabled.
+- ECS `47.103.57.217` was updated with the commit and root-only
+  `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true`; remote focused tests/build passed
+  and `a21-gateway` restarted active.
+- Guarded no-flash product build passed with app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  sha256
+  `9b8366e387b10ffa784394e965f702734753f1c4c68192f17a11135e3b713216`.
+- Guarded product flash passed with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-222334-1780583014061627000.json`.
+- Public `/v1/devices` then showed `xiaozhi_feature_touch_events=true` and
+  `xiaozhi_product_touch_events=true`.
+- Touch acceptance reports passed for device `44:1b:f6:e2:6a:60`:
+  `reports/a21-stackchan-touch-acceptance-20260604-222700.json`
+  (`screen_touch`),
+  `reports/a21-stackchan-touch-acceptance-20260604-222708.json`
+  (`top_tap`),
+  `reports/a21-stackchan-touch-acceptance-20260604-222719.json`
+  (`top_swipe_forward`),
+  `reports/a21-stackchan-touch-acceptance-20260604-222744.json`
+  (`top_swipe_backward`), and
+  `reports/a21-stackchan-touch-acceptance-20260604-222818.json`
+  (`top_barge_in` on trace `a21-trace-touch-barge-in-20260604`).
+- Directional swipes remain `guided_directional_touch` with
+  `needs_affordance=true`; full PRD physical acceptance remains open for
+  broader audio/playback evidence, screen visual acceptance, camera, NFC,
+  infrared, app lifecycle, no-cable boot/power, and richer body expression.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`
@@ -2556,6 +2596,7 @@ Next state:
 | T-XIAOZHI-PHYSICAL-PUBLIC-GATEWAY-TRACE-001: Public real-device voice trace | Completed physical gateway-trace candidate | Physical StackChan `44:1b:f6:e2:6a:60` connected to public Gateway `47.103.57.217` on stock Xiaozhi websocket profile and produced trace `a21-trace-44-1b-f6-e2-6a-60` / session `a21-session-44-1b-f6-e2-6a-60`. Counters showed real mic/Opus ingress (`xiaozhi.opus_frame.received=66`, decoded `66`), VAD speech start/end (`5/5`), listen auto-stop `5`, ASR partial/final (`11/11`), LLM first content `5`, TTS first audio `5`, TTS Opus downlink `506`, answer downlink first-frame markers `10`, completed voice pipelines `3`, and trace-level barge-in/playback stop evidence (`barge_in.detected=5`, `playback.stop=5`). Reports `reports/a21-xiaozhi-physical-evidence-20260603-201623.594517000.json` and `reports/a21-xiaozhi-half-duplex-acceptance-20260603-201623.946467000.json` record `candidate_gateway_downlink` / `candidate_gateway_trace`, mic delivery ratio `1`, `answer.first_downlink=571 ms`, downlink available, barge-in stop available, and `prd_accepted=false`. Remaining blockers are device playback ack or trusted runtime playback start, operator/instrumented audible observation, and stock firmware playback `stop_done` exposure. |
 | T-STACKCHAN-CLOUD-GATEWAY-NVS-CORRECTION-001: Product NVS cloud endpoint correction | Completed NVS write, cloud app verification blocked | After the operator clarified that the product StackChan must use the all-cloud path, the local LAN Gateway was stopped and local port `21080` was confirmed not listening. Official-compatible product NVS was rewritten with the operator-provided phone hotspot credentials plus cloud endpoints `http://47.103.57.217/xiaozhi/ota/` and `ws://47.103.57.217/v1/xiaozhi`; execute report `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163211-1780561931273006000.json` passed with `wifi_credentials_written=true`, `mutated_entry_count=5`, and `servo_calibration_present=true`. After hard reset, observed serial output showed regular `SystemInfo` lines and did not repeat the earlier `No AP found` or hotspot-provisioning fallback. Current network probes reach TCP ports `22`, `80`, `443`, and `21081`, but public HTTP/HTTPS requests return empty replies or TLS syscall errors and SSH closes before authentication, so device registration cannot be confirmed until the cloud Gateway/Caddy application layer is restored or an ECS control path is available. |
 | T-STACKCHAN-PRODUCT-FLASH-CHINANET-NVS-001: Product app flash and ChinaNet NVS refresh | Completed guarded hardware writes, physical reconnect restored | In the foreground hardware-window branch `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`, the control tower used only the product lane and flashed `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin` on `/dev/cu.usbmodem1101`; execute report `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-195734-1780574254123911000.json` passed with app SHA-256 `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`. First product NVS execute report `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-195752-1780574272065931000.json` passed but used the first typed SSID spelling; operator screenshot clarified the visible SSID is `ChinaNet-N6e3`. Corrected NVS execute report `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-200257-1780574577392353000.json` passed with `wifi_credentials_written=true`, `mutated_entry_count=5`, `servo_calibration_present=true`, OTA `http://47.103.57.217/xiaozhi/ota/`, and WebSocket `ws://47.103.57.217/v1/xiaozhi`. Serial startup confirmed the device found `ChinaNet-N6e3`, connected with IP `192.168.1.26`, opened the public Xiaozhi WebSocket, and entered listening/speaking. Public checks must bind source IP `192.168.1.20` while TUN is active; with that workaround `/healthz`, OTA, `/v1/devices`, and live trace access pass. This is hardware reconnect and live runtime evidence, not full PRD physical acceptance. |
+| T-STACKCHAN-OFFICIAL-TOUCH-ACTION-EVIDENCE-001: Product touch/body event bridge | Completed product-lane physical touch slice | Commit `f16e71b` added a product-only touch event bridge: Gateway parses `hello.features.touch_events`, only returns `a21.touch_events=true` under `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true` for hardware-MAC stock clients without debug features, records screen/top touch events as `device.touch.*.received`, and keeps debug `state`/`face`/`display`/`motion` blocked. The official-compatible overlay advertises `touch_events`, bridges screen touch and official top-touch HAL gestures, and sends `type=device, kind=touch` only after product allowance. ECS `47.103.57.217` was deployed with the new commit and env gate, guarded product build/flash passed with app SHA-256 `9b8366e387b10ffa784394e965f702734753f1c4c68192f17a11135e3b713216`, and physical acceptance passed for `screen_touch`, `top_tap`, `top_swipe_forward`, `top_swipe_backward`, and `top_barge_in` on device `44:1b:f6:e2:6a:60`. Directional swipes still need product affordance; this is not camera/NFC/IR/screen visual/no-cable/full PRD acceptance. |
 
 | T-XIAOZHI-SECOND-READONLY-CROSSCHECK-001: Protocol/endpoint/runtime/strategy cross-check | Completed read-only audit | Four strict read-only workers on HEAD `188b341` returned structured final reports. Protocol thread `019e8ac3-c9f3-7cc3-b8a1-c27cc2748168` confirmed WebSocket/Opus parity is enough for the immediate product lane but MQTT+UDP must remain a planned Xiaozhi transport gap. Endpoint thread `019e8ac3-c9f7-7721-9f6c-1bce1e69af4c` identified custom wake vs official AFE/WakeNet and parked direct-Xiaozhi app lifecycle as the highest product-lane parity risks. Runtime thread `019e8ac3-c9f6-7350-a66e-e51dcdc8109e` identified the host chain blocker: ASR partials do not yet drive LLM/TTS before ASR final/listen stop. Strategy thread `019e8ac3-c9fa-7ed0-8b61-625a418a84c2` recommends incremental A21 convergence using Xiaozhi firmware/protocol/audio-service patterns, with ADR-backed B-lite voice-engine adapter only if phased physical evidence fails. No worker edited files, built, flashed, started services, called providers/V21, or touched audio/hardware. |
 | T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001: Official hardware parity gap map | Completed docs/state baseline | Worker froze the official-vs-A21 hardware/control/status gap map in `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md` using the local official StackChan root `da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483` as a dirty working-tree reference and the Xiaozhi sub-tree `e77dedb1309153bb63fed285772962c920c97dd4` as a clean detached-HEAD reference. The map distinguishes `available`, `diagnostic`, `planned`, `blocked`, and `product-accepted`, assigns owner transitions, acceptance evidence, and rollback paths for every surface in the parity plan, and updates `docs/engineering/A21_CURRENT_CONTROL.md`. No Gateway start, provider/V21 execution, firmware build, flash, serial, or NVS write occurred. Next candidate is the low-risk MCP/status worker, not firmware or high-risk hardware. |
@@ -2568,7 +2609,7 @@ Next state:
 
 | Transition | Blocker | Required unblock |
 | --- | --- | --- |
-| T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Audible playback is accepted for the 3x foreground path, relay WAV playback received positive operator feedback, and no-flash self-trigger observation passed; custom wake, device playback timing, barge-in/touch operator proof, and final physical evidence regeneration are still missing | Collect custom wake proof, device playback timing or trusted playback-start evidence, and barge-in/touch proof, then regenerate `xiaozhi-physical-evidence`. |
+| T-HW-002b: Full StackChan physical acceptance after Gateway downlink | Audible playback is accepted for the 3x foreground path, relay WAV playback received positive operator feedback, no-flash self-trigger observation passed, and touch/barge-in proof now has product-lane physical reports; custom wake, broader device playback timing, and final physical evidence regeneration are still missing | Collect custom wake proof and device playback timing or trusted playback-start evidence, then regenerate `xiaozhi-physical-evidence`. |
 | T-PRD-001: Declare full PRD physical acceptance | Audio path is accepted, selected-provider readiness is refreshed, and no-flash self-trigger observation passed, but PRD accepted remains false because custom wake, continuous voice pipeline/host voice evidence, V21 professional execution, and final physical evidence regeneration are still pending | Close custom wake proof, collect continuous voice/host voice evidence and V21 professional evidence, regenerate physical evidence, and rerun product readiness. |
 | T-HALF-DUPLEX-DIAG-001: Instrumented half-duplex counter acceptance | Latest online diagnostic-counter run `reports/a21-stackchan-half-duplex-acceptance-20260603-015622.json` is blocked because current stock firmware lacks A21 identity, diagnostic mic-probe capability, available speaker echo fields, and runtime echo counters; this is no longer a contest-path blocker because no-flash self-trigger observation passed | Create a separate guarded diagnostic-capability firmware plan only if machine-verifiable counters are required. |
 | T-ALIYUN-CLOUD-GATEWAY-APP-REACHABILITY-001: Cloud Gateway application reachability | Default public probes from this Mac are false-negative while TUN routes `47.103.57.217` through `utun6`/`198.18.0.1`; direct-source probes with `192.168.1.20` return healthy A21 Gateway, OTA, device registry, and live traces. SSH with source bind reaches the real auth state but fails `Permission denied (publickey)`, so ECS deploy/restart remains blocked by key authorization, not app reachability. | Use `A21_DIRECT_SOURCE_IP=192.168.1.20` or `curl --interface 192.168.1.20` for verification under TUN; use Aliyun workbench or an accepted SSH key for ECS deploy/restart. |

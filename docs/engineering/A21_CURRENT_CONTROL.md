@@ -193,6 +193,50 @@ physical cut:
   A later public snapshot recorded `last_event=device.heartbeat` and
   `device_age_ms=1909`.
 
+Live truth after the 2026-06-04 22:28 CST StackChan product touch physical cut:
+
+- `T-STACKCHAN-OFFICIAL-TOUCH-ACTION-EVIDENCE-001` now has product-lane
+  physical touch evidence for screen tap, top tap, top directional swipes, and
+  top-touch barge-in on device `44:1b:f6:e2:6a:60`.
+- Gateway commit `f16e71b` was deployed to ECS `47.103.57.217`; remote focused
+  Gateway/App tests passed, remote build passed, `a21-gateway` restarted
+  active, and `/healthz` returned ok. ECS root-only runtime env now includes
+  `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true`; provider secrets were not printed.
+- The official-compatible product overlay now advertises
+  `features.touch_events=true`, parses `a21.touch_events=true`, bridges screen
+  touch and official top-touch HAL gestures into product-safe
+  `type=device, kind=touch` events, and still does not advertise debug
+  `features.device_events`.
+- Guarded no-flash product build passed with app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  at sha256
+  `9b8366e387b10ffa784394e965f702734753f1c4c68192f17a11135e3b713216`, report
+  `reports/a21-stackchan-official-baseline-20260604-221937-1780582777246064000.json`.
+- Guarded product flash passed on `/dev/cu.usbmodem1101` with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-222334-1780583014061627000.json`.
+- After flash, public `/v1/devices` showed `xiaozhi_feature_touch_events=true`
+  and `xiaozhi_product_touch_events=true`.
+- Physical touch acceptance passed:
+  `reports/a21-stackchan-touch-acceptance-20260604-222700.json`
+  (`screen_touch`, event `device.touch.wake_or_listen.received`, source
+  `screen`);
+  `reports/a21-stackchan-touch-acceptance-20260604-222708.json`
+  (`top_tap`, event `device.touch.top.tap.received`, source `top_sensor`);
+  `reports/a21-stackchan-touch-acceptance-20260604-222719.json`
+  (`top_swipe_forward`);
+  `reports/a21-stackchan-touch-acceptance-20260604-222744.json`
+  (`top_swipe_backward`); and
+  `reports/a21-stackchan-touch-acceptance-20260604-222818.json`
+  (`top_barge_in`, trace `a21-trace-touch-barge-in-20260604`, event
+  `device.touch.barge_in.received`, source `top_sensor`).
+- Directional top swipes are physically accepted as guided directional touch,
+  but still carry `needs_affordance=true`; they should get screen guidance,
+  product training, or physical labeling before being treated as frictionless
+  everyday UX.
+- This cut does not close full physical PRD acceptance, screen visual
+  acceptance, richer RGB/servo choreography, camera, NFC, infrared, app
+  lifecycle, or no-cable boot/power acceptance.
+
 ## Active Transition
 
 Current active plan:

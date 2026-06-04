@@ -48,15 +48,16 @@ stock-style xiaozhi JSON control messages:
 The server hello includes stock downlink `audio_params` (`opus`, `24000 Hz`,
 mono, `60 ms`) and an `audio` alias for current local tests. The client
 `hello.features` object is parsed for `mcp`, `aec`, `playback_events`,
-`keepalive_events`, `device_events`, and `debug_metrics`; `mcp` and `aec`
+`keepalive_events`, `touch_events`, `device_events`, and `debug_metrics`; `mcp` and `aec`
 remain stock xiaozhi capability hints, `playback_events` is the product-lane
 minimal playback acknowledgement hint, `keepalive_events` is the product-lane
-idle control-channel liveness hint, and `device_events` plus `debug_metrics`
+idle control-channel liveness hint, `touch_events` is the product-lane
+screen/top-touch physical event hint, and `device_events` plus `debug_metrics`
 still mark an isolated debug profile in the device registry. Ordinary stock
 server hellos never echo debug fields. A hardware StackChan client that
-advertises `playback_events` and/or `keepalive_events` may receive only the
-A21-namespaced product allowance when
-`A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` is set on the Gateway. It also
+advertises `playback_events`, `keepalive_events`, and/or `touch_events` may
+receive only the A21-namespaced product allowance when the matching explicit
+Gateway runtime gate is enabled. It also
 accepts xiaozhi binary protocol versions 1, 2, and 3 after a
 valid `hello` and active `listen/start`. Version 1 is a raw Opus payload.
 Version 2 unwraps the 16-byte metadata header and preserves the timestamp.
@@ -480,23 +481,26 @@ Stock hello and server hello remain free of debug or device-extension
 requirements. A debug client that explicitly advertises
 `features.device_events=true` receives only an A21-namespaced server allowance:
 `a21.profile=debug` and `a21.device_events=true`. A product client may
-separately advertise `features.playback_events=true` and
-`features.keepalive_events=true`; when `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`,
-the device ID is a hardware MAC, and the client has not requested
-`device_events` or `debug_metrics`, the server returns only
-`a21.profile=product` plus the allowed `a21.playback_events` and/or
-`a21.keepalive_events` booleans. This product allowance accepts playback
-`start` / `stop_done` acknowledgements and idle `heartbeat` events; it rejects
-all other `type=device` event kinds. Ordinary stock server hellos remain free
-of `a21`, `device_events`, `playback_events`, `keepalive_events`, and
-`debug_metrics`. A host may build
+separately advertise `features.playback_events=true`,
+`features.keepalive_events=true`, and `features.touch_events=true`; when the
+corresponding explicit Gateway gate is enabled, the device ID is a hardware
+MAC, and the client has not requested `device_events` or `debug_metrics`, the
+server returns only `a21.profile=product` plus the allowed
+`a21.playback_events`, `a21.keepalive_events`, and/or `a21.touch_events`
+booleans. `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` gates playback and
+keepalive evidence; `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true` gates physical
+touch evidence. This product allowance accepts playback `start` / `stop_done`
+acknowledgements, idle `heartbeat` events, and screen/top `touch` events; it
+rejects all other `type=device` event kinds. Ordinary stock server hellos
+remain free of `a21`, `device_events`, `playback_events`, `keepalive_events`,
+`touch_events`, and `debug_metrics`. A host may build
 `type=device` extension events only when the connected profile explicitly
 advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
 
 Current extension event kinds are `state`, `face`, `display`, `motion`,
-`heartbeat`, and playback acknowledgements. Values are provider-neutral A21
-semantics:
+`heartbeat`, playback acknowledgements, and product touch events. Values are
+provider-neutral A21 semantics:
 
 - `state`: `idle`, `listening`, `thinking`, `speaking`, `error`
 - `face`: `idle`, `attentive`, `thinking`, `speaking`, `happy`, `error`
@@ -512,6 +516,16 @@ semantics:
   `motion`. `start` is recorded as `device.playback.start`;
   `stop_done` is recorded as `device.playback.stop_done` and may prove
   barge-in stop completion when it follows `barge_in.detected`.
+- `touch`: `screen_tap`, `screen_barge_in`, `top_tap`,
+  `top_swipe_forward`, `top_swipe_backward`, or `top_barge_in`, with optional
+  `source=screen|top_sensor`; accepted only after
+  `features.device_events=true` or the product touch-events allowance above.
+  Product allowance records `screen_tap` as
+  `device.touch.wake_or_listen.received`, `screen_barge_in` and
+  `top_barge_in` as `device.touch.barge_in.received`, `top_tap` as
+  `device.touch.top.tap.received`, and swipes as
+  `device.touch.top.swipe_forward.received` /
+  `device.touch.top.swipe_backward.received`.
 
 For launch readiness, the extension's visual/action events are candidate
 transport evidence only until a flashed official StackChan avatar/action
@@ -521,16 +535,19 @@ of `state`, `face`, `display`, or `motion` is not PRD screen/action acceptance.
 The repo-owned firmware overlay
 `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
 now adds the product-side minimum: `CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
-`hello.features.playback_events=true`,
-`hello.features.keepalive_events=true`, server-hello parsing for
+`CONFIG_A21_PRODUCT_TOUCH_EVENTS=y`, `hello.features.playback_events=true`,
+`hello.features.keepalive_events=true`, `hello.features.touch_events=true`,
+server-hello parsing for
 `a21.profile=product` / `a21.playback_events=true` /
-`a21.keepalive_events=true`, idle product heartbeat sends through
+`a21.keepalive_events=true` / `a21.touch_events=true`, idle product heartbeat sends through
 `type=device, kind=heartbeat`, playback `start` after the official Xiaozhi
 audio task reaches `AudioOutputTask()`, and `stop_done` after server TTS stop
-or local abort clears the decoder queue. If the idle heartbeat send fails, the
-overlay stops the keepalive timer and runs a protocol-layer reconnect task that
-closes the stale channel and opens a fresh websocket. It does not advertise
-`features.device_events`, does
+or local abort clears the decoder queue. It also bridges official screen touch
+and top-touch HAL gestures into product-safe `type=device, kind=touch`
+messages after the server returns `a21.touch_events=true`. If the idle
+heartbeat send fails, the overlay stops the keepalive timer and runs a
+protocol-layer reconnect task that closes the stale channel and opens a fresh
+websocket. It does not advertise `features.device_events`, does
 not enable debug display/motion events, and does not store provider keys in
 firmware.
 
