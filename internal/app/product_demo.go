@@ -968,6 +968,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady &&
 		report.WakeWord.ProductReady &&
+		productWakeWordPhysicalAccepted(report.WakeWord) &&
 		productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain)
 	report.DemoReady = report.Gateway.Healthy && report.Gateway.SimulatorReady && report.Voice.LocalTTSReady
 	report.NextActions = buildProductNextActions(report)
@@ -1668,6 +1669,15 @@ func productWakeWordStatusReady(status gateway.WakeWordConfigResponse) bool {
 		return false
 	}
 	return strings.TrimSpace(status.RuntimeStatus) != "" && strings.TrimSpace(status.RuntimeStatus) != "unavailable"
+}
+
+func productWakeWordPhysicalAccepted(readiness productWakeWordReadiness) bool {
+	return readiness.PhysicalAcceptanceAvailable &&
+		strings.TrimSpace(readiness.PhysicalAcceptanceStatus) == "accepted" &&
+		readiness.PhysicalDeviceOnline &&
+		readiness.PhysicalFirmwareFlashed &&
+		readiness.PhysicalOperatorObserved &&
+		readiness.PhysicalWakePhraseMatched
 }
 
 const productLaunchPolicyExpectedLLMProfile = "stepfun"
@@ -3809,6 +3819,9 @@ func productMissingRealEvidence(report productReadinessReport) []string {
 	if !report.WakeWord.ProductReady {
 		missing = append(missing, "wake_word_product_ready")
 	}
+	if !productWakeWordPhysicalAccepted(report.WakeWord) {
+		missing = append(missing, "wake_word_physical_acceptance")
+	}
 	if !productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain) {
 		if productVoiceChainHasFinding(report.Voice.VoiceChain, "stepfun_not_selected") {
 			missing = append(missing, "stepfun_not_selected")
@@ -5234,6 +5247,8 @@ func buildProductNextActions(report productReadinessReport) []string {
 		} else {
 			actions = append(actions, "restore A21 Gateway wake word readiness before launch")
 		}
+	} else if !productWakeWordPhysicalAccepted(report.WakeWord) {
+		actions = append(actions, "collect physical wake-word acceptance evidence for the active A21 product wake path")
 	}
 	if !productVoiceChainLaunchPolicySatisfied(report.Voice.VoiceChain) {
 		if productVoiceChainHasFinding(report.Voice.VoiceChain, "stepfun_not_selected") {

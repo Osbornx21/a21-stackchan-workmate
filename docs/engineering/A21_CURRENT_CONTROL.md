@@ -71,6 +71,24 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 06:58 CST wake physical launch gate:
+
+- Review-thread wake-word evidence mismatch is now reflected in code:
+  server-side wake-word readiness is no longer enough for `launch_ready`.
+- `launch_ready` now requires accepted physical wake evidence through the
+  existing wake physical acceptance contract.
+- Public readiness was re-run with the same source-bound direct-connect setup.
+  Result:
+  `reports/a21-product-readiness-20260605-065743.json`,
+  `status=server_side_candidate_ready`.
+- Canonical remaining evidence is now exactly `physical_stackchan_online`,
+  `physical_stackchan_prd_acceptance`, and
+  `wake_word_physical_acceptance`.
+- The report now emits a concrete next action to collect physical wake-word
+  acceptance evidence for the active A21 product wake path.
+- Verification passed:
+  focused wake/launch tests and `GOMAXPROCS=2 make verify`.
+
 Live truth after the 2026-06-05 06:52 CST readiness remote-context alignment:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read. Its
@@ -95,8 +113,8 @@ Live truth after the 2026-06-05 06:52 CST readiness remote-context alignment:
   `smoke_provider` are StepFun. Professional bench/read-record, roleplay voice
   runtime, host voice loopback, wake-word server-side, and voice-chain
   evidence are ready.
-- Canonical remaining evidence is exactly `physical_stackchan_online` and
-  `physical_stackchan_prd_acceptance`.
+- Canonical remaining evidence before the later wake-physical gate was
+  `physical_stackchan_online` and `physical_stackchan_prd_acceptance`.
 - Tests and gates passed:
   focused app readiness tests, `GOMAXPROCS=2 make verify`,
   `GOMAXPROCS=2 make preflight`, `GOMAXPROCS=2 make doctor`, and

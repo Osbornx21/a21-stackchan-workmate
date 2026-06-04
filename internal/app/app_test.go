@@ -151,7 +151,13 @@ func TestProductReadinessReportsPersonalityMemoryStateWithoutLeakingText(t *test
 }
 
 func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.T) {
-	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`)
+	server := newProductReadinessTestServerWithWakeWord(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","identity_status":"valid","connection_status":"online","capabilities":{"microphone":"available_core_s3_i2s_24k_to_a21_16k"},"first_seen_ms":1,"last_seen_ms":2}]}`,
+		`{"schema_version":"a21.gateway.wake_word.v1","mode":"custom_multinet","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","desired_phrase":"小阿二一","desired_pinyin":"xiao a er yi","threshold":35,"runtime_status":"pending_firmware_build","runtime_configurable":false,"firmware_build_required":true,"code":"a21_wake_word_firmware_build_required"}`,
+	)
+	wakeWordDir := t.TempDir()
+	wakeWordPackage := writeProductReadinessReportFixtureFile(t, wakeWordDir, "a21-wake-word-firmware-package-20260602-030000.json", productReadinessWakeWordFirmwarePackageReportFixtureJSON())
+	wakeWordAcceptance := writeProductReadinessReportFixtureFile(t, wakeWordDir, "a21-wake-word-physical-acceptance-20260602-040000.json", productReadinessWakeWordPhysicalAcceptanceReportFixtureJSON())
 	ttsModelDir := createProductReadinessTTSModelDir(t)
 	asrModelDir := createProductReadinessASRModelDir(t)
 	originalLister := listFirmwareSerialDevices
@@ -163,12 +169,14 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 	})
 
 	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
-		GatewayURL:              server.URL,
-		DeviceID:                "stackchan-001",
-		ProviderSmokeReport:     writeProductReadinessProviderSmokeReportFixture(t),
-		V21ProfessionalReport:   writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
-		V21AdapterSmokeReport:   writeProductReadinessV21AdapterSmokeReportFixture(t),
-		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
+		GatewayURL:                 server.URL,
+		DeviceID:                   "stackchan-001",
+		ProviderSmokeReport:        writeProductReadinessProviderSmokeReportFixture(t),
+		V21ProfessionalReport:      writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
+		V21AdapterSmokeReport:      writeProductReadinessV21AdapterSmokeReportFixture(t),
+		PhysicalStackChanReport:    writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
+		WakeWordFirmwarePackage:    wakeWordPackage,
+		WakeWordPhysicalAcceptance: wakeWordAcceptance,
 	}, []string{
 		"A21_PROVIDER_PRIMARY=deepseek",
 		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
@@ -4596,7 +4604,17 @@ func newProductReadinessTestServerWithRoleplay(t *testing.T, devicesJSON string,
 	return newProductReadinessTestServerWithVoiceChainAndRoleplay(t, devicesJSON, productReadinessVoiceChainProfilesJSON("stepfun", nil), roleplayJSON)
 }
 
+func newProductReadinessTestServerWithWakeWord(t *testing.T, devicesJSON string, wakeWordJSON string) *httptest.Server {
+	t.Helper()
+	return newProductReadinessTestServerWithVoiceChainRoleplayWake(t, devicesJSON, productReadinessVoiceChainProfilesJSON("stepfun", nil), "", wakeWordJSON)
+}
+
 func newProductReadinessTestServerWithVoiceChainAndRoleplay(t *testing.T, devicesJSON string, voiceChainJSON string, roleplayJSON string) *httptest.Server {
+	t.Helper()
+	return newProductReadinessTestServerWithVoiceChainRoleplayWake(t, devicesJSON, voiceChainJSON, roleplayJSON, `{"schema_version":"a21.gateway.wake_word.v1","mode":"builtin_xiaozhi","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","threshold":30,"runtime_status":"active_builtin_model","runtime_configurable":false,"firmware_build_required":false}`)
+}
+
+func newProductReadinessTestServerWithVoiceChainRoleplayWake(t *testing.T, devicesJSON string, voiceChainJSON string, roleplayJSON string, wakeWordJSON string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -4611,7 +4629,7 @@ func newProductReadinessTestServerWithVoiceChainAndRoleplay(t *testing.T, device
 			_, _ = w.Write([]byte(devicesJSON))
 		case "/v1/wake-word":
 			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.wake_word.v1","mode":"builtin_xiaozhi","active_phrase":"你好小智","active_pinyin":"ni hao xiao zhi","threshold":30,"runtime_status":"active_builtin_model","runtime_configurable":false,"firmware_build_required":false}`))
+			_, _ = w.Write([]byte(wakeWordJSON))
 		case "/v1/voice-chain-profiles":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(voiceChainJSON))

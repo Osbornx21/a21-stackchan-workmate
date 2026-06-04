@@ -19,6 +19,68 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 06:58 CST - Wake Physical Launch Gate Enforced
+
+Round goal:
+
+- Close the review-thread wake-word evidence mismatch: server-side wake-word
+  readiness must not be mistaken for physical wake acceptance.
+
+Actual completed work:
+
+- Added an explicit physical wake-word launch gate. `launch_ready` now requires
+  both server wake-word readiness and physical wake acceptance evidence.
+- Added canonical missing evidence
+  `wake_word_physical_acceptance` when no accepted physical wake proof is
+  attached.
+- Added a next action asking for physical wake-word acceptance evidence when
+  server-side wake-word status is ready but physical proof is absent.
+- Updated the real-launch readiness test to include the existing guarded custom
+  wake package plus physical wake acceptance fixture.
+- Re-ran public product readiness. It still returns
+  `server_side_candidate_ready`, but canonical missing real evidence now
+  explicitly includes `wake_word_physical_acceptance` alongside physical
+  StackChan online and PRD physical acceptance.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- Wake/launch focused tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'ProductReadinessCanReachRealLaunchReadyWhenInputsArePresent|ProductReadinessReportsServerSideBlockedWhenWakeWordBlocksRealSlices|RunProductReadinessCommand.*WakeWord|ProductReadinessReportsMockDemoWithoutFullURLLeak' -count=1`.
+- Full verification passed: `GOMAXPROCS=2 make verify`.
+
+Runtime or physical evidence:
+
+- Public product readiness with source-bound direct connect returned
+  `reports/a21-product-readiness-20260605-065743.json`,
+  `status=server_side_candidate_ready`.
+- Canonical missing real evidence:
+  `physical_stackchan_online`, `physical_stackchan_prd_acceptance`, and
+  `wake_word_physical_acceptance`.
+
+Remaining issues:
+
+- Physical wake acceptance is still pending because the product device remains
+  stale/offline and the guarded delayed-relay firmware recovery flash has not
+  been completed.
+
+Next suggested action:
+
+- After guarded product flash and reconnect, collect physical wake evidence
+  before treating launch readiness as PRD accepted.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret output, no generic
+  product flash lane, no Git prune/gc, and no internal-test3 rollback.
+
 ## 2026-06-05 06:52 CST - Readiness Remote Context Aligned
 
 Round goal:
