@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `7593a79 feat(gateway): surface workspace read audit in simulator`
+  `491134e feat(gateway): route professional voice triggers`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,14 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-professional-voice-trigger-route.md`
+- `docs/plans/2026-06-04-workspace-source-readiness-registry.md`
 - Transition:
-  `T-INTERNAL-TEST4-PROFESSIONAL-VOICE-TRIGGER-001`
+  `T-INTERNAL-TEST4-WORKSPACE-SOURCE-READINESS-001`
 - Target:
-  route explicit user-spoken professional trigger phrases from default
-  roleplay/workmate voice turns into the existing professional evidence path,
-  while preserving negation guards, privacy/state boundaries, read-record
-  redaction, and internal test 3 Xiaozhi audio behavior.
+  expose safe public/personal workspace source readiness derived from redacted
+  upload/import job metadata, without storing document contents, running real
+  indexing, executing providers/V21, or weakening internal test 3 Xiaozhi
+  behavior.
 
 ## Scoped Hardware Parity Transition
 
@@ -927,3 +927,40 @@ Current conclusion:
 - This is host-local Gateway evidence only. It does not execute real provider
   or real V21, start Gateway as a runtime service, build/flash firmware, write
   serial/NVS, or prove physical StackChan professional consult acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Workspace Source Readiness Registry
+
+The workspace surface now has a memory-only source/readiness registry layered
+on top of the no-execute upload/import job contract.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-workspace-source-readiness-registry.md`.
+- Gateway exposes `GET /v1/workspace-sources` with schema
+  `a21.gateway.workspace_sources.v1`.
+- Creating a workspace upload/import job now creates a linked redacted
+  `source_id` with `readiness=metadata_only` and
+  `index_status=not_started_no_execute`.
+- `PUT /v1/workspace-upload-jobs` accepts
+  `mark_searchable` / `mark_indexed_metadata_only` and marks the source as
+  `searchable_metadata_only` without real indexing.
+- `mark_failed`, `retry`, and `delete` keep source readiness in sync; deletion
+  leaves only a redacted tombstone.
+- `/v1/professional-workspace` runtime now includes source-scope counts,
+  searchable source-scope counts, and query-scope readiness while keeping
+  `v21_execution_allowed=false`.
+- The simulator Workspace Audit surface can refresh source readiness and show
+  source count plus readiness summary.
+- Trace markers remain metadata-only:
+  `workspace.source.created_metadata_only` and
+  `workspace.index_job.searchable_metadata_only`.
+
+Current conclusion:
+
+- Internal test 4 can now show "uploaded/imported source exists" and
+  "searchable metadata candidate" per public/personal scope, which is closer to
+  the cloud workspace PRD shape.
+- This still does not store documents, run indexing, enforce V21 ACLs, execute
+  providers/V21, start Gateway, deploy ECS, or prove physical hardware
+  professional consult.

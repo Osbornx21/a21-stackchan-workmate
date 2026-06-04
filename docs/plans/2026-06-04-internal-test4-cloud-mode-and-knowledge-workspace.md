@@ -71,6 +71,13 @@ StackChan hardware.
   upload/import/index job skeleton. It can create, poll, mark failed, retry,
   and delete redacted metadata jobs while rejecting document text, bytes,
   base64 payloads, import URLs, local paths, credentials, and provider output.
+- Gateway now exposes `GET /v1/workspace-sources` as a memory-only source
+  readiness registry derived from upload/import job metadata. It returns
+  redacted source IDs, job IDs, user/workspace labels, source scope, source
+  kind, document label, content type, size, readiness, index status, and
+  source-scope counts. A narrow `mark_searchable`/`mark_indexed_metadata_only`
+  job action promotes a source to `searchable_metadata_only` for internal test
+  readiness without running real indexing or storing document contents.
 - Gateway now exposes a professional mode ritual contract in
   `GET/POST /v1/voice-modes`. Selecting `professional` returns a `PRO` screen
   label, evidence-first cue text, professional expression, trace marker,
@@ -118,10 +125,13 @@ single voice shell:
 2. **A21 Cloud/Web/App Workspace**
    - Users sign in and bind devices.
    - Users upload documents into a personal workspace.
-   - Users can query `public_only`, `personal_only`, or
-     `personal_plus_public` scopes.
-   - The same workspace controls what the hardware may consult when the user
-     switches to professional mode.
+- Users can query `public_only`, `personal_only`, or
+  `personal_plus_public` scopes.
+- Users can see which uploaded/imported sources are metadata-only,
+  searchable-metadata candidates, failed, or deleted before real indexing is
+  implemented.
+- The same workspace controls what the hardware may consult when the user
+  switches to professional mode.
    - Upload/index status, source visibility, citations, delete/export, and
      device access are visible to the user.
 
@@ -168,6 +178,8 @@ Target:
 Acceptance:
 
 - Upload job can be created, polled, failed, retried, and deleted.
+- Source registry can list public/personal source metadata and scope counts
+  without document contents.
 - Index readiness is source-scope aware.
 - A21 can show "uploaded / indexing / searchable / failed" without knowing V21
   internals.
@@ -332,8 +344,9 @@ Acceptance:
    for the Gateway/V21 adapter contract; V21 repository implementation remains
    a separate worker task.
 3. Add a no-execute upload/workspace PRD spec and API contract. Completed for
-   `/v1/professional-workspace` and `/v1/workspace-upload-jobs`; file
-   upload/import/index job execution is still not implemented.
+   `/v1/professional-workspace`, `/v1/workspace-upload-jobs`, and
+   `/v1/workspace-sources`; file upload/import/index job execution is still not
+   implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;
    - dialogue alias normalization;

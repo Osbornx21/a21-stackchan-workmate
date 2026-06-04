@@ -88,6 +88,8 @@ type Server struct {
 	professionalReadRecordSeq    uint64
 	workspaceUploadJobs          map[string]WorkspaceUploadJob
 	workspaceUploadJobSeq        uint64
+	workspaceSources             map[string]WorkspaceSource
+	workspaceSourceSeq           uint64
 	voiceChainModeConfig         string
 	cascadeASRProfileConfig      string
 	cascadeLLMProfileConfig      string
@@ -286,18 +288,21 @@ type ProfessionalWorkspaceResponse struct {
 }
 
 type ProfessionalWorkspaceRuntime struct {
-	SchemaVersion          string `json:"schema_version"`
-	Mode                   string `json:"mode"`
-	UserID                 string `json:"user_id"`
-	WorkspaceID            string `json:"workspace_id"`
-	QueryScope             string `json:"query_scope"`
-	PrivacyScope           string `json:"privacy_scope"`
-	AdapterContractVersion string `json:"adapter_contract_version"`
-	WorkspaceStatus        string `json:"workspace_status"`
-	UploadAPIReady         bool   `json:"upload_api_ready"`
-	IndexingAPIReady       bool   `json:"indexing_api_ready"`
-	QueryScopeReady        bool   `json:"query_scope_ready"`
-	V21ExecutionAllowed    bool   `json:"v21_execution_allowed"`
+	SchemaVersion               string         `json:"schema_version"`
+	Mode                        string         `json:"mode"`
+	UserID                      string         `json:"user_id"`
+	WorkspaceID                 string         `json:"workspace_id"`
+	QueryScope                  string         `json:"query_scope"`
+	PrivacyScope                string         `json:"privacy_scope"`
+	AdapterContractVersion      string         `json:"adapter_contract_version"`
+	WorkspaceStatus             string         `json:"workspace_status"`
+	QueryScopeReadiness         string         `json:"query_scope_readiness,omitempty"`
+	SourceScopeCounts           map[string]int `json:"source_scope_counts,omitempty"`
+	SearchableSourceScopeCounts map[string]int `json:"searchable_source_scope_counts,omitempty"`
+	UploadAPIReady              bool           `json:"upload_api_ready"`
+	IndexingAPIReady            bool           `json:"indexing_api_ready"`
+	QueryScopeReady             bool           `json:"query_scope_ready"`
+	V21ExecutionAllowed         bool           `json:"v21_execution_allowed"`
 }
 
 type ProfessionalWorkspaceRedaction struct {
@@ -366,6 +371,7 @@ type WorkspaceUploadJobsResponse struct {
 
 type WorkspaceUploadJob struct {
 	JobID            string                      `json:"job_id"`
+	SourceID         string                      `json:"source_id,omitempty"`
 	UserID           string                      `json:"user_id"`
 	WorkspaceID      string                      `json:"workspace_id"`
 	SourceScope      string                      `json:"source_scope"`
@@ -389,6 +395,50 @@ type WorkspaceUploadJob struct {
 	DeleteAllowed    bool                        `json:"delete_allowed"`
 	Redaction        WorkspaceUploadJobRedaction `json:"redaction"`
 	Findings         []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceSourcesResponse struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Service       string                      `json:"service"`
+	Status        string                      `json:"status"`
+	Sources       []WorkspaceSource           `json:"sources"`
+	Summary       WorkspaceSourceSummary      `json:"summary"`
+	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceSource struct {
+	SourceID      string                      `json:"source_id"`
+	JobID         string                      `json:"job_id"`
+	UserID        string                      `json:"user_id"`
+	WorkspaceID   string                      `json:"workspace_id"`
+	SourceScope   string                      `json:"source_scope"`
+	SourceKind    string                      `json:"source_kind"`
+	DocumentLabel string                      `json:"document_label"`
+	ContentType   string                      `json:"content_type,omitempty"`
+	SizeBytes     int64                       `json:"size_bytes,omitempty"`
+	Readiness     string                      `json:"readiness"`
+	IndexStatus   string                      `json:"index_status"`
+	CreatedAtMS   int64                       `json:"created_at_ms"`
+	UpdatedAtMS   int64                       `json:"updated_at_ms"`
+	TraceID       string                      `json:"trace_id,omitempty"`
+	SessionID     string                      `json:"session_id,omitempty"`
+	DeviceID      string                      `json:"device_id,omitempty"`
+	MetadataOnly  bool                        `json:"metadata_only"`
+	Searchable    bool                        `json:"searchable"`
+	Deleted       bool                        `json:"deleted"`
+	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceSourceSummary struct {
+	TotalSources                int            `json:"total_sources"`
+	MetadataOnlySources         int            `json:"metadata_only_sources"`
+	SearchableSources           int            `json:"searchable_sources"`
+	DeletedSources              int            `json:"deleted_sources"`
+	SourceScopeCounts           map[string]int `json:"source_scope_counts"`
+	SearchableSourceScopeCounts map[string]int `json:"searchable_source_scope_counts"`
+	WorkspaceStatus             string         `json:"workspace_status"`
 }
 
 type WorkspaceUploadJobRedaction struct {
@@ -741,6 +791,7 @@ const (
 	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
 	ProfessionalReadRecordsSchemaVersion      = "a21.gateway.professional_read_records.v1"
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
+	WorkspaceSourcesSchemaVersion             = "a21.gateway.workspace_sources.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade                     = "cascade"
 	VoiceChainModeRealtime                    = "realtime"
@@ -924,6 +975,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		professionalQueryScopeConfig: v21adapter.QueryScopePublic,
 		professionalReadRecords:      make(map[string]ProfessionalReadRecord),
 		workspaceUploadJobs:          make(map[string]WorkspaceUploadJob),
+		workspaceSources:             make(map[string]WorkspaceSource),
 		voiceChainModeConfig:         VoiceChainModeCascade,
 		cascadeASRProfileConfig:      initialASRProfile,
 		cascadeLLMProfileConfig:      initialLLMProfile,
@@ -971,6 +1023,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
+	mux.HandleFunc("/v1/workspace-sources", s.handleWorkspaceSources)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
@@ -1120,6 +1173,25 @@ func (s *Server) handleWorkspaceUploadJobs(w http.ResponseWriter, r *http.Reques
 		} else {
 			response, err = s.applyWorkspaceUploadJobAction(req)
 		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWorkspaceSources(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response, err := s.workspaceSourcesResponse(
+			strings.TrimSpace(r.URL.Query().Get("source_id")),
+			strings.TrimSpace(r.URL.Query().Get("user_id")),
+			strings.TrimSpace(r.URL.Query().Get("workspace_id")),
+			strings.TrimSpace(r.URL.Query().Get("source_scope")),
+		)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1667,19 +1739,28 @@ func (s *Server) professionalWorkspaceRuntime(override ProfessionalWorkspaceSele
 	if err != nil {
 		return ProfessionalWorkspaceRuntime{}, err
 	}
+	sourceSummary := s.workspaceSourceSummaryForWorkspace(userID, workspaceID)
+	queryScopeReadiness := workspaceQueryScopeReadiness(queryScope, sourceSummary)
+	workspaceStatus := "contract_ready"
+	if sourceSummary.TotalSources > 0 {
+		workspaceStatus = queryScopeReadiness
+	}
 	return ProfessionalWorkspaceRuntime{
-		SchemaVersion:          ProfessionalWorkspaceRuntimeSchemaVersion,
-		Mode:                   VoiceModeProfessional,
-		UserID:                 userID,
-		WorkspaceID:            workspaceID,
-		QueryScope:             queryScope,
-		PrivacyScope:           "professional_only",
-		AdapterContractVersion: ProfessionalAdapterContractVersion,
-		WorkspaceStatus:        "contract_ready",
-		UploadAPIReady:         false,
-		IndexingAPIReady:       false,
-		QueryScopeReady:        true,
-		V21ExecutionAllowed:    false,
+		SchemaVersion:               ProfessionalWorkspaceRuntimeSchemaVersion,
+		Mode:                        VoiceModeProfessional,
+		UserID:                      userID,
+		WorkspaceID:                 workspaceID,
+		QueryScope:                  queryScope,
+		PrivacyScope:                "professional_only",
+		AdapterContractVersion:      ProfessionalAdapterContractVersion,
+		WorkspaceStatus:             workspaceStatus,
+		QueryScopeReadiness:         queryScopeReadiness,
+		SourceScopeCounts:           copyWorkspaceSourceCounts(sourceSummary.SourceScopeCounts),
+		SearchableSourceScopeCounts: copyWorkspaceSourceCounts(sourceSummary.SearchableSourceScopeCounts),
+		UploadAPIReady:              sourceSummary.TotalSources > 0,
+		IndexingAPIReady:            false,
+		QueryScopeReady:             true,
+		V21ExecutionAllowed:         false,
 	}, nil
 }
 
@@ -2075,8 +2156,11 @@ func (s *Server) createWorkspaceUploadJob(req WorkspaceUploadJobRequest) (Worksp
 	s.mu.Lock()
 	s.workspaceUploadJobSeq++
 	jobID := fmt.Sprintf("a21-workspace-job-%06d", s.workspaceUploadJobSeq)
+	s.workspaceSourceSeq++
+	sourceID := fmt.Sprintf("a21-workspace-source-%06d", s.workspaceSourceSeq)
 	job := WorkspaceUploadJob{
 		JobID:            jobID,
+		SourceID:         sourceID,
 		UserID:           userID,
 		WorkspaceID:      workspaceID,
 		SourceScope:      sourceScope,
@@ -2105,10 +2189,12 @@ func (s *Server) createWorkspaceUploadJob(req WorkspaceUploadJobRequest) (Worksp
 		}},
 	}
 	s.workspaceUploadJobs[jobID] = job
+	s.workspaceSources[sourceID] = workspaceSourceFromJob(job, "metadata_only")
 	s.mu.Unlock()
 	if traceID != "" {
 		s.recordTrace(traceID, sessionID, deviceID, "workspace.upload_job.accepted_no_execute", nowMS)
 		s.recordTrace(traceID, sessionID, deviceID, "workspace.index_job.not_started_no_execute", nowMS)
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.source.created_metadata_only", nowMS)
 	}
 	return s.workspaceUploadJobsResponse(jobID, nil), nil
 }
@@ -2140,6 +2226,16 @@ func (s *Server) applyWorkspaceUploadJobAction(req WorkspaceUploadJobRequest) (W
 			Code:    "workspace_job_marked_failed",
 			Message: "A21 marked the redacted workspace job failed without storing document text or bytes",
 		})
+	case "mark_searchable", "mark_indexed_metadata_only":
+		job.Status = "accepted_no_execute"
+		job.IndexStatus = "searchable_metadata_only"
+		job.UpdatedAtMS = nowMS
+		job.RetryAllowed = true
+		job.DeleteAllowed = true
+		job.Findings = append(job.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_source_searchable_metadata_only",
+			Message: "A21 marked this redacted source searchable as metadata-only readiness; no indexing execution occurred",
+		})
 	case "retry":
 		job.Status = "accepted_no_execute"
 		job.IndexStatus = "not_started_no_execute"
@@ -2166,12 +2262,18 @@ func (s *Server) applyWorkspaceUploadJobAction(req WorkspaceUploadJobRequest) (W
 		})
 	default:
 		s.mu.Unlock()
-		return WorkspaceUploadJobsResponse{}, fmt.Errorf("action must be retry, mark_failed, or delete")
+		return WorkspaceUploadJobsResponse{}, fmt.Errorf("action must be retry, mark_failed, mark_searchable, or delete")
 	}
 	s.workspaceUploadJobs[jobID] = job
+	if job.SourceID != "" {
+		s.workspaceSources[job.SourceID] = workspaceSourceFromJob(job, workspaceSourceReadinessForJob(job))
+	}
 	s.mu.Unlock()
 	if job.TraceID != "" {
 		s.recordTrace(job.TraceID, job.SessionID, job.DeviceID, "workspace.upload_job."+job.Status, nowMS)
+		if job.IndexStatus == "searchable_metadata_only" {
+			s.recordTrace(job.TraceID, job.SessionID, job.DeviceID, "workspace.index_job.searchable_metadata_only", nowMS)
+		}
 	}
 	return s.workspaceUploadJobsResponse(jobID, nil), nil
 }
@@ -2216,6 +2318,229 @@ func (s *Server) workspaceUploadJobsSnapshot(jobID string) []WorkspaceUploadJob 
 		jobs = append(jobs, s.workspaceUploadJobs[key])
 	}
 	return jobs
+}
+
+func (s *Server) workspaceSourcesResponse(sourceID string, userID string, workspaceID string, sourceScope string) (WorkspaceSourcesResponse, error) {
+	sources, err := s.workspaceSourcesSnapshot(sourceID, userID, workspaceID, sourceScope)
+	if err != nil {
+		return WorkspaceSourcesResponse{}, err
+	}
+	status := "ok"
+	findings := []WorkspaceUploadJobFinding(nil)
+	if (strings.TrimSpace(sourceID) != "" || strings.TrimSpace(userID) != "" || strings.TrimSpace(workspaceID) != "" || strings.TrimSpace(sourceScope) != "") && len(sources) == 0 {
+		status = "not_found"
+		findings = append(findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_source_not_found",
+			Message: "A21 has no redacted workspace source matching those filters",
+		})
+	}
+	return WorkspaceSourcesResponse{
+		SchemaVersion: WorkspaceSourcesSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        status,
+		Sources:       sources,
+		Summary:       workspaceSourceSummary(sources),
+		Redaction:     workspaceUploadJobRedaction(),
+		Findings:      findings,
+	}, nil
+}
+
+func (s *Server) workspaceSourcesSnapshot(sourceID string, userID string, workspaceID string, sourceScope string) ([]WorkspaceSource, error) {
+	sourceID = strings.TrimSpace(sourceID)
+	userID = strings.ToLower(strings.TrimSpace(userID))
+	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
+	sourceScope = strings.ToLower(strings.TrimSpace(sourceScope))
+	if sourceID != "" && safeOptionalWorkspaceLabel(sourceID) == "" {
+		return nil, fmt.Errorf("valid redacted source_id is required")
+	}
+	if userID != "" && !validProfessionalLabel(userID) {
+		return nil, fmt.Errorf("valid redacted user_id is required")
+	}
+	if workspaceID != "" && !validProfessionalLabel(workspaceID) {
+		return nil, fmt.Errorf("valid redacted workspace_id is required")
+	}
+	if sourceScope != "" && !validWorkspaceSourceScope(sourceScope) {
+		return nil, fmt.Errorf("source_scope must be personal or public")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sources := make([]WorkspaceSource, 0, len(s.workspaceSources))
+	keys := make([]string, 0, len(s.workspaceSources))
+	if sourceID != "" {
+		keys = append(keys, sourceID)
+	} else {
+		for key := range s.workspaceSources {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		source, ok := s.workspaceSources[key]
+		if !ok {
+			continue
+		}
+		if userID != "" && source.UserID != userID {
+			continue
+		}
+		if workspaceID != "" && source.WorkspaceID != workspaceID {
+			continue
+		}
+		if sourceScope != "" && source.SourceScope != sourceScope {
+			continue
+		}
+		sources = append(sources, copyWorkspaceSource(source))
+	}
+	return sources, nil
+}
+
+func (s *Server) workspaceSourceSummaryForWorkspace(userID string, workspaceID string) WorkspaceSourceSummary {
+	sources, err := s.workspaceSourcesSnapshot("", userID, workspaceID, "")
+	if err != nil {
+		return emptyWorkspaceSourceSummary()
+	}
+	return workspaceSourceSummary(sources)
+}
+
+func workspaceSourceFromJob(job WorkspaceUploadJob, readiness string) WorkspaceSource {
+	readiness = defaultWorkspaceSourceReadiness(readiness)
+	return WorkspaceSource{
+		SourceID:      job.SourceID,
+		JobID:         job.JobID,
+		UserID:        job.UserID,
+		WorkspaceID:   job.WorkspaceID,
+		SourceScope:   job.SourceScope,
+		SourceKind:    job.SourceKind,
+		DocumentLabel: job.DocumentLabel,
+		ContentType:   job.ContentType,
+		SizeBytes:     job.SizeBytes,
+		Readiness:     readiness,
+		IndexStatus:   job.IndexStatus,
+		CreatedAtMS:   job.CreatedAtMS,
+		UpdatedAtMS:   job.UpdatedAtMS,
+		TraceID:       job.TraceID,
+		SessionID:     job.SessionID,
+		DeviceID:      job.DeviceID,
+		MetadataOnly:  true,
+		Searchable:    readiness == "searchable_metadata_only",
+		Deleted:       readiness == "deleted_metadata_only",
+		Redaction:     workspaceUploadJobRedaction(),
+		Findings:      append([]WorkspaceUploadJobFinding(nil), job.Findings...),
+	}
+}
+
+func workspaceSourceReadinessForJob(job WorkspaceUploadJob) string {
+	switch {
+	case job.Status == "deleted":
+		return "deleted_metadata_only"
+	case job.Status == "failed":
+		return "failed_metadata_only"
+	case job.IndexStatus == "searchable_metadata_only":
+		return "searchable_metadata_only"
+	default:
+		return "metadata_only"
+	}
+}
+
+func defaultWorkspaceSourceReadiness(readiness string) string {
+	switch strings.TrimSpace(readiness) {
+	case "metadata_only", "searchable_metadata_only", "failed_metadata_only", "deleted_metadata_only":
+		return strings.TrimSpace(readiness)
+	default:
+		return "metadata_only"
+	}
+}
+
+func copyWorkspaceSource(source WorkspaceSource) WorkspaceSource {
+	source.Findings = append([]WorkspaceUploadJobFinding(nil), source.Findings...)
+	return source
+}
+
+func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
+	summary := emptyWorkspaceSourceSummary()
+	for _, source := range sources {
+		summary.TotalSources++
+		if source.MetadataOnly {
+			summary.MetadataOnlySources++
+		}
+		if source.Deleted {
+			summary.DeletedSources++
+			continue
+		}
+		if validWorkspaceSourceScope(source.SourceScope) {
+			summary.SourceScopeCounts[source.SourceScope]++
+		}
+		if source.Searchable {
+			summary.SearchableSources++
+			if validWorkspaceSourceScope(source.SourceScope) {
+				summary.SearchableSourceScopeCounts[source.SourceScope]++
+			}
+		}
+	}
+	switch {
+	case summary.SearchableSources > 0:
+		summary.WorkspaceStatus = "searchable_metadata_only"
+	case summary.TotalSources == summary.DeletedSources && summary.TotalSources > 0:
+		summary.WorkspaceStatus = "deleted_metadata_only"
+	case summary.TotalSources > 0:
+		summary.WorkspaceStatus = "metadata_only"
+	default:
+		summary.WorkspaceStatus = "no_sources_metadata_only"
+	}
+	return summary
+}
+
+func emptyWorkspaceSourceSummary() WorkspaceSourceSummary {
+	return WorkspaceSourceSummary{
+		SourceScopeCounts:           map[string]int{"public": 0, "personal": 0},
+		SearchableSourceScopeCounts: map[string]int{"public": 0, "personal": 0},
+		WorkspaceStatus:             "no_sources_metadata_only",
+	}
+}
+
+func workspaceQueryScopeReadiness(queryScope string, summary WorkspaceSourceSummary) string {
+	switch defaultProfessionalQueryScope(queryScope) {
+	case v21adapter.QueryScopePublic:
+		return workspaceSingleScopeReadiness("public", summary)
+	case v21adapter.QueryScopePersonal:
+		return workspaceSingleScopeReadiness("personal", summary)
+	case v21adapter.QueryScopeCombined:
+		publicReady := summary.SearchableSourceScopeCounts["public"] > 0
+		personalReady := summary.SearchableSourceScopeCounts["personal"] > 0
+		switch {
+		case publicReady && personalReady:
+			return "combined_searchable_metadata_only"
+		case publicReady || personalReady:
+			return "partial_searchable_metadata_only"
+		case summary.SourceScopeCounts["public"] > 0 || summary.SourceScopeCounts["personal"] > 0:
+			return "metadata_only"
+		default:
+			return "no_sources_metadata_only"
+		}
+	default:
+		return "no_sources_metadata_only"
+	}
+}
+
+func workspaceSingleScopeReadiness(scope string, summary WorkspaceSourceSummary) string {
+	switch {
+	case summary.SearchableSourceScopeCounts[scope] > 0:
+		return "searchable_metadata_only"
+	case summary.SourceScopeCounts[scope] > 0:
+		return "metadata_only"
+	default:
+		return "no_sources_metadata_only"
+	}
+}
+
+func copyWorkspaceSourceCounts(counts map[string]int) map[string]int {
+	if len(counts) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(counts))
+	for scope, count := range counts {
+		out[scope] = count
+	}
+	return out
 }
 
 func defaultWorkspaceSourceScope(scope string) string {

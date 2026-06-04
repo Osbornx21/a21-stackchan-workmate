@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -334,6 +335,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/professional-workspace",
 		"/v1/professional-read-records",
 		"/v1/workspace-upload-jobs",
+		"/v1/workspace-sources",
 		"/v1/traces",
 		"Device Registry",
 		`id="registryConnection"`,
@@ -349,6 +351,9 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="workspaceDocumentLabel"`,
 		`id="workspaceJob"`,
 		`id="workspaceJobReadout"`,
+		`id="workspaceSourcesRefresh"`,
+		`id="workspaceSourceCount"`,
+		`id="workspaceSourceReadiness"`,
 		`id="professionalReadRecordsRefresh"`,
 		`id="professionalReadRecordCount"`,
 		`id="professionalReadRecordStatus"`,
@@ -1281,6 +1286,193 @@ func TestWorkspaceUploadJobsLifecycleIsNoExecuteAndRedacted(t *testing.T) {
 	for _, forbidden := range []string{"raw document", "http://", "https://", "/Users/", "secret", "api_key", "content_base64"} {
 		if strings.Contains(strings.ToLower(createRec.Body.String()+failRec.Body.String()+retryRec.Body.String()+deleteRec.Body.String()+traceRec.Body.String()), strings.ToLower(forbidden)) {
 			t.Fatalf("workspace upload job leaked %q", forbidden)
+		}
+	}
+}
+
+func TestWorkspaceSourcesRegistryTracksMetadataReadiness(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{
+		"user_id":"a21_user_sources",
+		"workspace_id":"a21_workspace_sources",
+		"source_scope":"personal",
+		"source_kind":"upload",
+		"document_label":"source readiness pack",
+		"content_type":"application/pdf",
+		"size_bytes":4096,
+		"trace_id":"a21-trace-workspace-source",
+		"session_id":"a21-session-workspace-source",
+		"device_id":"stackchan-sim-001"
+	}`))
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200: %s", createRec.Code, createRec.Body.String())
+	}
+	var createResp WorkspaceUploadJobsResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(createResp.Jobs) != 1 || createResp.Jobs[0].SourceID == "" {
+		t.Fatalf("create jobs = %+v, want source_id", createResp.Jobs)
+	}
+	job := createResp.Jobs[0]
+
+	sourcesReq := httptest.NewRequest(http.MethodGet, "/v1/workspace-sources?workspace_id=a21_workspace_sources&source_scope=personal", nil)
+	sourcesRec := httptest.NewRecorder()
+	handler.ServeHTTP(sourcesRec, sourcesReq)
+	if sourcesRec.Code != http.StatusOK {
+		t.Fatalf("sources status = %d, want 200: %s", sourcesRec.Code, sourcesRec.Body.String())
+	}
+	var sources WorkspaceSourcesResponse
+	if err := json.Unmarshal(sourcesRec.Body.Bytes(), &sources); err != nil {
+		t.Fatal(err)
+	}
+	if sources.SchemaVersion != "a21.gateway.workspace_sources.v1" || len(sources.Sources) != 1 {
+		t.Fatalf("sources response = %+v", sources)
+	}
+	source := sources.Sources[0]
+	if source.SourceID != job.SourceID ||
+		source.JobID != job.JobID ||
+		source.UserID != "a21_user_sources" ||
+		source.WorkspaceID != "a21_workspace_sources" ||
+		source.SourceScope != "personal" ||
+		source.Readiness != "metadata_only" ||
+		source.IndexStatus != "not_started_no_execute" ||
+		!source.MetadataOnly ||
+		source.Searchable {
+		t.Fatalf("source = %+v", source)
+	}
+	if sources.Summary.SourceScopeCounts["personal"] != 1 || sources.Summary.SearchableSourceScopeCounts["personal"] != 0 {
+		t.Fatalf("source summary = %+v", sources.Summary)
+	}
+
+	searchableReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"mark_searchable"}`))
+	searchableRec := httptest.NewRecorder()
+	handler.ServeHTTP(searchableRec, searchableReq)
+	if searchableRec.Code != http.StatusOK {
+		t.Fatalf("mark_searchable status = %d, want 200: %s", searchableRec.Code, searchableRec.Body.String())
+	}
+
+	sourcesRec = httptest.NewRecorder()
+	handler.ServeHTTP(sourcesRec, sourcesReq)
+	if err := json.Unmarshal(sourcesRec.Body.Bytes(), &sources); err != nil {
+		t.Fatal(err)
+	}
+	if len(sources.Sources) != 1 || sources.Sources[0].Readiness != "searchable_metadata_only" || !sources.Sources[0].Searchable {
+		t.Fatalf("searchable sources = %+v", sources)
+	}
+	if sources.Summary.SearchableSourceScopeCounts["personal"] != 1 || sources.Summary.WorkspaceStatus != "searchable_metadata_only" {
+		t.Fatalf("searchable summary = %+v", sources.Summary)
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_sources","workspace_id":"a21_workspace_sources","query_scope":"personal_only"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d, want 200: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	var workspace ProfessionalWorkspaceResponse
+	if err := json.Unmarshal(workspaceRec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.WorkspaceStatus != "searchable_metadata_only" ||
+		workspace.Runtime.SourceScopeCounts["personal"] != 1 ||
+		workspace.Runtime.SearchableSourceScopeCounts["personal"] != 1 ||
+		workspace.Runtime.QueryScopeReadiness != "searchable_metadata_only" ||
+		workspace.Runtime.V21ExecutionAllowed {
+		t.Fatalf("workspace source readiness = %+v runtime=%+v", workspace, workspace.Runtime)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-workspace-source", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"workspace.source.created_metadata_only", "workspace.index_job.searchable_metadata_only"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{"raw document", "content_base64", "http://", "https://", "/Users/", "secret", "api_key"} {
+		if strings.Contains(strings.ToLower(sourcesRec.Body.String()+workspaceRec.Body.String()+traceRec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("workspace source leaked %q", forbidden)
+		}
+	}
+}
+
+func TestWorkspaceSourcesLifecycleSyncsRetryFailAndDelete(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{
+		"workspace_id":"a21_workspace_lifecycle",
+		"source_scope":"public",
+		"source_kind":"import",
+		"document_label":"public release note",
+		"content_type":"text/markdown"
+	}`))
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200: %s", createRec.Code, createRec.Body.String())
+	}
+	var createResp WorkspaceUploadJobsResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createResp); err != nil {
+		t.Fatal(err)
+	}
+	job := createResp.Jobs[0]
+
+	failReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"mark_failed"}`))
+	failRec := httptest.NewRecorder()
+	handler.ServeHTTP(failRec, failReq)
+	if failRec.Code != http.StatusOK {
+		t.Fatalf("fail status = %d: %s", failRec.Code, failRec.Body.String())
+	}
+	source := fetchSingleWorkspaceSource(t, handler, job.SourceID)
+	if source.Readiness != "failed_metadata_only" || source.IndexStatus != "failed_no_execute" || source.Searchable {
+		t.Fatalf("failed source = %+v", source)
+	}
+
+	retryReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"retry"}`))
+	retryRec := httptest.NewRecorder()
+	handler.ServeHTTP(retryRec, retryReq)
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("retry status = %d: %s", retryRec.Code, retryRec.Body.String())
+	}
+	source = fetchSingleWorkspaceSource(t, handler, job.SourceID)
+	if source.Readiness != "metadata_only" || source.IndexStatus != "not_started_no_execute" || source.Searchable {
+		t.Fatalf("retried source = %+v", source)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-upload-jobs", bytes.NewBufferString(`{"job_id":"`+job.JobID+`","action":"delete"}`))
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+	source = fetchSingleWorkspaceSource(t, handler, job.SourceID)
+	if source.Readiness != "deleted_metadata_only" || source.DocumentLabel != "deleted" || source.ContentType != "" || source.SizeBytes != 0 || !source.Deleted {
+		t.Fatalf("deleted source = %+v", source)
+	}
+	if strings.Contains(fetchWorkspaceSourcesBody(t, handler, job.SourceID), "public release note") {
+		t.Fatal("deleted source retained original document label")
+	}
+}
+
+func TestWorkspaceSourcesRejectUnsafeFilters(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/v1/workspace-sources?workspace_id=https%3A%2F%2Fsecret.example%2Fraw&source_scope=personal", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"secret.example", "raw", "https://"} {
+		if strings.Contains(strings.ToLower(rec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("unsafe filter rejection leaked %q: %s", forbidden, rec.Body.String())
 		}
 	}
 }
@@ -12438,6 +12630,30 @@ func mustJSON(t *testing.T, value any) string {
 func asString(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+func fetchSingleWorkspaceSource(t *testing.T, handler http.Handler, sourceID string) WorkspaceSource {
+	t.Helper()
+	var response WorkspaceSourcesResponse
+	body := fetchWorkspaceSourcesBody(t, handler, sourceID)
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Sources) != 1 {
+		t.Fatalf("workspace sources = %+v, want one source", response)
+	}
+	return response.Sources[0]
+}
+
+func fetchWorkspaceSourcesBody(t *testing.T, handler http.Handler, sourceID string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/v1/workspace-sources?source_id="+url.QueryEscape(sourceID), nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace sources status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
 }
 
 func webSocketURL(serverURL string, path string) string {

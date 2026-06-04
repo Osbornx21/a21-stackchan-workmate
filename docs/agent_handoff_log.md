@@ -11077,6 +11077,91 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 09:04 CST - Workspace Source Readiness Registry
+
+Round goal:
+
+- Move the internal test 4 workspace surface beyond upload-job metadata by
+  exposing safe public/personal source readiness and query-scope readiness,
+  while preserving upload/read-record discipline and avoiding any false claim
+  of real document storage, indexing, provider execution, or V21 execution.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-workspace-source-readiness-registry.md`.
+- Added `GET /v1/workspace-sources` with schema
+  `a21.gateway.workspace_sources.v1`.
+- Workspace upload/import job creation now creates a linked redacted
+  `source_id` and a memory-only source record with
+  `readiness=metadata_only`.
+- `PUT /v1/workspace-upload-jobs` now accepts
+  `mark_searchable` / `mark_indexed_metadata_only`, promoting only metadata
+  readiness to `searchable_metadata_only`; no indexing execution occurs.
+- `mark_failed`, `retry`, and `delete` now sync the linked source readiness.
+  Delete leaves only a redacted tombstone.
+- `/v1/professional-workspace` runtime now reports `source_scope_counts`,
+  `searchable_source_scope_counts`, and `query_scope_readiness`, while
+  `v21_execution_allowed` remains false.
+- Simulator Workspace Audit now has a `Sources` refresh action plus source
+  count/readiness readouts.
+- Added Gateway tests for source creation, searchable metadata promotion,
+  professional workspace readiness summary, trace redaction, and fail/retry/
+  delete source synchronization.
+- Updated protocol, internal-test4 plan, current control, and project state
+  machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/plans/2026-06-04-workspace-source-readiness-registry.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not real upload byte storage, document parsing, indexing execution,
+  V21 ACL enforcement, durable persistence, provider execution, real V21
+  retrieval, or physical StackChan professional consult acceptance.
+- The source registry is memory-only and resets with Gateway restart.
+
+Known risks/blockers:
+
+- `searchable_metadata_only` is an internal test readiness label, not proof
+  that V21 can retrieve the source. V21 personal/public ACL enforcement remains
+  a separate worker concern.
+- Durable user/device/workspace binding remains unimplemented.
+
+Recommended next action:
+
+- Continue with a real upload/index adapter-boundary spike only after an ADR
+  defines storage and ACL ownership, or open a foreground hardware window for
+  spoken professional trigger, checking cue, evidence playback, and visible
+  `PRO` status proof.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceSource|TestWorkspaceUploadJobs|TestProfessionalWorkspace' -count=1`:
+  first failed before implementation because workspace source types/fields and
+  source helpers did not exist; passed after implementation.
+- `go test ./internal/gateway -run 'TestWorkspaceSource|TestWorkspaceUploadJobs|TestProfessionalWorkspace|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, or physical hardware
+  action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
+
 ## 2026-06-04 08:18 CST - Professional Workspace Read Records
 
 Round goal:

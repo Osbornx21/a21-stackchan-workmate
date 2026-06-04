@@ -624,12 +624,28 @@ the A21 workspace surface. `GET /v1/workspace-upload-jobs` returns
 `user_id`, `workspace_id`, `source_scope`, `source_kind`, `document_label`,
 `content_type`, `size_bytes`, and optional trace/session/device IDs. `PUT
 /v1/workspace-upload-jobs` accepts low-risk control actions: `mark_failed`,
-`retry`, and `delete`. The endpoint must reject raw document text, file bytes,
-base64 payloads, import URLs, local paths, credentials, API keys, and provider
-outputs. Current job status values such as `accepted_no_execute`,
-`failed`, `deleted`, and index statuses such as `not_started_no_execute` are
+`retry`, `mark_searchable`/`mark_indexed_metadata_only`, and `delete`. The
+endpoint must reject raw document text, file bytes, base64 payloads, import
+URLs, local paths, credentials, API keys, and provider outputs. Current job
+status values such as `accepted_no_execute`, `failed`, `deleted`, and index
+statuses such as `not_started_no_execute` or `searchable_metadata_only` are
 contract/readiness metadata only; they do not mean upload bytes were stored or
 V21 indexing ran.
+
+`workspace_sources` is the memory-only source/readiness registry derived from
+workspace upload/import job metadata. `GET /v1/workspace-sources` returns
+`a21.gateway.workspace_sources.v1` and can filter by `source_id`, `user_id`,
+`workspace_id`, and `source_scope`. Source records are limited to redacted
+source/job IDs, redacted user/workspace labels, source scope, source kind,
+document label, content type, size, readiness, index status, safe timestamps,
+and redaction flags. Readiness values such as `metadata_only`,
+`searchable_metadata_only`, `failed_metadata_only`, and
+`deleted_metadata_only` are explicitly not proof of real document storage,
+retrieval, or V21 indexing. `/v1/professional-workspace` may surface
+`source_scope_counts`, `searchable_source_scope_counts`, and
+`query_scope_readiness` from this registry while keeping
+`v21_execution_allowed=false` until a separately verified adapter execution
+path is used.
 
 `gateway_profile` is the operator/frontend transport selector for where the
 StackChan product connects. It is independent from `voice_mode`: selecting
