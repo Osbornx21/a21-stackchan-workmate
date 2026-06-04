@@ -330,6 +330,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <button id="requestIndex">Request index</button>
             <button class="secondary" id="bindDevice">Bind device</button>
             <button class="secondary" id="revokeDevice">Revoke device</button>
+            <button class="secondary" id="refreshConnectedDevice">Connected device</button>
             <button class="secondary" id="refreshDeviceBindings">Device bindings</button>
             <button class="secondary" id="deleteSource">Delete source</button>
             <button class="secondary" id="exportMetadata">Export metadata</button>
@@ -728,6 +729,7 @@ const workspaceConsoleHTML = `<!doctype html>
       job: null,
       source: null,
       indexJob: null,
+      devices: [],
       sources: [],
       deviceBindings: [],
       deviceBinding: null,
@@ -755,6 +757,7 @@ const workspaceConsoleHTML = `<!doctype html>
       requestIndex: document.getElementById('requestIndex'),
       bindDevice: document.getElementById('bindDevice'),
       revokeDevice: document.getElementById('revokeDevice'),
+      refreshConnectedDevice: document.getElementById('refreshConnectedDevice'),
       refreshDeviceBindings: document.getElementById('refreshDeviceBindings'),
       deleteSource: document.getElementById('deleteSource'),
       exportMetadata: document.getElementById('exportMetadata'),
@@ -937,6 +940,31 @@ const workspaceConsoleHTML = `<!doctype html>
     }
     function currentDeviceID() {
       return (ui.deviceId.value || '').trim() || 'stackchan-sim-001';
+    }
+    function preferredConnectedDevice(devices) {
+      const list = Array.isArray(devices) ? devices : [];
+      return list.find((device) => device.connection_status === 'online' && device.capabilities && device.capabilities.xiaozhi_profile === 'stock')
+        || list.find((device) => device.connection_status === 'online')
+        || list[0]
+        || null;
+    }
+    function shouldAutoAdoptDeviceID() {
+      const value = (ui.deviceId.value || '').trim();
+      return !value || value === 'stackchan-sim-001';
+    }
+    async function refreshConnectedDevice() {
+      const payload = await fetchJSON('/v1/devices', { cache: 'no-store' });
+      const devices = (payload && payload.devices) || [];
+      state.devices = devices;
+      const device = preferredConnectedDevice(devices);
+      if (device && device.device_id && shouldAutoAdoptDeviceID()) {
+        ui.deviceId.value = device.device_id;
+      }
+      const selected = device && device.device_id ? device.device_id : currentDeviceID();
+      const status = device && device.connection_status ? device.connection_status : 'missing';
+      setText(ui.deviceBindingStatus, 'device=' + selected + ' / ' + status);
+      log('connected device ' + selected + ' / ' + status);
+      return payload;
     }
     function renderDeviceBindings(payload) {
       const bindings = (payload && payload.bindings) || [];
@@ -2162,6 +2190,7 @@ const workspaceConsoleHTML = `<!doctype html>
         adapter_contract_version: ui.adapterStatus.textContent,
         source_count: state.sources.length,
         device_binding_count: state.deviceBindings.length,
+        connected_device_count: state.devices.length,
         read_record_count: state.readRecords.length,
         sources: state.sources.map(safeSource),
         device_bindings: state.deviceBindings.map(safeDeviceBinding),
@@ -2279,6 +2308,7 @@ const workspaceConsoleHTML = `<!doctype html>
       try {
         await refreshWorkspace();
         await refreshDeviceBindings();
+        await refreshConnectedDevice();
         await refreshSources();
         await refreshReads();
         await refreshRoleplayAndModes();
@@ -2305,6 +2335,7 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.requestIndex.addEventListener('click', () => requestIndex().catch((err) => log('index ' + err.message)));
     ui.bindDevice.addEventListener('click', () => bindDevice().catch((err) => log('device bind ' + err.message)));
     ui.revokeDevice.addEventListener('click', () => revokeDevice().catch((err) => log('device revoke ' + err.message)));
+    ui.refreshConnectedDevice.addEventListener('click', () => refreshConnectedDevice().catch((err) => log('connected device ' + err.message)));
     ui.deleteSource.addEventListener('click', () => deleteSource().catch((err) => log('delete ' + err.message)));
     ui.exportMetadata.addEventListener('click', exportMetadata);
     ui.clearReadFilters.addEventListener('click', clearReadFilters);
