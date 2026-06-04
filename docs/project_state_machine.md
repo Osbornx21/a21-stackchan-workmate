@@ -9,9 +9,35 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 01:07 CST:
+Latest control update, 2026-06-05 01:14 CST:
+
+- `T-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-001` is deployed on ECS.
+  Commit `c74261d` adds a Hardware Screen section to `/workspace` with a
+  brightness slider, theme controls for `light`, `dark`, and `auto`, device
+  status, screen info, MCP capability refresh, safe trace display, and
+  `screen_control_*` metadata export fields.
+- Local focused workspace/screen tests passed, full local `GOMAXPROCS=2 make
+  verify` passed, remote focused Gateway tests/build passed in `/opt/a21.next`,
+  `a21-gateway` safe-swapped active, loopback `/healthz` passed, and public
+  direct-source `/healthz` plus `/workspace` HTML smoke passed.
+- Public screen/status executions through the deployed Gateway on product
+  device `44:1b:f6:e2:6a:60` passed for traces
+  `a21-trace-workspace-screen-brightness-c74261d`,
+  `a21-trace-workspace-screen-theme-c74261d`, and
+  `a21-trace-workspace-screen-info-c74261d`. Responses were
+  `status=delivered`, `delivered_transport=xiaozhi_mcp`, and
+  `result_redacted=true`. Trace markers recorded
+  `xiaozhi.mcp.screen_brightness.sent`, `xiaozhi.mcp.screen_theme.sent`, and
+  `xiaozhi.mcp.screen_info.sent`; `/v1/devices` recorded
+  `screen_brightness=62` and `screen_theme=dark`; the device stayed online.
+- This transition is a hardware screen/status product surface deployment, not a
+  voice chain re-acceptance or protocol rollback. No firmware build/flash, no
+  NVS write, no provider/V21 execution, no camera/NFC/IR expansion, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback occurred.
+
+Previous control update, 2026-06-05 01:07 CST:
 
 - `T-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-001` is deployed on ECS. Commit
   `d361176` adds a Body Presets section to `/workspace` with buttons for

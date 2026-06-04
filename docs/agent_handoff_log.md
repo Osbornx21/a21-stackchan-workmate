@@ -15807,6 +15807,111 @@ Forbidden actions avoided:
   prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
   rollback.
 
+## 2026-06-05 01:14 CST - Workspace Hardware Screen Console Deployed
+
+Round goal:
+
+- Move the already deployed low-risk screen/status MCP parity endpoints into
+  the `/workspace` product control surface, continuing hardware/body parity
+  instead of repeating internal-test3 voice-chain acceptance work.
+
+Actual completed work:
+
+- Added a Hardware Screen section to `/workspace`.
+- Added brightness slider + apply action, theme controls for `light`, `dark`,
+  and `auto`, device status, screen info, MCP capabilities, and trace marker
+  refresh controls.
+- Wired the controls to existing `/v1/xiaozhi/device-status`,
+  `/v1/xiaozhi/screen-brightness`, `/v1/xiaozhi/screen-theme`,
+  `/v1/xiaozhi/mcp-control` for `self.screen.get_info`, and
+  `/v1/xiaozhi/mcp-capabilities`.
+- Added safe UI state for screen status, `physical_accepted`, trace id,
+  brightness, theme, MCP tool, capabilities, and trace markers.
+- Added safe `screen_control_*` fields to workspace client-side metadata
+  export.
+- Extended `TestWorkspaceConsolePageServed` to lock the screen controls,
+  endpoints, JS helpers, and export fields into the served page contract.
+- Updated `docs/engineering/PROTOCOL.md` to record that `/workspace` includes
+  the low-risk hardware screen/status surface and must keep
+  `physical_accepted=false` until visible operator or instrument evidence
+  proves product screen effects.
+- Committed and pushed
+  `c74261d feat(gateway): expose screen controls in workspace console`.
+- Deployed `c74261d` to ECS `47.103.57.217` through `/opt/a21.next`
+  safe-swap.
+
+Changed files:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiNamedMCPStatusEndpointsUseScopedTools|TestXiaozhiMCPStatusParityAllowsOnlyScopedTools' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+- Public `/workspace` HTML smoke found `Hardware Screen`,
+  `/v1/xiaozhi/screen-brightness`, `/v1/xiaozhi/screen-theme`,
+  `/v1/xiaozhi/device-status`, `/v1/xiaozhi/mcp-capabilities`,
+  `runHardwareScreenAction`, and `screen_control_trace_id`.
+
+Runtime or physical evidence:
+
+- Public MCP capabilities on product device `44:1b:f6:e2:6a:60` returned
+  `connection_status=online`, `mcp_advertised=true`, allowed tools for
+  speaker/status/screen/robot MCP, blocked high-risk classes for reboot,
+  firmware upgrade, camera, snapshot, video, NFC, infrared, and app lifecycle,
+  `result_redacted=true`, and `physical_accepted=false`.
+- Live public screen brightness response for trace
+  `a21-trace-workspace-screen-brightness-c74261d` returned
+  `status=delivered`, `tool_name=self.screen.set_brightness`,
+  `arguments.brightness=62`, and `result_redacted=true`.
+- Live public screen theme response for trace
+  `a21-trace-workspace-screen-theme-c74261d` returned `status=delivered`,
+  `tool_name=self.screen.set_theme`, `arguments.theme=dark`, and
+  `result_redacted=true`.
+- Live public screen info response for trace
+  `a21-trace-workspace-screen-info-c74261d` returned `status=delivered`,
+  `tool_name=self.screen.get_info`, and `result_redacted=true`.
+- Live traces recorded `xiaozhi.mcp.screen_brightness.sent`,
+  `xiaozhi.mcp.screen_theme.sent`, and `xiaozhi.mcp.screen_info.sent`.
+- Public `/v1/devices` recorded `screen_brightness=62`,
+  `screen_theme=dark`, and the product device remained online.
+
+Remaining issues:
+
+- This is deployed product-surface and product-socket evidence. It is not yet
+  visible operator/instrument physical acceptance for screen brightness/theme
+  effects.
+- Full PRD physical acceptance remains `PHYSICAL-PENDING`; the remaining
+  evidence window still needs mic ingress and trusted audible or instrumented
+  observation before promotion.
+- Camera, NFC, infrared, reboot, firmware upgrade, snapshot, video, and app
+  lifecycle remain blocked/planned high-risk controls.
+
+Next suggested action:
+
+- Use `/workspace` Hardware Screen and Body Presets together in the next
+  foreground hardware window, then record visible screen + LED/head movement
+  evidence before promoting those surfaces to physical accepted.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 01:07 CST - Workspace Body Preset Console Deployed
 
 Round goal:

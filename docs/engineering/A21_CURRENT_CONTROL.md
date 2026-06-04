@@ -71,6 +71,39 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 01:14 CST workspace hardware-screen console cut:
+
+- Commit `c74261d feat(gateway): expose screen controls in workspace console`
+  is pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- `/workspace` now exposes a Hardware Screen product control section for
+  screen brightness, screen theme, device status, screen info, and MCP
+  capabilities. The controls call the existing low-risk MCP/status endpoints
+  and display safe trace/status/tool/capability summaries plus safe
+  `screen_control_*` metadata.
+- Local focused workspace/screen tests passed and full local
+  `GOMAXPROCS=2 make verify` passed. Remote focused Gateway tests and build
+  passed in `/opt/a21.next`; `a21-gateway` restarted active; loopback and
+  public direct-source `/healthz` returned ok.
+- Public `/workspace` HTML smoke found `Hardware Screen`, the screen/status
+  endpoint calls, `runHardwareScreenAction`, and `screen_control_trace_id`.
+- Public MCP capabilities on product device `44:1b:f6:e2:6a:60` returned
+  `connection_status=online`, `mcp_advertised=true`, 8 allowed tools, blocked
+  high-risk classes for reboot/firmware upgrade/camera/snapshot/video/NFC/IR/
+  app lifecycle, `result_redacted=true`, and `physical_accepted=false`.
+- Live public brightness/theme/screen-info actions passed for traces
+  `a21-trace-workspace-screen-brightness-c74261d`,
+  `a21-trace-workspace-screen-theme-c74261d`, and
+  `a21-trace-workspace-screen-info-c74261d`. Responses were delivered through
+  `xiaozhi_mcp`; trace markers recorded
+  `xiaozhi.mcp.screen_brightness.sent`, `xiaozhi.mcp.screen_theme.sent`, and
+  `xiaozhi.mcp.screen_info.sent`. Public `/v1/devices` recorded
+  `screen_brightness=62`, `screen_theme=dark`, and the device remained online.
+- This cut is a hardware screen/status product surface deployment. It is not a
+  renewed internal-test3 voice-chain acceptance run and not a voice/protocol
+  rollback. No firmware build/flash, no NVS write, no provider or V21
+  execution, no camera/NFC/IR expansion, and no Git prune/gc occurred.
+
 Live truth after the 2026-06-05 01:07 CST workspace body-preset console cut:
 
 - Commit `d361176 feat(gateway): expose body presets in workspace console` is
