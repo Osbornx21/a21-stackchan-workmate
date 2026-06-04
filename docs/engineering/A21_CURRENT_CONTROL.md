@@ -1915,7 +1915,7 @@ Current implementation state:
 - Current branch:
   `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
 - After the accepted touch body-reaction proof, the next visible expression
-  slice is implemented locally behind
+  slice is implemented behind
   `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true`.
 - The new gate returns `a21.state_reactions=true` only for hardware-MAC stock
   Xiaozhi clients that advertise stock `hello.features.mcp=true`.
@@ -1930,17 +1930,36 @@ Current implementation state:
   preserves prior semantic `last_event` evidence but reports
   `connection_status=xiaozhi_ws_disconnected`, so MCP/body-control probes do
   not trust stale registry rows as writable sockets.
+- Commits `b6c12f0` and `f2663f1` are pushed on
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs` and
+  deployed to ECS `47.103.57.217`.
+- ECS `/etc/a21/runtime.env` has root-only
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` alongside the existing playback,
+  touch-event, and touch-reaction gates. The env value was checked only as
+  present/redacted.
+- Remote focused tests, remote Go build, Gateway restart, local health check,
+  and public direct-source `/healthz` and `/xiaozhi/ota/` probes passed.
+- Device `44:1b:f6:e2:6a:60` was recovered with read-only chip-id plus
+  hard-reset. No firmware flash and no NVS write occurred.
+- Product-device runtime evidence:
+  `reports/a21-stackchan-state-reaction-evidence-20260604-2316.json`.
+  Trace `a21-trace-state-reaction-wav-20260604` / session
+  `a21-session-state-reaction-wav-20260604` delivered host WAV-triggered
+  `speaking -> idle` state reactions through the real Xiaozhi socket, with
+  `xiaozhi.state_reaction.robot_led_color.sent`,
+  `xiaozhi.state_reaction.robot_head_angles_set.sent`, redacted MCP
+  responses, and registry echo for idle LED `20/20/40` plus head
+  `yaw=0,pitch=24,speed=160`.
 - Focused local tests pass for state reaction delivery, MCP-required gating,
-  and app env wiring. `GOMAXPROCS=2 make verify` passed after docs/state
-  updates. ECS deployment and physical evidence are still pending in this
-  active cut.
+  socket disconnect registry behavior, and app env wiring. `GOMAXPROCS=2 make
+  verify` passed before the final evidence-log update.
 
 Current conclusion:
 
-- State/body reaction is ready for ECS deployment with a root-only runtime env
-  toggle.
-- Physical product acceptance still requires a fresh device report after
-  deploy showing the state reaction on device `44:1b:f6:e2:6a:60`; this local
-  implementation does not by itself close screen visual acceptance, app
-  lifecycle, camera, NFC, infrared, no-cable boot/power, or full PRD
-  acceptance.
+- State/body reaction is now product-device evidenced at the Gateway/MCP/body
+  level, and stale online registry false-greens are fixed.
+- This is not full realtime voice parity or full PRD physical acceptance
+  because the evidence used `/v1/xiaozhi/say` with a short WAV to trigger the
+  state path. Natural microphone-triggered listen/speak evidence, screen
+  visual acceptance, app lifecycle, camera, NFC, infrared, no-cable boot/power,
+  and richer StackChan choreography remain open.

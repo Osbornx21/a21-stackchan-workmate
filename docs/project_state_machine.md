@@ -218,8 +218,9 @@ StackChan touch body-reaction evidence, 2026-06-04:
 
 StackChan state body-reaction implementation, 2026-06-04:
 
-- `T-STACKCHAN-OFFICIAL-STATE-BODY-REACTION-001` now has a local
-  Gateway/App implementation and focused tests.
+- `T-STACKCHAN-OFFICIAL-STATE-BODY-REACTION-001` now has a Gateway/App
+  implementation, focused tests, ECS deployment, and product-device runtime
+  evidence.
 - Gateway adds a separate `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` gate,
   returns `a21.state_reactions=true` only for hardware-MAC stock Xiaozhi
   clients with `hello.features.mcp=true`, and sends bounded official MCP
@@ -237,9 +238,24 @@ StackChan state body-reaction implementation, 2026-06-04:
   `connection_status=xiaozhi_ws_disconnected` while preserving the previous
   semantic `last_event`, preventing stale `/v1/devices` rows from being used
   as MCP/body-control proof.
-- This is not yet ECS deployed or physically evidenced on device
-  `44:1b:f6:e2:6a:60`; product physical acceptance remains open until a fresh
-  runtime/physical report observes the state body reaction.
+- Commits `b6c12f0` and `f2663f1` were pushed on branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`, deployed
+  to ECS `47.103.57.217`, and enabled through root-only
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true`.
+- Device `44:1b:f6:e2:6a:60` was recovered with a read-only chip-id/hard-reset
+  operation, not a firmware flash or NVS write. The product socket reconnected
+  and accepted state-reaction MCP delivery.
+- Runtime evidence report
+  `reports/a21-stackchan-state-reaction-evidence-20260604-2316.json` records
+  trace `a21-trace-state-reaction-wav-20260604`, session
+  `a21-session-state-reaction-wav-20260604`, host WAV-triggered
+  `speaking -> idle` state reactions, four audio chunks, MCP send markers,
+  redacted MCP responses, and registry echo for idle LED `20/20/40` plus head
+  `yaw=0,pitch=24,speed=160`.
+- This is product-device runtime/body evidence, not full realtime voice or full
+  PRD physical acceptance. Natural microphone-driven listen evidence, screen
+  visual acceptance, richer choreography, camera, NFC, infrared, no-cable
+  boot/power, and app lifecycle parity remain open.
 
 Active child transitions:
 

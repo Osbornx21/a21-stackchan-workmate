@@ -15084,3 +15084,97 @@ Forbidden actions avoided:
   provider execution, no V21 execution, no provider key in firmware, no generic
   `xiaozhi.bin` product lane, no Git prune/gc, and no internal-test3
   voice/protocol rollback.
+
+## 2026-06-04 23:16 CST - StackChan Product State Body Reaction Evidence
+
+Round goal:
+
+- Finish the state/body reaction cut by deploying to ECS, proving product
+  device MCP/body delivery, and reducing stale socket false-green risk, without
+  repeating the accepted keepalive/touch work.
+
+Actual completed work:
+
+- Pushed commit `b6c12f0`:
+  `feat(stackchan): add product state body reactions`.
+- Pushed follow-up commit `f2663f1`:
+  `fix(gateway): mark disconnected xiaozhi sockets`.
+- Deployed the branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs` to ECS
+  `47.103.57.217`.
+- Enabled root-only
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` in `/etc/a21/runtime.env`; the
+  env presence was checked only as redacted `<set>`.
+- Restarted `a21-gateway` and confirmed ECS local health plus public
+  direct-source `/healthz` and OTA probes.
+- Recovered device `44:1b:f6:e2:6a:60` with read-only chip-id plus hard-reset;
+  no firmware app flash, NVS write, or serial write command was run.
+- Captured product-device runtime evidence via `/v1/xiaozhi/say` with a short
+  local WAV trigger, proving the state reaction path over the real Xiaozhi
+  socket and official MCP responses.
+- Added a checked evidence report:
+  `reports/a21-stackchan-state-reaction-evidence-20260604-2316.json`.
+- Closed one still-manageable old worker thread; older detached delegation
+  records returned `No AppServerManager registered`, so no further thread-tool
+  cleanup was possible from this session.
+
+Changed files:
+
+- `reports/a21-stackchan-state-reaction-evidence-20260604-2316.json`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Runtime or physical evidence:
+
+- Device: `44:1b:f6:e2:6a:60`.
+- Evidence trace/session:
+  `a21-trace-state-reaction-wav-20260604` /
+  `a21-session-state-reaction-wav-20260604`.
+- `/v1/xiaozhi/say` response: `status=delivered`,
+  `delivered_transport=xiaozhi_ws`, `audio_source=wav_file`,
+  `audio_chunks=4`.
+- Trace markers included `xiaozhi.say.start`, `tts.first_audio`,
+  `stackchan.display_state.received`, `stackchan.display_state.registry_updated`,
+  `xiaozhi.state_reaction.robot_led_color.sent`,
+  `xiaozhi.state_reaction.robot_head_angles_set.sent`,
+  `xiaozhi.tts.opus_frame.downlink`, `xiaozhi.say.downlink`,
+  `xiaozhi.tts.stop`, and redacted `xiaozhi.mcp.response.received`.
+- `/v1/devices` runtime echo after completion showed
+  `last_state_reaction_status=delivered`,
+  `last_state_reaction_state=idle`,
+  `last_state_reaction_reason=tts_stop_host_say_complete`,
+  `last_state_reaction_tool=robot_head_angles_set`, LED `20/20/40`, and head
+  `yaw=0,pitch=24,speed=160`.
+
+Tests/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiDeviceRegistryMarksSocketDisconnectedOnClose|TestXiaozhiProductStateReactions|TestXiaozhiProductTouchReactions' -count=1`
+  passed.
+- `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresProduct(State|Touch|Playback)Events|TestGatewayServerOptionsFromEnvWiresProductTouchReactions|TestGatewayServerOptionsFromEnvWiresProductStateReactions' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify` passed before this evidence-log update.
+- ECS remote focused tests, remote Go build, service restart, and health
+  probes passed.
+
+Unfinished items:
+
+- This proves product-device state/body reaction through `/v1/xiaozhi` MCP,
+  not full natural realtime microphone/listen acceptance.
+- Full PRD physical acceptance remains open for natural voice turn evidence,
+  screen visual acceptance, app lifecycle/no-welcome parity, no-cable
+  boot/power behavior, richer official-style choreography, camera, NFC, and
+  infrared.
+
+Recommended next action:
+
+- Run a short natural listen/speak physical acceptance slice on the already
+  deployed ECS Gateway, then promote screen visual acceptance and no-cable
+  boot/power as the next two hardware parity cuts.
+
+Forbidden actions avoided:
+
+- No firmware app flash, no NVS write, no serial write, no provider secret
+  printing, no provider key in firmware, no V21 internal execution, no generic
+  `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
+  voice/protocol rollback.
