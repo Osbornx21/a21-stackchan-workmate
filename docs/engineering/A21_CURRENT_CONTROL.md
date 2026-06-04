@@ -175,6 +175,36 @@ lane:
   is still presumed to contain the rejected `61c9fa0` immediate-relay artifact
   until a guarded flash execution succeeds.
 
+Live truth after the 2026-06-05 06:43 CST server-side reconfirmation:
+
+- A fresh esptool `no_reset` probe on `/dev/cu.usbmodem1101` still failed with
+  `Failed to connect to ESP32-S3: No serial data received`, so the product
+  device has not entered ROM download mode.
+- Current Wi-Fi source address is `192.168.1.27`. With TUN active, default
+  routes to `47.103.57.217` go through `utun6` / `198.18.0.1` and can return
+  false `Empty reply from server`. Source-bind public verification to
+  `192.168.1.27` or set `A21_DIRECT_SOURCE_IP=192.168.1.27`.
+- Source-bound public checks passed:
+  `/healthz`, `/v1/devices`, and `/xiaozhi/ota/` all returned HTTP 200.
+- Public `/healthz` returned
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- Public `/xiaozhi/ota/` returned
+  `ws://47.103.57.217/v1/xiaozhi`.
+- Public `/v1/devices` shows product device `44:1b:f6:e2:6a:60` still in the
+  registry, but `connection_status=xiaozhi_ws_disconnected` with stale age,
+  consistent with the unflashed rejected immediate-relay firmware.
+- `GOMAXPROCS=2 make preflight` and `GOMAXPROCS=2 make doctor` passed.
+- Review-thread Gateway race regression subset passed:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute' -count=1`.
+- Re-running readiness with `A21_PROVIDER_PRIMARY=stepfun`,
+  `A21_DIRECT_SOURCE_IP=192.168.1.27`, explicit latest provider smoke, and
+  `--use-latest-reports` restored the expected server-side state:
+  `reports/a21-product-readiness-20260605-064249.json` and
+  `reports/a21-server-side-readiness-bundle-20260605-064249.json` are both
+  `server_side_candidate_ready`. Canonical missing real evidence is now
+  physical: `physical_stackchan_online` and
+  `physical_stackchan_prd_acceptance`.
+
 Live truth after the 2026-06-05 06:20 CST official StackChan relay runtime
 build:
 

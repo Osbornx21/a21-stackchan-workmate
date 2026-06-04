@@ -19,6 +19,95 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 06:43 CST - Server-Side Candidate Reconfirmed While Physical Flash Pending
+
+Round goal:
+
+- Keep moving toward the review-thread remediation goal while the product
+  device is still not in ESP32-S3 ROM download mode. Reconfirm that the
+  non-physical server/Gateway evidence is not blocked, and avoid repeating the
+  historical TUN false-negative diagnosis.
+
+Actual completed work:
+
+- Confirmed current branch is clean and synced at
+  `39931ec docs(control): record manual bootloader recovery state`.
+- Re-ran a short esptool `no_reset` probe on `/dev/cu.usbmodem1101`; it still
+  failed with `Failed to connect to ESP32-S3: No serial data received`, so the
+  device has not entered ROM download mode.
+- Ran default host gates after the latest recovery-lane commits:
+  `GOMAXPROCS=2 make preflight` and `GOMAXPROCS=2 make doctor` both passed.
+- Diagnosed the public Gateway false negative: with TUN active, the route to
+  `47.103.57.217` goes through `utun6` / `198.18.0.1`, which can return
+  `Empty reply from server`. The current Wi-Fi source address is
+  `192.168.1.27`, not the older `192.168.1.20`.
+- Verified public Gateway through the correct source-bound path:
+  `curl --interface 192.168.1.27 --noproxy '*' http://47.103.57.217/healthz`
+  returned HTTP 200; `/v1/devices` and `/xiaozhi/ota/` also returned HTTP 200.
+- Re-ran product readiness and server-side readiness with
+  `A21_PROVIDER_PRIMARY=stepfun`, `A21_DIRECT_SOURCE_IP=192.168.1.27`, the
+  latest provider smoke report, and `--use-latest-reports`.
+- Re-ran the review-thread Gateway race regression subset:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute' -count=1`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 make preflight`: passed.
+- `GOMAXPROCS=2 make doctor`: passed.
+- Source-bound public `/healthz`: HTTP 200 with
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- Source-bound public `/xiaozhi/ota/`: HTTP 200 and
+  `ws://47.103.57.217/v1/xiaozhi`.
+- Source-bound public `/v1/devices`: HTTP 200. Product device
+  `44:1b:f6:e2:6a:60` is still in the registry, but
+  `connection_status=xiaozhi_ws_disconnected` and age is stale, consistent
+  with the rejected firmware still running or rebooting.
+- Product readiness report:
+  `reports/a21-product-readiness-20260605-064249.json`,
+  `status=server_side_candidate_ready`. Canonical missing real evidence is
+  `physical_stackchan_online` and `physical_stackchan_prd_acceptance`.
+- Server-side readiness bundle:
+  `reports/a21-server-side-readiness-bundle-20260605-064249.json`,
+  `status=server_side_candidate_ready`, `candidate_ready=true`.
+- Gateway focused `-race` regression passed:
+  `ok a21.local/a21/internal/gateway`.
+
+Unfinished items:
+
+- Safe delayed-relay firmware is still not flashed because the board is not in
+  ROM download mode.
+- Physical device online, official `/stackChan/ws` online, official action
+  control delivery, no-cable boot, power-button acceptance, and visible
+  physical PRD acceptance remain pending.
+
+Known risks/blockers:
+
+- Do not use default public curl while TUN mode routes `47.103.57.217` through
+  `utun6`; bind to the current Wi-Fi source address (`192.168.1.27` in this
+  round) or set `A21_DIRECT_SOURCE_IP` for A21 readiness commands.
+- The latest successful product flash evidence still points to the rejected
+  immediate-relay artifact until the guarded delayed-relay flash succeeds.
+
+Recommended next action:
+
+- Put the device into ROM download mode using `BOOT` + `RESET` or `BOOT` +
+  USB replug, then run the guarded `no_reset` product flash command from the
+  previous handoff entry. After flash, verify 45 seconds of serial boot, public
+  Xiaozhi reconnect, official `/stackChan/ws`, official control delivery, and
+  visible head/RGB/screen movement.
+
+Forbidden actions avoided:
+
+- No Git prune/gc, no provider secret output, no provider/V21 execution, no
+  ECS mutation, no generic `xiaozhi.bin` flash lane, no NVS write, no JTAG
+  flash, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 06:38 CST - Guarded Manual Bootloader Recovery Lane Ready
 
 Round goal:
