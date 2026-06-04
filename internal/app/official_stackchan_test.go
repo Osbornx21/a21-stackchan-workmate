@@ -1003,6 +1003,7 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanBuildsNoFlashReceipt(t *t
 		`"dry_run": true`,
 		`"flash_allowed": false`,
 		`"flash_executed": false`,
+		`"esptool_before": "default_reset"`,
 		`"build_dir_name": "a21-stackchan-official-build"`,
 		`"app"`,
 		`"file": "a21-stackchan-official-xiaozhi-compatible.bin"`,
@@ -1081,6 +1082,28 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsOversizedAssetsPar
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsUnsupportedBeforeMode(t *testing.T) {
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--esptool-before", "hard_reset",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("unsupported esptool before mode unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "unsupported esptool before mode") {
+		t.Fatalf("stderr missing unsupported mode finding: %s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("unsupported-mode rejection leaked full build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRequiresConfirmationToken(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1125,12 +1148,13 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand(t *
 		"--build-dir", buildDir,
 		"--port", "/dev/cu.usbmodemA21",
 		"--idf-export", idfExport,
+		"--esptool-before", "no_reset",
 		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP",
 	}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	for _, want := range []string{"python -m esptool", "--chip esp32s3", "--port '/dev/cu.usbmodemA21'", "write_flash @flash_args"} {
+	for _, want := range []string{"python -m esptool", "--chip esp32s3", "--port '/dev/cu.usbmodemA21'", "--before 'no_reset'", "write_flash @flash_args"} {
 		if !strings.Contains(ranScript, want) {
 			t.Fatalf("flash script missing %q: %s", want, ranScript)
 		}
@@ -1138,6 +1162,7 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand(t *
 	for _, want := range []string{
 		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1"`,
 		`"flash_executed": true`,
+		`"esptool_before": "no_reset"`,
 		`"control_guard"`,
 		`"file": "a21-stackchan-official-xiaozhi-compatible.bin"`,
 	} {

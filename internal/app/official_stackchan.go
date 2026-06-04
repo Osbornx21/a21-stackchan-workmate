@@ -145,12 +145,13 @@ type stackChanOfficialPCMBridgeFlashPlanOptions struct {
 }
 
 type stackChanOfficialXiaozhiCompatibleFlashOptions struct {
-	BuildDir  string
-	IDFExport string
-	Port      string
-	OutputDir string
-	Confirm   string
-	Execute   bool
+	BuildDir      string
+	IDFExport     string
+	Port          string
+	EsptoolBefore string
+	OutputDir     string
+	Confirm       string
+	Execute       bool
 }
 
 type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
@@ -227,6 +228,7 @@ type stackChanOfficialXiaozhiCompatibleFlashReport struct {
 	FlashExecuted            bool                                `json:"flash_executed"`
 	ControlGuard             *runtimeguard.ControlGuardReport    `json:"control_guard,omitempty"`
 	Port                     string                              `json:"port"`
+	EsptoolBefore            string                              `json:"esptool_before"`
 	BuildDirName             string                              `json:"build_dir_name"`
 	IDFExportName            string                              `json:"idf_export_name,omitempty"`
 	FlashLogFile             string                              `json:"flash_log_file,omitempty"`
@@ -741,12 +743,13 @@ func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.W
 
 func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialXiaozhiCompatibleFlashOptions{
-		BuildDir:  firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
-		IDFExport: firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
-		Port:      strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
-		OutputDir: "",
-		Confirm:   "",
-		Execute:   execute,
+		BuildDir:      firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport:     firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:          strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		EsptoolBefore: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE")), "default_reset"),
+		OutputDir:     "",
+		Confirm:       "",
+		Execute:       execute,
 	}
 	if execute {
 		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM"))
@@ -754,7 +757,7 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP] [--idf-export /path/to/export.sh] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP] [--idf-export /path/to/export.sh] [--esptool-before default_reset|usb_reset|no_reset] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -777,6 +780,13 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 			}
 			i++
 			options.Port = args[i]
+		case "--esptool-before":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--esptool-before requires a value")
+				return 2
+			}
+			i++
+			options.EsptoolBefore = args[i]
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -1322,6 +1332,10 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
 		return stackChanOfficialXiaozhiCompatibleFlashReport{}, err
 	}
+	esptoolBefore, err := validateStackChanOfficialXiaozhiCompatibleEsptoolBefore(options.EsptoolBefore)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleFlashReport{}, err
+	}
 	usage, err := detectFirmwareUploadPortUsage(options.Port)
 	if err != nil {
 		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("inspect upload port: %w", err)
@@ -1350,6 +1364,7 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 		FlashAllowed:             false,
 		FlashExecuted:            false,
 		Port:                     options.Port,
+		EsptoolBefore:            esptoolBefore,
 		BuildDirName:             filepath.Base(buildDir),
 		IDFExportName:            filepath.Base(filepath.Clean(options.IDFExport)),
 		NextRequiredConfirmation: "a21-stackchan-official-xiaozhi-compatible-flash-execute_with_confirmation_token",
@@ -2362,11 +2377,19 @@ func executeStackChanOfficialXiaozhiCompatibleFlash(ctx context.Context, options
 	flashLogFile := fmt.Sprintf("a21-official-xiaozhi-compatible-flash-%s.log", time.Now().Format("20060102-150405"))
 	flashLogPath := filepath.Join(options.BuildDir, flashLogFile)
 	report.FlashLogFile = flashLogFile
+	esptoolBefore := report.EsptoolBefore
+	if esptoolBefore == "" {
+		var err error
+		esptoolBefore, err = validateStackChanOfficialXiaozhiCompatibleEsptoolBefore(options.EsptoolBefore)
+		if err != nil {
+			return err
+		}
+	}
 	script := strings.Join([]string{
 		"set -euo pipefail",
 		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
 		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
-		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before %s --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port), shellSingleQuote(esptoolBefore)),
 	}, "\n")
 	if err := runStackChanOfficialXiaozhiCompatibleFlashCommand(ctx, flashLogPath, script); err != nil {
 		return err
@@ -2652,6 +2675,19 @@ func validateOfficialSmokeUploadPort(port string) error {
 		return fmt.Errorf("upload port must be an explicit USB serial device")
 	}
 	return nil
+}
+
+func validateStackChanOfficialXiaozhiCompatibleEsptoolBefore(mode string) (string, error) {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		return "default_reset", nil
+	}
+	switch mode {
+	case "default_reset", "usb_reset", "no_reset":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported esptool before mode %q; want default_reset, usb_reset, or no_reset", mode)
+	}
 }
 
 func shellSingleQuote(value string) string {
