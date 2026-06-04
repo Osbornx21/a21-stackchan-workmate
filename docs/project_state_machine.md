@@ -333,6 +333,37 @@ Xiaozhi wake/control-channel overlay root cause, 2026-06-04:
 - Product-lane flash is pending after the code/docs commit because the flash
   guard correctly refused to write hardware while tracked files were dirty.
 
+Xiaozhi natural audio ingress physical evidence, 2026-06-04:
+
+- `T-XIAOZHI-NATURAL-AUDIO-INGRESS-ROOTCAUSE-001` is no longer blocked at
+  zero audio frames. Commit `43fcd16` was pushed, the product flash guard ran
+  from a clean worktree, and the official-compatible product app flash passed
+  with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-235129-1780588289127583000.json`.
+- No NVS write occurred. The device reconnected through the existing product
+  NVS and resumed heartbeat after `xiaozhi.hello`.
+- Physical serial/runtime evidence after the flash showed wake detection,
+  `idle -> listening`, AFE startup, device VAD stop, `idle -> speaking`, and
+  state-reaction MCP execution.
+- Live trace metrics now show natural audio ingress and answer downlink:
+  listen-to-audio-ingress `114ms`, ASR first partial `207ms`, LLM first
+  content `434ms`, audio downlink first frame `467ms`, TTS first audio
+  `766ms`, device playback start `51ms`, and answer first audio total
+  `641ms`.
+- The local physical-evidence reader now treats `roleplay.prompt_input.used`
+  as a safe trace marker because it proves prompt use without storing prompt
+  text. Unsafe transcript/prompt/body/URL/path/raw-audio/secret checks remain.
+- Physical evidence report
+  `reports/a21-xiaozhi-physical-evidence-20260604-235541.527765000.json`
+  is `candidate_gateway_downlink` with device online, `audio_frame_count=64`,
+  Opus decode, PCM ingress, VAD speech end, TTS downlink, and playback ack.
+- Half-duplex report
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260604-235541.288482000.json`
+  remains blocked because barge-in detected/stop/stop_done and trusted audible
+  observation are still missing. Next transition should focus on physical
+  audible observation plus barge-in/stop_done, not on reconnect or zero-frame
+  audio ingress.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`

@@ -1290,10 +1290,10 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 					"robot_head_pitch":            "30",
 					"robot_head_speed":            "180",
 				},
-				"last_trace_id":     "a21-trace-44-1b-f6-e2-6a-60",
-				"last_session_id":   "a21-session-44-1b-f6-e2-6a-60",
-				"first_seen_ms":     1,
-				"last_seen_ms":      2,
+				"last_trace_id":   "a21-trace-44-1b-f6-e2-6a-60",
+				"last_session_id": "a21-session-44-1b-f6-e2-6a-60",
+				"first_seen_ms":   1,
+				"last_seen_ms":    2,
 			}},
 		})
 	})
@@ -1307,6 +1307,7 @@ func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ..
 			{"name": "vad.speech.end", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1200, "offset_ms": 200},
 			{"name": "xiaozhi.listen.auto_stop", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1210, "offset_ms": 210},
 			{"name": "xiaozhi.voice_pipeline.start", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1220, "offset_ms": 220},
+			{"name": "roleplay.prompt_input.used", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1230, "offset_ms": 230},
 			{"name": "tts.first_audio", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1290, "offset_ms": 290},
 			{"name": "xiaozhi.tts.opus_frame.downlink", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1310, "offset_ms": 310},
 			{"name": "audio.downlink.first_frame", "trace_id": "a21-trace-44-1b-f6-e2-6a-60", "session_id": "a21-session-44-1b-f6-e2-6a-60", "device_id": "44:1b:f6:e2:6a:60", "at_ms": 1310, "offset_ms": 310},

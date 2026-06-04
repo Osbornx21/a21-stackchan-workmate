@@ -859,7 +859,7 @@ func xiaozhiPhysicalGatewayDataUnsafe(device firmwarecheck.DeviceIdentityRecord,
 		}
 	}
 	for _, event := range trace.Events {
-		if xiaozhiPhysicalUnsafeString(event.Name) ||
+		if xiaozhiPhysicalTraceEventNameUnsafe(event.Name) ||
 			xiaozhiPhysicalUnsafeString(event.TraceID) ||
 			xiaozhiPhysicalUnsafeString(event.SessionID) ||
 			xiaozhiPhysicalUnsafeString(event.DeviceID) {
@@ -878,6 +878,15 @@ func xiaozhiPhysicalGatewayDataUnsafe(device firmwarecheck.DeviceIdentityRecord,
 		}
 	}
 	return false
+}
+
+func xiaozhiPhysicalTraceEventNameUnsafe(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "roleplay.prompt_input.used":
+		return false
+	default:
+		return xiaozhiPhysicalUnsafeString(name)
+	}
 }
 
 func xiaozhiPhysicalConsumedRuntimeEcho(echo map[string]string) map[string]string {

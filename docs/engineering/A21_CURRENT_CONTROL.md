@@ -327,6 +327,43 @@ Live truth after the 2026-06-04 23:48 CST Xiaozhi wake overlay root-cause cut:
   tracked worktree was dirty. Next step is to commit this repair, rerun the
   product-lane flash guard, and collect natural audio ingress evidence.
 
+Live truth after the 2026-06-04 23:55 CST Xiaozhi natural audio ingress cut:
+
+- Commit `43fcd16` was pushed, leaving the worktree clean for the hardware
+  guard. The guarded product-lane app flash then passed on
+  `/dev/cu.usbmodem1101` with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-235129-1780588289127583000.json`.
+  The app artifact was
+  `a21-stackchan-official-xiaozhi-compatible.bin` at SHA-256
+  `e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305`.
+- No NVS write was executed in this cut. The device reused the existing
+  product NVS, reconnected to public Gateway `47.103.57.217`, and resumed
+  `device.heartbeat` after `xiaozhi.hello`.
+- A controlled physical wake/listen/speak attempt after the flash produced
+  serial evidence of wake detection, `idle -> listening`, AFE startup, device
+  VAD stop, `idle -> speaking`, and official MCP state-reaction execution.
+- The live trace now has real natural audio ingress:
+  `xiaozhi_listen_to_audio_ingress_ms=114`, `asr_first_partial_ms=207`,
+  `llm_first_content_ms=434`, `audio_downlink_first_frame_ms=467`,
+  `tts_first_audio_ms=766`, `device_playback_start_ms=51`, and
+  `answer_first_audio_total_ms=641`.
+- The local evidence reader needed one more safe-marker repair because the
+  real roleplay trace contains redacted marker `roleplay.prompt_input.used`.
+  It now allows that exact marker while still rejecting unsafe transcript,
+  prompt, URL, path, raw-audio, and secret values.
+- Physical evidence report
+  `reports/a21-xiaozhi-physical-evidence-20260604-235541.527765000.json`
+  passed as `candidate_gateway_downlink`: device online, stock profile,
+  `audio_frame_count=64`, mic available, Opus decode available, PCM ingress
+  available, VAD speech end available, TTS downlink available, and device
+  playback ack available.
+- Half-duplex acceptance report
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260604-235541.288482000.json`
+  remains `blocked` for the right remaining reasons: missing barge-in
+  detected/stop/stop_done evidence and missing operator or instrumented
+  audible observation. Full PRD physical acceptance is therefore still not
+  green.
+
 ## Active Transition
 
 Current active plan:

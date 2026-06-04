@@ -15409,3 +15409,93 @@ Forbidden actions avoided:
   provider secret printing, no provider key in firmware, no V21 internal
   execution, no generic `xiaozhi.bin` product flash, no Git prune/gc, and no
   internal-test3 voice/protocol rollback.
+
+## 2026-06-04 23:55 CST - Xiaozhi Natural Audio Ingress Restored
+
+Round goal:
+
+- Complete the wake/control-channel repair through product flash and prove
+  that natural audio ingress is no longer stuck at zero frames.
+
+Actual completed work:
+
+- Committed and pushed `43fcd16` so the product flash guard could run from a
+  clean tracked worktree.
+- Executed the guarded official-compatible product app flash on
+  `/dev/cu.usbmodem1101`.
+- Confirmed the device reconnected to public Gateway `47.103.57.217` using the
+  existing NVS and resumed heartbeat.
+- Ran a controlled physical wake/listen/speak attempt after the flash.
+- Collected serial evidence of wake detection, `idle -> listening`, AFE
+  startup, device VAD stop, `idle -> speaking`, and official MCP state
+  reactions.
+- Fixed the local physical-evidence reader to allow the safe redacted trace
+  marker `roleplay.prompt_input.used` while still rejecting unsafe transcript,
+  prompt body, URL, path, raw-audio, provider-output, and secret values.
+- Reran live `xiaozhi-physical-evidence` and half-duplex acceptance commands.
+
+Changed files:
+
+- `internal/app/xiaozhi_physical_evidence.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json`
+- `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-235129-1780588289127583000.json`
+- `reports/a21-xiaozhi-physical-evidence-20260604-235541.527765000.json`
+- `reports/a21-xiaozhi-half-duplex-acceptance-20260604-235541.288482000.json`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunXiaozhiPhysicalEvidence|TestRunXiaozhiHalfDuplexAcceptance|TestRunDoctorIncludesProviderNetworkPolicy' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Product build report:
+  `reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json`.
+- Product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-235129-1780588289127583000.json`,
+  app SHA-256
+  `e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305`.
+- Physical evidence report:
+  `reports/a21-xiaozhi-physical-evidence-20260604-235541.527765000.json`,
+  `acceptance_status=candidate_gateway_downlink`,
+  `audio_frame_count=64`, mic available, Opus decode available, PCM ingress
+  available, VAD speech end available, TTS downlink available, and playback
+  ack available.
+- Half-duplex report:
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260604-235541.288482000.json`,
+  still `blocked`.
+
+Runtime evidence and blocker:
+
+- Live trace summary after the flash included
+  `xiaozhi_listen_to_audio_ingress_ms=114`, `asr_first_partial_ms=207`,
+  `llm_first_content_ms=434`, `audio_downlink_first_frame_ms=467`,
+  `tts_first_audio_ms=766`, `device_playback_start_ms=51`, and
+  `answer_first_audio_total_ms=641`.
+- Remaining blockers are now full half-duplex/product acceptance items:
+  barge-in detected/stop/stop_done evidence and trusted operator or
+  instrumented audible observation.
+
+Unfinished items:
+
+- Collect trusted audible observation or instrumented audible energy.
+- Run a physical barge-in/stop_done window while the product device is
+  speaking.
+- Rerun `xiaozhi-physical-evidence`, `stackchan-accept --check
+  xiaozhi-half-duplex`, then `xiaozhi-physical-prd-review` only when those
+  acceptance reports become reviewable.
+
+Recommended next action:
+
+- Promote `T-XIAOZHI-PHYSICAL-BARGE-IN-STOP-DONE-001`: use a long enough
+  product speaking window, trigger physical wake or top-touch interruption,
+  confirm `barge_in.detected`, `playback.stop`, and
+  `device.playback.stop_done`, then add audible/instrument observation.
+
+Forbidden actions avoided:
+
+- No NVS write, no provider secret printing, no provider key in firmware, no
+  V21 internal execution, no generic `xiaozhi.bin` product flash, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback.

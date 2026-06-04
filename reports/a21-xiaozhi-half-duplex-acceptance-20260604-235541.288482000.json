@@ -1,0 +1,204 @@
+{
+  "schema_version": "a21.xiaozhi_half_duplex_acceptance.v1",
+  "generated_at_ms": 1780588541270,
+  "metadata": {
+    "generated_at": "2026-06-04T15:55:41Z",
+    "current_commit": "43fcd1637b4c",
+    "fingerprint": {
+      "network_interface": "en0",
+      "external_dns_mapped_ip": "198.18.0.46",
+      "proxy_env": [
+        "ALL_PROXY",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY"
+      ]
+    },
+    "proxy": {
+      "global_proxy_configured": true,
+      "provider_proxy_configured": false,
+      "global_proxy_env": [
+        "ALL_PROXY",
+        "HTTPS_PROXY",
+        "HTTP_PROXY"
+      ],
+      "no_proxy_env": [
+        "NO_PROXY"
+      ],
+      "direct_connect_required": [
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        ".local",
+        "10.0.0.0/8",
+        "10.21.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16"
+      ],
+      "direct_connect_covered": [
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        ".local"
+      ],
+      "direct_connect_missing": [
+        "10.0.0.0/8",
+        "10.21.0.0/16",
+        "172.16.0.0/12",
+        "192.168.0.0/16"
+      ],
+      "direct_connect_ok": false
+    }
+  },
+  "source": "xiaozhi_physical_evidence",
+  "hardware_acceptance_scope": "stock_xiaozhi_mic_to_tts_downlink",
+  "half_duplex_acceptance_status": "blocked",
+  "diagnostic_mic_probe_required": false,
+  "physical_sound_observed": false,
+  "gateway": "remote:80",
+  "device_id": "44:1b:f6:e2:6a:60",
+  "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+  "session_id": "a21-session-44-1b-f6-e2-6a-60",
+  "profile": "stock",
+  "physical_device_online": true,
+  "audio_frame_count": 64,
+  "mic_available": true,
+  "downlink_available": true,
+  "playback_ack_available": true,
+  "barge_in_detected_available": false,
+  "barge_in_stop_available": false,
+  "barge_in_stop_done_available": false,
+  "stage_availability": {
+    "audio.ingress.pcm": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "barge_in.detected": {
+      "available": false
+    },
+    "barge_in.stop": {
+      "available": false
+    },
+    "device.playback.ack": {
+      "available": true,
+      "source": "device_runtime_echo"
+    },
+    "device.playback.stop_done": {
+      "available": false
+    },
+    "operator.audible_observation": {
+      "available": false
+    },
+    "physical_xiaozhi.online": {
+      "available": true,
+      "source": "gateway_device_registry"
+    },
+    "vad.speech.end": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "xiaozhi.listen.auto_stop": {
+      "available": false
+    },
+    "xiaozhi.opus.decode": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "xiaozhi.profile.debug": {
+      "available": false
+    },
+    "xiaozhi.profile.stock": {
+      "available": true,
+      "source": "gateway_device_registry"
+    },
+    "xiaozhi.tts.downlink": {
+      "available": true,
+      "source": "gateway_trace"
+    }
+  },
+  "canonical_metrics": {
+    "device_downlink_first_frame_ms": {
+      "available": false
+    },
+    "device_playback_start_ms": {
+      "available": true,
+      "value_ms": 51,
+      "source": "device_runtime_echo"
+    },
+    "speech_end_to_first_audible_response_ms": {
+      "available": false
+    },
+    "barge_in_detected_ms": {
+      "available": false
+    },
+    "barge_in_stop_ms": {
+      "available": false
+    },
+    "barge_in_playback_stop_requested_ms": {
+      "available": false
+    },
+    "barge_in_playback_stop_done_ms": {
+      "available": false
+    }
+  },
+  "mic": {
+    "available": true,
+    "frames_captured": 64,
+    "frames_delivered": 64,
+    "rms": 0.124,
+    "delivery_ratio": 1,
+    "nonzero_sample_count": 61440
+  },
+  "observation": {
+    "available": false,
+    "physical_sound_observed": false,
+    "operator_confirmed": false
+  },
+  "redaction": {
+    "user_text_stored": false,
+    "instruction_text_stored": false,
+    "model_text_stored": false,
+    "audio_payload_stored": false,
+    "encoded_audio_payload_stored": false,
+    "network_locator_stored": false,
+    "network_route_stored": false,
+    "filesystem_locator_stored": false,
+    "secret_material_stored": false,
+    "internal_thought_stored": false
+  },
+  "prd_accepted": false,
+  "next_required_actions": [
+    "Keep this as stock Xiaozhi physical trace evidence; do not merge it with diagnostic mic-probe acceptance.",
+    "Collect operator audible confirmation or instrument observation before treating it as product half-duplex review evidence.",
+    "Run a separate wake-word product proof before claiming full PRD green."
+  ],
+  "source_physical_evidence_summary": {
+    "schema_version": "a21.xiaozhi_physical_evidence.v1",
+    "acceptance_status": "candidate_gateway_downlink",
+    "promotion_gate": "not_production",
+    "prd_accepted": false
+  },
+  "findings": [
+    {
+      "code": "xiaozhi_half_duplex_barge_in_detected_missing",
+      "severity": "error",
+      "message": "barge-in detection evidence is missing"
+    },
+    {
+      "code": "xiaozhi_half_duplex_barge_in_stop_missing",
+      "severity": "error",
+      "message": "barge-in stop evidence is missing"
+    },
+    {
+      "code": "xiaozhi_half_duplex_stop_done_missing",
+      "severity": "error",
+      "message": "device playback stop_done evidence is missing"
+    },
+    {
+      "code": "xiaozhi_half_duplex_audible_observation_missing",
+      "severity": "error",
+      "message": "operator audible confirmation or instrumented audible observation is missing"
+    }
+  ],
+  "report_path": "a21-xiaozhi-half-duplex-acceptance-20260604-235541.288482000.json"
+}

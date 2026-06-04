@@ -1,0 +1,142 @@
+{
+  "schema_version": "a21.xiaozhi_physical_evidence.v1",
+  "generated_at_ms": 1780588541527,
+  "execution_mode": "physical_xiaozhi_gateway",
+  "gateway": "remote:80",
+  "device_id": "44:1b:f6:e2:6a:60",
+  "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+  "session_id": "a21-session-44-1b-f6-e2-6a-60",
+  "profile": "stock",
+  "physical_device_online": true,
+  "audio_frame_count": 64,
+  "execution": {
+    "provider_executed": false,
+    "v21_executed": false,
+    "hardware_executed": false
+  },
+  "stage_availability": {
+    "answer.first_downlink": {
+      "available": true,
+      "value_ms": 5820,
+      "source": "gateway_trace"
+    },
+    "audio.ingress.pcm": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "device.playback.ack": {
+      "available": true,
+      "source": "device_runtime_echo"
+    },
+    "device.playback.stop_done": {
+      "available": false
+    },
+    "operator.audible_observation": {
+      "available": false
+    },
+    "physical_xiaozhi.online": {
+      "available": true,
+      "source": "gateway_device_registry"
+    },
+    "vad.speech.end": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "xiaozhi.listen.auto_stop": {
+      "available": false
+    },
+    "xiaozhi.opus.decode": {
+      "available": true,
+      "source": "gateway_trace"
+    },
+    "xiaozhi.profile.debug": {
+      "available": false
+    },
+    "xiaozhi.profile.stock": {
+      "available": true,
+      "source": "gateway_device_registry"
+    },
+    "xiaozhi.tts.downlink": {
+      "available": true,
+      "source": "gateway_trace"
+    }
+  },
+  "gateway_metrics": {
+    "gateway_answer_first_downlink_ms": {
+      "available": true,
+      "value_ms": 5820,
+      "source": "gateway_trace"
+    }
+  },
+  "canonical_metrics": {
+    "device_downlink_first_frame_ms": {
+      "available": false
+    },
+    "device_playback_start_ms": {
+      "available": true,
+      "value_ms": 51,
+      "source": "device_runtime_echo"
+    },
+    "speech_end_to_first_audible_response_ms": {
+      "available": false
+    },
+    "barge_in_detected_ms": {
+      "available": false
+    },
+    "barge_in_stop_ms": {
+      "available": false
+    },
+    "barge_in_playback_stop_requested_ms": {
+      "available": false
+    },
+    "barge_in_playback_stop_done_ms": {
+      "available": false
+    }
+  },
+  "mic": {
+    "available": true,
+    "frames_captured": 64,
+    "frames_delivered": 64,
+    "rms": 0.124,
+    "delivery_ratio": 1,
+    "nonzero_sample_count": 61440
+  },
+  "observation": {
+    "available": false,
+    "physical_sound_observed": false,
+    "operator_confirmed": false
+  },
+  "findings": [
+    {
+      "code": "xiaozhi_physical_auto_stop_missing",
+      "severity": "error",
+      "message": "Xiaozhi listen auto-stop trace evidence is missing"
+    },
+    {
+      "code": "xiaozhi_physical_gateway_downlink_candidate",
+      "severity": "info",
+      "message": "Xiaozhi physical device reached Gateway downlink, but this is not audible playback acceptance"
+    },
+    {
+      "code": "xiaozhi_physical_operator_observation_missing",
+      "severity": "error",
+      "message": "missing operator audible observation or instrumented first audible playback evidence"
+    }
+  ],
+  "redaction": {
+    "user_text_stored": false,
+    "instruction_text_stored": false,
+    "model_text_stored": false,
+    "audio_payload_stored": false,
+    "encoded_audio_payload_stored": false,
+    "network_locator_stored": false,
+    "network_route_stored": false,
+    "filesystem_locator_stored": false,
+    "secret_material_stored": false,
+    "internal_thought_stored": false
+  },
+  "promotion_gate": "not_production",
+  "acceptance_status": "candidate_gateway_downlink",
+  "prd_accepted": false,
+  "report_path": "a21-xiaozhi-physical-evidence-20260604-235541.527765000.json"
+}

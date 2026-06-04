@@ -1,0 +1,100 @@
+{
+  "schema_version": "a21.stackchan.official_baseline.v1",
+  "generated_at_ms": 1780588008770,
+  "status": "passed",
+  "firmware_candidate": "a21-stackchan-official-xiaozhi-compatible",
+  "build_lane_role": "product_candidate",
+  "official_avatar_action_preserved": true,
+  "official_xiaozhi_start_preserved": true,
+  "minimal_bridge_screen": false,
+  "source_export_mode": "git_head_archive_read_only",
+  "execute": true,
+  "source_root": "/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan",
+  "source_commit": "da156e1fa0e1c2a5e00b78fbf69b1f7e7bca0483",
+  "source_clean": false,
+  "dirty_file_count": 28,
+  "work_dir": "/tmp/a21-stackchan-official-clean",
+  "build_dir": "/tmp/a21-stackchan-official-build",
+  "idf_export": "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh",
+  "overlays": [
+    {
+      "path": "/Users/jiyurun/Documents/New project/firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch",
+      "applied": true
+    }
+  ],
+  "evidence": {
+    "tracked_sdkconfig_has_no_legacy_identity": true,
+    "hal_mic_test_uses_output_data": true,
+    "cores3_uses_esp_codec_dev": true,
+    "cores3_creates_duplex_channels": true,
+    "repos_declare_xiaozhi_audio_service": true,
+    "xiaozhi_output_task_uses_codec_output_data": true,
+    "xiaozhi_opus_frame_duration_ms": 60,
+    "mature_components": [
+      "ESP-IDF",
+      "esp_codec_dev",
+      "esp_audio_codec",
+      "esp-sr",
+      "xiaozhi AudioService pattern",
+      "Opus frame pipeline"
+    ],
+    "reference_files": [
+      "firmware/main/hal/audio.cpp",
+      "firmware/main/hal/board/cores3_audio_codec.cc",
+      "firmware/main/hal/board/config.h",
+      "firmware/repos.json",
+      "firmware/xiaozhi-esp32/main/audio/audio_service.cc",
+      "firmware/xiaozhi-esp32/main/audio/audio_service.h"
+    ]
+  },
+  "build": {
+    "fetch_executed": true,
+    "build_executed": true,
+    "fetch_log_path": "/tmp/a21-stackchan-official-build/a21-official-fetch.log",
+    "build_log_path": "/tmp/a21-stackchan-official-build/a21-official-build.log",
+    "artifacts": [
+      {
+        "name": "bootloader",
+        "path": "/tmp/a21-stackchan-official-build/bootloader/bootloader.bin",
+        "sha256": "767b1c05b59ac2782f84ad9357e0008f3bf9ddb398dd27c71cda3ad6db6c54c1",
+        "flash_offset": "0x0"
+      },
+      {
+        "name": "app",
+        "path": "/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin",
+        "sha256": "e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305",
+        "flash_offset": "0x20000"
+      },
+      {
+        "name": "partition_table",
+        "path": "/tmp/a21-stackchan-official-build/partition_table/partition-table.bin",
+        "sha256": "704b0cc2d29d95d8429450e3d379c903c77864042d0bc3050f669c2c244bdb8d",
+        "flash_offset": "0x8000"
+      },
+      {
+        "name": "ota_data_initial",
+        "path": "/tmp/a21-stackchan-official-build/ota_data_initial.bin",
+        "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+        "flash_offset": "0xd000"
+      },
+      {
+        "name": "assets",
+        "path": "/tmp/a21-stackchan-official-build/generated_assets.bin",
+        "sha256": "d0a20f925364d33e75694dd07b4897ba9a1689728949d45a2987d6551cbc8b8e",
+        "flash_offset": "0xa00000"
+      },
+      {
+        "name": "flash_args",
+        "path": "/tmp/a21-stackchan-official-build/flash_args",
+        "sha256": "03d3529acae8ff3262ceafec0466e79301c4117e07dbe82a0e10e997fa378c34"
+      }
+    ]
+  },
+  "findings": [
+    {
+      "code": "source_worktree_dirty",
+      "message": "source checkout has local changes; A21 will export from git HEAD only"
+    }
+  ],
+  "report_path": "reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json"
+}
