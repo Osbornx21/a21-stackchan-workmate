@@ -497,6 +497,11 @@ Execution update:
   `a21.xiaozhi_professional_bench.v1` report with checking feedback, result
   ordering, stale-result suppression, abort stop, V21 execution, and redaction
   checks.
+- `T-PROFESSIONAL-READ-RECORD-READINESS-GATE-001` makes the Gateway
+  professional read ledger part of the same readiness evidence. External
+  Gateway professional bench reports now include a safe `read_record` summary,
+  and product/server-side readiness require a completed matching read record
+  before the professional path can satisfy the server-side candidate gate.
 
 ## Not In Scope For This First Cut
 

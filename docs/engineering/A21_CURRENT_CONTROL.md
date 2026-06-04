@@ -1428,3 +1428,34 @@ Current conclusion:
 - This is still below physical StackChan PRD acceptance and does not flash
   firmware, touch serial/NVS, persist provider keys in firmware, deploy ECS, or
   prove audible/visible hardware professional consult behavior.
+
+## Latest Control-Tower Result - 2026-06-04 Professional Read-Record Gate
+
+Professional readiness now requires the execution report to prove the Gateway
+read ledger, not only the V21 answer.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-professional-read-record-readiness-gate.md`.
+- `a21 xiaozhi-professional-bench` now fetches
+  `/v1/professional-read-records?trace_id=<bench-trace>` and writes a safe
+  `read_record` summary into `a21.xiaozhi_professional_bench.v1` reports.
+- Product readiness rejects an external Gateway professional bench report if
+  the read record is missing, incomplete, mismatched, not `professional_only`,
+  missing legal source-scope counts/workspace status, or redaction is unsafe.
+- `a21 product-readiness` now reports
+  `server_side.professional_read_record_ready` and
+  `server_side.professional_read_record_source_report`.
+- `a21 server-side-readiness-bundle` exposes `professional_read_record` as a
+  separate evidence block. If the professional ritual is ready but the ledger
+  is not, the missing evidence is `professional_read_record`.
+
+Current conclusion:
+
+- The internal test 4 professional path now has launch-gate evidence for
+  both execution and read-ledger discipline: same trace, completed record,
+  scope/status/counts, and redaction.
+- This is still not real personal upload indexing, cloud storage, durable
+  account ACL, ECS deployment, firmware, serial, NVS, or physical StackChan
+  professional consult acceptance.

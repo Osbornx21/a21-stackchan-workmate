@@ -669,6 +669,19 @@ flags. It must not store utterance text, retrieved text, evidence bodies,
 screen-card text, speech blocks, provider output, document text, full URLs,
 local paths, credentials, API keys, voice transcripts, or audio.
 
+External Gateway `a21.xiaozhi_professional_bench.v1` evidence must include a
+safe `read_record` summary for the same bench trace before product readiness
+can mark `professional_read_record_ready=true`. The summary may include only
+safe record IDs, match booleans for trace/session/device IDs, query scope,
+privacy scope, latency profile, answer style, utterance length bucket,
+source-scope counts, workspace status, and redaction booleans. The bench report
+uses `voice_text_stored=false` rather than transcript wording and must not
+store or echo utterance text, evidence bodies, document text, provider output,
+full URLs, local paths, credentials, voice transcript, or audio. If the
+professional ritual report is accepted but the read record is missing or
+incomplete, `server_side.missing_evidence` includes
+`professional_read_record`.
+
 `workspace_upload_jobs` is the no-execute upload/import/index job contract for
 the A21 workspace surface. `GET /v1/workspace-upload-jobs` returns
 `a21.gateway.workspace_upload_jobs.v1` and redacted job metadata. `POST

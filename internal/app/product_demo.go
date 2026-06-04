@@ -132,6 +132,11 @@ type productV21ProfessionalReadiness struct {
 	ProfessionalAcceptanceStatus string         `json:"professional_acceptance_status,omitempty"`
 	SourceReport                 string         `json:"source_report,omitempty"`
 	AdapterExecuted              bool           `json:"adapter_executed"`
+	ReadRecordObserved           bool           `json:"read_record_observed"`
+	ReadRecordCompleted          bool           `json:"read_record_completed"`
+	ReadRecordQueryScope         string         `json:"read_record_query_scope,omitempty"`
+	ReadRecordWorkspaceStatus    string         `json:"read_record_workspace_status,omitempty"`
+	ReadRecordSourceScopeCounts  map[string]int `json:"read_record_source_scope_counts,omitempty"`
 	PRDAccepted                  bool           `json:"prd_accepted"`
 }
 
@@ -153,6 +158,11 @@ type productV21ProfessionalExecutionReadiness struct {
 	FollowUpCount                int            `json:"follow_up_count"`
 	ProfessionalAcceptanceStatus string         `json:"professional_acceptance_status,omitempty"`
 	RedactionOK                  bool           `json:"redaction_ok"`
+	ReadRecordObserved           bool           `json:"read_record_observed"`
+	ReadRecordCompleted          bool           `json:"read_record_completed"`
+	ReadRecordQueryScope         string         `json:"read_record_query_scope,omitempty"`
+	ReadRecordWorkspaceStatus    string         `json:"read_record_workspace_status,omitempty"`
+	ReadRecordSourceScopeCounts  map[string]int `json:"read_record_source_scope_counts,omitempty"`
 	PRDAccepted                  bool           `json:"prd_accepted"`
 }
 
@@ -288,25 +298,27 @@ type productWakeWordReadiness struct {
 }
 
 type productServerSideReadiness struct {
-	Status                         string                     `json:"status"`
-	CandidateReady                 bool                       `json:"candidate_ready"`
-	AcceptanceStatus               string                     `json:"acceptance_status"`
-	PRDAccepted                    bool                       `json:"prd_accepted"`
-	GatewayReady                   bool                       `json:"gateway_ready"`
-	ProviderEvidenceReady          bool                       `json:"provider_evidence_ready"`
-	V21ProfessionalEvidenceReady   bool                       `json:"v21_professional_evidence_ready"`
-	ProfessionalRitualReady        bool                       `json:"professional_ritual_ready"`
-	HostVoiceLoopbackReady         bool                       `json:"host_voice_loopback_ready"`
-	RoleplayVoiceRuntimeReady      bool                       `json:"roleplay_voice_runtime_ready"`
-	WakeWordReady                  bool                       `json:"wake_word_ready"`
-	RequiresPhysicalAcceptance     bool                       `json:"requires_physical_acceptance"`
-	VoiceChain                     productVoiceChainReadiness `json:"voice_chain"`
-	ProviderSmokeSourceReport      string                     `json:"provider_smoke_source_report,omitempty"`
-	V21ProfessionalSourceReport    string                     `json:"v21_professional_source_report,omitempty"`
-	ProfessionalRitualSourceReport string                     `json:"professional_ritual_source_report,omitempty"`
-	HostVoiceSourceReport          string                     `json:"host_voice_source_report,omitempty"`
-	RoleplayVoiceSourceReport      string                     `json:"roleplay_voice_source_report,omitempty"`
-	MissingEvidence                []string                   `json:"missing_evidence,omitempty"`
+	Status                             string                     `json:"status"`
+	CandidateReady                     bool                       `json:"candidate_ready"`
+	AcceptanceStatus                   string                     `json:"acceptance_status"`
+	PRDAccepted                        bool                       `json:"prd_accepted"`
+	GatewayReady                       bool                       `json:"gateway_ready"`
+	ProviderEvidenceReady              bool                       `json:"provider_evidence_ready"`
+	V21ProfessionalEvidenceReady       bool                       `json:"v21_professional_evidence_ready"`
+	ProfessionalRitualReady            bool                       `json:"professional_ritual_ready"`
+	ProfessionalReadRecordReady        bool                       `json:"professional_read_record_ready"`
+	HostVoiceLoopbackReady             bool                       `json:"host_voice_loopback_ready"`
+	RoleplayVoiceRuntimeReady          bool                       `json:"roleplay_voice_runtime_ready"`
+	WakeWordReady                      bool                       `json:"wake_word_ready"`
+	RequiresPhysicalAcceptance         bool                       `json:"requires_physical_acceptance"`
+	VoiceChain                         productVoiceChainReadiness `json:"voice_chain"`
+	ProviderSmokeSourceReport          string                     `json:"provider_smoke_source_report,omitempty"`
+	V21ProfessionalSourceReport        string                     `json:"v21_professional_source_report,omitempty"`
+	ProfessionalRitualSourceReport     string                     `json:"professional_ritual_source_report,omitempty"`
+	ProfessionalReadRecordSourceReport string                     `json:"professional_read_record_source_report,omitempty"`
+	HostVoiceSourceReport              string                     `json:"host_voice_source_report,omitempty"`
+	RoleplayVoiceSourceReport          string                     `json:"roleplay_voice_source_report,omitempty"`
+	MissingEvidence                    []string                   `json:"missing_evidence,omitempty"`
 }
 
 type productCanonicalReadinessDecision struct {
@@ -948,6 +960,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.V21.Healthy &&
 		productV21ProfessionalReady(report.V21) &&
 		productProfessionalRitualReady(report.V21) &&
+		productProfessionalReadRecordReady(report.V21) &&
 		report.StackChan.PhysicalDeviceOnline &&
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady &&
@@ -2872,8 +2885,24 @@ func productProfessionalRitualReady(v21 productV21Readiness) bool {
 		v21.ProfessionalExecution.ProfessionalAcceptanceStatus == "external_gateway_ready"
 }
 
+func productProfessionalReadRecordReady(v21 productV21Readiness) bool {
+	return productProfessionalRitualReady(v21) &&
+		v21.ProfessionalExecution.ReadRecordObserved &&
+		v21.ProfessionalExecution.ReadRecordCompleted &&
+		v21adapter.ValidQueryScope(v21.ProfessionalExecution.ReadRecordQueryScope) &&
+		validProductV21WorkspaceStatus(v21.ProfessionalExecution.ReadRecordWorkspaceStatus) &&
+		validProductV21SourceScopeCounts(v21.ProfessionalExecution.ReadRecordSourceScopeCounts)
+}
+
 func productProfessionalRitualSourceReport(v21 productV21Readiness) string {
 	if v21.ProfessionalExecution.SourceKind != "xiaozhi_professional_bench_report" {
+		return ""
+	}
+	return v21.ProfessionalExecution.SourceReport
+}
+
+func productProfessionalReadRecordSourceReport(v21 productV21Readiness) string {
+	if !productProfessionalReadRecordReady(v21) {
 		return ""
 	}
 	return v21.ProfessionalExecution.SourceReport
@@ -2901,6 +2930,11 @@ func buildProductV21ProfessionalExecutionReadiness(professional productV21Profes
 		FollowUpCount:                professional.FollowUpCount,
 		ProfessionalAcceptanceStatus: professional.ProfessionalAcceptanceStatus,
 		RedactionOK:                  true,
+		ReadRecordObserved:           professional.ReadRecordObserved,
+		ReadRecordCompleted:          professional.ReadRecordCompleted,
+		ReadRecordQueryScope:         professional.ReadRecordQueryScope,
+		ReadRecordWorkspaceStatus:    professional.ReadRecordWorkspaceStatus,
+		ReadRecordSourceScopeCounts:  copyStringIntMap(professional.ReadRecordSourceScopeCounts),
 		PRDAccepted:                  false,
 	}
 }
@@ -2952,15 +2986,16 @@ func productV21ProfessionalExecutionSourceKind(status string) string {
 
 func buildProductServerSideReadiness(report productReadinessReport) productServerSideReadiness {
 	readiness := productServerSideReadiness{
-		Status:                         "blocked",
-		AcceptanceStatus:               "server_side_blocked",
-		ProviderSmokeSourceReport:      report.Provider.SmokeSourceReport,
-		V21ProfessionalSourceReport:    report.V21.Professional.SourceReport,
-		ProfessionalRitualSourceReport: productProfessionalRitualSourceReport(report.V21),
-		HostVoiceSourceReport:          report.Voice.VoicePipeline.SourceReport,
-		RoleplayVoiceSourceReport:      report.Roleplay.VoiceRuntimeSourceReport,
-		RequiresPhysicalAcceptance:     !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
-		VoiceChain:                     report.Voice.VoiceChain,
+		Status:                             "blocked",
+		AcceptanceStatus:                   "server_side_blocked",
+		ProviderSmokeSourceReport:          report.Provider.SmokeSourceReport,
+		V21ProfessionalSourceReport:        report.V21.Professional.SourceReport,
+		ProfessionalRitualSourceReport:     productProfessionalRitualSourceReport(report.V21),
+		ProfessionalReadRecordSourceReport: productProfessionalReadRecordSourceReport(report.V21),
+		HostVoiceSourceReport:              report.Voice.VoicePipeline.SourceReport,
+		RoleplayVoiceSourceReport:          report.Roleplay.VoiceRuntimeSourceReport,
+		RequiresPhysicalAcceptance:         !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
+		VoiceChain:                         report.Voice.VoiceChain,
 	}
 	readiness.GatewayReady = report.Gateway.Healthy && report.Gateway.SimulatorReady
 	readiness.ProviderEvidenceReady = report.Provider.RealProviderReady &&
@@ -2968,6 +3003,7 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		report.Provider.SmokeExecuted
 	readiness.V21ProfessionalEvidenceReady = productV21ProfessionalReady(report.V21)
 	readiness.ProfessionalRitualReady = productProfessionalRitualReady(report.V21)
+	readiness.ProfessionalReadRecordReady = productProfessionalReadRecordReady(report.V21)
 	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostProductChainReady
 	readiness.RoleplayVoiceRuntimeReady = report.Roleplay.VoiceRuntimeReady
 	readiness.WakeWordReady = report.WakeWord.ProductReady
@@ -2982,6 +3018,8 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 	}
 	if !readiness.ProfessionalRitualReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "professional_ritual_execution")
+	} else if !readiness.ProfessionalReadRecordReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "professional_read_record")
 	}
 	if !readiness.HostVoiceLoopbackReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "host_voice_loopback")
@@ -3694,6 +3732,8 @@ func productMissingRealEvidence(report productReadinessReport) []string {
 	}
 	if !productProfessionalRitualReady(report.V21) {
 		missing = append(missing, "professional_ritual_execution")
+	} else if !productProfessionalReadRecordReady(report.V21) {
+		missing = append(missing, "professional_read_record")
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		missing = append(missing, "physical_stackchan_online")
@@ -4581,22 +4621,53 @@ func loadProductV21ProfessionalReportEvidence(path string) (productV21Profession
 }
 
 type productXiaozhiProfessionalBenchReportFixture struct {
-	SchemaVersion                   string                                          `json:"schema_version"`
-	SourceProfile                   string                                          `json:"source_profile"`
-	AcceptanceStatus                string                                          `json:"acceptance_status"`
-	PRDAccepted                     bool                                            `json:"prd_accepted"`
-	CheckingFeedbackWithin1200      *bool                                           `json:"checking_feedback_within_1200"`
-	ProfessionalResultObserved      *bool                                           `json:"professional_result_observed"`
-	ProfessionalResultAfterChecking *bool                                           `json:"professional_result_after_checking"`
-	EvidenceCount                   *int                                            `json:"evidence_count"`
-	ScreenCardCount                 *int                                            `json:"screen_card_count"`
-	FollowUpCount                   *int                                            `json:"follow_up_count"`
-	ConfidencePresent               *bool                                           `json:"confidence_present"`
-	NoPlaceholderUtterance          *bool                                           `json:"no_placeholder_utterance"`
-	NoASRTextLeak                   *bool                                           `json:"no_asr_text_leak"`
-	FailureCount                    *int                                            `json:"failure_count"`
-	Execution                       productXiaozhiProfessionalBenchExecutionFixture `json:"execution"`
-	Redaction                       productXiaozhiProfessionalBenchRedactionFixture `json:"redaction"`
+	SchemaVersion                   string                                           `json:"schema_version"`
+	SourceProfile                   string                                           `json:"source_profile"`
+	AcceptanceStatus                string                                           `json:"acceptance_status"`
+	PRDAccepted                     bool                                             `json:"prd_accepted"`
+	CheckingFeedbackWithin1200      *bool                                            `json:"checking_feedback_within_1200"`
+	ProfessionalResultObserved      *bool                                            `json:"professional_result_observed"`
+	ProfessionalResultAfterChecking *bool                                            `json:"professional_result_after_checking"`
+	EvidenceCount                   *int                                             `json:"evidence_count"`
+	ScreenCardCount                 *int                                             `json:"screen_card_count"`
+	FollowUpCount                   *int                                             `json:"follow_up_count"`
+	ConfidencePresent               *bool                                            `json:"confidence_present"`
+	NoPlaceholderUtterance          *bool                                            `json:"no_placeholder_utterance"`
+	NoASRTextLeak                   *bool                                            `json:"no_asr_text_leak"`
+	FailureCount                    *int                                             `json:"failure_count"`
+	ReadRecord                      productXiaozhiProfessionalBenchReadRecordFixture `json:"read_record"`
+	Execution                       productXiaozhiProfessionalBenchExecutionFixture  `json:"execution"`
+	Redaction                       productXiaozhiProfessionalBenchRedactionFixture  `json:"redaction"`
+}
+
+type productXiaozhiProfessionalBenchReadRecordFixture struct {
+	Observed          *bool                                              `json:"observed"`
+	Completed         *bool                                              `json:"completed"`
+	RecordCount       *int                                               `json:"record_count"`
+	Status            string                                             `json:"status"`
+	RecordID          string                                             `json:"record_id"`
+	TraceIDMatched    *bool                                              `json:"trace_id_matched"`
+	SessionIDMatched  *bool                                              `json:"session_id_matched"`
+	DeviceIDMatched   *bool                                              `json:"device_id_matched"`
+	QueryScope        string                                             `json:"query_scope"`
+	PrivacyScope      string                                             `json:"privacy_scope"`
+	LatencyProfile    string                                             `json:"latency_profile"`
+	AnswerStyle       string                                             `json:"answer_style"`
+	UtteranceBucket   string                                             `json:"utterance_bucket"`
+	SourceScopeCounts map[string]int                                     `json:"source_scope_counts"`
+	WorkspaceStatus   string                                             `json:"workspace_status"`
+	Redaction         productXiaozhiProfessionalBenchReadRecordRedaction `json:"redaction"`
+}
+
+type productXiaozhiProfessionalBenchReadRecordRedaction struct {
+	DocumentTextStored    *bool `json:"document_text_stored"`
+	QueryTextStored       *bool `json:"query_text_stored"`
+	RetrievedTextStored   *bool `json:"retrieved_text_stored"`
+	FullURLStored         *bool `json:"full_url_stored"`
+	LocalPathStored       *bool `json:"local_path_stored"`
+	CredentialValueStored *bool `json:"credential_value_stored"`
+	ProviderOutputStored  *bool `json:"provider_output_stored"`
+	VoiceTextStored       *bool `json:"voice_text_stored"`
 }
 
 type productXiaozhiProfessionalBenchExecutionFixture struct {
@@ -4638,6 +4709,7 @@ func productXiaozhiProfessionalBenchReportEvidence(path string, data []byte) (pr
 		!*fixture.NoPlaceholderUtterance ||
 		!*fixture.NoASRTextLeak ||
 		*fixture.FailureCount != 0 ||
+		!productXiaozhiProfessionalBenchReadRecordReady(fixture.ReadRecord) ||
 		*fixture.Execution.ProviderExecuted ||
 		!*fixture.Execution.V21Executed ||
 		*fixture.Execution.HardwareExecuted ||
@@ -4663,8 +4735,42 @@ func productXiaozhiProfessionalBenchReportEvidence(path string, data []byte) (pr
 		ProfessionalAcceptanceStatus: strings.TrimSpace(fixture.AcceptanceStatus),
 		SourceReport:                 filepath.Base(filepath.Clean(path)),
 		AdapterExecuted:              *fixture.Execution.V21Executed,
+		ReadRecordObserved:           *fixture.ReadRecord.Observed,
+		ReadRecordCompleted:          *fixture.ReadRecord.Completed,
+		ReadRecordQueryScope:         strings.TrimSpace(fixture.ReadRecord.QueryScope),
+		ReadRecordWorkspaceStatus:    strings.TrimSpace(fixture.ReadRecord.WorkspaceStatus),
+		ReadRecordSourceScopeCounts:  copyStringIntMap(fixture.ReadRecord.SourceScopeCounts),
 		PRDAccepted:                  false,
 	}, nil
+}
+
+func productXiaozhiProfessionalBenchReadRecordReady(record productXiaozhiProfessionalBenchReadRecordFixture) bool {
+	return record.Observed != nil && *record.Observed &&
+		record.Completed != nil && *record.Completed &&
+		record.RecordCount != nil && *record.RecordCount == 1 &&
+		strings.TrimSpace(record.Status) == "completed" &&
+		strings.TrimSpace(record.RecordID) != "" &&
+		record.TraceIDMatched != nil && *record.TraceIDMatched &&
+		record.SessionIDMatched != nil && *record.SessionIDMatched &&
+		record.DeviceIDMatched != nil && *record.DeviceIDMatched &&
+		v21adapter.ValidQueryScope(record.QueryScope) &&
+		strings.TrimSpace(record.PrivacyScope) == "professional_only" &&
+		strings.TrimSpace(record.LatencyProfile) == "fast_first" &&
+		strings.TrimSpace(record.AnswerStyle) == "voice_first_with_citations" &&
+		validProductV21WorkspaceStatus(record.WorkspaceStatus) &&
+		validProductV21SourceScopeCounts(record.SourceScopeCounts) &&
+		productXiaozhiProfessionalBenchReadRecordRedactionOK(record.Redaction)
+}
+
+func productXiaozhiProfessionalBenchReadRecordRedactionOK(redaction productXiaozhiProfessionalBenchReadRecordRedaction) bool {
+	return redaction.DocumentTextStored != nil && !*redaction.DocumentTextStored &&
+		redaction.QueryTextStored != nil && !*redaction.QueryTextStored &&
+		redaction.RetrievedTextStored != nil && !*redaction.RetrievedTextStored &&
+		redaction.FullURLStored != nil && !*redaction.FullURLStored &&
+		redaction.LocalPathStored != nil && !*redaction.LocalPathStored &&
+		redaction.CredentialValueStored != nil && !*redaction.CredentialValueStored &&
+		redaction.ProviderOutputStored != nil && !*redaction.ProviderOutputStored &&
+		redaction.VoiceTextStored != nil && !*redaction.VoiceTextStored
 }
 
 func missingProductXiaozhiProfessionalBenchReportField(fixture productXiaozhiProfessionalBenchReportFixture) string {
@@ -4689,6 +4795,34 @@ func missingProductXiaozhiProfessionalBenchReportField(fixture productXiaozhiPro
 		return "no_asr_text_leak"
 	case fixture.FailureCount == nil:
 		return "failure_count"
+	case fixture.ReadRecord.Observed == nil:
+		return "read_record.observed"
+	case fixture.ReadRecord.Completed == nil:
+		return "read_record.completed"
+	case fixture.ReadRecord.RecordCount == nil:
+		return "read_record.record_count"
+	case fixture.ReadRecord.TraceIDMatched == nil:
+		return "read_record.trace_id_matched"
+	case fixture.ReadRecord.SessionIDMatched == nil:
+		return "read_record.session_id_matched"
+	case fixture.ReadRecord.DeviceIDMatched == nil:
+		return "read_record.device_id_matched"
+	case fixture.ReadRecord.Redaction.DocumentTextStored == nil:
+		return "read_record.redaction.document_text_stored"
+	case fixture.ReadRecord.Redaction.QueryTextStored == nil:
+		return "read_record.redaction.query_text_stored"
+	case fixture.ReadRecord.Redaction.RetrievedTextStored == nil:
+		return "read_record.redaction.retrieved_text_stored"
+	case fixture.ReadRecord.Redaction.FullURLStored == nil:
+		return "read_record.redaction.full_url_stored"
+	case fixture.ReadRecord.Redaction.LocalPathStored == nil:
+		return "read_record.redaction.local_path_stored"
+	case fixture.ReadRecord.Redaction.CredentialValueStored == nil:
+		return "read_record.redaction.credential_value_stored"
+	case fixture.ReadRecord.Redaction.ProviderOutputStored == nil:
+		return "read_record.redaction.provider_output_stored"
+	case fixture.ReadRecord.Redaction.VoiceTextStored == nil:
+		return "read_record.redaction.voice_text_stored"
 	case fixture.Execution.ProviderExecuted == nil:
 		return "execution.provider_executed"
 	case fixture.Execution.V21Executed == nil:
@@ -5004,6 +5138,8 @@ func buildProductNextActions(report productReadinessReport) []string {
 		actions = append(actions, "run `go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports` and pass it to product-readiness with --v21-adapter-smoke-report")
 	} else if !productProfessionalRitualReady(report.V21) {
 		actions = append(actions, "run `go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports` and pass it to product-readiness with --v21-professional-report")
+	} else if !productProfessionalReadRecordReady(report.V21) {
+		actions = append(actions, "rerun `go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports` against a Gateway that exposes completed professional read records")
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		actions = append(actions, "bring a physical StackChan online against the A21 Gateway")

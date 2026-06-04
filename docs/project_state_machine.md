@@ -2626,3 +2626,12 @@ Priority candidate added from the 2026-06-04 internal test 4 workspace plan:
     - Next action: collect fresh provider/V21/professional/roleplay/wake
       reports against the intended runtime, then move the remaining acceptance
       work into the foreground physical StackChan window.
+
+14. `T-PROFESSIONAL-READ-RECORD-READINESS-GATE-001`
+    - Current phase: completed code/test/doc transition on 2026-06-04.
+      External Gateway professional bench evidence now includes a safe
+      `read_record` summary from `/v1/professional-read-records`, and
+      server-side readiness exposes `professional_read_record_ready`.
+    - Next action: collect fresh runtime reports against the intended Gateway
+      and keep real upload indexing, durable account ACL, ECS deployment, and
+      physical StackChan professional acceptance as separate transitions.

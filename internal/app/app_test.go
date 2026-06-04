@@ -2504,6 +2504,56 @@ func TestProductReadinessCountsExecutedProfessionalReportWithoutLiveV21Health(t 
 	}
 }
 
+func TestProductReadinessRejectsXiaozhiProfessionalReportWithoutReadRecord(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	delete(raw, "read_record")
+	mutated, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	missingReadRecord := filepath.Join(dir, "a21-xiaozhi-professional-missing-read-record.json")
+	if err := os.WriteFile(missingReadRecord, mutated, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: missingReadRecord,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if report.V21.Professional.Valid ||
+		report.ServerSide.V21ProfessionalEvidenceReady ||
+		report.ServerSide.ProfessionalRitualReady ||
+		report.ServerSide.ProfessionalReadRecordReady {
+		t.Fatalf("v21/server readiness = %+v/%+v, want missing read-record report rejected", report.V21, report.ServerSide)
+	}
+	if !containsProductFinding(report.Findings, "v21_professional_report_missing_field", "read_record.observed") {
+		t.Fatalf("findings = %#v, want missing read_record.observed", report.Findings)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{fixture, filepath.Dir(fixture), missingReadRecord, dir, server.URL, "http://", "https://", "/Users/", `"candidate_ready": true`, `"launch_ready": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessRejectsWeakV21AdapterSmokeReport(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	tests := []struct {
@@ -5117,6 +5167,33 @@ func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) 
   "no_placeholder_utterance": true,
   "no_asr_text_leak": true,
   "v21_query_first_result_ms": 178,
+  "read_record": {
+    "observed": true,
+    "completed": true,
+    "record_count": 1,
+    "status": "completed",
+    "record_id": "a21-professional-read-000001",
+    "trace_id_matched": true,
+    "session_id_matched": true,
+    "device_id_matched": true,
+    "query_scope": "public_only",
+    "privacy_scope": "professional_only",
+    "latency_profile": "fast_first",
+    "answer_style": "voice_first_with_citations",
+    "utterance_bucket": "length_17_64",
+    "source_scope_counts": {"public": 5},
+    "workspace_status": "searchable",
+    "redaction": {
+      "document_text_stored": false,
+      "query_text_stored": false,
+      "retrieved_text_stored": false,
+      "full_url_stored": false,
+      "local_path_stored": false,
+      "credential_value_stored": false,
+      "provider_output_stored": false,
+      "voice_text_stored": false
+    }
+  },
   "tts_stop_observed": true,
   "failure_count": 0,
   "execution": {
@@ -8797,6 +8874,12 @@ func TestRunXiaozhiProfessionalBenchReportsExternalGatewayRuntimeContract(t *tes
 		`"v21_executed": true`,
 		`"hardware_executed": false`,
 		`"gateway_runtime": "external_gateway"`,
+		`"read_record": {`,
+		`"completed": true`,
+		`"query_scope": "public_only"`,
+		`"privacy_scope": "professional_only"`,
+		`"workspace_status": "searchable"`,
+		`"voice_text_stored": false`,
 		`"report_path"`,
 	} {
 		if !strings.Contains(rendered, want) {

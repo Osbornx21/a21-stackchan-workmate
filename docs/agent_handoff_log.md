@@ -12866,6 +12866,90 @@ Forbidden actions avoided:
   ECS/root-secret change, report deletion, prune/gc, destructive git, or
   physical hardware action occurred.
 
+## 2026-06-04 14:23 CST - Professional Read-Record Gate Landed
+
+Round goal:
+
+- Make professional-mode readiness prove the Gateway read-record ledger, not
+  only the checking ritual and V21 result.
+
+Actual completed work:
+
+- Extended `a21 xiaozhi-professional-bench` reports with a safe `read_record`
+  summary fetched from `/v1/professional-read-records?trace_id=<bench-trace>`.
+- The report now proves a single completed read record matching the bench
+  trace/session/device, legal query scope, `professional_only` privacy,
+  `fast_first` latency profile, `voice_first_with_citations` answer style,
+  safe source-scope counts, workspace status, and redaction booleans.
+- The bench report maps Gateway `VoiceTranscriptStored` into
+  `voice_text_stored=false` so the report avoids transcript wording while
+  preserving the redaction fact.
+- Product readiness now exposes `professional_read_record_ready` and
+  `professional_read_record_source_report`.
+- Server-side readiness blocks with `professional_read_record` when the
+  professional ritual report is otherwise accepted but the ledger is missing
+  or incomplete.
+- Server-side readiness bundle now exposes a `professional_read_record`
+  evidence block and can recollect it through the existing professional bench
+  path under the same explicit `--execute-v21-smoke` authorization.
+- Updated protocol/current-control/state/internal-test4 plan docs.
+
+Changed files:
+
+- `internal/app/xiaozhi_professional_bench.go`
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-professional-read-record-readiness-gate.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This does not implement real personal upload indexing, durable account ACL,
+  cloud storage, ECS deployment, physical StackChan professional consult
+  acceptance, or audible/visible hardware proof.
+
+Known risks/blockers:
+
+- Fresh runtime evidence still needs to be collected against the intended
+  Gateway/provider/V21 environment. Physical PRD acceptance remains separate.
+
+Recommended next action:
+
+- Run a fresh authorized server-side readiness collection against the intended
+  runtime, then proceed to the foreground physical StackChan window for
+  wake/roleplay/professional proof.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunXiaozhiProfessionalBenchReportsExternalGatewayRuntimeContract|TestProductReadiness(CountsExecutedProfessionalReportWithoutLiveV21Health|RejectsXiaozhiProfessionalReportWithoutReadRecord)|TestRun(ServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence|ServerSideReadinessBundleUsesLatestReportsWithoutPathLeak)' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadiness(ReportsServerSideCandidateWhenEvidenceSlicesPass|ReportsServerSideBlockedWhenWakeWordBlocksRealSlices|CountsExecutedProfessionalReportWithoutLiveV21Health|ExposesV21ProfessionalExecutionForRealAdapterReport|CanReachRealLaunchReadyWhenInputsArePresent)|TestRun(ProductReadinessCommandUsesLatestReportsWithoutPathLeak|ProductReadinessLatestV21SelectionPrefersProfessionalBenchOverNewerAdapterSmoke|ServerSideReadinessBundleUsesLatestReportsWithoutPathLeak|ServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthorization|ServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence|ServerSideReadinessBundleCollectsMissingRoleplayVoiceRuntime)' -count=1`:
+  passed.
+- `go test ./internal/app -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- Initial focused run showed the bench was collecting read records, but the
+  mock V21 client did not provide safe `workspace_status` or
+  `source_scope_counts`; the mock was fixed to provide searchable/public
+  metadata so the gate tests the intended contract.
+- The external bench report initially emitted the JSON key
+  `voice_transcript_stored`; this was changed to `voice_text_stored` to avoid
+  transcript wording in readiness-facing evidence.
+
+Forbidden actions avoided:
+
+- No firmware build, flash, serial, NVS, provider key persistence in firmware,
+  ECS/root-secret change, report deletion, prune/gc, destructive git, or
+  physical hardware action occurred.
+
 ## 2026-06-04 13:39 CST - Roleplay Voice Probe Report Generator
 
 Round goal:

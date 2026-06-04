@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -45,37 +46,38 @@ func parseXiaozhiProfessionalBenchPositiveInt(raw string, option string) (int, e
 }
 
 type xiaozhiProfessionalBenchReport struct {
-	SchemaVersion                   string                            `json:"schema_version"`
-	GeneratedAtUnixMS               int64                             `json:"generated_at_unix_ms"`
-	SourceProfile                   string                            `json:"source_profile"`
-	Scenario                        string                            `json:"scenario"`
-	AcceptanceStatus                string                            `json:"acceptance_status"`
-	PRDAccepted                     bool                              `json:"prd_accepted"`
-	Gateway                         string                            `json:"gateway,omitempty"`
-	Input                           *xiaozhiVoiceBenchInput           `json:"input_audio,omitempty"`
-	TraceID                         string                            `json:"trace_id"`
-	SessionID                       string                            `json:"session_id"`
-	DeviceID                        string                            `json:"device_id"`
-	CheckingFeedbackObserved        bool                              `json:"checking_feedback_observed"`
-	CheckingFeedbackMS              int64                             `json:"checking_feedback_ms"`
-	CheckingFeedbackWithin1200      bool                              `json:"checking_feedback_within_1200"`
-	ProfessionalResultObserved      bool                              `json:"professional_result_observed"`
-	ProfessionalResultAfterChecking bool                              `json:"professional_result_after_checking"`
-	AbortStopObserved               bool                              `json:"abort_stop_observed"`
-	StaleResultSuppressed           bool                              `json:"stale_result_suppressed"`
-	EvidenceCount                   int                               `json:"evidence_count"`
-	ScreenCardCount                 int                               `json:"screen_card_count"`
-	FollowUpCount                   int                               `json:"follow_up_count"`
-	ConfidencePresent               bool                              `json:"confidence_present"`
-	NoPlaceholderUtterance          bool                              `json:"no_placeholder_utterance"`
-	NoASRTextLeak                   bool                              `json:"no_asr_text_leak"`
-	V21QueryFirstResultMS           *int64                            `json:"v21_query_first_result_ms,omitempty"`
-	TTSStopObserved                 bool                              `json:"tts_stop_observed"`
-	FailureCount                    int                               `json:"failure_count"`
-	Execution                       xiaozhiProfessionalBenchExecution `json:"execution"`
-	Redaction                       xiaozhiProfessionalBenchRedaction `json:"redaction"`
-	Findings                        []xiaozhiProfessionalBenchFinding `json:"findings,omitempty"`
-	ReportPath                      string                            `json:"report_path,omitempty"`
+	SchemaVersion                   string                             `json:"schema_version"`
+	GeneratedAtUnixMS               int64                              `json:"generated_at_unix_ms"`
+	SourceProfile                   string                             `json:"source_profile"`
+	Scenario                        string                             `json:"scenario"`
+	AcceptanceStatus                string                             `json:"acceptance_status"`
+	PRDAccepted                     bool                               `json:"prd_accepted"`
+	Gateway                         string                             `json:"gateway,omitempty"`
+	Input                           *xiaozhiVoiceBenchInput            `json:"input_audio,omitempty"`
+	TraceID                         string                             `json:"trace_id"`
+	SessionID                       string                             `json:"session_id"`
+	DeviceID                        string                             `json:"device_id"`
+	CheckingFeedbackObserved        bool                               `json:"checking_feedback_observed"`
+	CheckingFeedbackMS              int64                              `json:"checking_feedback_ms"`
+	CheckingFeedbackWithin1200      bool                               `json:"checking_feedback_within_1200"`
+	ProfessionalResultObserved      bool                               `json:"professional_result_observed"`
+	ProfessionalResultAfterChecking bool                               `json:"professional_result_after_checking"`
+	AbortStopObserved               bool                               `json:"abort_stop_observed"`
+	StaleResultSuppressed           bool                               `json:"stale_result_suppressed"`
+	EvidenceCount                   int                                `json:"evidence_count"`
+	ScreenCardCount                 int                                `json:"screen_card_count"`
+	FollowUpCount                   int                                `json:"follow_up_count"`
+	ConfidencePresent               bool                               `json:"confidence_present"`
+	NoPlaceholderUtterance          bool                               `json:"no_placeholder_utterance"`
+	NoASRTextLeak                   bool                               `json:"no_asr_text_leak"`
+	V21QueryFirstResultMS           *int64                             `json:"v21_query_first_result_ms,omitempty"`
+	ReadRecord                      xiaozhiProfessionalBenchReadRecord `json:"read_record"`
+	TTSStopObserved                 bool                               `json:"tts_stop_observed"`
+	FailureCount                    int                                `json:"failure_count"`
+	Execution                       xiaozhiProfessionalBenchExecution  `json:"execution"`
+	Redaction                       xiaozhiProfessionalBenchRedaction  `json:"redaction"`
+	Findings                        []xiaozhiProfessionalBenchFinding  `json:"findings,omitempty"`
+	ReportPath                      string                             `json:"report_path,omitempty"`
 }
 
 type xiaozhiProfessionalBenchExecution struct {
@@ -83,6 +85,36 @@ type xiaozhiProfessionalBenchExecution struct {
 	V21Executed      bool   `json:"v21_executed"`
 	HardwareExecuted bool   `json:"hardware_executed"`
 	GatewayRuntime   string `json:"gateway_runtime"`
+}
+
+type xiaozhiProfessionalBenchReadRecord struct {
+	Observed          bool                                     `json:"observed"`
+	Completed         bool                                     `json:"completed"`
+	RecordCount       int                                      `json:"record_count"`
+	Status            string                                   `json:"status,omitempty"`
+	RecordID          string                                   `json:"record_id,omitempty"`
+	TraceIDMatched    bool                                     `json:"trace_id_matched"`
+	SessionIDMatched  bool                                     `json:"session_id_matched"`
+	DeviceIDMatched   bool                                     `json:"device_id_matched"`
+	QueryScope        string                                   `json:"query_scope,omitempty"`
+	PrivacyScope      string                                   `json:"privacy_scope,omitempty"`
+	LatencyProfile    string                                   `json:"latency_profile,omitempty"`
+	AnswerStyle       string                                   `json:"answer_style,omitempty"`
+	UtteranceBucket   string                                   `json:"utterance_bucket,omitempty"`
+	SourceScopeCounts map[string]int                           `json:"source_scope_counts,omitempty"`
+	WorkspaceStatus   string                                   `json:"workspace_status,omitempty"`
+	Redaction         xiaozhiProfessionalBenchReadRecordRedact `json:"redaction"`
+}
+
+type xiaozhiProfessionalBenchReadRecordRedact struct {
+	DocumentTextStored    bool `json:"document_text_stored"`
+	QueryTextStored       bool `json:"query_text_stored"`
+	RetrievedTextStored   bool `json:"retrieved_text_stored"`
+	FullURLStored         bool `json:"full_url_stored"`
+	LocalPathStored       bool `json:"local_path_stored"`
+	CredentialValueStored bool `json:"credential_value_stored"`
+	ProviderOutputStored  bool `json:"provider_output_stored"`
+	VoiceTextStored       bool `json:"voice_text_stored"`
 }
 
 type xiaozhiProfessionalBenchRedaction struct {
@@ -299,6 +331,7 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 		report.Execution.V21Executed = trace.V21QueryStarted && trace.V21QueryFirstResult
 		report.NoPlaceholderUtterance = trace.UtteranceLengthObserved
 		report.V21QueryFirstResultMS = trace.V21QueryFirstResultMS
+		report.ReadRecord = fetchXiaozhiProfessionalBenchReadRecord(ctx, options.GatewayURL, traceID, sessionID, options.DeviceID)
 		abortTurn := runXiaozhiProfessionalBenchAbortTurn(ctx, options, options.GatewayURL, packets)
 		report.AbortStopObserved = abortTurn.abortStopObserved
 		report.StaleResultSuppressed = abortTurn.staleResultSuppressed
@@ -332,6 +365,7 @@ func buildXiaozhiProfessionalBenchReport(ctx context.Context, options xiaozhiPro
 	report.ConfidencePresent = turn.confidencePresent
 	report.TTSStopObserved = turn.ttsStopObserved
 	report.NoPlaceholderUtterance = v21.lastUtterance() != "" && v21.lastUtterance() != xiaozhiProfessionalBenchPlaceholderUtterance
+	report.ReadRecord = fetchXiaozhiProfessionalBenchReadRecord(ctx, httpServer.URL, traceID, sessionID, options.DeviceID)
 	return finalizeXiaozhiProfessionalBenchReport(report)
 }
 
@@ -359,6 +393,9 @@ func finalizeXiaozhiProfessionalBenchReport(report xiaozhiProfessionalBenchRepor
 	if !report.NoPlaceholderUtterance {
 		report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "placeholder_utterance_used", Message: "professional query did not use ASR-derived utterance"})
 	}
+	if report.SourceProfile == "external_gateway" && !xiaozhiProfessionalBenchReadRecordReady(report.ReadRecord) {
+		report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "professional_read_record_missing", Message: "professional read-record ledger did not complete for the bench trace"})
+	}
 	report.FailureCount = len(report.Findings)
 	if report.FailureCount == 0 {
 		if report.SourceProfile == "external_gateway" {
@@ -374,6 +411,35 @@ func finalizeXiaozhiProfessionalBenchReport(report xiaozhiProfessionalBenchRepor
 		report.Findings = append(report.Findings, xiaozhiProfessionalBenchFinding{Code: "redaction_failed", Message: "professional bench report contained unsafe content"})
 	}
 	return report
+}
+
+func xiaozhiProfessionalBenchReadRecordReady(record xiaozhiProfessionalBenchReadRecord) bool {
+	return record.Observed &&
+		record.Completed &&
+		record.RecordCount == 1 &&
+		record.Status == "completed" &&
+		record.RecordID != "" &&
+		record.TraceIDMatched &&
+		record.SessionIDMatched &&
+		record.DeviceIDMatched &&
+		v21adapter.ValidQueryScope(record.QueryScope) &&
+		record.PrivacyScope == "professional_only" &&
+		record.LatencyProfile == "fast_first" &&
+		record.AnswerStyle == "voice_first_with_citations" &&
+		validProductV21WorkspaceStatus(record.WorkspaceStatus) &&
+		validProductV21SourceScopeCounts(record.SourceScopeCounts) &&
+		xiaozhiProfessionalBenchReadRecordRedactionOK(record.Redaction)
+}
+
+func xiaozhiProfessionalBenchReadRecordRedactionOK(redaction xiaozhiProfessionalBenchReadRecordRedact) bool {
+	return !redaction.DocumentTextStored &&
+		!redaction.QueryTextStored &&
+		!redaction.RetrievedTextStored &&
+		!redaction.FullURLStored &&
+		!redaction.LocalPathStored &&
+		!redaction.CredentialValueStored &&
+		!redaction.ProviderOutputStored &&
+		!redaction.VoiceTextStored
 }
 
 type xiaozhiProfessionalBenchTurn struct {
@@ -612,6 +678,77 @@ func fetchXiaozhiProfessionalBenchTraceEvidence(ctx context.Context, gatewayURL 
 	return evidence, nil
 }
 
+func fetchXiaozhiProfessionalBenchReadRecord(ctx context.Context, gatewayURL string, traceID string, sessionID string, deviceID string) xiaozhiProfessionalBenchReadRecord {
+	query := make(url.Values)
+	query.Set("trace_id", traceID)
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/professional-read-records", query)
+	if err != nil {
+		return xiaozhiProfessionalBenchReadRecord{}
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return xiaozhiProfessionalBenchReadRecord{}
+	}
+	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return xiaozhiProfessionalBenchReadRecord{}
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return xiaozhiProfessionalBenchReadRecord{}
+	}
+	var records gateway.ProfessionalReadRecordsResponse
+	if err := json.NewDecoder(io.LimitReader(response.Body, 32768)).Decode(&records); err != nil {
+		return xiaozhiProfessionalBenchReadRecord{}
+	}
+	if records.SchemaVersion != gateway.ProfessionalReadRecordsSchemaVersion || records.Status != "ok" {
+		return xiaozhiProfessionalBenchReadRecord{
+			RecordCount: len(records.Records),
+			Redaction:   xiaozhiProfessionalBenchReadRecordRedactionFromGateway(records.Redaction),
+		}
+	}
+	summary := xiaozhiProfessionalBenchReadRecord{
+		Observed:    len(records.Records) > 0,
+		RecordCount: len(records.Records),
+		Redaction:   xiaozhiProfessionalBenchReadRecordRedactionFromGateway(records.Redaction),
+	}
+	if len(records.Records) != 1 {
+		return summary
+	}
+	record := records.Records[0]
+	summary.Completed = record.Status == "completed"
+	summary.Status = record.Status
+	summary.RecordID = record.RecordID
+	summary.TraceIDMatched = record.TraceID == traceID
+	summary.SessionIDMatched = record.SessionID == sessionID
+	summary.DeviceIDMatched = record.DeviceID == deviceID
+	summary.QueryScope = record.QueryScope
+	summary.PrivacyScope = record.PrivacyScope
+	summary.LatencyProfile = record.LatencyProfile
+	summary.AnswerStyle = record.AnswerStyle
+	summary.UtteranceBucket = record.UtteranceBucket
+	summary.SourceScopeCounts = copyStringIntMap(record.SourceScopeCounts)
+	summary.WorkspaceStatus = record.WorkspaceStatus
+	summary.Redaction = xiaozhiProfessionalBenchReadRecordRedactionFromGateway(record.Redaction)
+	return summary
+}
+
+func xiaozhiProfessionalBenchReadRecordRedactionFromGateway(redaction gateway.ProfessionalWorkspaceRedaction) xiaozhiProfessionalBenchReadRecordRedact {
+	return xiaozhiProfessionalBenchReadRecordRedact{
+		DocumentTextStored:    redaction.DocumentTextStored,
+		QueryTextStored:       redaction.QueryTextStored,
+		RetrievedTextStored:   redaction.RetrievedTextStored,
+		FullURLStored:         redaction.FullURLStored,
+		LocalPathStored:       redaction.LocalPathStored,
+		CredentialValueStored: redaction.CredentialValueStored,
+		ProviderOutputStored:  redaction.ProviderOutputStored,
+		VoiceTextStored:       redaction.VoiceTranscriptStored,
+	}
+}
+
 func xiaozhiProfessionalBenchOpusPackets(options xiaozhiProfessionalBenchOptions) ([][]byte, xiaozhiVoiceBenchInput, error) {
 	packets, input, err := xiaozhiVoiceBenchOpusPackets(xiaozhiVoiceBenchOptions{InputWAV: options.InputWAV})
 	if err != nil {
@@ -766,8 +903,10 @@ func (c *xiaozhiProfessionalBenchV21Client) Query(ctx context.Context, request v
 			Summary:  "RAW_SECRET_EVIDENCE_BODY",
 			Quote:    "RAW_SECRET_QUOTE",
 		}},
-		SpeechBlocks: []string{"RAW_SECRET_SPEECH_BLOCK"},
-		ScreenCards:  []v21adapter.ScreenCard{{Label: "结论", Text: "RAW_SECRET_CARD_TEXT"}},
-		FollowUps:    []string{"RAW_SECRET_FOLLOW_UP"},
+		SpeechBlocks:      []string{"RAW_SECRET_SPEECH_BLOCK"},
+		ScreenCards:       []v21adapter.ScreenCard{{Label: "结论", Text: "RAW_SECRET_CARD_TEXT"}},
+		FollowUps:         []string{"RAW_SECRET_FOLLOW_UP"},
+		SourceScopeCounts: map[string]int{"public": 1},
+		WorkspaceStatus:   v21adapter.WorkspaceSearchable,
 	}, nil
 }

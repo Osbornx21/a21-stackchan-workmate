@@ -46,6 +46,7 @@ type serverSideReadinessBundleReport struct {
 	Provider                   serverSideReadinessBundleEvidence  `json:"provider"`
 	V21                        serverSideReadinessBundleEvidence  `json:"v21"`
 	ProfessionalRitual         serverSideReadinessBundleEvidence  `json:"professional_ritual"`
+	ProfessionalReadRecord     serverSideReadinessBundleEvidence  `json:"professional_read_record"`
 	HostVoice                  serverSideReadinessBundleEvidence  `json:"host_voice"`
 	RoleplayVoice              serverSideReadinessBundleEvidence  `json:"roleplay_voice"`
 	WakeWord                   serverSideReadinessBundleEvidence  `json:"wake_word"`
@@ -261,6 +262,11 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			Status:       productReport.V21.ProfessionalExecution.ProfessionalAcceptanceStatus,
 			SourceReport: productReport.ServerSide.ProfessionalRitualSourceReport,
 		},
+		ProfessionalReadRecord: serverSideReadinessBundleEvidence{
+			Ready:        productReport.ServerSide.ProfessionalReadRecordReady,
+			Status:       productReport.V21.ProfessionalExecution.ReadRecordWorkspaceStatus,
+			SourceReport: productReport.ServerSide.ProfessionalReadRecordSourceReport,
+		},
 		HostVoice: serverSideReadinessBundleEvidence{
 			Ready:        productReport.ServerSide.HostVoiceLoopbackReady,
 			Status:       productReport.Voice.VoicePipeline.AcceptanceStatus,
@@ -315,6 +321,8 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 		return collectServerSideV21Smoke(options)
 	case "professional_ritual_execution":
 		return collectServerSideProfessionalRitual(options)
+	case "professional_read_record":
+		return collectServerSideProfessionalReadRecord(options)
 	case "host_voice_loopback":
 		return collectServerSideHostVoice(options)
 	case "roleplay_voice_runtime":
@@ -387,6 +395,12 @@ func collectServerSideProfessionalRitual(options serverSideReadinessBundleOption
 	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-professional-bench-*.json"})
 }
 
+func collectServerSideProfessionalReadRecord(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
+	step := collectServerSideProfessionalRitual(options)
+	step.Name = "professional_read_record"
+	return step
+}
+
 func collectServerSideHostVoice(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
 	repeat := options.CollectRepeat
 	if repeat <= 0 {
@@ -434,6 +448,10 @@ func markServerSideCollectionAbsorbed(collection serverSideReadinessCollection, 
 			step.AbsorbedByReadiness = step.SourceReport != "" &&
 				step.SourceReport == report.ServerSide.ProfessionalRitualSourceReport &&
 				report.ServerSide.ProfessionalRitualReady
+		case "professional_read_record":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.ServerSide.ProfessionalReadRecordSourceReport &&
+				report.ServerSide.ProfessionalReadRecordReady
 		case "host_voice_loopback":
 			step.AbsorbedByReadiness = step.SourceReport != "" &&
 				step.SourceReport == report.Voice.VoicePipeline.SourceReport &&
@@ -475,6 +493,8 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 		case "v21_professional_smoke":
 			commands = append(commands, "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports")
 		case "professional_ritual_execution":
+			commands = append(commands, "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
+		case "professional_read_record":
 			commands = append(commands, "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
 		case "host_voice_loopback":
 			commands = append(commands, "go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
