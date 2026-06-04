@@ -277,6 +277,35 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 	}
 }
 
+func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
+		`WriteReg(0x22, 0b110);`,
+		`WriteReg(0x27, 0x10);`,
+		`PWRON and OFFLEVEL can request PMIC power-off.`,
+		`hardware power key long-press path at 4s`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key lifecycle contract %q", required)
+		}
+	}
+	if strings.Contains(overlay, `+        WriteReg(0x27, 0x00);`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must not add the old immediate PMIC power-key timing")
+	}
+}
+
 func TestOfficialXiaozhiCompatibleOverlaySetsZiYueCustomWake(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
