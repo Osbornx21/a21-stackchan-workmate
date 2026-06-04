@@ -7763,6 +7763,7 @@ func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event stri
 	if len(capabilities) > 0 {
 		record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
 	}
+	record.ConnectionStatus = "online"
 	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
 		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
 	}
@@ -7859,6 +7860,7 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
+	record.ConnectionStatus = "online"
 	record.LastEvent = deviceEvent
 	record.LastTouchEvent = deviceEvent
 	record.LastTouchSource = source
@@ -8113,6 +8115,7 @@ func (s *Server) recordXiaozhiTouchReactionEcho(session *xiaozhiSession, event x
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
+	record.ConnectionStatus = "online"
 	record.LastEvent = deviceEvent
 	record.LastTouchEvent = deviceEvent
 	record.LastTouchSource = source
@@ -8148,6 +8151,7 @@ func (s *Server) recordXiaozhiStateReactionEcho(session *xiaozhiSession, state s
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
+	record.ConnectionStatus = "online"
 	record.LastTraceID = session.traceID
 	record.LastSessionID = session.sessionID
 	record.LastSeenMS = nowMS
@@ -8177,6 +8181,7 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
+	record.ConnectionStatus = "online"
 	record.LastEvent = protocol.DeviceEventKind(event)
 	record.LastTraceID = session.traceID
 	record.LastSessionID = session.sessionID
@@ -10949,6 +10954,9 @@ func (s *Server) deviceRecords() []DeviceRecord {
 		applyRoleplayDeviceState(&record, roleplayState)
 		record.CurrentCloudVoiceProfile = cloudVoiceProfile
 		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, roleplayDeviceRuntimeEcho(roleplayState))
+		if socket := s.xiaozhiSockets[record.DeviceID]; socket != nil {
+			record.ConnectionStatus = "online"
+		}
 		records = append(records, withDeviceFreshness(record, nowMS))
 	}
 	sort.Slice(records, func(i, j int) bool {

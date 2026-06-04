@@ -6064,6 +6064,84 @@ func TestXiaozhiDeviceRegistryMarksSocketDisconnectedOnClose(t *testing.T) {
 	}
 }
 
+func TestXiaozhiDeviceRegistryRestoresOnlineAfterReconnect(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{XiaozhiProductPlaybackEvents: true}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-reconnect-1",
+		"session_id": "a21-session-xiaozhi-reconnect-1",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":              true,
+			"aec":              true,
+			"keepalive_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Close(websocket.StatusNormalClosure, "test reconnect"); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+		if registry["connection_status"] == "xiaozhi_ws_disconnected" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	reconn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reconn.Close(websocket.StatusNormalClosure, "test done") })
+	writeXiaozhiHello(t, ctx, reconn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-reconnect-2",
+		"session_id": "a21-session-xiaozhi-reconnect-2",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":              true,
+			"aec":              true,
+			"keepalive_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, reconn)
+	if err := wsjson.Write(ctx, reconn, map[string]any{
+		"type":       "device",
+		"kind":       "heartbeat",
+		"trace_id":   "a21-trace-xiaozhi-reconnect-2",
+		"session_id": "a21-session-xiaozhi-reconnect-2",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var registry map[string]any
+	deadline = time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		registry = fetchSingleDeviceRegistryItem(t, httpServer.URL)
+		if registry["last_event"] == "device.heartbeat" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if registry["connection_status"] != "online" ||
+		registry["last_event"] != "device.heartbeat" ||
+		registry["last_trace_id"] != "a21-trace-xiaozhi-reconnect-2" ||
+		registry["last_session_id"] != "a21-session-xiaozhi-reconnect-2" {
+		t.Fatalf("registry after reconnect = %#v, want online heartbeat", registry)
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
