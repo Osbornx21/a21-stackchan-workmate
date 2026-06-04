@@ -432,6 +432,20 @@ surfaces:
   product-socket body-control evidence, not official avatar/action relay
   acceptance and not physical proof until operator or instrument evidence
   confirms visible movement.
+- `POST /v1/xiaozhi/body-scene` is the product-operation alias for bounded
+  one-click hardware scenes that combine screen and body MCP tools. The request
+  accepts `device_id`, a `scene` of `showtime`, `focus`, or `reset`, and
+  optional `trace_id` / `session_id`. Gateway expands `showtime` into ordered
+  screen theme/brightness plus RGB/head MCP writes, while `focus` and `reset`
+  provide shorter bounded workspace states. Delivery records generic MCP
+  markers plus ordered body-scene markers such as
+  `xiaozhi.body_scene.showtime.step1.screen_theme.sent`; the device registry
+  records safe echo fields including `last_body_scene`, `screen_theme`,
+  `screen_brightness`, `robot_led_*`, and `robot_head_*`. Responses carry only
+  redacted step metadata and `physical_accepted=false`. This is a live product
+  socket demo/control surface for foreground operator checks, not official
+  avatar/action relay acceptance and not physical proof until visible or
+  instrumented evidence confirms the screen, RGB, and servo movement.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

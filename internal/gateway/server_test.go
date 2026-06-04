@@ -496,6 +496,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/professional-query",
 		"/v1/xiaozhi/body-preset",
 		"/v1/xiaozhi/body-motion",
+		"/v1/xiaozhi/body-scene",
 		"/v1/xiaozhi/device-status",
 		"/v1/xiaozhi/screen-brightness",
 		"/v1/xiaozhi/screen-theme",
@@ -577,6 +578,16 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`id="bodyPresetTransportStatus"`,
 		`id="bodyPresetTraceList"`,
 		`id="refreshBodyPresetTrace"`,
+		`id="hardwareSceneActions"`,
+		`id="refreshHardwareSceneTrace"`,
+		`id="hardwareSceneStatus"`,
+		`id="hardwareScenePhysicalStatus"`,
+		`id="hardwareSceneTraceStatus"`,
+		`id="hardwareSceneScreenStatus"`,
+		`id="hardwareSceneBodyStatus"`,
+		`id="hardwareSceneStepStatus"`,
+		`id="hardwareSceneTransportStatus"`,
+		`id="hardwareSceneTraceList"`,
 		`id="hardwareScreenStatus"`,
 		`id="hardwareScreenPhysicalStatus"`,
 		`id="screenBrightness"`,
@@ -615,6 +626,9 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`data-body-motion="shake"`,
 		`data-body-motion="dance"`,
 		`data-body-motion="stop"`,
+		`data-hardware-scene="showtime"`,
+		`data-hardware-scene="focus"`,
+		`data-hardware-scene="reset"`,
 		`data-screen-theme="light"`,
 		`data-screen-theme="dark"`,
 		`data-screen-theme="auto"`,
@@ -637,6 +651,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"Wake Word Setup",
 		"Voice Probe",
 		"Body Presets",
+		"Hardware Scenes",
 		"Hardware Screen",
 		"Official Actions",
 		"Run roleplay probe",
@@ -669,9 +684,13 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"voice_probe_trace_id",
 		"body_preset_trace_id",
 		"body_motion_trace_id",
+		"hardware_scene_trace_id",
+		"hardware_scene_step_count",
 		"runBodyPreset",
 		"runBodyMotion",
+		"runHardwareScene",
 		"refreshBodyPresetTrace",
+		"refreshHardwareSceneTrace",
 		"screen_control_trace_id",
 		"runHardwareScreenAction",
 		"refreshHardwareScreenTrace",
@@ -7020,6 +7039,121 @@ func TestXiaozhiBodyMotionRejectsUnknownMotion(t *testing.T) {
 	NewServer().Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("body motion status = %d, want 400", rec.Code)
+	}
+}
+
+func TestXiaozhiBodySceneSendsScreenAndBodyMCPSequence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-scene-hello",
+		"session_id": "a21-session-body-scene-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-scene",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"showtime","trace_id":"a21-trace-body-scene","session_id":"a21-session-body-scene"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("body scene status = %d: %s", resp.StatusCode, string(body))
+	}
+	var response XiaozhiBodySceneResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.xiaozhi_body_scene.v1" ||
+		response.Status != "delivered" ||
+		response.DeliveredTransport != "xiaozhi_mcp_sequence" ||
+		response.Scene != "showtime" ||
+		!response.ResultRedacted ||
+		response.PhysicalAccepted ||
+		len(response.Steps) != 8 {
+		t.Fatalf("body scene response = %+v", response)
+	}
+
+	expected := []struct {
+		tool string
+		args map[string]any
+	}{
+		{tool: xiaozhiMCPScreenSetThemeToolName, args: map[string]any{"theme": "dark"}},
+		{tool: xiaozhiMCPScreenSetBrightnessToolName, args: map[string]any{"brightness": float64(72)}},
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(168), "green": float64(80), "blue": float64(0)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(-18), "pitch": float64(36), "speed": float64(260)}},
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(0), "green": float64(168), "blue": float64(80)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(18), "pitch": float64(36), "speed": float64(260)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(0), "pitch": float64(24), "speed": float64(220)}},
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(0), "green": float64(36), "blue": float64(96)}},
+	}
+	for _, want := range expected {
+		message := readXiaozhiJSON(t, ctx, conn)
+		assertXiaozhiMCPMessage(t, message, want.tool, want.args)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-scene")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.body_scene.showtime.step1.screen_theme.sent",
+		"xiaozhi.body_scene.showtime.step2.screen_brightness.sent",
+		"xiaozhi.body_scene.showtime.step8.robot_led_color.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("capabilities = %#v", registry["capabilities"])
+	}
+	for key, want := range map[string]any{
+		"last_body_scene":        "showtime",
+		"last_body_scene_status": "delivered",
+		"last_body_scene_step":   "8",
+		"screen_theme":           "dark",
+		"screen_brightness":      "72",
+		"robot_head_yaw":         "0",
+		"robot_head_pitch":       "24",
+		"robot_led_blue":         "96",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiBodySceneRejectsUnknownScene(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/body-scene", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"camera"}`))
+	rec := httptest.NewRecorder()
+	NewServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("body scene status = %d, want 400", rec.Code)
 	}
 }
 

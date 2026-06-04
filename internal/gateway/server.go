@@ -888,6 +888,13 @@ type XiaozhiBodyMotionRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+type XiaozhiBodySceneRequest struct {
+	DeviceID  string `json:"device_id"`
+	Scene     string `json:"scene"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
 	SessionID          string         `json:"session_id"`
@@ -928,6 +935,19 @@ type XiaozhiBodyMotionResponse struct {
 	Status             string                          `json:"status"`
 	DeliveredTransport string                          `json:"delivered_transport"`
 	Motion             string                          `json:"motion"`
+	Steps              []XiaozhiBodyPresetStepResponse `json:"steps"`
+	ResultRedacted     bool                            `json:"result_redacted"`
+	PhysicalAccepted   bool                            `json:"physical_accepted"`
+}
+
+type XiaozhiBodySceneResponse struct {
+	SchemaVersion      string                          `json:"schema_version"`
+	TraceID            string                          `json:"trace_id"`
+	SessionID          string                          `json:"session_id"`
+	DeviceID           string                          `json:"device_id"`
+	Status             string                          `json:"status"`
+	DeliveredTransport string                          `json:"delivered_transport"`
+	Scene              string                          `json:"scene"`
 	Steps              []XiaozhiBodyPresetStepResponse `json:"steps"`
 	ResultRedacted     bool                            `json:"result_redacted"`
 	PhysicalAccepted   bool                            `json:"physical_accepted"`
@@ -1475,6 +1495,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/xiaozhi/screen-theme", s.handleXiaozhiScreenTheme)
 	mux.HandleFunc("/v1/xiaozhi/body-preset", s.handleXiaozhiBodyPreset)
 	mux.HandleFunc("/v1/xiaozhi/body-motion", s.handleXiaozhiBodyMotion)
+	mux.HandleFunc("/v1/xiaozhi/body-scene", s.handleXiaozhiBodyScene)
 	mux.HandleFunc("/v1/xiaozhi/mcp-capabilities", s.handleXiaozhiMCPCapabilities)
 	mux.HandleFunc("/v1/xiaozhi/mcp-control", s.handleXiaozhiMCPControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
@@ -5805,6 +5826,71 @@ func (s *Server) handleXiaozhiBodyMotion(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func (s *Server) handleXiaozhiBodyScene(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiBodySceneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	scene, plans, err := xiaozhiBodyScenePlans(req.DeviceID, req.Scene)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	steps := make([]XiaozhiBodyPresetStepResponse, 0, len(plans))
+	for index, plan := range plans {
+		plan.TraceID = traceID
+		plan.SessionID = sessionID
+		delivery, status, message := s.sendXiaozhiMCPControl(r.Context(), plan)
+		if status != 0 {
+			s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.body_scene."+scene+".failed", s.now().UnixMilli())
+			http.Error(w, message, status)
+			return
+		}
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		sceneMarker := "xiaozhi.body_scene." + scene + ".step" + strconv.Itoa(index+1) + "." + delivery.Marker + ".sent"
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, sceneMarker, s.now().UnixMilli())
+		activity := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
+		activity["last_body_scene"] = scene
+		activity["last_body_scene_status"] = "delivered"
+		activity["last_body_scene_step"] = strconv.Itoa(index + 1)
+		activity["last_body_scene_tool"] = delivery.Marker
+		s.recordXiaozhiDeviceActivity(&xiaozhiSession{
+			deviceID:  delivery.Response.DeviceID,
+			traceID:   delivery.Response.TraceID,
+			sessionID: delivery.Response.SessionID,
+		}, sceneMarker, activity)
+		steps = append(steps, XiaozhiBodyPresetStepResponse{
+			ToolName:  delivery.Response.ToolName,
+			MCPID:     delivery.Response.MCPID,
+			Marker:    delivery.Marker,
+			Arguments: delivery.Response.Arguments,
+		})
+	}
+	writeJSON(w, http.StatusOK, XiaozhiBodySceneResponse{
+		SchemaVersion:      "a21.gateway.xiaozhi_body_scene.v1",
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_mcp_sequence",
+		Scene:              scene,
+		Steps:              steps,
+		ResultRedacted:     true,
+		PhysicalAccepted:   false,
+	})
+}
+
 func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -6177,6 +6263,71 @@ func xiaozhiBodyMotionPlans(deviceID string, motion string) (string, []XiaozhiMC
 		}, nil
 	default:
 		return "", nil, errors.New("body_motion must be look_up, nod, shake, dance, or stop")
+	}
+}
+
+func xiaozhiBodyScenePlans(deviceID string, scene string) (string, []XiaozhiMCPControlRequest, error) {
+	scene = strings.ToLower(strings.TrimSpace(scene))
+	if scene == "" {
+		return "", nil, errors.New("body_scene is required")
+	}
+	base := XiaozhiMCPControlRequest{DeviceID: deviceID}
+	brightness := func(value int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPScreenSetBrightnessToolName
+		req.Brightness = xiaozhiPresetInt(value)
+		return req
+	}
+	theme := func(value string) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPScreenSetThemeToolName
+		req.Theme = value
+		return req
+	}
+	led := func(red, green, blue int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetLEDColorToolName
+		req.Red = xiaozhiPresetInt(red)
+		req.Green = xiaozhiPresetInt(green)
+		req.Blue = xiaozhiPresetInt(blue)
+		return req
+	}
+	head := func(yaw, pitch, speed int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetHeadAnglesToolName
+		req.Yaw = xiaozhiPresetInt(yaw)
+		req.Pitch = xiaozhiPresetInt(pitch)
+		req.Speed = xiaozhiPresetInt(speed)
+		return req
+	}
+	switch scene {
+	case "showtime":
+		return scene, []XiaozhiMCPControlRequest{
+			theme("dark"),
+			brightness(72),
+			led(168, 80, 0),
+			head(-18, 36, 260),
+			led(0, 168, 80),
+			head(18, 36, 260),
+			head(0, 24, 220),
+			led(0, 36, 96),
+		}, nil
+	case "focus":
+		return scene, []XiaozhiMCPControlRequest{
+			theme("dark"),
+			brightness(62),
+			led(120, 72, 0),
+			head(-12, 28, 180),
+		}, nil
+	case "reset":
+		return scene, []XiaozhiMCPControlRequest{
+			theme("auto"),
+			brightness(55),
+			led(0, 0, 32),
+			head(0, 18, 200),
+		}, nil
+	default:
+		return "", nil, errors.New("body_scene must be showtime, focus, or reset")
 	}
 }
 
