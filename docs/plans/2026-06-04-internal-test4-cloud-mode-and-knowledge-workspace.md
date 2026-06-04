@@ -88,6 +88,16 @@ StackChan hardware.
   evidence appears. The surface displays only safe metadata: count, status,
   query scope, utterance bucket, source-scope counts, workspace status, and
   privacy scope.
+- Explicit user-spoken trigger phrases now bridge the default companion path
+  into professional mode. `/v1/mock-turn` and stock `/v1/xiaozhi` turns in
+  default/roleplay/workmate/companion context route to the professional evidence
+  path when the recognized text contains phrases such as "专业模式",
+  "认真查一下", "帮我查 V21", or "给我证据". Negated phrases such as
+  "不要进专业检索" remain out of V21. Xiaozhi trigger routing reuses the
+  streaming ASR final text when present instead of running a second batch ASR.
+  Traces record only safe markers:
+  `professional.voice_trigger.detected` and
+  `xiaozhi.professional_route.voice_trigger`.
 
 ## Product Form
 
@@ -284,6 +294,10 @@ Acceptance:
 
 - Hardware professional consult shows `PRO`, checking feedback, and evidence
   cards.
+- Default/roleplay/workmate/companion voice turns can enter professional mode
+  only through explicit user-spoken trigger phrases such as "专业模式",
+  "认真查一下", "帮我查 V21", or "给我证据"; negated phrases and
+  privacy/state modes must not route to V21.
 - `/v1/voice-modes` exposes the same `PRO` checking cue contract used by
   hardware/web/app mode selection before V21 evidence is read aloud.
 - Web/app professional consult and hardware consult use the same adapter

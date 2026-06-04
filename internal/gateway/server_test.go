@@ -2782,6 +2782,70 @@ func TestProfessionalModeSendsExplicitV21PlaceholderContract(t *testing.T) {
 	}
 }
 
+func TestProfessionalVoiceTriggerRoutesMockTurnToProfessionalPath(t *testing.T) {
+	v21 := &capturingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"认真查一下座舱报警证据","mode":"workmate","trace_id":"a21-trace-pro-trigger","session_id":"a21-session-pro-trigger"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if v21.request.Mode != "professional" || v21.request.Utterance != "认真查一下座舱报警证据" {
+		t.Fatalf("v21 request = %+v, want professional trigger utterance", v21.request)
+	}
+	var response MockTurnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var answer protocol.ControlEventPayload
+	if err := json.Unmarshal(response.Events[len(response.Events)-1].Payload, &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Mode != protocol.ModeProfessional || len(answer.Evidence) == 0 || len(answer.ScreenCards) == 0 {
+		t.Fatalf("trigger answer = %+v, want professional evidence response", answer)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-pro-trigger", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"professional.voice_trigger.detected", "professional.checking_feedback.sent", "v21.query.start"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	if strings.Contains(traceRec.Body.String(), "认真查一下座舱报警证据") {
+		t.Fatalf("trace leaked trigger utterance: %s", traceRec.Body.String())
+	}
+
+	recordsReq := httptest.NewRequest(http.MethodGet, "/v1/professional-read-records?trace_id=a21-trace-pro-trigger", nil)
+	recordsRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recordsRec, recordsReq)
+	var records ProfessionalReadRecordsResponse
+	if err := json.Unmarshal(recordsRec.Body.Bytes(), &records); err != nil {
+		t.Fatal(err)
+	}
+	if len(records.Records) != 1 || records.Records[0].Status != "completed" {
+		t.Fatalf("read records = %+v, want one completed trigger record", records)
+	}
+}
+
+func TestProfessionalVoiceTriggerClassifierKeepsNegatedTextOutOfV21(t *testing.T) {
+	for _, text := range []string{"不要进专业检索", "不用专业模式", "别查 V21", "普通聊一下座舱报警"} {
+		if professionalVoiceTrigger(text) {
+			t.Fatalf("professionalVoiceTrigger(%q) = true, want false", text)
+		}
+	}
+	for _, text := range []string{"专业模式", "认真查一下座舱报警", "帮我查 V21 座舱反馈", "给我证据"} {
+		if !professionalVoiceTrigger(text) {
+			t.Fatalf("professionalVoiceTrigger(%q) = false, want true", text)
+		}
+	}
+}
+
 func TestWorkmateModeDoesNotCallV21Adapter(t *testing.T) {
 	v21 := &countingV21Client{}
 	server := NewServerWithOptions(ServerOptions{V21Client: v21})
@@ -2805,6 +2869,24 @@ func TestOfficePrivacyModesDoNotCallV21Adapter(t *testing.T) {
 			v21 := &countingV21Client{}
 			server := NewServerWithOptions(ServerOptions{V21Client: v21})
 			body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"不要进专业检索","mode":"` + string(mode) + `"}`)
+			req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
+			rec := httptest.NewRecorder()
+
+			server.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			if v21.calls != 0 {
+				t.Fatalf("v21 calls = %d, want 0", v21.calls)
+			}
+		})
+	}
+	for _, mode := range []protocol.Mode{protocol.ModePublic, protocol.ModePrivate, protocol.ModeFocus, protocol.ModeMuted} {
+		t.Run(string(mode)+"_positive_trigger_blocked", func(t *testing.T) {
+			v21 := &countingV21Client{}
+			server := NewServerWithOptions(ServerOptions{V21Client: v21})
+			body := bytes.NewBufferString(`{"device_id":"stackchan-sim-001","text":"给我证据","mode":"` + string(mode) + `"}`)
 			req := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", body)
 			rec := httptest.NewRecorder()
 
@@ -7193,6 +7275,110 @@ func TestXiaozhiWebSocketProfessionalModeSendsCheckingBeforeDelayedResult(t *tes
 	}
 }
 
+func TestXiaozhiWebSocketVoiceTriggerRoutesDefaultListenToProfessional(t *testing.T) {
+	v21 := newDelayedXiaozhiProfessionalV21Client(0)
+	streamingASR := newTriggerPhraseStreamingASRAdapter("给我证据 座舱报警")
+	server := NewServerWithOptions(ServerOptions{
+		V21Client: v21,
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: passthroughTextStreamAdapter{},
+			TTS:        providers.NewMockTTSAdapter("a21-test-tts"),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-voice-trigger",
+		"session_id": "a21-session-xiaozhi-voice-trigger",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-streamingASR.appended:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("streaming ASR did not receive xiaozhi audio frame")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" || ttsStart["mode"] != "professional" {
+		t.Fatalf("voice-trigger tts start = %#v", ttsStart)
+	}
+	checking := readXiaozhiJSON(t, ctx, conn)
+	if checking["type"] != "tts" || checking["state"] != "sentence_start" || checking["phase"] != "professional_checking" || checking["mode"] != "professional" {
+		t.Fatalf("voice-trigger checking feedback = %#v", checking)
+	}
+	select {
+	case <-v21.started:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("professional V21 query did not start after voice trigger")
+	}
+	if got := v21.lastUtterance(); got != "给我证据 座舱报警" {
+		t.Fatalf("v21 utterance = %q, want streaming final utterance", got)
+	}
+
+	result := readXiaozhiJSON(t, ctx, conn)
+	if result["type"] != "tts" || result["state"] != "sentence_start" || result["phase"] != "professional_result" || result["mode"] != "professional" {
+		t.Fatalf("voice-trigger professional result = %#v", result)
+	}
+	resultJSON := mustJSON(t, result)
+	for _, forbidden := range []string{"给我证据 座舱报警", "RAW_SECRET_EVIDENCE_BODY"} {
+		if strings.Contains(resultJSON, forbidden) {
+			t.Fatalf("voice-trigger professional result leaked %q: %s", forbidden, resultJSON)
+		}
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "professional_result_completed" {
+		t.Fatalf("voice-trigger professional stop = %#v", stop)
+	}
+	select {
+	case <-streamingASR.transcribed:
+		t.Fatal("triggered professional route ran duplicate batch ASR")
+	default:
+	}
+
+	resp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-voice-trigger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	traceBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceJSON := string(traceBody)
+	for _, forbidden := range []string{"给我证据 座舱报警", "RAW_SECRET_EVIDENCE_BODY"} {
+		if strings.Contains(traceJSON, forbidden) {
+			t.Fatalf("voice-trigger trace leaked %q: %s", forbidden, traceJSON)
+		}
+	}
+	for _, want := range []string{"professional.voice_trigger.detected", "xiaozhi.professional_route.voice_trigger", "professional.checking_feedback.sent", "v21.query.start"} {
+		if !strings.Contains(traceJSON, want) {
+			t.Fatalf("voice-trigger trace missing %q: %s", want, traceJSON)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketStockProfessionalRouteUsesRealtimeListenMode(t *testing.T) {
 	v21 := newDelayedXiaozhiProfessionalV21Client(100 * time.Millisecond)
 	server := NewServerWithOptions(ServerOptions{
@@ -11421,6 +11607,75 @@ func (a scriptedProfessionalASRAdapter) Transcribe(ctx context.Context, req prov
 		}
 	}()
 	return out, nil
+}
+
+type triggerPhraseStreamingASRAdapter struct {
+	finalText      string
+	events         chan providers.ASRAdapterEvent
+	appended       chan struct{}
+	transcribed    chan struct{}
+	appendOnce     sync.Once
+	commitOnce     sync.Once
+	transcribeOnce sync.Once
+}
+
+func newTriggerPhraseStreamingASRAdapter(finalText string) *triggerPhraseStreamingASRAdapter {
+	return &triggerPhraseStreamingASRAdapter{
+		finalText:   finalText,
+		events:      make(chan providers.ASRAdapterEvent, 2),
+		appended:    make(chan struct{}),
+		transcribed: make(chan struct{}),
+	}
+}
+
+func (a *triggerPhraseStreamingASRAdapter) Name() string {
+	return "a21-trigger-phrase-streaming-asr"
+}
+
+func (a *triggerPhraseStreamingASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	a.transcribeOnce.Do(func() {
+		close(a.transcribed)
+	})
+	out := make(chan providers.ASRAdapterEvent)
+	close(out)
+	return out, ctx.Err()
+}
+
+func (a *triggerPhraseStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
+	return a, ctx.Err()
+}
+
+func (a *triggerPhraseStreamingASRAdapter) AppendFrame(ctx context.Context, frame providers.VoicePipelinePCMFrame) error {
+	a.appendOnce.Do(func() {
+		close(a.appended)
+	})
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case a.events <- providers.ASRAdapterEvent{Text: "给我证据", Final: false}:
+		return nil
+	}
+}
+
+func (a *triggerPhraseStreamingASRAdapter) Events() <-chan providers.ASRAdapterEvent {
+	return a.events
+}
+
+func (a *triggerPhraseStreamingASRAdapter) Commit(ctx context.Context) error {
+	a.commitOnce.Do(func() {
+		select {
+		case <-ctx.Done():
+		case a.events <- providers.ASRAdapterEvent{Text: a.finalText, Final: true}:
+		}
+		close(a.events)
+	})
+	return ctx.Err()
+}
+
+func (a *triggerPhraseStreamingASRAdapter) Cancel(error) {
+	a.commitOnce.Do(func() {
+		close(a.events)
+	})
 }
 
 type blockingProfessionalASRAdapter struct {

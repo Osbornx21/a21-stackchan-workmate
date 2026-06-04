@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `6faab06 feat(gateway): record professional workspace reads`
+  `7593a79 feat(gateway): surface workspace read audit in simulator`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,13 +90,14 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-simulator-workspace-audit-surface.md`
+- `docs/plans/2026-06-04-professional-voice-trigger-route.md`
 - Transition:
-  `T-INTERNAL-TEST4-SIMULATOR-WORKSPACE-AUDIT-001`
+  `T-INTERNAL-TEST4-PROFESSIONAL-VOICE-TRIGGER-001`
 - Target:
-  expose upload-job status and professional read-record ledger state in the
-  simulator's Workspace Audit surface, using only safe metadata and without
-  adding real ingest, provider/V21 execution, or hardware actions.
+  route explicit user-spoken professional trigger phrases from default
+  roleplay/workmate voice turns into the existing professional evidence path,
+  while preserving negation guards, privacy/state boundaries, read-record
+  redaction, and internal test 3 Xiaozhi audio behavior.
 
 ## Scoped Hardware Parity Transition
 
@@ -847,3 +848,82 @@ Current conclusion:
 - Real upload storage, indexing execution, delete propagation, source ACLs,
   durable user/device binding, and V21 personal/public corpus enforcement
   remain separate unshipped slices.
+
+## Latest Control-Tower Result - 2026-06-04 Professional Workspace Read Records
+
+Professional evidence turns now leave a safe read ledger for upload/read-record
+discipline without storing query text or retrieved content.
+
+Current implementation state:
+
+- Gateway exposes `GET /v1/professional-read-records` with schema
+  `a21.gateway.professional_read_records.v1`.
+- Mock professional turns and stock Xiaozhi professional turns start a
+  memory-only read record before V21 query and complete or fail it with safe
+  status/scope/count/timing metadata.
+- Records store trace/session/device IDs, redacted user/workspace labels,
+  query scope, privacy scope, latency profile, answer style, utterance length
+  bucket, source-scope counts, workspace status, and redaction flags only.
+- Traces add `professional.read_record.started`,
+  `professional.read_record.completed`, and
+  `professional.read_record.failed`.
+
+Current conclusion:
+
+- Internal test 4 now has an auditable professional-read metadata surface.
+- The ledger is memory-only; durable audit storage and real cloud document
+  indexing remain separate work.
+
+## Latest Control-Tower Result - 2026-06-04 Simulator Workspace Audit Surface
+
+The simulator now exposes the workspace/read-record metadata operators need for
+internal test 4 checks.
+
+Current implementation state:
+
+- The simulator has a `Workspace Audit` section with a no-execute workspace job
+  action and a `Read Records` refresh action.
+- The surface shows last workspace job status plus read-record count, status,
+  failure code, query scope, utterance bucket, source-scope counts, workspace
+  status, and privacy scope.
+- Professional evidence responses refresh read records for the current trace.
+- The simulator displays metadata only, not raw queries, retrieved text,
+  evidence bodies, provider output, document text, URLs, paths, credentials,
+  voice transcripts, or audio.
+
+Current conclusion:
+
+- The internal-test operator surface can inspect upload/read discipline without
+  leaving the safe metadata boundary.
+- Browser screenshot tooling was unavailable in that round; local HTTP smoke
+  covered the served page and endpoint presence.
+
+## Latest Control-Tower Result - 2026-06-04 Professional Voice Trigger Route
+
+Professional mode can now be entered from speech by explicit user trigger
+phrases instead of only API/app selection.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-professional-voice-trigger-route.md`.
+- `/v1/mock-turn` routes default/roleplay/workmate/companion trigger text such
+  as "认真查一下" into `professionalTurnResponse`.
+- Stock `/v1/xiaozhi` default `realtime`/workmate turns route to
+  professional when the streaming ASR final contains an explicit trigger such
+  as "给我证据".
+- Xiaozhi triggered professional turns reuse the streaming ASR final and avoid
+  a duplicate batch ASR pass.
+- Negated phrases such as "不要进专业检索", "不用专业模式", and
+  "别查 V21" do not trigger V21.
+- Trace markers are redacted:
+  `professional.voice_trigger.detected` and
+  `xiaozhi.professional_route.voice_trigger`.
+
+Current conclusion:
+
+- The PRD's user-initiated mode switch now has a Gateway route on both the mock
+  control path and the stock Xiaozhi socket.
+- This is host-local Gateway evidence only. It does not execute real provider
+  or real V21, start Gateway as a runtime service, build/flash firmware, write
+  serial/NVS, or prove physical StackChan professional consult acceptance.

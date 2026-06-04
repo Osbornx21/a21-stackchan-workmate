@@ -1250,6 +1250,60 @@ func voiceModeRitual(mode string) VoiceModeRitual {
 	}
 }
 
+func professionalVoiceTriggerModeAllowed(mode protocol.Mode) bool {
+	switch mode {
+	case "", protocol.ModeWorkmate, protocol.ModeRoleplay, protocol.ModeCompanion:
+		return true
+	default:
+		return false
+	}
+}
+
+func professionalVoiceTrigger(text string) bool {
+	normalized := normalizeProfessionalVoiceTriggerText(text)
+	if normalized == "" {
+		return false
+	}
+	for _, phrase := range []string{
+		"不要进专业",
+		"不用专业模式",
+		"不要专业模式",
+		"别查v21",
+		"不要查v21",
+		"不用查v21",
+	} {
+		if strings.Contains(normalized, phrase) {
+			return false
+		}
+	}
+	for _, phrase := range []string{
+		"专业模式",
+		"进入专业模式",
+		"认真查",
+		"认真查一下",
+		"帮我查v21",
+		"查v21",
+		"给我证据",
+	} {
+		if strings.Contains(normalized, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeProfessionalVoiceTriggerText(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	replacer := strings.NewReplacer(
+		" ", "",
+		"\t", "",
+		"\n", "",
+		"\r", "",
+		"　", "",
+	)
+	return replacer.Replace(text)
+}
+
 func validVoiceMode(mode string) bool {
 	return canonicalVoiceMode(mode) != ""
 }
@@ -5384,6 +5438,15 @@ func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, sess
 		s.writeXiaozhiProfessionalTTS(ctx, conn, session, task)
 		return
 	}
+	if professionalVoiceTriggerModeAllowed(task.mode) && professionalVoiceTrigger(task.streamingASRFinalText) {
+		task.mode = protocol.ModeProfessional
+		session.setCurrentXiaozhiTurnMode(protocol.ModeProfessional)
+		now := s.now().UnixMilli()
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.voice_trigger.detected", now)
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.professional_route.voice_trigger", now)
+		s.writeXiaozhiProfessionalTTS(ctx, conn, session, task)
+		return
+	}
 	if s.writeXiaozhiVoicePipelineTTS(ctx, conn, session, task) {
 		return
 	}
@@ -5542,6 +5605,9 @@ func xiaozhiProfessionalCheckingReceipt(task xiaozhiTurnTask) v21adapter.Profess
 }
 
 func (s *Server) xiaozhiProfessionalASRFinal(ctx context.Context, task xiaozhiTurnTask) (string, error) {
+	if finalText := strings.TrimSpace(task.streamingASRFinalText); finalText != "" {
+		return finalText, nil
+	}
 	if s.xiaozhiProfessionalASR == nil {
 		return "", fmt.Errorf("professional ASR adapter unavailable")
 	}
@@ -8188,6 +8254,14 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 		req.Mode = protocol.ModeWorkmate
 	}
 	if req.Mode == protocol.ModeProfessional {
+		return s.professionalTurnResponse(req)
+	}
+	if professionalVoiceTriggerModeAllowed(req.Mode) && professionalVoiceTrigger(req.Text) {
+		traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+		req.TraceID = traceID
+		req.SessionID = sessionID
+		req.Mode = protocol.ModeProfessional
+		s.recordTrace(traceID, sessionID, req.DeviceID, "professional.voice_trigger.detected", s.now().UnixMilli())
 		return s.professionalTurnResponse(req)
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)

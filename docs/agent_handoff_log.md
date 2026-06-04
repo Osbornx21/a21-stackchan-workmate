@@ -11240,3 +11240,84 @@ Failure location/reason:
 - Browser/Playwright screenshot automation unavailable because the Browser tool
   was not exposed and Node `playwright` module was not installed. HTTP smoke
   covered the served page and endpoint presence instead.
+
+## 2026-06-04 08:49 CST - Professional Voice Trigger Route
+
+Round goal:
+
+- Let explicit PRD trigger phrases such as "专业模式", "认真查一下",
+  "帮我查 V21", and "给我证据" route default roleplay/workmate voice turns
+  into the professional evidence path without weakening internal test 3
+  Xiaozhi audio behavior, privacy/state boundaries, or read-record redaction.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-professional-voice-trigger-route.md`.
+- Added a provider-neutral Gateway trigger classifier with negation guards for
+  phrases such as "不要进专业检索", "不用专业模式", and "别查 V21".
+- `/v1/mock-turn` now forces default/roleplay/workmate/companion trigger text
+  into the existing `professionalTurnResponse` path and records
+  `professional.voice_trigger.detected`.
+- Stock `/v1/xiaozhi` default `realtime`/workmate turns now route to
+  professional when the streaming ASR final contains an explicit trigger,
+  records `professional.voice_trigger.detected` and
+  `xiaozhi.professional_route.voice_trigger`, and reuses that streaming final
+  instead of running duplicate batch ASR.
+- Added tests for mock-turn routing/read-record/redaction, negated classifier
+  phrases, and Xiaozhi WebSocket trigger routing without stock override.
+- Updated protocol, internal-test4 plan, current control, and project state
+  machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-professional-voice-trigger-route.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not real provider execution, real V21 retrieval, permanent cloud
+  workspace ingest/indexing, durable audit storage, or physical StackChan
+  professional consult acceptance.
+- Hardware voice-trigger acceptance still needs a foreground physical window
+  after the product route is deployed/configured.
+
+Known risks/blockers:
+
+- The trigger list is intentionally narrow. More natural-language switch
+  variants should be added only with explicit tests and privacy/negation
+  guards.
+- The read-record ledger remains memory-only until a future durable audit
+  store is scoped.
+
+Recommended next action:
+
+- Continue internal test 4 with either a no-execute workspace ingest/index
+  readiness slice or a foreground hardware evidence window for spoken
+  professional trigger, checking cue, evidence playback, and visible `PRO`
+  status. Keep firmware, serial, NVS, and real provider/V21 execution out of
+  unscoped workers.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestProfessionalVoiceTrigger|TestXiaozhiWebSocketVoiceTrigger' -count=1`:
+  first failed before implementation with `undefined: professionalVoiceTrigger`;
+  passed after implementation.
+- `go test ./internal/gateway -run 'TestProfessionalVoiceTrigger|TestXiaozhiWebSocketVoiceTrigger|TestProfessionalMode|TestWorkmateModeDoesNotCallV21Adapter|TestOfficePrivacyModesDoNotCallV21Adapter' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, or physical hardware
+  action occurred.
+
+Failure location/reason:
+
+- None in this focused round.

@@ -539,6 +539,19 @@ cue text is the same checking acknowledgement used before V21 query execution:
 utterances, workspace text, evidence bodies, provider output, URLs, paths,
 credentials, or raw audio.
 
+Explicit spoken professional triggers are allowed only as a user-initiated mode
+switch from default/roleplay/workmate/companion contexts into the existing
+professional path. Recognized phrases include "专业模式", "认真查一下",
+"帮我查 V21", and "给我证据". Negated phrases such as "不要进专业检索",
+"不用专业模式", and "别查 V21" must not route to V21, and `focus`,
+`public`, `private`, and `muted` remain policy/state modes that are not
+silently upgraded. Gateway traces only `professional.voice_trigger.detected`
+and, on the stock Xiaozhi socket, `xiaozhi.professional_route.voice_trigger`;
+it must not trace trigger utterance text, evidence bodies, provider output,
+document text, URLs, paths, credentials, voice transcript, or audio. When the
+Xiaozhi streaming ASR final is already available, the professional route reuses
+that final text instead of running a second batch ASR pass.
+
 `roleplay_profile` is the frontend/Gateway selector for the default embodied
 roleplay runtime under `voice_mode=roleplay`. `GET /v1/roleplay-profile`
 returns `a21.gateway.roleplay_profile.v1`, the selected roleplay profile,
