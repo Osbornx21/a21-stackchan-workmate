@@ -838,6 +838,12 @@ type XiaozhiMCPControlRequest struct {
 	Brightness *int   `json:"brightness,omitempty"`
 	Volume     *int   `json:"volume,omitempty"`
 	Theme      string `json:"theme,omitempty"`
+	Yaw        *int   `json:"yaw,omitempty"`
+	Pitch      *int   `json:"pitch,omitempty"`
+	Speed      *int   `json:"speed,omitempty"`
+	Red        *int   `json:"red,omitempty"`
+	Green      *int   `json:"green,omitempty"`
+	Blue       *int   `json:"blue,omitempty"`
 	TraceID    string `json:"trace_id,omitempty"`
 	SessionID  string `json:"session_id,omitempty"`
 }
@@ -5275,6 +5281,9 @@ const (
 	xiaozhiMCPScreenSetBrightnessToolName = "self.screen.set_brightness"
 	xiaozhiMCPScreenSetThemeToolName      = "self.screen.set_theme"
 	xiaozhiMCPScreenGetInfoToolName       = "self.screen.get_info"
+	xiaozhiMCPRobotGetHeadAnglesToolName  = "self.robot.get_head_angles"
+	xiaozhiMCPRobotSetHeadAnglesToolName  = "self.robot.set_head_angles"
+	xiaozhiMCPRobotSetLEDColorToolName    = "self.robot.set_led_color"
 )
 
 func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
@@ -5548,6 +5557,24 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 	if value, ok := args["theme"]; ok {
 		activity["screen_theme"] = fmt.Sprint(value)
 	}
+	if value, ok := args["yaw"]; ok {
+		activity["robot_head_yaw"] = fmt.Sprint(value)
+	}
+	if value, ok := args["pitch"]; ok {
+		activity["robot_head_pitch"] = fmt.Sprint(value)
+	}
+	if value, ok := args["speed"]; ok {
+		activity["robot_head_speed"] = fmt.Sprint(value)
+	}
+	if value, ok := args["red"]; ok {
+		activity["robot_led_red"] = fmt.Sprint(value)
+	}
+	if value, ok := args["green"]; ok {
+		activity["robot_led_green"] = fmt.Sprint(value)
+	}
+	if value, ok := args["blue"]; ok {
+		activity["robot_led_blue"] = fmt.Sprint(value)
+	}
 	s.recordXiaozhiDeviceActivity(&xiaozhiSession{deviceID: req.DeviceID, traceID: traceID, sessionID: sessionID}, traceMarker, activity)
 	writeJSON(w, http.StatusOK, XiaozhiMCPControlResponse{
 		TraceID:            traceID,
@@ -5571,13 +5598,13 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 		if *req.Volume < 0 || *req.Volume > 100 {
 			return "", nil, "", errors.New("volume must be 0..100")
 		}
-		if req.Brightness != nil || strings.TrimSpace(req.Theme) != "" {
-			return "", nil, "", errors.New("speaker volume does not accept screen arguments")
+		if xiaozhiMCPHasAnyArgumentExcept(req, "volume") {
+			return "", nil, "", errors.New("speaker volume accepts only volume")
 		}
 		return toolName, map[string]any{"volume": *req.Volume}, "speaker_volume", nil
 	case xiaozhiMCPGetDeviceStatusToolName:
-		if req.Brightness != nil || req.Volume != nil || strings.TrimSpace(req.Theme) != "" {
-			return "", nil, "", errors.New("device status does not accept screen arguments")
+		if xiaozhiMCPHasAnyArgument(req) {
+			return "", nil, "", errors.New("device status does not accept arguments")
 		}
 		return toolName, nil, "device_status", nil
 	case xiaozhiMCPScreenSetBrightnessToolName:
@@ -5587,11 +5614,8 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 		if *req.Brightness < 0 || *req.Brightness > 100 {
 			return "", nil, "", errors.New("brightness must be 0..100")
 		}
-		if req.Volume != nil {
-			return "", nil, "", errors.New("brightness control does not accept volume")
-		}
-		if strings.TrimSpace(req.Theme) != "" {
-			return "", nil, "", errors.New("brightness control does not accept theme")
+		if xiaozhiMCPHasAnyArgumentExcept(req, "brightness") {
+			return "", nil, "", errors.New("brightness control accepts only brightness")
 		}
 		return toolName, map[string]any{"brightness": *req.Brightness}, "screen_brightness", nil
 	case xiaozhiMCPScreenSetThemeToolName:
@@ -5599,21 +5623,108 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 		if !validXiaozhiScreenTheme(theme) {
 			return "", nil, "", errors.New("theme must be a safe 1..32 character token")
 		}
-		if req.Brightness != nil {
-			return "", nil, "", errors.New("theme control does not accept brightness")
-		}
-		if req.Volume != nil {
-			return "", nil, "", errors.New("theme control does not accept volume")
+		if xiaozhiMCPHasAnyArgumentExcept(req, "theme") {
+			return "", nil, "", errors.New("theme control accepts only theme")
 		}
 		return toolName, map[string]any{"theme": theme}, "screen_theme", nil
 	case xiaozhiMCPScreenGetInfoToolName:
-		if req.Brightness != nil || req.Volume != nil || strings.TrimSpace(req.Theme) != "" {
-			return "", nil, "", errors.New("screen info does not accept screen arguments")
+		if xiaozhiMCPHasAnyArgument(req) {
+			return "", nil, "", errors.New("screen info does not accept arguments")
 		}
 		return toolName, nil, "screen_info", nil
+	case xiaozhiMCPRobotGetHeadAnglesToolName:
+		if xiaozhiMCPHasAnyArgument(req) {
+			return "", nil, "", errors.New("robot head angle read does not accept arguments")
+		}
+		return toolName, nil, "robot_head_angles", nil
+	case xiaozhiMCPRobotSetHeadAnglesToolName:
+		if req.Yaw == nil && req.Pitch == nil {
+			return "", nil, "", errors.New("yaw or pitch is required")
+		}
+		if xiaozhiMCPHasAnyArgumentExcept(req, "yaw", "pitch", "speed") {
+			return "", nil, "", errors.New("robot head control accepts only yaw, pitch, and speed")
+		}
+		args := map[string]any{}
+		if req.Yaw != nil {
+			if *req.Yaw < -128 || *req.Yaw > 128 {
+				return "", nil, "", errors.New("yaw must be -128..128")
+			}
+			args["yaw"] = *req.Yaw
+		}
+		if req.Pitch != nil {
+			if *req.Pitch < 0 || *req.Pitch > 90 {
+				return "", nil, "", errors.New("pitch must be 0..90")
+			}
+			args["pitch"] = *req.Pitch
+		}
+		speed := 150
+		if req.Speed != nil {
+			if *req.Speed < 100 || *req.Speed > 1000 {
+				return "", nil, "", errors.New("speed must be 100..1000")
+			}
+			speed = *req.Speed
+		}
+		args["speed"] = speed
+		return toolName, args, "robot_head_angles_set", nil
+	case xiaozhiMCPRobotSetLEDColorToolName:
+		if req.Red == nil || req.Green == nil || req.Blue == nil {
+			return "", nil, "", errors.New("red, green, and blue are required")
+		}
+		if xiaozhiMCPHasAnyArgumentExcept(req, "red", "green", "blue") {
+			return "", nil, "", errors.New("robot led control accepts only red, green, and blue")
+		}
+		if *req.Red < 0 || *req.Red > 168 {
+			return "", nil, "", errors.New("red must be 0..168")
+		}
+		if *req.Green < 0 || *req.Green > 168 {
+			return "", nil, "", errors.New("green must be 0..168")
+		}
+		if *req.Blue < 0 || *req.Blue > 168 {
+			return "", nil, "", errors.New("blue must be 0..168")
+		}
+		return toolName, map[string]any{"red": *req.Red, "green": *req.Green, "blue": *req.Blue}, "robot_led_color", nil
 	default:
 		return "", nil, "", errors.New("xiaozhi mcp tool is not allowed by A21 status parity")
 	}
+}
+
+func xiaozhiMCPHasAnyArgument(req XiaozhiMCPControlRequest) bool {
+	return xiaozhiMCPHasAnyArgumentExcept(req)
+}
+
+func xiaozhiMCPHasAnyArgumentExcept(req XiaozhiMCPControlRequest, allowed ...string) bool {
+	allowedSet := map[string]bool{}
+	for _, name := range allowed {
+		allowedSet[name] = true
+	}
+	if req.Brightness != nil && !allowedSet["brightness"] {
+		return true
+	}
+	if req.Volume != nil && !allowedSet["volume"] {
+		return true
+	}
+	if strings.TrimSpace(req.Theme) != "" && !allowedSet["theme"] {
+		return true
+	}
+	if req.Yaw != nil && !allowedSet["yaw"] {
+		return true
+	}
+	if req.Pitch != nil && !allowedSet["pitch"] {
+		return true
+	}
+	if req.Speed != nil && !allowedSet["speed"] {
+		return true
+	}
+	if req.Red != nil && !allowedSet["red"] {
+		return true
+	}
+	if req.Green != nil && !allowedSet["green"] {
+		return true
+	}
+	if req.Blue != nil && !allowedSet["blue"] {
+		return true
+	}
+	return false
 }
 
 func validXiaozhiScreenTheme(theme string) bool {

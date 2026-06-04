@@ -5719,8 +5719,7 @@ func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
 		body     string
 		toolName string
 		marker   string
-		argKey   string
-		argValue any
+		args     map[string]any
 	}{
 		{
 			name:     "device status",
@@ -5733,30 +5732,47 @@ func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
 			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":88,"trace_id":"a21-trace-mcp-speaker-volume","session_id":"a21-session-mcp-speaker-volume"}`,
 			toolName: xiaozhiSpeakerVolumeToolName,
 			marker:   "xiaozhi.mcp.speaker_volume.sent",
-			argKey:   "volume",
-			argValue: float64(88),
+			args:     map[string]any{"volume": float64(88)},
 		},
 		{
 			name:     "screen brightness",
 			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":72,"trace_id":"a21-trace-mcp-brightness","session_id":"a21-session-mcp-brightness"}`,
 			toolName: xiaozhiMCPScreenSetBrightnessToolName,
 			marker:   "xiaozhi.mcp.screen_brightness.sent",
-			argKey:   "brightness",
-			argValue: float64(72),
+			args:     map[string]any{"brightness": float64(72)},
 		},
 		{
 			name:     "screen theme",
 			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"dark","trace_id":"a21-trace-mcp-theme","session_id":"a21-session-mcp-theme"}`,
 			toolName: xiaozhiMCPScreenSetThemeToolName,
 			marker:   "xiaozhi.mcp.screen_theme.sent",
-			argKey:   "theme",
-			argValue: "dark",
+			args:     map[string]any{"theme": "dark"},
 		},
 		{
 			name:     "screen info",
 			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","trace_id":"a21-trace-mcp-info","session_id":"a21-session-mcp-info"}`,
 			toolName: xiaozhiMCPScreenGetInfoToolName,
 			marker:   "xiaozhi.mcp.screen_info.sent",
+		},
+		{
+			name:     "robot head angles",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.get_head_angles","trace_id":"a21-trace-mcp-robot-head-read","session_id":"a21-session-mcp-robot-head-read"}`,
+			toolName: xiaozhiMCPRobotGetHeadAnglesToolName,
+			marker:   "xiaozhi.mcp.robot_head_angles.sent",
+		},
+		{
+			name:     "robot set head angles",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":15,"pitch":25,"speed":150,"trace_id":"a21-trace-mcp-robot-head-set","session_id":"a21-session-mcp-robot-head-set"}`,
+			toolName: xiaozhiMCPRobotSetHeadAnglesToolName,
+			marker:   "xiaozhi.mcp.robot_head_angles_set.sent",
+			args:     map[string]any{"yaw": float64(15), "pitch": float64(25), "speed": float64(150)},
+		},
+		{
+			name:     "robot set led color",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":0,"green":80,"blue":168,"trace_id":"a21-trace-mcp-robot-led","session_id":"a21-session-mcp-robot-led"}`,
+			toolName: xiaozhiMCPRobotSetLEDColorToolName,
+			marker:   "xiaozhi.mcp.robot_led_color.sent",
+			args:     map[string]any{"red": float64(0), "green": float64(80), "blue": float64(168)},
 		},
 	}
 
@@ -5817,13 +5833,21 @@ func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
 				t.Fatalf("mcp tool name = %#v", params["name"])
 			}
 			args, ok := params["arguments"].(map[string]any)
-			if tc.argKey == "" {
+			if len(tc.args) == 0 {
 				if ok && len(args) != 0 {
 					t.Fatalf("mcp args = %#v, want none", args)
 				}
 			} else {
-				if !ok || args[tc.argKey] != tc.argValue {
-					t.Fatalf("mcp args = %#v, want %s=%#v", args, tc.argKey, tc.argValue)
+				if !ok {
+					t.Fatalf("mcp args = %#v, want %#v", params["arguments"], tc.args)
+				}
+				if len(args) != len(tc.args) {
+					t.Fatalf("mcp args = %#v, want %#v", args, tc.args)
+				}
+				for key, want := range tc.args {
+					if args[key] != want {
+						t.Fatalf("mcp args = %#v, want %s=%#v", args, key, want)
+					}
 				}
 			}
 
@@ -5877,6 +5901,8 @@ func TestXiaozhiMCPStatusParityBlocksHighRiskTools(t *testing.T) {
 		"self.camera.start_stream",
 		"self.nfc.read",
 		"self.infrared.send",
+		"self.nfc.write",
+		"self.infrared.receive",
 		"self.app.launch",
 	}
 	for _, tool := range blockedTools {
@@ -5910,8 +5936,24 @@ func TestXiaozhiMCPStatusParityRequiresSafeArguments(t *testing.T) {
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"dark","volume":88}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","theme":"dark"}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","volume":88}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","yaw":10}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","brightness":10}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","volume":88}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","red":10,"green":10,"blue":10}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.get_head_angles","pitch":20}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":-129}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":129}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","pitch":-1}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","pitch":91}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":10,"speed":99}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":10,"speed":1001}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_head_angles","yaw":10,"red":10}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":1,"green":2}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":-1,"green":2,"blue":3}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":1,"green":169,"blue":3}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":1,"green":2,"blue":169}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.robot.set_led_color","red":1,"green":2,"blue":3,"pitch":20}`,
 	}
 	for _, body := range tests {
 		req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/mcp-control", bytes.NewBufferString(body))
