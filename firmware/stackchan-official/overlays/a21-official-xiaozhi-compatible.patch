@@ -284,11 +284,6 @@ index 3b6f07e..ec1e05d 100644
                  auto led = Board::GetInstance().GetLed();
                  led->OnStateChanged();
              }
-+#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
-+            if (clock_ticks_ % 10 == 3) {
-+                EnsureA21ControlChannel();
-+            }
-+#endif
 +        }
 +
 +        if (bits & MAIN_EVENT_VAD_STOP_TIMEOUT) {
@@ -296,6 +291,18 @@ index 3b6f07e..ec1e05d 100644
          }
 
          if (bits & MAIN_EVENT_SCHEDULE) {
+@@ -255,6 +315,11 @@ void Application::Run() {
+             if (clock_ticks_ % 10 == 0) {
+                 SystemInfo::PrintHeapStats();
+             }
++#if CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL
++            if (clock_ticks_ % 3 == 1) {
++                EnsureA21ControlChannel();
++            }
++#endif
+         }
+     }
+ }
 @@ -261,6 +321,10 @@ void Application::Run() {
  void Application::HandleNetworkConnectedEvent() {
      ESP_LOGI(TAG, "Network connected");
