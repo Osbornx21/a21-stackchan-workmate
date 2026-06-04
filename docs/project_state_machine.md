@@ -257,6 +257,29 @@ StackChan state body-reaction implementation, 2026-06-04:
   visual acceptance, richer choreography, camera, NFC, infrared, no-cable
   boot/power, and app lifecycle parity remain open.
 
+Xiaozhi physical acceptance tooling update, 2026-06-04:
+
+- `T-XIAOZHI-PHYSICAL-ACCEPTANCE-TOOLING-001` fixed an acceptance-tooling false
+  block discovered while moving from state/body evidence to natural
+  listen/speak acceptance.
+- The local `xiaozhi-physical-evidence` and `xiaozhi-half-duplex` commands
+  already support the TUN-safe `A21_DIRECT_SOURCE_IP=192.168.1.20` path. With
+  that env set, ECS Gateway queries work from the control Mac.
+- The evidence reader no longer rejects safe, unrelated device runtime echo
+  booleans such as `roleplay_prompt_text_stored=false`, because the
+  Xiaozhi physical report does not serialize the full runtime echo. It still
+  scans consumed runtime echo, trace events, audio metadata, and instrument
+  reports for prompt/transcript/provider/secret/raw-audio/locator leaks.
+- Fresh live diagnosis against ECS generated a real blocked candidate instead
+  of `gateway data unsafe`: device `44:1b:f6:e2:6a:60` was correctly marked
+  `xiaozhi_ws_disconnected`, latest trace had `xiaozhi.listen.start` and state
+  reaction markers, but no Opus frames, PCM ingress, VAD speech end, TTS
+  downlink, playback ack, or audible observation.
+- Next state is not more acceptance-tool plumbing. The next physical action is
+  to recover the device online, trigger a real microphone listen/speak turn,
+  then rerun `xiaozhi-physical-evidence`,
+  `stackchan-accept --check xiaozhi-half-duplex`, and the explicit PRD review.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`

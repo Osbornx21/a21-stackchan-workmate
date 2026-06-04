@@ -15178,3 +15178,82 @@ Forbidden actions avoided:
   printing, no provider key in firmware, no V21 internal execution, no generic
   `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
   voice/protocol rollback.
+
+## 2026-06-04 23:25 CST - Xiaozhi Physical Acceptance Tooling Unblocked
+
+Round goal:
+
+- Continue from state/body evidence toward natural microphone listen/speak PRD
+  acceptance and identify whether the current blocker is tooling, network,
+  Gateway, or physical runtime evidence.
+
+Actual completed work:
+
+- Confirmed ECS public health still works through the TUN-safe direct-source
+  path.
+- Confirmed local A21 evidence commands must be run with
+  `A21_DIRECT_SOURCE_IP=192.168.1.20` while the control Mac TUN route is
+  active.
+- Found a false acceptance-tool blocker: `xiaozhi-physical-evidence` rejected
+  the full Gateway device record because safe product runtime echo included
+  `roleplay_prompt_text_stored=false`.
+- Fixed the reader to scan only Xiaozhi physical consumed runtime echo fields
+  while keeping trace/audio/instrument redaction checks strict.
+- Added regression coverage by including safe roleplay runtime echo fields in
+  the Xiaozhi physical evidence fixture.
+- Re-ran live ECS physical evidence and half-duplex commands. They now produce
+  honest blocked reports instead of `gateway data unsafe`.
+
+Changed files:
+
+- `internal/app/xiaozhi_physical_evidence.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunXiaozhiPhysicalEvidence|TestRunXiaozhiHalfDuplexAcceptance|TestA21DirectHTTPClient' -count=1`
+  passed.
+- `git diff --check` passed before this handoff update.
+- Live command with `A21_DIRECT_SOURCE_IP=192.168.1.20`:
+  `xiaozhi-physical-evidence --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --trace-id a21-trace-44-1b-f6-e2-6a-60 --session-id a21-session-44-1b-f6-e2-6a-60`
+  produced blocked report
+  `reports/a21-xiaozhi-physical-evidence-20260604-232451.781686000.json`.
+- Live command with `A21_DIRECT_SOURCE_IP=192.168.1.20`:
+  `stackchan-accept --check xiaozhi-half-duplex --gateway-url http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60`
+  produced blocked report
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260604-232452.185159000.json`.
+
+Runtime evidence and blocker:
+
+- `/v1/devices` now correctly reports
+  `connection_status=xiaozhi_ws_disconnected`, not stale online.
+- Latest trace `a21-trace-44-1b-f6-e2-6a-60` has `xiaozhi.listen.start`,
+  `asr.stream.start`, and state-reaction MCP markers, but lacks Opus decode,
+  PCM ingress, VAD speech end, listen auto-stop, TTS downlink, playback ack,
+  and audible observation.
+- Therefore the next blocker is real product-device runtime evidence, not ECS
+  health, network routing, or acceptance-tool safety filtering.
+
+Unfinished items:
+
+- Recover the device online and trigger a natural microphone listen/speak turn.
+- Capture audible or instrumented playback observation.
+- Rerun `xiaozhi-physical-evidence`,
+  `stackchan-accept --check xiaozhi-half-duplex`, then
+  `xiaozhi-physical-prd-review` only when both reports are
+  `physical_review_required`.
+
+Recommended next action:
+
+- Hard-reset/reconnect device `44:1b:f6:e2:6a:60` without flashing or NVS,
+  trigger a real spoken turn, and collect the PRD chain with
+  `A21_DIRECT_SOURCE_IP=192.168.1.20`.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret printing, no provider
+  key in firmware, no V21 internal execution, no generic `xiaozhi.bin` product
+  flash, no Git prune/gc, and no internal-test3 voice/protocol rollback.

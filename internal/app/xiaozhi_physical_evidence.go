@@ -850,7 +850,10 @@ func xiaozhiPhysicalGatewayDataUnsafe(device firmwarecheck.DeviceIdentityRecord,
 			return true
 		}
 	}
-	for key, value := range device.RuntimeEcho {
+	// This report never serializes the full device runtime echo. Scanning every
+	// echo key here rejects safe product booleans such as
+	// roleplay_prompt_text_stored=false while adding no redaction value.
+	for key, value := range xiaozhiPhysicalConsumedRuntimeEcho(device.RuntimeEcho) {
 		if xiaozhiPhysicalUnsafeString(key) || xiaozhiPhysicalUnsafeString(value) {
 			return true
 		}
@@ -875,6 +878,31 @@ func xiaozhiPhysicalGatewayDataUnsafe(device firmwarecheck.DeviceIdentityRecord,
 		}
 	}
 	return false
+}
+
+func xiaozhiPhysicalConsumedRuntimeEcho(echo map[string]string) map[string]string {
+	if len(echo) == 0 {
+		return nil
+	}
+	consumed := make(map[string]string)
+	for _, key := range []string{
+		"last_state_reaction_status",
+		"last_state_reaction_state",
+		"last_state_reaction_reason",
+		"last_state_reaction_tool",
+		"robot_led_red",
+		"robot_led_green",
+		"robot_led_blue",
+		"robot_head_yaw",
+		"robot_head_pitch",
+		"robot_head_speed",
+		"xiaozhi_mcp_tool",
+	} {
+		if value, ok := echo[key]; ok {
+			consumed[key] = value
+		}
+	}
+	return consumed
 }
 
 func xiaozhiPhysicalEvidenceMatchesTarget(options xiaozhiPhysicalEvidenceOptions, device firmwarecheck.DeviceIdentityRecord, trace gateway.TraceResponse, audioRecent gateway.AudioRecentResponse) bool {

@@ -1963,3 +1963,47 @@ Current conclusion:
   state path. Natural microphone-triggered listen/speak evidence, screen
   visual acceptance, app lifecycle, camera, NFC, infrared, no-cable boot/power,
   and richer StackChan choreography remain open.
+
+## Latest Control-Tower Result - 2026-06-04 Xiaozhi Physical Acceptance Tooling
+
+Current implementation state:
+
+- The next PRD path after state/body evidence is the stock Xiaozhi physical
+  acceptance chain:
+  `xiaozhi-physical-evidence` -> `stackchan-accept --check xiaozhi-half-duplex`
+  -> `xiaozhi-physical-prd-review`.
+- Under the active TUN route, local evidence commands must be run with
+  `A21_DIRECT_SOURCE_IP=192.168.1.20`; this is already implemented in the A21
+  direct HTTP helper and is equivalent to the successful
+  `curl --interface 192.168.1.20 --noproxy '*' ...` checks.
+- A false blocker was found and fixed: the physical evidence reader rejected
+  the whole Gateway device record when safe product runtime echo keys contained
+  words such as `prompt`, for example `roleplay_prompt_text_stored=false`.
+  The report does not serialize full runtime echo, so the reader now scans
+  only the runtime echo fields it consumes while keeping trace/audio/instrument
+  redaction checks strict.
+- Focused tests passed:
+  `go test ./internal/app -run 'TestRunXiaozhiPhysicalEvidence|TestRunXiaozhiHalfDuplexAcceptance|TestA21DirectHTTPClient' -count=1`.
+- After the fix, live ECS evidence generation no longer fails as
+  `gateway data unsafe`. It produces an honest blocked report:
+  `reports/a21-xiaozhi-physical-evidence-20260604-232451.781686000.json`.
+- The paired half-duplex check also produces an honest blocked report:
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260604-232452.185159000.json`.
+  These are local generated reports under the ignored `reports/` directory and
+  are not product acceptance artifacts.
+- Current live device state from `/v1/devices`: device `44:1b:f6:e2:6a:60` is
+  `connection_status=xiaozhi_ws_disconnected`; latest trace has
+  `xiaozhi.listen.start`, `asr.stream.start`, and state-reaction MCP delivery,
+  but no `xiaozhi.opus_frame.decoded`, no `audio.ingress.buffered`, no
+  `vad.speech.end`, no `xiaozhi.listen.auto_stop`, no TTS downlink, no playback
+  ack, and no audible observation.
+
+Current conclusion:
+
+- The acceptance command path is unblocked and accurate. The remaining blocker
+  for PRD physical voice acceptance is real device/runtime evidence: bring the
+  product device back online, trigger a natural microphone listen/speak turn,
+  capture audible/playback observation, then run the existing PRD chain.
+- No firmware flash, NVS write, provider execution, V21 execution, generic
+  `xiaozhi.bin` product flash, Git prune/gc, or internal-test3 rollback
+  occurred in this tooling fix.
