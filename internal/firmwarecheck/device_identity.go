@@ -26,22 +26,26 @@ type DeviceIdentityFirmware struct {
 }
 
 type DeviceIdentityRecord struct {
-	DeviceID          string                 `json:"device_id"`
-	Firmware          DeviceIdentityFirmware `json:"firmware"`
-	Capabilities      map[string]string      `json:"capabilities,omitempty"`
-	RuntimeEcho       map[string]string      `json:"runtime_echo,omitempty"`
-	IdentityStatus    string                 `json:"identity_status"`
-	IdentityError     string                 `json:"identity_error,omitempty"`
-	ConnectionStatus  string                 `json:"connection_status,omitempty"`
-	DeviceAgeMS       int64                  `json:"device_age_ms,omitempty"`
-	CurrentMode       string                 `json:"current_mode,omitempty"`
-	CurrentExpression string                 `json:"current_expression,omitempty"`
-	PlaybackStreamID  string                 `json:"playback_stream_id,omitempty"`
-	LastEvent         string                 `json:"last_event,omitempty"`
-	LastTouchSource   string                 `json:"last_touch_source,omitempty"`
-	LastTraceID       string                 `json:"last_trace_id,omitempty"`
-	LastSessionID     string                 `json:"last_session_id,omitempty"`
-	LastSeenMS        int64                  `json:"last_seen_ms,omitempty"`
+	DeviceID           string                 `json:"device_id"`
+	Firmware           DeviceIdentityFirmware `json:"firmware"`
+	Capabilities       map[string]string      `json:"capabilities,omitempty"`
+	RuntimeEcho        map[string]string      `json:"runtime_echo,omitempty"`
+	IdentityStatus     string                 `json:"identity_status"`
+	IdentityError      string                 `json:"identity_error,omitempty"`
+	ConnectionStatus   string                 `json:"connection_status,omitempty"`
+	DeviceAgeMS        int64                  `json:"device_age_ms,omitempty"`
+	CurrentMode        string                 `json:"current_mode,omitempty"`
+	CurrentExpression  string                 `json:"current_expression,omitempty"`
+	PlaybackStreamID   string                 `json:"playback_stream_id,omitempty"`
+	LastEvent          string                 `json:"last_event,omitempty"`
+	LastTouchEvent     string                 `json:"last_touch_event,omitempty"`
+	LastTouchSource    string                 `json:"last_touch_source,omitempty"`
+	LastTouchTraceID   string                 `json:"last_touch_trace_id,omitempty"`
+	LastTouchSessionID string                 `json:"last_touch_session_id,omitempty"`
+	LastTouchSeenMS    int64                  `json:"last_touch_seen_ms,omitempty"`
+	LastTraceID        string                 `json:"last_trace_id,omitempty"`
+	LastSessionID      string                 `json:"last_session_id,omitempty"`
+	LastSeenMS         int64                  `json:"last_seen_ms,omitempty"`
 }
 
 type DeviceIdentityResult struct {

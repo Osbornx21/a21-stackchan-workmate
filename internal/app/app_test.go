@@ -6032,6 +6032,15 @@ func TestGatewayServerOptionsFromEnvWiresProductTouchEvents(t *testing.T) {
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresProductTouchReactions(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true",
+	})
+	if !options.XiaozhiProductTouchReactions {
+		t.Fatal("xiaozhi product touch reactions not configured")
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_LISTEN_MAX_MS=4500",
@@ -16457,17 +16466,23 @@ func TestRunStackChanTouchAcceptancePassesTopTapWithGatewayTrace(t *testing.T) {
 			fmt.Fprint(w, `{"trace_id":"a21-trace-touch-acceptance-top_tap","session_id":"a21-session-touch-acceptance","device_id":"stackchan-001","status":"delivered","delivered_transport":"audio_ws","events":[]}`)
 		case "/v1/devices":
 			lastEvent := ""
+			lastTouchEvent := ""
 			lastSource := ""
 			lastTrace := ""
+			lastTouchTrace := ""
 			lastSeen := int64(1780000001000)
+			lastTouchSeen := int64(0)
 			if armed {
-				lastEvent = "touch.top.tap"
+				lastEvent = "device.heartbeat"
+				lastTouchEvent = "touch.top.tap"
 				lastSource = "top_sensor"
 				lastTrace = "a21-trace-device-000123"
+				lastTouchTrace = "a21-trace-device-000123"
 				lastSeen = time.Now().UnixMilli()
+				lastTouchSeen = lastSeen
 			}
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abc123"},"capabilities":{"screen":"available","screen_touch":"available","top_touch":"available","speaker":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_event":%q,"last_touch_source":%q,"last_trace_id":%q,"last_session_id":"a21-session-touch-acceptance","last_seen_ms":%d,"first_seen_ms":1780000000000}]}`, lastEvent, lastSource, lastTrace, lastSeen)
+			fmt.Fprintf(w, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-001","firmware":{"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abc123"},"capabilities":{"screen":"available","screen_touch":"available","top_touch":"available","speaker":"available","servo_y":"available","rgb":"available"},"runtime_echo":{"screen":"idle"},"identity_status":"ok","connection_status":"online","last_event":%q,"last_touch_event":%q,"last_touch_source":%q,"last_trace_id":%q,"last_touch_trace_id":%q,"last_session_id":"a21-session-touch-acceptance","last_touch_session_id":"a21-session-touch-acceptance","last_seen_ms":%d,"last_touch_seen_ms":%d,"first_seen_ms":1780000000000}]}`, lastEvent, lastTouchEvent, lastSource, lastTrace, lastTouchTrace, lastSeen, lastTouchSeen)
 		case "/v1/traces":
 			if r.URL.Query().Get("trace_id") != "a21-trace-device-000123" {
 				t.Fatalf("trace id = %q", r.URL.Query().Get("trace_id"))

@@ -1,0 +1,109 @@
+{
+  "schema_version": "a21.stackchan_touch_reaction_evidence.v1",
+  "generated_at_ms": 1780584476649,
+  "dry_run": true,
+  "flash_allowed": false,
+  "nvs_write_allowed": false,
+  "provider_execution_allowed": false,
+  "gateway_url": "http://47.103.57.217",
+  "device_id": "44:1b:f6:e2:6a:60",
+  "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+  "session_id": "a21-session-44-1b-f6-e2-6a-60",
+  "touch_reaction_status": "passed",
+  "last_event": "device.heartbeat",
+  "last_touch_event": "touch.top.swipe_backward",
+  "last_touch_source": "top_sensor",
+  "last_touch_trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+  "last_touch_seen_ms": 1780584421063,
+  "capabilities": {
+    "xiaozhi_feature_mcp": "true",
+    "xiaozhi_feature_touch_events": "true",
+    "xiaozhi_product_touch_events": "true",
+    "xiaozhi_product_touch_reactions": "true"
+  },
+  "runtime_echo": {
+    "last_touch_reaction_status": "delivered",
+    "last_touch_reaction_event": "top_swipe_backward",
+    "last_touch_reaction_source": "top_sensor",
+    "last_touch_reaction_tool": "robot_head_angles_set",
+    "robot_led_red": "120",
+    "robot_led_green": "60",
+    "robot_led_blue": "0",
+    "robot_head_yaw": "-18",
+    "robot_head_pitch": "24",
+    "robot_head_speed": "200"
+  },
+  "trace_markers": [
+    {
+      "name": "device.touch.top.swipe_backward.received",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421063,
+      "offset_ms": 266
+    },
+    {
+      "name": "xiaozhi.mcp.robot_led_color.sent",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421063,
+      "offset_ms": 266
+    },
+    {
+      "name": "xiaozhi.touch_reaction.robot_led_color.sent",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421063,
+      "offset_ms": 266
+    },
+    {
+      "name": "xiaozhi.mcp.robot_head_angles_set.sent",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421063,
+      "offset_ms": 266
+    },
+    {
+      "name": "xiaozhi.touch_reaction.robot_head_angles_set.sent",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421063,
+      "offset_ms": 266
+    },
+    {
+      "name": "xiaozhi.mcp.response.received",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421141,
+      "offset_ms": 344
+    },
+    {
+      "name": "xiaozhi.mcp.response.received",
+      "trace_id": "a21-trace-44-1b-f6-e2-6a-60",
+      "session_id": "a21-session-44-1b-f6-e2-6a-60",
+      "device_id": "44:1b:f6:e2:6a:60",
+      "at_ms": 1780584421153,
+      "offset_ms": 356
+    }
+  ],
+  "redaction": {
+    "raw_audio_stored": false,
+    "transcript_stored": false,
+    "provider_output_stored": false,
+    "credential_value_stored": false,
+    "raw_mcp_result_stored": false
+  },
+  "forbidden_actions_avoided": [
+    "firmware_flash",
+    "nvs_write",
+    "serial_write",
+    "provider_execution",
+    "v21_execution",
+    "git_prune_gc"
+  ]
+}

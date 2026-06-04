@@ -5654,7 +5654,7 @@ func TestXiaozhiProductTouchEventsAllowanceRecordsTouch(t *testing.T) {
 	}
 
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
-	if registry["last_event"] != "touch.top.swipe_forward" || registry["last_touch_source"] != "top_sensor" {
+	if registry["last_event"] != "touch.top.swipe_forward" || registry["last_touch_event"] != "touch.top.swipe_forward" || registry["last_touch_source"] != "top_sensor" {
 		t.Fatalf("registry touch = %#v, want top swipe forward source", registry)
 	}
 	capabilities, ok := registry["capabilities"].(map[string]any)
@@ -5665,6 +5665,196 @@ func TestXiaozhiProductTouchEventsAllowanceRecordsTouch(t *testing.T) {
 	}
 	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
 		t.Fatalf("product touch allowance marked debug capabilities: %#v", capabilities)
+	}
+}
+
+func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+		XiaozhiProductTouchEvents:    true,
+		XiaozhiProductTouchReactions: true,
+	}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-touch-reaction",
+		"session_id": "a21-session-xiaozhi-product-touch-reaction",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":          true,
+			"aec":          true,
+			"touch_events": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["touch_events"] != true || a21["touch_reactions"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product touch reactions", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "touch",
+		"touch":      "top_swipe_forward",
+		"source":     "top_sensor",
+		"trace_id":   "a21-trace-xiaozhi-product-touch-reaction",
+		"session_id": "a21-session-xiaozhi-product-touch-reaction",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	readMCP := func() (string, map[string]any) {
+		message := readXiaozhiJSON(t, ctx, conn)
+		if message["type"] != "mcp" || message["trace_id"] != "a21-trace-xiaozhi-product-touch-reaction" || message["device_id"] != "44:1b:f6:e2:6a:60" {
+			t.Fatalf("reaction mcp wrapper = %#v", message)
+		}
+		payload, ok := message["payload"].(map[string]any)
+		if !ok {
+			t.Fatalf("reaction payload = %#v", message["payload"])
+		}
+		params, ok := payload["params"].(map[string]any)
+		if !ok {
+			t.Fatalf("reaction params = %#v", payload["params"])
+		}
+		args, ok := params["arguments"].(map[string]any)
+		if !ok {
+			t.Fatalf("reaction args = %#v", params["arguments"])
+		}
+		return fmt.Sprint(params["name"]), args
+	}
+
+	tool, args := readMCP()
+	if tool != xiaozhiMCPRobotSetLEDColorToolName ||
+		args["red"] != float64(0) ||
+		args["green"] != float64(120) ||
+		args["blue"] != float64(90) {
+		t.Fatalf("led reaction = tool:%s args:%#v", tool, args)
+	}
+	tool, args = readMCP()
+	if tool != xiaozhiMCPRobotSetHeadAnglesToolName ||
+		args["yaw"] != float64(18) ||
+		args["pitch"] != float64(24) ||
+		args["speed"] != float64(200) {
+		t.Fatalf("head reaction = tool:%s args:%#v", tool, args)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-touch-reaction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"device.touch.top.swipe_forward.received",
+		"xiaozhi.touch_reaction.robot_led_color.sent",
+		"xiaozhi.touch_reaction.robot_head_angles_set.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "touch.top.swipe_forward" ||
+		registry["last_touch_event"] != "touch.top.swipe_forward" ||
+		registry["last_touch_source"] != "top_sensor" ||
+		registry["last_touch_trace_id"] != "a21-trace-xiaozhi-product-touch-reaction" ||
+		registry["last_touch_session_id"] != "a21-session-xiaozhi-product-touch-reaction" {
+		t.Fatalf("registry touch = %#v, want touch last_event preserved", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok || capabilities["xiaozhi_product_touch_reactions"] != "true" {
+		t.Fatalf("registry capabilities = %#v, want product touch reactions", registry["capabilities"])
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok ||
+		runtimeEcho["last_touch_reaction_status"] != "delivered" ||
+		runtimeEcho["last_touch_reaction_event"] != "top_swipe_forward" ||
+		runtimeEcho["robot_head_yaw"] != "18" ||
+		runtimeEcho["robot_led_green"] != "120" {
+		t.Fatalf("registry runtime_echo = %#v, want touch reaction echo", registry["runtime_echo"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type": "mcp",
+		"payload": map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"result":  map[string]any{"content": []any{}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+	registry = fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "xiaozhi.mcp.response.received" ||
+		registry["last_touch_event"] != "touch.top.swipe_forward" ||
+		registry["last_touch_source"] != "top_sensor" {
+		t.Fatalf("registry after mcp response = %#v, want stable last_touch_event", registry)
+	}
+}
+
+func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+		XiaozhiProductTouchEvents:    true,
+		XiaozhiProductTouchReactions: true,
+	}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-touch-no-mcp",
+		"session_id": "a21-session-xiaozhi-product-touch-no-mcp",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"aec":          true,
+			"touch_events": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["touch_events"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product touch allowance", reply["a21"])
+	}
+	if _, ok := a21["touch_reactions"]; ok {
+		t.Fatalf("touch reactions allowed without mcp: %#v", a21)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "touch",
+		"touch":      "top_tap",
+		"source":     "top_sensor",
+		"trace_id":   "a21-trace-xiaozhi-product-touch-no-mcp",
+		"session_id": "a21-session-xiaozhi-product-touch-no-mcp",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "touch.top.tap" || registry["last_touch_event"] != "touch.top.tap" {
+		t.Fatalf("registry touch without mcp = %#v", registry)
 	}
 }
 

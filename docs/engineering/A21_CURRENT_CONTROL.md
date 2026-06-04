@@ -237,6 +237,38 @@ Live truth after the 2026-06-04 22:28 CST StackChan product touch physical cut:
   acceptance, richer RGB/servo choreography, camera, NFC, infrared, app
   lifecycle, or no-cable boot/power acceptance.
 
+Live truth after the 2026-06-04 22:48 CST StackChan touch body-reaction cut:
+
+- `T-STACKCHAN-OFFICIAL-TOUCH-BODY-REACTION-001` is deployed on ECS and
+  product-gated behind `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`.
+- Gateway now returns `a21.touch_reactions=true` only when the same hardware
+  MAC stock Xiaozhi client has product touch allowance and advertises
+  `hello.features.mcp=true`; it still rejects debug-only device events from
+  the product profile.
+- Accepted product touch events now trigger bounded official MCP body
+  feedback on the live `/v1/xiaozhi` socket: `self.robot.set_led_color` and
+  `self.robot.set_head_angles`. The mapping is deliberately small: low
+  RGB values and small pitch/yaw values within the existing robot MCP clamps.
+- Device registry now has stable touch evidence fields
+  `last_touch_event`, `last_touch_source`, `last_touch_trace_id`,
+  `last_touch_session_id`, and `last_touch_seen_ms` so later
+  `xiaozhi.mcp.response.received`, Opus, or heartbeat events do not erase the
+  touch acceptance signal.
+- Physical/runtime evidence passed on device `44:1b:f6:e2:6a:60`:
+  report `reports/a21-stackchan-touch-reaction-evidence-20260604-224756.json`,
+  trace `a21-trace-44-1b-f6-e2-6a-60`, session
+  `a21-session-44-1b-f6-e2-6a-60`.
+- The observed touch was `top_swipe_backward` from `top_sensor`; Gateway sent
+  LED `red=120, green=60, blue=0` and head `yaw=-18, pitch=24, speed=200`;
+  trace markers include `device.touch.top.swipe_backward.received`,
+  `xiaozhi.touch_reaction.robot_led_color.sent`,
+  `xiaozhi.touch_reaction.robot_head_angles_set.sent`, and two redacted
+  `xiaozhi.mcp.response.received` events.
+- This is the first real "touch -> body" foreground reaction proof. It does
+  not close screen visual acceptance, richer choreography, camera, NFC,
+  infrared, no-cable boot/power, app lifecycle, or full PRD physical
+  acceptance.
+
 ## Active Transition
 
 Current active plan:

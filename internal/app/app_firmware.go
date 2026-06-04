@@ -158,7 +158,10 @@ func validateFirmwareDeviceReportDevices(devices []firmwarecheck.DeviceIdentityR
 			device.Firmware.Board,
 			device.Firmware.Commit,
 			device.LastEvent,
+			device.LastTouchEvent,
 			device.LastTouchSource,
+			device.LastTouchTraceID,
+			device.LastTouchSessionID,
 			device.LastTraceID,
 			device.LastSessionID,
 		}

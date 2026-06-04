@@ -232,7 +232,7 @@ func runStackChanTouchAcceptanceCase(options stackChanTouchAcceptanceOptions) st
 			report.addFinding("device_disconnected", "expected StackChan device disappeared during touch acceptance")
 			return report
 		}
-		for _, traceID := range candidateStackChanTouchTraceIDs(device.LastTraceID) {
+		for _, traceID := range candidateStackChanTouchTraceIDs(firstNonEmpty(device.LastTouchTraceID, device.LastTraceID)) {
 			trace, err := fetchGatewayTrace(options.GatewayURL, traceID)
 			if err == nil {
 				for _, event := range trace.Events {
@@ -262,13 +262,14 @@ func runStackChanTouchAcceptanceCase(options stackChanTouchAcceptanceOptions) st
 				}
 			}
 		}
-		if string(device.LastEvent) == spec.ExpectedEvent && (spec.ExpectedSource == "" || device.LastTouchSource == spec.ExpectedSource) {
+		lastTouchEvent := firstNonEmpty(device.LastTouchEvent, device.LastEvent)
+		if lastTouchEvent == spec.ExpectedEvent && (spec.ExpectedSource == "" || device.LastTouchSource == spec.ExpectedSource) {
 			report.ObservedEvents = append(report.ObservedEvents, stackChanTouchAcceptanceObservation{
-				Event:     "device." + string(device.LastEvent) + ".received",
-				TraceID:   device.LastTraceID,
-				SessionID: device.LastSessionID,
+				Event:     "device." + lastTouchEvent + ".received",
+				TraceID:   firstNonEmpty(device.LastTouchTraceID, device.LastTraceID),
+				SessionID: firstNonEmpty(device.LastTouchSessionID, device.LastSessionID),
 				DeviceID:  device.DeviceID,
-				AtMS:      device.LastSeenMS,
+				AtMS:      firstNonZeroInt64(device.LastTouchSeenMS, device.LastSeenMS),
 				Source:    string(device.LastTouchSource),
 			})
 			report.AcceptanceStatus = "passed"
@@ -361,6 +362,16 @@ func stackChanTouchCase(name string) (stackChanTouchCaseSpec, bool) {
 		return stackChanTouchCaseSpec{}, false
 	}
 }
+
+func firstNonZeroInt64(values ...int64) int64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
+}
+
 func writeStackChanTouchAcceptanceReport(outputDir string, report stackChanTouchAcceptanceReport) (string, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return "", err

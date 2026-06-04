@@ -80,6 +80,7 @@ type Server struct {
 	xiaozhiStockProfessional     bool
 	xiaozhiProductPlaybackEvents bool
 	xiaozhiProductTouchEvents    bool
+	xiaozhiProductTouchReactions bool
 	xiaozhiListenMaxDurationMS   int64
 	wakeWordConfigPath           string
 	voiceModeConfig              string
@@ -127,6 +128,7 @@ type ServerOptions struct {
 	XiaozhiStockProfessional     bool
 	XiaozhiProductPlaybackEvents bool
 	XiaozhiProductTouchEvents    bool
+	XiaozhiProductTouchReactions bool
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
 	WorkspaceDocumentStoreDir    string
@@ -968,7 +970,11 @@ type DeviceRecord struct {
 	DisplayStateAccepted     bool                     `json:"display_state_physical_accepted"`
 	PlaybackStream           string                   `json:"playback_stream_id,omitempty"`
 	LastEvent                protocol.DeviceEventKind `json:"last_event,omitempty"`
+	LastTouchEvent           protocol.DeviceEventKind `json:"last_touch_event,omitempty"`
 	LastTouchSource          protocol.TouchSource     `json:"last_touch_source,omitempty"`
+	LastTouchTraceID         string                   `json:"last_touch_trace_id,omitempty"`
+	LastTouchSessionID       string                   `json:"last_touch_session_id,omitempty"`
+	LastTouchSeenMS          int64                    `json:"last_touch_seen_ms,omitempty"`
 	LastSeq                  uint64                   `json:"last_seq,omitempty"`
 	LastTraceID              string                   `json:"last_trace_id,omitempty"`
 	LastSessionID            string                   `json:"last_session_id,omitempty"`
@@ -1320,6 +1326,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
 		xiaozhiProductPlaybackEvents: options.XiaozhiProductPlaybackEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
 		xiaozhiProductTouchEvents:    options.XiaozhiProductTouchEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
+		xiaozhiProductTouchReactions: options.XiaozhiProductTouchReactions || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS"),
 		xiaozhiListenMaxDurationMS:   xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:           wakeWordConfigPath(options.WakeWordConfigPath),
 		roleplayProfileConfig:        DefaultRoleplayProfile,
@@ -5647,29 +5654,50 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) deliverXiaozhiMCPControl(ctx context.Context, req XiaozhiMCPControlRequest) (XiaozhiMCPControlResponse, int, string) {
+	delivery, status, message := s.sendXiaozhiMCPControl(ctx, req)
+	if status != 0 {
+		return XiaozhiMCPControlResponse{}, status, message
+	}
+	traceMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+	s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, traceMarker, s.now().UnixMilli())
+	s.recordXiaozhiDeviceActivity(&xiaozhiSession{
+		deviceID:  delivery.Response.DeviceID,
+		traceID:   delivery.Response.TraceID,
+		sessionID: delivery.Response.SessionID,
+	}, traceMarker, xiaozhiMCPActivity(delivery.Marker, delivery.Args))
+	return delivery.Response, 0, ""
+}
+
+type xiaozhiMCPDelivery struct {
+	Response XiaozhiMCPControlResponse
+	Marker   string
+	Args     map[string]any
+}
+
+func (s *Server) sendXiaozhiMCPControl(ctx context.Context, req XiaozhiMCPControlRequest) (xiaozhiMCPDelivery, int, string) {
 	if !validA21DeviceID(req.DeviceID) {
-		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "valid device_id is required"
+		return xiaozhiMCPDelivery{}, http.StatusBadRequest, "valid device_id is required"
 	}
 	toolName, args, marker, err := xiaozhiMCPStatusParityCall(req)
 	if err != nil {
-		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, err.Error()
+		return xiaozhiMCPDelivery{}, http.StatusBadRequest, err.Error()
 	}
 	socket, ok := s.xiaozhiSocket(req.DeviceID)
 	if !ok {
-		return XiaozhiMCPControlResponse{}, http.StatusConflict, "xiaozhi websocket is not connected"
+		return xiaozhiMCPDelivery{}, http.StatusConflict, "xiaozhi websocket is not connected"
 	}
 	if !socket.features.MCP {
-		return XiaozhiMCPControlResponse{}, http.StatusConflict, "xiaozhi mcp control requires stock MCP support"
+		return xiaozhiMCPDelivery{}, http.StatusConflict, "xiaozhi mcp control requires stock MCP support"
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	mcpID := "a21-mcp-status-parity-" + safeGatewayFallbackToken(marker, "tool") + "-" + safeGatewayFallbackToken(traceID, "trace")
 	payload, err := xiaozhitransport.BuildMCPToolsCallRequest(mcpID, toolName, args)
 	if err != nil {
-		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
+		return xiaozhiMCPDelivery{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
 	}
 	var payloadObject map[string]any
 	if err := json.Unmarshal(payload, &payloadObject); err != nil {
-		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
+		return xiaozhiMCPDelivery{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
 	}
 	message, err := json.Marshal(map[string]any{
 		"type":       "mcp",
@@ -5679,16 +5707,30 @@ func (s *Server) deliverXiaozhiMCPControl(ctx context.Context, req XiaozhiMCPCon
 		"device_id":  req.DeviceID,
 	})
 	if err != nil {
-		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control message"
+		return xiaozhiMCPDelivery{}, http.StatusBadRequest, "invalid xiaozhi mcp control message"
 	}
 	socket.writeMu.Lock()
 	err = socket.conn.Write(ctx, websocket.MessageText, message)
 	socket.writeMu.Unlock()
 	if err != nil {
-		return XiaozhiMCPControlResponse{}, http.StatusBadGateway, "xiaozhi mcp control delivery failed"
+		return xiaozhiMCPDelivery{}, http.StatusBadGateway, "xiaozhi mcp control delivery failed"
 	}
-	traceMarker := "xiaozhi.mcp." + marker + ".sent"
-	s.recordTrace(traceID, sessionID, req.DeviceID, traceMarker, s.now().UnixMilli())
+
+	response := XiaozhiMCPControlResponse{
+		TraceID:            traceID,
+		SessionID:          sessionID,
+		DeviceID:           req.DeviceID,
+		Status:             "delivered",
+		DeliveredTransport: "xiaozhi_mcp",
+		ToolName:           toolName,
+		MCPID:              mcpID,
+		Arguments:          args,
+		ResultRedacted:     true,
+	}
+	return xiaozhiMCPDelivery{Response: response, Marker: marker, Args: args}, 0, ""
+}
+
+func xiaozhiMCPActivity(marker string, args map[string]any) map[string]string {
 	activity := map[string]string{
 		"xiaozhi_mcp_tool": marker,
 	}
@@ -5719,18 +5761,7 @@ func (s *Server) deliverXiaozhiMCPControl(ctx context.Context, req XiaozhiMCPCon
 	if value, ok := args["blue"]; ok {
 		activity["robot_led_blue"] = fmt.Sprint(value)
 	}
-	s.recordXiaozhiDeviceActivity(&xiaozhiSession{deviceID: req.DeviceID, traceID: traceID, sessionID: sessionID}, traceMarker, activity)
-	return XiaozhiMCPControlResponse{
-		TraceID:            traceID,
-		SessionID:          sessionID,
-		DeviceID:           req.DeviceID,
-		Status:             "delivered",
-		DeliveredTransport: "xiaozhi_mcp",
-		ToolName:           toolName,
-		MCPID:              mcpID,
-		Arguments:          args,
-		ResultRedacted:     true,
-	}, 0, ""
+	return activity
 }
 
 func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[string]any, string, error) {
@@ -7295,7 +7326,9 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 	case xiaozhitransport.DeviceEventKindTouch:
 		if !s.recordXiaozhiTouchEvent(session, event) {
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi touch event"))
+			return true
 		}
+		s.maybeSendXiaozhiTouchReaction(ctx, session, event)
 		return true
 	default:
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
@@ -7792,6 +7825,37 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 	if session == nil || strings.TrimSpace(session.deviceID) == "" {
 		return false
 	}
+	deviceEvent, source, ok := xiaozhiTouchEventKindAndSource(event)
+	if !ok {
+		return false
+	}
+	nowMS := s.now().UnixMilli()
+	traceName := "device." + string(deviceEvent) + ".received"
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, traceName, nowMS)
+	s.mu.Lock()
+	record := s.devices[session.deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = session.deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.LastEvent = deviceEvent
+	record.LastTouchEvent = deviceEvent
+	record.LastTouchSource = source
+	record.LastTouchTraceID = session.traceID
+	record.LastTouchSessionID = session.sessionID
+	record.LastTouchSeenMS = nowMS
+	record.LastTraceID = session.traceID
+	record.LastSessionID = session.sessionID
+	record.LastSeenMS = nowMS
+	s.devices[session.deviceID] = record
+	s.mu.Unlock()
+	return true
+}
+
+func xiaozhiTouchEventKindAndSource(event xiaozhitransport.DeviceExtensionEvent) (protocol.DeviceEventKind, protocol.TouchSource, bool) {
 	var deviceEvent protocol.DeviceEventKind
 	var source protocol.TouchSource
 	switch event.Value {
@@ -7814,16 +7878,127 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 		deviceEvent = protocol.DeviceEventTouchBargeIn
 		source = protocol.TouchSourceTopSensor
 	default:
-		return false
+		return "", "", false
 	}
 	if event.Source == string(protocol.TouchSourceScreen) {
 		source = protocol.TouchSourceScreen
 	} else if event.Source == string(protocol.TouchSourceTopSensor) {
 		source = protocol.TouchSourceTopSensor
 	}
+	return deviceEvent, source, true
+}
+
+func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) {
+	if !s.xiaozhiProductTouchReactionsAllowed(session) {
+		return
+	}
+	plans := xiaozhiTouchReactionPlans(session, event)
+	if len(plans) == 0 {
+		return
+	}
+	for _, req := range plans {
+		delivery, status, message := s.sendXiaozhiMCPControl(ctx, req)
+		if status != 0 {
+			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.touch_reaction.failed", s.now().UnixMilli())
+			if message != "" {
+				s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
+					"last_touch_reaction_status": "failed_" + strconv.Itoa(status),
+				})
+			}
+			continue
+		}
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		reactionMarker := "xiaozhi.touch_reaction." + delivery.Marker + ".sent"
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, reactionMarker, s.now().UnixMilli())
+		echo := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
+		echo["last_touch_reaction_status"] = "delivered"
+		echo["last_touch_reaction_tool"] = delivery.Marker
+		s.recordXiaozhiTouchReactionEcho(session, event, echo)
+	}
+}
+
+func xiaozhiTouchReactionPlans(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) []XiaozhiMCPControlRequest {
+	if session == nil {
+		return nil
+	}
+	base := XiaozhiMCPControlRequest{
+		DeviceID:  session.deviceID,
+		TraceID:   session.traceID,
+		SessionID: session.sessionID,
+	}
+	led := func(red, green, blue int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetLEDColorToolName
+		req.Red = xiaozhiReactionInt(red)
+		req.Green = xiaozhiReactionInt(green)
+		req.Blue = xiaozhiReactionInt(blue)
+		return req
+	}
+	head := func(yaw *int, pitch int, speed int) XiaozhiMCPControlRequest {
+		req := base
+		req.ToolName = xiaozhiMCPRobotSetHeadAnglesToolName
+		req.Yaw = yaw
+		req.Pitch = xiaozhiReactionInt(pitch)
+		req.Speed = xiaozhiReactionInt(speed)
+		return req
+	}
+	switch event.Value {
+	case "screen_tap":
+		return []XiaozhiMCPControlRequest{
+			led(0, 72, 168),
+			head(nil, 28, 180),
+		}
+	case "screen_barge_in":
+		return []XiaozhiMCPControlRequest{
+			led(168, 40, 0),
+			head(xiaozhiReactionInt(0), 24, 240),
+		}
+	case "top_tap":
+		return []XiaozhiMCPControlRequest{
+			led(60, 0, 168),
+			head(nil, 32, 180),
+		}
+	case "top_swipe_forward":
+		return []XiaozhiMCPControlRequest{
+			led(0, 120, 90),
+			head(xiaozhiReactionInt(18), 24, 200),
+		}
+	case "top_swipe_backward":
+		return []XiaozhiMCPControlRequest{
+			led(120, 60, 0),
+			head(xiaozhiReactionInt(-18), 24, 200),
+		}
+	case "top_barge_in":
+		return []XiaozhiMCPControlRequest{
+			led(168, 24, 0),
+			head(xiaozhiReactionInt(0), 20, 240),
+		}
+	default:
+		return nil
+	}
+}
+
+func xiaozhiReactionInt(value int) *int {
+	return &value
+}
+
+func (s *Server) recordXiaozhiTouchReactionEcho(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent, echo map[string]string) {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return
+	}
+	deviceEvent, source, ok := xiaozhiTouchEventKindAndSource(event)
+	if !ok {
+		return
+	}
 	nowMS := s.now().UnixMilli()
-	traceName := "device." + string(deviceEvent) + ".received"
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, traceName, nowMS)
+	reactionEcho := map[string]string{
+		"last_touch_reaction_event":  safeGatewayFallbackToken(event.Value, "unknown"),
+		"last_touch_reaction_source": string(source),
+	}
+	for key, value := range echo {
+		reactionEcho[key] = value
+	}
 	s.mu.Lock()
 	record := s.devices[session.deviceID]
 	if record.DeviceID == "" {
@@ -7834,13 +8009,17 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 		record.IdentityStatus = "unknown"
 	}
 	record.LastEvent = deviceEvent
+	record.LastTouchEvent = deviceEvent
 	record.LastTouchSource = source
+	record.LastTouchTraceID = session.traceID
+	record.LastTouchSessionID = session.sessionID
+	record.LastTouchSeenMS = nowMS
 	record.LastTraceID = session.traceID
 	record.LastSessionID = session.sessionID
 	record.LastSeenMS = nowMS
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, reactionEcho)
 	s.devices[session.deviceID] = record
 	s.mu.Unlock()
-	return true
 }
 
 func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event string, streamID string) {
@@ -7906,6 +8085,9 @@ func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatu
 		if s.xiaozhiProductTouchEventsAllowed(session) {
 			capabilities["xiaozhi_product_touch_events"] = "true"
 		}
+		if s.xiaozhiProductTouchReactionsAllowed(session) {
+			capabilities["xiaozhi_product_touch_reactions"] = "true"
+		}
 	}
 	if features.DebugMetrics {
 		capabilities["xiaozhi_feature_debug_metrics"] = "true"
@@ -7944,6 +8126,13 @@ func (s *Server) xiaozhiProductTouchEventsAllowed(session *xiaozhiSession) bool 
 		!session.features.DeviceEvents &&
 		!session.features.DebugMetrics &&
 		hardwareMACDeviceID(session.deviceID)
+}
+
+func (s *Server) xiaozhiProductTouchReactionsAllowed(session *xiaozhiSession) bool {
+	return s != nil &&
+		s.xiaozhiProductTouchReactions &&
+		s.xiaozhiProductTouchEventsAllowed(session) &&
+		session.features.MCP
 }
 
 func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
@@ -9399,6 +9588,9 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 		}
 		if s.xiaozhiProductTouchEventsAllowed(session) {
 			a21["touch_events"] = true
+		}
+		if s.xiaozhiProductTouchReactionsAllowed(session) {
+			a21["touch_reactions"] = true
 		}
 		reply["a21"] = a21
 	}

@@ -14914,3 +14914,92 @@ Forbidden actions avoided:
 - No generic `xiaozhi.bin` product flash, no NVS write, no provider secret
   printing, no provider key in firmware, no Git prune/gc, no V21 internal
   execution, and no internal-test3 voice/protocol rollback occurred.
+
+## 2026-06-04 22:49 CST - StackChan Product Touch Body Reaction Evidence
+
+Round goal:
+
+- Continue hardware parity from accepted touch events into visible body
+  feedback, without repeating keepalive/touch bridge work and without
+  regressing internal-test3 voice/protocol behavior.
+
+Actual completed work:
+
+- Added product-gated touch body reactions behind
+  `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`.
+- Gateway returns `a21.touch_reactions=true` only for hardware-MAC stock
+  Xiaozhi clients that already satisfy product touch allowance and advertise
+  `hello.features.mcp=true`.
+- Accepted product touch events now send bounded official MCP
+  `self.robot.set_led_color` and `self.robot.set_head_angles` reactions over
+  the same live `/v1/xiaozhi` socket.
+- Added stable registry fields `last_touch_event`, `last_touch_source`,
+  `last_touch_trace_id`, `last_touch_session_id`, and `last_touch_seen_ms`
+  so MCP responses, Opus, or heartbeat events can keep their true
+  `last_event` semantics without erasing touch acceptance evidence.
+- Updated touch acceptance to prefer stable `last_touch_*` fields.
+- Deployed the Gateway update to ECS `47.103.57.217`, enabled root-only
+  `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`, and restarted `a21-gateway`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_firmware.go`
+- `internal/app/app_stackchan_touch.go`
+- `internal/app/app_test.go`
+- `internal/firmwarecheck/device_identity.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Runtime or physical evidence:
+
+- ECS remote focused Gateway/App tests passed and remote build/restart/health
+  passed.
+- Public `/v1/devices` after reconnect showed
+  `xiaozhi_product_touch_reactions=true`.
+- Real foreground touch on device `44:1b:f6:e2:6a:60` passed:
+  `reports/a21-stackchan-touch-reaction-evidence-20260604-224756.json`.
+- Evidence trace/session:
+  `a21-trace-44-1b-f6-e2-6a-60` /
+  `a21-session-44-1b-f6-e2-6a-60`.
+- Observed touch/reaction:
+  `top_swipe_backward` from `top_sensor` -> LED `120/60/0` and head
+  `yaw=-18,pitch=24,speed=200`.
+- Trace markers included `device.touch.top.swipe_backward.received`,
+  `xiaozhi.touch_reaction.robot_led_color.sent`,
+  `xiaozhi.touch_reaction.robot_head_angles_set.sent`, and two redacted
+  `xiaozhi.mcp.response.received` events.
+- `last_event` later advanced to Opus/heartbeat events, while
+  `last_touch_event=touch.top.swipe_backward` remained stable as intended.
+
+Tests/build/runtime results:
+
+- `git diff --check` passed.
+- `go test ./internal/gateway -run 'TestXiaozhiProductTouch|TestXiaozhiMCPStatusParityAllowsOnlyScopedTools|TestXiaozhiMCPCapabilitiesEndpointReportsAllowedAndBlockedTools' -count=1` passed.
+- `go test ./internal/app -run 'TestRunStackChanTouchAcceptancePassesTopTapWithGatewayTrace|TestGatewayServerOptionsFromEnvWiresProductTouch|TestGatewayServerOptionsFromEnvWiresProductPlaybackEvents' -count=1` passed.
+- `GOMAXPROCS=2 make verify` passed after the final docs/state/handoff update.
+
+Unfinished items:
+
+- This is the first product `touch -> body` proof, not full screen visual
+  acceptance, richer personality choreography, camera, NFC, infrared,
+  no-cable boot/power, app lifecycle, or full PRD physical acceptance.
+- Directional swipe UX still needs an affordance/training/screen cue before
+  it can be considered frictionless core UX.
+
+Recommended next action:
+
+- Move to a visible expression polish slice: small per-state reaction map for
+  listening/thinking/speaking/error and roleplay/professional mode, using the
+  same bounded MCP/body contract and separate acceptance evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no serial write, no provider execution,
+  no V21 execution, no provider key in firmware, no generic `xiaozhi.bin`
+  product lane, no Git prune/gc, and no internal-test3 voice/protocol rollback.
