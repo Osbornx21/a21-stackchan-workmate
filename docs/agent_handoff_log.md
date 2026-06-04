@@ -15584,3 +15584,55 @@ Forbidden actions avoided:
 - No NVS write, no provider secret printing, no provider key in firmware, no
   V21 internal execution, no generic product flash lane, no Git prune/gc, and
   no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 00:42 CST - Clean Wake/Mic Ingress Retry Note
+
+Round goal:
+
+- After committing `78f2d83`, try to combine the newly proven touch
+  barge-in/stop_done path with wake/listen mic ingress in a single physical
+  evidence window.
+
+Actual completed work:
+
+- Confirmed branch was clean and pushed at `78f2d83`.
+- Confirmed public Gateway health was ok and device `44:1b:f6:e2:6a:60` was
+  online.
+- Attempted to use the post-barge `listening` state by playing a Chinese
+  question through macOS `Tingting`; the device did not produce a new answer
+  trace and the previous trace only accumulated suppressed post-barge frames.
+- Recovered the device to `idle` with short host-say trace
+  `a21-trace-reset-idle-20260605004000`, then waited and tried a clean
+  macOS-speaker wake/question again. That did not produce reliable new
+  wake/listen mic-ingress evidence; the trace shows host-say suppression
+  markers and ignored suppressed Opus frames.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Runtime evidence:
+
+- Device was healthy after the retry: online, `display_state=idle`, last trace
+  `a21-trace-reset-idle-20260605004000`.
+- The retry did not improve the half-duplex blocker beyond the previous
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260605-003553.730698000.json`.
+
+Tests/build/runtime results:
+
+- No code changed in this retry note.
+- No new acceptance report was promoted.
+
+Remaining issues:
+
+- Mac speaker wake is not reliable enough to be used as product physical
+  mic-ingress proof from this workstation position.
+- Next physical window needs the user/operator physically near the device to
+  say `紫悦` and ask a short question, then top-touch during the answer. The
+  target report should combine mic ingress, answer downlink/playback, audible
+  or instrument observation, and touch/wake barge-in stop_done.
+
+Forbidden actions avoided:
+
+- No NVS write, no provider secret printing, no firmware flash, no provider or
+  V21 execution, no Git prune/gc, and no internal-test3 voice/protocol rollback.
