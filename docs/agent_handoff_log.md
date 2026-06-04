@@ -14251,3 +14251,93 @@ Forbidden actions avoided:
 - No provider execution, real V21 service execution, ECS/root-secret/runtime
   change, firmware build, flash, serial, NVS, report deletion, prune/gc, or
   internal-test3 protocol/audio rollback occurred.
+
+## 2026-06-04 20:03 CST - Product Flash/NVS Hardware Window And Live Blocker Cut
+
+Round goal:
+
+- Stop re-auditing already-completed internal-test4 work, execute the now
+  unblocked product StackChan firmware/NVS path, and report the real PRD
+  blockers plainly.
+
+Actual completed work:
+
+- Rechecked current branch/worktree: foreground hardware-window branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`, HEAD
+  `522c5c28d335`, clean before guarded writes.
+- Confirmed product artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  exists with SHA-256
+  `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+- Ran product flash plan, then guarded product flash execute on
+  `/dev/cu.usbmodem1101`; execution passed.
+- Ran product NVS plan, then guarded product NVS execute on
+  `/dev/cu.usbmodem1101`; execution passed, set OTA to
+  `http://47.103.57.217/xiaozhi/ota/`, WebSocket to
+  `ws://47.103.57.217/v1/xiaozhi`, and wrote the first operator-text Wi-Fi
+  SSID spelling without recording the password in docs.
+- Captured serial startup after flash/NVS: A21 official Xiaozhi-compatible app
+  booted, device MAC is `44:1b:f6:e2:6a:60`, firmware entered Wi-Fi station
+  mode, then logged `No AP found`.
+- Verified the Mac also could not join that first typed SSID spelling from this
+  location.
+- Operator screenshot then clarified the visible SSID spelling as
+  `ChinaNet-N6e3` with no spaces around the hyphen, so the Wi-Fi blocker is an
+  NVS SSID spelling correction rather than evidence that the AP is absent.
+- Rechecked public Gateway `47.103.57.217`: TCP connects to `80` and `21081`,
+  but `/healthz`, `/xiaozhi/ota/`, and `/v1/devices` return empty replies;
+  SSH to `root@47.103.57.217` closes before authentication.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- Physical PRD acceptance is still not claimable. The device needs a corrected
+  NVS SSID write using `ChinaNet-N6e3`, and the public ECS Gateway application
+  layer is not returning HTTP responses.
+- The latest local Web/App professional endpoint commit is not yet deployed to
+  the public ECS because SSH/control-plane access is unavailable from this Mac.
+
+Known risks/blockers:
+
+- `T-STACKCHAN-CHINANET-SSID-SPELLING-001`: first NVS write used the typed SSID
+  spelling with a space; screenshot shows the visible SSID is `ChinaNet-N6e3`.
+- `T-ALIYUN-CLOUD-GATEWAY-APP-REACHABILITY-001`: public ECS accepts TCP but
+  returns empty HTTP replies and closes SSH before auth; cloud control-plane
+  intervention is needed.
+
+Recommended next action:
+
+- In Aliyun workbench, restore or restart the A21 Gateway/Caddy chain until
+  `http://47.103.57.217/healthz`,
+  `http://47.103.57.217/xiaozhi/ota/`, and
+  `http://47.103.57.217/v1/devices` return valid A21 responses; then rewrite
+  product NVS with `ChinaNet-N6e3` and rerun physical `/v1/xiaozhi` evidence
+  collection.
+
+Test/build/runtime results:
+
+- Flash plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-195627-1780574187977369000.json`
+  passed with `dry_run=true`.
+- Flash execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-195734-1780574254123911000.json`
+  passed with `flash_executed=true`.
+- NVS plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-195740-1780574260353872000.json`
+  passed with `dry_run=true`.
+- NVS execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-195752-1780574272065931000.json`
+  passed with `write_executed=true`, `mutated_entry_count=5`,
+  `wifi_credentials_written=true`, and `servo_calibration_present=true`.
+- Serial observation on `/dev/cu.usbmodem1101` showed boot/app identity and
+  `No AP found`; no `got ip` or WebSocket registration was observed.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no prune/gc, no provider secret
+  printing, no firmware key storage, no V21 internal execution, and no
+  internal-test3 protocol/audio rollback occurred.
