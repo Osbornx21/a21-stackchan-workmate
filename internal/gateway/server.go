@@ -6326,8 +6326,27 @@ func xiaozhiBodyScenePlans(deviceID string, scene string) (string, []XiaozhiMCPC
 			led(0, 0, 32),
 			head(0, 18, 200),
 		}, nil
+	case "full_check":
+		return scene, []XiaozhiMCPControlRequest{
+			theme("dark"),
+			brightness(72),
+			led(168, 80, 0),
+			head(-18, 36, 260),
+			led(0, 168, 80),
+			head(18, 36, 260),
+			head(0, 24, 220),
+			led(0, 36, 96),
+			theme("dark"),
+			brightness(62),
+			led(120, 72, 0),
+			head(-12, 28, 180),
+			theme("auto"),
+			brightness(55),
+			led(0, 0, 32),
+			head(0, 18, 200),
+		}, nil
 	default:
-		return "", nil, errors.New("body_scene must be showtime, focus, or reset")
+		return "", nil, errors.New("body_scene must be showtime, focus, reset, or full_check")
 	}
 }
 

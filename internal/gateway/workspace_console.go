@@ -574,7 +574,8 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
         <div class="panel-body">
           <div class="actions" id="hardwareSceneActions">
-            <button data-hardware-scene="showtime">Showtime</button>
+            <button data-hardware-scene="full_check">Full Check</button>
+            <button class="secondary" data-hardware-scene="showtime">Showtime</button>
             <button class="secondary" data-hardware-scene="focus">Focus</button>
             <button class="secondary" data-hardware-scene="reset">Reset</button>
             <button class="secondary" id="refreshHardwareSceneTrace">Trace markers</button>

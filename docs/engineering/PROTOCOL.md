@@ -434,10 +434,13 @@ surfaces:
   confirms visible movement.
 - `POST /v1/xiaozhi/body-scene` is the product-operation alias for bounded
   one-click hardware scenes that combine screen and body MCP tools. The request
-  accepts `device_id`, a `scene` of `showtime`, `focus`, or `reset`, and
-  optional `trace_id` / `session_id`. Gateway expands `showtime` into ordered
-  screen theme/brightness plus RGB/head MCP writes, while `focus` and `reset`
-  provide shorter bounded workspace states. Delivery records generic MCP
+  accepts `device_id`, a `scene` of `showtime`, `focus`, `reset`, or
+  `full_check`, and optional `trace_id` / `session_id`. Gateway expands
+  `showtime` into ordered screen theme/brightness plus RGB/head MCP writes,
+  while `focus` and `reset` provide shorter bounded workspace states.
+  `full_check` combines the same bounded screen, RGB, left/right head, focus,
+  and reset poses into a longer operator-visible hardware diagnostic sequence.
+  Delivery records generic MCP
   markers plus ordered body-scene markers such as
   `xiaozhi.body_scene.showtime.step1.screen_theme.sent`; the device registry
   records safe echo fields including `last_body_scene`, `screen_theme`,

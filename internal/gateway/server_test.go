@@ -629,6 +629,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`data-hardware-scene="showtime"`,
 		`data-hardware-scene="focus"`,
 		`data-hardware-scene="reset"`,
+		`data-hardware-scene="full_check"`,
 		`data-screen-theme="light"`,
 		`data-screen-theme="dark"`,
 		`data-screen-theme="auto"`,
@@ -7205,6 +7206,89 @@ func TestXiaozhiBodySceneSendsScreenAndBodyMCPSequence(t *testing.T) {
 		"robot_head_yaw":         "0",
 		"robot_head_pitch":       "24",
 		"robot_led_blue":         "96",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-scene-full-check-hello",
+		"session_id": "a21-session-body-scene-full-check-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-scene",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"full_check","trace_id":"a21-trace-body-scene-full-check","session_id":"a21-session-body-scene-full-check"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("body scene full_check status = %d: %s", resp.StatusCode, string(body))
+	}
+	var response XiaozhiBodySceneResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Scene != "full_check" || response.Status != "delivered" || len(response.Steps) != 16 || response.PhysicalAccepted {
+		t.Fatalf("body scene full_check response = %+v", response)
+	}
+
+	for i := 0; i < 16; i++ {
+		readXiaozhiJSON(t, ctx, conn)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-scene-full-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.body_scene.full_check.step1.screen_theme.sent",
+		"xiaozhi.body_scene.full_check.step8.robot_led_color.sent",
+		"xiaozhi.body_scene.full_check.step16.robot_head_angles_set.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	for key, want := range map[string]any{
+		"last_body_scene":        "full_check",
+		"last_body_scene_status": "delivered",
+		"last_body_scene_step":   "16",
+		"screen_theme":           "auto",
+		"screen_brightness":      "55",
+		"robot_head_yaw":         "0",
+		"robot_head_pitch":       "18",
+		"robot_led_blue":         "32",
 	} {
 		if capabilities[key] != want {
 			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
