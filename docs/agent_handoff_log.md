@@ -1,7 +1,7 @@
 # A21 Agent Handoff Log
 
 Status: active handoff document.
-Last updated: 2026-06-04.
+Last updated: 2026-06-05.
 
 This log is the recovery surface for Codex workers and future control-tower
 threads. Every work round must add or update an entry before handoff. Keep this
@@ -18,6 +18,122 @@ Each entry should include:
 - recommended next action;
 - test, build, or runtime results;
 - failure location and reason, when applicable.
+
+## 2026-06-05 03:24 CST - Latest Product Deployment And Guarded Flash
+
+Round goal:
+
+- Deploy the latest internal-test4 product surface, flash the current
+  official-compatible product app, and report the real PRD/experience state
+  without reopening internal-test3 voice-chain acceptance.
+
+Actual completed work:
+
+- Pushed `1c9dece fix(workspace): adopt connected hardware device`.
+- Deployed `1c9dece` to ECS `47.103.57.217` through `/opt/a21.next` safe
+  swap.
+- `/workspace` now has `Connected device` and boot-time adoption of the online
+  product hardware device from `/v1/devices`, instead of staying on
+  `stackchan-sim-001` when the operator has not selected a device.
+- Ran public product smokes for `/healthz`, `/workspace`, `/v1/devices`, and
+  `/v1/hardware-acceptance`.
+- Ran a guarded no-write product flash plan on `/dev/cu.usbmodem1101`.
+- Executed the guarded official-compatible product flash on
+  `/dev/cu.usbmodem1101`.
+- Waited for product device `44:1b:f6:e2:6a:60` to return with a fresh online
+  heartbeat after flash.
+- Re-ran roleplay mode ritual and `full_check` body scene after the flash,
+  both against the real product device.
+
+Changed files:
+
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Local focused Gateway tests passed before commit:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual|TestXiaozhiBodyScenePhysicalAcceptance|TestXiaozhiBodySceneReportsAndAppliesStepPacing' -count=1`.
+- Local full verification passed before commit:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed on `/opt/a21.next`:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- `a21-gateway.service` restarted active.
+- Public direct `/healthz` returned `status=ok`.
+- Public `/workspace` smoke found `Connected device`,
+  `refreshConnectedDevice`, `preferredConnectedDevice`, `/v1/devices`,
+  `connected_device_count`, `Acceptance Board`, `Full Check`,
+  `Accept Visible Full Check`, and `Accept Visible Mode Ritual`.
+
+Runtime or physical evidence:
+
+- Product flash plan report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-032219-1780600939242091000.json`
+  with `status=ready`.
+- Product flash execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-032331-1780601011958120000.json`
+  with `status=passed`, `flash_executed=true`, T7 guard ok, clean worktree,
+  commit `1c9dece8b37e`, and app artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+- No NVS write was performed. Existing Wi-Fi/cloud configuration was
+  preserved. No generic `xiaozhi.bin` product flash was used.
+- After flash, product device `44:1b:f6:e2:6a:60` returned fresh online
+  heartbeats (`device_age_ms=1228`, then `device_age_ms=430`).
+- After-flash roleplay ritual trace
+  `a21-trace-mode-ritual-after-flash-1c9dece-20260605` returned HTTP 200
+  `status=delivered`, `selected_voice_mode=roleplay`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`,
+  `provider_executed=false`, and `v21_executed=false`.
+- After-flash `full_check` trace
+  `a21-trace-full-check-after-flash-1c9dece-20260605` returned HTTP 200
+  `status=delivered`, `scene=full_check`, 16 redacted screen/RGB/head steps,
+  `step_delay_ms=180`, and `total_planned_delay_ms=2700`.
+- Final public hardware-acceptance summary returned
+  `overall_status=physical_pending`; both `mode_ritual` and `full_check` were
+  `delivery_status=delivered`, with next actions
+  `accept_visible_mode_ritual` and `accept_visible_full_check`.
+
+Deviations from plan:
+
+- None for deployment/flash. Physical acceptance was not auto-recorded because
+  the foreground operator has not yet confirmed visible screen/RGB/head
+  movement.
+
+Remaining issues:
+
+- The product has machine-delivered screen/RGB/servo body evidence after
+  flash, but physical acceptance remains pending until the user/operator
+  confirms what was visible and clicks the two acceptance controls.
+- Professional mode has contracts and read-record surfaces, but real V21
+  upload/index/query-scope execution is still not product-accepted.
+- Roleplay persona, memory, prompt, voice clone, and probe surfaces exist, but
+  long-term memory persistence/delete/export and fully polished character
+  authoring are not complete.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, infrared, battery/sensor diagnostics, and richer official
+  avatar/motion semantics remain planned/high-risk parity work.
+- Natural microphone-triggered voice-chain physical PRD acceptance was not
+  reopened in this round.
+
+Next suggested action:
+
+- Use the live `/workspace` Acceptance Board as the foreground checklist:
+  watch mode ritual and full check on the product device, then click
+  `Accept Visible Mode Ritual` and `Accept Visible Full Check` if screen/RGB
+  and head movement are visible. Then move to official avatar/action relay and
+  camera/NFC/IR parity spikes, while keeping internal-test3 voice protocol
+  untouched.
+
+Forbidden actions avoided:
+
+- No Git prune/gc, no NVS write, no generic product flash lane, no provider
+  secret printing, no accidental V21/provider execution during body evidence,
+  no internal-test3 voice/protocol rollback, and no subagent dispatch.
 
 ## 2026-06-05 - T-WORKSPACE-HARDWARE-FULL-CHECK-SCENE-001 - Full Body Check Deployed
 

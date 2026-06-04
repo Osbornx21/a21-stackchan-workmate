@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this roleplay clone runtime repair cut:
-  `8da6de9 fix(providers): honor voice clone cli alias in pipeline`
+- Current source HEAD after the latest product deployment/flash cut:
+  `1c9dece fix(workspace): adopt connected hardware device`
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +70,54 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 03:24 CST product deployment and guarded
+official-compatible flash:
+
+- Commit `1c9dece fix(workspace): adopt connected hardware device` is pushed
+  to `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
+  and deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- `/workspace` now has a `Connected device` control and boot-time device
+  adoption. It queries `GET /v1/devices` and replaces the default
+  `stackchan-sim-001` input with the online product hardware device when the
+  operator has not chosen another device.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestHardwareAcceptance|TestVoiceModeRitual' -count=1`.
+  Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+  `a21-gateway.service` restarted active and public direct `/healthz` passed.
+- Public `/workspace` smoke found `Connected device`,
+  `refreshConnectedDevice`, `preferredConnectedDevice`, `/v1/devices`, and
+  `connected_device_count`.
+- Product device `44:1b:f6:e2:6a:60` returned online through public
+  `/v1/devices`; after the guarded flash it produced a fresh heartbeat with
+  `device_age_ms=1228`, then later `device_age_ms=430`.
+- The product app was flashed through the guarded official-compatible lane on
+  `/dev/cu.usbmodem1101`. The no-write plan report was
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-032219-1780600939242091000.json`;
+  the execution report was
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-032331-1780601011958120000.json`.
+  The execution report records `status=passed`, `flash_executed=true`, T7
+  guard ok, clean worktree, commit `1c9dece8b37e`, and app part
+  `a21-stackchan-official-xiaozhi-compatible.bin` at offset `0x20000`.
+- No NVS write was performed. Existing Wi-Fi/cloud configuration was preserved.
+  No generic `xiaozhi.bin` product flash lane was used.
+- After the flash, live roleplay mode ritual trace
+  `a21-trace-mode-ritual-after-flash-1c9dece-20260605` returned HTTP 200
+  `status=delivered`, `selected_voice_mode=roleplay`, `step_delay_ms=180`,
+  `total_planned_delay_ms=540`, `provider_executed=false`, and
+  `v21_executed=false`.
+- After the flash, live `full_check` trace
+  `a21-trace-full-check-after-flash-1c9dece-20260605` returned HTTP 200
+  `status=delivered`, `scene=full_check`, 16 redacted screen/RGB/head steps,
+  `step_delay_ms=180`, and `total_planned_delay_ms=2700`.
+- Final public hardware-acceptance summary for product device
+  `44:1b:f6:e2:6a:60` returned `overall_status=physical_pending`; both
+  `mode_ritual` and `full_check` were `delivery_status=delivered`, with
+  trace/session IDs from the after-flash run and next actions
+  `accept_visible_mode_ritual` and `accept_visible_full_check`.
+- Physical acceptance remains pending until the operator or an instrument
+  confirms visible screen/RGB/head movement from the foreground product.
 
 Live truth after the 2026-06-05 04:05 CST hardware acceptance summary board
 deployment:
