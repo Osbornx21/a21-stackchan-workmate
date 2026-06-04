@@ -118,6 +118,15 @@ Current next cut:
   runtime echo, playback stop_done/auto_stop where applicable, and operator or
   instrumented audible observation. Do not treat Gateway downlink or host-only
   voice bench as physical PRD acceptance.
+- Current implementation cut:
+  product-safe playback acknowledgement negotiation is landing locally as
+  `hello.features.playback_events` plus Gateway env
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`. The env defaults off. When enabled,
+  only a hardware-MAC device that advertises `playback_events` and does not
+  request debug features receives `a21.profile=product` /
+  `a21.playback_events=true`; only playback `start` / `stop_done` events are
+  accepted. This is an adaptation path for physical evidence collection, not
+  accepted PRD evidence by itself.
 
 ## Scoped Hardware Parity Transition
 

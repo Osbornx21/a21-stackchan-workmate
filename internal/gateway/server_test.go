@@ -5105,6 +5105,92 @@ func TestXiaozhiStockProfileRejectsPlaybackStartDeviceEvent(t *testing.T) {
 	}
 }
 
+func TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{XiaozhiProductPlaybackEvents: true}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-playback",
+		"session_id": "a21-session-xiaozhi-product-playback",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":             true,
+			"aec":             true,
+			"playback_events": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	replyJSON := mustJSON(t, reply)
+	for _, forbidden := range []string{"debug_metrics", `"device_events":true`, `"profile":"debug"`} {
+		if strings.Contains(strings.ToLower(replyJSON), strings.ToLower(forbidden)) {
+			t.Fatalf("product playback hello leaked debug field %q: %s", forbidden, replyJSON)
+		}
+	}
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["playback_events"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product playback allowance", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":  "device",
+		"kind":  "state",
+		"state": "speaking",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rejected := readXiaozhiJSON(t, ctx, conn)
+	if rejected["type"] != "error" || rejected["code"] != "unsupported_device_event" {
+		t.Fatalf("product playback allowance accepted non-playback event: %#v", rejected)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":      "device",
+		"kind":      "playback",
+		"playback":  "start",
+		"stream_id": "a21-xiaozhi-stream-001",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-playback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "device.playback.start") {
+		t.Fatalf("trace missing product playback start: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "device.playback.start" || registry["playback_stream_id"] != "a21-xiaozhi-stream-001" {
+		t.Fatalf("registry playback = %#v, want playback start and stream", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok ||
+		capabilities["xiaozhi_profile"] != "stock" ||
+		capabilities["xiaozhi_feature_playback_events"] != "true" ||
+		capabilities["xiaozhi_product_playback_events"] != "true" {
+		t.Fatalf("registry capabilities = %#v, want stock product playback events", registry["capabilities"])
+	}
+	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
+		t.Fatalf("product playback allowance marked debug capabilities: %#v", capabilities)
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)

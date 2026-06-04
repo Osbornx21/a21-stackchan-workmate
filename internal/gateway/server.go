@@ -78,6 +78,7 @@ type Server struct {
 	xiaozhiProfessionalASR       providers.ASRAdapter
 	xiaozhiFastAckTTS            providers.TTSAdapter
 	xiaozhiStockProfessional     bool
+	xiaozhiProductPlaybackEvents bool
 	xiaozhiListenMaxDurationMS   int64
 	wakeWordConfigPath           string
 	voiceModeConfig              string
@@ -121,6 +122,7 @@ type ServerOptions struct {
 	XiaozhiVoicePipelineAdapters *providers.VoicePipelineAdapters
 	AudioIngressConfig           audio.IngressConfig
 	XiaozhiStockProfessional     bool
+	XiaozhiProductPlaybackEvents bool
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
 	WorkspaceDocumentStoreDir    string
@@ -1153,6 +1155,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiProfessionalASR:       xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:            xiaozhiFastAckTTS,
 		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
+		xiaozhiProductPlaybackEvents: options.XiaozhiProductPlaybackEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
 		xiaozhiListenMaxDurationMS:   xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:           wakeWordConfigPath(options.WakeWordConfigPath),
 		roleplayProfileConfig:        DefaultRoleplayProfile,
@@ -1189,6 +1192,15 @@ func gatewayEnvValue(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func gatewayEnvBool(env []string, key string) bool {
+	switch strings.ToLower(strings.TrimSpace(gatewayEnvValue(env, key))) {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func isZeroGatewayVoicePipelineSelection(selection providers.VoicePipelineSelection) bool {
@@ -6163,13 +6175,18 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before device events"))
 		return true
 	}
-	if !session.features.DeviceEvents {
-		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation"))
+	productPlaybackEvents := s.xiaozhiProductPlaybackEventsAllowed(session)
+	if !session.features.DeviceEvents && !productPlaybackEvents {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product playback-events allowance"))
 		return true
 	}
 	event, err := xiaozhitransport.ParseDeviceExtensionEvent(data)
 	if err != nil {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
+		return true
+	}
+	if productPlaybackEvents && !session.features.DeviceEvents && event.Kind != xiaozhitransport.DeviceEventKindPlayback {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product playback-events allowance only accepts playback acknowledgements"))
 		return true
 	}
 	switch event.Kind {
@@ -6572,14 +6589,15 @@ func pcm16Bytes(pcm []int16) []byte {
 }
 
 func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
-	capabilities := map[string]string(nil)
-	if frame.Control != nil && frame.Control.Hello != nil {
-		capabilities = xiaozhiFeatureCapabilities(frame.Control.Hello.Features)
-	}
 	session := &xiaozhiSession{
 		deviceID:  frame.DeviceID,
 		traceID:   frame.TraceID,
 		sessionID: frame.SessionID,
+	}
+	capabilities := map[string]string(nil)
+	if frame.Control != nil && frame.Control.Hello != nil {
+		session.features = frame.Control.Hello.Features
+		capabilities = s.xiaozhiFeatureCapabilities(frame.Control.Hello.Features, session)
 	}
 	s.recordXiaozhiDeviceActivity(session, "xiaozhi.hello", capabilities)
 }
@@ -6701,7 +6719,7 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 	s.devices[session.deviceID] = record
 }
 
-func xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures) map[string]string {
+func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures, session *xiaozhiSession) map[string]string {
 	capabilities := map[string]string{
 		"xiaozhi_profile":   xiaozhiClientProfile(features),
 		"xiaozhi_transport": "websocket",
@@ -6716,6 +6734,12 @@ func xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures) map[str
 	if features.DeviceEvents {
 		capabilities["xiaozhi_feature_device_events"] = "true"
 	}
+	if features.PlaybackEvents {
+		capabilities["xiaozhi_feature_playback_events"] = "true"
+		if s.xiaozhiProductPlaybackEventsAllowed(session) {
+			capabilities["xiaozhi_product_playback_events"] = "true"
+		}
+	}
 	if features.DebugMetrics {
 		capabilities["xiaozhi_feature_debug_metrics"] = "true"
 	}
@@ -6723,6 +6747,16 @@ func xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures) map[str
 		capabilities["xiaozhi_debug_extension_isolated"] = "true"
 	}
 	return capabilities
+}
+
+func (s *Server) xiaozhiProductPlaybackEventsAllowed(session *xiaozhiSession) bool {
+	return s != nil &&
+		s.xiaozhiProductPlaybackEvents &&
+		session != nil &&
+		session.features.PlaybackEvents &&
+		!session.features.DeviceEvents &&
+		!session.features.DebugMetrics &&
+		hardwareMACDeviceID(session.deviceID)
 }
 
 func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
@@ -8158,6 +8192,11 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 		reply["a21"] = map[string]any{
 			"profile":       "debug",
 			"device_events": true,
+		}
+	} else if s.xiaozhiProductPlaybackEventsAllowed(session) {
+		reply["a21"] = map[string]any{
+			"profile":         "product",
+			"playback_events": true,
 		}
 	}
 	return reply

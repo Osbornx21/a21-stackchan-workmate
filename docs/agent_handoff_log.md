@@ -12791,6 +12791,101 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 17:39 CST - Product Playback Ack Channel Adaptation
+
+Round goal:
+
+- Continue `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` without repeating closed
+  roleplay/provider/V21 work or weakening internal test 3. Add only the
+  product-safe playback acknowledgement adaptation needed to collect missing
+  physical StackChan playback-start / stop_done evidence.
+
+Actual completed work:
+
+- Added `hello.features.playback_events` parsing to the Xiaozhi transport
+  hello model.
+- Added Gateway option/env `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`, default off.
+- When the env/option is enabled, only a hardware-MAC device that advertises
+  `playback_events` and does not request debug flags receives
+  `a21.profile=product` / `a21.playback_events=true`.
+- Product allowance accepts only playback `start` / `stop_done` `type=device`
+  acknowledgements. Non-playback device events are rejected, and the existing
+  debug `features.device_events=true` path remains isolated.
+- Device registry capabilities now record
+  `xiaozhi_feature_playback_events=true` and
+  `xiaozhi_product_playback_events=true` for the product allowance while
+  keeping `xiaozhi_profile=stock`.
+- Updated protocol, internal-test4 plan, current-control, and project state
+  docs to state that this is an evidence-collection path, not physical PRD
+  acceptance.
+
+Changed files:
+
+- `internal/transport/xiaozhi/frame.go`
+- `internal/transport/xiaozhi/frame_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This does not deploy to ECS, enable the env in runtime, build firmware, flash,
+  write NVS, touch serial, execute providers, execute V21, or collect fresh
+  physical/audible evidence.
+- A product firmware/runtime cut still needs to advertise
+  `features.playback_events=true` before this can produce real device ack
+  evidence.
+- Product readiness remains blocked on `physical_stackchan_prd_acceptance`.
+
+Known risks/blockers:
+
+- The new Gateway allowance is intentionally default-off. If a physical device
+  does not advertise `playback_events`, it remains on the ordinary stock path.
+- Physical PRD promotion still needs real StackChan playback-start,
+  bounded stop_done/barge-in evidence, and operator or instrumented audible
+  observation.
+
+Recommended next action:
+
+- Implement or select the product-lane firmware/runtime patch that advertises
+  `features.playback_events=true` and emits playback `start` / `stop_done`,
+  then run a foreground StackChan physical evidence window and promote only via
+  `a21 xiaozhi-physical-prd-review --confirm ACCEPT_A21_XIAOZHI_PHYSICAL_PRD`.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWires(ProductPlaybackEvents|StockProfessionalRoute)' -count=1`:
+  passed.
+- `go test ./internal/transport/xiaozhi -run 'TestParseHelloCapturesFeatureProfile|TestBuildServerHelloKeepsStockProfileFreeOfDebugExtensions' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestXiaozhi(WebSocketStockProfileHelloReply|WebSocketDebugProfileHelloReplyIncludesA21DeviceEventsAllowance|StockProfileRejectsPlaybackStartDeviceEvent|ProductPlaybackEventsAllowanceRecordsPlaybackStart|DebugProfileRecordsPlayback(Start|StopDone)DeviceEvent|DebugProfileRejectsUnsafePlaybackStreamID)' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart|TestXiaozhi(StockProfileRejectsPlaybackStartDeviceEvent|DebugProfileRecordsPlayback(Start|StopDone)DeviceEvent|DebugProfileRejectsUnsafePlaybackStreamID)' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- Initial continuation compile failure was in `internal/gateway/server.go`
+  `recordXiaozhiDeviceSeen`: the in-progress diff referenced `session` before
+  declaring it. The function now constructs the temporary session first and
+  attaches hello features before deriving capabilities.
+
+Forbidden actions avoided:
+
+- No repeated roleplay/provider/V21 evidence runs.
+- No ECS deployment or runtime env mutation.
+- No firmware build, flash, serial access, NVS write, Wi-Fi change, report
+  deletion, repository prune/gc, or rollback of internal test 3 protocol/audio
+  changes.
+
 ## 2026-06-04 17:25 CST - Roleplay Clone Runtime Closed And Server-Side Candidate Ready
 
 Round goal:

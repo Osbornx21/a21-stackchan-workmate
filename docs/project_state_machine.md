@@ -31,6 +31,19 @@ Latest control update, 2026-06-04 17:23 CST:
   `reports/a21-product-readiness-20260604-172722.json` still correctly keeps
   launch/PRD false because `physical_stackchan_prd_acceptance` remains missing.
 
+Follow-on physical transition update, 2026-06-04:
+
+- `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` now has a local product-safe
+  playback acknowledgement adaptation path in progress. Gateway can parse
+  `hello.features.playback_events`; with explicit
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`, a hardware-MAC product device
+  that does not request debug features receives only `a21.profile=product` /
+  `a21.playback_events=true` and may report playback `start` / `stop_done`.
+- This is a protocol adaptation for collecting the missing physical evidence.
+  It does not change the total state away from `PHYSICAL-PENDING` until a real
+  StackChan run supplies playback-start, bounded stop_done/barge-in evidence,
+  and operator or instrumented audible observation.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`

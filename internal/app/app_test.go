@@ -6014,6 +6014,15 @@ func TestGatewayServerOptionsFromEnvWiresStockProfessionalRoute(t *testing.T) {
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresProductPlaybackEvents(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true",
+	})
+	if !options.XiaozhiProductPlaybackEvents {
+		t.Fatal("xiaozhi product playback events not configured")
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_LISTEN_MAX_MS=4500",

@@ -78,10 +78,11 @@ type HelloMessage struct {
 }
 
 type HelloFeatures struct {
-	MCP          bool
-	AEC          bool
-	DeviceEvents bool
-	DebugMetrics bool
+	MCP            bool
+	AEC            bool
+	DeviceEvents   bool
+	PlaybackEvents bool
+	DebugMetrics   bool
 }
 
 type AudioParams struct {
@@ -129,10 +130,11 @@ type helloWire struct {
 }
 
 type helloFeaturesWire struct {
-	MCP          bool `json:"mcp"`
-	AEC          bool `json:"aec"`
-	DeviceEvents bool `json:"device_events"`
-	DebugMetrics bool `json:"debug_metrics"`
+	MCP            bool `json:"mcp"`
+	AEC            bool `json:"aec"`
+	DeviceEvents   bool `json:"device_events"`
+	PlaybackEvents bool `json:"playback_events"`
+	DebugMetrics   bool `json:"debug_metrics"`
 }
 
 type audioParamsWire struct {
@@ -192,10 +194,11 @@ func ParseTextFrame(data []byte, direction Direction, identity Identity) (Frame,
 			Version:   msg.Version,
 			Transport: strings.TrimSpace(msg.Transport),
 			Features: HelloFeatures{
-				MCP:          msg.Features.MCP,
-				AEC:          msg.Features.AEC,
-				DeviceEvents: msg.Features.DeviceEvents,
-				DebugMetrics: msg.Features.DebugMetrics,
+				MCP:            msg.Features.MCP,
+				AEC:            msg.Features.AEC,
+				DeviceEvents:   msg.Features.DeviceEvents,
+				PlaybackEvents: msg.Features.PlaybackEvents,
+				DebugMetrics:   msg.Features.DebugMetrics,
 			},
 			AudioParams: AudioParams{
 				Format:                strings.TrimSpace(params.Format),

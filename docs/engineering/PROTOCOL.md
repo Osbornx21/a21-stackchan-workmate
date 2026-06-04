@@ -48,10 +48,14 @@ stock-style xiaozhi JSON control messages:
 The server hello includes stock downlink `audio_params` (`opus`, `24000 Hz`,
 mono, `60 ms`) and an `audio` alias for current local tests. The client
 `hello.features` object is parsed for `mcp`, `aec`,
-`device_events`, and `debug_metrics`; `mcp` and `aec` remain stock xiaozhi
-capability hints, while `device_events` and `debug_metrics` mark an isolated
-debug profile in the device registry and are never echoed into the stock server
-hello. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after a
+`playback_events`, `device_events`, and `debug_metrics`; `mcp` and `aec`
+remain stock xiaozhi capability hints, `playback_events` is the product-lane
+minimal playback acknowledgement hint, and `device_events` plus
+`debug_metrics` still mark an isolated debug profile in the device registry.
+Ordinary stock server hellos never echo debug fields. A hardware StackChan
+client that advertises `playback_events` may receive only the A21-namespaced
+product allowance when `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` is set on the
+Gateway. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after a
 valid `hello` and active `listen/start`. Version 1 is a raw Opus payload.
 Version 2 unwraps the 16-byte metadata header and preserves the timestamp.
 Version 3 unwraps the compact 4-byte header. The current server seam records
@@ -446,8 +450,14 @@ authorize A21-specific display rendering inside the Xiaozhi voice firmware.
 Stock hello and server hello remain free of debug or device-extension
 requirements. A debug client that explicitly advertises
 `features.device_events=true` receives only an A21-namespaced server allowance:
-`a21.profile=debug` and `a21.device_events=true`. Stock server hellos remain
-free of `a21`, `device_events`, and `debug_metrics`. A host may build
+`a21.profile=debug` and `a21.device_events=true`. A product client may
+separately advertise `features.playback_events=true`; when
+`A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`, the device ID is a hardware MAC,
+and the client has not requested `device_events` or `debug_metrics`, the server
+returns only `a21.profile=product` and `a21.playback_events=true`. This product
+allowance accepts playback `start` / `stop_done` acknowledgements and rejects
+all other `type=device` event kinds. Ordinary stock server hellos remain free
+of `a21`, `device_events`, `playback_events`, and `debug_metrics`. A host may build
 `type=device` extension events only when the connected profile explicitly
 advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
@@ -461,10 +471,11 @@ semantics:
 - `display`: `status`, `asr`, `tts`
 - `motion`: `look_up`, `nod`, `shake`, `stop`, `dance`
 - `playback`: `start` or `stop_done`, with optional `stream_id`; accepted only
-  after `features.device_events=true`. `start` is recorded as
-  `device.playback.start`; `stop_done` is recorded as
-  `device.playback.stop_done` and may prove barge-in stop completion when it
-  follows `barge_in.detected`.
+  after `features.device_events=true` or the product playback-events allowance
+  above. Product allowance does not accept `state`, `face`, `display`,
+  `motion`, or `heartbeat`. `start` is recorded as `device.playback.start`;
+  `stop_done` is recorded as `device.playback.stop_done` and may prove
+  barge-in stop completion when it follows `barge_in.detected`.
 
 For launch readiness, the extension's visual/action events are candidate
 transport evidence only until a flashed official StackChan avatar/action
@@ -1084,7 +1095,8 @@ candidate stock-Xiaozhi physical evidence to PRD-accepted physical evidence.
 It consumes a matching `a21.xiaozhi_physical_evidence.v1` report and
 `a21.xiaozhi_half_duplex_acceptance.v1` report only after the operator provides
 `--confirm ACCEPT_A21_XIAOZHI_PHYSICAL_PRD`. The command verifies target
-identity, stock/debug profile, Gateway downlink, mic ingress, playback-start,
+identity, stock profile with product playback-events allowance or isolated
+debug profile, Gateway downlink, mic ingress, playback-start,
 operator/instrument audible observation, barge-in stop, bounded
 `device.playback.stop_done`, and redaction. Its output is another
 `a21.xiaozhi_physical_evidence.v1` report with
