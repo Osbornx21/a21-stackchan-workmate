@@ -689,6 +689,26 @@ private document contents. V21 adapter responses may include redacted
 `source_scope_counts` and `workspace_status`; these are counts/status only, not
 retrieved document bodies.
 
+`professional_query` is the first Web/App-facing professional consult endpoint.
+`POST /v1/professional-query` accepts only safe JSON fields:
+`device_id`, `user_id`, `workspace_id`, `query_scope`, `text` or `utterance`,
+`trace_id`, and `session_id`. The response schema is
+`a21.gateway.professional_query.v1`; it returns the professional cue/control
+events, selected workspace runtime, device-binding decision, read-record ID and
+status, a user-facing answer when V21 succeeds, and a redacted
+`evidence_report` with counts/presence flags. The response may show the answer
+and evidence cards because it is the active consult surface, but the read
+ledger, workspace metadata, traces, and exports still must not persist or echo
+the user's question text, document text, retrieved text, evidence bodies,
+screen-card bodies, speech blocks, provider output, URLs, local paths,
+credentials, voice transcripts, or audio. Unsafe payload fields such as
+`document_text`, `data_base64`, `provider_output`, `evidence`, `screen_cards`,
+URLs, paths, credentials, transcript, or audio keys are rejected before a read
+record or V21 query is started. Device binding is enforced exactly like stock
+professional Xiaozhi and mock professional turns: when bindings exist for the
+workspace, unbound/revoked/deleted/scope-denied devices fail before
+`v21.query.start`.
+
 A21's local `v21-adapter-bridge` must call V21 native
 `/internal/v1/knowledge/voice-query` as the primary professional query path and
 must pass `device_id`, `user_id`, `workspace_id`, and `query_scope` through
@@ -793,8 +813,8 @@ soul/scenario/voice profile/bounded memory hint through existing
 mode/ASR/LLM/realtime-provider selection through existing
 `/v1/voice-chain-profiles`, configure wake-word intent through existing
 `/v1/wake-word`, run safe roleplay/professional Voice Probe checks through
-existing `/v1/fast-companion/turn`, `/v1/mock-turn`, `/v1/traces`, and
-`/v1/professional-read-records`, and view the
+existing `/v1/fast-companion/turn`, `/v1/professional-query`, `/v1/traces`,
+and `/v1/professional-read-records`, and view the
 roleplay/professional boundary from `/v1/roleplay-profile`,
 `/v1/voice-chain-profiles`, `/v1/wake-word`, and `/v1/voice-modes`. The
 console must keep state labels honest:

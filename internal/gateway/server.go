@@ -397,6 +397,45 @@ type ProfessionalReadRecordsResponse struct {
 	Redaction     ProfessionalWorkspaceRedaction `json:"redaction"`
 }
 
+type ProfessionalQueryRequest struct {
+	DeviceID    string `json:"device_id,omitempty"`
+	Text        string `json:"text,omitempty"`
+	Utterance   string `json:"utterance,omitempty"`
+	UserID      string `json:"user_id,omitempty"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	QueryScope  string `json:"query_scope,omitempty"`
+	TraceID     string `json:"trace_id,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+}
+
+type ProfessionalQueryResponse struct {
+	SchemaVersion          string                                       `json:"schema_version"`
+	Service                string                                       `json:"service"`
+	Status                 string                                       `json:"status"`
+	FailureCode            string                                       `json:"failure_code,omitempty"`
+	TraceID                string                                       `json:"trace_id"`
+	SessionID              string                                       `json:"session_id"`
+	DeviceID               string                                       `json:"device_id,omitempty"`
+	Mode                   string                                       `json:"mode"`
+	Route                  string                                       `json:"route"`
+	AdapterContractVersion string                                       `json:"adapter_contract_version"`
+	Workspace              ProfessionalWorkspaceRuntime                 `json:"workspace"`
+	DeviceBinding          ProfessionalQueryDeviceBinding               `json:"device_binding"`
+	ReadRecordID           string                                       `json:"read_record_id,omitempty"`
+	ReadRecordStatus       string                                       `json:"read_record_status,omitempty"`
+	Answer                 *protocol.ControlEventPayload                `json:"answer,omitempty"`
+	EvidenceReport         *v21adapter.ProfessionalBridgeEvidenceReport `json:"evidence_report,omitempty"`
+	Events                 []protocol.Envelope                          `json:"events"`
+	Redaction              ProfessionalWorkspaceRedaction               `json:"redaction"`
+}
+
+type ProfessionalQueryDeviceBinding struct {
+	Policy      string `json:"policy"`
+	Status      string `json:"status"`
+	BindingID   string `json:"binding_id,omitempty"`
+	FailureCode string `json:"failure_code,omitempty"`
+}
+
 type ProfessionalReadRecord struct {
 	RecordID          string                         `json:"record_id"`
 	Status            string                         `json:"status"`
@@ -1054,6 +1093,7 @@ const (
 	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
 	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
 	ProfessionalReadRecordsSchemaVersion      = "a21.gateway.professional_read_records.v1"
+	ProfessionalQuerySchemaVersion            = "a21.gateway.professional_query.v1"
 	WorkspaceDocumentsSchemaVersion           = "a21.gateway.workspace_documents.v1"
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
 	WorkspaceIndexJobsSchemaVersion           = "a21.gateway.workspace_index_jobs.v1"
@@ -1309,6 +1349,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
+	mux.HandleFunc("/v1/professional-query", s.handleProfessionalQuery)
 	mux.HandleFunc("/v1/workspace-documents", s.handleWorkspaceDocuments)
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
 	mux.HandleFunc("/v1/workspace-index-jobs", s.handleWorkspaceIndexJobs)
@@ -1445,6 +1486,36 @@ func (s *Server) handleProfessionalReadRecords(w http.ResponseWriter, r *http.Re
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleProfessionalQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	req, err := decodeProfessionalQueryRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Text) == "" && strings.TrimSpace(req.Utterance) == "" {
+		http.Error(w, "text or utterance is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.DeviceID) != "" && safeWorkspaceDeviceID(req.DeviceID) == "" {
+		http.Error(w, "valid A21 device_id is required", http.StatusBadRequest)
+		return
+	}
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	req.TraceID = traceID
+	req.SessionID = sessionID
+	s.recordTrace(traceID, sessionID, req.DeviceID, "http.professional_query.received", s.now().UnixMilli())
+	response, err := s.executeProfessionalQuery(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleWorkspaceDocuments(w http.ResponseWriter, r *http.Request) {
@@ -2485,6 +2556,62 @@ func professionalWorkspaceRedaction() ProfessionalWorkspaceRedaction {
 		ProviderOutputStored:  false,
 		VoiceTranscriptStored: false,
 	}
+}
+
+func decodeProfessionalQueryRequest(r *http.Request) (ProfessionalQueryRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return ProfessionalQueryRequest{}, fmt.Errorf("invalid json")
+	}
+	for key := range raw {
+		if professionalQueryForbiddenKey(key) {
+			return ProfessionalQueryRequest{}, fmt.Errorf("professional query request must not include document text, evidence bodies, provider output, URLs, paths, credentials, base64, transcript, or audio payload fields")
+		}
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return ProfessionalQueryRequest{}, fmt.Errorf("invalid json")
+	}
+	var req ProfessionalQueryRequest
+	if err := json.Unmarshal(encoded, &req); err != nil {
+		return ProfessionalQueryRequest{}, fmt.Errorf("invalid json")
+	}
+	return req, nil
+}
+
+func professionalQueryForbiddenKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if workspaceUploadJobForbiddenKey(key) {
+		return true
+	}
+	for _, forbidden := range []string{
+		"answer",
+		"fast_answer",
+		"screen_card",
+		"screen_cards",
+		"speech_block",
+		"speech_blocks",
+		"follow_up",
+		"follow_ups",
+		"quote",
+		"quotes",
+		"retrieval",
+		"retrieved",
+		"source_text",
+		"source_body",
+	} {
+		if key == forbidden {
+			return true
+		}
+	}
+	return false
+}
+
+func professionalQueryUtterance(req ProfessionalQueryRequest) string {
+	if strings.TrimSpace(req.Text) != "" {
+		return strings.TrimSpace(req.Text)
+	}
+	return strings.TrimSpace(req.Utterance)
 }
 
 func (s *Server) startProfessionalReadRecord(request v21adapter.QueryRequest, utteranceBucket string) string {
@@ -10454,47 +10581,105 @@ func (s *Server) mockTurnResponse(req MockTurnRequest) MockTurnResponse {
 }
 
 func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse {
+	response, err := s.executeProfessionalQuery(ProfessionalQueryRequest{
+		DeviceID:  req.DeviceID,
+		Text:      req.Text,
+		TraceID:   req.TraceID,
+		SessionID: req.SessionID,
+	})
+	if err != nil {
+		traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+		events := s.controlSequence(req.DeviceID, traceID, sessionID, []protocol.ControlEventPayload{{
+			State: protocol.ExpressionError,
+			Mode:  protocol.ModeProfessional,
+			Text:  "专业模式参数不完整。我先停在证据边界。",
+			Final: true,
+		}})
+		return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+	}
+	return MockTurnResponse{TraceID: response.TraceID, SessionID: response.SessionID, DeviceID: response.DeviceID, Events: response.Events}
+}
+
+func (s *Server) executeProfessionalQuery(req ProfessionalQueryRequest) (ProfessionalQueryResponse, error) {
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
+	deviceID := strings.TrimSpace(req.DeviceID)
+	utterance := professionalQueryUtterance(req)
+	workspace, err := s.professionalWorkspaceRuntime(ProfessionalWorkspaceSelectionRequest{
+		UserID:      req.UserID,
+		WorkspaceID: req.WorkspaceID,
+		QueryScope:  req.QueryScope,
+	})
+	if err != nil {
+		return ProfessionalQueryResponse{}, err
+	}
 	preQueryPayloads := []protocol.ControlEventPayload{
 		{State: protocol.ExpressionListening, Mode: protocol.ModeProfessional, Text: "我在听"},
 		{State: protocol.ExpressionProfessional, Mode: protocol.ModeProfessional, Text: "进入专业模式。情绪先放旁边，现在只看证据。"},
 		{State: protocol.ExpressionThinking, Mode: protocol.ModeProfessional, Text: "我在查，先把证据和置信度拉出来。"},
 	}
-	events := s.controlSequence(req.DeviceID, traceID, sessionID, preQueryPayloads)
-	workspace := s.selectedProfessionalWorkspace()
-	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
-	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.workspace.ready", s.now().UnixMilli())
-	s.recordTrace(traceID, sessionID, req.DeviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
-	utteranceBucket := v21UtteranceLengthBucket(req.Text)
+	events := s.controlSequence(deviceID, traceID, sessionID, preQueryPayloads)
+	s.recordTrace(traceID, sessionID, deviceID, "professional.query.started", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, deviceID, "professional.checking_feedback.sent", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, deviceID, "professional.workspace.ready", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, deviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
+	utteranceBucket := v21UtteranceLengthBucket(utterance)
 	queryRequest := v21adapter.QueryRequest{
 		TraceID:            traceID,
 		SessionID:          sessionID,
-		DeviceID:           req.DeviceID,
+		DeviceID:           deviceID,
 		UserID:             workspace.UserID,
 		WorkspaceID:        workspace.WorkspaceID,
 		Mode:               "professional",
 		QueryScope:         workspace.QueryScope,
-		Utterance:          req.Text,
+		Utterance:          utterance,
 		LatencyProfile:     "fast_first",
 		AnswerStyle:        "voice_first_with_citations",
 		MaxFirstResponseMS: 1200,
 		PrivacyScope:       "professional_only",
 	}
 	readRecordID := s.startProfessionalReadRecord(queryRequest, utteranceBucket)
-	bindingDecision := s.professionalDeviceBindingDecision(req.DeviceID, workspace.UserID, workspace.WorkspaceID, workspace.QueryScope)
-	s.recordTrace(traceID, sessionID, req.DeviceID, bindingDecision.TraceMarker, s.now().UnixMilli())
+	bindingDecision := s.professionalDeviceBindingDecision(deviceID, workspace.UserID, workspace.WorkspaceID, workspace.QueryScope)
+	deviceBinding := ProfessionalQueryDeviceBinding{
+		Policy:      bindingDecision.Policy,
+		Status:      bindingDecision.Status,
+		BindingID:   bindingDecision.BindingID,
+		FailureCode: bindingDecision.FailureCode,
+	}
+	baseResponse := ProfessionalQueryResponse{
+		SchemaVersion:          ProfessionalQuerySchemaVersion,
+		Service:                DeviceRegistryServiceName,
+		Status:                 "started",
+		TraceID:                traceID,
+		SessionID:              sessionID,
+		DeviceID:               deviceID,
+		Mode:                   VoiceModeProfessional,
+		Route:                  "professional_query",
+		AdapterContractVersion: ProfessionalAdapterContractVersion,
+		Workspace:              workspace,
+		DeviceBinding:          deviceBinding,
+		ReadRecordID:           readRecordID,
+		ReadRecordStatus:       "started",
+		Events:                 events,
+		Redaction:              professionalWorkspaceRedaction(),
+	}
+	s.recordTrace(traceID, sessionID, deviceID, bindingDecision.TraceMarker, s.now().UnixMilli())
 	if !bindingDecision.Allowed {
 		s.failProfessionalReadRecord(readRecordID, bindingDecision.FailureCode)
-		events = append(events, s.controlSequenceFrom(req.DeviceID, traceID, sessionID, uint64(len(events)+1), []protocol.ControlEventPayload{{
+		events = append(events, s.controlSequenceFrom(deviceID, traceID, sessionID, uint64(len(events)+1), []protocol.ControlEventPayload{{
 			State: protocol.ExpressionError,
 			Mode:  protocol.ModeProfessional,
 			Text:  "这台设备还没绑定到当前专业工作区。我先停在证据边界，避免把个人资料查错地方。",
 			Final: true,
 		}})...)
-		return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+		baseResponse.Status = "failed"
+		baseResponse.FailureCode = bindingDecision.FailureCode
+		baseResponse.ReadRecordStatus = "failed"
+		baseResponse.Events = events
+		baseResponse.DeviceBinding = deviceBinding
+		return baseResponse, nil
 	}
-	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
-	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, deviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
+	s.recordTrace(traceID, sessionID, deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)
 	defer cancel()
 	started := time.Now()
@@ -10503,40 +10688,55 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 	postQueryPayloads := make([]protocol.ControlEventPayload, 0, 1)
 	if err != nil {
 		s.failProfessionalReadRecord(readRecordID, professionalReadFailureCode(err, queryCtx))
-		s.recordV21QueryFailure(traceID, sessionID, req.DeviceID, err, queryCtx)
+		s.recordV21QueryFailure(traceID, sessionID, deviceID, err, queryCtx)
 		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
 			State: protocol.ExpressionError,
 			Mode:  protocol.ModeProfessional,
 			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
 			Final: true,
 		})
-	} else if _, reportErr := v21adapter.NewProfessionalBridgeEvidenceReport(response); reportErr != nil {
-		s.failProfessionalReadRecord(readRecordID, "contract_invalid")
-		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error", s.now().UnixMilli())
-		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.error.contract_invalid", s.now().UnixMilli())
-		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
-			State: protocol.ExpressionError,
-			Mode:  protocol.ModeProfessional,
-			Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
-			Final: true,
-		})
+		baseResponse.Status = "failed"
+		baseResponse.FailureCode = professionalReadFailureCode(err, queryCtx)
+		baseResponse.ReadRecordStatus = "failed"
 	} else {
-		s.completeProfessionalReadRecord(readRecordID, response)
-		s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.first_result", s.now().UnixMilli())
-		postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
-			State:        protocol.ExpressionSpeaking,
-			Mode:         protocol.ModeProfessional,
-			Text:         response.FastAnswer,
-			Final:        true,
-			Confidence:   response.Confidence,
-			Evidence:     v21EvidenceToProtocol(response.Evidence),
-			SpeechBlocks: response.SpeechBlocks,
-			ScreenCards:  v21ScreenCardsToProtocol(response.ScreenCards),
-			FollowUps:    response.FollowUps,
-		})
+		report, reportErr := v21adapter.NewProfessionalBridgeEvidenceReport(response)
+		if reportErr != nil {
+			s.failProfessionalReadRecord(readRecordID, "contract_invalid")
+			s.recordTrace(traceID, sessionID, deviceID, "v21.query.error", s.now().UnixMilli())
+			s.recordTrace(traceID, sessionID, deviceID, "v21.query.error.contract_invalid", s.now().UnixMilli())
+			postQueryPayloads = append(postQueryPayloads, protocol.ControlEventPayload{
+				State: protocol.ExpressionError,
+				Mode:  protocol.ModeProfessional,
+				Text:  "V21 现在没接上。我先把这个问题留住，等专业系统回来再查证据。",
+				Final: true,
+			})
+			baseResponse.Status = "failed"
+			baseResponse.FailureCode = "contract_invalid"
+			baseResponse.ReadRecordStatus = "failed"
+		} else {
+			s.completeProfessionalReadRecord(readRecordID, response)
+			s.recordTrace(traceID, sessionID, deviceID, "v21.query.first_result", s.now().UnixMilli())
+			answer := protocol.ControlEventPayload{
+				State:        protocol.ExpressionSpeaking,
+				Mode:         protocol.ModeProfessional,
+				Text:         response.FastAnswer,
+				Final:        true,
+				Confidence:   response.Confidence,
+				Evidence:     v21EvidenceToProtocol(response.Evidence),
+				SpeechBlocks: response.SpeechBlocks,
+				ScreenCards:  v21ScreenCardsToProtocol(response.ScreenCards),
+				FollowUps:    response.FollowUps,
+			}
+			postQueryPayloads = append(postQueryPayloads, answer)
+			baseResponse.Status = "completed"
+			baseResponse.ReadRecordStatus = "completed"
+			baseResponse.Answer = &answer
+			baseResponse.EvidenceReport = &report
+		}
 	}
-	events = append(events, s.controlSequenceFrom(req.DeviceID, traceID, sessionID, uint64(len(events)+1), postQueryPayloads)...)
-	return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+	events = append(events, s.controlSequenceFrom(deviceID, traceID, sessionID, uint64(len(events)+1), postQueryPayloads)...)
+	baseResponse.Events = events
+	return baseResponse, nil
 }
 
 func (s *Server) recordV21QueryFailure(traceID string, sessionID string, deviceID string, err error, queryCtx context.Context) {

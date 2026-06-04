@@ -493,7 +493,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/wake-word",
 		"/v1/voice-modes",
 		"/v1/fast-companion/turn",
-		"/v1/mock-turn",
+		"/v1/professional-query",
 		"/v1/traces",
 		`id="queryScope"`,
 		`id="documentLabel"`,
@@ -575,7 +575,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"runtime_hot_swap=false",
 		"route=idle",
 		"trace=none",
-		"professional_mock_turn",
+		"professional_query",
 		"fast_companion_hybrid",
 		"a21_roleplay_default",
 		"desk_mouthpiece",
@@ -2333,6 +2333,142 @@ func TestWorkspaceDeviceBindingsRejectUnsafePayloadFields(t *testing.T) {
 	for _, forbidden := range []string{"RAW_PAIRING_SECRET", "RAW_DEVICE_CREDENTIAL", "secret.example"} {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("unsafe binding rejection leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func TestProfessionalQueryEndpointExecutesBoundWorkspaceAndRedactsLedger(t *testing.T) {
+	v21 := &capturingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	handler := server.Handler()
+
+	bindReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-device-bindings", bytes.NewBufferString(`{"device_id":"stackchan-web-001","user_id":"a21_user_web","workspace_id":"a21_workspace_web","allowed_query_scopes":["personal_plus_public"]}`))
+	bindRec := httptest.NewRecorder()
+	handler.ServeHTTP(bindRec, bindReq)
+	if bindRec.Code != http.StatusOK {
+		t.Fatalf("bind status = %d: %s", bindRec.Code, bindRec.Body.String())
+	}
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-web-001","user_id":"a21_user_web","workspace_id":"a21_workspace_web","query_scope":"personal_plus_public","text":"RAW_PRIVATE_QUERY_ENDPOINT","trace_id":"a21-trace-professional-query","session_id":"a21-session-professional-query"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/professional-query", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("query status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response ProfessionalQueryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != ProfessionalQuerySchemaVersion ||
+		response.Status != "completed" ||
+		response.Route != "professional_query" ||
+		response.TraceID != "a21-trace-professional-query" ||
+		response.SessionID != "a21-session-professional-query" ||
+		response.DeviceID != "stackchan-web-001" ||
+		response.Workspace.UserID != "a21_user_web" ||
+		response.Workspace.WorkspaceID != "a21_workspace_web" ||
+		response.Workspace.QueryScope != "personal_plus_public" ||
+		response.DeviceBinding.Status != "bound" ||
+		response.ReadRecordID == "" ||
+		response.ReadRecordStatus != "completed" ||
+		response.Answer == nil ||
+		response.Answer.Text == "" ||
+		response.EvidenceReport == nil ||
+		response.EvidenceReport.EvidenceCount != 1 ||
+		len(response.Events) < 4 {
+		t.Fatalf("professional query response = %+v", response)
+	}
+	if v21.request.Utterance != "RAW_PRIVATE_QUERY_ENDPOINT" ||
+		v21.request.UserID != "a21_user_web" ||
+		v21.request.WorkspaceID != "a21_workspace_web" ||
+		v21.request.QueryScope != "personal_plus_public" ||
+		v21.request.Mode != "professional" ||
+		v21.request.PrivacyScope != "professional_only" {
+		t.Fatalf("v21 request = %+v", v21.request)
+	}
+	if strings.Contains(rec.Body.String(), "RAW_PRIVATE_QUERY_ENDPOINT") {
+		t.Fatalf("professional query response echoed raw query: %s", rec.Body.String())
+	}
+	if response.Redaction.QueryTextStored || response.Redaction.RetrievedTextStored ||
+		response.Redaction.ProviderOutputStored || response.Redaction.DocumentTextStored ||
+		response.Redaction.CredentialValueStored || response.Redaction.VoiceTranscriptStored {
+		t.Fatalf("query redaction = %+v", response.Redaction)
+	}
+	assertProfessionalReadRecordStatus(t, handler, "a21-trace-professional-query", "completed", "")
+	assertTraceContains(t, handler, "a21-trace-professional-query", "http.professional_query.received")
+	assertTraceContains(t, handler, "a21-trace-professional-query", "professional.query.started")
+	assertTraceContains(t, handler, "a21-trace-professional-query", "professional.device_binding.bound")
+	assertTraceContains(t, handler, "a21-trace-professional-query", "v21.query.start")
+
+	recordsReq := httptest.NewRequest(http.MethodGet, "/v1/professional-read-records?trace_id=a21-trace-professional-query", nil)
+	recordsRec := httptest.NewRecorder()
+	handler.ServeHTTP(recordsRec, recordsReq)
+	if strings.Contains(recordsRec.Body.String(), "RAW_PRIVATE_QUERY_ENDPOINT") {
+		t.Fatalf("read records leaked query text: %s", recordsRec.Body.String())
+	}
+}
+
+func TestProfessionalQueryEndpointBlocksUnboundDeviceBeforeV21(t *testing.T) {
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	handler := server.Handler()
+
+	bindReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-device-bindings", bytes.NewBufferString(`{"device_id":"stackchan-bound-web-001","user_id":"a21_user_web_guard","workspace_id":"a21_workspace_web_guard","allowed_query_scopes":["public_only"]}`))
+	bindRec := httptest.NewRecorder()
+	handler.ServeHTTP(bindRec, bindReq)
+	if bindRec.Code != http.StatusOK {
+		t.Fatalf("bind status = %d: %s", bindRec.Code, bindRec.Body.String())
+	}
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-unbound-web-001","user_id":"a21_user_web_guard","workspace_id":"a21_workspace_web_guard","query_scope":"public_only","text":"RAW_PRIVATE_UNBOUND_QUERY_ENDPOINT","trace_id":"a21-trace-professional-query-unbound","session_id":"a21-session-professional-query-unbound"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/professional-query", body)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("query status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response ProfessionalQueryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "failed" ||
+		response.FailureCode != "device_unbound" ||
+		response.ReadRecordStatus != "failed" ||
+		response.DeviceBinding.Status != "unbound" ||
+		response.DeviceBinding.FailureCode != "device_unbound" {
+		t.Fatalf("blocked query response = %+v", response)
+	}
+	if v21.calls != 0 {
+		t.Fatalf("v21 calls after unbound professional query = %d, want 0", v21.calls)
+	}
+	if strings.Contains(rec.Body.String(), "RAW_PRIVATE_UNBOUND_QUERY_ENDPOINT") {
+		t.Fatalf("blocked query response echoed raw query: %s", rec.Body.String())
+	}
+	assertProfessionalReadRecordStatus(t, handler, "a21-trace-professional-query-unbound", "failed", "device_unbound")
+	assertTraceContains(t, handler, "a21-trace-professional-query-unbound", "professional.device_binding.blocked.device_unbound")
+	assertTraceOmits(t, handler, "a21-trace-professional-query-unbound", "v21.query.start")
+}
+
+func TestProfessionalQueryEndpointRejectsUnsafePayloadFields(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/v1/professional-query", bytes.NewBufferString(`{
+		"device_id":"stackchan-web-001",
+		"text":"查一下证据",
+		"document_text":"RAW_DOCUMENT_TEXT",
+		"provider_output":"RAW_PROVIDER_OUTPUT",
+		"screen_cards":[{"text":"RAW_CARD"}]
+	}`))
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"RAW_DOCUMENT_TEXT", "RAW_PROVIDER_OUTPUT", "RAW_CARD"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("unsafe query rejection leaked %q: %s", forbidden, rec.Body.String())
 		}
 	}
 }

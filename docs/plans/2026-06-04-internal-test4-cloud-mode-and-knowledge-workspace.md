@@ -185,11 +185,10 @@ StackChan hardware.
 - The workspace console now also exposes a safe Voice Probe panel. Roleplay
   probe uses existing `/v1/fast-companion/turn` boundary metadata to show the
   selected role soul, scenario, voice profile, memory count, prompt readiness,
-  and trace markers. Professional probe uses existing `/v1/mock-turn`,
-  `/v1/traces`, and `/v1/professional-read-records` to show professional
-  route/read metadata. It does not add a backend route, execute real provider
-  or V21 services, index documents, touch firmware/hardware, or expose raw
-  utterance, prompt, evidence, document, credential, or audio content.
+  and trace markers. Professional probe now uses the formal
+  `/v1/professional-query` Web/App consult endpoint plus `/v1/traces` and
+  `/v1/professional-read-records` to show professional route/read metadata
+  instead of depending on `/v1/mock-turn`.
 - Product readiness and server-side readiness now ingest the existing static
   no-execute selected voice-chain capability report
   `a21.xiaozhi_streaming_provider_readiness.v1` through
@@ -235,6 +234,14 @@ StackChan hardware.
   and safe metadata export. It does not store pairing secrets, provider/V21
   credentials, document text, utterance text, evidence bodies, voice data, local
   paths, URLs, or audio.
+- Gateway now exposes `POST /v1/professional-query` as the first formal
+  Web/App professional consult endpoint. It accepts safe query/workspace/device
+  fields, emits the professional checking cue, enforces workspace device
+  bindings before `v21.query.start`, starts/completes/fails the read ledger,
+  and returns user-facing answer/evidence events plus a redacted evidence
+  report when V21 succeeds. Gateway metadata, workspace/read-ledger records,
+  traces, and exports do not echo the user's query text; they still store only
+  IDs, scope, status, counts, length bucket, and redaction flags.
 
 ## Product Form
 
@@ -481,8 +488,11 @@ Acceptance:
    `/v1/workspace-sources`; local file upload intake is now completed through
    `/v1/workspace-documents` as `stored_local_pending_index`; no-execute index
    request readiness is now completed through `/v1/workspace-index-jobs` as
-   `indexing_requested_no_execute`. Import, parsing, chunking, embedding,
-   actual indexing, cloud storage, and V21 execution are still not implemented.
+   `indexing_requested_no_execute`; formal Web/App professional consult is now
+   completed through `/v1/professional-query` with read-record and device
+   binding guard reuse. Import, parsing, chunking, embedding, actual indexing,
+   cloud storage, durable tenant ACL, and V21 release/merge are still not
+   implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;
    - dialogue alias normalization;
@@ -561,6 +571,15 @@ Execution update:
   or CLI options while preserving calibration, mutating only the Xiaozhi
   connection keys and requested Wi-Fi keys, and redacting credentials from
   stdout/reports.
+- `T-INTERNAL-TEST4-PROFESSIONAL-QUERY-ENDPOINT-001` closes the Web/App
+  consult-entry gap. Gateway now exposes `POST /v1/professional-query` with
+  schema `a21.gateway.professional_query.v1`, reuses the professional
+  checking/read-record/V21 adapter path, enforces the workspace device-binding
+  guard before V21 execution, rejects unsafe raw payload/evidence/provider
+  fields, and updates `/workspace` professional probe to use the formal
+  endpoint. This is a Gateway product-surface cut; it is not real indexing,
+  durable cloud auth/ACL, V21 merge/release, provider deployment, firmware,
+  NVS, flash, or physical StackChan consult acceptance.
 
 ## Not In Scope For This First Cut
 

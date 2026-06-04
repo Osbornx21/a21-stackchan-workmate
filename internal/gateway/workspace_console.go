@@ -888,7 +888,7 @@ const workspaceConsoleHTML = `<!doctype html>
         professional_workspace_status: latest.workspace_status || '',
         professional_failure_code: latest.failure_code || ''
       });
-      setProbeRoute('professional_mock_turn', payload);
+      setProbeRoute('professional_query', payload);
     }
     async function refreshVoiceProbeTrace() {
       if (!state.voiceProbe || !state.voiceProbe.trace_id) {
@@ -938,14 +938,16 @@ const workspaceConsoleHTML = `<!doctype html>
         trace_id: ids.trace_id,
         session_id: ids.session_id
       };
-      const payload = await postJSON('/v1/mock-turn', {
-        device_id: 'stackchan-sim-001',
-        mode: 'professional',
+      const payload = await postJSON('/v1/professional-query', {
+        device_id: currentDeviceID(),
+        user_id: ui.userId.textContent || 'a21_local_user',
+        workspace_id: ui.workspaceId.textContent || 'a21_local_workspace',
+        query_scope: ui.queryScope.value,
         text: probeCue('professional'),
         trace_id: ids.trace_id,
         session_id: ids.session_id
       });
-      setProbeRoute('professional_mock_turn', payload);
+      setProbeRoute(payload.route || 'professional_query', payload);
       await refreshVoiceProbeTrace();
       const records = await refreshVoiceProbeReads();
       setProbeProfessional(payload, records);

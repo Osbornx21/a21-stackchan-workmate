@@ -150,15 +150,19 @@ Current cloud/workspace product cut:
   Gateway now exposes memory-only `GET/POST/PUT
   /v1/workspace-device-bindings`, adds device-binding summary to
   `/v1/professional-workspace`, exposes bind/revoke controls in `/workspace`,
-  and gates professional mock/Xiaozhi turns before V21 execution whenever a
-  workspace has binding records. No binding records keeps old internal-test
-  flows `open_until_binding_configured`; bound devices may query; unbound,
-  revoked, deleted, or query-scope-denied devices fail before `v21.query.start`
-  with safe read-ledger failure codes.
+  and gates professional mock/Xiaozhi/Web-App consult turns before V21
+  execution whenever a workspace has binding records. Gateway now also exposes
+  formal `POST /v1/professional-query` with schema
+  `a21.gateway.professional_query.v1`; `/workspace` professional probe uses
+  that endpoint rather than `/v1/mock-turn`. No binding records keeps old
+  internal-test flows `open_until_binding_configured`; bound devices may query;
+  unbound, revoked, deleted, or query-scope-denied devices fail before
+  `v21.query.start` with safe read-ledger failure codes.
 - Boundary:
-  this is cloud/workspace access metadata only. It does not execute provider or
-  V21 services, index documents, store pairing secrets, touch firmware, flash,
-  write NVS, or promote physical StackChan PRD acceptance.
+  this is a Gateway cloud/workspace product-surface cut. It does not perform
+  real document indexing, durable cloud auth/tenant ACL, V21 merge/release,
+  provider deployment, store pairing secrets, touch firmware, flash, write NVS,
+  or promote physical StackChan PRD acceptance.
 
 ## Scoped Hardware Parity Transition
 
@@ -1352,6 +1356,14 @@ Current implementation state:
   `query_scope=public_only`, and `workspace_status=searchable` in the
   host-local default mock path.
 - Desktop and mobile render checks had no horizontal overflow.
+
+Follow-on product-surface update:
+
+- The professional probe path has now moved from `/v1/mock-turn` to the formal
+  Web/App consult endpoint `POST /v1/professional-query`. The old observations
+  above remain historical evidence for the mock probe cut; current workspace
+  console behavior should be read from the professional-query endpoint and its
+  read-record trace.
 
 Current conclusion:
 

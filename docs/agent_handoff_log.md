@@ -14167,3 +14167,87 @@ Forbidden actions avoided:
 - No provider execution, V21 execution, ECS/root-secret/runtime change, firmware
   build, flash, serial, NVS, report deletion, prune/gc, or internal-test3
   rollback occurred.
+
+## 2026-06-04 18:45 CST - Professional Query Endpoint Product Surface
+
+Round goal:
+
+- Continue internal test 4 cloud/workspace product progress without repeating
+  closed device-binding, roleplay, provider, V21, or firmware work.
+
+Actual completed work:
+
+- Added formal `POST /v1/professional-query` with schema
+  `a21.gateway.professional_query.v1` for Web/App professional consult.
+- The endpoint accepts safe device/workspace/scope/query fields, emits the
+  professional checking cue, starts the professional read ledger, enforces the
+  workspace device-binding guard before `v21.query.start`, calls the A21/V21
+  adapter only after that guard, and returns user-facing answer/evidence events
+  plus a redacted evidence report when V21 succeeds.
+- Unsafe payload fields such as document text, evidence bodies, provider
+  output, base64, URLs/paths, credentials, transcript, screen cards, speech
+  blocks, and audio are rejected before read-record or V21 execution.
+- Refactored mock professional turns to reuse the same Gateway professional
+  query execution path, keeping mock/Web/App guard and read-ledger behavior in
+  one place.
+- Updated `/workspace` professional probe to call `/v1/professional-query`
+  instead of `/v1/mock-turn`.
+- Updated protocol/control/state docs so the next environment should continue
+  from the formal professional-query endpoint rather than repeating mock probe
+  work.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is a host-local Gateway product-surface cut. It does not implement real
+  document parsing, chunking, embedding, indexing, cloud storage, durable
+  account/auth/tenant ACL, V21 merge/release, provider deployment, firmware
+  flash, NVS write, serial access, or physical StackChan professional consult
+  acceptance.
+- Physical PRD acceptance still needs the foreground StackChan evidence window
+  with playback `start` / `stop_done`, barge-in, wake, and audible observation.
+
+Known risks/blockers:
+
+- Device bindings and read records remain memory-only in this Gateway slice.
+- The endpoint can show user-facing answer/evidence output because it is the
+  active consult surface; the persistence/redaction guarantee applies to
+  Gateway metadata, workspace/read-ledger records, traces, and exports.
+
+Recommended next action:
+
+- Continue the cloud/workspace path with durable account/device binding and
+  indexing-worker handoff, or use the approved foreground hardware window to
+  collect physical StackChan PRD evidence. Do not go back to `/v1/mock-turn` as
+  the Web/App professional product entry.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestProfessionalQueryEndpoint|TestWorkspaceDeviceBindings|TestProfessionalReadRecords|TestWorkspaceConsolePageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- Local runtime check: started `go run ./cmd/a21 gateway --addr
+  127.0.0.1:21080`, confirmed `/workspace` references
+  `/v1/professional-query`, bound `stackchan-runtime-web-001`, observed bound
+  `/v1/professional-query` complete with answer/evidence report and a completed
+  read record, observed unbound `stackchan-runtime-unbound-001` fail with
+  `device_unbound`, and confirmed its trace had no `v21.query.start`. The
+  Gateway was then stopped.
+
+Forbidden actions avoided:
+
+- No provider execution, real V21 service execution, ECS/root-secret/runtime
+  change, firmware build, flash, serial, NVS, report deletion, prune/gc, or
+  internal-test3 protocol/audio rollback occurred.
