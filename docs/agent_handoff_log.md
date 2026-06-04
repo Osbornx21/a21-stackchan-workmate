@@ -15806,3 +15806,90 @@ Forbidden actions avoided:
   printing, no provider or V21 execution, no generic product flash lane, no Git
   prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
   rollback.
+
+## 2026-06-05 01:07 CST - Workspace Body Preset Console Deployed
+
+Round goal:
+
+- Move the already deployed body-preset API from curl/API-only into the
+  `/workspace` product control surface, while confirming this is not a renewed
+  internal-test3 voice-chain acceptance run or rollback.
+
+Actual completed work:
+
+- Added a Body Presets section to `/workspace` with controls for `ready`,
+  `listening`, `thinking`, `speaking`, `celebrate`, and `reset_idle`.
+- Wired the controls to existing `POST /v1/xiaozhi/body-preset`.
+- Added safe UI state for preset status, `physical_accepted`, trace id, LED
+  args, head args, transport, and trace markers.
+- Added safe `body_preset_*` fields to workspace client-side metadata export.
+- Extended `TestWorkspaceConsolePageServed` to lock the body-preset controls,
+  endpoint, JS helpers, and export fields into the served page contract.
+- Updated `docs/engineering/PROTOCOL.md` to record that `/workspace` includes
+  bounded body presets and must keep `physical_accepted=false` until visible
+  operator or instrument evidence proves product LED/head movement.
+- Committed and pushed
+  `d361176 feat(gateway): expose body presets in workspace console`.
+- Deployed `d361176` to ECS `47.103.57.217` through `/opt/a21.next`
+  safe-swap.
+
+Changed files:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+- Public `/workspace` HTML smoke found `Body Presets`,
+  `/v1/xiaozhi/body-preset`, `bodyPresetActions`, and the `celebrate` control.
+
+Runtime or physical evidence:
+
+- Live public `ready` body-preset response for trace
+  `a21-trace-workspace-body-ready-d361176` returned `status=delivered`,
+  `delivered_transport=xiaozhi_mcp_sequence`, `physical_accepted=false`, LED
+  args `red=0,green=36,blue=96`, and head args
+  `yaw=0,pitch=22,speed=180`.
+- Live trace recorded both official MCP send markers and body-preset markers:
+  `xiaozhi.mcp.robot_led_color.sent`,
+  `xiaozhi.body_preset.ready.robot_led_color.sent`,
+  `xiaozhi.mcp.robot_head_angles_set.sent`, and
+  `xiaozhi.body_preset.ready.robot_head_angles_set.sent`.
+- Public `/v1/devices` recorded `last_body_preset=ready`, updated robot LED
+  and head values, and the product device `44:1b:f6:e2:6a:60` remained online.
+
+Remaining issues:
+
+- This is deployed product-surface and product-socket evidence. It is not yet
+  visible operator/instrument physical acceptance for LED/head movement.
+- Full PRD physical acceptance remains `PHYSICAL-PENDING`; the remaining
+  evidence window still needs mic ingress and trusted audible or instrumented
+  observation before promotion.
+- Camera, NFC, and infrared remain planned high-risk spikes, not product
+  controls.
+
+Next suggested action:
+
+- Use `/workspace` Body Presets in the next foreground hardware window while
+  watching the device, then record visible LED/head movement evidence and only
+  then promote body presets from product-socket evidence to physical accepted.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
+  rollback.

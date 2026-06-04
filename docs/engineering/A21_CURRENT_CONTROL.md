@@ -71,6 +71,34 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 01:07 CST workspace body-preset console cut:
+
+- Commit `d361176 feat(gateway): expose body presets in workspace console` is
+  pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- `/workspace` now exposes a Body Presets product control section for
+  `ready`, `listening`, `thinking`, `speaking`, `celebrate`, and `reset_idle`.
+  The controls call the existing `/v1/xiaozhi/body-preset` endpoint, display
+  safe trace/status/LED/head/transport summaries, and export safe
+  `body_preset_*` metadata.
+- Local focused workspace/body tests passed and full local
+  `GOMAXPROCS=2 make verify` passed. Remote focused Gateway tests and build
+  passed in `/opt/a21.next`; `a21-gateway` restarted active; loopback and
+  public direct-source `/healthz` returned ok.
+- Public `/workspace` HTML smoke found `Body Presets`,
+  `/v1/xiaozhi/body-preset`, `bodyPresetActions`, and the `celebrate` control.
+- Live public `ready` preset against product device `44:1b:f6:e2:6a:60`
+  passed for trace `a21-trace-workspace-body-ready-d361176`.
+  Response status was `delivered`, transport `xiaozhi_mcp_sequence`,
+  `physical_accepted=false`, LED args `red=0,green=36,blue=96`, and head args
+  `yaw=0,pitch=22,speed=180`. Trace markers recorded both official MCP sends
+  and body-preset markers. Public `/v1/devices` recorded
+  `last_body_preset=ready`; the device remained online.
+- This cut is a body-control product surface deployment. It is not a renewed
+  internal-test3 voice-chain acceptance run and not a voice/protocol rollback.
+  No firmware build/flash, no NVS write, no provider or V21 execution, no
+  camera/NFC/IR expansion, and no Git prune/gc occurred.
+
 Live truth after the 2026-06-05 00:58 CST Gateway body-preset sequence cut:
 
 - Commit `da77d21 feat(gateway): add xiaozhi body preset sequences` is pushed
