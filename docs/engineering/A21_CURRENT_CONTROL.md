@@ -71,7 +71,60 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 02:50 CST body-scene physical acceptance
+Live truth after the 2026-06-05 03:31 CST voice-mode hardware ritual pacing
+deployment:
+
+- Commit `a5d9b9d fix(gateway): pace voice mode rituals` is pushed and
+  deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- This is a mode-switch body-feedback deployment, not an internal-test3 voice
+  chain revalidation. It did not change ASR, TTS, wake, audio protocol,
+  provider execution, V21 execution, firmware, flash, NVS, camera, NFC,
+  infrared, or app lifecycle.
+- `/v1/voice-mode-ritual` now returns `step_delay_ms` and
+  `total_planned_delay_ms` and uses the existing
+  `A21_BODY_SCENE_STEP_DELAY_MS` pacing policy. ECS runtime currently records
+  `A21_BODY_SCENE_STEP_DELAY_MS=180`,
+  `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`, and
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false`.
+- Local red/green evidence: before implementation,
+  `TestVoiceModeRitualProfessionalSendsHardwareSequence` failed because
+  `step_delay_ms` was missing. After implementation:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestVoiceModeRitual|TestWorkspaceConsolePageServed|TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional|TestVoiceModeSelectionProfessionalReturnsRitualContract' -count=1`
+  passed, `git diff --check` passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`.
+  Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+  `a21-gateway.service` restarted active; loopback `/healthz` and public
+  direct `/healthz` passed.
+- Public `/workspace` smoke found `Run Roleplay Ritual`,
+  `Run Professional Ritual`, `modeRitualStatus`, `data-mode-ritual`, and
+  `/v1/voice-mode-ritual`.
+- Product device `44:1b:f6:e2:6a:60` was online before the live run.
+- Live professional trace
+  `a21-trace-mode-ritual-professional-paced-a5d9b9d-202606050330`
+  returned HTTP 200 with `selected_voice_mode=professional`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`,
+  `provider_executed=false`, `v21_executed=false`,
+  `official_relay_claimed=false`, and `physical_accepted=false`. Trace summary
+  `last_offset_ms=541` proves the four MCP writes were not emitted as a 0 ms
+  burst.
+- Live roleplay restore trace
+  `a21-trace-mode-ritual-roleplay-paced-a5d9b9d-202606050331`
+  returned HTTP 200 with `selected_voice_mode=roleplay`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`, and trace summary
+  `last_offset_ms=541`.
+- Final public `/v1/devices` check showed the device online and restored to
+  `current_voice_mode=roleplay`; registry state included
+  `screen_theme=auto`, `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`.
+- Physical acceptance is still pending because no operator or instrument has
+  confirmed visible mode-switch screen/RGB/head movement.
+- Git still emits the historical loose objects/gc warning during commits; no
+  `git prune` or manual cleanup was run.
+
+Previous live truth after the 2026-06-05 02:50 CST body-scene physical acceptance
 surface deployment:
 
 - Commit `98700ab feat(gateway): record body scene physical acceptance` is

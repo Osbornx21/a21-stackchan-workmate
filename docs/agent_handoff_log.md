@@ -16695,6 +16695,117 @@ Forbidden actions avoided:
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 03:31 CST - Voice Mode Hardware Ritual Pacing Deployed
+
+Round goal:
+
+- Make the PRD roleplay/professional mode switch visible on the physical
+  StackChan body without reopening or rolling back internal-test3 voice-chain
+  acceptance.
+
+Actual completed work:
+
+- Added response fields `step_delay_ms` and `total_planned_delay_ms` to
+  `POST /v1/voice-mode-ritual`.
+- Reused the existing body-scene pacing policy for the four-step
+  screen/RGB/head mode ritual so it is delivered over an operator-visible
+  window instead of a near-instant burst.
+- Documented the pacing contract in `docs/engineering/PROTOCOL.md`.
+- Updated `docs/plans/2026-06-05-voice-mode-hardware-ritual.md`,
+  `docs/engineering/A21_CURRENT_CONTROL.md`, and
+  `docs/project_state_machine.md` with current evidence.
+- Committed and pushed:
+  `a5d9b9d fix(gateway): pace voice mode rituals`.
+- Deployed `a5d9b9d` to ECS through `/opt/a21.next` safe-swap.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-05-voice-mode-hardware-ritual.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red test first failed as expected:
+  `TestVoiceModeRitualProfessionalSendsHardwareSequence` did not find
+  `step_delay_ms`.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestVoiceModeRitual|TestWorkspaceConsolePageServed|TestVoiceModesCatalogDefaultsToRoleplayAndListsProfessional|TestVoiceModeSelectionProfessionalReturnsRitualContract' -count=1`.
+- `git diff --check` passed.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback and public direct
+  `/healthz` passed.
+
+Runtime or physical evidence:
+
+- ECS runtime env includes `A21_BODY_SCENE_STEP_DELAY_MS=180`,
+  `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`, and
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false`.
+- Public `/workspace` smoke found `Run Roleplay Ritual`,
+  `Run Professional Ritual`, `modeRitualStatus`, `data-mode-ritual`, and
+  `/v1/voice-mode-ritual`.
+- Product device `44:1b:f6:e2:6a:60` was online before the live run.
+- Live professional trace
+  `a21-trace-mode-ritual-professional-paced-a5d9b9d-202606050330`
+  returned HTTP 200 with `selected_voice_mode=professional`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`,
+  `provider_executed=false`, `v21_executed=false`,
+  `official_relay_claimed=false`, and `physical_accepted=false`.
+  Trace summary `last_offset_ms=541` proved the ritual was paced.
+- Live roleplay restore trace
+  `a21-trace-mode-ritual-roleplay-paced-a5d9b9d-202606050331`
+  returned HTTP 200 with `selected_voice_mode=roleplay`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`, and trace summary
+  `last_offset_ms=541`.
+- Final public `/v1/devices` check showed the product device online and
+  restored to `current_voice_mode=roleplay`, with `screen_theme=auto`,
+  `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`.
+
+Deviations from plan:
+
+- None for this scoped transition. The deployment intentionally reused the
+  existing `A21_BODY_SCENE_STEP_DELAY_MS` policy instead of introducing a new
+  env var.
+
+Remaining issues:
+
+- Mode ritual physical acceptance still requires operator or instrument
+  confirmation of visible screen/RGB/head movement.
+- Body-scene `full_check` physical acceptance is still pending operator or
+  instrument confirmation.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+- Natural microphone-triggered voice-chain physical PRD acceptance remains a
+  separate foreground evidence path; it was not reopened in this round.
+
+Next suggested action:
+
+- In the next foreground operator window, watch the `/workspace` roleplay and
+  professional ritual buttons, record visible screen/RGB/head confirmation,
+  then add a narrow mode-ritual physical acceptance endpoint or fold it into
+  the existing hardware acceptance report format. After that, continue the
+  hardware parity queue with official avatar/action relay or camera/NFC/IR
+  spikes only behind explicit gates.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite the historical loose-object warning, and
+  no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 02:50 CST - Body Scene Physical Acceptance Surface Deployed
 
 Round goal:
