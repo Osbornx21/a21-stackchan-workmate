@@ -71,6 +71,34 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 00:58 CST Gateway body-preset sequence cut:
+
+- Commit `da77d21 feat(gateway): add xiaozhi body preset sequences` is pushed
+  and deployed to ECS `47.103.57.217` through the existing `/opt/a21.next`
+  safe-swap path.
+- Gateway now exposes `POST /v1/xiaozhi/body-preset` for bounded product
+  expression presets: `ready`, `listening`, `thinking`, `speaking`,
+  `celebrate`, and `reset_idle`. Each preset expands to exactly two official
+  MCP writes on the live Xiaozhi socket: `self.robot.set_led_color` and
+  `self.robot.set_head_angles`.
+- Remote focused body/MCP tests passed, remote
+  `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed, `a21-gateway`
+  restarted active, and public `/healthz` returned ok.
+- Live public body-preset execution against product device `44:1b:f6:e2:6a:60`
+  passed for trace `a21-trace-live-body-preset-celebrate-202606050058`.
+  Response status was `delivered`, transport `xiaozhi_mcp_sequence`,
+  `physical_accepted=false`, LED args `red=0,green=168,blue=80`, and head args
+  `yaw=18,pitch=36,speed=260`.
+- Live trace recorded
+  `xiaozhi.body_preset.celebrate.robot_led_color.sent` and
+  `xiaozhi.body_preset.celebrate.robot_head_angles_set.sent`. Public
+  `/v1/devices` recorded `last_body_preset=celebrate`, robot LED/head values,
+  and the device remained online.
+- No firmware build/flash, no NVS write, no provider or V21 execution, no
+  camera/NFC/IR expansion, and no internal-test3 voice/protocol rollback
+  occurred. This is product-socket body-control evidence, not operator-accepted
+  visible movement yet.
+
 Live truth after the 2026-06-05 00:48 CST Gateway host-say interrupt
 classification cut:
 

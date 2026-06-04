@@ -11,7 +11,28 @@ are the project memory.
 
 Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 00:48 CST:
+Latest control update, 2026-06-05 00:58 CST:
+
+- `T-STACKCHAN-OFFICIAL-BODY-PRESET-SEQUENCE-001` is deployed and has live
+  product-socket evidence. Commit `da77d21` adds
+  `POST /v1/xiaozhi/body-preset`, mapping `ready`, `listening`, `thinking`,
+  `speaking`, `celebrate`, and `reset_idle` into bounded official
+  `self.robot.set_led_color` plus `self.robot.set_head_angles` MCP writes.
+- Local `GOMAXPROCS=2 make verify` passed before deployment. Remote focused
+  body/MCP tests/build passed before ECS safe-swap, `a21-gateway` restarted
+  active, and public `/healthz` returned ok.
+- Live public execution on product device `44:1b:f6:e2:6a:60` with trace
+  `a21-trace-live-body-preset-celebrate-202606050058` returned
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`, LED
+  `0/168/80`, head `yaw=18,pitch=36,speed=260`, and
+  `physical_accepted=false`. Public `/v1/devices` recorded
+  `last_body_preset=celebrate` and the robot LED/head values.
+- This transition did not flash firmware, write NVS, execute providers/V21, or
+  expand camera/NFC/IR. It improves the product body-control surface, but the
+  total state remains `PHYSICAL-PENDING` until operator or instrument evidence
+  confirms visible LED/head movement and the remaining mic/audible PRD window.
+
+Previous control update, 2026-06-05 00:48 CST:
 
 - `T-XIAOZHI-HOST-SAY-INTERRUPT-CLASSIFICATION-001` is ready in code and
   tests. The previously observed medium/long `/v1/xiaozhi/say` `502` is now

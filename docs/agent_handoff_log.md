@@ -15719,3 +15719,90 @@ Forbidden actions avoided:
 - No firmware build, no firmware flash, no NVS write, no provider secret
   printing, no provider or V21 execution, no generic product flash lane, no Git
   prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 00:58 CST - Xiaozhi Body Preset Sequence Deployed
+
+Round goal:
+
+- Continue hardware/body parity after the host-say interrupt fix by turning
+  low-level robot LED/head MCP controls into a product-usable expression
+  sequence endpoint.
+
+Actual completed work:
+
+- Added `POST /v1/xiaozhi/body-preset`.
+- Supported bounded presets: `ready`, `listening`, `thinking`, `speaking`,
+  `celebrate`, and `reset_idle`.
+- Each preset expands to exactly two official MCP writes over the existing
+  live Xiaozhi socket: `self.robot.set_led_color` followed by
+  `self.robot.set_head_angles`.
+- Responses return redacted step metadata, `delivered_transport` as
+  `xiaozhi_mcp_sequence`, and `physical_accepted=false`.
+- Added tests for successful bounded preset delivery, trace markers, registry
+  updates, and rejection of unknown presets such as `camera`.
+- Committed and pushed `da77d21 feat(gateway): add xiaozhi body preset
+  sequences`.
+- Deployed `da77d21` to ECS `47.103.57.217` through `/opt/a21.next`
+  safe-swap.
+- Ran a live public `celebrate` preset against product device
+  `44:1b:f6:e2:6a:60`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local body/MCP tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiBodyPreset|TestXiaozhiNamedMCPStatusEndpointsUseScopedTools|TestXiaozhiMCPStatusParityAllowsOnlyScopedTools' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused body/MCP tests passed before ECS safe-swap.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+
+Runtime or physical evidence:
+
+- Live public body-preset response for trace
+  `a21-trace-live-body-preset-celebrate-202606050058` returned
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`,
+  `physical_accepted=false`, LED args `red=0,green=168,blue=80`, and head args
+  `yaw=18,pitch=36,speed=260`.
+- Live trace recorded
+  `xiaozhi.body_preset.celebrate.robot_led_color.sent` and
+  `xiaozhi.body_preset.celebrate.robot_head_angles_set.sent`.
+- Public `/v1/devices` recorded `last_body_preset=celebrate`,
+  `robot_led_green=168`, `robot_led_blue=80`, `robot_head_yaw=18`,
+  `robot_head_pitch=36`, and `robot_head_speed=260`; the device remained
+  online.
+
+Remaining issues:
+
+- This is product-socket body-control evidence, not operator/instrument
+  physical proof that LED and servos visibly moved.
+- Full PRD physical acceptance still needs the mic ingress + audible
+  observation + answer playback + barge-in stop_done window.
+- Camera, NFC, and infrared remain planned high-risk spikes, not product
+  controls.
+
+Next suggested action:
+
+- In the next foreground hardware window, have the operator watch the device
+  while calling `/v1/xiaozhi/body-preset` presets, then record visible LED/head
+  movement evidence. Continue toward mic/audible PRD acceptance after body
+  expression is visibly confirmed.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, and no internal-test3 voice/protocol
+  rollback.
