@@ -597,6 +597,48 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Official actions">
+        <div class="panel-head">
+          <h2>Official Actions</h2>
+          <div class="tagline">
+            <span class="tag ready" id="officialActionStatus">action=idle</span>
+            <span class="tag warn" id="officialActionPhysicalStatus">physical_accepted=false</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Pitch angle
+              <input id="officialActionYAngle" type="range" min="5" max="85" step="1" value="38">
+            </label>
+            <label>Angle
+              <input id="officialActionYAngleValue" value="38" readonly>
+            </label>
+          </div>
+          <div class="actions" id="officialActionControls">
+            <button class="secondary" data-official-state="idle">Idle</button>
+            <button class="secondary" data-official-state="listening">Listening</button>
+            <button class="secondary" data-official-state="thinking">Thinking</button>
+            <button class="secondary" data-official-state="speaking">Speaking</button>
+            <button class="secondary" data-official-face="happy">Happy</button>
+            <button class="secondary" data-official-face="attentive">Attentive</button>
+            <button class="secondary" data-official-motion="look_up">Look up</button>
+            <button class="secondary" data-official-motion="nod">Nod</button>
+            <button class="secondary" data-official-motion="shake">Shake</button>
+            <button data-official-motion="dance">Dance</button>
+            <button class="secondary" data-official-motion="stop">Stop</button>
+            <button class="secondary" id="refreshOfficialActionTrace">Trace markers</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Trace</span><strong id="officialActionTraceStatus">trace=none</strong></div>
+            <div class="metric"><span>Event</span><strong id="officialActionEventStatus">event=none</strong></div>
+            <div class="metric"><span>Packets</span><strong id="officialActionPacketStatus">packets=0</strong></div>
+            <div class="metric"><span>Transport</span><strong id="officialActionTransportStatus">stackchan_official_ws</strong></div>
+            <div class="metric"><span>Surfaces</span><strong id="officialActionSurfaceStatus">surfaces=none</strong></div>
+          </div>
+          <div class="row-list" id="officialActionTraceList" aria-label="Official action trace markers"></div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -634,6 +676,7 @@ const workspaceConsoleHTML = `<!doctype html>
       voiceProbe: null,
       bodyPreset: null,
       hardwareScreen: null,
+      officialAction: null,
       lastExport: null
     };
     const ui = {
@@ -728,6 +771,18 @@ const workspaceConsoleHTML = `<!doctype html>
       screenToolStatus: document.getElementById('screenToolStatus'),
       mcpCapabilitiesStatus: document.getElementById('mcpCapabilitiesStatus'),
       hardwareScreenTraceList: document.getElementById('hardwareScreenTraceList'),
+      officialActionControls: document.getElementById('officialActionControls'),
+      officialActionYAngle: document.getElementById('officialActionYAngle'),
+      officialActionYAngleValue: document.getElementById('officialActionYAngleValue'),
+      refreshOfficialActionTrace: document.getElementById('refreshOfficialActionTrace'),
+      officialActionStatus: document.getElementById('officialActionStatus'),
+      officialActionPhysicalStatus: document.getElementById('officialActionPhysicalStatus'),
+      officialActionTraceStatus: document.getElementById('officialActionTraceStatus'),
+      officialActionEventStatus: document.getElementById('officialActionEventStatus'),
+      officialActionPacketStatus: document.getElementById('officialActionPacketStatus'),
+      officialActionTransportStatus: document.getElementById('officialActionTransportStatus'),
+      officialActionSurfaceStatus: document.getElementById('officialActionSurfaceStatus'),
+      officialActionTraceList: document.getElementById('officialActionTraceList'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -958,6 +1013,13 @@ const workspaceConsoleHTML = `<!doctype html>
         session_id: 'a21-session-workspace-screen-' + action + '-' + stamp
       };
     }
+    function nextOfficialActionIDs(action) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-official-' + action + '-' + stamp,
+        session_id: 'a21-session-workspace-official-' + action + '-' + stamp
+      };
+    }
     function probeCue(mode) {
       const value = ui.voiceProbeInput.value.trim();
       if (value) return value;
@@ -1167,6 +1229,103 @@ const workspaceConsoleHTML = `<!doctype html>
       renderHardwareScreenResponse(payload, action);
       await refreshHardwareScreenTrace();
       log('screen ' + action + ' ' + (payload.status || 'sent'));
+    }
+    function officialSurfaceText(surfaces) {
+      surfaces = surfaces || {};
+      const keys = Object.keys(surfaces).sort();
+      if (!keys.length) return 'surfaces=none';
+      return keys.map((key) => key + ':' + surfaces[key]).join(' / ');
+    }
+    function renderOfficialActionResponse(response) {
+      const surfaces = (response && response.official_action_surfaces) || {};
+      setText(ui.officialActionStatus, 'action=' + ((response && response.status) || 'idle'));
+      setText(ui.officialActionPhysicalStatus, 'physical_accepted=' + String(!!(response && response.official_action_physical_accepted)));
+      setText(ui.officialActionTraceStatus, 'trace=' + ((response && response.trace_id) || 'none'));
+      setText(ui.officialActionEventStatus, 'event=' + [response && response.event, response && response.value].filter(Boolean).join(':'));
+      setText(ui.officialActionPacketStatus, 'packets=' + ((response && response.packet_count) || 0));
+      setText(ui.officialActionTransportStatus, (response && response.delivered_transport) || 'stackchan_official_ws');
+      setText(ui.officialActionSurfaceStatus, officialSurfaceText(surfaces));
+    }
+    function renderOfficialActionTrace(payload) {
+      const events = (payload && payload.events) || [];
+      const summary = (payload && payload.summary) || {};
+      ui.officialActionTraceList.textContent = '';
+      setText(ui.officialActionTraceStatus, 'trace=' + (payload && payload.trace_id ? payload.trace_id : 'none') + ' / events=' + (summary.event_count || events.length));
+      if (!events.length) {
+        ui.officialActionTraceList.append(row('No official action trace markers', 'official action idle', 'none', 'warn'));
+        return;
+      }
+      events.slice(-8).forEach((event) => {
+        ui.officialActionTraceList.append(row(event.name, 'offset_ms=' + String(event.offset_ms || 0), event.session_id || 'session', 'ready', event.device_id || 'device'));
+      });
+    }
+    async function refreshOfficialActionTrace() {
+      if (!state.officialAction || !state.officialAction.trace_id) {
+        renderOfficialActionTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        return;
+      }
+      const payload = await fetchJSON('/v1/traces?trace_id=' + encodeURIComponent(state.officialAction.trace_id), { cache: 'no-store' });
+      state.officialAction.trace_markers = traceNameList(payload);
+      renderOfficialActionTrace(payload);
+      log('official action trace ' + ((payload.summary || {}).event_count || 0));
+    }
+    async function runOfficialAction(kind, value) {
+      const action = kind + '-' + value;
+      const ids = nextOfficialActionIDs(action);
+      const body = {
+        device_id: currentDeviceID(),
+        event: kind,
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      };
+      if (kind === 'state') {
+        body.state = value;
+      } else if (kind === 'face') {
+        body.emotion = value;
+      } else {
+        body.name = value;
+        if (value === 'look_up') {
+          body.y_angle = Number(ui.officialActionYAngle.value || 38);
+        }
+      }
+      try {
+        const payload = await postJSON('/v1/stackchan/official/control', body);
+        state.officialAction = {
+          action: action,
+          trace_id: payload.trace_id || ids.trace_id,
+          session_id: payload.session_id || ids.session_id,
+          status: payload.status || '',
+          delivered_transport: payload.delivered_transport || '',
+          event: payload.event || kind,
+          value: payload.value || value,
+          packet_count: payload.packet_count || 0,
+          official_action_physical_accepted: !!payload.official_action_physical_accepted,
+          official_action_surfaces: payload.official_action_surfaces || {}
+        };
+        renderOfficialActionResponse(payload);
+        await refreshOfficialActionTrace();
+        log('official action ' + action + ' ' + (payload.status || 'sent'));
+      } catch (err) {
+        state.officialAction = {
+          action: action,
+          trace_id: ids.trace_id,
+          session_id: ids.session_id,
+          status: 'blocked',
+          error: err.message,
+          event: kind,
+          value: value,
+          official_action_physical_accepted: false
+        };
+        setText(ui.officialActionStatus, 'blocked=' + err.message);
+        setText(ui.officialActionPhysicalStatus, 'physical_accepted=false');
+        setText(ui.officialActionTraceStatus, 'trace=' + ids.trace_id);
+        setText(ui.officialActionEventStatus, 'event=' + kind + ':' + value);
+        setText(ui.officialActionPacketStatus, 'packets=0');
+        setText(ui.officialActionTransportStatus, 'stackchan_official_ws');
+        setText(ui.officialActionSurfaceStatus, 'surfaces=blocked');
+        renderOfficialActionTrace({ trace_id: ids.trace_id, events: [], summary: { event_count: 0 } });
+        log('official action ' + action + ' blocked ' + err.message);
+      }
     }
     async function runRoleplayProbe() {
       const ids = nextProbeIDs('roleplay');
@@ -1611,6 +1770,17 @@ const workspaceConsoleHTML = `<!doctype html>
         screen_control_physical_accepted: !!(state.hardwareScreen && state.hardwareScreen.physical_accepted),
         screen_control_trace_markers: (state.hardwareScreen && state.hardwareScreen.trace_markers) || [],
         screen_control_mcp_advertised: !!(state.hardwareScreen && state.hardwareScreen.mcp_advertised),
+        official_action: (state.officialAction && state.officialAction.action) || '',
+        official_action_trace_id: (state.officialAction && state.officialAction.trace_id) || '',
+        official_action_session_id: (state.officialAction && state.officialAction.session_id) || '',
+        official_action_status: (state.officialAction && state.officialAction.status) || '',
+        official_action_transport: (state.officialAction && state.officialAction.delivered_transport) || '',
+        official_action_event: (state.officialAction && state.officialAction.event) || '',
+        official_action_value: (state.officialAction && state.officialAction.value) || '',
+        official_action_packet_count: (state.officialAction && state.officialAction.packet_count) || 0,
+        official_action_physical_accepted: !!(state.officialAction && state.officialAction.official_action_physical_accepted),
+        official_action_surfaces: (state.officialAction && state.officialAction.official_action_surfaces) || {},
+        official_action_trace_markers: (state.officialAction && state.officialAction.trace_markers) || [],
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -1653,6 +1823,7 @@ const workspaceConsoleHTML = `<!doctype html>
         renderProbeReadRecords({ records: [] });
         renderBodyPresetTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         renderHardwareScreenTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        renderOfficialActionTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -1700,6 +1871,21 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.runScreenInfo.addEventListener('click', () => runHardwareScreenAction('screen_info').catch((err) => log('screen info ' + err.message)));
     ui.refreshMCPCapabilities.addEventListener('click', () => refreshMCPCapabilities().catch((err) => log('mcp capabilities ' + err.message)));
     ui.refreshHardwareScreenTrace.addEventListener('click', () => refreshHardwareScreenTrace().catch((err) => log('screen trace ' + err.message)));
+    ui.officialActionYAngle.addEventListener('input', () => {
+      ui.officialActionYAngleValue.value = ui.officialActionYAngle.value;
+    });
+    ui.officialActionControls.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-official-state],[data-official-face],[data-official-motion]');
+      if (!button) return;
+      if (button.dataset.officialState) {
+        runOfficialAction('state', button.dataset.officialState);
+      } else if (button.dataset.officialFace) {
+        runOfficialAction('face', button.dataset.officialFace);
+      } else if (button.dataset.officialMotion) {
+        runOfficialAction('motion', button.dataset.officialMotion);
+      }
+    });
+    ui.refreshOfficialActionTrace.addEventListener('click', () => refreshOfficialActionTrace().catch((err) => log('official action trace ' + err.message)));
     ui.voiceProbeModeSelect.addEventListener('change', () => {
       if (ui.voiceProbeModeSelect.value === 'professional') {
         ui.voiceProbeInput.placeholder = 'safe evidence cue';

@@ -934,7 +934,9 @@ existing `/v1/xiaozhi/body-preset`, operate the low-risk hardware screen/status
 surface through existing `/v1/xiaozhi/device-status`,
 `/v1/xiaozhi/screen-brightness`, `/v1/xiaozhi/screen-theme`,
 `/v1/xiaozhi/mcp-control` for `self.screen.get_info`, and
-`/v1/xiaozhi/mcp-capabilities`, and view the
+`/v1/xiaozhi/mcp-capabilities`, operate official StackChan semantic
+state/face/motion controls through existing
+`/v1/stackchan/official/control`, and view the
 roleplay/professional boundary from `/v1/roleplay-profile`,
 `/v1/voice-chain-profiles`, `/v1/wake-word`, and `/v1/voice-modes`. The
 console must keep state labels honest:
@@ -944,16 +946,20 @@ when requested, `searchable=false`, `v21_execution_allowed=false`, and
 `physical_accepted=false` until visible operator or instrument evidence proves
 the LED/head movement on the product device, and screen/status controls must
 keep `physical_accepted=false` until visible screen/operator or instrument
-evidence proves the effect on the product device. Device binding state must
-remain metadata-only and show `open_until_binding_configured` or
+evidence proves the effect on the product device. Official action controls
+must keep `official_action_physical_accepted=false`, and must show the
+disconnected `/stackChan/ws` path as a blocked control state rather than
+pretending the face/motion/dance packet was delivered. Device binding state
+must remain metadata-only and show `open_until_binding_configured` or
 `bound_devices_only` honestly. Custom wake-word intent must show built-in
 Xiaozhi WakeNet as active until guarded firmware evidence exists. The Voice
-Probe, body-preset, and screen/status trace views must display only safe
-route/status, selected role/profile IDs, memory counts, trace marker
-names/counts, safe MCP argument summaries, and professional read metadata.
-They must not display document text, raw bytes, local paths, credentials,
-prompt text, transcripts, provider output, evidence bodies, voice samples,
-audio, raw user utterances, or document-derived text.
+Probe, body-preset, screen/status, and official-action trace views must
+display only safe route/status, selected role/profile IDs, memory counts,
+trace marker names/counts, safe MCP/action argument summaries, official
+surface labels, and professional read metadata. They must not display document
+text, raw bytes, local paths, credentials, prompt text, transcripts, provider
+output, evidence bodies, voice samples, audio, raw user utterances, or
+document-derived text.
 
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns
