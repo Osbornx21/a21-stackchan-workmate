@@ -338,6 +338,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/professional-read-records",
 		"/v1/workspace-upload-jobs",
 		"/v1/workspace-documents",
+		"/v1/workspace-index-jobs",
 		"/v1/workspace-sources",
 		"/v1/traces",
 		"Device Registry",
@@ -357,9 +358,11 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="workspaceDocumentFile"`,
 		`id="workspaceJob"`,
 		`id="workspaceDocumentUpload"`,
+		`id="workspaceIndexRequest"`,
 		`id="workspaceDocumentReadout"`,
 		`id="workspaceDocumentStorage"`,
 		`id="workspaceJobReadout"`,
+		`id="workspaceIndexReadout"`,
 		`id="workspaceSourcesRefresh"`,
 		`id="workspaceSourceCount"`,
 		`id="workspaceSourceReadiness"`,
@@ -423,6 +426,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"refreshGatewayProfiles",
 		"saveGatewayProfile",
 		"uploadWorkspaceDocument",
+		"requestWorkspaceIndex",
 		"/v1/cloud-voice-profiles",
 		"refreshCloudVoiceProfiles",
 		"saveCloudVoiceProfile",
@@ -1387,6 +1391,161 @@ func TestWorkspaceDocumentUploadIntakeStoresBytesAndRedactsResponse(t *testing.T
 	}
 }
 
+func TestWorkspaceIndexJobRequestPromotesStoredDocumentWithoutLeakingContent(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "a21-workspace-documents")
+	server := NewServerWithOptions(ServerOptions{
+		WorkspaceDocumentStoreDir: storeDir,
+		WorkspaceDocumentMaxBytes: 1 << 20,
+	})
+	handler := server.Handler()
+	privateContent := "RAW_PRIVATE_INDEX_DOCUMENT_CONTENT_FOR_A21"
+	body, contentType := multipartWorkspaceDocumentBody(t, map[string]string{
+		"user_id":        "a21_user_index",
+		"workspace_id":   "a21_workspace_index",
+		"source_scope":   "personal",
+		"document_label": "Index readiness pack",
+		"content_type":   "text/plain",
+		"trace_id":       "a21-trace-index-upload",
+		"session_id":     "a21-session-index-upload",
+		"device_id":      "stackchan-sim-001",
+	}, "SECRET-index-source.txt", privateContent)
+	uploadReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-documents", body)
+	uploadReq.Header.Set("Content-Type", contentType)
+	uploadRec := httptest.NewRecorder()
+	handler.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, want 200: %s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var uploadResp WorkspaceDocumentsResponse
+	if err := json.Unmarshal(uploadRec.Body.Bytes(), &uploadResp); err != nil {
+		t.Fatal(err)
+	}
+	document := uploadResp.Documents[0]
+
+	indexReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-index-jobs", bytes.NewBufferString(`{
+		"document_id":"`+document.DocumentID+`",
+		"trace_id":"a21-trace-index-request",
+		"session_id":"a21-session-index-request",
+		"device_id":"stackchan-sim-001"
+	}`))
+	indexRec := httptest.NewRecorder()
+	handler.ServeHTTP(indexRec, indexReq)
+	if indexRec.Code != http.StatusOK {
+		t.Fatalf("index status = %d, want 200: %s", indexRec.Code, indexRec.Body.String())
+	}
+	var indexResp WorkspaceIndexJobsResponse
+	if err := json.Unmarshal(indexRec.Body.Bytes(), &indexResp); err != nil {
+		t.Fatal(err)
+	}
+	if indexResp.SchemaVersion != "a21.gateway.workspace_index_jobs.v1" || indexResp.Status != "indexing_requested_no_execute" || len(indexResp.Jobs) != 1 {
+		t.Fatalf("index response = %+v", indexResp)
+	}
+	indexJob := indexResp.Jobs[0]
+	if indexJob.IndexJobID == "" ||
+		indexJob.DocumentID != document.DocumentID ||
+		indexJob.JobID != document.JobID ||
+		indexJob.SourceID != document.SourceID ||
+		indexJob.DocumentHash != document.DocumentHash ||
+		indexJob.StorageStatus != "stored_local" ||
+		indexJob.Status != "indexing_requested_no_execute" ||
+		indexJob.IndexStatus != "indexing_requested_no_execute" ||
+		indexJob.AdapterContractVersion != ProfessionalAdapterContractVersion ||
+		indexJob.V21ExecutionAllowed ||
+		indexJob.ExecutionStarted {
+		t.Fatalf("index job = %+v", indexJob)
+	}
+	if indexJob.Redaction.DocumentTextStored ||
+		!indexJob.Redaction.DocumentBytesStored ||
+		indexJob.Redaction.Base64PayloadStored ||
+		indexJob.Redaction.ImportURLStored ||
+		indexJob.Redaction.LocalPathStored ||
+		indexJob.Redaction.CredentialValueStored ||
+		indexJob.Redaction.ProviderOutputStored {
+		t.Fatalf("index redaction = %+v", indexJob.Redaction)
+	}
+
+	jobReq := httptest.NewRequest(http.MethodGet, "/v1/workspace-upload-jobs?job_id="+url.QueryEscape(document.JobID), nil)
+	jobRec := httptest.NewRecorder()
+	handler.ServeHTTP(jobRec, jobReq)
+	if jobRec.Code != http.StatusOK {
+		t.Fatalf("job status = %d, want 200: %s", jobRec.Code, jobRec.Body.String())
+	}
+	var jobs WorkspaceUploadJobsResponse
+	if err := json.Unmarshal(jobRec.Body.Bytes(), &jobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Jobs) != 1 ||
+		jobs.Jobs[0].Status != "indexing_requested_no_execute" ||
+		jobs.Jobs[0].IndexStatus != "indexing_requested_no_execute" ||
+		!jobs.Jobs[0].IndexingAPIReady ||
+		jobs.Jobs[0].ExecutionStarted {
+		t.Fatalf("linked upload job = %+v", jobs)
+	}
+
+	sourcesReq := httptest.NewRequest(http.MethodGet, "/v1/workspace-sources?workspace_id=a21_workspace_index&source_scope=personal", nil)
+	sourcesRec := httptest.NewRecorder()
+	handler.ServeHTTP(sourcesRec, sourcesReq)
+	if sourcesRec.Code != http.StatusOK {
+		t.Fatalf("sources status = %d, want 200: %s", sourcesRec.Code, sourcesRec.Body.String())
+	}
+	var sources WorkspaceSourcesResponse
+	if err := json.Unmarshal(sourcesRec.Body.Bytes(), &sources); err != nil {
+		t.Fatal(err)
+	}
+	if len(sources.Sources) != 1 ||
+		sources.Sources[0].Readiness != "indexing_requested_no_execute" ||
+		!sources.Sources[0].IndexingRequested ||
+		!sources.Sources[0].StoredLocal ||
+		sources.Sources[0].Searchable {
+		t.Fatalf("index source = %+v", sources)
+	}
+	if sources.Summary.WorkspaceStatus != "indexing_requested_no_execute" ||
+		sources.Summary.IndexingRequestedSources != 1 ||
+		sources.Summary.IndexingRequestedSourceScopeCounts["personal"] != 1 ||
+		sources.Summary.SearchableSourceScopeCounts["personal"] != 0 {
+		t.Fatalf("index source summary = %+v", sources.Summary)
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_index","workspace_id":"a21_workspace_index","query_scope":"personal_only"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d, want 200: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	var workspace ProfessionalWorkspaceResponse
+	if err := json.Unmarshal(workspaceRec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.WorkspaceStatus != "indexing_requested_no_execute" ||
+		workspace.Runtime.QueryScopeReadiness != "indexing_requested_no_execute" ||
+		!workspace.Runtime.IndexingAPIReady ||
+		workspace.Runtime.SearchableSourceScopeCounts["personal"] != 0 ||
+		workspace.Runtime.V21ExecutionAllowed {
+		t.Fatalf("workspace = %+v runtime=%+v", workspace, workspace.Runtime)
+	}
+
+	getIndexReq := httptest.NewRequest(http.MethodGet, "/v1/workspace-index-jobs?document_id="+url.QueryEscape(document.DocumentID), nil)
+	getIndexRec := httptest.NewRecorder()
+	handler.ServeHTTP(getIndexRec, getIndexReq)
+	if getIndexRec.Code != http.StatusOK || !strings.Contains(getIndexRec.Body.String(), indexJob.IndexJobID) {
+		t.Fatalf("index get = %d %s", getIndexRec.Code, getIndexRec.Body.String())
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-index-request", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"workspace.index_job.requested_no_execute", "workspace.source.indexing_requested_no_execute"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{privateContent, "SECRET-index-source", storeDir, "/Users/", "api_key", "bearer ", "provider output"} {
+		combined := indexRec.Body.String() + jobRec.Body.String() + sourcesRec.Body.String() + workspaceRec.Body.String() + getIndexRec.Body.String() + traceRec.Body.String()
+		if strings.Contains(strings.ToLower(combined), strings.ToLower(forbidden)) {
+			t.Fatalf("index surfaces leaked %q", forbidden)
+		}
+	}
+}
+
 func TestWorkspaceDocumentUploadRejectsRawJSONAndUnsafeLabelsWithoutStoring(t *testing.T) {
 	storeDir := filepath.Join(t.TempDir(), "a21-workspace-documents")
 	server := NewServerWithOptions(ServerOptions{WorkspaceDocumentStoreDir: storeDir})
@@ -1424,6 +1583,26 @@ func TestWorkspaceDocumentUploadRejectsRawJSONAndUnsafeLabelsWithoutStoring(t *t
 	}
 	if stored := readAllFilesUnder(t, storeDir); stored != "" {
 		t.Fatalf("unsafe uploads stored bytes: %q", stored)
+	}
+}
+
+func TestWorkspaceIndexJobsRejectRawPayloadFields(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace-index-jobs", bytes.NewBufferString(`{
+		"document_id":"a21-workspace-document-000001",
+		"document_text":"RAW_PRIVATE_INDEX_PAYLOAD",
+		"file_path":"/Users/private/secret.pdf",
+		"provider_output":"PRIVATE_PROVIDER_OUTPUT"
+	}`))
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"RAW_PRIVATE_INDEX_PAYLOAD", "/Users/private", "secret.pdf", "PRIVATE_PROVIDER_OUTPUT"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("rejection leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 

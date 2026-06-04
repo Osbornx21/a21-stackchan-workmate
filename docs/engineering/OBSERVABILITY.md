@@ -510,6 +510,8 @@ Current mock trace events include:
 - `workspace.upload_job.failed`
 - `workspace.upload_job.deleted`
 - `workspace.index_job.not_started_no_execute`
+- `workspace.index_job.requested_no_execute`
+- `workspace.source.indexing_requested_no_execute`
 - `xiaozhi.professional_asr_empty`
 - `xiaozhi.professional_asr_unavailable`
 - `xiaozhi.professional_result_suppressed`

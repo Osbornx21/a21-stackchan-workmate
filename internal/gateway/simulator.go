@@ -390,6 +390,7 @@ const simulatorHTML = `<!doctype html>
           <button id="audioFrame">Audio Frame</button>
           <button id="workspaceJob">Workspace Job</button>
           <button id="workspaceDocumentUpload">Upload Doc</button>
+          <button id="workspaceIndexRequest">Index Request</button>
           <button id="workspaceSourcesRefresh">Sources</button>
           <button id="professionalReadRecordsRefresh">Read Records</button>
         </div>
@@ -500,6 +501,7 @@ const simulatorHTML = `<!doctype html>
           <h2>Workspace Audit</h2>
           <div class="registry-grid">
             <div class="metric"><label>Upload Job</label><div id="workspaceJobReadout">none</div></div>
+            <div class="metric"><label>Index Job</label><div id="workspaceIndexReadout">none</div></div>
             <div class="metric"><label>Document</label><div id="workspaceDocumentReadout">none</div></div>
             <div class="metric"><label>Storage</label><div id="workspaceDocumentStorage">none</div></div>
             <div class="metric"><label>Source Count</label><div id="workspaceSourceCount">0</div></div>
@@ -615,6 +617,7 @@ const simulatorHTML = `<!doctype html>
       playbackScheduledChunks: document.getElementById('playbackScheduledChunks'),
       mockPlayback: document.getElementById('mockPlayback'),
       workspaceJobReadout: document.getElementById('workspaceJobReadout'),
+      workspaceIndexReadout: document.getElementById('workspaceIndexReadout'),
       workspaceDocumentReadout: document.getElementById('workspaceDocumentReadout'),
       workspaceDocumentStorage: document.getElementById('workspaceDocumentStorage'),
       workspaceSourceCount: document.getElementById('workspaceSourceCount'),
@@ -697,7 +700,9 @@ const simulatorHTML = `<!doctype html>
       micTimer: null,
       playbackContext: null,
       playbackNextAt: 0,
-      playbackSources: []
+      playbackSources: [],
+      lastWorkspaceDocumentId: '',
+      lastWorkspaceJobId: ''
     };
     const firmwareIdentity = {
       firmware_id: 'a21-stackchan',
@@ -1040,7 +1045,15 @@ const simulatorHTML = `<!doctype html>
         ui.workspaceJobReadout.textContent = 'none';
         return;
       }
+      sim.lastWorkspaceJobId = job.job_id || sim.lastWorkspaceJobId;
       ui.workspaceJobReadout.textContent = job.job_id + ' / ' + (job.status || 'unknown') + ' / ' + (job.index_status || 'index unknown');
+    }
+    function renderWorkspaceIndexJob(job) {
+      if (!job || !job.index_job_id) {
+        ui.workspaceIndexReadout.textContent = 'none';
+        return;
+      }
+      ui.workspaceIndexReadout.textContent = job.index_job_id + ' / ' + (job.status || 'unknown') + ' / ' + (job.index_status || 'index unknown');
     }
     function renderWorkspaceDocument(document) {
       if (!document || !document.document_id) {
@@ -1048,6 +1061,8 @@ const simulatorHTML = `<!doctype html>
         ui.workspaceDocumentStorage.textContent = 'none';
         return;
       }
+      sim.lastWorkspaceDocumentId = document.document_id || sim.lastWorkspaceDocumentId;
+      sim.lastWorkspaceJobId = document.job_id || sim.lastWorkspaceJobId;
       const shortHash = (document.document_hash || '').replace('sha256:', '').slice(0, 10);
       ui.workspaceDocumentReadout.textContent = document.document_id + ' / ' + (document.size_bytes || 0) + ' bytes' + (shortHash ? ' / ' + shortHash : '');
       ui.workspaceDocumentStorage.textContent = (document.storage_status || 'unknown') + ' / ' + (document.readiness || 'pending');
@@ -1059,6 +1074,7 @@ const simulatorHTML = `<!doctype html>
       ui.workspaceSourceReadiness.textContent = [
         summary.workspace_status,
         formatSourceCounts(summary.source_scope_counts),
+        'indexing ' + formatSourceCounts(summary.indexing_requested_source_scope_counts),
         'searchable ' + formatSourceCounts(summary.searchable_source_scope_counts)
       ].filter(Boolean).join(' / ') || 'none';
     }
@@ -1376,6 +1392,40 @@ const simulatorHTML = `<!doctype html>
         log('workspace document ' + (document.document_id || 'stored') + ' ' + (document.status || 'pending'));
       } catch (err) {
         log('workspace document upload unavailable');
+      }
+    }
+    async function requestWorkspaceIndex() {
+      const documentId = sim.lastWorkspaceDocumentId;
+      const jobId = sim.lastWorkspaceJobId;
+      if (!documentId && !jobId) {
+        log('upload a workspace document before requesting index');
+        return;
+      }
+      try {
+        const body = {
+          trace_id: sim.traceId || '',
+          session_id: sim.sessionId || '',
+          device_id: deviceId()
+        };
+        if (documentId) body.document_id = documentId;
+        if (jobId) body.job_id = jobId;
+        const response = await fetch('/v1/workspace-index-jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!response.ok) {
+          log('workspace index request failed ' + response.status);
+          return;
+        }
+        const payload = await response.json();
+        const indexJob = (payload.jobs || [])[0] || {};
+        renderWorkspaceIndexJob(indexJob);
+        refreshWorkspaceSources();
+        refreshProfessionalWorkspace();
+        log('workspace index ' + (indexJob.index_job_id || 'requested') + ' ' + (indexJob.status || 'no_execute'));
+      } catch (err) {
+        log('workspace index request unavailable');
       }
     }
     async function saveGatewayProfile() {
@@ -1708,6 +1758,7 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
     document.getElementById('workspaceJob').addEventListener('click', createWorkspaceUploadJob);
     document.getElementById('workspaceDocumentUpload').addEventListener('click', uploadWorkspaceDocument);
+    document.getElementById('workspaceIndexRequest').addEventListener('click', requestWorkspaceIndex);
     document.getElementById('workspaceSourcesRefresh').addEventListener('click', refreshWorkspaceSources);
     document.getElementById('professionalReadRecordsRefresh').addEventListener('click', refreshProfessionalReadRecords);
     ui.mode.addEventListener('change', () => setMode(ui.mode.value));

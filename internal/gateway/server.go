@@ -93,6 +93,8 @@ type Server struct {
 	professionalReadRecordSeq    uint64
 	workspaceUploadJobs          map[string]WorkspaceUploadJob
 	workspaceUploadJobSeq        uint64
+	workspaceIndexJobs           map[string]WorkspaceIndexJob
+	workspaceIndexJobSeq         uint64
 	workspaceSources             map[string]WorkspaceSource
 	workspaceSourceSeq           uint64
 	workspaceDocuments           map[string]WorkspaceDocument
@@ -304,21 +306,22 @@ type ProfessionalWorkspaceResponse struct {
 }
 
 type ProfessionalWorkspaceRuntime struct {
-	SchemaVersion               string         `json:"schema_version"`
-	Mode                        string         `json:"mode"`
-	UserID                      string         `json:"user_id"`
-	WorkspaceID                 string         `json:"workspace_id"`
-	QueryScope                  string         `json:"query_scope"`
-	PrivacyScope                string         `json:"privacy_scope"`
-	AdapterContractVersion      string         `json:"adapter_contract_version"`
-	WorkspaceStatus             string         `json:"workspace_status"`
-	QueryScopeReadiness         string         `json:"query_scope_readiness,omitempty"`
-	SourceScopeCounts           map[string]int `json:"source_scope_counts,omitempty"`
-	SearchableSourceScopeCounts map[string]int `json:"searchable_source_scope_counts,omitempty"`
-	UploadAPIReady              bool           `json:"upload_api_ready"`
-	IndexingAPIReady            bool           `json:"indexing_api_ready"`
-	QueryScopeReady             bool           `json:"query_scope_ready"`
-	V21ExecutionAllowed         bool           `json:"v21_execution_allowed"`
+	SchemaVersion                      string         `json:"schema_version"`
+	Mode                               string         `json:"mode"`
+	UserID                             string         `json:"user_id"`
+	WorkspaceID                        string         `json:"workspace_id"`
+	QueryScope                         string         `json:"query_scope"`
+	PrivacyScope                       string         `json:"privacy_scope"`
+	AdapterContractVersion             string         `json:"adapter_contract_version"`
+	WorkspaceStatus                    string         `json:"workspace_status"`
+	QueryScopeReadiness                string         `json:"query_scope_readiness,omitempty"`
+	SourceScopeCounts                  map[string]int `json:"source_scope_counts,omitempty"`
+	IndexingRequestedSourceScopeCounts map[string]int `json:"indexing_requested_source_scope_counts,omitempty"`
+	SearchableSourceScopeCounts        map[string]int `json:"searchable_source_scope_counts,omitempty"`
+	UploadAPIReady                     bool           `json:"upload_api_ready"`
+	IndexingAPIReady                   bool           `json:"indexing_api_ready"`
+	QueryScopeReady                    bool           `json:"query_scope_ready"`
+	V21ExecutionAllowed                bool           `json:"v21_execution_allowed"`
 }
 
 type ProfessionalWorkspaceRedaction struct {
@@ -416,6 +419,53 @@ type WorkspaceUploadJob struct {
 	Findings         []WorkspaceUploadJobFinding `json:"findings,omitempty"`
 }
 
+type WorkspaceIndexJobRequest struct {
+	IndexJobID string `json:"index_job_id,omitempty"`
+	DocumentID string `json:"document_id,omitempty"`
+	JobID      string `json:"job_id,omitempty"`
+	SourceID   string `json:"source_id,omitempty"`
+	TraceID    string `json:"trace_id,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
+	DeviceID   string `json:"device_id,omitempty"`
+}
+
+type WorkspaceIndexJobsResponse struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Service       string                      `json:"service"`
+	Status        string                      `json:"status"`
+	Jobs          []WorkspaceIndexJob         `json:"jobs"`
+	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceIndexJob struct {
+	IndexJobID             string                      `json:"index_job_id"`
+	DocumentID             string                      `json:"document_id"`
+	SourceID               string                      `json:"source_id"`
+	JobID                  string                      `json:"job_id"`
+	DocumentHash           string                      `json:"document_hash"`
+	StorageStatus          string                      `json:"storage_status"`
+	UserID                 string                      `json:"user_id"`
+	WorkspaceID            string                      `json:"workspace_id"`
+	SourceScope            string                      `json:"source_scope"`
+	SourceKind             string                      `json:"source_kind"`
+	DocumentLabel          string                      `json:"document_label"`
+	ContentType            string                      `json:"content_type,omitempty"`
+	SizeBytes              int64                       `json:"size_bytes"`
+	Status                 string                      `json:"status"`
+	IndexStatus            string                      `json:"index_status"`
+	AdapterContractVersion string                      `json:"adapter_contract_version"`
+	CreatedAtMS            int64                       `json:"created_at_ms"`
+	UpdatedAtMS            int64                       `json:"updated_at_ms"`
+	TraceID                string                      `json:"trace_id,omitempty"`
+	SessionID              string                      `json:"session_id,omitempty"`
+	DeviceID               string                      `json:"device_id,omitempty"`
+	V21ExecutionAllowed    bool                        `json:"v21_execution_allowed"`
+	ExecutionStarted       bool                        `json:"execution_started"`
+	Redaction              WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings               []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
 type WorkspaceSourcesResponse struct {
 	SchemaVersion string                      `json:"schema_version"`
 	Service       string                      `json:"service"`
@@ -427,43 +477,46 @@ type WorkspaceSourcesResponse struct {
 }
 
 type WorkspaceSource struct {
-	SourceID      string                      `json:"source_id"`
-	JobID         string                      `json:"job_id"`
-	DocumentID    string                      `json:"document_id,omitempty"`
-	DocumentHash  string                      `json:"document_hash,omitempty"`
-	StorageStatus string                      `json:"storage_status,omitempty"`
-	UserID        string                      `json:"user_id"`
-	WorkspaceID   string                      `json:"workspace_id"`
-	SourceScope   string                      `json:"source_scope"`
-	SourceKind    string                      `json:"source_kind"`
-	DocumentLabel string                      `json:"document_label"`
-	ContentType   string                      `json:"content_type,omitempty"`
-	SizeBytes     int64                       `json:"size_bytes,omitempty"`
-	Readiness     string                      `json:"readiness"`
-	IndexStatus   string                      `json:"index_status"`
-	CreatedAtMS   int64                       `json:"created_at_ms"`
-	UpdatedAtMS   int64                       `json:"updated_at_ms"`
-	TraceID       string                      `json:"trace_id,omitempty"`
-	SessionID     string                      `json:"session_id,omitempty"`
-	DeviceID      string                      `json:"device_id,omitempty"`
-	MetadataOnly  bool                        `json:"metadata_only"`
-	StoredLocal   bool                        `json:"stored_local"`
-	Searchable    bool                        `json:"searchable"`
-	Deleted       bool                        `json:"deleted"`
-	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
-	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+	SourceID          string                      `json:"source_id"`
+	JobID             string                      `json:"job_id"`
+	DocumentID        string                      `json:"document_id,omitempty"`
+	DocumentHash      string                      `json:"document_hash,omitempty"`
+	StorageStatus     string                      `json:"storage_status,omitempty"`
+	UserID            string                      `json:"user_id"`
+	WorkspaceID       string                      `json:"workspace_id"`
+	SourceScope       string                      `json:"source_scope"`
+	SourceKind        string                      `json:"source_kind"`
+	DocumentLabel     string                      `json:"document_label"`
+	ContentType       string                      `json:"content_type,omitempty"`
+	SizeBytes         int64                       `json:"size_bytes,omitempty"`
+	Readiness         string                      `json:"readiness"`
+	IndexStatus       string                      `json:"index_status"`
+	CreatedAtMS       int64                       `json:"created_at_ms"`
+	UpdatedAtMS       int64                       `json:"updated_at_ms"`
+	TraceID           string                      `json:"trace_id,omitempty"`
+	SessionID         string                      `json:"session_id,omitempty"`
+	DeviceID          string                      `json:"device_id,omitempty"`
+	MetadataOnly      bool                        `json:"metadata_only"`
+	StoredLocal       bool                        `json:"stored_local"`
+	IndexingRequested bool                        `json:"indexing_requested"`
+	Searchable        bool                        `json:"searchable"`
+	Deleted           bool                        `json:"deleted"`
+	Redaction         WorkspaceUploadJobRedaction `json:"redaction"`
+	Findings          []WorkspaceUploadJobFinding `json:"findings,omitempty"`
 }
 
 type WorkspaceSourceSummary struct {
-	TotalSources                 int            `json:"total_sources"`
-	MetadataOnlySources          int            `json:"metadata_only_sources"`
-	StoredLocalSources           int            `json:"stored_local_sources"`
-	SearchableSources            int            `json:"searchable_sources"`
-	DeletedSources               int            `json:"deleted_sources"`
-	SourceScopeCounts            map[string]int `json:"source_scope_counts"`
-	StoredLocalSourceScopeCounts map[string]int `json:"stored_local_source_scope_counts"`
-	SearchableSourceScopeCounts  map[string]int `json:"searchable_source_scope_counts"`
-	WorkspaceStatus              string         `json:"workspace_status"`
+	TotalSources                       int            `json:"total_sources"`
+	MetadataOnlySources                int            `json:"metadata_only_sources"`
+	StoredLocalSources                 int            `json:"stored_local_sources"`
+	IndexingRequestedSources           int            `json:"indexing_requested_sources"`
+	SearchableSources                  int            `json:"searchable_sources"`
+	DeletedSources                     int            `json:"deleted_sources"`
+	SourceScopeCounts                  map[string]int `json:"source_scope_counts"`
+	StoredLocalSourceScopeCounts       map[string]int `json:"stored_local_source_scope_counts"`
+	IndexingRequestedSourceScopeCounts map[string]int `json:"indexing_requested_source_scope_counts"`
+	SearchableSourceScopeCounts        map[string]int `json:"searchable_source_scope_counts"`
+	WorkspaceStatus                    string         `json:"workspace_status"`
 }
 
 type WorkspaceUploadJobRedaction struct {
@@ -869,6 +922,7 @@ const (
 	ProfessionalReadRecordsSchemaVersion      = "a21.gateway.professional_read_records.v1"
 	WorkspaceDocumentsSchemaVersion           = "a21.gateway.workspace_documents.v1"
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
+	WorkspaceIndexJobsSchemaVersion           = "a21.gateway.workspace_index_jobs.v1"
 	WorkspaceSourcesSchemaVersion             = "a21.gateway.workspace_sources.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade                     = "cascade"
@@ -1057,6 +1111,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		professionalQueryScopeConfig: v21adapter.QueryScopePublic,
 		professionalReadRecords:      make(map[string]ProfessionalReadRecord),
 		workspaceUploadJobs:          make(map[string]WorkspaceUploadJob),
+		workspaceIndexJobs:           make(map[string]WorkspaceIndexJob),
 		workspaceSources:             make(map[string]WorkspaceSource),
 		workspaceDocuments:           make(map[string]WorkspaceDocument),
 		workspaceDocumentStoreDir:    workspaceDocumentStoreDir(options.WorkspaceDocumentStoreDir),
@@ -1109,6 +1164,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
 	mux.HandleFunc("/v1/workspace-documents", s.handleWorkspaceDocuments)
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
+	mux.HandleFunc("/v1/workspace-index-jobs", s.handleWorkspaceIndexJobs)
 	mux.HandleFunc("/v1/workspace-sources", s.handleWorkspaceSources)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
@@ -1299,6 +1355,38 @@ func (s *Server) handleWorkspaceUploadJobs(w http.ResponseWriter, r *http.Reques
 		} else {
 			response, err = s.applyWorkspaceUploadJobAction(req)
 		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWorkspaceIndexJobs(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response, err := s.workspaceIndexJobsResponse(
+			strings.TrimSpace(r.URL.Query().Get("index_job_id")),
+			strings.TrimSpace(r.URL.Query().Get("document_id")),
+			strings.TrimSpace(r.URL.Query().Get("job_id")),
+			strings.TrimSpace(r.URL.Query().Get("source_id")),
+			nil,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case http.MethodPost:
+		req, err := decodeWorkspaceIndexJobRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		response, err := s.createWorkspaceIndexJob(req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1925,21 +2013,22 @@ func (s *Server) professionalWorkspaceRuntime(override ProfessionalWorkspaceSele
 		workspaceStatus = queryScopeReadiness
 	}
 	return ProfessionalWorkspaceRuntime{
-		SchemaVersion:               ProfessionalWorkspaceRuntimeSchemaVersion,
-		Mode:                        VoiceModeProfessional,
-		UserID:                      userID,
-		WorkspaceID:                 workspaceID,
-		QueryScope:                  queryScope,
-		PrivacyScope:                "professional_only",
-		AdapterContractVersion:      ProfessionalAdapterContractVersion,
-		WorkspaceStatus:             workspaceStatus,
-		QueryScopeReadiness:         queryScopeReadiness,
-		SourceScopeCounts:           copyWorkspaceSourceCounts(sourceSummary.SourceScopeCounts),
-		SearchableSourceScopeCounts: copyWorkspaceSourceCounts(sourceSummary.SearchableSourceScopeCounts),
-		UploadAPIReady:              sourceSummary.TotalSources > 0,
-		IndexingAPIReady:            false,
-		QueryScopeReady:             true,
-		V21ExecutionAllowed:         false,
+		SchemaVersion:                      ProfessionalWorkspaceRuntimeSchemaVersion,
+		Mode:                               VoiceModeProfessional,
+		UserID:                             userID,
+		WorkspaceID:                        workspaceID,
+		QueryScope:                         queryScope,
+		PrivacyScope:                       "professional_only",
+		AdapterContractVersion:             ProfessionalAdapterContractVersion,
+		WorkspaceStatus:                    workspaceStatus,
+		QueryScopeReadiness:                queryScopeReadiness,
+		SourceScopeCounts:                  copyWorkspaceSourceCounts(sourceSummary.SourceScopeCounts),
+		IndexingRequestedSourceScopeCounts: copyWorkspaceSourceCounts(sourceSummary.IndexingRequestedSourceScopeCounts),
+		SearchableSourceScopeCounts:        copyWorkspaceSourceCounts(sourceSummary.SearchableSourceScopeCounts),
+		UploadAPIReady:                     sourceSummary.TotalSources > 0,
+		IndexingAPIReady:                   sourceSummary.IndexingRequestedSources > 0,
+		QueryScopeReady:                    true,
+		V21ExecutionAllowed:                false,
 	}, nil
 }
 
@@ -2467,6 +2556,25 @@ func (s *Server) deleteWorkspaceDocumentForJobLocked(job *WorkspaceUploadJob, no
 			Message: "A21 deleted the local intake file and retained only a redacted tombstone",
 		})
 		s.workspaceDocuments[document.DocumentID] = document
+		for indexJobID, indexJob := range s.workspaceIndexJobs {
+			if indexJob.DocumentID != document.DocumentID {
+				continue
+			}
+			indexJob.Status = "deleted_metadata_only"
+			indexJob.IndexStatus = "deleted_no_execute"
+			indexJob.StorageStatus = "deleted_local"
+			indexJob.DocumentHash = ""
+			indexJob.DocumentLabel = "deleted"
+			indexJob.ContentType = ""
+			indexJob.SizeBytes = 0
+			indexJob.UpdatedAtMS = nowMS
+			indexJob.Redaction = workspaceUploadJobRedaction()
+			indexJob.Findings = append(indexJob.Findings, WorkspaceUploadJobFinding{
+				Code:    "workspace_index_job_deleted",
+				Message: "A21 retained only a redacted index request tombstone after local document deletion",
+			})
+			s.workspaceIndexJobs[indexJobID] = indexJob
+		}
 	}
 	job.DocumentHash = ""
 	job.StorageStatus = "deleted_local"
@@ -2537,6 +2645,12 @@ func workspaceUploadJobForbiddenKey(key string) bool {
 		"credentials",
 		"api_key",
 		"token",
+		"provider_output",
+		"retrieved_text",
+		"evidence",
+		"transcript",
+		"audio",
+		"wav_path",
 	} {
 		if key == forbidden {
 			return true
@@ -2548,6 +2662,247 @@ func workspaceUploadJobForbiddenKey(key string) bool {
 		}
 	}
 	return false
+}
+
+func decodeWorkspaceIndexJobRequest(r *http.Request) (WorkspaceIndexJobRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return WorkspaceIndexJobRequest{}, fmt.Errorf("invalid json")
+	}
+	for key := range raw {
+		if workspaceUploadJobForbiddenKey(key) {
+			return WorkspaceIndexJobRequest{}, fmt.Errorf("workspace index job request must not include raw document, URL, path, credential, provider output, or payload fields")
+		}
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return WorkspaceIndexJobRequest{}, fmt.Errorf("invalid json")
+	}
+	var req WorkspaceIndexJobRequest
+	if err := json.Unmarshal(encoded, &req); err != nil {
+		return WorkspaceIndexJobRequest{}, fmt.Errorf("invalid json")
+	}
+	return req, nil
+}
+
+func (s *Server) createWorkspaceIndexJob(req WorkspaceIndexJobRequest) (WorkspaceIndexJobsResponse, error) {
+	nowMS := s.now().UnixMilli()
+	traceID := safeOptionalWorkspaceLabel(req.TraceID)
+	sessionID := safeOptionalWorkspaceLabel(req.SessionID)
+	deviceID := safeOptionalWorkspaceLabel(req.DeviceID)
+	s.mu.Lock()
+	document, job, _, err := s.resolveWorkspaceIndexTargetLocked(req)
+	if err != nil {
+		s.mu.Unlock()
+		return WorkspaceIndexJobsResponse{}, err
+	}
+	if document.Status == "deleted" || job.Status == "deleted" || document.StorageStatus != "stored_local" || job.StorageStatus != "stored_local" {
+		s.mu.Unlock()
+		return WorkspaceIndexJobsResponse{}, fmt.Errorf("workspace document must be stored_local before indexing can be requested")
+	}
+	if path := s.workspaceDocumentPath(document); path == "" {
+		s.mu.Unlock()
+		return WorkspaceIndexJobsResponse{}, fmt.Errorf("workspace document local store metadata unavailable")
+	} else if _, err := os.Stat(path); err != nil {
+		s.mu.Unlock()
+		return WorkspaceIndexJobsResponse{}, fmt.Errorf("workspace document local store file unavailable")
+	}
+	if traceID == "" {
+		traceID = document.TraceID
+	}
+	if sessionID == "" {
+		sessionID = document.SessionID
+	}
+	if deviceID == "" {
+		deviceID = document.DeviceID
+	}
+	s.workspaceIndexJobSeq++
+	indexJobID := fmt.Sprintf("a21-workspace-index-job-%06d", s.workspaceIndexJobSeq)
+	finding := WorkspaceUploadJobFinding{
+		Code:    "workspace_index_requested_no_execute",
+		Message: "A21 recorded an indexing request for a stored-local document; parsing, embedding, upload, and V21 execution remain disabled",
+	}
+	document.Status = "indexing_requested_no_execute"
+	document.IndexStatus = "indexing_requested_no_execute"
+	document.Readiness = "indexing_requested_no_execute"
+	document.UpdatedAtMS = nowMS
+	document.TraceID = traceID
+	document.SessionID = sessionID
+	document.DeviceID = deviceID
+	document.Findings = append(document.Findings, finding)
+	job.Status = "indexing_requested_no_execute"
+	job.IndexStatus = "indexing_requested_no_execute"
+	job.IndexingAPIReady = true
+	job.ExecutionStarted = false
+	job.UpdatedAtMS = nowMS
+	job.TraceID = traceID
+	job.SessionID = sessionID
+	job.DeviceID = deviceID
+	job.Findings = append(job.Findings, finding)
+	source := workspaceSourceFromJob(job, "indexing_requested_no_execute")
+	indexJob := WorkspaceIndexJob{
+		IndexJobID:             indexJobID,
+		DocumentID:             document.DocumentID,
+		SourceID:               document.SourceID,
+		JobID:                  document.JobID,
+		DocumentHash:           document.DocumentHash,
+		StorageStatus:          document.StorageStatus,
+		UserID:                 document.UserID,
+		WorkspaceID:            document.WorkspaceID,
+		SourceScope:            document.SourceScope,
+		SourceKind:             document.SourceKind,
+		DocumentLabel:          document.DocumentLabel,
+		ContentType:            document.ContentType,
+		SizeBytes:              document.SizeBytes,
+		Status:                 "indexing_requested_no_execute",
+		IndexStatus:            "indexing_requested_no_execute",
+		AdapterContractVersion: ProfessionalAdapterContractVersion,
+		CreatedAtMS:            nowMS,
+		UpdatedAtMS:            nowMS,
+		TraceID:                traceID,
+		SessionID:              sessionID,
+		DeviceID:               deviceID,
+		V21ExecutionAllowed:    false,
+		ExecutionStarted:       false,
+		Redaction:              workspaceUploadJobStoredDocumentRedaction(),
+		Findings:               []WorkspaceUploadJobFinding{finding},
+	}
+	s.workspaceDocuments[document.DocumentID] = document
+	s.workspaceUploadJobs[job.JobID] = job
+	s.workspaceSources[source.SourceID] = source
+	s.workspaceIndexJobs[indexJobID] = indexJob
+	s.mu.Unlock()
+	if traceID != "" {
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.index_job.requested_no_execute", nowMS)
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.source.indexing_requested_no_execute", nowMS)
+	}
+	response, err := s.workspaceIndexJobsResponse(indexJobID, "", "", "", nil)
+	if err != nil {
+		return WorkspaceIndexJobsResponse{}, err
+	}
+	response.Status = "indexing_requested_no_execute"
+	return response, nil
+}
+
+func (s *Server) resolveWorkspaceIndexTargetLocked(req WorkspaceIndexJobRequest) (WorkspaceDocument, WorkspaceUploadJob, WorkspaceSource, error) {
+	documentID, err := normalizeWorkspaceLedgerID("document_id", req.DocumentID)
+	if err != nil {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, err
+	}
+	jobID, err := normalizeWorkspaceLedgerID("job_id", req.JobID)
+	if err != nil {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, err
+	}
+	sourceID, err := normalizeWorkspaceLedgerID("source_id", req.SourceID)
+	if err != nil {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, err
+	}
+	if documentID == "" && jobID != "" {
+		job, ok := s.workspaceUploadJobs[jobID]
+		if !ok || strings.TrimSpace(job.DocumentID) == "" {
+			return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace stored document not found")
+		}
+		documentID = job.DocumentID
+	}
+	if documentID == "" && sourceID != "" {
+		source, ok := s.workspaceSources[sourceID]
+		if !ok || strings.TrimSpace(source.DocumentID) == "" {
+			return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace stored document not found")
+		}
+		documentID = source.DocumentID
+	}
+	if documentID == "" {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("document_id, job_id, or source_id is required")
+	}
+	document, ok := s.workspaceDocuments[documentID]
+	if !ok {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace stored document not found")
+	}
+	if jobID != "" && document.JobID != jobID {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace stored document not found")
+	}
+	if sourceID != "" && document.SourceID != sourceID {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace stored document not found")
+	}
+	job, ok := s.workspaceUploadJobs[document.JobID]
+	if !ok {
+		return WorkspaceDocument{}, WorkspaceUploadJob{}, WorkspaceSource{}, fmt.Errorf("workspace upload job not found")
+	}
+	source, ok := s.workspaceSources[document.SourceID]
+	if !ok {
+		source = workspaceSourceFromJob(job, workspaceSourceReadinessForJob(job))
+	}
+	return document, job, source, nil
+}
+
+func (s *Server) workspaceIndexJobsResponse(indexJobID string, documentID string, jobID string, sourceID string, findings []WorkspaceUploadJobFinding) (WorkspaceIndexJobsResponse, error) {
+	jobs, err := s.workspaceIndexJobsSnapshot(indexJobID, documentID, jobID, sourceID)
+	if err != nil {
+		return WorkspaceIndexJobsResponse{}, err
+	}
+	status := "ok"
+	if (strings.TrimSpace(indexJobID) != "" || strings.TrimSpace(documentID) != "" || strings.TrimSpace(jobID) != "" || strings.TrimSpace(sourceID) != "") && len(jobs) == 0 {
+		status = "not_found"
+		findings = append(findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_index_job_not_found",
+			Message: "A21 has no redacted workspace index job matching those filters",
+		})
+	} else if len(jobs) == 1 && strings.TrimSpace(indexJobID) != "" {
+		status = jobs[0].Status
+	}
+	return WorkspaceIndexJobsResponse{
+		SchemaVersion: WorkspaceIndexJobsSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        status,
+		Jobs:          jobs,
+		Redaction:     workspaceUploadJobRedactionForIndexJobs(jobs),
+		Findings:      findings,
+	}, nil
+}
+
+func (s *Server) workspaceIndexJobsSnapshot(indexJobID string, documentID string, jobID string, sourceID string) ([]WorkspaceIndexJob, error) {
+	var err error
+	if indexJobID, err = normalizeWorkspaceLedgerID("index_job_id", indexJobID); err != nil {
+		return nil, err
+	}
+	if documentID, err = normalizeWorkspaceLedgerID("document_id", documentID); err != nil {
+		return nil, err
+	}
+	if jobID, err = normalizeWorkspaceLedgerID("job_id", jobID); err != nil {
+		return nil, err
+	}
+	if sourceID, err = normalizeWorkspaceLedgerID("source_id", sourceID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]string, 0, len(s.workspaceIndexJobs))
+	if indexJobID != "" {
+		keys = append(keys, indexJobID)
+	} else {
+		for key := range s.workspaceIndexJobs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+	}
+	jobs := make([]WorkspaceIndexJob, 0, len(keys))
+	for _, key := range keys {
+		job, ok := s.workspaceIndexJobs[key]
+		if !ok {
+			continue
+		}
+		if documentID != "" && job.DocumentID != documentID {
+			continue
+		}
+		if jobID != "" && job.JobID != jobID {
+			continue
+		}
+		if sourceID != "" && job.SourceID != sourceID {
+			continue
+		}
+		jobs = append(jobs, copyWorkspaceIndexJob(job))
+	}
+	return jobs, nil
 }
 
 func (s *Server) createWorkspaceUploadJob(req WorkspaceUploadJobRequest) (WorkspaceUploadJobsResponse, error) {
@@ -2841,31 +3196,32 @@ func workspaceSourceFromJob(job WorkspaceUploadJob, readiness string) WorkspaceS
 	storedLocal := job.StorageStatus == "stored_local" && readiness != "deleted_metadata_only"
 	redaction := job.Redaction
 	return WorkspaceSource{
-		SourceID:      job.SourceID,
-		JobID:         job.JobID,
-		DocumentID:    job.DocumentID,
-		DocumentHash:  job.DocumentHash,
-		StorageStatus: job.StorageStatus,
-		UserID:        job.UserID,
-		WorkspaceID:   job.WorkspaceID,
-		SourceScope:   job.SourceScope,
-		SourceKind:    job.SourceKind,
-		DocumentLabel: job.DocumentLabel,
-		ContentType:   job.ContentType,
-		SizeBytes:     job.SizeBytes,
-		Readiness:     readiness,
-		IndexStatus:   job.IndexStatus,
-		CreatedAtMS:   job.CreatedAtMS,
-		UpdatedAtMS:   job.UpdatedAtMS,
-		TraceID:       job.TraceID,
-		SessionID:     job.SessionID,
-		DeviceID:      job.DeviceID,
-		MetadataOnly:  !storedLocal,
-		StoredLocal:   storedLocal,
-		Searchable:    readiness == "searchable_metadata_only",
-		Deleted:       readiness == "deleted_metadata_only",
-		Redaction:     redaction,
-		Findings:      append([]WorkspaceUploadJobFinding(nil), job.Findings...),
+		SourceID:          job.SourceID,
+		JobID:             job.JobID,
+		DocumentID:        job.DocumentID,
+		DocumentHash:      job.DocumentHash,
+		StorageStatus:     job.StorageStatus,
+		UserID:            job.UserID,
+		WorkspaceID:       job.WorkspaceID,
+		SourceScope:       job.SourceScope,
+		SourceKind:        job.SourceKind,
+		DocumentLabel:     job.DocumentLabel,
+		ContentType:       job.ContentType,
+		SizeBytes:         job.SizeBytes,
+		Readiness:         readiness,
+		IndexStatus:       job.IndexStatus,
+		CreatedAtMS:       job.CreatedAtMS,
+		UpdatedAtMS:       job.UpdatedAtMS,
+		TraceID:           job.TraceID,
+		SessionID:         job.SessionID,
+		DeviceID:          job.DeviceID,
+		MetadataOnly:      !storedLocal,
+		StoredLocal:       storedLocal,
+		IndexingRequested: readiness == "indexing_requested_no_execute",
+		Searchable:        readiness == "searchable_metadata_only",
+		Deleted:           readiness == "deleted_metadata_only",
+		Redaction:         redaction,
+		Findings:          append([]WorkspaceUploadJobFinding(nil), job.Findings...),
 	}
 }
 
@@ -2875,6 +3231,8 @@ func workspaceSourceReadinessForJob(job WorkspaceUploadJob) string {
 		return "deleted_metadata_only"
 	case job.Status == "failed":
 		return "failed_metadata_only"
+	case job.Status == "indexing_requested_no_execute" || job.IndexStatus == "indexing_requested_no_execute":
+		return "indexing_requested_no_execute"
 	case job.Status == "stored_local_pending_index":
 		return "stored_local_pending_index"
 	case job.IndexStatus == "searchable_metadata_only":
@@ -2886,7 +3244,7 @@ func workspaceSourceReadinessForJob(job WorkspaceUploadJob) string {
 
 func defaultWorkspaceSourceReadiness(readiness string) string {
 	switch strings.TrimSpace(readiness) {
-	case "metadata_only", "stored_local_pending_index", "searchable_metadata_only", "failed_metadata_only", "deleted_metadata_only":
+	case "metadata_only", "stored_local_pending_index", "indexing_requested_no_execute", "searchable_metadata_only", "failed_metadata_only", "deleted_metadata_only":
 		return strings.TrimSpace(readiness)
 	default:
 		return "metadata_only"
@@ -2924,10 +3282,18 @@ func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
 		if source.StoredLocal && validWorkspaceSourceScope(source.SourceScope) {
 			summary.StoredLocalSourceScopeCounts[source.SourceScope]++
 		}
+		if source.IndexingRequested {
+			summary.IndexingRequestedSources++
+			if validWorkspaceSourceScope(source.SourceScope) {
+				summary.IndexingRequestedSourceScopeCounts[source.SourceScope]++
+			}
+		}
 	}
 	switch {
 	case summary.SearchableSources > 0:
 		summary.WorkspaceStatus = "searchable_metadata_only"
+	case summary.IndexingRequestedSources > 0:
+		summary.WorkspaceStatus = "indexing_requested_no_execute"
 	case summary.TotalSources == summary.DeletedSources && summary.TotalSources > 0:
 		summary.WorkspaceStatus = "deleted_metadata_only"
 	case summary.StoredLocalSources > 0:
@@ -2942,10 +3308,11 @@ func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
 
 func emptyWorkspaceSourceSummary() WorkspaceSourceSummary {
 	return WorkspaceSourceSummary{
-		SourceScopeCounts:            map[string]int{"public": 0, "personal": 0},
-		StoredLocalSourceScopeCounts: map[string]int{"public": 0, "personal": 0},
-		SearchableSourceScopeCounts:  map[string]int{"public": 0, "personal": 0},
-		WorkspaceStatus:              "no_sources_metadata_only",
+		SourceScopeCounts:                  map[string]int{"public": 0, "personal": 0},
+		StoredLocalSourceScopeCounts:       map[string]int{"public": 0, "personal": 0},
+		IndexingRequestedSourceScopeCounts: map[string]int{"public": 0, "personal": 0},
+		SearchableSourceScopeCounts:        map[string]int{"public": 0, "personal": 0},
+		WorkspaceStatus:                    "no_sources_metadata_only",
 	}
 }
 
@@ -2958,6 +3325,8 @@ func workspaceQueryScopeReadiness(queryScope string, summary WorkspaceSourceSumm
 	case v21adapter.QueryScopeCombined:
 		publicReady := summary.SearchableSourceScopeCounts["public"] > 0
 		personalReady := summary.SearchableSourceScopeCounts["personal"] > 0
+		publicIndexing := summary.IndexingRequestedSourceScopeCounts["public"] > 0
+		personalIndexing := summary.IndexingRequestedSourceScopeCounts["personal"] > 0
 		publicStored := summary.StoredLocalSourceScopeCounts["public"] > 0
 		personalStored := summary.StoredLocalSourceScopeCounts["personal"] > 0
 		switch {
@@ -2965,6 +3334,8 @@ func workspaceQueryScopeReadiness(queryScope string, summary WorkspaceSourceSumm
 			return "combined_searchable_metadata_only"
 		case publicReady || personalReady:
 			return "partial_searchable_metadata_only"
+		case publicIndexing || personalIndexing:
+			return "indexing_requested_no_execute"
 		case publicStored || personalStored:
 			return "stored_local_pending_index"
 		case summary.SourceScopeCounts["public"] > 0 || summary.SourceScopeCounts["personal"] > 0:
@@ -2981,6 +3352,8 @@ func workspaceSingleScopeReadiness(scope string, summary WorkspaceSourceSummary)
 	switch {
 	case summary.SearchableSourceScopeCounts[scope] > 0:
 		return "searchable_metadata_only"
+	case summary.IndexingRequestedSourceScopeCounts[scope] > 0:
+		return "indexing_requested_no_execute"
 	case summary.StoredLocalSourceScopeCounts[scope] > 0:
 		return "stored_local_pending_index"
 	case summary.SourceScopeCounts[scope] > 0:
@@ -2999,6 +3372,28 @@ func copyWorkspaceSourceCounts(counts map[string]int) map[string]int {
 		out[scope] = count
 	}
 	return out
+}
+
+func copyWorkspaceIndexJob(job WorkspaceIndexJob) WorkspaceIndexJob {
+	job.Findings = append([]WorkspaceUploadJobFinding(nil), job.Findings...)
+	return job
+}
+
+func normalizeWorkspaceLedgerID(field string, value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > 96 {
+		return "", fmt.Errorf("valid redacted %s is required", field)
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return "", fmt.Errorf("valid redacted %s is required", field)
+	}
+	return value, nil
 }
 
 func defaultWorkspaceSourceScope(scope string) string {
@@ -3122,6 +3517,14 @@ func workspaceUploadJobRedactionForSources(sources []WorkspaceSource) WorkspaceU
 	redaction := workspaceUploadJobRedaction()
 	for _, source := range sources {
 		redaction = mergeWorkspaceUploadJobRedaction(redaction, source.Redaction)
+	}
+	return redaction
+}
+
+func workspaceUploadJobRedactionForIndexJobs(jobs []WorkspaceIndexJob) WorkspaceUploadJobRedaction {
+	redaction := workspaceUploadJobRedaction()
+	for _, job := range jobs {
+		redaction = mergeWorkspaceUploadJobRedaction(redaction, job.Redaction)
 	}
 	return redaction
 }

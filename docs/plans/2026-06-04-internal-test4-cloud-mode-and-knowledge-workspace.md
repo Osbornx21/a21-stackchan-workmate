@@ -87,6 +87,13 @@ StackChan hardware.
   execute V21; API responses, traces, simulator readouts, and tests keep raw
   content, base64 payloads, original private filenames, local paths,
   credentials, provider output, and evidence bodies out of the surface.
+- Gateway now exposes `GET/POST /v1/workspace-index-jobs` as the no-execute
+  indexing request ledger for stored local documents. It verifies the stored
+  local file exists, records a redacted `index_job_id`, and promotes linked
+  document/job/source readiness to `indexing_requested_no_execute` while
+  keeping `execution_started=false`, `v21_execution_allowed=false`, and
+  `searchable=false`. Professional workspace readiness can now distinguish
+  stored-local pending index from indexing-requested-without-execution.
 - Gateway now exposes a professional mode ritual contract in
   `GET/POST /v1/voice-modes`. Selecting `professional` returns a `PRO` screen
   label, evidence-first cue text, professional expression, trace marker,
@@ -358,9 +365,10 @@ Acceptance:
 3. Add a no-execute upload/workspace PRD spec and API contract. Completed for
    `/v1/professional-workspace`, `/v1/workspace-upload-jobs`, and
    `/v1/workspace-sources`; local file upload intake is now completed through
-   `/v1/workspace-documents` as `stored_local_pending_index`. Import, parsing,
-   chunking, embedding, indexing, cloud storage, and V21 execution are still not
-   implemented.
+   `/v1/workspace-documents` as `stored_local_pending_index`; no-execute index
+   request readiness is now completed through `/v1/workspace-index-jobs` as
+   `indexing_requested_no_execute`. Import, parsing, chunking, embedding,
+   actual indexing, cloud storage, and V21 execution are still not implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;
    - dialogue alias normalization;

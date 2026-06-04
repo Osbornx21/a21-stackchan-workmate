@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this focused MCP speaker-volume cut:
-  `c2a1260 feat(gateway): add selectable roleplay soul profiles`
+- Current source HEAD before this focused workspace index-request cut:
+  `509d688 feat(gateway): fold speaker volume into mcp control`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,14 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`
+- `docs/plans/2026-06-04-workspace-index-request-ledger.md`
 - Transition:
-  `T-STACKCHAN-OFFICIAL-MCP-SPEAKER-VOLUME-FREEZE-001`
+  `T-INTERNAL-TEST4-WORKSPACE-INDEX-REQUEST-LEDGER-001`
 - Target:
-  freeze the already-used official `self.audio_speaker.set_volume` tool into
-  the unified `/v1/xiaozhi/mcp-control` whitelist while preserving the existing
-  `/v1/xiaozhi/speaker-volume` compatibility endpoint and avoiding physical
-  acceptance overclaims.
+  add a redacted no-execute workspace indexing request ledger so locally stored
+  uploads can advance from `stored_local_pending_index` to
+  `indexing_requested_no_execute` without parsing, embedding, V21 execution, or
+  private-content leakage.
 
 ## Scoped Hardware Parity Transition
 
@@ -1062,3 +1062,34 @@ Current conclusion:
   acceptance still requires fresh device evidence; no provider/V21, Gateway
   runtime service start, ECS, firmware, serial, NVS, or hardware action
   occurred.
+
+## Latest Control-Tower Result - 2026-06-04 Workspace Index Request Ledger
+
+Internal test 4 workspace upload readiness now has a no-execute indexing
+request ledger.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-workspace-index-request-ledger.md`.
+- Gateway now exposes `GET/POST /v1/workspace-index-jobs` with schema
+  `a21.gateway.workspace_index_jobs.v1`.
+- `POST /v1/workspace-index-jobs` accepts only safe document/job/source IDs
+  and optional trace/session/device IDs. It verifies the stored local file is
+  present, but does not read, parse, chunk, embed, OCR, upload, or send it to
+  V21.
+- Linked document, upload job, and source readiness now promote to
+  `indexing_requested_no_execute`; the source summary exposes
+  `indexing_requested_source_scope_counts`, and professional workspace
+  readiness can report `indexing_api_ready=true` after a request is recorded.
+- The simulator Workspace Audit surface now has an `Index Request` control and
+  index-job readout using only safe IDs/status metadata.
+
+Current conclusion:
+
+- Local uploads now have a truthful adapter-ready pre-index state instead of a
+  dead-end pending flag.
+- This is not searchable readiness, real indexing, parsing, embedding, cloud
+  storage, provider/V21 execution, durable auth/ACL, Gateway service startup,
+  ECS deployment, firmware, serial, NVS, or physical StackChan professional
+  consult acceptance.

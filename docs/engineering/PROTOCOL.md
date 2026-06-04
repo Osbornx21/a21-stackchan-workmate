@@ -660,6 +660,23 @@ credentials, provider output, V21 evidence, or document-derived text. This
 endpoint does not parse, chunk, embed, OCR, index, upload to cloud storage, or
 execute V21.
 
+`workspace_index_jobs` is the no-execute indexing request ledger for stored
+local workspace documents. `GET /v1/workspace-index-jobs` returns
+`a21.gateway.workspace_index_jobs.v1` and can filter by `index_job_id`,
+`document_id`, `job_id`, or `source_id`. `POST /v1/workspace-index-jobs`
+accepts only those safe IDs plus optional `trace_id`, `session_id`, and
+`device_id`. The target document must already exist as
+`storage_status=stored_local`; Gateway verifies that the local intake file is
+present but does not read, parse, chunk, embed, OCR, upload, or send it to V21.
+The created ledger entry and linked document/job/source move to
+`indexing_requested_no_execute`; the upload job sets
+`indexing_api_ready=true` and `execution_started=false`. This status means the
+A21/V21 adapter boundary is ready for a future indexing worker, not that the
+document is searchable. Responses and traces must not contain document text,
+raw bytes, base64 payloads, original private filenames, local storage paths,
+import URLs, credentials, provider output, V21 evidence, or document-derived
+text.
+
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns
 `a21.gateway.workspace_sources.v1` and can filter by `source_id`, `user_id`,
@@ -668,13 +685,18 @@ source/job IDs, redacted user/workspace labels, source scope, source kind,
 document ID/hash when present, document label, content type, size, readiness,
 storage status, index status, safe timestamps, and redaction flags. Readiness
 values such as `metadata_only`, `stored_local_pending_index`,
-`searchable_metadata_only`, `failed_metadata_only`, and
+`indexing_requested_no_execute`, `searchable_metadata_only`,
+`failed_metadata_only`, and
 `deleted_metadata_only` are explicitly scoped: `stored_local_pending_index`
-means A21 accepted local bytes and has not indexed them; the other metadata
-statuses are not proof of real document storage, retrieval, or V21 indexing.
+means A21 accepted local bytes and has not indexed them;
+`indexing_requested_no_execute` means A21 recorded a future indexing request
+but did not execute parsing, embedding, upload, retrieval, or V21 indexing; the
+other metadata statuses are not proof of real document storage, retrieval, or
+V21 indexing.
 `/v1/professional-workspace` may surface
-`source_scope_counts`, `searchable_source_scope_counts`, and
-`query_scope_readiness` from this registry while keeping
+`source_scope_counts`, `indexing_requested_source_scope_counts`,
+`searchable_source_scope_counts`, and `query_scope_readiness` from this
+registry while keeping
 `v21_execution_allowed=false` until a separately verified adapter execution
 path is used.
 

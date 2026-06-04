@@ -11667,3 +11667,82 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 10:36 CST - Workspace Index Request Ledger
+
+Round goal:
+
+- Move internal test 4 workspace uploads from `stored_local_pending_index` to a
+  truthful no-execute indexing request state, without parsing documents,
+  indexing, executing V21, or leaking private document contents.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-workspace-index-request-ledger.md`.
+- Added `GET/POST /v1/workspace-index-jobs` with schema
+  `a21.gateway.workspace_index_jobs.v1`.
+- `POST /v1/workspace-index-jobs` accepts safe document/job/source IDs and
+  optional trace/session/device IDs, verifies the stored-local intake file is
+  present, and records a redacted `index_job_id`.
+- Linked documents, upload jobs, and sources promote to
+  `indexing_requested_no_execute`; upload jobs set
+  `indexing_api_ready=true` while keeping `execution_started=false`.
+- `/v1/workspace-sources` now reports
+  `indexing_requested_source_scope_counts`, and
+  `/v1/professional-workspace` can report selected-scope
+  `indexing_requested_no_execute` readiness without allowing V21 execution.
+- Simulator Workspace Audit now includes an `Index Request` control and
+  index-job readout.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/plans/2026-06-04-workspace-index-request-ledger.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not parsing, OCR, chunking, embedding, cloud storage, durable
+  account/auth/ACL, real indexing, searchable readiness, V21 execution, or
+  physical StackChan professional consult acceptance.
+- The workspace/index ledgers remain in-memory; local files persist in the
+  runtime store, but metadata is not durable across Gateway restart.
+
+Known risks/blockers:
+
+- `indexing_requested_no_execute` must not be treated as searchable or as proof
+  that personal/public ACL enforcement exists.
+- Future V21 indexing must remain behind the A21/V21 adapter contract and must
+  preserve source-scope redaction.
+- Git may still warn about historical loose objects/gc; no prune/gc action was
+  taken.
+
+Recommended next action:
+
+- Continue with a scoped V21/A21 indexing adapter worker that consumes stored
+  local documents through an approved contract, or use a foreground hardware
+  window for professional consult evidence. Keep real V21 execution out of
+  unscoped workspace UI work.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceIndex|TestWorkspaceDocumentUpload|TestWorkspaceSource|TestWorkspaceUploadJobs|TestProfessionalWorkspace|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, prune/gc, or physical
+  hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
