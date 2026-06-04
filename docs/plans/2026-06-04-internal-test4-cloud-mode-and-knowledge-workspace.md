@@ -174,6 +174,14 @@ StackChan hardware.
   existing runtime prompt/voice pipeline readiness without exposing memory
   text, prompt bodies, voice data, provider output, V21 evidence, or physical
   acceptance.
+- The workspace console now also exposes voice-chain and wake-word setup over
+  existing safe contracts. Voice-chain controls select `cascade` or
+  `realtime`, ASR profile, LLM profile, realtime provider, and effective TTS
+  readout through `/v1/voice-chain-profiles` without running a provider.
+  Wake-word controls save/reset `/v1/wake-word` intent while showing the
+  honest activation boundary: custom MultiNet requests are
+  `pending_firmware_build`, built-in Xiaozhi WakeNet remains active, runtime
+  hot swap is false, and physical acceptance is still separate.
 
 ## Product Form
 

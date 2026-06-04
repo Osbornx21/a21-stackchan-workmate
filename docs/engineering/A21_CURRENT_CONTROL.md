@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this workspace roleplay-control cut:
-  `44fce07 feat(gateway): add workspace console management controls`
+- Current source HEAD before this workspace voice/wake-control cut:
+  `b93d820 feat(gateway): add workspace roleplay controls`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,15 +90,14 @@ Target:
 
 Current focused cut:
 
-- Host-local workspace roleplay-control plan:
-  `docs/plans/2026-06-04-workspace-roleplay-control-surface.md`
+- Host-local workspace voice/wake-control plan:
+  `docs/plans/2026-06-04-workspace-voice-chain-wake-control-surface.md`
 - Transition:
-  `T-WORKSPACE-ROLEPLAY-CONTROL-SURFACE-001`
+  `T-WORKSPACE-VOICE-CHAIN-WAKE-CONTROL-SURFACE-001`
 - Target:
-  let `/workspace` configure role soul, scenario, voice profile, and bounded
-  memory hints through existing Gateway contracts so roleplay prompt/voice
-  readiness is visible on the product console while avoiding provider/V21
-  execution, real indexing, firmware, serial, NVS, or physical hardware
+  let `/workspace` configure provider voice-chain selection and wake-word
+  intent through existing Gateway contracts while avoiding provider/V21
+  execution, real indexing, firmware build, serial, NVS, or physical hardware
   action.
 
 ## Scoped Hardware Parity Transition

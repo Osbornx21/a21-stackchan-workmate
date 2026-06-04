@@ -12544,3 +12544,81 @@ Forbidden actions avoided:
 
 - No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
   hardware action occurred.
+
+## 2026-06-04 12:23 CST - Workspace Voice Chain And Wake Control Surface
+
+Transition:
+
+- `T-WORKSPACE-VOICE-CHAIN-WAKE-CONTROL-SURFACE-001`
+
+What changed:
+
+- Extended `GET /workspace` with provider voice-chain and wake-word setup
+  controls over existing safe Gateway contracts only.
+- Added voice-chain controls for chain mode, ASR profile, LLM profile,
+  realtime provider, save, hot-switch status, effective TTS readout, and safe
+  finding readout.
+- Added wake-word controls for builtin/custom mode, desired phrase, desired
+  pinyin, threshold, save, reset, build-required status, runtime hot-swap
+  status, active phrase, runtime status, firmware status, and safe code.
+- Safe metadata export now includes selected voice-chain and wake-word status
+  fields while keeping redaction flags explicit.
+
+Files changed:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-workspace-voice-chain-wake-control-surface.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceChainProfiles|TestWakeWord|TestRoleplayProfile|TestWorkspaceDocumentUpload|TestWorkspaceIndex|TestWorkspaceSource|TestProfessionalWorkspace' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- Local Gateway was started on `127.0.0.1:21080` only for page verification,
+  then stopped.
+- Playwright opened `/workspace` at desktop `1270x900` and mobile `390x900`.
+- Playwright selected `cascade`, `doubao_asr_realtime`, `stepfun`, and
+  `openai_realtime`, saved voice-chain settings, and observed
+  `/v1/voice-chain-profiles` return the selected profiles plus
+  `hot_switch=true`.
+- Playwright saved custom wake-word intent `custom_multinet` for
+  `小阿二一` / `xiao a er yi` with threshold `35`, observed
+  `/v1/wake-word` return `pending_firmware_build`,
+  `firmware_build_required=true`, `custom_pending_firmware`,
+  `builtin_xiaozhi_wakenet`, `runtime_hot_swap_supported=false`, and
+  `custom_runtime_active=false`, then reset back to `builtin_xiaozhi`.
+- Desktop and mobile screenshots plus export evidence were written under
+  `.a21-run/evidence/` for local runtime evidence only.
+
+Deviations from plan:
+
+- Browser/IAB control was not exposed in this context, so Playwright was used
+  as the browser automation fallback.
+
+Remaining issues:
+
+- This is product-console configuration and Gateway contract evidence. It is
+  not provider execution, realtime provider session acceptance, audible
+  voice-clone playback, custom wake-word firmware build/flash/activation, V21
+  execution, or physical StackChan acceptance.
+
+Next suggested action:
+
+- Move from frontend configuration into evidence: either host-only provider
+  voice-chain smoke for the selected chain or a foreground hardware window for
+  roleplay/professional/wake physical acceptance.
+
+Forbidden actions avoided:
+
+- No provider, V21, ECS, firmware build, serial, NVS, prune/gc, flash, or
+  physical hardware action occurred.

@@ -406,6 +406,81 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Voice chain setup">
+        <div class="panel-head">
+          <h2>Voice Chain Setup</h2>
+          <div class="tagline">
+            <span class="tag ready" id="voiceChainHotSwitchStatus">hot_switch=true</span>
+            <span class="tag warn" id="voiceChainFindingStatus">stepfun_not_selected</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Chain mode
+              <select id="voiceChainModeSelect"></select>
+            </label>
+            <label>ASR profile
+              <select id="voiceChainASRSelect"></select>
+            </label>
+            <label>LLM profile
+              <select id="voiceChainLLMSelect"></select>
+            </label>
+            <label>Realtime provider
+              <select id="voiceChainRealtimeSelect"></select>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="saveVoiceChainSetup">Save voice chain</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Chain</span><strong id="voiceChainModeStatus">cascade</strong></div>
+            <div class="metric"><span>ASR</span><strong id="voiceChainASRStatus">dashscope_qwen_asr_realtime</strong></div>
+            <div class="metric"><span>LLM</span><strong id="voiceChainLLMStatus">stepfun</strong></div>
+            <div class="metric"><span>Effective TTS</span><strong id="voiceChainTTSStatus">dashscope_qwen_tts_realtime</strong></div>
+            <div class="metric"><span>Realtime</span><strong id="voiceChainRealtimeStatus">doubao_realtime</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="wide" aria-label="Wake word setup">
+        <div class="panel-head">
+          <h2>Wake Word Setup</h2>
+          <div class="tagline">
+            <span class="tag warn" id="wakeWordBuildStatus">build_required=false</span>
+            <span class="tag off" id="wakeWordHotSwapStatus">runtime_hot_swap=false</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Wake mode
+              <select id="wakeWordModeSelect">
+                <option value="builtin_xiaozhi">builtin_xiaozhi</option>
+                <option value="custom_multinet">custom_multinet</option>
+              </select>
+            </label>
+            <label>Desired phrase
+              <input id="wakeWordPhrase" value="小阿二一" autocomplete="off">
+            </label>
+            <label>Desired pinyin
+              <input id="wakeWordPinyin" value="xiao a er yi" autocomplete="off">
+            </label>
+            <label>Threshold
+              <input id="wakeWordThreshold" type="number" min="1" max="100" value="30">
+            </label>
+          </div>
+          <div class="actions">
+            <button id="saveWakeWordSetup">Save wake word</button>
+            <button class="secondary" id="resetWakeWordSetup">Reset builtin</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Active phrase</span><strong id="wakeWordActiveStatus">你好小智</strong></div>
+            <div class="metric"><span>Runtime</span><strong id="wakeWordRuntimeStatus">active_builtin_model</strong></div>
+            <div class="metric"><span>Firmware</span><strong id="wakeWordFirmwareStatus">builtin_active</strong></div>
+            <div class="metric"><span>Code</span><strong id="wakeWordCodeStatus">none</strong></div>
+          </div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -436,6 +511,7 @@ const workspaceConsoleHTML = `<!doctype html>
       workspace: null,
       roleplay: null,
       voiceCatalog: null,
+      wakeWord: null,
       voiceModes: null,
       lastExport: null
     };
@@ -466,6 +542,30 @@ const workspaceConsoleHTML = `<!doctype html>
       roleplayScenarioStatus: document.getElementById('roleplayScenarioStatus'),
       roleplayVoiceStatus: document.getElementById('roleplayVoiceStatus'),
       roleplayMemoryStatus: document.getElementById('roleplayMemoryStatus'),
+      voiceChainModeSelect: document.getElementById('voiceChainModeSelect'),
+      voiceChainASRSelect: document.getElementById('voiceChainASRSelect'),
+      voiceChainLLMSelect: document.getElementById('voiceChainLLMSelect'),
+      voiceChainRealtimeSelect: document.getElementById('voiceChainRealtimeSelect'),
+      saveVoiceChainSetup: document.getElementById('saveVoiceChainSetup'),
+      voiceChainHotSwitchStatus: document.getElementById('voiceChainHotSwitchStatus'),
+      voiceChainFindingStatus: document.getElementById('voiceChainFindingStatus'),
+      voiceChainModeStatus: document.getElementById('voiceChainModeStatus'),
+      voiceChainASRStatus: document.getElementById('voiceChainASRStatus'),
+      voiceChainLLMStatus: document.getElementById('voiceChainLLMStatus'),
+      voiceChainTTSStatus: document.getElementById('voiceChainTTSStatus'),
+      voiceChainRealtimeStatus: document.getElementById('voiceChainRealtimeStatus'),
+      wakeWordModeSelect: document.getElementById('wakeWordModeSelect'),
+      wakeWordPhrase: document.getElementById('wakeWordPhrase'),
+      wakeWordPinyin: document.getElementById('wakeWordPinyin'),
+      wakeWordThreshold: document.getElementById('wakeWordThreshold'),
+      saveWakeWordSetup: document.getElementById('saveWakeWordSetup'),
+      resetWakeWordSetup: document.getElementById('resetWakeWordSetup'),
+      wakeWordBuildStatus: document.getElementById('wakeWordBuildStatus'),
+      wakeWordHotSwapStatus: document.getElementById('wakeWordHotSwapStatus'),
+      wakeWordActiveStatus: document.getElementById('wakeWordActiveStatus'),
+      wakeWordRuntimeStatus: document.getElementById('wakeWordRuntimeStatus'),
+      wakeWordFirmwareStatus: document.getElementById('wakeWordFirmwareStatus'),
+      wakeWordCodeStatus: document.getElementById('wakeWordCodeStatus'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -653,11 +753,46 @@ const workspaceConsoleHTML = `<!doctype html>
     }
     function setVoiceCatalog(payload) {
       state.voiceCatalog = payload || null;
+      const cascade = (payload && payload.cascade) || {};
+      const realtime = (payload && payload.realtime) || {};
+      const selectedMode = (payload && payload.selected_voice_chain_mode) || 'cascade';
+      const selectedASR = (payload && payload.selected_asr_profile) || 'dashscope_qwen_asr_realtime';
+      const selectedLLM = (payload && payload.selected_llm_profile) || 'stepfun';
+      const selectedRealtime = (payload && payload.selected_realtime_provider) || 'doubao_realtime';
       const selectedVoice = (payload && payload.selected_voice_clone_profile) ||
         ((state.roleplay || {}).selected_voice_clone_profile) ||
         'a21_voice_default_dashscope';
+      setSelectOptions(ui.voiceChainModeSelect, [
+        { id: 'cascade', label: 'Cascade ASR -> LLM -> TTS', status: 'default' },
+        { id: 'realtime', label: 'Realtime voice', status: 'opt_in' }
+      ], selectedMode);
+      setSelectOptions(ui.voiceChainASRSelect, cascade.asr_profiles || [], selectedASR);
+      setSelectOptions(ui.voiceChainLLMSelect, cascade.llm_profiles || [], selectedLLM);
+      setSelectOptions(ui.voiceChainRealtimeSelect, realtime.providers || [], selectedRealtime);
       setSelectOptions(ui.roleplayVoiceSelect, (payload && payload.voices) || [], selectedVoice);
       setText(ui.roleplayVoiceStatus, selectedVoice);
+      setText(ui.voiceChainModeStatus, selectedMode);
+      setText(ui.voiceChainASRStatus, selectedASR);
+      setText(ui.voiceChainLLMStatus, selectedLLM);
+      setText(ui.voiceChainTTSStatus, (payload && payload.selected_tts_profile) || 'dashscope_qwen_tts_realtime');
+      setText(ui.voiceChainRealtimeStatus, selectedRealtime);
+      setText(ui.voiceChainHotSwitchStatus, 'hot_switch=' + String(!!(payload && payload.hot_switch)));
+      const findings = (payload && payload.findings) || [];
+      setText(ui.voiceChainFindingStatus, findings.length ? findings.join(' / ') : 'ready');
+    }
+    function setWakeWord(payload) {
+      state.wakeWord = payload || null;
+      const mode = (payload && payload.mode) || 'builtin_xiaozhi';
+      ui.wakeWordModeSelect.value = mode;
+      ui.wakeWordThreshold.value = String((payload && payload.threshold) || 30);
+      if (payload && payload.desired_phrase) ui.wakeWordPhrase.value = payload.desired_phrase;
+      if (payload && payload.desired_pinyin) ui.wakeWordPinyin.value = payload.desired_pinyin;
+      setText(ui.wakeWordActiveStatus, (payload && payload.active_phrase) || '你好小智');
+      setText(ui.wakeWordRuntimeStatus, (payload && payload.runtime_status) || 'active_builtin_model');
+      setText(ui.wakeWordFirmwareStatus, (payload && payload.firmware_status) || 'builtin_active');
+      setText(ui.wakeWordCodeStatus, (payload && payload.code) || 'none');
+      setText(ui.wakeWordBuildStatus, 'build_required=' + String(!!(payload && payload.firmware_build_required)));
+      setText(ui.wakeWordHotSwapStatus, 'runtime_hot_swap=' + String(!!(payload && payload.runtime_hot_swap_supported)));
     }
     function setVoiceModes(payload) {
       state.voiceModes = payload || null;
@@ -778,6 +913,45 @@ const workspaceConsoleHTML = `<!doctype html>
       setVoiceCatalog(voiceCatalog);
       log('roleplay ' + (payload.selected_roleplay_profile || 'saved'));
     }
+    async function saveVoiceChainSetup() {
+      const payload = await postJSON('/v1/voice-chain-profiles', {
+        voice_chain_mode: ui.voiceChainModeSelect.value,
+        asr_profile: ui.voiceChainASRSelect.value,
+        llm_profile: ui.voiceChainLLMSelect.value,
+        realtime_provider: ui.voiceChainRealtimeSelect.value,
+        voice_clone_profile: ui.roleplayVoiceSelect.value
+      });
+      setVoiceCatalog(payload);
+      const roleplay = await fetchJSON('/v1/roleplay-profile', { cache: 'no-store' });
+      setRoleplay(roleplay);
+      log('voice chain ' + (payload.selected_voice_chain_mode || 'saved'));
+    }
+    function wakeWordRequestBody(mode) {
+      const body = {
+        mode: mode || ui.wakeWordModeSelect.value,
+        threshold: Number(ui.wakeWordThreshold.value || 30)
+      };
+      if (body.mode === 'custom_multinet') {
+        body.desired_phrase = ui.wakeWordPhrase.value.trim();
+        body.desired_pinyin = ui.wakeWordPinyin.value.trim();
+      }
+      return body;
+    }
+    async function refreshWakeWord() {
+      const payload = await fetchJSON('/v1/wake-word', { cache: 'no-store' });
+      setWakeWord(payload);
+      log('wake word ' + (payload.runtime_status || 'loaded'));
+    }
+    async function saveWakeWordSetup() {
+      const payload = await putJSON('/v1/wake-word', wakeWordRequestBody());
+      setWakeWord(payload);
+      log('wake word ' + (payload.runtime_status || 'saved'));
+    }
+    async function resetWakeWordSetup() {
+      const payload = await putJSON('/v1/wake-word', { mode: 'builtin_xiaozhi', threshold: 30 });
+      setWakeWord(payload);
+      log('wake word builtin_xiaozhi');
+    }
     function clearReadFilters() {
       ui.readRecordFilter.value = '';
       ui.readTraceFilter.value = '';
@@ -851,6 +1025,16 @@ const workspaceConsoleHTML = `<!doctype html>
         roleplay_voice_profile: ui.roleplayVoiceStatus.textContent,
         roleplay_memory_status: ui.roleplayMemoryStatus.textContent,
         roleplay_expression: ui.roleplayExpression.textContent,
+        voice_chain_mode: ui.voiceChainModeStatus.textContent,
+        voice_chain_asr_profile: ui.voiceChainASRStatus.textContent,
+        voice_chain_llm_profile: ui.voiceChainLLMStatus.textContent,
+        voice_chain_tts_profile: ui.voiceChainTTSStatus.textContent,
+        voice_chain_realtime_provider: ui.voiceChainRealtimeStatus.textContent,
+        wake_word_mode: ui.wakeWordModeSelect.value,
+        wake_word_active_phrase: ui.wakeWordActiveStatus.textContent,
+        wake_word_runtime_status: ui.wakeWordRuntimeStatus.textContent,
+        wake_word_firmware_status: ui.wakeWordFirmwareStatus.textContent,
+        wake_word_code: ui.wakeWordCodeStatus.textContent,
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -887,6 +1071,7 @@ const workspaceConsoleHTML = `<!doctype html>
         await refreshSources();
         await refreshReads();
         await refreshRoleplayAndModes();
+        await refreshWakeWord();
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -907,6 +1092,9 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.roleplayVoiceSelect.addEventListener('change', () => saveRoleplaySetup().catch((err) => log('roleplay ' + err.message)));
     ui.saveRoleplaySetup.addEventListener('click', () => saveRoleplaySetup({ includeMemory: true }).catch((err) => log('roleplay ' + err.message)));
     ui.clearRoleplayMemory.addEventListener('click', () => saveRoleplaySetup({ clearMemory: true }).catch((err) => log('roleplay ' + err.message)));
+    ui.saveVoiceChainSetup.addEventListener('click', () => saveVoiceChainSetup().catch((err) => log('voice chain ' + err.message)));
+    ui.saveWakeWordSetup.addEventListener('click', () => saveWakeWordSetup().catch((err) => log('wake word ' + err.message)));
+    ui.resetWakeWordSetup.addEventListener('click', () => resetWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     boot();
   </script>
 </body>
