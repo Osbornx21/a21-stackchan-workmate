@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD after the latest product deployment/flash cut:
-  `1c9dece fix(workspace): adopt connected hardware device`
+- Current source HEAD after the latest product direct-start recovery flash:
+  `eeeb699 fix(firmware): avoid unsafe mooncake teardown autostart`
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -118,6 +118,59 @@ official-compatible flash:
   `accept_visible_mode_ritual` and `accept_visible_full_check`.
 - Physical acceptance remains pending until the operator or an instrument
   confirms visible screen/RGB/head movement from the foreground product.
+
+Live truth after the 2026-06-05 04:10 CST no-cable power/lifecycle recovery:
+
+- The operator reported that the physical power button still did not start the
+  prototype as a standalone product. This was not previously accepted; the
+  earlier flash only proved USB/flash-reset boot, cloud reconnect, and body MCP
+  delivery.
+- Plan `docs/plans/2026-06-05-no-cable-boot-power-lifecycle-recovery.md`
+  records transition `T-NO-CABLE-BOOT-POWER-LIFECYCLE-001`.
+- Commit `fabffd4 fix(firmware): preserve official xiaozhi start lifecycle`
+  built and flashed through the guarded product lane, but post-flash
+  `mode_ritual` and `full_check` returned HTTP 409
+  `xiaozhi websocket is not connected`.
+- Read-only serial sampling on `/dev/cu.usbmodem1101` showed repeated task
+  watchdog triggers with CPU0 running `main`. Decoding the backtrace against
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.elf`
+  pointed at `GetMooncake().uninstallAllApps()` from `app_main`, specifically
+  AppSetup/AppLauncher LVGL teardown. The request-lifecycle autostart path is
+  therefore rejected for the product lane until a separate teardown transition
+  proves it non-regressing.
+- Commit `eeeb699 fix(firmware): avoid unsafe mooncake teardown autostart` is
+  pushed to
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+  It preserves the WDT-safe direct `GetHAL().startXiaozhi()` product path,
+  keeps the app artifact `a21-stackchan-official-xiaozhi-compatible.bin`, and
+  records the lifecycle finding in the recovery plan.
+- Verification passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTeardown|TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestStackChanOfficialCandidateContract' -count=1`,
+  `git diff --check`, `make a21-stackchan-official-xiaozhi-compatible-build`,
+  and `GOMAXPROCS=2 make verify`.
+- The restored product build report is
+  `reports/a21-stackchan-official-baseline-20260605-040655-1780603615828792000.json`;
+  the app artifact SHA is
+  `065e23976722aa7630d0dccf8ee80dff2674785ce9bb6221f67769368a960284`.
+- Guarded product flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-040818-1780603698194451000.json`.
+  Guarded product flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-040923-1780603763139018000.json`.
+  The execution report records clean worktree, commit `eeeb6998a9b0`,
+  `flash_executed=true`, and no generic `xiaozhi.bin` lane.
+- After the restored flash, public `/v1/devices` showed product device
+  `44:1b:f6:e2:6a:60` online with `device_age_ms=719`. Read-only serial
+  showed MultiNet wake commands loaded, audio codec open, quiet control
+  WebSocket open, and `WS: Session ID: a21-session-44-1b-f6-e2-6a-60`.
+- Live trace `a21-trace-mode-ritual-after-wdt-safe-eeeb699-20260605`
+  returned HTTP 200 `status=delivered`; live trace
+  `a21-trace-full-check-after-wdt-safe-eeeb699-20260605` returned HTTP 200
+  `status=delivered` with 16 redacted screen/RGB/head steps.
+- Final public hardware-acceptance summary returned
+  `overall_status=physical_pending`: machine delivery evidence is restored,
+  but physical button cold boot and visible body acceptance remain unaccepted.
+- No NVS write, provider execution, V21 execution, generic product flash lane,
+  destructive Git cleanup, or internal-test3 voice/protocol rollback occurred.
 
 Live truth after the 2026-06-05 04:05 CST hardware acceptance summary board
 deployment:

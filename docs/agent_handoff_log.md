@@ -16811,6 +16811,96 @@ Forbidden actions avoided:
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 04:10 CST - No-Cable Power/Lifecycle Recovery and WDT-Safe Product Reflash
+
+Round goal:
+
+- Explain and act on the operator report that the physical power button still
+  does not start the standalone product, without overclaiming prior
+  USB/flash-reset evidence as no-cable boot acceptance.
+
+Actual completed work:
+
+- Created plan
+  `docs/plans/2026-06-05-no-cable-boot-power-lifecycle-recovery.md`.
+- Tested an official lifecycle autostart candidate in commit `fabffd4`; product
+  build and guarded flash passed, but runtime evidence rejected it.
+- Read-only serial evidence on `/dev/cu.usbmodem1101` showed task watchdog
+  triggers with CPU0 running `main`. Decoded backtrace pointed at
+  `GetMooncake().uninstallAllApps()` from `app_main`, specifically
+  AppSetup/AppLauncher LVGL teardown.
+- Forward-fixed the product lane in commit `eeeb699` by preserving the
+  WDT-safe direct `GetHAL().startXiaozhi()` autostart path and recording the
+  lifecycle finding in the plan.
+- Rebuilt, pushed, and guarded-flashed the restored product app.
+
+Changed files:
+
+- `docs/plans/2026-06-05-no-cable-boot-power-lifecycle-recovery.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused app test passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTeardown|TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestStackChanOfficialCandidateContract' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Product build passed:
+  `reports/a21-stackchan-official-baseline-20260605-040655-1780603615828792000.json`,
+  app SHA
+  `065e23976722aa7630d0dccf8ee80dff2674785ce9bb6221f67769368a960284`.
+- Guarded flash plan passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-040818-1780603698194451000.json`.
+- Guarded flash execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-040923-1780603763139018000.json`,
+  clean worktree, commit `eeeb6998a9b0`, `flash_executed=true`.
+
+Runtime or physical evidence:
+
+- The rejected lifecycle candidate produced HTTP 409
+  `xiaozhi websocket is not connected` for body commands and serial watchdog
+  evidence in `GetMooncake().uninstallAllApps()`.
+- After the WDT-safe reflash, read-only serial showed MultiNet wake commands,
+  audio codec open, quiet control WebSocket open, and Xiaozhi session
+  `a21-session-44-1b-f6-e2-6a-60`.
+- Public `/v1/devices` showed device `44:1b:f6:e2:6a:60` online with fresh
+  heartbeat.
+- Live trace `a21-trace-mode-ritual-after-wdt-safe-eeeb699-20260605` returned
+  HTTP 200 `status=delivered`.
+- Live trace `a21-trace-full-check-after-wdt-safe-eeeb699-20260605` returned
+  HTTP 200 `status=delivered`.
+- Public hardware acceptance summary returned `overall_status=physical_pending`
+  with both delivery traces present.
+
+Remaining issues:
+
+- Physical power-button cold boot without USB is still not accepted. If it
+  still fails on the foreground device after the WDT-safe reflash, the next
+  root-cause branch is hardware power path, battery, PMIC, power-button
+  hold/latched behavior, and missing battery telemetry rather than Gateway/body
+  MCP.
+- Official Mooncake teardown lifecycle remains a rejected product path until a
+  separate transition can prove it does not WDT or regress Xiaozhi WS.
+- Visible screen/RGB/head physical acceptance remains pending operator or
+  instrument confirmation.
+
+Next suggested action:
+
+- Ask the operator to disconnect USB/power, attempt physical-button cold boot,
+  and report exact behavior: screen/backlight, LED, servo twitch, boot sound,
+  and whether the public `/v1/devices` row gets a fresh heartbeat. If it still
+  fails, open a foreground power-path/battery/PMIC diagnostic transition.
+
+Forbidden actions avoided:
+
+- No NVS write, no provider execution, no V21 execution, no generic
+  `xiaozhi.bin` product flash, no Git prune/gc, no destructive reset, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 03:31 CST - Voice Mode Hardware Ritual Pacing Deployed
 
 Round goal:
