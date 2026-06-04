@@ -985,6 +985,100 @@ func TestProductReadinessIngestsSelectedVoiceChainStaticReadiness(t *testing.T) 
 	}
 }
 
+func TestProductReadinessSurfacesRoleplayImmersionReadiness(t *testing.T) {
+	server := newProductReadinessTestServerWithRoleplay(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessRoleplayProfileFixtureJSON("ready"),
+	)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, nil)
+
+	roleplay := report.Roleplay
+	if !roleplay.Available ||
+		!roleplay.ImmersionReady ||
+		roleplay.Status != "ready" ||
+		roleplay.SelectedRoleplayProfile != "a21_roleplay_wry_peer" ||
+		roleplay.SelectedScenario != "engineer_pushback" ||
+		roleplay.SelectedVoiceCloneProfile != "a21_voice_clone_default" ||
+		!roleplay.SoulPromptInputReady ||
+		!roleplay.PromptComposed ||
+		roleplay.PromptPartCount != 3 ||
+		!roleplay.MemoryConfigured ||
+		!roleplay.MemoryPromptInputReady ||
+		!roleplay.MemoryReady ||
+		roleplay.MemoryHintCount != 1 ||
+		!roleplay.VoiceCloneProfileReady ||
+		!roleplay.ExpressionPlanAvailable ||
+		roleplay.ExpressionDeliveryPolicy != "no_send_plan_only" ||
+		roleplay.ExpressionActionCount != 4 ||
+		roleplay.ExpressionPacketCount != 4 ||
+		roleplay.PhysicalAccepted ||
+		roleplay.ExpressionPhysicalAccepted ||
+		!roleplay.ExpressionRedactionOK ||
+		!roleplay.RuntimeRedactionOK ||
+		roleplay.PromptStored ||
+		roleplay.MemoryTextStored ||
+		roleplay.TranscriptStored ||
+		roleplay.ProviderOutputStored ||
+		roleplay.AudioStored ||
+		roleplay.VoiceCloneSampleStored ||
+		roleplay.ProfessionalRouteAllowed ||
+		roleplay.V21Executed {
+		t.Fatalf("roleplay readiness = %+v, want safe immersion-ready contract", roleplay)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"roleplay"`,
+		`"immersion_ready": true`,
+		`"selected_roleplay_profile": "a21_roleplay_wry_peer"`,
+		`"selected_scenario": "engineer_pushback"`,
+		`"selected_voice_clone_profile": "a21_voice_clone_default"`,
+		`"memory_prompt_input_ready": true`,
+		`"expression_delivery_policy": "no_send_plan_only"`,
+		`"physical_accepted": false`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness JSON missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "raw roleplay prompt", "memory text", "provider output", "voice sample", `"physical_accepted": true`, `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("roleplay readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessRejectsUnsafeRoleplayProfile(t *testing.T) {
+	server := newProductReadinessTestServerWithRoleplay(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessRoleplayProfileFixtureJSON("unsafe"),
+	)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL: server.URL,
+		DeviceID:   "stackchan-001",
+	}, nil)
+
+	if report.Roleplay.Available || report.Roleplay.Status != "unavailable" || !containsProductFinding(report.Findings, "roleplay_profile_invalid", "") {
+		t.Fatalf("roleplay/readiness/findings = %+v / %+v, want unsafe profile rejected", report.Roleplay, report.Findings)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "raw roleplay prompt", "memory text", "provider output", "voice sample", "secret_roleplay", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("unsafe roleplay readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
 func TestProductReadinessRejectsVoiceChainStaticReadinessMismatch(t *testing.T) {
 	server := newProductReadinessTestServerWithVoiceChain(t,
 		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
@@ -3932,6 +4026,16 @@ func newProductReadinessTestServer(t *testing.T, devicesJSON string) *httptest.S
 
 func newProductReadinessTestServerWithVoiceChain(t *testing.T, devicesJSON string, voiceChainJSON string) *httptest.Server {
 	t.Helper()
+	return newProductReadinessTestServerWithVoiceChainAndRoleplay(t, devicesJSON, voiceChainJSON, "")
+}
+
+func newProductReadinessTestServerWithRoleplay(t *testing.T, devicesJSON string, roleplayJSON string) *httptest.Server {
+	t.Helper()
+	return newProductReadinessTestServerWithVoiceChainAndRoleplay(t, devicesJSON, productReadinessVoiceChainProfilesJSON("stepfun", nil), roleplayJSON)
+}
+
+func newProductReadinessTestServerWithVoiceChainAndRoleplay(t *testing.T, devicesJSON string, voiceChainJSON string, roleplayJSON string) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthz":
@@ -3949,6 +4053,13 @@ func newProductReadinessTestServerWithVoiceChain(t *testing.T, devicesJSON strin
 		case "/v1/voice-chain-profiles":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(voiceChainJSON))
+		case "/v1/roleplay-profile":
+			if strings.TrimSpace(roleplayJSON) == "" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(roleplayJSON))
 		default:
 			http.NotFound(w, r)
 		}
@@ -4277,6 +4388,95 @@ func productReadinessVoiceChainReadinessReportFixtureJSON(llmProfile string) str
   },
   "next_required": []
 }`, llmProfile, llmProfile, llmProfile, string(findingsJSON))
+}
+
+func productReadinessRoleplayProfileFixtureJSON(mode string) string {
+	profile := "a21_roleplay_wry_peer"
+	if mode == "unsafe" {
+		profile = "secret_roleplay"
+	}
+	return fmt.Sprintf(`{
+  "schema_version": "a21.gateway.roleplay_profile.v1",
+  "service": "a21-gateway",
+  "selected_roleplay_profile": "%s",
+  "selected_scenario": "engineer_pushback",
+  "selected_voice_clone_profile": "a21_voice_clone_default",
+  "memory": {
+    "schema_version": "a21.personality_memory_state.v1",
+    "status": "configured",
+    "contract_ready": true,
+    "configured": true,
+    "prompt_input_ready": true,
+    "policy": "bounded_prompt_hints",
+    "max_items": 6,
+    "max_item_chars": 80,
+    "user_preference_count": 1,
+    "session_memory_count": 0,
+    "redaction": {
+      "memory_text_stored": false,
+      "instruction_text_stored": false,
+      "asr_text_stored": false,
+      "model_text_stored": false,
+      "network_locator_stored": false,
+      "filesystem_locator_stored": false,
+      "credential_value_stored": false
+    }
+  },
+  "runtime": {
+    "schema_version": "a21.roleplay_runtime.v1",
+    "mode": "roleplay",
+    "roleplay_profile": "%s",
+    "scenario": "engineer_pushback",
+    "voice_clone_profile": "a21_voice_clone_default",
+    "soul_prompt_input_ready": true,
+    "prompt_parts": ["role_soul:%s", "scenario:engineer_pushback", "memory:ready"],
+    "memory_policy": "bounded_prompt_hints",
+    "memory_configured": true,
+    "memory_prompt_input_ready": true,
+    "memory_hint_count": 1,
+    "prompt_composed": true,
+    "prompt_stored": false,
+    "memory_text_stored": false,
+    "transcript_stored": false,
+    "provider_output_stored": false,
+    "voice_clone_sample_stored": false,
+    "professional_route_allowed": false,
+    "v21_executed": false
+  },
+  "expression_plan": {
+    "schema_version": "a21.roleplay_expression_plan.v1",
+    "adapter": "official_stackchan_action_plan",
+    "delivery_policy": "no_send_plan_only",
+    "roleplay_profile": "%s",
+    "scenario": "engineer_pushback",
+    "voice_clone_profile": "a21_voice_clone_default",
+    "memory_ready": true,
+    "memory_hint_count": 1,
+    "action_count": 4,
+    "packet_count": 4,
+    "physical_accepted": false,
+    "actions": [
+      {"phase": "baseline_posture", "event": "state", "value": "listening", "packet_count": 1, "physical_accepted": false, "surfaces": {"state": "official_state"}},
+      {"phase": "role_soul", "event": "face", "value": "happy", "packet_count": 1, "physical_accepted": false, "surfaces": {"face": "official_avatar_expression"}},
+      {"phase": "scenario_emphasis", "event": "state", "value": "thinking", "packet_count": 1, "physical_accepted": false, "surfaces": {"state": "official_state"}},
+      {"phase": "memory_cue", "event": "motion", "value": "nod", "packet_count": 1, "physical_accepted": false, "surfaces": {"motion": "official_pitch_sequence"}}
+    ],
+    "surfaces": {
+      "role_soul_face": "official_avatar_expression",
+      "memory_cue_motion": "official_pitch_sequence"
+    },
+    "redaction": {
+      "prompt_text_stored": false,
+      "memory_text_stored": false,
+      "transcript_stored": false,
+      "provider_output_stored": false,
+      "audio_stored": false,
+      "voice_clone_sample_stored": false
+    }
+  },
+  "profiles": [],
+  "scenarios": []
+}`, profile, profile, profile, profile)
 }
 
 func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) string {

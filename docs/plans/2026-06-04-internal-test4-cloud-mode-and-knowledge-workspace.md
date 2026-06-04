@@ -200,6 +200,14 @@ StackChan hardware.
   metadata evidence only, not provider execution, V21 execution, Gateway
   deployment, ECS acceptance, firmware/hardware action, audible playback, or
   physical StackChan PRD acceptance.
+- Product readiness now also exposes a top-level `roleplay` readiness object
+  from `GET /v1/roleplay-profile` when the Gateway exposes it. It reports safe
+  role soul, scenario, voice-clone profile, soul prompt readiness, prompt
+  composed status, memory configured/readiness/count, official expression-plan
+  action/packet counts, redaction flags, and physical acceptance truth. This
+  makes roleplay immersion measurable in the launch report while still not
+  executing providers, V21, voice-clone CLI, Gateway deployment, ECS, firmware,
+  serial, NVS, or physical StackChan roleplay acceptance.
 
 ## Product Form
 

@@ -12790,3 +12790,86 @@ Forbidden actions avoided:
 - No provider execution, V21 execution, ECS/root-secret/runtime change, Gateway
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
+
+## 2026-06-04 13:18 CST - Roleplay Immersion Product Readiness
+
+Round goal:
+
+- Complete `T-ROLEPLAY-IMMERSION-READINESS-001` so roleplay soul, memory,
+  voice-clone profile, prompt composition, and expression planning become
+  visible in product readiness instead of only in Gateway UI/probe metadata.
+
+Actual completed work:
+
+- Added top-level `roleplay` readiness to `a21 product-readiness`.
+- Product readiness now fetches `GET /v1/roleplay-profile` when the Gateway
+  exposes it.
+- The report surfaces selected role soul, scenario, voice-clone profile, soul
+  prompt readiness, prompt-composed status, memory configured/readiness/count,
+  official expression-plan action/packet counts, redaction booleans, and
+  physical acceptance truth.
+- Invalid or unsafe roleplay profile responses become
+  `roleplay_profile_invalid`; unavailable endpoints remain
+  `status=unavailable`.
+- Output uses `asr_text_stored=false` rather than `transcript_stored=false` so
+  existing redaction tests continue to forbid transcript wording in product
+  readiness output.
+- Updated protocol, current-control, internal-test4 plan, project state, and
+  this handoff log.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-roleplay-immersion-product-readiness.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is product-readiness visibility only. It does not execute a provider,
+  V21, voice-clone CLI, ECS deployment, firmware, serial, NVS, or physical
+  hardware.
+- Roleplay physical acceptance and audible voice-clone playback still require a
+  foreground hardware/runtime evidence window.
+
+Known risks/blockers:
+
+- Roleplay immersion readiness proves the Gateway contract is visible and
+  redacted in launch reports; it does not prove actual audio quality, voice
+  clone output quality, physical facial/motion delivery, or latency.
+
+Recommended next action:
+
+- Continue toward a runtime/physical evidence gate: either collect fresh
+  host/runtime roleplay voice evidence that combines selected roleplay readiness
+  with provider/voice-chain execution, or schedule a foreground StackChan
+  hardware window for wake/roleplay/professional acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestProductReadiness(SurfacesRoleplayImmersionReadiness|RejectsUnsafeRoleplayProfile)' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadiness(SurfacesRoleplayImmersionReadiness|RejectsUnsafeRoleplayProfile|IngestsSelectedVoiceChainStaticReadiness|RejectsVoiceChainStaticReadinessMismatch|BlocksServerSideCandidateWhenStepFunNotSelected|CanReachRealLaunchReadyWhenInputsArePresent|ReportsServerSideCandidateWithoutPhysicalPRD)|TestRunProductReadinessUsesLatestVoiceChainReadinessReport|TestServerSideReadinessBundleAcceptsVoiceChainStaticReadinessReport' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadinessIngestsXiaozhiHostLoopbackCandidateEvidence|TestRunProductReadinessCommandAcceptsXiaozhiReportAndRedactsOutput|TestProductReadiness(SurfacesRoleplayImmersionReadiness|RejectsUnsafeRoleplayProfile)' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- The first full `make verify` attempt failed because product readiness output
+  used the JSON key `transcript_stored=false`, which correctly carried no
+  transcript content but violated existing redaction tests that forbid the
+  transcript term in product readiness JSON. The output key was changed to
+  `asr_text_stored=false`, focused tests passed, and full verify passed.
+
+Forbidden actions avoided:
+
+- No provider execution, V21 execution, ECS/root-secret/runtime change, Gateway
+  protocol change, firmware build, flash, serial, NVS, report deletion,
+  prune/gc, or physical hardware action occurred.

@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this selected voice-chain readiness cut:
-  `4989f9a feat(gateway): add workspace voice probe`
+- Current source HEAD before this roleplay immersion readiness cut:
+  `bc35339 feat(readiness): ingest selected voice-chain capability evidence`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,16 +90,16 @@ Target:
 
 Current focused cut:
 
-- Selected voice-chain readiness ingress plan:
-  `docs/plans/2026-06-04-selected-voice-chain-readiness-ingress.md`
+- Roleplay immersion product-readiness plan:
+  `docs/plans/2026-06-04-roleplay-immersion-product-readiness.md`
 - Transition:
-  `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
+  `T-ROLEPLAY-IMMERSION-READINESS-001`
 - Target:
-  let product readiness and server-side readiness ingest the existing
-  `a21.xiaozhi_streaming_provider_readiness.v1` static no-execute capability
-  report for the selected ASR/LLM/TTS voice chain while avoiding provider/V21
-  execution, Gateway protocol changes, ECS changes, firmware build, serial,
-  NVS, or physical hardware action.
+  let product readiness expose whether selected role soul, scenario, memory,
+  voice-clone profile, prompt composition, and official expression planning are
+  ready for roleplay immersion while avoiding provider/V21 execution, Gateway
+  protocol changes, ECS changes, firmware build, serial, NVS, or physical
+  hardware action.
 
 ## Scoped Hardware Parity Transition
 
@@ -1330,3 +1330,34 @@ Current conclusion:
 - This is not provider execution, real V21 execution, audible playback, Gateway
   deployment, ECS runtime acceptance, firmware, serial, NVS, or physical
   StackChan PRD acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Immersion Readiness
+
+Product readiness now has an explicit roleplay immersion surface instead of
+leaving persona/memory/voice-clone readiness only in Gateway UI/probe metadata.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-immersion-product-readiness.md`.
+- `a21 product-readiness` fetches `GET /v1/roleplay-profile` when the Gateway
+  exposes it.
+- The product report now includes a top-level `roleplay` object with selected
+  role soul, scenario, voice-clone profile, soul prompt readiness, prompt
+  composed status, memory configured/readiness/count, expression-plan
+  availability, action/packet counts, redaction flags, and physical acceptance
+  truth.
+- Invalid or unsafe roleplay profile responses become
+  `roleplay_profile_invalid`; unavailable endpoints stay `status=unavailable`
+  so older Gateway/test surfaces are not overinterpreted.
+- `roleplay.physical_accepted` remains false until separate physical evidence
+  exists.
+
+Current conclusion:
+
+- This makes roleplay immersion measurable in the launch readiness report:
+  the PRD reviewer can see whether role soul, memory, voice clone, prompt, and
+  expression planning are ready without inspecting runtime traces by hand.
+- This is not provider execution, real voice-clone audio, V21 execution,
+  Gateway deployment, ECS runtime acceptance, firmware, serial, NVS, or
+  physical StackChan roleplay acceptance.

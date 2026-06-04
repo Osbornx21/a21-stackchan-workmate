@@ -55,6 +55,7 @@ type productReadinessReport struct {
 	V21               productV21Readiness               `json:"v21"`
 	StackChan         productStackChanReadiness         `json:"stackchan"`
 	Voice             productVoiceReadiness             `json:"voice"`
+	Roleplay          productRoleplayReadiness          `json:"roleplay"`
 	Memory            personality.MemoryState           `json:"memory"`
 	WakeWord          productWakeWordReadiness          `json:"wake_word"`
 	ServerSide        productServerSideReadiness        `json:"server_side"`
@@ -198,6 +199,40 @@ type productVoiceReadiness struct {
 	ContinuousVoiceReady bool                          `json:"continuous_voice_ready"`
 	VoicePipeline        productVoicePipelineReadiness `json:"voice_pipeline"`
 	VoiceChain           productVoiceChainReadiness    `json:"voice_chain"`
+}
+
+type productRoleplayReadiness struct {
+	Available                  bool     `json:"available"`
+	ImmersionReady             bool     `json:"immersion_ready"`
+	Status                     string   `json:"status"`
+	SelectedRoleplayProfile    string   `json:"selected_roleplay_profile,omitempty"`
+	SelectedScenario           string   `json:"selected_scenario,omitempty"`
+	SelectedVoiceCloneProfile  string   `json:"selected_voice_clone_profile,omitempty"`
+	SoulPromptInputReady       bool     `json:"soul_prompt_input_ready"`
+	PromptComposed             bool     `json:"prompt_composed"`
+	PromptPartCount            int      `json:"prompt_part_count"`
+	MemoryConfigured           bool     `json:"memory_configured"`
+	MemoryPromptInputReady     bool     `json:"memory_prompt_input_ready"`
+	MemoryReady                bool     `json:"memory_ready"`
+	MemoryHintCount            int      `json:"memory_hint_count"`
+	VoiceCloneProfileReady     bool     `json:"voice_clone_profile_ready"`
+	ExpressionPlanAvailable    bool     `json:"expression_plan_available"`
+	ExpressionDeliveryPolicy   string   `json:"expression_delivery_policy,omitempty"`
+	ExpressionActionCount      int      `json:"expression_action_count"`
+	ExpressionPacketCount      int      `json:"expression_packet_count"`
+	ExpressionPhysicalAccepted bool     `json:"expression_physical_accepted"`
+	PhysicalAccepted           bool     `json:"physical_accepted"`
+	PromptStored               bool     `json:"prompt_stored"`
+	MemoryTextStored           bool     `json:"memory_text_stored"`
+	TranscriptStored           bool     `json:"asr_text_stored"`
+	ProviderOutputStored       bool     `json:"provider_output_stored"`
+	AudioStored                bool     `json:"audio_stored"`
+	VoiceCloneSampleStored     bool     `json:"voice_clone_sample_stored"`
+	ProfessionalRouteAllowed   bool     `json:"professional_route_allowed"`
+	V21Executed                bool     `json:"v21_executed"`
+	ExpressionRedactionOK      bool     `json:"expression_redaction_ok"`
+	RuntimeRedactionOK         bool     `json:"runtime_redaction_ok"`
+	Findings                   []string `json:"findings,omitempty"`
 }
 
 type productWakeWordReadiness struct {
@@ -817,6 +852,9 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.Findings = append(report.Findings, attachProductProviderRealtimeEvidence(&report.Provider, providerRealtimeEvidence)...)
 	}
 	report.V21 = buildProductV21Readiness(env)
+	roleplay, roleplayFindings := fetchProductRoleplayReadiness(ctx, gatewayURL)
+	report.Roleplay = roleplay
+	report.Findings = append(report.Findings, roleplayFindings...)
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
@@ -2910,6 +2948,227 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		readiness.AcceptanceStatus = "server_side_candidate_ready"
 	}
 	return readiness
+}
+
+func fetchProductRoleplayReadiness(ctx context.Context, gatewayURL string) (productRoleplayReadiness, []productReadinessFinding) {
+	unavailable := productRoleplayReadiness{
+		Available:      false,
+		ImmersionReady: false,
+		Status:         "unavailable",
+	}
+	endpoint, _, err := firmwareGatewayEndpoint(gatewayURL, "/v1/roleplay-profile", nil)
+	if err != nil {
+		return unavailable, []productReadinessFinding{{
+			Code:    "roleplay_profile_unavailable",
+			Message: "A21 Gateway roleplay profile readiness is unavailable",
+			Detail:  "invalid_gateway_url",
+		}}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return unavailable, []productReadinessFinding{{
+			Code:    "roleplay_profile_unavailable",
+			Message: "A21 Gateway roleplay profile readiness is unavailable",
+			Detail:  "invalid_request",
+		}}
+	}
+	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	response, err := client.Do(request)
+	if err != nil {
+		return unavailable, nil
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return unavailable, nil
+	}
+	var status gateway.RoleplayProfileResponse
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 16384))
+	if err := decoder.Decode(&status); err != nil {
+		return unavailable, []productReadinessFinding{invalidProductRoleplayProfileFinding()}
+	}
+	readiness, ok := productRoleplayReadinessFromGateway(status)
+	if !ok {
+		return unavailable, []productReadinessFinding{invalidProductRoleplayProfileFinding()}
+	}
+	return readiness, nil
+}
+
+func productRoleplayReadinessFromGateway(status gateway.RoleplayProfileResponse) (productRoleplayReadiness, bool) {
+	if strings.TrimSpace(status.SchemaVersion) != gateway.RoleplayProfileSchemaVersion {
+		return productRoleplayReadiness{}, false
+	}
+	runtime := status.Runtime
+	plan := status.ExpressionPlan
+	profile := strings.TrimSpace(status.SelectedRoleplayProfile)
+	scenario := strings.TrimSpace(status.SelectedScenario)
+	voiceClone := strings.TrimSpace(status.SelectedVoiceCloneProfile)
+	if !productVoiceChainSafeID(profile) ||
+		!productVoiceChainSafeID(scenario) ||
+		!productVoiceChainSafeID(voiceClone) ||
+		!productRoleplayRuntimeSafe(runtime) ||
+		!productRoleplayExpressionPlanSafe(plan) {
+		return productRoleplayReadiness{}, false
+	}
+	memoryReady := !runtime.MemoryConfigured || runtime.MemoryPromptInputReady
+	runtimeRedactionOK := !runtime.PromptStored &&
+		!runtime.MemoryTextStored &&
+		!runtime.TranscriptStored &&
+		!runtime.ProviderOutputStored &&
+		!runtime.VoiceCloneSampleStored &&
+		!runtime.ProfessionalRouteAllowed &&
+		!runtime.V21Executed
+	expressionRedactionOK := !plan.Redaction.PromptTextStored &&
+		!plan.Redaction.MemoryTextStored &&
+		!plan.Redaction.TranscriptStored &&
+		!plan.Redaction.ProviderOutputStored &&
+		!plan.Redaction.AudioStored &&
+		!plan.Redaction.VoiceCloneSampleStored
+	expressionAvailable := plan.SchemaVersion == "a21.roleplay_expression_plan.v1" &&
+		plan.Adapter == "official_stackchan_action_plan" &&
+		plan.DeliveryPolicy == "no_send_plan_only" &&
+		plan.ActionCount > 0 &&
+		plan.PacketCount > 0
+	voiceCloneReady := voiceClone != "" && !runtime.VoiceCloneSampleStored
+	immersionReady := runtime.Mode == "roleplay" &&
+		runtime.SoulPromptInputReady &&
+		runtime.PromptComposed &&
+		memoryReady &&
+		voiceCloneReady &&
+		expressionAvailable &&
+		runtimeRedactionOK &&
+		expressionRedactionOK
+	readinessStatus := "ready"
+	var findings []string
+	if !immersionReady {
+		readinessStatus = "blocked"
+		findings = productRoleplayReadinessFindings(runtime, plan, memoryReady, voiceCloneReady, expressionAvailable, runtimeRedactionOK, expressionRedactionOK)
+	}
+	return productRoleplayReadiness{
+		Available:                  true,
+		ImmersionReady:             immersionReady,
+		Status:                     readinessStatus,
+		SelectedRoleplayProfile:    profile,
+		SelectedScenario:           scenario,
+		SelectedVoiceCloneProfile:  voiceClone,
+		SoulPromptInputReady:       runtime.SoulPromptInputReady,
+		PromptComposed:             runtime.PromptComposed,
+		PromptPartCount:            len(runtime.PromptParts),
+		MemoryConfigured:           runtime.MemoryConfigured,
+		MemoryPromptInputReady:     runtime.MemoryPromptInputReady,
+		MemoryReady:                memoryReady,
+		MemoryHintCount:            runtime.MemoryHintCount,
+		VoiceCloneProfileReady:     voiceCloneReady,
+		ExpressionPlanAvailable:    expressionAvailable,
+		ExpressionDeliveryPolicy:   plan.DeliveryPolicy,
+		ExpressionActionCount:      plan.ActionCount,
+		ExpressionPacketCount:      plan.PacketCount,
+		ExpressionPhysicalAccepted: plan.PhysicalAccepted,
+		PhysicalAccepted:           false,
+		PromptStored:               runtime.PromptStored || plan.Redaction.PromptTextStored,
+		MemoryTextStored:           runtime.MemoryTextStored || plan.Redaction.MemoryTextStored,
+		TranscriptStored:           runtime.TranscriptStored || plan.Redaction.TranscriptStored,
+		ProviderOutputStored:       runtime.ProviderOutputStored || plan.Redaction.ProviderOutputStored,
+		AudioStored:                plan.Redaction.AudioStored,
+		VoiceCloneSampleStored:     runtime.VoiceCloneSampleStored || plan.Redaction.VoiceCloneSampleStored,
+		ProfessionalRouteAllowed:   runtime.ProfessionalRouteAllowed,
+		V21Executed:                runtime.V21Executed,
+		ExpressionRedactionOK:      expressionRedactionOK,
+		RuntimeRedactionOK:         runtimeRedactionOK,
+		Findings:                   findings,
+	}, true
+}
+
+func productRoleplayRuntimeSafe(runtime gateway.RoleplayRuntimeSummary) bool {
+	if runtime.SchemaVersion != "a21.roleplay_runtime.v1" ||
+		runtime.Mode != "roleplay" ||
+		!productVoiceChainSafeID(runtime.RoleplayProfile) ||
+		!productVoiceChainSafeID(runtime.Scenario) ||
+		!productVoiceChainSafeID(runtime.VoiceCloneProfile) ||
+		runtime.MemoryHintCount < 0 ||
+		len(runtime.PromptParts) > 12 {
+		return false
+	}
+	for _, part := range runtime.PromptParts {
+		if !productRoleplayPromptPartSafe(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func productRoleplayExpressionPlanSafe(plan gateway.RoleplayExpressionPlan) bool {
+	if plan.SchemaVersion != "a21.roleplay_expression_plan.v1" ||
+		plan.Adapter != "official_stackchan_action_plan" ||
+		plan.DeliveryPolicy != "no_send_plan_only" ||
+		!productVoiceChainSafeID(plan.RoleplayProfile) ||
+		!productVoiceChainSafeID(plan.Scenario) ||
+		!productVoiceChainSafeID(plan.VoiceCloneProfile) ||
+		plan.MemoryHintCount < 0 ||
+		plan.ActionCount < 0 ||
+		plan.PacketCount < 0 ||
+		len(plan.Actions) > 12 {
+		return false
+	}
+	for _, action := range plan.Actions {
+		if !productVoiceChainSafeID(action.Phase) ||
+			!productVoiceChainSafeID(action.Event) ||
+			!productVoiceChainSafeID(action.Value) ||
+			action.PacketCount < 0 {
+			return false
+		}
+		for key, value := range action.Surfaces {
+			if !productVoiceChainSafeID(key) || !productVoiceChainSafeID(value) {
+				return false
+			}
+		}
+	}
+	for key, value := range plan.Surfaces {
+		if !productVoiceChainSafeID(key) || !productVoiceChainSafeID(value) {
+			return false
+		}
+	}
+	return true
+}
+
+func productRoleplayPromptPartSafe(part string) bool {
+	left, right, ok := strings.Cut(strings.TrimSpace(part), ":")
+	return ok && productVoiceChainSafeID(left) && productVoiceChainSafeID(right)
+}
+
+func productRoleplayReadinessFindings(runtime gateway.RoleplayRuntimeSummary, plan gateway.RoleplayExpressionPlan, memoryReady bool, voiceCloneReady bool, expressionAvailable bool, runtimeRedactionOK bool, expressionRedactionOK bool) []string {
+	var findings []string
+	if !runtime.SoulPromptInputReady {
+		findings = appendProductFindingCode(findings, "roleplay_soul_prompt_not_ready")
+	}
+	if !runtime.PromptComposed {
+		findings = appendProductFindingCode(findings, "roleplay_prompt_not_composed")
+	}
+	if !memoryReady {
+		findings = appendProductFindingCode(findings, "roleplay_memory_prompt_not_ready")
+	}
+	if !voiceCloneReady {
+		findings = appendProductFindingCode(findings, "roleplay_voice_clone_not_ready")
+	}
+	if !expressionAvailable {
+		findings = appendProductFindingCode(findings, "roleplay_expression_plan_not_ready")
+	}
+	if plan.PhysicalAccepted {
+		findings = appendProductFindingCode(findings, "roleplay_expression_physical_claim_ignored")
+	}
+	if !runtimeRedactionOK || !expressionRedactionOK {
+		findings = appendProductFindingCode(findings, "roleplay_redaction_not_ok")
+	}
+	if runtime.ProfessionalRouteAllowed || runtime.V21Executed {
+		findings = appendProductFindingCode(findings, "roleplay_professional_boundary_not_ok")
+	}
+	return findings
+}
+
+func invalidProductRoleplayProfileFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "roleplay_profile_invalid",
+		Message: "A21 Gateway roleplay profile readiness is invalid or unsafe",
+	}
 }
 
 func buildProductCanonicalReadinessDecision(report productReadinessReport) productCanonicalReadinessDecision {

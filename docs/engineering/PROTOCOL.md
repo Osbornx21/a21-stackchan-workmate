@@ -817,6 +817,16 @@ not record voice samples, reference audio/text, local paths, URLs, raw model
 IDs, credentials, prompt text, transcripts, provider output, or raw/base64
 audio.
 
+`product-readiness` treats `GET /v1/roleplay-profile` as the roleplay
+immersion readiness source when the Gateway exposes it. The report surfaces
+only safe profile/scenario/voice-clone IDs, prompt-composed booleans, memory
+counts/readiness, official expression-plan counts, delivery policy, redaction
+booleans, and physical acceptance truth. It must not store prompt bodies,
+memory text, transcripts, provider output, audio payloads, voice-clone samples,
+URLs, paths, or credentials. This readiness surface proves product-report
+visibility of the roleplay contract; it is not provider execution, voice-clone
+audio execution, hardware expression delivery, or physical roleplay acceptance.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or
