@@ -15912,6 +15912,114 @@ Forbidden actions avoided:
   prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
   lifecycle exposure, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 01:26 CST - Workspace Official Actions And Body Motion Deployed
+
+Round goal:
+
+- Continue hardware/body parity from screen/body controls into action
+  controls: expose the existing official StackChan avatar/action relay in
+  `/workspace`, and add a current-product Xiaozhi MCP motion path so the device
+  can perform bounded head/LED motions even while the separate official
+  `/stackChan/ws` socket is not connected.
+
+Actual completed work:
+
+- Added an Official Actions section to `/workspace` with semantic state, face,
+  and motion controls for `idle`, `listening`, `thinking`, `speaking`, `happy`,
+  `attentive`, `look_up`, `nod`, `shake`, `dance`, and `stop`.
+- Wired Official Actions to existing `POST /v1/stackchan/official/control`.
+- Official Actions display safe status, trace, event, packet count, transport,
+  surface labels, and `official_action_physical_accepted=false`; a disconnected
+  official socket is shown as a blocked state rather than fake delivery.
+- Added `POST /v1/xiaozhi/body-motion` with bounded MCP-backed motions:
+  `look_up`, `nod`, `shake`, `dance`, and `stop`.
+- Wired Body Presets `/workspace` controls to the new body-motion endpoint for
+  immediate current-product motion feedback on the live Xiaozhi MCP socket.
+- Added safe `official_action_*` and `body_motion_*` metadata export fields.
+- Extended workspace page contract tests and added body-motion sequence tests.
+- Updated `docs/engineering/PROTOCOL.md` to document body-motion and the
+  official action console behavior.
+- Committed and pushed:
+  `6ce372e feat(gateway): expose official actions in workspace console`.
+- Committed and pushed:
+  `e5ae4d1 feat(gateway): add xiaozhi body motion sequences`.
+- Deployed `e5ae4d1` to ECS `47.103.57.217` through `/opt/a21.next`
+  safe-swap, superseding the intermediate `6ce372e` binary.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset|TestXiaozhiBodyMotion|TestOfficialStackChanControlEndpoint' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+- Public `/workspace` HTML smoke found `Official Actions`,
+  `/v1/stackchan/official/control`, `official_action_trace_id`,
+  `/v1/xiaozhi/body-motion`, `runBodyMotion`, and `body_motion_trace_id`.
+
+Runtime or physical evidence:
+
+- Public official action relay test against product device
+  `44:1b:f6:e2:6a:60` returned HTTP 409:
+  `official stackchan websocket is not connected`. This is the current truth
+  for the separate official avatar/action relay path and is now surfaced
+  honestly.
+- Live public body-motion `dance` response for trace
+  `a21-trace-workspace-body-motion-dance-e5ae4d1` returned
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`, 5 redacted
+  steps, and `physical_accepted=false`.
+- Live trace recorded 10 events: generic robot MCP markers plus ordered
+  `xiaozhi.body_motion.dance.step1.robot_led_color.sent`,
+  `xiaozhi.body_motion.dance.step2.robot_head_angles_set.sent`,
+  `xiaozhi.body_motion.dance.step3.robot_led_color.sent`,
+  `xiaozhi.body_motion.dance.step4.robot_head_angles_set.sent`, and
+  `xiaozhi.body_motion.dance.step5.robot_head_angles_set.sent`.
+- Public `/v1/devices` recorded `last_body_motion=dance`,
+  `last_body_motion_status=delivered`, `last_body_motion_step=5`, final robot
+  head `yaw=0,pitch=24,speed=220`, LED `red=0,green=168,blue=80`, and the
+  product device remained online.
+
+Remaining issues:
+
+- Body-motion has product-socket delivery evidence, not operator/instrument
+  physical acceptance that movement was visibly observed.
+- The official avatar/action relay remains runtime-disconnected for the
+  product device until a `/stackChan/ws` official socket or app-lifecycle
+  reconciliation path is connected and accepted.
+- Full PRD physical acceptance remains `PHYSICAL-PENDING`; the remaining
+  evidence window still needs mic ingress and trusted audible or instrumented
+  observation before promotion.
+- Camera, NFC, infrared, reboot, firmware upgrade, snapshot, video, and app
+  lifecycle remain blocked/planned high-risk controls.
+
+Next suggested action:
+
+- Keep `/workspace` Body Motion as the current-product action path. Next,
+  reconcile the official `/stackChan/ws` avatar/action socket or app lifecycle
+  so Official Actions can move from visible blocked state to delivered
+  official-frame evidence without weakening the no-welcome product path.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 01:07 CST - Workspace Body Preset Console Deployed
 
 Round goal:

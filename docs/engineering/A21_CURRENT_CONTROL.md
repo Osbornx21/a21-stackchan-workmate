@@ -71,6 +71,46 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 01:26 CST workspace official-action/body-motion cut:
+
+- Commit `6ce372e feat(gateway): expose official actions in workspace console`
+  is pushed and deployed to ECS. `/workspace` now exposes an Official Actions
+  section for semantic state, face, and motion controls through the existing
+  `/v1/stackchan/official/control` relay, with safe status/trace/surface
+  metadata and `official_action_physical_accepted=false`.
+- Commit `e5ae4d1 feat(gateway): add xiaozhi body motion sequences` is pushed
+  and deployed to ECS through the existing `/opt/a21.next` safe-swap path.
+  Gateway now exposes `POST /v1/xiaozhi/body-motion` for bounded MCP-backed
+  `look_up`, `nod`, `shake`, `dance`, and `stop` sequences, and `/workspace`
+  Body Presets now includes those MCP motion controls.
+- Local focused workspace/official-action/body-motion tests passed and full
+  local `GOMAXPROCS=2 make verify` passed. Remote focused Gateway tests and
+  build passed in `/opt/a21.next`; `a21-gateway` restarted active; loopback
+  and public direct-source `/healthz` returned ok.
+- Public `/workspace` HTML smoke found Official Actions, Body Presets,
+  `/v1/stackchan/official/control`, `/v1/xiaozhi/body-motion`,
+  `runOfficialAction`, `runBodyMotion`, `official_action_trace_id`, and
+  `body_motion_trace_id`.
+- Public official action relay on product device `44:1b:f6:e2:6a:60`
+  currently returns HTTP 409 `official stackchan websocket is not connected`.
+  This is the truthful runtime state for the separate `/stackChan/ws` official
+  avatar/action socket and is now visible from the product console instead of
+  being hidden.
+- Live public `dance` body-motion on product device `44:1b:f6:e2:6a:60`
+  passed for trace `a21-trace-workspace-body-motion-dance-e5ae4d1`.
+  Response status was `delivered`, transport `xiaozhi_mcp_sequence`, with 5
+  redacted steps and `physical_accepted=false`. Trace recorded ordered
+  `xiaozhi.body_motion.dance.step*.sent` markers plus generic robot MCP
+  markers. Public `/v1/devices` recorded `last_body_motion=dance`,
+  `last_body_motion_status=delivered`, `last_body_motion_step=5`, final robot
+  head `yaw=0,pitch=24,speed=220`, LED `red=0,green=168,blue=80`, and the
+  device remained online.
+- This cut is a product action/body-control surface deployment. It is not a
+  renewed internal-test3 voice-chain acceptance run and not a voice/protocol
+  rollback. No firmware build/flash, no NVS write, no provider or V21
+  execution, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no Git prune/gc occurred.
+
 Live truth after the 2026-06-05 01:14 CST workspace hardware-screen console cut:
 
 - Commit `c74261d feat(gateway): expose screen controls in workspace console`

@@ -9,9 +9,40 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 01:14 CST:
+Latest control update, 2026-06-05 01:26 CST:
+
+- `T-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-001` and
+  `T-XIAOZHI-BODY-MOTION-SEQUENCE-001` are deployed on ECS. Commit `6ce372e`
+  adds an Official Actions section to `/workspace` for semantic
+  state/face/motion/dance relay through `/v1/stackchan/official/control`, and
+  commit `e5ae4d1` adds `POST /v1/xiaozhi/body-motion` plus `/workspace` MCP
+  motion controls for `look_up`, `nod`, `shake`, `dance`, and `stop`.
+- Local focused tests passed for workspace, official action, body preset, and
+  body motion. Full local `GOMAXPROCS=2 make verify` passed. Remote focused
+  Gateway tests/build passed in `/opt/a21.next`, `a21-gateway` safe-swapped
+  active, loopback `/healthz` passed, and public direct-source `/healthz` plus
+  `/workspace` HTML smoke passed.
+- Public official action relay on product device `44:1b:f6:e2:6a:60` returned
+  HTTP 409 `official stackchan websocket is not connected`; this is now an
+  honest surfaced runtime gap for the separate `/stackChan/ws` official avatar
+  relay, not a hidden failure or voice rollback.
+- Public MCP-backed body motion `dance` passed on product device
+  `44:1b:f6:e2:6a:60` with trace
+  `a21-trace-workspace-body-motion-dance-e5ae4d1`. Response was
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`, 5 redacted
+  steps, and `physical_accepted=false`. Trace recorded 10 generic/body-motion
+  markers, and `/v1/devices` recorded `last_body_motion=dance`,
+  `last_body_motion_step=5`, final head `yaw=0,pitch=24,speed=220`, LED
+  `0/168/80`, and device online.
+- These transitions improve the product action surface while preserving the
+  official-compatible product lane. No firmware build/flash, no NVS write, no
+  provider/V21 execution, no camera/NFC/IR expansion, no reboot/OTA/snapshot/
+  video/app-lifecycle exposure, no Git prune/gc, and no internal-test3
+  voice/protocol rollback occurred.
+
+Previous control update, 2026-06-05 01:14 CST:
 
 - `T-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-001` is deployed on ECS.
   Commit `c74261d` adds a Hardware Screen section to `/workspace` with a
