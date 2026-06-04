@@ -28,6 +28,7 @@ type productReadinessOptions struct {
 	OutputDir                  string
 	ProviderSmokeReport        string
 	ProviderRealtimeReport     string
+	VoiceChainReadinessReport  string
 	XiaozhiReport              string
 	V21ProfessionalReport      string
 	V21AdapterSmokeReport      string
@@ -304,6 +305,16 @@ type productVoiceChainReadiness struct {
 	HotSwitch                      bool     `json:"hot_switch"`
 	LaunchPolicyExpectedLLMProfile string   `json:"launch_policy_expected_llm_profile,omitempty"`
 	LaunchPolicySatisfied          bool     `json:"launch_policy_satisfied"`
+	CapabilityEvidenceAvailable    bool     `json:"capability_evidence_available"`
+	CapabilityEvidenceMatched      bool     `json:"capability_evidence_matched"`
+	CapabilityEvidenceStatus       string   `json:"capability_evidence_status,omitempty"`
+	CapabilityEvidenceSourceReport string   `json:"capability_evidence_source_report,omitempty"`
+	CapabilityExecutionMode        string   `json:"capability_execution_mode,omitempty"`
+	StaticCapabilityReady          bool     `json:"static_capability_ready"`
+	ASRStreamingReady              bool     `json:"asr_streaming_ready"`
+	LLMStreamingReady              bool     `json:"llm_streaming_ready"`
+	TTSStreamingReady              bool     `json:"tts_streaming_ready"`
+	CapabilityFindings             []string `json:"capability_findings,omitempty"`
 	Findings                       []string `json:"findings,omitempty"`
 }
 
@@ -322,7 +333,7 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
+			fmt.Fprintln(stdout, "a21 product-readiness [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--provider-smoke-report report.json] [--provider-realtime-fixture-report report.json] [--voice-chain-readiness-report report.json] [--xiaozhi-report report.json] [--v21-professional-report report.json] [--v21-adapter-smoke-report report.json] [--physical-stackchan-report report.json] [--wake-word-firmware-plan report.json] [--wake-word-firmware-package-report report.json] [--wake-word-physical-acceptance-report report.json] [--use-latest-reports] [--output-dir reports] [--require-real]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
@@ -342,6 +353,10 @@ func runProductReadiness(args []string, stdout io.Writer, stderr io.Writer) int 
 			}
 		case "--provider-realtime-fixture-report":
 			if !readStringOption(args, &i, stderr, "--provider-realtime-fixture-report", &options.ProviderRealtimeReport) {
+				return 2
+			}
+		case "--voice-chain-readiness-report":
+			if !readStringOption(args, &i, stderr, "--voice-chain-readiness-report", &options.VoiceChainReadinessReport) {
 				return 2
 			}
 		case "--xiaozhi-report":
@@ -473,6 +488,13 @@ func resolveLatestProductReadinessReports(options productReadinessOptions) produ
 		}, productLatestProviderRealtimeFixtureReportAccepted)
 		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
 	}
+	if strings.TrimSpace(options.VoiceChainReadinessReport) == "" {
+		var findings []productReadinessFinding
+		options.VoiceChainReadinessReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "voice_chain_readiness", []string{
+			"a21-xiaozhi-streaming-provider-readiness-*.json",
+		}, productLatestVoiceChainReadinessReportAccepted)
+		options.LatestReportFindings = append(options.LatestReportFindings, findings...)
+	}
 	if strings.TrimSpace(options.XiaozhiReport) == "" {
 		var findings []productReadinessFinding
 		options.XiaozhiReport, findings = latestAcceptedProductReadinessReportPath(reportDir, "xiaozhi_voice", []string{
@@ -586,6 +608,11 @@ func resolveLatestProductProviderSmokeReport(options *productReadinessOptions, r
 func productLatestProviderRealtimeFixtureReportAccepted(path string) bool {
 	evidence, _ := loadProductProviderRealtimeReportEvidence(path)
 	return evidence.Valid && evidence.Configured && evidence.Executed && evidence.Status == string(providers.ProviderSmokePassed)
+}
+
+func productLatestVoiceChainReadinessReportAccepted(path string) bool {
+	evidence, _ := loadProductVoiceChainReadinessReportEvidence(path)
+	return evidence.Valid
 }
 
 func productLatestXiaozhiReportAccepted(path string) bool {
@@ -795,6 +822,11 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	report.Findings = append(report.Findings, wakeWordFindings...)
 	voiceChain, voiceChainFindings := fetchProductVoiceChainReadiness(ctx, gatewayURL)
 	report.Findings = append(report.Findings, voiceChainFindings...)
+	voiceChainCapabilityEvidence, voiceChainCapabilityFindings := loadProductVoiceChainReadinessReportEvidence(options.VoiceChainReadinessReport)
+	report.Findings = append(report.Findings, voiceChainCapabilityFindings...)
+	if voiceChainCapabilityEvidence.Valid {
+		report.Findings = append(report.Findings, attachProductVoiceChainCapabilityEvidence(&voiceChain, voiceChainCapabilityEvidence)...)
+	}
 	report.Findings = append(report.Findings, resolveLatestProductWakeWordFirmwarePlan(&options, report.WakeWord)...)
 	wakeWordPlan, wakeWordPlanFindings := loadProductWakeWordFirmwarePlanEvidence(options.WakeWordFirmwarePlan)
 	report.Findings = append(report.Findings, wakeWordPlanFindings...)
@@ -1654,6 +1686,268 @@ func productVoiceChainHasFinding(readiness productVoiceChainReadiness, code stri
 
 func productVoiceChainLaunchPolicySatisfied(readiness productVoiceChainReadiness) bool {
 	return readiness.Available && readiness.LaunchPolicySatisfied
+}
+
+type productVoiceChainCapabilityEvidence struct {
+	Valid         bool
+	SourceReport  string
+	GateStatus    string
+	ExecutionMode string
+	ASRProfile    string
+	LLMProfile    string
+	TTSProfile    string
+	ASRReady      bool
+	LLMReady      bool
+	TTSReady      bool
+	Findings      []string
+}
+
+func loadProductVoiceChainReadinessReportEvidence(path string) (productVoiceChainCapabilityEvidence, []productReadinessFinding) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return productVoiceChainCapabilityEvidence{}, nil
+	}
+	if strings.ToLower(filepath.Ext(path)) != ".json" {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) > providerLatencyFixtureSidecarMaxBytes {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	var raw any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&raw); err != nil {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	if providerLatencyFixtureContainsForbiddenKey(raw) || productVoiceChainReadinessReportContainsForbiddenValue(raw) {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	var report xiaozhiStreamingProviderReadinessReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	if missingField := missingProductVoiceChainReadinessReportField(report); missingField != "" {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{missingProductVoiceChainReadinessReportFieldFinding(missingField)}
+	}
+	asrProfile := providerLatencySafeIdentifier(report.ASR.Profile, false)
+	llmProfile := providerLatencySafeIdentifier(report.LLM.Profile, false)
+	ttsProfile := providerLatencySafeIdentifier(report.TTS.Profile, false)
+	if report.SchemaVersion != xiaozhiStreamingProviderReadinessSchemaVersion ||
+		report.GeneratedAtMS <= 0 ||
+		report.ExecutionMode != "static_no_execute_provider_capability_gate" ||
+		report.ProductMode != "dialogue" ||
+		report.ChainMode != "dialogue_low_latency" ||
+		report.ProfessionalBoundary != "v21_adapter_only" ||
+		!validProductVoiceChainReadinessGateStatus(report.GateStatus) ||
+		report.PRDAccepted ||
+		!productVoiceChainReadinessRedactionOK(report.Redaction) ||
+		!productVoiceChainReadinessStageSafe(report.ASR) ||
+		!productVoiceChainReadinessStageSafe(report.LLM) ||
+		!productVoiceChainReadinessStageSafe(report.TTS) ||
+		!productVoiceChainSelectionSafe(report.Selection) ||
+		asrProfile == "" ||
+		llmProfile == "" ||
+		ttsProfile == "" ||
+		(report.ReportPath != "" && !productVoiceChainReadinessReportPathSafe(report.ReportPath)) {
+		return productVoiceChainCapabilityEvidence{}, []productReadinessFinding{invalidProductVoiceChainReadinessReportFinding()}
+	}
+	return productVoiceChainCapabilityEvidence{
+		Valid:         true,
+		SourceReport:  filepath.Base(filepath.Clean(path)),
+		GateStatus:    strings.TrimSpace(report.GateStatus),
+		ExecutionMode: strings.TrimSpace(report.ExecutionMode),
+		ASRProfile:    asrProfile,
+		LLMProfile:    llmProfile,
+		TTSProfile:    ttsProfile,
+		ASRReady:      report.ASR.Ready && report.ASR.RealProvider && report.ASR.Streaming && report.ASR.ImplementedInGateway,
+		LLMReady:      report.LLM.Ready && report.LLM.RealProvider && report.LLM.Streaming && report.LLM.ImplementedInGateway,
+		TTSReady:      report.TTS.Ready && report.TTS.RealProvider && report.TTS.Streaming && report.TTS.ImplementedInGateway,
+		Findings:      productVoiceChainSafeFindings(report.Findings),
+	}, nil
+}
+
+func attachProductVoiceChainCapabilityEvidence(readiness *productVoiceChainReadiness, evidence productVoiceChainCapabilityEvidence) []productReadinessFinding {
+	if readiness == nil || !evidence.Valid {
+		return nil
+	}
+	readiness.CapabilityEvidenceAvailable = true
+	readiness.CapabilityEvidenceMatched = false
+	readiness.CapabilityEvidenceStatus = evidence.GateStatus
+	readiness.CapabilityEvidenceSourceReport = evidence.SourceReport
+	readiness.CapabilityExecutionMode = evidence.ExecutionMode
+	readiness.CapabilityFindings = append([]string(nil), evidence.Findings...)
+	readiness.ASRStreamingReady = evidence.ASRReady
+	readiness.LLMStreamingReady = evidence.LLMReady
+	readiness.TTSStreamingReady = evidence.TTSReady
+	if !readiness.Available {
+		readiness.Findings = appendProductFindingCode(readiness.Findings, "voice_chain_selector_unavailable")
+		return []productReadinessFinding{{
+			Code:    "voice_chain_selector_unavailable",
+			Message: "Voice-chain capability report could not be matched because the Gateway selector is unavailable",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	if !productVoiceChainCapabilityEvidenceMatchesSelected(*readiness, evidence) {
+		readiness.Findings = appendProductFindingCode(readiness.Findings, "voice_chain_capability_report_mismatch")
+		return []productReadinessFinding{{
+			Code:    "voice_chain_capability_report_mismatch",
+			Message: "Voice-chain capability report does not match the selected A21 Gateway voice-chain profiles",
+			Detail:  evidence.SourceReport,
+		}}
+	}
+	readiness.CapabilityEvidenceMatched = true
+	readiness.StaticCapabilityReady = evidence.GateStatus == "passed" && evidence.ASRReady && evidence.LLMReady && evidence.TTSReady
+	return nil
+}
+
+func productVoiceChainCapabilityEvidenceMatchesSelected(readiness productVoiceChainReadiness, evidence productVoiceChainCapabilityEvidence) bool {
+	selectedTTS := firstNonEmpty(readiness.SelectedTTSProfile, readiness.FixedTTSProfile)
+	return evidence.Valid &&
+		evidence.ASRProfile == readiness.SelectedASRProfile &&
+		evidence.LLMProfile == readiness.SelectedLLMProfile &&
+		(evidence.TTSProfile == selectedTTS || evidence.TTSProfile == readiness.FixedTTSProfile)
+}
+
+func missingProductVoiceChainReadinessReportField(report xiaozhiStreamingProviderReadinessReport) string {
+	switch {
+	case strings.TrimSpace(report.SchemaVersion) == "":
+		return "schema_version"
+	case report.GeneratedAtMS <= 0:
+		return "generated_at_ms"
+	case strings.TrimSpace(report.ExecutionMode) == "":
+		return "execution_mode"
+	case strings.TrimSpace(report.ProductMode) == "":
+		return "product_mode"
+	case strings.TrimSpace(report.ChainMode) == "":
+		return "chain_mode"
+	case strings.TrimSpace(report.ProfessionalBoundary) == "":
+		return "professional_boundary"
+	case strings.TrimSpace(report.ASR.Profile) == "":
+		return "asr.profile"
+	case strings.TrimSpace(report.LLM.Profile) == "":
+		return "llm.profile"
+	case strings.TrimSpace(report.TTS.Profile) == "":
+		return "tts.profile"
+	case strings.TrimSpace(report.GateStatus) == "":
+		return "gate_status"
+	default:
+		return ""
+	}
+}
+
+func missingProductVoiceChainReadinessReportFieldFinding(field string) productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "voice_chain_readiness_report_missing_field",
+		Message: "Voice-chain readiness report is missing a required field",
+		Detail:  field,
+	}
+}
+
+func invalidProductVoiceChainReadinessReportFinding() productReadinessFinding {
+	return productReadinessFinding{
+		Code:    "voice_chain_readiness_report_invalid",
+		Message: "Voice-chain readiness report is invalid or unsafe",
+	}
+}
+
+func validProductVoiceChainReadinessGateStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "passed", "blocked":
+		return true
+	default:
+		return false
+	}
+}
+
+func productVoiceChainReadinessRedactionOK(redaction xiaozhiVoiceBenchRedaction) bool {
+	return !redaction.PayloadsStored &&
+		!redaction.CredentialValuesStored &&
+		!redaction.FullURLsStored &&
+		!redaction.LocalPathsStored
+}
+
+func productVoiceChainReadinessStageSafe(stage xiaozhiStreamingProviderReadinessStage) bool {
+	return productVoiceChainSafeID(stage.Profile) &&
+		productVoiceChainSafeOptionalID(stage.ProfileEnv) &&
+		productVoiceChainSafeOptionalID(stage.SelectionRole) &&
+		productVoiceChainSafeID(stage.Adapter) &&
+		productVoiceChainSafeID(stage.Capability) &&
+		productProviderSmokeEnvNamesSafe(stage.RequiredEnv...) &&
+		productProviderSmokeEnvNamesSafe(stage.PresentEnv...) &&
+		productProviderSmokeEnvNamesSafe(stage.MissingEnv...)
+}
+
+func productVoiceChainSelectionSafe(selection providers.VoicePipelineSelection) bool {
+	return productVoiceChainSafeOptionalID(selection.ASRMode) &&
+		productVoiceChainSafeID(selection.ASRProfile) &&
+		productVoiceChainSafeOptionalID(selection.ASRProfileEnv) &&
+		productVoiceChainSafeID(selection.LLMProfile) &&
+		productVoiceChainSafeOptionalID(selection.LLMProfileEnv) &&
+		productVoiceChainSafeOptionalID(selection.LLMFallbackProfile) &&
+		productVoiceChainSafeOptionalID(selection.LLMFallbackProfileEnv) &&
+		productVoiceChainSafeOptionalID(selection.TTSMode) &&
+		productVoiceChainSafeID(selection.TTSProfile) &&
+		productVoiceChainSafeOptionalID(selection.TTSProfileEnv)
+}
+
+func productVoiceChainReadinessReportPathSafe(path string) bool {
+	path = strings.TrimSpace(strings.ToLower(path))
+	return path == "" ||
+		(!strings.Contains(path, "http://") &&
+			!strings.Contains(path, "https://") &&
+			!strings.Contains(path, "/users/") &&
+			!strings.Contains(path, "secret") &&
+			!strings.Contains(path, "token") &&
+			!containsLegacyIdentity(path))
+}
+
+func productVoiceChainReadinessReportContainsForbiddenValue(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, child := range typed {
+			if productVoiceChainReadinessReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if productVoiceChainReadinessReportContainsForbiddenValue(child) {
+				return true
+			}
+		}
+	case string:
+		lower := strings.ToLower(typed)
+		if strings.TrimSpace(lower) != "v21_adapter_only" && containsLegacyIdentity(typed) {
+			return true
+		}
+		for _, forbidden := range []string{
+			"http://",
+			"https://",
+			"/users/",
+			"bearer ",
+			"sk-",
+			"raw prompt",
+			"prompt text",
+			"raw transcript",
+			"transcript text",
+			"raw provider output",
+			"provider output",
+			"raw reasoning",
+			"reasoning text",
+			"data_base64",
+			"audio_base64",
+			"secret-value",
+		} {
+			if strings.Contains(lower, forbidden) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func productStringSliceContains(values []string, want string) bool {

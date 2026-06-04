@@ -1,7 +1,7 @@
 # A21 Agent Handoff Log
 
 Status: active handoff document.
-Last updated: 2026-06-03.
+Last updated: 2026-06-04.
 
 This log is the recovery surface for Codex workers and future control-tower
 threads. Every work round must add or update an entry before handoff. Keep this
@@ -12707,3 +12707,86 @@ Forbidden actions avoided:
 
 - No provider, real V21, ECS, firmware build, serial, NVS, prune/gc, flash, or
   physical hardware action occurred.
+
+## 2026-06-04 13:00 CST - Selected Voice-Chain Readiness Ingress
+
+Round goal:
+
+- Complete
+  `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
+  without repeating the already-completed workspace voice-probe cut.
+
+Actual completed work:
+
+- Added `--voice-chain-readiness-report` to `a21 product-readiness`.
+- Added `--voice-chain-readiness-report` passthrough to
+  `a21 server-side-readiness-bundle`.
+- Added `--use-latest-reports` discovery for newest
+  `a21-xiaozhi-streaming-provider-readiness-*.json`.
+- Added defensive ingestion for
+  `a21.xiaozhi_streaming_provider_readiness.v1` static no-execute selected
+  ASR/LLM/TTS capability evidence.
+- Product/server-side readiness now expose static capability evidence status,
+  basename source report, profile match state, stage-ready booleans, execution
+  mode, and safe finding codes.
+- Mismatched capability reports remain visible as
+  `voice_chain_capability_report_mismatch` and are not absorbed as current-chain
+  readiness.
+- Updated current-control, protocol, internal-test4 plan, and state-machine
+  docs.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-selected-voice-chain-readiness-ingress.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This ingress is static no-execute readiness bookkeeping only. It does not run
+  a provider, run V21, deploy Gateway/ECS, or prove audible/physical StackChan
+  behavior.
+- Next promotion still needs the existing provider execution, V21 execution,
+  host/physical voice, wake, and physical PRD acceptance gates.
+
+Known risks/blockers:
+
+- Static capability evidence can prove selected-chain configuration readiness,
+  but not runtime latency, answer quality, audio quality, or physical playback.
+- A future gate decision is still needed if static capability should become a
+  hard server-side candidate requirement.
+
+Recommended next action:
+
+- Continue from the current focused state. Either collect/ingest fresh selected
+  voice-chain static reports from the active runtime, or move to the next
+  runtime/physical evidence gate without redoing workspace console/probe work.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestProductReadiness(IngestsSelectedVoiceChainStaticReadiness|RejectsVoiceChainStaticReadinessMismatch|BlocksServerSideCandidateWhenStepFunNotSelected)|TestServerSideReadinessBundle(AcceptsVoiceChainStaticReadinessReport|SurfacesStepFunNotSelected)|TestRunProductReadinessUsesLatestVoiceChainReadinessReport' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadiness(AcceptsExecutedProviderSmokeEvidence|RejectsProviderSmokeReportMismatch|AcceptsProviderRealtimeFixtureEvidence|IngestsSelectedVoiceChainStaticReadiness|RejectsVoiceChainStaticReadinessMismatch|BlocksServerSideCandidateWhenStepFunNotSelected)|TestRunProductReadiness(UsesLatestRealtimeFixtureWithoutPathLeak|UsesLatestVoiceChainReadinessReport|LatestProviderSelectionPrefersNewestUsableConfiguredMatch)|TestServerSideReadinessBundle(AcceptsVoiceChainStaticReadinessReport|SurfacesStepFunNotSelected)' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- None. During implementation a transient loader audit found that a broad
+  provider-smoke forbidden-value helper would reject the explicit
+  `v21_adapter_only` boundary string; this was replaced with a voice-chain
+  specific safe-value check and provider smoke/realtime loaders were confirmed
+  restored.
+
+Forbidden actions avoided:
+
+- No provider execution, V21 execution, ECS/root-secret/runtime change, Gateway
+  protocol change, firmware build, flash, serial, NVS, report deletion,
+  prune/gc, or physical hardware action occurred.

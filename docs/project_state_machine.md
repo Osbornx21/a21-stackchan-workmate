@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
 Active child transitions:
 
@@ -2520,12 +2520,16 @@ Priority candidate added from the 2026-06-04 internal test 4 workspace plan:
      before changing provider, gain, codec, or firmware.
 
 5. `T-VOICE-CHAIN-EVIDENCE-001: Selected Voice-Chain Readiness Ingress`
-   - Current phase: StepFun+Iflytek relay evidence is the best operator
-     accepted voice-chain candidate, but existing product readiness provider
-     slots correctly accept only route-eligible provider-smoke evidence.
-   - Next action: either add a narrow redacted voice-chain evidence ingestion
-     surface, or run the existing host voice/continuous pipeline report shape
-     with the selected relay chain without changing provider route eligibility.
+   - Current phase: product readiness and server-side readiness now ingest the
+     existing static no-execute
+     `a21.xiaozhi_streaming_provider_readiness.v1` report through
+     `--voice-chain-readiness-report` or `--use-latest-reports`. The report is
+     matched against the current Gateway-selected ASR/LLM/TTS profiles before
+     `static_capability_ready` is set. Mismatches remain safe findings and are
+     not absorbed as current-chain readiness.
+   - Next action: use this ingress as readiness bookkeeping only; real
+     provider execution, host/physical voice evidence, V21 execution, and
+     physical StackChan PRD acceptance still require their existing gates.
 
 6. `T-XIAOZHI-HOST-LOCAL-REAL-BASIC-DIALOGUE-SMOKE`
    - Current phase: read-only Gateway/provider audit confirmed `/v1/xiaozhi`

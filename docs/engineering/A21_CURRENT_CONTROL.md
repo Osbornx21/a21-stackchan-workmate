@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this workspace voice-probe cut:
-  `4a8287e feat(gateway): add workspace voice and wake controls`
+- Current source HEAD before this selected voice-chain readiness cut:
+  `4989f9a feat(gateway): add workspace voice probe`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,15 +90,16 @@ Target:
 
 Current focused cut:
 
-- Host-local workspace voice-probe plan:
-  `docs/plans/2026-06-04-workspace-voice-probe-control-surface.md`
+- Selected voice-chain readiness ingress plan:
+  `docs/plans/2026-06-04-selected-voice-chain-readiness-ingress.md`
 - Transition:
-  `T-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-001`
+  `T-VOICE-CHAIN-EVIDENCE-001-SELECTED-VOICE-CHAIN-READINESS-INGRESS`
 - Target:
-  let `/workspace` prove selected roleplay/voice/memory and professional mode
-  routing are visible on existing safe dialogue-path metadata while avoiding
-  real provider/V21 execution, real indexing, firmware build, serial, NVS, or
-  physical hardware action.
+  let product readiness and server-side readiness ingest the existing
+  `a21.xiaozhi_streaming_provider_readiness.v1` static no-execute capability
+  report for the selected ASR/LLM/TTS voice chain while avoiding provider/V21
+  execution, Gateway protocol changes, ECS changes, firmware build, serial,
+  NVS, or physical hardware action.
 
 ## Scoped Hardware Parity Transition
 
@@ -1300,3 +1301,32 @@ Current conclusion:
 - This is not provider execution, real V21 execution, audible voice-clone
   playback, real document indexing, Gateway deployment, ECS, firmware, serial,
   NVS, or physical StackChan professional/roleplay acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Selected Voice-Chain Readiness Ingress
+
+Product/server-side readiness now has a safe selected voice-chain capability
+evidence ingress instead of only the Gateway selector readout.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-selected-voice-chain-readiness-ingress.md`.
+- `a21 product-readiness` accepts
+  `--voice-chain-readiness-report <report.json>`.
+- `a21 product-readiness --use-latest-reports` can discover the newest
+  `a21-xiaozhi-streaming-provider-readiness-*.json` report.
+- `a21 server-side-readiness-bundle` passes the same evidence through to the
+  underlying product-readiness report.
+- The report must match the current Gateway-selected ASR, LLM, and TTS profile
+  IDs before `static_capability_ready` becomes true.
+- Mismatched reports remain visible as
+  `voice_chain_capability_report_mismatch` and are not absorbed as current-chain
+  readiness.
+
+Current conclusion:
+
+- This closes the bookkeeping gap between the existing static no-execute
+  provider-chain classifier and product/server-side readiness.
+- This is not provider execution, real V21 execution, audible playback, Gateway
+  deployment, ECS runtime acceptance, firmware, serial, NVS, or physical
+  StackChan PRD acceptance.

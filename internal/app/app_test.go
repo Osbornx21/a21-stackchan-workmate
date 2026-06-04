@@ -930,6 +930,167 @@ func TestProductReadinessBlocksServerSideCandidateWhenStepFunNotSelected(t *test
 	}
 }
 
+func TestProductReadinessIngestsSelectedVoiceChainStaticReadiness(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("stepfun", nil),
+	)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:                server.URL,
+		DeviceID:                  "stackchan-001",
+		VoiceChainReadinessReport: writeProductReadinessVoiceChainReadinessReportFixture(t, "stepfun"),
+	}, nil)
+
+	chain := report.Voice.VoiceChain
+	if !chain.Available ||
+		!chain.CapabilityEvidenceAvailable ||
+		!chain.CapabilityEvidenceMatched ||
+		chain.CapabilityEvidenceStatus != "passed" ||
+		chain.CapabilityEvidenceSourceReport != "a21-xiaozhi-streaming-provider-readiness-real.json" ||
+		chain.CapabilityExecutionMode != "static_no_execute_provider_capability_gate" ||
+		!chain.StaticCapabilityReady ||
+		!chain.ASRStreamingReady ||
+		!chain.LLMStreamingReady ||
+		!chain.TTSStreamingReady {
+		t.Fatalf("voice-chain capability = %+v, want selected static provider-chain evidence absorbed", chain)
+	}
+	if !containsExactProductString(chain.CapabilityFindings, "stepfun_selected") {
+		t.Fatalf("capability findings = %#v, want stepfun_selected", chain.CapabilityFindings)
+	}
+	if report.LaunchReady || report.CanonicalDecision.PRDAccepted {
+		t.Fatalf("launch/canonical = %v/%+v, static evidence must not promote PRD", report.LaunchReady, report.CanonicalDecision)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"capability_evidence_available": true`,
+		`"capability_evidence_matched": true`,
+		`"capability_evidence_source_report": "a21-xiaozhi-streaming-provider-readiness-real.json"`,
+		`"static_capability_ready": true`,
+		`"asr_streaming_ready": true`,
+		`"llm_streaming_ready": true`,
+		`"tts_streaming_ready": true`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("product readiness JSON missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "sk-a21", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestProductReadinessRejectsVoiceChainStaticReadinessMismatch(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("stepfun", nil),
+	)
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:                server.URL,
+		DeviceID:                  "stackchan-001",
+		VoiceChainReadinessReport: writeProductReadinessVoiceChainReadinessReportFixture(t, "deepseek"),
+	}, nil)
+
+	chain := report.Voice.VoiceChain
+	if !chain.CapabilityEvidenceAvailable ||
+		chain.CapabilityEvidenceMatched ||
+		chain.StaticCapabilityReady ||
+		!containsExactProductString(chain.Findings, "voice_chain_capability_report_mismatch") ||
+		!containsProductFinding(report.Findings, "voice_chain_capability_report_mismatch", "a21-xiaozhi-streaming-provider-readiness-real.json") {
+		t.Fatalf("voice-chain mismatch = %+v findings=%+v, want mismatch visible and not absorbed", chain, report.Findings)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONProductReadiness(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "sk-a21", `"static_capability_ready": true`, `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("mismatched product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestServerSideReadinessBundleAcceptsVoiceChainStaticReadinessReport(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("stepfun", nil),
+	)
+
+	report := buildServerSideReadinessBundleReport(context.Background(), productReadinessOptions{
+		GatewayURL:                server.URL,
+		DeviceID:                  "stackchan-001",
+		VoiceChainReadinessReport: writeProductReadinessVoiceChainReadinessReportFixture(t, "stepfun"),
+	}, nil, serverSideReadinessCollection{})
+
+	if !report.VoiceChain.CapabilityEvidenceAvailable ||
+		!report.VoiceChain.CapabilityEvidenceMatched ||
+		!report.VoiceChain.StaticCapabilityReady ||
+		report.VoiceChain.CapabilityEvidenceSourceReport != "a21-xiaozhi-streaming-provider-readiness-real.json" ||
+		!report.ServerSide.VoiceChain.StaticCapabilityReady {
+		t.Fatalf("bundle voice-chain capability = %+v server=%+v, want static readiness passthrough", report.VoiceChain, report.ServerSide.VoiceChain)
+	}
+	var encoded bytes.Buffer
+	if err := writeJSONServerSideReadinessBundle(&encoded, report); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"voice_chain"`,
+		`"capability_evidence_available": true`,
+		`"capability_evidence_matched": true`,
+		`"static_capability_ready": true`,
+	} {
+		if !strings.Contains(encoded.String(), want) {
+			t.Fatalf("bundle JSON missing %q: %s", want, encoded.String())
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "sk-a21", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(encoded.String(), forbidden) {
+			t.Fatalf("bundle leaked or overclaimed %q: %s", forbidden, encoded.String())
+		}
+	}
+}
+
+func TestRunProductReadinessUsesLatestVoiceChainReadinessReport(t *testing.T) {
+	server := newProductReadinessTestServerWithVoiceChain(t,
+		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
+		productReadinessVoiceChainProfilesJSON("stepfun", nil),
+	)
+	dir := t.TempDir()
+	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-streaming-provider-readiness-20260602-100000.json", productReadinessVoiceChainReadinessReportFixtureJSON("stepfun"))
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"product-readiness", "--gateway-url", server.URL, "--use-latest-reports", "--output-dir", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	rendered := stdout.String()
+	for _, want := range []string{
+		`"capability_evidence_available": true`,
+		`"capability_evidence_matched": true`,
+		`"capability_evidence_source_report": "a21-xiaozhi-streaming-provider-readiness-20260602-100000.json"`,
+		`"static_capability_ready": true`,
+		`"launch_ready": false`,
+		`"prd_accepted": false`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("stdout missing %q: %s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{server.URL, "http://", "https://", "/Users/", "secret-value", "sk-a21", `"launch_ready": true`, `"prd_accepted": true`} {
+		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("latest voice-chain readiness leaked or overclaimed %q: stdout=%s stderr=%s", forbidden, rendered, stderr.String())
+		}
+	}
+}
+
 func TestServerSideReadinessBundleSurfacesStepFunNotSelected(t *testing.T) {
 	server := newProductReadinessTestServerWithVoiceChain(t,
 		`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
@@ -4020,6 +4181,102 @@ func writeProductReadinessRealtimeFixtureReportFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func writeProductReadinessVoiceChainReadinessReportFixture(t *testing.T, llmProfile string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a21-xiaozhi-streaming-provider-readiness-real.json")
+	if err := os.WriteFile(path, []byte(productReadinessVoiceChainReadinessReportFixtureJSON(llmProfile)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func productReadinessVoiceChainReadinessReportFixtureJSON(llmProfile string) string {
+	llmProfile = firstNonEmpty(strings.TrimSpace(llmProfile), "stepfun")
+	findings := []string{"stepfun_selected"}
+	if llmProfile != "stepfun" {
+		findings = []string{"stepfun_not_selected"}
+	}
+	findingsJSON, err := json.Marshal(findings)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`{
+  "schema_version": "a21.xiaozhi_streaming_provider_readiness.v1",
+  "generated_at_ms": 1780335600000,
+  "execution_mode": "static_no_execute_provider_capability_gate",
+  "product_mode": "dialogue",
+  "chain_mode": "dialogue_low_latency",
+  "professional_boundary": "v21_adapter_only",
+  "selection": {
+    "asr_mode": "streaming",
+    "asr_profile": "dashscope_qwen_asr_realtime",
+    "asr_profile_env": "A21_ASR_LOCAL_PROFILE",
+    "llm_profile": "%s",
+    "llm_profile_env": "A21_TEXT_STREAM_PROFILE",
+    "tts_mode": "streaming",
+    "tts_profile": "dashscope_qwen_tts_realtime",
+    "tts_profile_env": "A21_TTS_FAST_PROFILE"
+  },
+  "asr": {
+    "profile": "dashscope_qwen_asr_realtime",
+    "profile_env": "A21_ASR_LOCAL_PROFILE",
+    "required_env": ["A21_DASHSCOPE_API_KEY"],
+    "present_env": ["A21_DASHSCOPE_API_KEY"],
+    "adapter": "dashscope_realtime_asr_adapter",
+    "capability": "streaming_asr_session",
+    "ready": true,
+    "real_provider": true,
+    "streaming": true,
+    "uses_mock": false,
+    "uses_file_boundary": false,
+    "uses_wav_boundary": false,
+    "implemented_in_gateway": true
+  },
+  "llm": {
+    "profile": "%s",
+    "profile_env": "A21_TEXT_STREAM_PROFILE",
+    "selection_role": "launch_policy",
+    "required_env": ["A21_LAB_STEPFUN_API_KEY", "A21_STEPFUN_MODEL"],
+    "present_env": ["A21_LAB_STEPFUN_API_KEY", "A21_STEPFUN_MODEL"],
+    "adapter": "%s",
+    "capability": "text_delta_stream",
+    "ready": true,
+    "real_provider": true,
+    "streaming": true,
+    "uses_mock": false,
+    "uses_file_boundary": false,
+    "uses_wav_boundary": false,
+    "implemented_in_gateway": true
+  },
+  "tts": {
+    "profile": "dashscope_qwen_tts_realtime",
+    "profile_env": "A21_TTS_FAST_PROFILE",
+    "required_env": ["A21_DASHSCOPE_API_KEY"],
+    "present_env": ["A21_DASHSCOPE_API_KEY"],
+    "adapter": "dashscope_realtime_tts_adapter",
+    "capability": "incremental_tts_audio_stream",
+    "ready": true,
+    "real_provider": true,
+    "streaming": true,
+    "uses_mock": false,
+    "uses_file_boundary": false,
+    "uses_wav_boundary": false,
+    "implemented_in_gateway": true
+  },
+  "gate_status": "passed",
+  "prd_accepted": false,
+  "findings": %s,
+  "redaction": {
+    "payloads_stored": false,
+    "credential_values_stored": false,
+    "full_urls_stored": false,
+    "local_paths_stored": false
+  },
+  "next_required": []
+}`, llmProfile, llmProfile, llmProfile, string(findingsJSON))
 }
 
 func writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t *testing.T) string {

@@ -166,6 +166,18 @@ when the report includes `repeat >= 3`, at least three answer turns, at least
 three barge-in turns, zero failures, answer first-audio p95 under 1500 ms, and
 barge-in stop p95 under 300 ms.
 
+`product-readiness` and `server-side-readiness-bundle` can also ingest the
+static no-execute selected voice-chain capability report through
+`--voice-chain-readiness-report` or `--use-latest-reports`. The report schema is
+`a21.xiaozhi_streaming_provider_readiness.v1`; it records the selected ASR,
+LLM, and TTS profile IDs, `passed|blocked` gate status, stage streaming-ready
+booleans, and safe finding codes only. Ingestion must match those profiles
+against the current `GET /v1/voice-chain-profiles` selector before marking
+`static_capability_ready`; mismatched reports remain visible as findings and
+are not absorbed as the current chain. This is static capability evidence, not
+provider execution, V21 execution, physical StackChan playback evidence, or PRD
+acceptance.
+
 Text-stream fallback is provider-neutral. `A21_TEXT_STREAM_FALLBACK_PROFILE`
 selects a secondary configured route-eligible text provider for the host-local
 voice pipeline, and `local-voice-loopback --fallback-text-provider` exposes the

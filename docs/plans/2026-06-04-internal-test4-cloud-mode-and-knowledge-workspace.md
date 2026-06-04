@@ -190,6 +190,16 @@ StackChan hardware.
   route/read metadata. It does not add a backend route, execute real provider
   or V21 services, index documents, touch firmware/hardware, or expose raw
   utterance, prompt, evidence, document, credential, or audio content.
+- Product readiness and server-side readiness now ingest the existing static
+  no-execute selected voice-chain capability report
+  `a21.xiaozhi_streaming_provider_readiness.v1` through
+  `--voice-chain-readiness-report` or `--use-latest-reports`. The report must
+  match the current Gateway-selected ASR, LLM, and TTS profiles before
+  `static_capability_ready` becomes true; mismatches stay visible as safe
+  findings and do not get absorbed as current-chain readiness. This is
+  metadata evidence only, not provider execution, V21 execution, Gateway
+  deployment, ECS acceptance, firmware/hardware action, audible playback, or
+  physical StackChan PRD acceptance.
 
 ## Product Form
 
