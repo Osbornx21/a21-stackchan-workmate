@@ -19,6 +19,100 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 - T-WORKSPACE-HARDWARE-FULL-CHECK-SCENE-001 - Full Body Check Deployed
+
+Goal:
+
+- Add a one-click operator-visible hardware body diagnostic so the product can
+  exercise screen, RGB, and head motion without asking the operator to run
+  showtime/focus/reset separately.
+
+Actual completed work:
+
+- Added `scene=full_check` to `POST /v1/xiaozhi/body-scene`.
+- Added `Full Check` to the `/workspace` Hardware Scenes panel.
+- Kept the sequence bounded to already whitelisted stock MCP tools:
+  `self.screen.set_theme`, `self.screen.set_brightness`,
+  `self.robot.set_led_color`, and `self.robot.set_head_angles`.
+- Used TDD: the first focused test run failed because `full_check` was not in
+  the workspace and API returned HTTP 400; after implementation, focused tests
+  passed.
+- Committed and pushed `9171751 feat(gateway): add full body check scene`.
+- Deployed to ECS through `/opt/a21.next` safe swap. Remote focused Gateway
+  tests passed, remote build passed, `a21-gateway.service` restarted active,
+  and public `/healthz` passed.
+- Public `/workspace` smoke found `Full Check`,
+  `data-hardware-scene="full_check"`, and `/v1/xiaozhi/body-scene`.
+- Public `/v1/devices` showed product device `44:1b:f6:e2:6a:60` online after
+  the Gateway restart and across 8 heartbeat polls.
+- Live product full check trace
+  `a21-trace-hardware-full-check-9171751-202606050217` returned HTTP 200 with
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`,
+  `scene=full_check`, and 16 redacted steps.
+- Trace endpoint recorded 32 markers through
+  `xiaozhi.body_scene.full_check.step16.robot_head_angles_set.sent`.
+- `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_status=delivered`, `last_body_scene_step=16`,
+  `screen_theme=auto`, `screen_brightness=55`, final head
+  `yaw=0,pitch=18,speed=200`, and final RGB `0/0/32`. A 12-second follow-up
+  check still showed the device online.
+
+Files changed:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_EVIDENCE_MANIFEST.md`
+
+Unfinished items:
+
+- `physical_accepted=false` remains until visible operator or instrument
+  confirmation of the full check movement.
+- Separate official `/stackChan/ws` avatar/action relay still returns HTTP
+  409 when no official avatar socket is connected.
+- Camera/NFC/IR remain planned/high-risk parity spikes, not product surfaces.
+
+Known risks or blockers:
+
+- Do not promote full_check to product-accepted from machine delivery alone.
+- Do not re-enable automatic listen-start state reactions until foreground
+  hardware stability proves it safe.
+- Git may keep reporting historical loose object/gc warnings; no prune/gc is
+  authorized.
+
+Recommended next action:
+
+- Get operator confirmation for visible full_check motion, then encode that as
+  physical acceptance evidence.
+- Continue with official avatar relay lifecycle reconciliation or safe
+  diagnostic-only battery/IMU status exposure.
+
+Test, build, or runtime results:
+
+- RED:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence' -count=1`
+  failed as expected before implementation.
+- GREEN:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence|TestXiaozhiBodySceneRejectsUnknownScene' -count=1`
+  passed.
+- Focused:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyScene' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- Remote `/opt/a21.next` focused Gateway tests: passed.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21`: passed.
+- ECS loopback and public `/healthz`: passed.
+- Public product `full_check`: HTTP 200 delivered.
+
+Failure location and reason:
+
+- None in the final deployed path. A remote binary `--help` probe returned an
+  unsupported-command status after build and was not used as a deployment gate.
+
 ## 2026-06-05 - T-FIRMWARE-QUIET-RECONNECT-PRODUCT-FLASH-001 - Product Reconnect Flash and Showtime Machine Evidence
 
 Goal:

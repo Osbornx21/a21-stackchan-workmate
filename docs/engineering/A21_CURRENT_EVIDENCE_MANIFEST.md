@@ -108,6 +108,27 @@ Current decision after this evidence:
 - `hardware_body_physical_acceptance`: pending operator/instrument
   confirmation
 
+## 2026-06-05 Full Body Check Machine Evidence
+
+This evidence is accepted for the one-click operator body-check surface and
+product-socket MCP delivery. It does not by itself prove physical PRD
+acceptance.
+
+| Scope | Evidence | Status | Launch Use |
+| --- | --- | --- | --- |
+| Full check code | commit `9171751 feat(gateway): add full body check scene` | pushed and deployed | Product body-check surface evidence |
+| Full check UI | public `/workspace` | contains `Full Check` and `data-hardware-scene="full_check"` | Operator control surface evidence |
+| Full check product trace | `a21-trace-hardware-full-check-9171751-202606050217` | HTTP 200 delivered, 16 steps, 32 trace markers | Machine-readable screen/RGB/servo sequence evidence |
+| Post-check device health | public `/v1/devices` after 12 seconds | device online, `last_body_scene=full_check`, final reset pose recorded | Product socket stability evidence |
+
+Current decision after this evidence:
+
+- `launch_ready`: false
+- `prd_accepted`: false
+- `hardware_body_full_check_machine_evidence`: ready
+- `hardware_body_physical_acceptance`: pending operator/instrument
+  confirmation
+
 ## 2026-06-04 Protocol Adaptation Verification
 
 The full-launch protocol-adaptation worker round is accepted as local

@@ -71,6 +71,51 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 02:17 CST full body check deployment:
+
+- Commit `9171751 feat(gateway): add full body check scene` is pushed and
+  deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- Gateway now accepts `scene=full_check` on `POST /v1/xiaozhi/body-scene`.
+  The scene runs a bounded 16-step operator-visible diagnostic sequence:
+  screen theme/brightness, RGB, left/right head motion, center pose, focus
+  pose, and final reset pose. It uses only the already whitelisted stock MCP
+  tools `self.screen.set_theme`, `self.screen.set_brightness`,
+  `self.robot.set_led_color`, and `self.robot.set_head_angles`.
+- `/workspace` Hardware Scenes now exposes `Full Check` via
+  `data-hardware-scene="full_check"` alongside Showtime, Focus, and Reset.
+- Local verification before deploy:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyScene' -count=1`
+  passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests passed and
+  `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed. A non-product
+  `--help` binary probe returned unsupported-command status and was not used
+  as a deployment gate.
+- ECS `a21-gateway.service` restarted active, loopback `/healthz` passed, and
+  public `/healthz` plus `/workspace` smoke confirmed `Full Check`,
+  `data-hardware-scene="full_check"`, and `/v1/xiaozhi/body-scene`.
+- After ECS restart, public `/v1/devices` showed product device
+  `44:1b:f6:e2:6a:60` online across 8 heartbeat polls.
+- Product trace `a21-trace-hardware-full-check-9171751-202606050217`
+  returned HTTP 200 `status=delivered`, `delivered_transport=
+  xiaozhi_mcp_sequence`, `scene=full_check`, and 16 redacted steps. The trace
+  endpoint recorded 32 markers from
+  `xiaozhi.body_scene.full_check.step1.screen_theme.sent` through
+  `xiaozhi.body_scene.full_check.step16.robot_head_angles_set.sent`.
+- `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_status=delivered`, `last_body_scene_step=16`, final
+  `screen_theme=auto`, `screen_brightness=55`, final head
+  `yaw=0,pitch=18,speed=200`, and final RGB `0/0/32`.
+- A follow-up public `/v1/devices` check about 12 seconds later still showed
+  the device online with heartbeat updates and the full_check registry state.
+- This improves the operator hardware-check surface and body-control product
+  feel, but it is still machine-readable delivery evidence only:
+  `physical_accepted=false` remains until visible operator or instrument
+  confirmation.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred in this code deployment.
+
 Live truth after the 2026-06-05 02:08 CST guarded product-lane reconnect
 flash and hardware scene run:
 

@@ -9,7 +9,49 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-PHYSICAL-PENDING`
+
+Latest control update, 2026-06-05 02:17 CST:
+
+- `T-WORKSPACE-HARDWARE-FULL-CHECK-SCENE-001` is pushed and deployed on ECS.
+  Commit `9171751` adds `scene=full_check` to
+  `POST /v1/xiaozhi/body-scene` and adds a `Full Check` button to the
+  `/workspace` Hardware Scenes panel.
+- The scene uses only bounded official MCP tools already accepted by the
+  product socket path: screen theme, screen brightness, RGB LED, and head
+  yaw/pitch/speed. It combines showtime, focus, and reset poses into a
+  16-step operator-visible diagnostic sequence and keeps
+  `physical_accepted=false`.
+- Local TDD red/green completed: before implementation,
+  `TestWorkspaceConsolePageServed` missed
+  `data-hardware-scene="full_check"` and
+  `TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence` returned HTTP
+  400. After implementation, focused Gateway tests passed and
+  `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests and build passed, then
+  `a21-gateway.service` safe-swapped active. Public `/healthz` passed and
+  `/workspace` smoke found `Full Check`,
+  `data-hardware-scene="full_check"`, and `/v1/xiaozhi/body-scene`.
+- Product device `44:1b:f6:e2:6a:60` returned online after the ECS restart and
+  stayed online through 8 public heartbeat polls.
+- Live product full check trace
+  `a21-trace-hardware-full-check-9171751-202606050217` returned HTTP 200
+  `status=delivered`, `scene=full_check`, and 16 redacted steps. The trace
+  endpoint recorded 32 ordered markers through
+  `xiaozhi.body_scene.full_check.step16.robot_head_angles_set.sent`.
+- `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_step=16`, final `screen_theme=auto`,
+  `screen_brightness=55`, final head `yaw=0,pitch=18,speed=200`, and final
+  RGB `0/0/32`. A follow-up public check about 12 seconds later still showed
+  the device online with heartbeat updates.
+- This is machine-readable product-socket body evidence and an improved
+  operator check surface, not physical acceptance. Operator or instrument
+  confirmation is still required before promoting the body scene to
+  product-accepted.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred.
 
 Latest control update, 2026-06-05 02:08 CST:
 
