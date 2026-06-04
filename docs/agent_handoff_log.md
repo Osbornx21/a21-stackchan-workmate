@@ -11077,6 +11077,73 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 11:33 CST - Environment Switch No-Repeat Handoff
+
+Round goal:
+
+- Preserve current internal test 4 progress and unfinished items before a
+  development environment switch, with explicit no-repeat guidance after
+  context compaction.
+
+Actual completed work:
+
+- Added
+  `docs/handoffs/2026-06-04-a21-internal-test4-environment-switch-handoff.md`
+  as the current recovery point.
+- Recorded the last pushed HEAD
+  `d4a974c docs(control): hand off roleplay expression plan`.
+- Recorded that the only pre-handoff tracked local code changes were
+  `internal/gateway/server.go`, `internal/gateway/server_test.go`, and
+  `internal/gateway/simulator.go` for the uncommitted roleplay
+  `expression_plan` slice.
+- Recorded that the local expression-plan slice is not yet protocol-doc,
+  state-machine, handoff-log, full-verify, commit, or push complete.
+- Recorded that current-mainline internal test 4 commits through roleplay
+  device-state reflection and A21 native V21 voice-query bridge are ancestors
+  of HEAD and should not be repeated.
+- Closed the completed Poincare subagent after it reported the StackChan
+  official hardware parity gap-map audit had already landed in the main tree
+  and that continuing the older worker branch would create duplicate churn.
+
+Changed files:
+
+- `docs/handoffs/2026-06-04-a21-internal-test4-environment-switch-handoff.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- The local roleplay `expression_plan` code slice remains uncommitted.
+- No fresh full verification has been run after this handoff-doc update.
+- Product-visible gaps remain: web/app workspace, real indexing, durable
+  account/device binding, V21 merge/release, physical StackChan expression and
+  PRD acceptance, custom wake proof, and persistent cloud topology.
+
+Known risks/blockers:
+
+- Context compaction can cause repeated branch scans and repeated work unless
+  the next environment starts from the new handoff.
+- Older StackChan parity worker branches are not ancestors of current HEAD and
+  must not be blindly merged because they predate later internal test 4 work.
+- Git may still warn about historical loose objects/gc; no prune/gc action was
+  taken.
+
+Recommended next action:
+
+- In the new environment, first read the new handoff, run
+  `git status --short --branch`, then either finish the local
+  `expression_plan` slice with docs/state/handoff/full verification or park it
+  and move to visible product progress.
+
+Test/build/runtime results:
+
+- No runtime, provider, V21, ECS, firmware, serial, NVS, prune/gc, or hardware
+  action occurred in this handoff-doc round.
+- Fresh verification after adding the handoff/log entry is still pending.
+
+Failure location/reason:
+
+- None; this round intentionally stopped at a recovery handoff.
+
 ## 2026-06-04 11:09 CST - Environment Switch Handoff And Product Gap Report
 
 Round goal:
