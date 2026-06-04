@@ -12791,6 +12791,81 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 13:39 CST - Roleplay Voice Probe Report Generator
+
+Round goal:
+
+- Add the missing generator for live Gateway roleplay voice runtime evidence so
+  internal test 4 roleplay readiness can move from static/profile visibility to
+  runnable host/Gateway evidence without hand-authored fixtures.
+
+Actual completed work:
+
+- Added `a21 roleplay-voice-probe`.
+- The command sends a short redacted local-audio probe to the existing Gateway
+  `/v1/fast-companion/turn` roleplay voice path and fetches `/v1/traces`.
+- Generated reports use the existing `a21.roleplay_voice_probe.v1` schema and
+  are written as `a21-roleplay-voice-probe-*.json`.
+- Complete Gateway voice-pipeline evidence writes `status=passed`; incomplete
+  evidence writes `status=blocked`.
+- `--require-ready` returns non-zero for blocked evidence after preserving the
+  report.
+- Added tests proving generated ready reports are accepted by
+  `product-readiness --use-latest-reports`, while blocked reports do not
+  overclaim.
+- Updated protocol, current-control, internal-test4 plan, project state, and
+  the scoped generator plan.
+
+Changed files:
+
+- `internal/app/app.go`
+- `internal/app/roleplay_voice_probe.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-roleplay-voice-probe-report-generator.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is host/Gateway runtime evidence generation only. It does not prove
+  physical wake, audible voice-clone quality, hardware expression delivery, or
+  full PRD launch acceptance.
+- A fresh report still needs to be generated against the target live Gateway
+  runtime after provider/voice-chain configuration is selected.
+
+Known risks/blockers:
+
+- If the Gateway is configured without a completing voice pipeline, the command
+  will correctly write `status=blocked` instead of closing readiness.
+
+Recommended next action:
+
+- Run `a21 roleplay-voice-probe --gateway-url <target> --use target device/env`
+  in the live runtime, rerun `a21 product-readiness --use-latest-reports`, then
+  continue toward real low-latency voice, roleplay immersion, professional mode,
+  and physical StackChan/MCP acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunRoleplayVoiceProbe|TestRunProductReadinessUsesLatestRoleplayVoiceRuntimeReport|TestProductReadinessSurfacesRoleplayVoiceRuntimeEvidence' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- None.
+
+Forbidden actions avoided:
+
+- No ECS/root-secret change, V21 execution, firmware build, flash, serial, NVS,
+  report deletion, prune/gc, destructive Git cleanup, or physical hardware
+  action occurred. The CLI does not call providers directly; any provider
+  runtime occurs only through the already configured Gateway path.
+
 ## 2026-06-04 14:05 CST - Roleplay Voice Runtime Evidence Ingress
 
 Round goal:

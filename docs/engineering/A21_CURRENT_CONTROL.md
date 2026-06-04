@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this roleplay voice runtime evidence cut:
-  `bd7c5dd feat(readiness): surface roleplay immersion readiness`
+- Current source HEAD before this roleplay voice probe generator cut:
+  `fb5d40b feat(readiness): ingest roleplay voice runtime evidence`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,16 +90,16 @@ Target:
 
 Current focused cut:
 
-- Roleplay voice runtime evidence ingress plan:
-  `docs/plans/2026-06-04-roleplay-voice-runtime-evidence-ingress.md`
+- Roleplay voice probe report generator plan:
+  `docs/plans/2026-06-04-roleplay-voice-probe-report-generator.md`
 - Transition:
-  `T-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-001`
+  `T-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-001`
 - Target:
-  let product readiness ingest a safe roleplay voice probe report proving the
-  selected role soul, scenario, memory prompt, voice-clone profile, and prompt
-  input reached a roleplay voice turn and audio downlink boundary, while
-  avoiding provider/V21 execution, Gateway protocol changes, ECS changes,
-  firmware build, serial, NVS, or physical hardware action.
+  generate the safe `a21-roleplay-voice-probe-*.json` report from the live
+  Gateway `/v1/fast-companion/turn` roleplay voice path so
+  `product-readiness --use-latest-reports` can close the host/Gateway roleplay
+  runtime evidence gap without hand-authored fixtures. The cut stays out of
+  ECS, V21, firmware, serial, NVS, and physical hardware action.
 
 ## Scoped Hardware Parity Transition
 

@@ -476,6 +476,16 @@ Acceptance:
 6. Re-run A21 product/server-side readiness and keep physical StackChan PRD
    acceptance separate.
 
+Execution update:
+
+- `T-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-001` adds
+  `a21 roleplay-voice-probe`, which generates the safe
+  `a21-roleplay-voice-probe-*.json` runtime report from the existing Gateway
+  roleplay voice path instead of relying on a hand-authored fixture. This closes
+  the host/Gateway roleplay runtime evidence-generation gap while keeping
+  physical StackChan, wake, audible voice-clone quality, and PRD acceptance as
+  separate gates.
+
 ## Not In Scope For This First Cut
 
 - No firmware flash, NVS write, or product-lane artifact change.

@@ -45,6 +45,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runProductReadiness(args[1:], stdout, stderr)
 	case "server-side-readiness-bundle":
 		return runServerSideReadinessBundle(args[1:], stdout, stderr)
+	case "roleplay-voice-probe":
+		return runRoleplayVoiceProbe(args[1:], stdout, stderr)
 	case "gate":
 		return runGate(args[1:], stdout, stderr)
 	case "doctor":

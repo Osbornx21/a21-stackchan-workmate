@@ -847,6 +847,14 @@ the roleplay voice-path reporting gap; it is still not provider quality
 acceptance, real voice-clone audio acceptance, hardware expression delivery, or
 physical StackChan PRD acceptance.
 
+`a21 roleplay-voice-probe` generates that report from the live Gateway
+roleplay voice path by sending a short redacted local-audio probe to
+`POST /v1/fast-companion/turn`, then reading
+`GET /v1/traces?trace_id=...`. Complete Gateway voice-pipeline evidence is
+written as `status=passed`; incomplete evidence is preserved as
+`status=blocked` unless the operator uses `--require-ready`, which returns a
+non-zero exit after writing the blocked report.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or
