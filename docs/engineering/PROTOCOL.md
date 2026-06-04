@@ -381,6 +381,19 @@ surfaces:
   physical serial evidence on device `44:1b:f6:e2:6a:60`, while speaker,
   screen/status, camera, NFC, infrared, and app-lifecycle product acceptance
   remain separate evidence gates.
+- The Gateway also exposes named product-operation aliases for the low-risk
+  screen/status subset: `POST /v1/xiaozhi/device-status`,
+  `POST /v1/xiaozhi/screen-brightness`,
+  `POST /v1/xiaozhi/screen-theme`, and
+  `GET /v1/xiaozhi/mcp-capabilities?device_id=<device_id>`. These endpoints
+  reuse the same stock MCP WebSocket delivery path and never broaden the
+  whitelist. `screen-brightness` requires `brightness` in `0..100`;
+  `screen-theme` accepts only `light`, `dark`, or `auto`; `device-status`
+  accepts no tool arguments. The capabilities response lists allowed tools and
+  blocked tool classes with `result_redacted=true` and
+  `physical_accepted=false`. Named endpoints require the connected device to
+  advertise `hello.features.mcp=true`, return redacted metadata only, and do
+  not persist raw MCP result bodies.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

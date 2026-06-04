@@ -848,6 +848,26 @@ type XiaozhiMCPControlRequest struct {
 	SessionID  string `json:"session_id,omitempty"`
 }
 
+type XiaozhiDeviceStatusRequest struct {
+	DeviceID  string `json:"device_id"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type XiaozhiScreenBrightnessRequest struct {
+	DeviceID   string `json:"device_id"`
+	Brightness *int   `json:"brightness"`
+	TraceID    string `json:"trace_id,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
+}
+
+type XiaozhiScreenThemeRequest struct {
+	DeviceID  string `json:"device_id"`
+	Theme     string `json:"theme"`
+	TraceID   string `json:"trace_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
 	SessionID          string         `json:"session_id"`
@@ -857,6 +877,19 @@ type XiaozhiMCPControlResponse struct {
 	ToolName           string         `json:"tool_name"`
 	MCPID              string         `json:"mcp_id"`
 	Arguments          map[string]any `json:"arguments,omitempty"`
+	ResultRedacted     bool           `json:"result_redacted"`
+}
+
+type XiaozhiMCPCapabilitiesResponse struct {
+	SchemaVersion      string   `json:"schema_version"`
+	Service            string   `json:"service"`
+	DeviceID           string   `json:"device_id"`
+	ConnectionStatus   string   `json:"connection_status"`
+	MCPAdvertised      bool     `json:"mcp_advertised"`
+	AllowedTools       []string `json:"allowed_tools"`
+	BlockedToolClasses []string `json:"blocked_tool_classes"`
+	ResultRedacted     bool     `json:"result_redacted"`
+	PhysicalAccepted   bool     `json:"physical_accepted"`
 }
 
 type XiaozhiSayRequest struct {
@@ -1376,6 +1409,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/xiaozhi/control", s.handleXiaozhiDeviceControl)
 	mux.HandleFunc("/v1/xiaozhi/say", s.handleXiaozhiSay)
 	mux.HandleFunc("/v1/xiaozhi/speaker-volume", s.handleXiaozhiSpeakerVolume)
+	mux.HandleFunc("/v1/xiaozhi/device-status", s.handleXiaozhiDeviceStatus)
+	mux.HandleFunc("/v1/xiaozhi/screen-brightness", s.handleXiaozhiScreenBrightness)
+	mux.HandleFunc("/v1/xiaozhi/screen-theme", s.handleXiaozhiScreenTheme)
+	mux.HandleFunc("/v1/xiaozhi/mcp-capabilities", s.handleXiaozhiMCPCapabilities)
 	mux.HandleFunc("/v1/xiaozhi/mcp-control", s.handleXiaozhiMCPControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/stackChan/ws", s.handleOfficialStackChanWS)
@@ -5485,6 +5522,109 @@ func (s *Server) handleXiaozhiSpeakerVolume(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (s *Server) handleXiaozhiDeviceStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiDeviceStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	response, status, message := s.deliverXiaozhiMCPControl(r.Context(), XiaozhiMCPControlRequest{
+		DeviceID:  req.DeviceID,
+		ToolName:  xiaozhiMCPGetDeviceStatusToolName,
+		TraceID:   req.TraceID,
+		SessionID: req.SessionID,
+	})
+	if status != 0 {
+		http.Error(w, message, status)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleXiaozhiScreenBrightness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiScreenBrightnessRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	response, status, message := s.deliverXiaozhiMCPControl(r.Context(), XiaozhiMCPControlRequest{
+		DeviceID:   req.DeviceID,
+		ToolName:   xiaozhiMCPScreenSetBrightnessToolName,
+		Brightness: req.Brightness,
+		TraceID:    req.TraceID,
+		SessionID:  req.SessionID,
+	})
+	if status != 0 {
+		http.Error(w, message, status)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleXiaozhiScreenTheme(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiScreenThemeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validXiaozhiNamedScreenTheme(req.Theme) {
+		http.Error(w, "theme must be light, dark, or auto", http.StatusBadRequest)
+		return
+	}
+	response, status, message := s.deliverXiaozhiMCPControl(r.Context(), XiaozhiMCPControlRequest{
+		DeviceID:  req.DeviceID,
+		ToolName:  xiaozhiMCPScreenSetThemeToolName,
+		Theme:     req.Theme,
+		TraceID:   req.TraceID,
+		SessionID: req.SessionID,
+	})
+	if status != 0 {
+		http.Error(w, message, status)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	socket, ok := s.xiaozhiSocket(deviceID)
+	if !ok {
+		http.Error(w, "xiaozhi websocket is not connected", http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, XiaozhiMCPCapabilitiesResponse{
+		SchemaVersion:      "a21.gateway.xiaozhi_mcp_capabilities.v1",
+		Service:            "a21-gateway",
+		DeviceID:           deviceID,
+		ConnectionStatus:   "online",
+		MCPAdvertised:      socket.features.MCP,
+		AllowedTools:       xiaozhiMCPAllowedTools(),
+		BlockedToolClasses: xiaozhiMCPBlockedToolClasses(),
+		ResultRedacted:     true,
+		PhysicalAccepted:   false,
+	})
+}
+
 func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -5495,35 +5635,38 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if !validA21DeviceID(req.DeviceID) {
-		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+	response, status, message := s.deliverXiaozhiMCPControl(r.Context(), req)
+	if status != 0 {
+		http.Error(w, message, status)
 		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) deliverXiaozhiMCPControl(ctx context.Context, req XiaozhiMCPControlRequest) (XiaozhiMCPControlResponse, int, string) {
+	if !validA21DeviceID(req.DeviceID) {
+		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "valid device_id is required"
 	}
 	toolName, args, marker, err := xiaozhiMCPStatusParityCall(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, err.Error()
 	}
 	socket, ok := s.xiaozhiSocket(req.DeviceID)
 	if !ok {
-		http.Error(w, "xiaozhi websocket is not connected", http.StatusConflict)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusConflict, "xiaozhi websocket is not connected"
 	}
 	if !socket.features.MCP {
-		http.Error(w, "xiaozhi mcp control requires stock MCP support", http.StatusConflict)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusConflict, "xiaozhi mcp control requires stock MCP support"
 	}
 	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	mcpID := "a21-mcp-status-parity-" + safeGatewayFallbackToken(marker, "tool") + "-" + safeGatewayFallbackToken(traceID, "trace")
 	payload, err := xiaozhitransport.BuildMCPToolsCallRequest(mcpID, toolName, args)
 	if err != nil {
-		http.Error(w, "invalid xiaozhi mcp control request", http.StatusBadRequest)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
 	}
 	var payloadObject map[string]any
 	if err := json.Unmarshal(payload, &payloadObject); err != nil {
-		http.Error(w, "invalid xiaozhi mcp control request", http.StatusBadRequest)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control request"
 	}
 	message, err := json.Marshal(map[string]any{
 		"type":       "mcp",
@@ -5533,15 +5676,13 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 		"device_id":  req.DeviceID,
 	})
 	if err != nil {
-		http.Error(w, "invalid xiaozhi mcp control message", http.StatusBadRequest)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusBadRequest, "invalid xiaozhi mcp control message"
 	}
 	socket.writeMu.Lock()
-	err = socket.conn.Write(r.Context(), websocket.MessageText, message)
+	err = socket.conn.Write(ctx, websocket.MessageText, message)
 	socket.writeMu.Unlock()
 	if err != nil {
-		http.Error(w, "xiaozhi mcp control delivery failed", http.StatusBadGateway)
-		return
+		return XiaozhiMCPControlResponse{}, http.StatusBadGateway, "xiaozhi mcp control delivery failed"
 	}
 	traceMarker := "xiaozhi.mcp." + marker + ".sent"
 	s.recordTrace(traceID, sessionID, req.DeviceID, traceMarker, s.now().UnixMilli())
@@ -5576,7 +5717,7 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 		activity["robot_led_blue"] = fmt.Sprint(value)
 	}
 	s.recordXiaozhiDeviceActivity(&xiaozhiSession{deviceID: req.DeviceID, traceID: traceID, sessionID: sessionID}, traceMarker, activity)
-	writeJSON(w, http.StatusOK, XiaozhiMCPControlResponse{
+	return XiaozhiMCPControlResponse{
 		TraceID:            traceID,
 		SessionID:          sessionID,
 		DeviceID:           req.DeviceID,
@@ -5585,7 +5726,8 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 		ToolName:           toolName,
 		MCPID:              mcpID,
 		Arguments:          args,
-	})
+		ResultRedacted:     true,
+	}, 0, ""
 }
 
 func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[string]any, string, error) {
@@ -5688,6 +5830,32 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 	}
 }
 
+func xiaozhiMCPAllowedTools() []string {
+	return []string{
+		xiaozhiSpeakerVolumeToolName,
+		xiaozhiMCPGetDeviceStatusToolName,
+		xiaozhiMCPScreenSetBrightnessToolName,
+		xiaozhiMCPScreenSetThemeToolName,
+		xiaozhiMCPScreenGetInfoToolName,
+		xiaozhiMCPRobotGetHeadAnglesToolName,
+		xiaozhiMCPRobotSetHeadAnglesToolName,
+		xiaozhiMCPRobotSetLEDColorToolName,
+	}
+}
+
+func xiaozhiMCPBlockedToolClasses() []string {
+	return []string{
+		"reboot",
+		"firmware_upgrade",
+		"camera_photo",
+		"screen_snapshot",
+		"camera_stream_video",
+		"nfc",
+		"infrared",
+		"app_lifecycle",
+	}
+}
+
 func xiaozhiMCPHasAnyArgument(req XiaozhiMCPControlRequest) bool {
 	return xiaozhiMCPHasAnyArgumentExcept(req)
 }
@@ -5738,6 +5906,15 @@ func validXiaozhiScreenTheme(theme string) bool {
 		return false
 	}
 	return true
+}
+
+func validXiaozhiNamedScreenTheme(theme string) bool {
+	switch strings.ToLower(strings.TrimSpace(theme)) {
+	case "light", "dark", "auto":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) suppressXiaozhiInputAfterHostSay(session *xiaozhiSession, task xiaozhiTurnTask) {

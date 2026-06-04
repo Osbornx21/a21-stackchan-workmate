@@ -129,6 +129,22 @@ Live truth after the 2026-06-04 20:36 CST official robot MCP body-control cut:
   online for this evidence window. Treat that as a firmware/app-lifecycle
   follow-up, not as a reason to roll back internal-test3 voice changes.
 
+Local implementation update after the robot MCP cut:
+
+- The next low-risk screen/status operation surface is implemented locally as
+  named Gateway endpoints:
+  `POST /v1/xiaozhi/device-status`,
+  `POST /v1/xiaozhi/screen-brightness`,
+  `POST /v1/xiaozhi/screen-theme`, and
+  `GET /v1/xiaozhi/mcp-capabilities?device_id=<device_id>`.
+- These endpoints reuse the same official MCP whitelist and redaction path as
+  `/v1/xiaozhi/mcp-control`; they do not expose reboot, upgrade, camera,
+  snapshot, stream/video, NFC, infrared, or app-lifecycle controls.
+- This is a product-operation convenience cut for Web/App/operator tools. It
+  still needs ECS deployment plus live screen/status MCP evidence before it is
+  recorded as public runtime truth, and it is not physical screen visual
+  acceptance.
+
 ## Active Transition
 
 Current active plan:

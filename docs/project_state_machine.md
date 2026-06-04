@@ -106,6 +106,19 @@ Official robot MCP body-control update, 2026-06-04 20:36 CST:
   evidence, camera, NFC, infrared, and official app-lifecycle parity remain
   open transitions.
 
+Screen/status MCP operation-surface update, 2026-06-04:
+
+- `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001` now has local named endpoint
+  implementation for `POST /v1/xiaozhi/device-status`,
+  `POST /v1/xiaozhi/screen-brightness`,
+  `POST /v1/xiaozhi/screen-theme`, and
+  `GET /v1/xiaozhi/mcp-capabilities?device_id=<device_id>`.
+- The endpoints reuse the same stock MCP delivery, whitelist, numeric
+  JSON-RPC id, and redacted response behavior as the unified
+  `/v1/xiaozhi/mcp-control` path. This is not physical screen visual
+  acceptance and still needs ECS deployment plus live device evidence before it
+  becomes public runtime truth.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`
