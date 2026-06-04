@@ -12389,6 +12389,85 @@ Forbidden actions avoided:
 - No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
   hardware action occurred.
 
+## 2026-06-04 12:13 CST - Workspace Roleplay Control Surface
+
+Transition:
+
+- `T-WORKSPACE-ROLEPLAY-CONTROL-SURFACE-001`
+
+What changed:
+
+- Extended `GET /workspace` with roleplay setup controls over existing safe
+  Gateway contracts only.
+- Added product-console controls for role soul, scenario, voice profile,
+  bounded roleplay memory hint, save, and memory clear.
+- The page now populates role soul/scenario options from
+  `/v1/roleplay-profile` and voice options from `/v1/voice-chain-profiles`.
+- Saving roleplay setup writes `/v1/roleplay-profile`; the backend keeps
+  voice profile selection mediated through the existing voice-chain contract.
+- The page shows only safe readiness/status fields: selected IDs, prompt-input
+  readiness, memory status/count, expression action/packet counts, and
+  `physical_accepted=false`.
+- Safe metadata export now includes selected roleplay profile/scenario/voice
+  and memory status, still with redaction flags only.
+
+Files changed:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-workspace-roleplay-control-surface.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestRoleplayProfile|TestVoiceChainProfiles|TestWorkspaceDocumentUpload|TestWorkspaceIndex|TestWorkspaceSource|TestProfessionalWorkspace' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- Local Gateway was started on `127.0.0.1:21080` only for page verification,
+  then stopped.
+- Playwright opened `/workspace` at desktop `1270x900` and mobile `390x900`.
+- Playwright selected `a21_roleplay_wry_peer`, `engineer_pushback`, and
+  `a21_voice_clone_default`, saved one bounded memory hint, observed
+  `/v1/roleplay-profile` return `memory_count=1`,
+  `prompt_composed=true`, `expression_actions=4`, and
+  `physical_accepted=false`, then cleared memory.
+- Playwright exported safe metadata and verified roleplay profile/scenario/
+  voice/status fields plus redaction flags.
+- Desktop and mobile screenshots were written under `.a21-run/evidence/` for
+  local runtime evidence only.
+
+Deviations from plan:
+
+- Browser/IAB control was not exposed in this context, so Playwright was used
+  as the browser automation fallback.
+
+Remaining issues:
+
+- This is product-console configuration and Gateway contract evidence. It is
+  not real provider execution, real TTS/voice-clone audio playback, physical
+  roleplay expression acceptance, wake-word firmware activation, V21 indexing,
+  or physical StackChan professional consult acceptance.
+
+Next suggested action:
+
+- Continue toward the full PRD by adding the adjacent wake-word/provider
+  control surface to `/workspace`, or move to a foreground hardware evidence
+  window for roleplay/professional physical acceptance once the operator is
+  ready.
+
+Forbidden actions avoided:
+
+- No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
+  hardware action occurred.
+
 ## 2026-06-04 12:02 CST - Workspace Console Management Controls
 
 Transition:

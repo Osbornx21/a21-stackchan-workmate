@@ -370,6 +370,42 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Roleplay setup">
+        <div class="panel-head">
+          <h2>Roleplay Setup</h2>
+          <div class="tagline">
+            <span class="tag ready" id="roleplayPromptStatus">prompt_input_ready=false</span>
+            <span class="tag warn" id="roleplayPhysicalStatus">physical_accepted=false</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Role soul
+              <select id="roleplayProfileSelect"></select>
+            </label>
+            <label>Scenario
+              <select id="roleplayScenarioSelect"></select>
+            </label>
+            <label>Voice profile
+              <select id="roleplayVoiceSelect"></select>
+            </label>
+            <label>Memory hint
+              <input id="roleplayMemoryHint" placeholder="bounded session hint" autocomplete="off">
+            </label>
+          </div>
+          <div class="actions">
+            <button id="saveRoleplaySetup">Save roleplay</button>
+            <button class="secondary" id="clearRoleplayMemory">Clear memory</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Role soul</span><strong id="roleplayProfileStatus">a21_roleplay_default</strong></div>
+            <div class="metric"><span>Scenario</span><strong id="roleplayScenarioStatus">desk_mouthpiece</strong></div>
+            <div class="metric"><span>Voice profile</span><strong id="roleplayVoiceStatus">a21_voice_default_dashscope</strong></div>
+            <div class="metric"><span>Memory</span><strong id="roleplayMemoryStatus">empty / 0</strong></div>
+          </div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -399,6 +435,7 @@ const workspaceConsoleHTML = `<!doctype html>
       readRecords: [],
       workspace: null,
       roleplay: null,
+      voiceCatalog: null,
       voiceModes: null,
       lastExport: null
     };
@@ -417,6 +454,18 @@ const workspaceConsoleHTML = `<!doctype html>
       readTraceFilter: document.getElementById('readTraceFilter'),
       readSessionFilter: document.getElementById('readSessionFilter'),
       clearReadFilters: document.getElementById('clearReadFilters'),
+      roleplayProfileSelect: document.getElementById('roleplayProfileSelect'),
+      roleplayScenarioSelect: document.getElementById('roleplayScenarioSelect'),
+      roleplayVoiceSelect: document.getElementById('roleplayVoiceSelect'),
+      roleplayMemoryHint: document.getElementById('roleplayMemoryHint'),
+      saveRoleplaySetup: document.getElementById('saveRoleplaySetup'),
+      clearRoleplayMemory: document.getElementById('clearRoleplayMemory'),
+      roleplayPromptStatus: document.getElementById('roleplayPromptStatus'),
+      roleplayPhysicalStatus: document.getElementById('roleplayPhysicalStatus'),
+      roleplayProfileStatus: document.getElementById('roleplayProfileStatus'),
+      roleplayScenarioStatus: document.getElementById('roleplayScenarioStatus'),
+      roleplayVoiceStatus: document.getElementById('roleplayVoiceStatus'),
+      roleplayMemoryStatus: document.getElementById('roleplayMemoryStatus'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -475,6 +524,23 @@ const workspaceConsoleHTML = `<!doctype html>
       if (!counts) return 'none';
       const parts = Object.keys(counts).sort().map((key) => key + ':' + counts[key]);
       return parts.length ? parts.join(' / ') : 'none';
+    }
+    function optionLabel(option) {
+      return (option.label || option.id || 'none') + (option.status ? ' [' + option.status + ']' : '');
+    }
+    function setSelectOptions(select, options, selected) {
+      const current = selected || select.value;
+      select.textContent = '';
+      (options || []).forEach((option) => {
+        const item = document.createElement('option');
+        item.value = option.id || '';
+        item.textContent = optionLabel(option);
+        if ((option.id || '') === current) item.selected = true;
+        select.append(item);
+      });
+      if (current && Array.from(select.options).some((option) => option.value === current)) {
+        select.value = current;
+      }
     }
     function row(title, left, right, tone, detail) {
       const item = document.createElement('div');
@@ -567,9 +633,31 @@ const workspaceConsoleHTML = `<!doctype html>
     }
     function setRoleplay(payload) {
       state.roleplay = payload || null;
+      const runtime = (payload && payload.runtime) || {};
+      const memory = (payload && payload.memory) || {};
       const plan = (payload && payload.expression_plan) || {};
+      const selectedProfile = payload.selected_roleplay_profile || runtime.roleplay_profile || 'a21_roleplay_default';
+      const selectedScenario = payload.selected_scenario || runtime.scenario || 'desk_mouthpiece';
+      const selectedVoice = payload.selected_voice_clone_profile || runtime.voice_clone_profile || 'a21_voice_default_dashscope';
+      if (payload && payload.profiles) setSelectOptions(ui.roleplayProfileSelect, payload.profiles, selectedProfile);
+      if (payload && payload.scenarios) setSelectOptions(ui.roleplayScenarioSelect, payload.scenarios, selectedScenario);
+      if (ui.roleplayVoiceSelect.options.length && selectedVoice) ui.roleplayVoiceSelect.value = selectedVoice;
       const value = [plan.delivery_policy || 'no_send_plan_only', (plan.action_count || 0) + ' actions', (plan.packet_count || 0) + ' packets'].join(' / ');
       setText(ui.roleplayExpression, value);
+      setText(ui.roleplayProfileStatus, selectedProfile);
+      setText(ui.roleplayScenarioStatus, selectedScenario);
+      setText(ui.roleplayVoiceStatus, selectedVoice);
+      setText(ui.roleplayMemoryStatus, (memory.status || (runtime.memory_configured ? 'ready' : 'empty')) + ' / ' + (runtime.memory_hint_count || 0));
+      setText(ui.roleplayPromptStatus, 'prompt_input_ready=' + String(!!runtime.prompt_composed || !!runtime.soul_prompt_input_ready));
+      setText(ui.roleplayPhysicalStatus, 'physical_accepted=' + String(!!plan.physical_accepted));
+    }
+    function setVoiceCatalog(payload) {
+      state.voiceCatalog = payload || null;
+      const selectedVoice = (payload && payload.selected_voice_clone_profile) ||
+        ((state.roleplay || {}).selected_voice_clone_profile) ||
+        'a21_voice_default_dashscope';
+      setSelectOptions(ui.roleplayVoiceSelect, (payload && payload.voices) || [], selectedVoice);
+      setText(ui.roleplayVoiceStatus, selectedVoice);
     }
     function setVoiceModes(payload) {
       state.voiceModes = payload || null;
@@ -667,6 +755,29 @@ const workspaceConsoleHTML = `<!doctype html>
       renderReadRecords(payload);
       log('reads ' + ((payload.records || []).length) + (query ? ' filtered' : ''));
     }
+    async function saveRoleplaySetup(options) {
+      options = options || {};
+      const body = {
+        roleplay_profile: ui.roleplayProfileSelect.value,
+        scenario: ui.roleplayScenarioSelect.value,
+        voice_clone_profile: ui.roleplayVoiceSelect.value
+      };
+      if (options.includeMemory) {
+        const hint = ui.roleplayMemoryHint.value.trim();
+        body.memory_hints = hint ? [hint] : [];
+      }
+      if (options.clearMemory) {
+        body.clear_memory = true;
+      }
+      const payload = await postJSON('/v1/roleplay-profile', body);
+      if (options.includeMemory || options.clearMemory) {
+        ui.roleplayMemoryHint.value = '';
+      }
+      setRoleplay(payload);
+      const voiceCatalog = await fetchJSON('/v1/voice-chain-profiles', { cache: 'no-store' });
+      setVoiceCatalog(voiceCatalog);
+      log('roleplay ' + (payload.selected_roleplay_profile || 'saved'));
+    }
     function clearReadFilters() {
       ui.readRecordFilter.value = '';
       ui.readTraceFilter.value = '';
@@ -735,6 +846,10 @@ const workspaceConsoleHTML = `<!doctype html>
         read_record_count: state.readRecords.length,
         sources: state.sources.map(safeSource),
         read_records: state.readRecords.map(safeReadRecord),
+        roleplay_profile: ui.roleplayProfileStatus.textContent,
+        roleplay_scenario: ui.roleplayScenarioStatus.textContent,
+        roleplay_voice_profile: ui.roleplayVoiceStatus.textContent,
+        roleplay_memory_status: ui.roleplayMemoryStatus.textContent,
         roleplay_expression: ui.roleplayExpression.textContent,
         professional_cue: ui.professionalCue.textContent,
         redaction: {
@@ -761,6 +876,8 @@ const workspaceConsoleHTML = `<!doctype html>
     async function refreshRoleplayAndModes() {
       const roleplay = await fetchJSON('/v1/roleplay-profile', { cache: 'no-store' });
       setRoleplay(roleplay);
+      const voiceCatalog = await fetchJSON('/v1/voice-chain-profiles', { cache: 'no-store' });
+      setVoiceCatalog(voiceCatalog);
       const modes = await fetchJSON('/v1/voice-modes', { cache: 'no-store' });
       setVoiceModes(modes);
     }
@@ -785,6 +902,11 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.deleteSource.addEventListener('click', () => deleteSource().catch((err) => log('delete ' + err.message)));
     ui.exportMetadata.addEventListener('click', exportMetadata);
     ui.clearReadFilters.addEventListener('click', clearReadFilters);
+    ui.roleplayProfileSelect.addEventListener('change', () => saveRoleplaySetup().catch((err) => log('roleplay ' + err.message)));
+    ui.roleplayScenarioSelect.addEventListener('change', () => saveRoleplaySetup().catch((err) => log('roleplay ' + err.message)));
+    ui.roleplayVoiceSelect.addEventListener('change', () => saveRoleplaySetup().catch((err) => log('roleplay ' + err.message)));
+    ui.saveRoleplaySetup.addEventListener('click', () => saveRoleplaySetup({ includeMemory: true }).catch((err) => log('roleplay ' + err.message)));
+    ui.clearRoleplayMemory.addEventListener('click', () => saveRoleplaySetup({ clearMemory: true }).catch((err) => log('roleplay ' + err.message)));
     boot();
   </script>
 </body>

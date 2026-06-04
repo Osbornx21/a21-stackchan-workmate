@@ -167,6 +167,13 @@ StackChan hardware.
   filter professional read records by `record_id`, `trace_id`, or
   `session_id`. These controls do not parse, index, upload, retrieve, call
   V21/provider services, or claim physical acceptance.
+- The workspace console now also exposes roleplay setup controls over existing
+  safe contracts: role soul, scenario, voice profile, bounded memory hint, and
+  memory clear. Saving those controls writes `/v1/roleplay-profile`, refreshes
+  `/v1/voice-chain-profiles`, and reflects the selected values in the
+  existing runtime prompt/voice pipeline readiness without exposing memory
+  text, prompt bodies, voice data, provider output, V21 evidence, or physical
+  acceptance.
 
 ## Product Form
 

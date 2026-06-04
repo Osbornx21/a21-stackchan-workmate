@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this workspace console management-controls cut:
-  `20f6f8d feat(gateway): add workspace console surface`
+- Current source HEAD before this workspace roleplay-control cut:
+  `44fce07 feat(gateway): add workspace console management controls`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,15 +90,16 @@ Target:
 
 Current focused cut:
 
-- Host-local workspace console management plan:
-  `docs/plans/2026-06-04-workspace-console-management-controls.md`
+- Host-local workspace roleplay-control plan:
+  `docs/plans/2026-06-04-workspace-roleplay-control-surface.md`
 - Transition:
-  `T-WORKSPACE-CONSOLE-MANAGEMENT-CONTROLS-001`
+  `T-WORKSPACE-ROLEPLAY-CONTROL-SURFACE-001`
 - Target:
-  let `/workspace` delete selected source/job metadata, export safe metadata,
-  and filter professional read records while reusing existing Gateway APIs only
-  and avoiding provider/V21 execution, real indexing, firmware, serial, NVS,
-  or physical hardware action.
+  let `/workspace` configure role soul, scenario, voice profile, and bounded
+  memory hints through existing Gateway contracts so roleplay prompt/voice
+  readiness is visible on the product console while avoiding provider/V21
+  execution, real indexing, firmware, serial, NVS, or physical hardware
+  action.
 
 ## Scoped Hardware Parity Transition
 

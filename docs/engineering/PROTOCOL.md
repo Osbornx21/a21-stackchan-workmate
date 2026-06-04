@@ -707,9 +707,12 @@ no-execute indexing ledger through `/v1/workspace-index-jobs`, refresh
 `/v1/workspace-sources`, refresh or filter `/v1/professional-read-records` by
 safe `record_id`, `trace_id`, or `session_id`, delete the selected source/job
 through existing `PUT /v1/workspace-upload-jobs` with `action=delete`, export
-client-side safe metadata as `a21.workspace_console_export.v1`, and view the
-roleplay/professional boundary from `/v1/roleplay-profile` and
-`/v1/voice-modes`. The console must keep state labels honest:
+client-side safe metadata as `a21.workspace_console_export.v1`, configure
+roleplay role soul/scenario/voice profile/bounded memory hint through existing
+`/v1/roleplay-profile` and `/v1/voice-chain-profiles`, and view the
+roleplay/professional boundary from `/v1/roleplay-profile`,
+`/v1/voice-chain-profiles`, and `/v1/voice-modes`. The console must keep state
+labels honest:
 `storage_status=stored_local`, `index_status=indexing_requested_no_execute`
 when requested, `searchable=false`, `v21_execution_allowed=false`, and
 `physical_accepted=false`. It must not display document text, raw bytes, local
