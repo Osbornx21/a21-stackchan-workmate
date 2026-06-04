@@ -132,6 +132,49 @@ Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
   `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
   voice/protocol rollback occurred.
 
+Live truth after the 2026-06-05 06:38 CST guarded manual bootloader recovery
+lane:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read again and
+  compared against current HEAD. The remaining unaccepted P0/P1 is still the
+  physical official StackChan relay/power recovery path, not a Gateway/ECS
+  route absence.
+- Commit `409ff0b fix(firmware): allow guarded manual bootloader flash` is
+  pushed to
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- The official Xiaozhi-compatible product flash lane now supports a guarded
+  `--esptool-before default_reset|usb_reset|no_reset` option and Makefile env
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE`. The default
+  remains `default_reset`; `no_reset` exists only for manual ROM bootloader
+  recovery after a bad product artifact.
+- This change does not create an unguarded upload path. Flash execute still
+  requires the A21 T7 control guard, clean worktree, exact product artifact
+  `a21-stackchan-official-xiaozhi-compatible.bin`, and the confirmation token.
+- Local focused App flash/overlay tests, `git diff --check`, and
+  `GOMAXPROCS=2 make verify` passed.
+- Product rebuild after the recovery-lane commit passed:
+  `reports/a21-stackchan-official-baseline-20260605-063356-1780612436653826000.json`.
+  Product app SHA:
+  `6c2ba13982efc7570ad0ac9ec0329232af6bedc58cd5ad9b18cc06b7f8f5b8b9`.
+- Guarded `no_reset` product flash execute was attempted, but failed because
+  the chip was not in ROM bootloader/download mode:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-063415-1780612455688329000.json`.
+  The flash log shows `--before no_reset` and
+  `Failed to connect to ESP32-S3: No serial data received`.
+- USB enumeration confirms the connected Espressif USB JTAG/serial device has
+  serial/MAC `44:1B:F6:E2:6A:60`; the port is not a wrong-device issue.
+- `no_reset_no_sync` direct probe also failed. OpenOCD USB-JTAG read-only probe
+  failed at `libusb_get_string_descriptor_ascii() failed with -1`; no JTAG
+  flash was attempted.
+- The foreground recovery requirement is now physical: hold the board
+  `BOOT`/download key, press/release `RESET`, keep holding `BOOT` until
+  esptool reports `Chip is ESP32-S3`; if reset is unclear, hold `BOOT` while
+  unplugging/replugging USB. Product power key/touch does not enter ROM
+  download mode.
+- Safe delayed-relay firmware remains build-ready but not flashed. The device
+  is still presumed to contain the rejected `61c9fa0` immediate-relay artifact
+  until a guarded flash execution succeeds.
+
 Live truth after the 2026-06-05 06:20 CST official StackChan relay runtime
 build:
 

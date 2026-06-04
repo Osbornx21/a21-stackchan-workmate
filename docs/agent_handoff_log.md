@@ -19,6 +19,100 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 06:38 CST - Guarded Manual Bootloader Recovery Lane Ready
+
+Round goal:
+
+- Continue from review thread `019e941c-761b-7ee0-a4b8-68103a0850a1`,
+  recover the product device from the rejected immediate-relay firmware, and
+  avoid repeating Gateway/ECS/provider investigations for a firmware download
+  mode problem.
+
+Actual completed work:
+
+- Re-read the review thread conclusions and compared them against current HEAD.
+  The remaining unaccepted product issue is still the official StackChan body
+  relay/power physical path, not Gateway route availability.
+- Confirmed the device USB serial/JTAG endpoint is present and belongs to the
+  product MAC `44:1B:F6:E2:6A:60`.
+- Added a guarded product-flash reset strategy option for the official
+  Xiaozhi-compatible lane:
+  `--esptool-before default_reset|usb_reset|no_reset`.
+- Wired the same option through Makefile as
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE`, defaulting to
+  `default_reset`.
+- The recovery path still uses the A21 T7 control guard, clean worktree guard,
+  exact product artifact `a21-stackchan-official-xiaozhi-compatible.bin`, and
+  confirmation token. It does not introduce a raw or generic firmware upload
+  path.
+- Committed and pushed:
+  `409ff0b fix(firmware): allow guarded manual bootloader flash`.
+- Rebuilt the product official-compatible artifact after the recovery-lane
+  commit so the report, HEAD, and artifact evidence are current.
+
+Changed files:
+
+- `Makefile`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused App flash/overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleFlash|OfficialXiaozhiCompatibleOverlay|StackChanOfficial|Firmware|Xiaozhi|Frozen' -count=1`.
+- `git diff --check` passed.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Product rebuild passed:
+  `reports/a21-stackchan-official-baseline-20260605-063356-1780612436653826000.json`.
+  Product app SHA:
+  `6c2ba13982efc7570ad0ac9ec0329232af6bedc58cd5ad9b18cc06b7f8f5b8b9`.
+- Guarded `no_reset` flash execute was attempted and failed because the chip
+  was not in ROM bootloader/download mode:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-063415-1780612455688329000.json`.
+- The flash log shows the guarded command used
+  `--before no_reset` and failed with
+  `Failed to connect to ESP32-S3: No serial data received`.
+- `no_reset_no_sync` direct probe also failed; it produced no usable bootloader
+  connection.
+- OpenOCD USB-JTAG read-only probe found the local toolchain, but failed at
+  `libusb_get_string_descriptor_ascii() failed with -1`; no JTAG flash path
+  was attempted.
+
+Unfinished items:
+
+- The current physical device is still presumed to contain the rejected
+  `61c9fa0` immediate-relay firmware that triggered `sys_evt` stack overflow.
+- The safe delayed-relay product artifact is built but not flashed.
+- `/stackChan/ws` online evidence, official control delivery, visible body
+  confirmation, no-cable boot acceptance, and power-button acceptance remain
+  pending.
+
+Known risks/blockers:
+
+- Operator must put the ESP32-S3 into ROM download mode. Required action:
+  hold the board `BOOT`/download key, press/release `RESET`, keep holding
+  `BOOT` until esptool reports `Chip is ESP32-S3`; if reset is unclear, hold
+  `BOOT` while unplugging/replugging USB.
+- Pressing the product power key or touch surface is not sufficient for this
+  recovery path.
+
+Recommended next action:
+
+- Once the device is in ROM download mode, run:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE=no_reset A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- After flash succeeds, capture serial boot for at least 45 seconds, confirm no
+  `sys_evt` stack overflow, confirm Xiaozhi online, confirm `/stackChan/ws`
+  online, then POST `/v1/stackchan/official/control` to device
+  `44:1b:f6:e2:6a:60` and record visible head/RGB/screen evidence.
+
+Forbidden actions avoided:
+
+- No Git prune/gc despite the historical loose-object warning, no generic
+  `xiaozhi.bin` product flash lane, no NVS write, no provider secret output,
+  no provider/V21 execution, no JTAG flash, no camera/NFC/IR expansion, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 06:20 CST - Official StackChan Relay Runtime Build Ready
 
 Round goal:
