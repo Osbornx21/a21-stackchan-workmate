@@ -166,17 +166,41 @@ diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
 index 164a751..199a17d 100644
 --- a/firmware/main/main.cpp
 +++ b/firmware/main/main.cpp
-@@ -3,6 +3,8 @@
+@@ -3,6 +3,11 @@
   *
   * SPDX-License-Identifier: MIT
   */
 +#include <audio/audio_codec.h>
 +#include <board.h>
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
++#endif
 +#include <string_view>
  #include <smooth_ui_toolkit.hpp>
  #include <uitk/short_namespace.hpp>
  #include <mooncake_log.h>
-@@ -36,6 +39,23 @@ extern "C" void app_main(void)
+@@ -15,6 +20,24 @@
+ using namespace mooncake;
+ using namespace smooth_ui_toolkit;
+-
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++static void a21_start_avatar_relay_task(void*)
++{
++    GetHAL().delay(12000);
++    mclog::tagInfo("main", "A21 starting official StackChan avatar relay runtime");
++    GetHAL().startA21WebSocketAvatarRuntime([](std::string_view) {});
++    while (1) {
++        GetHAL().updateA21WebSocketAvatarRuntime();
++        GetHAL().delay(20);
++    }
++}
++#endif
++
+ extern "C" void app_main(void)
+ {
+     // Setup logger
+@@ -36,6 +59,19 @@ extern "C" void app_main(void)
      GetMooncake().installApp(std::make_unique<AppDance>());
      GetMooncake().installApp(std::make_unique<AppSetup>());
 -
@@ -185,16 +209,12 @@ index 164a751..199a17d 100644
 +    if (codec != nullptr) {
 +        codec->SetOutputVolume(92);
 +    }
-+    mclog::tagInfo("main", "A21 starting official StackChan avatar relay runtime");
-+    GetHAL().startA21WebSocketAvatarRuntime([](std::string_view msg) {
-+        mclog::tagInfo("main", "A21 avatar relay: {}", msg);
-+    });
++    xTaskCreate(a21_start_avatar_relay_task, "a21_avatar", 12288, nullptr, 4, nullptr);
 +    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
 +    GetHAL().startXiaozhi();
 +    while (1) {
 +        GetHAL().feedTheDog();
-+        GetHAL().updateA21WebSocketAvatarRuntime();
-+        GetHAL().delay(20);
++        GetHAL().delay(1000);
 +    }
 +#endif
 +

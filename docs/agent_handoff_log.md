@@ -19,7 +19,7 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
-## 2026-06-05 06:12 CST - Official StackChan Relay Runtime Build Ready
+## 2026-06-05 06:20 CST - Official StackChan Relay Runtime Build Ready
 
 Round goal:
 
@@ -47,7 +47,11 @@ Actual completed work:
   Xiaozhi reconnected, but official control still returned HTTP 409, and boot
   serial logs did not show the relay-start log line after `HAL start xiaozhi`.
 - Moved the official avatar relay start before `GetHAL().startXiaozhi()`
-  because the Xiaozhi start call blocks in the product runtime.
+  because the Xiaozhi start call blocks in the product runtime; then rejected
+  that immediate ordering after serial logs showed `sys_evt` stack overflow.
+- Replaced the immediate relay start with `a21_start_avatar_relay_task`, which
+  waits 12 seconds, uses a no-op `onStartLog` callback, and ticks the official
+  avatar runtime in a background task.
 - Updated the official avatar URL to use
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"` and
   append `device_id` from `GetHAL().getFactoryMacString(":")` so controls to
@@ -92,10 +96,19 @@ Tests/build/runtime results:
   `reports/a21-stackchan-official-baseline-20260605-061145-1780611105314101000.json`.
   Product app SHA:
   `1ef4b72146c307ea9d5d3e6cfcf8ce7e3d83e780128366857da389625531a6e5`.
+- Guarded product flash of commit `61c9fa0426ca` passed, report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-061513-1780611313024355000.json`.
+- Serial boot capture then rejected that artifact for product use: it started
+  the official relay before Xiaozhi, began Wi-Fi scan/connection, and hit
+  `***ERROR*** A stack overflow in task sys_evt`.
+- Guarded product rebuild after the delayed-task/no-op-log fix passed:
+  `reports/a21-stackchan-official-baseline-20260605-062018-1780611618644528000.json`.
+  Product app SHA:
+  `a1b0262ebf659a268c9c9e578e8b34b1584fed0ec5c20a9c8fc84f5cde7ab92b`.
 
 Unfinished items:
 
-- The order-fixed product app has not yet been flashed in this round.
+- The delayed-task product app has not yet been flashed in this round.
 - `/stackChan/ws` online evidence after the new firmware is still pending.
 - Official `/v1/stackchan/official/control` delivery to the product MAC and
   visible physical confirmation remain pending.

@@ -132,7 +132,7 @@ Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
   `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
   voice/protocol rollback occurred.
 
-Live truth after the 2026-06-05 06:12 CST official StackChan relay runtime
+Live truth after the 2026-06-05 06:20 CST official StackChan relay runtime
 build:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was compared against
@@ -143,11 +143,12 @@ build:
 - The product firmware overlay had parked before the Mooncake
   `WebsocketAvatarWorker`, so the official `WebSocketAvatar` was not being
   ticked after WDT-safe direct `GetHAL().startXiaozhi()`.
-- The product overlay now keeps direct Xiaozhi start and starts an A21 direct
-  official StackChan avatar relay runtime before entering the blocking
-  `GetHAL().startXiaozhi()` call. The parked loop still calls
-  `GetHAL().updateA21WebSocketAvatarRuntime()` every 20 ms if control returns,
-  while continuing to feed the watchdog.
+- The product overlay now keeps direct Xiaozhi start and schedules a delayed
+  A21 direct official StackChan avatar relay task before entering the blocking
+  `GetHAL().startXiaozhi()` call. The task waits 12 seconds for the Xiaozhi
+  Wi-Fi/runtime path to stabilize, starts the official `WebSocketAvatar`
+  without system-event logging, and then ticks
+  `GetHAL().updateA21WebSocketAvatarRuntime()` every 20 ms.
 - The official avatar relay base URL is now controlled by
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`, and
   the official socket appends `device_id` from
@@ -166,13 +167,18 @@ build:
   and `HAL start xiaozhi`, but no `A21 starting official StackChan avatar
   relay runtime`, proving `GetHAL().startXiaozhi()` blocks before the later
   relay-start code.
-- Guarded product rebuild after the ordering fix passed. Build report:
-  `reports/a21-stackchan-official-baseline-20260605-061145-1780611105314101000.json`.
+- Flash of the immediate-before-Xiaozhi ordering fix then exposed a second
+  firmware issue: startup logs showed the relay runtime beginning Wi-Fi first,
+  followed by `***ERROR*** A stack overflow in task sys_evt`. That artifact is
+  not acceptable for product use.
+- Guarded product rebuild after moving the relay into a delayed background task
+  passed. Build report:
+  `reports/a21-stackchan-official-baseline-20260605-062018-1780611618644528000.json`.
   Product app artifact:
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
-  SHA `1ef4b72146c307ea9d5d3e6cfcf8ce7e3d83e780128366857da389625531a6e5`.
+  SHA `a1b0262ebf659a268c9c9e578e8b34b1584fed0ec5c20a9c8fc84f5cde7ab92b`.
 - This is not yet physical acceptance. Required next evidence is guarded
-  product flash of the ordering-fixed artifact on `/dev/cu.usbmodem1101`,
+  product flash of the delayed-task artifact on `/dev/cu.usbmodem1101`,
   reconnect of device
   `44:1b:f6:e2:6a:60`, `/stackChan/ws` online evidence, successful
   `/v1/stackchan/official/control` delivery to the product MAC, and visible

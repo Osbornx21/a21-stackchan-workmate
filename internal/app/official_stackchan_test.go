@@ -247,6 +247,9 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
+		`a21_start_avatar_relay_task`,
+		`xTaskCreate(a21_start_avatar_relay_task`,
+		`GetHAL().delay(12000);`,
 		`A21 starting Xiaozhi mode directly after official apps preload`,
 		`GetHAL().startXiaozhi();`,
 		`A21 starting official StackChan avatar relay runtime`,
@@ -263,13 +266,18 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	startAvatarIndex := strings.Index(overlay, `+    GetHAL().startA21WebSocketAvatarRuntime`)
+	scheduleAvatarIndex := strings.Index(overlay, `+    xTaskCreate(a21_start_avatar_relay_task`)
 	startRuntimeIndex := strings.Index(overlay, `+    GetHAL().startXiaozhi();`)
-	if volumeIndex < 0 || startAvatarIndex < 0 || startRuntimeIndex < 0 {
+	taskDelayIndex := strings.Index(overlay, `+    GetHAL().delay(12000);`)
+	startAvatarIndex := strings.Index(overlay, `+    GetHAL().startA21WebSocketAvatarRuntime`)
+	if volumeIndex < 0 || scheduleAvatarIndex < 0 || startRuntimeIndex < 0 || taskDelayIndex < 0 || startAvatarIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if volumeIndex > startAvatarIndex || startAvatarIndex > startRuntimeIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set volume, start avatar relay, then enter blocking Xiaozhi runtime")
+	if volumeIndex > scheduleAvatarIndex || scheduleAvatarIndex > startRuntimeIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set volume, schedule delayed avatar relay task, then enter blocking Xiaozhi runtime")
+	}
+	if taskDelayIndex > startAvatarIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must delay before starting relay inside the background task")
 	}
 	mainLoopIndex := strings.Index(overlay, `     // Main loop`)
 	feedIndex := strings.Index(overlay, `+        GetHAL().feedTheDog();`)
