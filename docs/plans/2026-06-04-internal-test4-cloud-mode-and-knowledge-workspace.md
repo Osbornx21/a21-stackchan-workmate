@@ -485,6 +485,11 @@ Execution update:
   the host/Gateway roleplay runtime evidence-generation gap while keeping
   physical StackChan, wake, audible voice-clone quality, and PRD acceptance as
   separate gates.
+- `T-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-001` makes matched ready roleplay
+  voice runtime evidence a `server-side-readiness-bundle` candidate gate and
+  wires `--collect-missing` to run `a21 roleplay-voice-probe --require-ready`.
+  Provider/V21/host-voice evidence alone can no longer produce a server-side
+  candidate without roleplay voice runtime.
 
 ## Not In Scope For This First Cut
 

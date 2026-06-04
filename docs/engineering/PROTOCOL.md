@@ -855,6 +855,11 @@ written as `status=passed`; incomplete evidence is preserved as
 `status=blocked` unless the operator uses `--require-ready`, which returns a
 non-zero exit after writing the blocked report.
 
+`server-side-readiness-bundle` treats matched ready roleplay voice runtime as a
+server-side candidate gate through `roleplay_voice_runtime_ready`. When
+`--collect-missing` is used, it runs `a21 roleplay-voice-probe --require-ready`
+and absorbs the generated report only if `product-readiness` accepts it.
+
 StackChan Wi-Fi provisioning is device-side and follows Xiaozhi's startup
 model. Stored NVS credentials are tried first. If none are available, the
 firmware enters Wi-Fi provisioning instead of requiring a hardcoded SSID or

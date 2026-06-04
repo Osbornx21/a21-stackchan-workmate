@@ -465,6 +465,9 @@ func newProductReadinessCustomWakeTestServer(t *testing.T) *httptest.Server {
 		case "/v1/voice-chain-profiles":
 			w.Header().Set("content-type", "application/json")
 			_, _ = w.Write([]byte(productReadinessVoiceChainProfilesJSON("stepfun", nil)))
+		case "/v1/roleplay-profile":
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(productReadinessRoleplayProfileFixtureJSON("ready")))
 		default:
 			http.NotFound(w, r)
 		}

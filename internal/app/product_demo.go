@@ -296,12 +296,14 @@ type productServerSideReadiness struct {
 	ProviderEvidenceReady        bool                       `json:"provider_evidence_ready"`
 	V21ProfessionalEvidenceReady bool                       `json:"v21_professional_evidence_ready"`
 	HostVoiceLoopbackReady       bool                       `json:"host_voice_loopback_ready"`
+	RoleplayVoiceRuntimeReady    bool                       `json:"roleplay_voice_runtime_ready"`
 	WakeWordReady                bool                       `json:"wake_word_ready"`
 	RequiresPhysicalAcceptance   bool                       `json:"requires_physical_acceptance"`
 	VoiceChain                   productVoiceChainReadiness `json:"voice_chain"`
 	ProviderSmokeSourceReport    string                     `json:"provider_smoke_source_report,omitempty"`
 	V21ProfessionalSourceReport  string                     `json:"v21_professional_source_report,omitempty"`
 	HostVoiceSourceReport        string                     `json:"host_voice_source_report,omitempty"`
+	RoleplayVoiceSourceReport    string                     `json:"roleplay_voice_source_report,omitempty"`
 	MissingEvidence              []string                   `json:"missing_evidence,omitempty"`
 }
 
@@ -2943,6 +2945,7 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		ProviderSmokeSourceReport:   report.Provider.SmokeSourceReport,
 		V21ProfessionalSourceReport: report.V21.Professional.SourceReport,
 		HostVoiceSourceReport:       report.Voice.VoicePipeline.SourceReport,
+		RoleplayVoiceSourceReport:   report.Roleplay.VoiceRuntimeSourceReport,
 		RequiresPhysicalAcceptance:  !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
 		VoiceChain:                  report.Voice.VoiceChain,
 	}
@@ -2952,6 +2955,7 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 		report.Provider.SmokeExecuted
 	readiness.V21ProfessionalEvidenceReady = productV21ProfessionalReady(report.V21)
 	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostProductChainReady
+	readiness.RoleplayVoiceRuntimeReady = report.Roleplay.VoiceRuntimeReady
 	readiness.WakeWordReady = report.WakeWord.ProductReady
 	if !readiness.GatewayReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "gateway")
@@ -2964,6 +2968,9 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 	}
 	if !readiness.HostVoiceLoopbackReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "host_voice_loopback")
+	}
+	if !readiness.RoleplayVoiceRuntimeReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "roleplay_voice_runtime")
 	}
 	if !readiness.WakeWordReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "wake_word")

@@ -46,6 +46,7 @@ type serverSideReadinessBundleReport struct {
 	Provider                   serverSideReadinessBundleEvidence  `json:"provider"`
 	V21                        serverSideReadinessBundleEvidence  `json:"v21"`
 	HostVoice                  serverSideReadinessBundleEvidence  `json:"host_voice"`
+	RoleplayVoice              serverSideReadinessBundleEvidence  `json:"roleplay_voice"`
 	WakeWord                   serverSideReadinessBundleEvidence  `json:"wake_word"`
 	VoiceChain                 productVoiceChainReadiness         `json:"voice_chain"`
 	ServerSide                 productServerSideReadiness         `json:"server_side"`
@@ -259,6 +260,11 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			Status:       productReport.Voice.VoicePipeline.AcceptanceStatus,
 			SourceReport: productReport.Voice.VoicePipeline.SourceReport,
 		},
+		RoleplayVoice: serverSideReadinessBundleEvidence{
+			Ready:        productReport.ServerSide.RoleplayVoiceRuntimeReady,
+			Status:       productReport.Roleplay.VoiceRuntimeStatus,
+			SourceReport: productReport.Roleplay.VoiceRuntimeSourceReport,
+		},
 		WakeWord: serverSideReadinessBundleEvidence{
 			Ready:        productReport.ServerSide.WakeWordReady,
 			Status:       productReport.WakeWord.RuntimeStatus,
@@ -303,6 +309,8 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 		return collectServerSideV21Smoke(options)
 	case "host_voice_loopback":
 		return collectServerSideHostVoice(options)
+	case "roleplay_voice_runtime":
+		return collectServerSideRoleplayVoice(options)
 	case "gateway":
 		return serverSideReadinessCollectionStep{Name: missing, Status: "skipped", Reason: "start gateway separately", Command: "go run ./cmd/a21 gateway --addr 127.0.0.1:21080"}
 	case "wake_word":
@@ -370,6 +378,19 @@ func collectServerSideHostVoice(options serverSideReadinessBundleOptions) server
 	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-voice-bench-*.json"})
 }
 
+func collectServerSideRoleplayVoice(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
+	step := serverSideReadinessCollectionStep{
+		Name:                "roleplay_voice_runtime",
+		Status:              "failed",
+		Command:             "go run ./cmd/a21 roleplay-voice-probe --require-ready --output-dir reports",
+		ExecutionAuthorized: true,
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"roleplay-voice-probe", "--gateway-url", options.GatewayURL, "--device-id", options.DeviceID, "--output-dir", options.OutputDir, "--require-ready"}, &stdout, &stderr)
+	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-roleplay-voice-probe-*.json"})
+}
+
 func markServerSideCollectionAbsorbed(collection serverSideReadinessCollection, report productReadinessReport) serverSideReadinessCollection {
 	for index := range collection.Steps {
 		step := &collection.Steps[index]
@@ -386,6 +407,10 @@ func markServerSideCollectionAbsorbed(collection serverSideReadinessCollection, 
 			step.AbsorbedByReadiness = step.SourceReport != "" &&
 				step.SourceReport == report.Voice.VoicePipeline.SourceReport &&
 				report.ServerSide.HostVoiceLoopbackReady
+		case "roleplay_voice_runtime":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.Roleplay.VoiceRuntimeSourceReport &&
+				report.ServerSide.RoleplayVoiceRuntimeReady
 		}
 	}
 	return collection
@@ -420,6 +445,8 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 			commands = append(commands, "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports")
 		case "host_voice_loopback":
 			commands = append(commands, "go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
+		case "roleplay_voice_runtime":
+			commands = append(commands, "go run ./cmd/a21 roleplay-voice-probe --require-ready --output-dir reports")
 		case "wake_word":
 			commands = append(commands, serverSideWakeWordCollectionCommand(report))
 		}

@@ -12866,6 +12866,77 @@ Forbidden actions avoided:
   action occurred. The CLI does not call providers directly; any provider
   runtime occurs only through the already configured Gateway path.
 
+## 2026-06-04 13:43 CST - Server-Side Roleplay Voice Runtime Gate
+
+Round goal:
+
+- Stop server-side candidate readiness from bypassing roleplay voice immersion
+  after the roleplay voice probe generator landed.
+
+Actual completed work:
+
+- Added `roleplay_voice_runtime_ready` and `roleplay_voice_source_report` to
+  `product-readiness.server_side`.
+- `server_side.missing_evidence` now includes `roleplay_voice_runtime` until a
+  matched ready `a21-roleplay-voice-probe-*.json` report is present.
+- `server-side-readiness-bundle` now exposes a `roleplay_voice` evidence block.
+- `server-side-readiness-bundle --collect-missing` now runs
+  `a21 roleplay-voice-probe --require-ready` and only absorbs the generated
+  report when `product-readiness` accepts it.
+- Updated tests so old provider/V21/host-only candidate paths require roleplay
+  voice runtime evidence, and added a direct collect-missing test for the
+  roleplay voice probe path.
+- Updated protocol, current-control, internal-test4 plan, project state, and
+  the scoped gate plan.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-server-side-roleplay-voice-runtime-gate.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This tightens the server-side launch gate; it still does not prove physical
+  wake, audible voice-clone quality, hardware expression delivery, or full PRD
+  acceptance.
+
+Known risks/blockers:
+
+- A Gateway with an incomplete roleplay voice pipeline now correctly blocks
+  server-side candidate readiness. That is intentional product gating, not a
+  process blocker.
+
+Recommended next action:
+
+- Generate live roleplay voice runtime evidence against the target Gateway,
+  rerun `server-side-readiness-bundle --collect-missing --require-candidate`,
+  then move to physical StackChan wake/playback/professional/MCP acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunServerSideReadinessBundle|TestServerSideReadinessBundle|TestRunRoleplayVoiceProbe|TestRunProductReadinessUsesLatestRoleplayVoiceRuntimeReport' -count=1`:
+  passed.
+
+Failure location/reason:
+
+- First focused run correctly exposed stale tests that expected
+  provider/V21/host evidence to be enough for server-side candidate readiness.
+  The tests were updated to include roleplay voice runtime evidence or verify
+  roleplay collection.
+
+Forbidden actions avoided:
+
+- No ECS/root-secret change, firmware build, flash, serial, NVS, report
+  deletion, prune/gc, destructive Git cleanup, or physical hardware action
+  occurred.
+
 ## 2026-06-04 14:05 CST - Roleplay Voice Runtime Evidence Ingress
 
 Round goal:
