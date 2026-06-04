@@ -17346,6 +17346,115 @@ Forbidden actions avoided:
   exposure, no Git prune/gc despite the historical loose-object warning, and
   no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 05:45 CST - Stock Professional Route Mode Gate Deployed
+
+Round goal:
+
+- Consume the full review-thread conclusion against current implementation,
+  fix any remaining software-side issue that could cause power/body/voice mode
+  confusion, redeploy ECS, and refresh product readiness without rolling back
+  internal-test3 voice protocol or the PMIC product flash.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  it to current code, deployed ECS behavior, and latest PMIC power-key flash
+  evidence.
+- Found a fresh runtime regression while re-running evidence:
+  `A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=true` routed stock `realtime` listens
+  into professional execution even when selected voice mode was roleplay.
+- Fixed the Gateway route state machine so stock professional override only
+  applies when selected voice mode is `professional`. Explicit
+  `mode=professional` and voice-triggered professional paths remain covered.
+- Committed:
+  `15a16dc fix(gateway): gate stock professional route by voice mode`.
+- Deployed `15a16dc` to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- Replayed product roleplay mode ritual and `full_check` after deploy.
+- Verified official `/stackChan/ws` remains disconnected with a correct
+  official control request returning HTTP 409, so current body evidence is
+  Xiaozhi MCP screen/head/RGB delivery rather than official typed-frame relay
+  product acceptance.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Local focused Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'StockProfessionalRoute|ProfessionalModeDoesNotUsePlaceholder|VoiceTrigger' -count=1`.
+- Local focused App tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'GatewayServerOptionsFromEnvWiresStockProfessionalRoute|XiaozhiVoiceBench|XiaozhiProfessionalBench' -count=1`.
+- `git diff --check` passed.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway/App tests passed.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback `/healthz` passed.
+
+Runtime or physical evidence:
+
+- Fresh provider smoke passed:
+  `reports/a21-provider-smoke-20260605-054222-582464591.json`.
+- Fresh roleplay runtime probe passed:
+  `reports/a21-roleplay-voice-probe-20260605-054224.json`.
+- Fresh repeat-3 Xiaozhi voice bench passed with
+  `acceptance_status=candidate_host_only`, cloud-edge product-chain execution,
+  `failure_count=0`, answer first-audio P95 `1281 ms`, and barge-in stop P95
+  `0 ms`:
+  `reports/a21-xiaozhi-voice-bench-20260605-054238.059793905.json`.
+- Fresh professional bench passed with
+  `acceptance_status=external_gateway_ready`, checking feedback `204 ms`,
+  completed read record, and `tts_stop_observed=true`:
+  `reports/a21-xiaozhi-professional-bench-20260605-054250.259403329.json`.
+- Fresh product readiness is `server_side_candidate_ready` with canonical
+  missing real evidence reduced to `physical_stackchan_prd_acceptance`:
+  `reports/a21-product-readiness-20260605-054250.json`.
+- Fresh server-side readiness bundle is `server_side_candidate_ready`,
+  `candidate_ready=true`, and `collection.status=nothing_missing`:
+  `reports/a21-server-side-readiness-bundle-20260605-054250.json`.
+- Product roleplay mode ritual trace
+  `a21-trace-mode-ritual-route-fix-15a16dc-20260605` returned HTTP 200
+  `status=delivered`.
+- Product `full_check` trace
+  `a21-trace-full-check-route-fix-15a16dc-20260605` returned HTTP 200
+  `status=delivered` with 16 paced steps.
+- Public hardware acceptance remains `overall_status=physical_pending` for
+  `mode_ritual`, `full_check`, and `power_lifecycle`.
+- Public power lifecycle remains `overall_status=physical_pending`,
+  `xiaozhi_ws_online=true`, and `battery_telemetry=missing`.
+
+Remaining issues:
+
+- User/operator physical acceptance is still required for no-cable cold boot,
+  physical power-button start, visible mode ritual, visible full-check body
+  sequence, audible natural microphone voice chain, custom wake, and overall
+  physical StackChan PRD acceptance.
+- Official `/stackChan/ws` avatar/action relay remains disconnected and is not
+  product accepted.
+- Battery telemetry is still missing in power lifecycle status.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+
+Next suggested action:
+
+- Have the operator perform the physical acceptance window: unplug USB, use
+  the power button, confirm Gateway/Xiaozhi reconnect, then from `/workspace`
+  observe and accept the latest mode ritual and full-check sequence. After
+  physical acceptance, continue with official `/stackChan/ws` lifecycle/relay
+  parity as the next software transition.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret printing, no generic
+  `xiaozhi.bin` product flash lane, no camera/NFC/IR expansion, no reboot/OTA
+  exposure, no Git prune/gc despite the historical loose-object warning, and
+  no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 03:45 CST - Mode Ritual Physical Acceptance Surface Deployed
 
 Round goal:

@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD at the latest product PMIC power-key parity flash:
-  `fda7769 fix(firmware): restore stackchan power key pmic config`
+- Current source HEAD after the latest route-gating remediation:
+  `15a16dc fix(gateway): gate stock professional route by voice mode`
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +70,67 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read and
+  compared against current implementation after the PMIC flash evidence. A new
+  runtime regression was found during fresh ECS readiness: enabling
+  `A21_XIAOZHI_STOCK_PROFESSIONAL_ROUTE=true` made stock `realtime` listen
+  turns enter professional routing even while A21's selected voice mode was
+  roleplay.
+- Commit `15a16dc fix(gateway): gate stock professional route by voice mode`
+  is deployed on ECS through `/opt/a21.next` safe swap. The stock professional
+  route now requires the A21 selected voice mode to be `professional`; default
+  roleplay stock turns stay on the normal voice pipeline. Explicit
+  `mode=professional` and voice-triggered professional routes remain covered.
+- Local verification passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'StockProfessionalRoute|ProfessionalModeDoesNotUsePlaceholder|VoiceTrigger' -count=1`,
+  `GOMAXPROCS=2 go test ./internal/app -run 'GatewayServerOptionsFromEnvWiresStockProfessionalRoute|XiaozhiVoiceBench|XiaozhiProfessionalBench' -count=1`,
+  `git diff --check`, and `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway/App tests passed, remote build
+  passed, `a21-gateway.service` restarted active, and loopback `/healthz`
+  passed.
+- Fresh real provider smoke passed:
+  `reports/a21-provider-smoke-20260605-054222-582464591.json`.
+- Fresh roleplay runtime probe passed:
+  `reports/a21-roleplay-voice-probe-20260605-054224.json`.
+- Fresh repeat-3 Xiaozhi voice bench after the route fix passed with
+  `acceptance_status=candidate_host_only`, `failure_count=0`, cloud-edge
+  product-chain execution, answer first-audio P95 `1281 ms`, and barge-in stop
+  P95 `0 ms`:
+  `reports/a21-xiaozhi-voice-bench-20260605-054238.059793905.json`.
+- Fresh professional bench passed with `acceptance_status=external_gateway_ready`,
+  checking feedback `204 ms`, `read_record.status=completed`, and
+  `tts_stop_observed=true`:
+  `reports/a21-xiaozhi-professional-bench-20260605-054250.259403329.json`.
+- Fresh product readiness is now `server_side_candidate_ready` with
+  canonical missing real evidence reduced to `physical_stackchan_prd_acceptance`
+  only:
+  `reports/a21-product-readiness-20260605-054250.json`.
+- Fresh server-side readiness bundle is `server_side_candidate_ready`,
+  `candidate_ready=true`, and `collection.status=nothing_missing`:
+  `reports/a21-server-side-readiness-bundle-20260605-054250.json`.
+- Product roleplay mode ritual was replayed after deploy:
+  `a21-trace-mode-ritual-route-fix-15a16dc-20260605` returned HTTP 200
+  `status=delivered`, `selected_voice_mode=roleplay`, and 4 steps.
+- Product `full_check` was replayed after deploy:
+  `a21-trace-full-check-route-fix-15a16dc-20260605` returned HTTP 200
+  `status=delivered`, 16 steps, `step_delay_ms=180`, and
+  `total_planned_delay_ms=2700`.
+- Public hardware acceptance still returns `overall_status=physical_pending`.
+  `mode_ritual`, `full_check`, and `power_lifecycle` are delivered but not
+  physically accepted.
+- Public power lifecycle still returns `overall_status=physical_pending`,
+  `xiaozhi_ws_online=true`, and `battery_telemetry=missing`.
+- Official `/stackChan/ws` relay remains disconnected. A correct
+  `/v1/stackchan/official/control` request returned HTTP 409
+  `official stackchan websocket is not connected`. Current body evidence is
+  therefore Xiaozhi MCP screen/head/RGB delivery, not official typed-frame
+  avatar/action relay product acceptance.
+- No firmware flash, no NVS write, no provider secret output, no generic
+  `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
+  voice/protocol rollback occurred.
 
 Live truth after the 2026-06-05 05:31 CST StackChan PMIC power-key parity
 product flash:
