@@ -15257,3 +15257,155 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider secret printing, no provider
   key in firmware, no V21 internal execution, no generic `xiaozhi.bin` product
   flash, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-04 23:34 CST - Xiaozhi Reconnect Registry Fixed, Natural Audio Still Blocked
+
+Round goal:
+
+- Move from stale-socket/tooling diagnosis to real product-device natural
+  voice acceptance without losing the state/body evidence thread.
+
+Actual completed work:
+
+- Pushed commit `5852e20`:
+  `fix(gateway): restore xiaozhi online status after reconnect`.
+- Deployed the branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs` to ECS
+  `47.103.57.217`.
+- Fixed `/v1/devices` behavior so fresh product Xiaozhi hello, heartbeat,
+  playback, touch, and state-reaction activity restore
+  `connection_status=online` after a prior socket-close
+  `xiaozhi_ws_disconnected` mark.
+- Recovered device `44:1b:f6:e2:6a:60` with read-only chip-id plus hard-reset;
+  no firmware flash, no NVS write, and no serial write command was run.
+- Confirmed live public direct-source device snapshots now show stable
+  `online` heartbeat after reconnect.
+- Reran physical evidence after the tooling fix and collected serial
+  diagnostics for the remaining natural voice blocker.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+
+Tests/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiDeviceRegistryMarksSocketDisconnectedOnClose|TestXiaozhiDeviceRegistryRestoresOnlineAfterReconnect|TestXiaozhiProductKeepaliveEventsAllowanceRecordsHeartbeat|TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart|TestXiaozhiProductTouchEventsAllowanceRecordsTouch|TestXiaozhiProductStateReactions' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify` passed before deployment.
+- ECS remote focused tests, remote Go build, `a21-gateway` restart, and
+  local `/healthz` passed after deployment.
+
+Runtime evidence and blocker:
+
+- Live `xiaozhi-physical-evidence` with
+  `A21_DIRECT_SOURCE_IP=192.168.1.20` now finds the device online and no longer
+  stops at `gateway data unsafe`.
+- The current live blocked report still has `audio_frame_count=0`, with no
+  Opus decode, PCM ingress, VAD speech end, listen auto-stop, TTS downlink,
+  playback ack, or audible observation.
+- Serial evidence during a controlled wake/listen attempt showed wake-word
+  detection, Gateway reconnect/listen start, and official MCP state-reaction
+  execution, but the device transitioned `listening -> idle` almost
+  immediately and only later logged wake-word Opus packet encoding.
+- The narrowed suspect is the current stock-physical server `type=listen`
+  reply suppression invariant. It must be tested with a product-gated,
+  default-off path, not by rolling back internal test 3 protocol behavior.
+
+Unfinished items:
+
+- Implement and test a minimal product-gated listen-reply trial path.
+- Enable it on ECS only after local regression tests pass.
+- Rerun natural microphone physical evidence and half-duplex acceptance.
+
+Recommended next action:
+
+- Add `A21_XIAOZHI_PRODUCT_LISTEN_REPLIES` as a separate runtime gate for
+  hardware-MAC product Xiaozhi clients, preserve the default suppression
+  behavior, deploy it, and run one controlled physical audio-ingress trial.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret printing, no provider
+  key in firmware, no V21 internal execution, no generic `xiaozhi.bin` product
+  flash, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-04 23:48 CST - Xiaozhi Wake Control-Channel Overlay Root Cause
+
+Round goal:
+
+- Fix the first concrete cause of natural audio ingress failure without
+  changing Gateway provider routing, Xiaozhi listen suppression, NVS, or
+  internal test 3 voice protocol behavior.
+
+Actual completed work:
+
+- Investigated the current listen-reply suppression hypothesis against the
+  official Xiaozhi WebSocket/Application code. Server `type=listen` replies are
+  not consumed by the official Application handler, so that is not the first
+  repair target.
+- Found a firmware overlay hunk-context bug: the intended
+  `ContinueWakeWordInvoke` idle-control-channel repair could match a nearby
+  helper with the same comment, leaving the actual wake continuation path in
+  its old `Connecting`-only state.
+- Tightened the overlay hunk with the
+  `Application::ContinueWakeWordInvoke` function signature.
+- Added a targeted host test that requires the exact wake-function hunk, so a
+  future nearby-helper false positive fails locally.
+- Fixed an unrelated doctor-test false positive where a generated timestamp
+  containing `7891` could be mistaken for a leaked provider proxy port. The
+  test still blocks the full proxy URL, host:port, and secret value.
+- Rebuilt the official-compatible product artifact without hardware write.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `internal/app/app_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady|TestRunXiaozhiPhysicalEvidence|TestGatewayServerOptionsFromEnvWiresProduct' -count=1`
+  passed.
+- `go test ./internal/app -run 'TestRunDoctorIncludesProviderNetworkPolicy|TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify` passed.
+- `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`
+  passed with report
+  `reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json`
+  and product app SHA-256
+  `e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305`.
+- Post-build source inspection confirmed
+  `ContinueWakeWordInvoke` now allows
+  `state == kDeviceStateIdle && protocol_->IsAudioChannelOpened()`.
+
+Runtime evidence and blocker:
+
+- A guarded product flash attempt correctly stopped before hardware write
+  because the tracked worktree was dirty. This is a guard success, not a
+  hardware failure.
+
+Unfinished items:
+
+- Commit this root-cause repair.
+- Rerun the guarded product-lane flash command against `/dev/cu.usbmodem1101`.
+- After reboot/reconnect, run a natural wake/speak acceptance attempt and
+  rerun `xiaozhi-physical-evidence` plus `stackchan-accept --check
+  xiaozhi-half-duplex`.
+
+Recommended next action:
+
+- Commit/push, execute
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute` with the product
+  confirmation token, then collect audio ingress evidence with the TUN-safe
+  `A21_DIRECT_SOURCE_IP=192.168.1.20` path.
+
+Forbidden actions avoided:
+
+- No firmware flash completed while the worktree was dirty, no NVS write, no
+  provider secret printing, no provider key in firmware, no V21 internal
+  execution, no generic `xiaozhi.bin` product flash, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.

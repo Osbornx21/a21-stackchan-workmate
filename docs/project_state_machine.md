@@ -280,6 +280,59 @@ Xiaozhi physical acceptance tooling update, 2026-06-04:
   then rerun `xiaozhi-physical-evidence`,
   `stackchan-accept --check xiaozhi-half-duplex`, and the explicit PRD review.
 
+Xiaozhi reconnect registry repair and natural-voice blocker, 2026-06-04:
+
+- `T-XIAOZHI-DEVICE-RECONNECT-REGISTRY-001` repaired a live regression where
+  the stale-socket fix correctly marked a closed product Xiaozhi socket as
+  `xiaozhi_ws_disconnected`, but a later hello/heartbeat from the same device
+  did not always restore `connection_status=online`.
+- Gateway now promotes active product Xiaozhi hello, heartbeat, playback,
+  touch, and state-reaction activity back to `online`, and `/v1/devices`
+  snapshots also treat a live Xiaozhi socket as online before applying
+  freshness checks.
+- Commit `5852e20` was pushed and deployed to ECS. Remote focused tests,
+  remote build, service restart, and health probe passed.
+- Read-only chip-id/hard-reset recovery brought device
+  `44:1b:f6:e2:6a:60` back online without firmware flash or NVS write.
+  Subsequent direct-source public checks showed stable `online` heartbeats.
+- Natural microphone PRD acceptance remains blocked for a narrower reason:
+  live evidence now finds the device online, wake/listen trace markers, and
+  state-reaction MCP delivery, but still records zero audio ingress frames.
+  Serial evidence shows wake detection followed by a near-immediate
+  `listening -> idle` transition, before wake-word Opus packets are logged.
+- The active next transition is
+  `T-XIAOZHI-NATURAL-AUDIO-INGRESS-ROOTCAUSE-001`: test whether the current
+  stock-physical server `type=listen` reply suppression is preventing the
+  official-compatible product firmware from staying in listening/audio-upload
+  state. Any change must be product-gated and default-off until physical
+  evidence proves it.
+
+Xiaozhi wake/control-channel overlay root cause, 2026-06-04:
+
+- `T-XIAOZHI-WAKE-CONTROL-CHANNEL-OVERLAY-001` identified the actual first
+  repair for natural audio ingress. The stock-physical listen-reply
+  suppression hypothesis is now lower confidence because the official
+  Application runtime does not consume server `type=listen` replies.
+- The official-compatible overlay intended to allow wake continuation when the
+  device is `Idle` and the quiet control websocket is already open. However,
+  its hunk context was too weak and could match the nearby
+  `ContinueOpenAudioChannel` helper instead of
+  `Application::ContinueWakeWordInvoke`.
+- The overlay now includes the `ContinueWakeWordInvoke` function signature in
+  the hunk context, and the host test checks the exact targeted hunk. This
+  prevents future builds from falsely passing while leaving the wake path in
+  the old `Connecting`-only state.
+- `GOMAXPROCS=2 make verify` passed. Guarded product no-flash build passed
+  with report
+  `reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json`
+  and app SHA-256
+  `e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305`.
+- Build-source inspection confirms
+  `ContinueWakeWordInvoke` now accepts
+  `state == kDeviceStateIdle && protocol_->IsAudioChannelOpened()`.
+- Product-lane flash is pending after the code/docs commit because the flash
+  guard correctly refused to write hardware while tracked files were dirty.
+
 Active child transitions:
 
 - `T-WAKE-003-ZI-YUE-PHRASE-TUNING`

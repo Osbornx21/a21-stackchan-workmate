@@ -372,6 +372,17 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing A21 idle socket contract %q", required)
 		}
 	}
+	targetedWakeInvokeHunk := strings.Join([]string{
+		` void Application::ContinueWakeWordInvoke(const std::string& wake_word) {`,
+		`     // Check state again in case it was changed during scheduling`,
+		`-    if (GetDeviceState() != kDeviceStateConnecting) {`,
+		`+    auto state = GetDeviceState();`,
+		`+    if (state != kDeviceStateConnecting && !(state == kDeviceStateIdle && protocol_->IsAudioChannelOpened())) {`,
+		`         return;`,
+	}, "\n")
+	if !strings.Contains(overlay, targetedWakeInvokeHunk) {
+		t.Fatal("official Xiaozhi-compatible overlay must patch ContinueWakeWordInvoke itself, not only a nearby helper with similar context")
+	}
 	forbiddenAdded := []string{
 		`+                ContinueOpenAudioChannel(kListeningModeManualStop);`,
 		`+        SetListeningMode(kListeningModeManualStop);`,

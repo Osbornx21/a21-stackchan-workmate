@@ -269,6 +269,64 @@ Live truth after the 2026-06-04 22:48 CST StackChan touch body-reaction cut:
   infrared, no-cable boot/power, app lifecycle, or full PRD physical
   acceptance.
 
+Live truth after the 2026-06-04 23:34 CST Xiaozhi reconnect/voice diagnosis:
+
+- Gateway commit `5852e20` is deployed on ECS and fixes a registry regression
+  introduced by the stale-socket guard: a fresh product Xiaozhi hello or
+  heartbeat now restores `connection_status=online` after the previous socket
+  was marked `xiaozhi_ws_disconnected`.
+- ECS remote focused Gateway tests, remote Go build, `a21-gateway` restart,
+  and local `/healthz` passed. The deployment used the existing source-bound
+  SSH path and did not touch provider secrets.
+- Device `44:1b:f6:e2:6a:60` was recovered with read-only chip-id plus
+  hard-reset only. After reconnect, `/v1/devices` showed stable
+  `connection_status=online` with `xiaozhi.hello` and later
+  `device.heartbeat`.
+- The physical evidence tooling fix now works: live
+  `xiaozhi-physical-evidence` reports the device online instead of
+  `gateway data unsafe`. The current blocked report is honest: audio frame
+  count is still zero and the trace still lacks Opus decode, PCM ingress, VAD
+  speech end, TTS downlink, playback ack, and audible observation.
+- Serial capture during a controlled wake/listen attempt showed wake-word
+  detection, Gateway reconnect/listen start, and official MCP state-reaction
+  execution, but the device transitioned `listening -> idle` almost
+  immediately and only then logged wake-word Opus packet encoding. The next
+  active root-cause thread is Xiaozhi natural audio ingress, with special
+  attention to the current stock-physical server `type=listen` reply
+  suppression invariant.
+- This is a runtime blocker diagnosis, not a rollback authorization. Internal
+  test 3 voice protocol changes, provider routing, product flash guards,
+  keepalive, touch, and body-reaction cuts remain preserved.
+
+Live truth after the 2026-06-04 23:48 CST Xiaozhi wake overlay root-cause cut:
+
+- Root-cause review rejected the first listen-reply hypothesis: the official
+  Xiaozhi WebSocket runtime forwards non-hello JSON to Application, and the
+  Application handler does not process server `type=listen` replies.
+- The stronger firmware-side root cause was an overlay hunk with weak context.
+  The intended A21 idle-control-channel fix for
+  `Application::ContinueWakeWordInvoke` actually matched a nearby helper with
+  the same comment, so the product wake path could still return early when
+  the device was `Idle` and the quiet control websocket was already open.
+- The overlay now carries function-signature context so `git apply --recount`
+  patches `ContinueWakeWordInvoke` itself. A targeted host test checks this
+  exact hunk and prevents the old false positive.
+- `GOMAXPROCS=2 make verify` passed after the overlay/test repair. A flaky
+  doctor test was also tightened so it rejects full provider proxy URLs and
+  secrets without treating arbitrary timestamp digits as a proxy leak.
+- Guarded no-flash product build passed:
+  `reports/a21-stackchan-official-baseline-20260604-234848-1780588128571683000.json`.
+  The rebuilt app artifact is
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  with SHA-256
+  `e8880adbe7982a2e59bf58319d34097cbc16fbfcc2988975c0a19e186d32b305`.
+- Post-build source inspection confirmed
+  `ContinueWakeWordInvoke` now accepts
+  `state == kDeviceStateIdle && protocol_->IsAudioChannelOpened()`. The first
+  guarded flash attempt correctly stopped before hardware write because the
+  tracked worktree was dirty. Next step is to commit this repair, rerun the
+  product-lane flash guard, and collect natural audio ingress evidence.
+
 ## Active Transition
 
 Current active plan:

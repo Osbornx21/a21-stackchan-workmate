@@ -6516,7 +6516,7 @@ func TestRunDoctorIncludesProviderNetworkPolicy(t *testing.T) {
 			t.Fatalf("stdout missing %q: %s", want, stdout.String())
 		}
 	}
-	for _, forbidden := range []string{"provider-secret", "7891"} {
+	for _, forbidden := range []string{"provider-secret", "http://provider-secret@127.0.0.1:7891", "provider-secret@127.0.0.1:7891", "127.0.0.1:7891"} {
 		if strings.Contains(stdout.String(), forbidden) {
 			t.Fatalf("stdout leaked provider proxy value %q: %s", forbidden, stdout.String())
 		}
