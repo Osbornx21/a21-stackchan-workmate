@@ -352,6 +352,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="clearRoleplayMemory"`,
 		`id="roleplaySoulReadout"`,
 		`id="roleplayMemoryReadout"`,
+		`id="roleplayExpressionReadout"`,
 		`id="registryRoleplayProfile"`,
 		`id="registryRoleplayScenario"`,
 		`id="registryRoleplayMemory"`,
@@ -1202,6 +1203,91 @@ func TestRoleplayProfileEndpointSelectsSoulProfileAndReturnsSafeCatalog(t *testi
 			t.Fatalf("roleplay profile leaked prompt/private text %q: %s", forbidden, rec.Body.String())
 		}
 	}
+}
+
+func TestRoleplayProfileEndpointReturnsOfficialExpressionPlanWithoutSendingHardware(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{
+		"roleplay_profile":"a21_roleplay_wry_peer",
+		"scenario":"engineer_pushback",
+		"voice_clone_profile":"a21_voice_clone_default",
+		"memory_hints":["角色语气只给短句","https://secret.example/leak"]
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response RoleplayProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	plan := response.ExpressionPlan
+	if plan.SchemaVersion != "a21.roleplay_expression_plan.v1" ||
+		plan.Adapter != "official_stackchan_action_plan" ||
+		plan.DeliveryPolicy != "no_send_plan_only" ||
+		plan.RoleplayProfile != "a21_roleplay_wry_peer" ||
+		plan.Scenario != "engineer_pushback" ||
+		plan.VoiceCloneProfile != "a21_voice_clone_default" ||
+		!plan.MemoryReady ||
+		plan.MemoryHintCount != 1 ||
+		plan.PhysicalAccepted ||
+		plan.ActionCount != 4 ||
+		plan.PacketCount != 6 {
+		t.Fatalf("expression plan = %+v", plan)
+	}
+	if plan.Redaction.PromptTextStored ||
+		plan.Redaction.MemoryTextStored ||
+		plan.Redaction.TranscriptStored ||
+		plan.Redaction.ProviderOutputStored ||
+		plan.Redaction.AudioStored ||
+		plan.Redaction.VoiceCloneSampleStored {
+		t.Fatalf("expression redaction = %+v, want no stored private payloads", plan.Redaction)
+	}
+	if !roleplayExpressionPhase(plan.Actions, "baseline_posture", "state", "listening") ||
+		!roleplayExpressionPhase(plan.Actions, "role_soul", "face", "happy") ||
+		!roleplayExpressionPhase(plan.Actions, "scenario_emphasis", "state", "thinking") ||
+		!roleplayExpressionPhase(plan.Actions, "memory_cue", "motion", "nod") {
+		t.Fatalf("expression actions = %+v", plan.Actions)
+	}
+	if plan.Surfaces["role_soul_avatar"] != "happy" ||
+		plan.Surfaces["scenario_emphasis_avatar"] != "thinking" ||
+		plan.Surfaces["memory_cue_motion"] != "official_pitch_sequence" ||
+		plan.Surfaces["baseline_posture_packet_contract"] != "official_stackchan_binary" {
+		t.Fatalf("expression surfaces = %+v", plan.Surfaces)
+	}
+	for _, action := range plan.Actions {
+		if action.PhysicalAccepted {
+			t.Fatalf("action = %+v, must not claim physical acceptance", action)
+		}
+		if action.PacketCount <= 0 {
+			t.Fatalf("action = %+v, want official packet metadata", action)
+		}
+	}
+	for _, forbidden := range []string{
+		"角色语气只给短句",
+		"secret.example",
+		"Role Soul: Wry Peer",
+		"provider output",
+		"voice clone sample",
+		"http://",
+		"https://",
+	} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("roleplay expression plan leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func roleplayExpressionPhase(actions []RoleplayExpressionAction, phase string, event string, value string) bool {
+	for _, action := range actions {
+		if action.Phase == phase && action.Event == event && action.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRoleplayProfileEndpointSetsRuntimeMemoryHintsForFastCompanion(t *testing.T) {

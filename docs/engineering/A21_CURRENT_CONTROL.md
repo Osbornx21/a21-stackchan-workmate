@@ -1208,3 +1208,32 @@ Current conclusion:
   providers, V21, or voice-clone CLI; it does not start Gateway as a service,
   deploy ECS, build/flash firmware, write serial/NVS, or prove physical
   StackChan roleplay audio/visual acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Official Expression Plan
+
+Roleplay identity now has a safe host-side expression plan instead of stopping
+at hidden prompt/device-state metadata.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-official-expression-plan.md`.
+- `/v1/roleplay-profile` now returns `expression_plan` with schema
+  `a21.roleplay_expression_plan.v1`.
+- The plan maps baseline posture, selected role soul, scenario emphasis, and
+  memory cue phases to existing official StackChan action-plan metadata.
+- The simulator shows the expression delivery policy plus action and packet
+  counts.
+- The plan records only safe profile/scenario/voice-clone IDs, memory
+  readiness/count, event kinds, event values, packet counts, official semantic
+  surfaces, and redaction flags.
+
+Current conclusion:
+
+- Roleplay is one step closer to embodied expression because the Gateway can
+  now describe which official StackChan semantics should represent the selected
+  role state.
+- This is still a no-send contract with
+  `delivery_policy=no_send_plan_only` and `physical_accepted=false`. It does
+  not execute providers, V21, voice-clone CLI, Gateway runtime delivery,
+  `/stackChan/ws`, firmware, serial, NVS, ECS, or physical hardware action.

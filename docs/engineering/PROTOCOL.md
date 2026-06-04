@@ -571,6 +571,18 @@ endpoint also updates the existing
 `voice_chain_profile` selection so roleplay voice clone reaches the selected
 TTS boundary without adding a second provider selector. Scenario options are
 playbook labels under the roleplay product mode, not new product modes.
+The response also includes `expression_plan` with schema
+`a21.roleplay_expression_plan.v1`: a no-send official StackChan action plan
+built from the selected role soul, scenario, memory readiness, and
+voice-clone profile. It uses the existing official StackChan action adapter
+metadata only, reports action phases, packet counts, semantic surfaces, and
+redaction flags, and keeps `delivery_policy=no_send_plan_only` with
+`physical_accepted=false` until a separate foreground hardware window proves
+screen/avatar/motion/RGB/servo behavior. The expression plan may expose only
+safe profile/scenario/voice-clone IDs, memory readiness/counts, event kinds,
+bounded event values, packet counts, and official surface names; it must not
+store or return prompt text, memory text, transcripts, provider output, audio,
+voice-clone samples, local paths, URLs, credentials, or V21 evidence.
 
 The roleplay runtime composes personality prompt input only in memory and only
 from the selected role soul, mode prompt, scenario, and safe memory hints

@@ -461,6 +461,7 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">A21 natural voice</div></div>
           <div class="metric"><label>Soul</label><div id="roleplaySoulReadout">A21 desk workmate</div></div>
           <div class="metric"><label>Memory</label><div id="roleplayMemoryReadout">empty / 0</div></div>
+          <div class="metric"><label>Expression</label><div id="roleplayExpressionReadout">no-send / 0</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
         <section class="visibility" aria-label="Office Visibility">
@@ -601,6 +602,7 @@ const simulatorHTML = `<!doctype html>
       voiceCloneProfileReadout: document.getElementById('voiceCloneProfileReadout'),
       roleplaySoulReadout: document.getElementById('roleplaySoulReadout'),
       roleplayMemoryReadout: document.getElementById('roleplayMemoryReadout'),
+      roleplayExpressionReadout: document.getElementById('roleplayExpressionReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
       privacyBadge: document.getElementById('privacyBadge'),
@@ -788,6 +790,9 @@ const simulatorHTML = `<!doctype html>
       const memory = catalog.memory || {};
       const count = (memory.user_preference_count || 0) + (memory.session_memory_count || 0);
       ui.roleplayMemoryReadout.textContent = (memory.status || 'empty') + ' / ' + count;
+      const expression = catalog.expression_plan || {};
+      const policy = expression.delivery_policy || 'no_send_plan_only';
+      ui.roleplayExpressionReadout.textContent = policy + ' / ' + (expression.action_count || 0) + ' actions / ' + (expression.packet_count || 0) + ' packets';
     }
     function setProfessionalWorkspace(catalog) {
       const selectedScope = catalog.selected_query_scope || 'public_only';

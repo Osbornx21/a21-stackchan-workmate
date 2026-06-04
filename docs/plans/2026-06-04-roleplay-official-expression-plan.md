@@ -1,6 +1,6 @@
 # 2026-06-04 - Roleplay Official Expression Plan
 
-Status: active control plan.
+Status: completed and verified.
 Owner: A21 control tower.
 Transition: `T-INTERNAL-TEST4-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-001`.
 
@@ -65,6 +65,24 @@ Forbidden:
 - `physical_accepted` remains false for every action and the aggregate plan.
 - Focused Gateway tests, `git diff --check`, and `GOMAXPROCS=2 make verify`
   pass.
+
+## Execution Update - 2026-06-04
+
+- Gateway `RoleplayProfileResponse` now includes `expression_plan`.
+- The plan uses `stackchantransport.BuildOfficialActionPlan` for all phases and
+  aggregates packet count plus phase-prefixed official semantic surfaces.
+- Default phases include baseline posture, role soul expression, and scenario
+  emphasis; memory-ready state adds a memory cue.
+- Selected `a21_roleplay_wry_peer` maps to the official happy face metadata;
+  `engineer_pushback` maps to thinking state metadata; memory-ready state maps
+  to the official nod motion metadata.
+- The simulator roleplay panel shows the no-send policy, action count, and
+  packet count.
+- The response redaction policy states that prompt text, memory text,
+  transcripts, provider output, audio, and voice-clone samples are not stored.
+- `physical_accepted` remains false for every action and the aggregate plan.
+- No `/stackChan/ws`, `/v1/stackchan/official/control`, serial, NVS, firmware,
+  ECS, provider, V21, voice-clone CLI, or audio playback action occurred.
 
 ## Handoff Format
 

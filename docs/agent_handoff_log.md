@@ -11144,6 +11144,80 @@ Failure location/reason:
 
 - None; this round intentionally stopped at a recovery handoff.
 
+## 2026-06-04 11:36 CST - Roleplay Official Expression Plan
+
+Transition:
+
+- `T-INTERNAL-TEST4-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-001`
+
+What changed:
+
+- Added a safe no-send `expression_plan` to `/v1/roleplay-profile`.
+- The plan uses existing official StackChan action metadata for baseline
+  posture, role soul, scenario emphasis, and memory cue phases.
+- Selected `a21_roleplay_wry_peer` + `engineer_pushback` + memory-ready state
+  now maps to official happy/thinking/nod metadata with packet counts and
+  phase-prefixed surfaces.
+- The simulator roleplay panel now displays the expression delivery policy,
+  action count, and packet count.
+- Protocol, internal test 4 plan, current control, and state machine now record
+  that this is no-send host-local expression planning rather than hardware
+  delivery or physical acceptance.
+
+Files changed:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-roleplay-official-expression-plan.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestSimulatorPageServed|TestRoleplayProfileEndpointReturnsOfficialExpressionPlanWithoutSendingHardware|TestRoleplayProfileEndpointSelectsSoulProfile|TestRoleplayProfileEndpointPersistsScenarioVoiceClone|TestRoleplayProfileEndpointSetsRuntimeMemoryHints|TestRoleplayProfileEndpointSelectsSoulProfileAndReturnsSafeCatalog' -count=1`:
+  passed.
+- `go test ./internal/transport/stackchan -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- None. This round did not start Gateway, send StackChan action packets, run
+  provider/V21/voice-clone execution, play audio, flash firmware, write NVS, or
+  touch physical hardware.
+
+Deviations from plan:
+
+- None. The implementation stayed within host-side Gateway response,
+  simulator, tests, and control docs.
+
+Remaining issues:
+
+- This is not hardware expression delivery and not roleplay physical
+  acceptance.
+- Screen/avatar/motion/RGB/servo proof still needs a foreground hardware
+  window and must keep `physical_accepted=false` until that evidence exists.
+- The bigger product gaps remain web/app workspace UX, real indexing,
+  persistent account/device binding, V21 release/ACL, custom wake proof, and
+  full StackChan PRD acceptance.
+
+Next suggested action:
+
+- Move from safe host contracts to visible product progress: either build the
+  web/app workspace UI over the existing Gateway APIs, implement the real
+  stored-document indexing adapter path, or schedule the foreground hardware
+  window for expression/touch/barge-in evidence.
+
+Forbidden actions avoided:
+
+- No `/stackChan/ws`, `/v1/stackchan/official/control`, provider, V21,
+  voice-clone CLI, audio playback, Gateway service start, ECS, firmware,
+  serial, NVS, prune/gc, or physical hardware action occurred.
+
 ## 2026-06-04 11:09 CST - Environment Switch Handoff And Product Gap Report
 
 Round goal:
@@ -12190,3 +12264,50 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 11:40 CST - Latest Recovery Pointer
+
+Round goal:
+
+- Keep the newest recovery signal at the end of the handoff log after earlier
+  entries landed above older records.
+
+Actual completed work:
+
+- The current latest implementation transition is
+  `2026-06-04 11:36 CST - Roleplay Official Expression Plan` in this log.
+- The current no-repeat environment handoff is
+  `docs/handoffs/2026-06-04-a21-internal-test4-environment-switch-handoff.md`.
+- Next environment should read that handoff, then current `git status`, then
+  continue from HEAD instead of redoing internal test 3 or old worker branch
+  audits.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Product-visible gaps remain web/app workspace UX, real indexing, persistent
+  account/device binding, V21 release/ACL, custom wake proof, and full
+  StackChan PRD physical acceptance.
+
+Known risks/blockers:
+
+- Historical Git loose-object/gc warnings may still appear; no prune/gc action
+  should be taken in this flow.
+
+Recommended next action:
+
+- Commit/push the verified roleplay expression-plan slice, then move to a
+  visibly user-facing product surface or a foreground hardware evidence window.
+
+Test/build/runtime results:
+
+- This pointer adds no code or runtime behavior.
+- Fresh final `git diff --check` after this pointer: passed.
+- Fresh final `GOMAXPROCS=2 make verify` after this pointer: passed.
+
+Failure location/reason:
+
+- None.

@@ -148,6 +148,13 @@ StackChan hardware.
   registry panel. It records only IDs, booleans, counts, and non-storage flags;
   it does not expose prompt bodies, memory text, transcripts, provider output,
   voice-clone samples, or physical acceptance.
+- Roleplay official expression planning now exposes a safe no-send
+  `expression_plan` in `/v1/roleplay-profile`. The plan maps the selected role
+  soul, scenario, memory readiness, and voice-clone profile to existing
+  official StackChan action metadata with action phases, packet counts,
+  semantic surfaces, and redaction flags. It keeps
+  `delivery_policy=no_send_plan_only` and `physical_accepted=false`; it is not
+  hardware delivery or roleplay physical acceptance.
 
 ## Product Form
 

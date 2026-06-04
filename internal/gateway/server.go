@@ -250,8 +250,44 @@ type RoleplayProfileResponse struct {
 	SelectedVoiceCloneProfile string                  `json:"selected_voice_clone_profile"`
 	Memory                    personality.MemoryState `json:"memory"`
 	Runtime                   RoleplayRuntimeSummary  `json:"runtime"`
+	ExpressionPlan            RoleplayExpressionPlan  `json:"expression_plan"`
 	Profiles                  []RoleplayProfileOption `json:"profiles"`
 	Scenarios                 []RoleplayProfileOption `json:"scenarios"`
+}
+
+type RoleplayExpressionPlan struct {
+	SchemaVersion     string                      `json:"schema_version"`
+	Adapter           string                      `json:"adapter"`
+	DeliveryPolicy    string                      `json:"delivery_policy"`
+	RoleplayProfile   string                      `json:"roleplay_profile"`
+	Scenario          string                      `json:"scenario"`
+	VoiceCloneProfile string                      `json:"voice_clone_profile"`
+	MemoryReady       bool                        `json:"memory_ready"`
+	MemoryHintCount   int                         `json:"memory_hint_count"`
+	ActionCount       int                         `json:"action_count"`
+	PacketCount       int                         `json:"packet_count"`
+	PhysicalAccepted  bool                        `json:"physical_accepted"`
+	Actions           []RoleplayExpressionAction  `json:"actions"`
+	Surfaces          map[string]string           `json:"surfaces,omitempty"`
+	Redaction         RoleplayExpressionRedaction `json:"redaction"`
+}
+
+type RoleplayExpressionAction struct {
+	Phase            string            `json:"phase"`
+	Event            string            `json:"event"`
+	Value            string            `json:"value"`
+	PacketCount      int               `json:"packet_count"`
+	PhysicalAccepted bool              `json:"physical_accepted"`
+	Surfaces         map[string]string `json:"surfaces,omitempty"`
+}
+
+type RoleplayExpressionRedaction struct {
+	PromptTextStored       bool `json:"prompt_text_stored"`
+	MemoryTextStored       bool `json:"memory_text_stored"`
+	TranscriptStored       bool `json:"transcript_stored"`
+	ProviderOutputStored   bool `json:"provider_output_stored"`
+	AudioStored            bool `json:"audio_stored"`
+	VoiceCloneSampleStored bool `json:"voice_clone_sample_stored"`
 }
 
 type RoleplayRuntimeSummary struct {
@@ -1656,6 +1692,7 @@ func (s *Server) roleplayProfileResponse(override RoleplayProfileSelectionReques
 	if err != nil {
 		return RoleplayProfileResponse{}, err
 	}
+	expressionPlan := roleplayExpressionPlan(summary)
 	return RoleplayProfileResponse{
 		SchemaVersion:             RoleplayProfileSchemaVersion,
 		Service:                   DeviceRegistryServiceName,
@@ -1664,6 +1701,7 @@ func (s *Server) roleplayProfileResponse(override RoleplayProfileSelectionReques
 		SelectedVoiceCloneProfile: summary.VoiceCloneProfile,
 		Memory:                    memory,
 		Runtime:                   summary,
+		ExpressionPlan:            expressionPlan,
 		Profiles:                  roleplayProfileOptions(summary.RoleplayProfile),
 		Scenarios:                 roleplayScenarioOptions(summary.Scenario),
 	}, nil
@@ -1780,6 +1818,119 @@ func roleplayDeviceRuntimeEcho(state roleplayDeviceState) map[string]string {
 		"roleplay_memory_text_stored":  "false",
 		"roleplay_voice_sample_stored": "false",
 	}
+}
+
+func roleplayExpressionPlan(summary RoleplayRuntimeSummary) RoleplayExpressionPlan {
+	actions := make([]RoleplayExpressionAction, 0, 5)
+	for _, candidate := range roleplayExpressionEvents(summary) {
+		plan, err := stackchantransport.BuildOfficialActionPlan(candidate.event)
+		if err != nil {
+			continue
+		}
+		actions = append(actions, RoleplayExpressionAction{
+			Phase:            candidate.phase,
+			Event:            string(plan.Event.Kind),
+			Value:            plan.Event.Value,
+			PacketCount:      plan.Metadata.PacketCount,
+			PhysicalAccepted: plan.Metadata.PhysicalAccepted,
+			Surfaces:         copyStringMap(plan.Metadata.Surfaces),
+		})
+	}
+	packetCount := 0
+	physicalAccepted := false
+	surfaces := make(map[string]string)
+	for _, action := range actions {
+		packetCount += action.PacketCount
+		physicalAccepted = physicalAccepted || action.PhysicalAccepted
+		for key, value := range action.Surfaces {
+			surfaces[action.Phase+"_"+key] = value
+		}
+	}
+	return RoleplayExpressionPlan{
+		SchemaVersion:     "a21.roleplay_expression_plan.v1",
+		Adapter:           "official_stackchan_action_plan",
+		DeliveryPolicy:    "no_send_plan_only",
+		RoleplayProfile:   summary.RoleplayProfile,
+		Scenario:          summary.Scenario,
+		VoiceCloneProfile: summary.VoiceCloneProfile,
+		MemoryReady:       summary.MemoryPromptInputReady,
+		MemoryHintCount:   summary.MemoryHintCount,
+		ActionCount:       len(actions),
+		PacketCount:       packetCount,
+		PhysicalAccepted:  physicalAccepted,
+		Actions:           actions,
+		Surfaces:          surfaces,
+		Redaction: RoleplayExpressionRedaction{
+			PromptTextStored:       false,
+			MemoryTextStored:       false,
+			TranscriptStored:       false,
+			ProviderOutputStored:   false,
+			AudioStored:            false,
+			VoiceCloneSampleStored: false,
+		},
+	}
+}
+
+type roleplayExpressionEvent struct {
+	phase string
+	event xiaozhitransport.DeviceExtensionEvent
+}
+
+func roleplayExpressionEvents(summary RoleplayRuntimeSummary) []roleplayExpressionEvent {
+	events := []roleplayExpressionEvent{
+		{
+			phase: "baseline_posture",
+			event: xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindState, Value: "listening"},
+		},
+		{
+			phase: "role_soul",
+			event: roleplaySoulExpressionEvent(summary.RoleplayProfile),
+		},
+		{
+			phase: "scenario_emphasis",
+			event: roleplayScenarioExpressionEvent(summary.Scenario),
+		},
+	}
+	if summary.MemoryPromptInputReady {
+		events = append(events, roleplayExpressionEvent{
+			phase: "memory_cue",
+			event: xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "nod"},
+		})
+	}
+	return events
+}
+
+func roleplaySoulExpressionEvent(profile string) xiaozhitransport.DeviceExtensionEvent {
+	switch defaultRoleplayProfile(profile) {
+	case RoleplayProfileWryPeer:
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindFace, Value: "happy"}
+	case RoleplayProfileCalmAnchor:
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindFace, Value: "attentive"}
+	default:
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindFace, Value: "idle"}
+	}
+}
+
+func roleplayScenarioExpressionEvent(scenario string) xiaozhitransport.DeviceExtensionEvent {
+	switch defaultRoleplayScenario(scenario) {
+	case "boss_challenge", "engineer_pushback", "user_complaint":
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindState, Value: "thinking"}
+	case "late_night_radio":
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindState, Value: "speaking"}
+	default:
+		return xiaozhitransport.DeviceExtensionEvent{Kind: xiaozhitransport.DeviceEventKindState, Value: "listening"}
+	}
+}
+
+func copyStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Server) roleplayPromptInput(override RoleplayProfileSelectionRequest, userText string) (string, error) {
