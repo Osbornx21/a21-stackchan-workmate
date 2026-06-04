@@ -15658,6 +15658,12 @@ Actual completed work:
   partial `audio_chunks`, and trace marker `xiaozhi.say.interrupted`.
 - Preserved the failure boundary: actual TTS/downlink errors still return HTTP
   502 and record `xiaozhi.say.downlink_error`.
+- Committed and pushed `45f363f fix(gateway): classify xiaozhi say barge-in
+  as interrupted`.
+- Deployed `45f363f` to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path after remote focused tests and build passed.
+- Confirmed post-deploy public `/healthz` ok and product device
+  `44:1b:f6:e2:6a:60` online with fresh `last_event=xiaozhi.hello`.
 
 Changed files:
 
@@ -15678,12 +15684,20 @@ Tests/build/runtime results:
   `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhi(ProductTouchBargeInCancelsActiveTurnAndStopsPlayback|ProductTouchReactionsSendBoundedBodyMCP|Say(DeliversTextAsStockTTSDownlink|ReportsInterruptedWhenProductTouchBargeInCancelsDownlink|KeepsBadGatewayForActualDownlinkError|DeliversWAVAsStockTTSDownlink|SuppressesImmediateListenRestartForStockPhysical))' -count=1`.
 - Full verification passed:
   `GOMAXPROCS=2 make verify`.
+- Remote ECS focused Gateway regression suite passed before safe-swap.
+- Remote ECS build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `systemctl is-active a21-gateway`, loopback `/healthz`, and public
+  direct-source `/healthz` passed after safe-swap.
 
 Runtime or physical evidence:
 
-- No new physical evidence was promoted in this round. This was a Gateway
+- No new physical PRD evidence was promoted in this round. This was a Gateway
   control-surface repair for the previously observed host-say 502 after
   touch/barge-in.
+- Public direct-source `/v1/devices` after the ECS restart showed the product
+  device online with product touch/playback/keepalive/state-reaction
+  capabilities still present.
 
 Remaining issues:
 
@@ -15695,10 +15709,10 @@ Remaining issues:
 
 Next suggested action:
 
-- If ECS deployment is desired for the public product Gateway, safe-swap this
-  commit and rerun a short host-say interrupted by top touch to confirm public
-  HTTP now reports `interrupted` instead of 502. Then return to physical
-  screen/servo/RGB/touch body parity and the operator-side mic/audible window.
+- In the next operator-side hardware window, rerun a short host-say interrupted
+  by top touch to confirm public HTTP now reports `interrupted` instead of
+  502. Then continue physical screen/servo/RGB/touch body parity and the
+  mic/audible window.
 
 Forbidden actions avoided:
 

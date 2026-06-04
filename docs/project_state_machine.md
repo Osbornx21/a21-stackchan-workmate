@@ -27,10 +27,14 @@ Latest control update, 2026-06-05 00:48 CST:
   downlink error, WAV host-say, post-host-say suppression, product touch
   barge-in, and product touch reactions. Full `GOMAXPROCS=2 make verify`
   passed.
-- This transition did not flash firmware, swap ECS runtime, write NVS, execute
-  providers/V21, or roll back internal-test3 voice/protocol changes. Total
-  state remains `PHYSICAL-PENDING` because mic ingress and trusted audible or
-  instrument observation are still missing from one product physical window.
+- Commit `45f363f` is pushed and deployed to ECS `47.103.57.217`; remote
+  focused Gateway tests/build passed, `a21-gateway` restarted active, public
+  `/healthz` returned ok, and direct-source `/v1/devices` showed product
+  device `44:1b:f6:e2:6a:60` online with fresh `xiaozhi.hello`.
+- This transition did not flash firmware, write NVS, execute providers/V21, or
+  roll back internal-test3 voice/protocol changes. Total state remains
+  `PHYSICAL-PENDING` because mic ingress and trusted audible or instrument
+  observation are still missing from one product physical window.
 
 Previous control update, 2026-06-05 00:36 CST:
 

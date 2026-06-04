@@ -90,9 +90,17 @@ classification cut:
   downlink error, WAV host-say delivery, post-host-say suppression, product
   touch barge-in, and product touch reactions. Full
   `GOMAXPROCS=2 make verify` also passed.
-- No firmware build/flash, no ECS swap, no NVS write, no provider or V21
-  execution, and no internal-test3 voice/protocol rollback occurred in this
-  cut.
+- Commit `45f363f fix(gateway): classify xiaozhi say barge-in as interrupted`
+  is pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path. Remote focused Gateway tests passed, remote
+  `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed, `a21-gateway`
+  restarted active, and loopback plus public `/healthz` returned ok.
+- Post-deploy public `/v1/devices` through the TUN-safe direct-source path
+  showed product device `44:1b:f6:e2:6a:60` online with fresh
+  `last_event=xiaozhi.hello`; the product device reconnected after this
+  Gateway restart without firmware flash or NVS write.
+- No firmware build/flash, no NVS write, no provider or V21 execution, and no
+  internal-test3 voice/protocol rollback occurred in this cut.
 - Remaining physical PRD blockers are unchanged: collect one operator-side
   window with wake/listen mic ingress, answer downlink/playback, trusted
   audible or instrument observation, and touch/wake barge-in stop_done.
