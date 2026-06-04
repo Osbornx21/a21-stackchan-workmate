@@ -12,13 +12,13 @@ execution plan.
 ## Current Checkout
 
 - Workspace: `/Users/jiyurun/Documents/New project`
-- Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
+- Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this server-side roleplay gate cut:
-  `050723e feat(readiness): generate roleplay voice probe evidence`
+- Current source HEAD before this roleplay clone runtime repair cut:
+  `8da6de9 fix(providers): honor voice clone cli alias in pipeline`
 - Remote:
-  `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
   do not start launch implementation from unclassified tracked diffs.
 - `.DS_Store` policy:
@@ -94,11 +94,28 @@ Current focused cut:
   `docs/plans/2026-06-04-server-side-roleplay-voice-runtime-gate.md`
 - Transition:
   `T-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-001`
+- Status:
+  ready as server-side evidence. Fresh runtime report
+  `reports/a21-roleplay-voice-probe-20260604-172311.json` passed with selected
+  `a21_roleplay_wry_peer`, scenario `engineer_pushback`,
+  `a21_voice_clone_default`, StepFun text stream execution, prompt input,
+  voice-clone profile usage, audio downlink, device playback start, and 46
+  audio chunks. Server-side bundle
+  `reports/a21-server-side-readiness-bundle-20260604-172349.json` is
+  `server_side_candidate_ready`. Product readiness
+  `reports/a21-product-readiness-20260604-172349.json` remains
+  `server_side_candidate_ready` only because physical StackChan PRD acceptance
+  is still missing.
+
+Current next cut:
+
+- `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001`
 - Target:
-  require matched ready roleplay voice runtime evidence for server-side
-  candidate readiness and let `server-side-readiness-bundle --collect-missing`
-  collect it through `a21 roleplay-voice-probe --require-ready`. The cut stays
-  out of ECS, firmware, serial, NVS, and physical hardware action.
+  close physical StackChan PRD acceptance without weakening internal test 3.
+  Required missing evidence is playback ack/start from device or trusted
+  runtime echo, playback stop_done/auto_stop where applicable, and operator or
+  instrumented audible observation. Do not treat Gateway downlink or host-only
+  voice bench as physical PRD acceptance.
 
 ## Scoped Hardware Parity Transition
 

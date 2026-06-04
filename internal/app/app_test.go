@@ -520,7 +520,7 @@ func TestProductReadinessExposesProfessionalBridgeStateWithoutQueryExecution(t *
 			_, _ = w.Write([]byte("<!doctype html><title>A21 Simulator</title>"))
 		case "/v1/devices":
 			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
+			_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"44:1b:f6:e2:6a:60","identity_status":"valid","connection_status":"online","first_seen_ms":1,"last_seen_ms":2},{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`))
 		case "/a21/v21/query":
 			queryCalled = true
 			http.Error(w, "query execution is out of scope for product readiness", http.StatusInternalServerError)
@@ -1216,7 +1216,7 @@ func TestRunRoleplayVoiceProbeWritesReadyReportAndProductReadinessCanIngest(t *t
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"roleplay-voice-probe", "--gateway-url", server.URL, "--device-id", "stackchan-sim-001", "--trace-id", "a21-trace-roleplay-voice-probe-test-ready", "--session-id", "a21-session-roleplay-voice-probe-test-ready", "--output-dir", dir}, &stdout, &stderr)
+	code := Run([]string{"roleplay-voice-probe", "--gateway-url", server.URL, "--device-id", "44:1b:f6:e2:6a:60", "--trace-id", "a21-trace-roleplay-voice-probe-test-ready", "--session-id", "a21-session-roleplay-voice-probe-test-ready", "--output-dir", dir}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s\n%s", code, stderr.String(), stdout.String())
@@ -1277,6 +1277,25 @@ func TestRunRoleplayVoiceProbeWritesReadyReportAndProductReadinessCanIngest(t *t
 	for _, forbidden := range []string{server.URL, dir, "http://", "https://", "data_base64", "audio_base64", "raw roleplay prompt", "memory text", "provider output", "voice sample", "secret-value", `"launch_ready": true`, `"prd_accepted": true`} {
 		if strings.Contains(readinessStdout.String(), forbidden) {
 			t.Fatalf("product-readiness leaked or overclaimed %q: %s", forbidden, readinessStdout.String())
+		}
+	}
+}
+
+func TestProductRoleplayVoiceSafeOptionalIDAcceptsDeviceMACOnly(t *testing.T) {
+	for _, value := range []string{"44:1b:f6:e2:6a:60", "stackchan-sim-001", "a21-trace-roleplay-voice-probe-test"} {
+		if !productRoleplayVoiceSafeOptionalID(value) {
+			t.Fatalf("identity %q rejected, want accepted", value)
+		}
+	}
+	for _, value := range []string{
+		"http://47.103.57.217",
+		"/Users/a21/report.json",
+		"bearer secret-value",
+		"44:1b:f6:e2:6a:60/../../secret",
+		"trace id with spaces",
+	} {
+		if productRoleplayVoiceSafeOptionalID(value) {
+			t.Fatalf("identity %q accepted, want rejected", value)
 		}
 	}
 }
@@ -4555,7 +4574,7 @@ func newRoleplayVoiceProbeTestServer(t *testing.T, ready bool) *httptest.Server 
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatalf("decode fast companion request: %v", err)
 			}
-			if request.DeviceID != "stackchan-sim-001" || request.Mode != "roleplay" {
+			if strings.TrimSpace(request.DeviceID) == "" || request.Mode != "roleplay" {
 				t.Fatalf("fast companion request device/mode = %q/%q", request.DeviceID, request.Mode)
 			}
 			if request.LocalAudio.ASRProvider == "" || len(request.LocalAudio.Frames) != 1 || request.LocalAudio.Frames[0].DataBase64 == "" {

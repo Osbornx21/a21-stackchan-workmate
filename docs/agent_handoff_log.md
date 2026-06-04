@@ -12791,6 +12791,121 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 17:25 CST - Roleplay Clone Runtime Closed And Server-Side Candidate Ready
+
+Round goal:
+
+- Stop repeating prior Gateway/cloud checks and close the one remaining
+  server-side roleplay voice-clone runtime gap from the current branch state.
+
+Actual completed work:
+
+- Confirmed cloud `/v1/roleplay-profile` was already set to
+  `a21_roleplay_wry_peer`, `engineer_pushback`, and
+  `a21_voice_clone_default` with memory ready.
+- Reproduced the fresh failure once:
+  `reports/a21-roleplay-voice-probe-20260604-170513.json` showed roleplay and
+  voice-clone selection hit, but the fast companion pipeline fell to
+  `local_fallback`.
+- Fixed the provider runtime env mismatch left after the previous alias patch:
+  `VoicePipelineAdaptersFromEnv` now reads `A21_VOICE_CLONE_CLI` as a
+  compatibility alias for `A21_VOICE_CLONE_COMMAND`.
+- Found the deeper ECS voice-clone wrapper failure through direct
+  `local-tts-smoke`: the DashScope CosyVoice wrapper was consuming generic
+  Qwen realtime `A21_DASHSCOPE_TTS_MODEL=qwen3-tts-flash-realtime` and
+  `A21_DASHSCOPE_TTS_VOICE=Cherry`, causing provider task failures.
+- Updated `scripts/a21_dashscope_cosyvoice_tts.py` so CosyVoice clone runtime
+  prefers the explicit `--model`/voice-clone model, uses only
+  `A21_DASHSCOPE_COSYVOICE_VOICE` or the CosyVoice default voice for voice
+  selection, and emits short provider task failure code/message diagnostics
+  without printing prompts, keys, URLs, or audio.
+- Fixed roleplay evidence parsing so real StackChan MAC-style `device_id`
+  values such as `44:1b:f6:e2:6a:60` are accepted while URL/path/whitespace
+  and credential-shaped identities remain rejected.
+- Remote voice-clone CLI smoke then passed and produced a 16 kHz mono WAV with
+  audio quality passed.
+- Fresh roleplay voice runtime probe passed:
+  `reports/a21-roleplay-voice-probe-20260604-172311.json`, with StepFun text
+  stream executed, prompt input used, voice clone profile used, audio downlink
+  observed, device playback start observed, and 46 audio chunks.
+- Fresh server-side bundle passed as server-side candidate:
+  `reports/a21-server-side-readiness-bundle-20260604-172349.json`.
+- Fresh product readiness remains truthful:
+  `reports/a21-product-readiness-20260604-172349.json` is
+  `server_side_candidate_ready`, `launch_ready=false`, `prd_accepted=false`,
+  with only `physical_stackchan_prd_acceptance` missing at the canonical
+  decision layer.
+
+Changed files:
+
+- `internal/providers/voice_pipeline_adapters.go`
+- `internal/providers/voice_pipeline_real_adapters_test.go`
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `scripts/a21_dashscope_cosyvoice_tts.py`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Full PRD launch still requires physical StackChan PRD acceptance:
+  playback ack/start from device or trusted runtime echo, stop_done/auto_stop
+  where applicable, and operator or instrumented audible observation.
+- Product readiness still reports V21 adapter runtime env as not configured in
+  the local shell, while the fresh professional external-gateway report is used
+  as evidence for server-side candidate readiness. Do not misread this as full
+  permanent ECS V21 topology.
+
+Known risks/blockers:
+
+- CosyVoice wrapper now isolates Qwen realtime model/voice env, but cloud
+  clone TTS latency in the smoke was about 1.2s to first audio. This is usable
+  for roleplay runtime evidence, not yet a tuned low-latency physical PRD
+  acceptance metric.
+- The control Mac source IP changed from `192.168.0.196` to `10.98.141.239`
+  during this round. Future public Gateway and SSH checks must use the current
+  `en0` source IP through `A21_DIRECT_SOURCE_IP` or `ssh -b`.
+
+Recommended next action:
+
+- Continue with `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` in a foreground
+  hardware/evidence window. Do not rerun the roleplay clone debugging path
+  unless the passed report is superseded by a new failure.
+
+Test/build/runtime results:
+
+- `go test ./internal/providers -run 'TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI|TestVoicePipelineAdaptersFromEnvAcceptsVoiceCloneCLIAlias|TestVoicePipelineRunnerPassesVoiceCloneProfileToTTSAndReport' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestRunRoleplayVoiceProbeWritesReadyReportAndProductReadinessCanIngest|TestProductRoleplayVoiceSafeOptionalIDAcceptsDeviceMACOnly|TestRunRoleplayVoiceProbeWritesBlockedReportWhenPipelineIncomplete|TestProductVoiceReadinessAcceptsVoiceCloneCLIAlias' -count=1`:
+  passed.
+- `python3 -m py_compile scripts/a21_dashscope_cosyvoice_tts.py`: passed.
+- Remote `/opt/a21/bin/a21 local-tts-smoke --engine voice_clone_cli`: passed;
+  latest remote report `a21-local-tts-smoke-20260604-171908.json`.
+- `a21 roleplay-voice-probe --require-ready`: passed; report
+  `reports/a21-roleplay-voice-probe-20260604-172311.json`.
+- `a21 server-side-readiness-bundle`: passed as server-side candidate; report
+  `reports/a21-server-side-readiness-bundle-20260604-172349.json`.
+- `a21 product-readiness`: server-side candidate only; report
+  `reports/a21-product-readiness-20260604-172349.json`.
+
+Failure location/reason:
+
+- The first runtime failure was real: voice-clone TTS command failed inside the
+  ECS wrapper, so Gateway correctly returned `local_fallback`.
+- The wrapper failure was caused by generic Qwen realtime TTS model/voice env
+  leaking into the CosyVoice clone wrapper. After model/voice isolation, the
+  command produced WAV successfully.
+- The subsequent probe `blocked` status with a completed pipeline was a local
+  report parser bug: MAC-style product device IDs were rejected by provider-ID
+  safety rules.
+
+Forbidden actions avoided:
+
+- No firmware build, firmware flash, serial, NVS write, provider key print,
+  secret edit, report deletion, prune/gc, broad rollback, or internal-test3
+  protocol/audio regression occurred.
+
 ## 2026-06-04 16:15 CST - Internal Test 4 Hardware Window Control and PRD Promote Gate
 
 Round goal:

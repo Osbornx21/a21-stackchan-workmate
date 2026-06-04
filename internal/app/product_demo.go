@@ -3524,7 +3524,30 @@ func productRoleplayVoiceExecutionModeSafe(mode string) bool {
 }
 
 func productRoleplayVoiceSafeOptionalID(value string) bool {
-	return productVoiceChainSafeOptionalID(value)
+	value = strings.TrimSpace(value)
+	if value == "" || productVoiceChainSafeID(value) {
+		return true
+	}
+	if len(value) > 96 {
+		return false
+	}
+	hasAlphaNum := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			hasAlphaNum = true
+		case r >= 'A' && r <= 'Z':
+			hasAlphaNum = true
+		case r >= '0' && r <= '9':
+			hasAlphaNum = true
+		case r == '-' || r == '_' || r == '.' || r == ':':
+		default:
+			return false
+		}
+	}
+	return hasAlphaNum &&
+		!strings.Contains(value, "..") &&
+		!strings.Contains(strings.ToLower(value), "://")
 }
 
 func productRoleplayVoicePipelineSafe(pipeline productRoleplayVoicePipelineFixture) bool {

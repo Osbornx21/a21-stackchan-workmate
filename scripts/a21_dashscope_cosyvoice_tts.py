@@ -142,8 +142,11 @@ def main() -> int:
         return 2
 
     ws_url = env_first("A21_DASHSCOPE_TTS_URL", "TTS_BASE_URL") or DEFAULT_WS_URL
-    model = env_first("A21_DASHSCOPE_TTS_MODEL", "TTS_MODEL") or normalize_model(args.model)
-    voice = env_first("A21_DASHSCOPE_TTS_VOICE", "TTS_VOICE") or DEFAULT_VOICE
+    model = normalize_model(
+        args.model
+        or env_first("A21_DASHSCOPE_COSYVOICE_MODEL", "A21_DASHSCOPE_TTS_MODEL", "TTS_MODEL")
+    )
+    voice = env_first("A21_DASHSCOPE_COSYVOICE_VOICE") or DEFAULT_VOICE
     sample_rate = args.sample_rate if args.sample_rate > 0 else 24000
     task_id = str(uuid.uuid4())
     pcm = bytearray()
@@ -176,7 +179,9 @@ def main() -> int:
                     finish_task(ws, task_id)
                     finish_sent = True
                 elif event_name == "task-failed":
-                    print("dashscope_tts_task_failed", file=sys.stderr)
+                    code = str(header.get("error_code", "unknown"))[:80]
+                    message = str(header.get("error_message", "unknown"))[:240]
+                    print("dashscope_tts_task_failed:" + code + ":" + message, file=sys.stderr)
                     return 4
                 elif event_name == "task-finished":
                     break
