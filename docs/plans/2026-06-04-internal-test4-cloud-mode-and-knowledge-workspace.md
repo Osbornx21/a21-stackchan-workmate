@@ -516,6 +516,22 @@ Execution update:
   plus `--require-candidate` returned `server_side_candidate_ready`. Full PRD
   launch still requires physical StackChan online evidence and physical PRD
   acceptance.
+- `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` adds the report-only promote
+  boundary for stock Xiaozhi physical evidence. The new
+  `a21 xiaozhi-physical-prd-review` command and
+  `make xiaozhi-physical-prd-review` target consume matching
+  `a21.xiaozhi_physical_evidence.v1` and
+  `a21.xiaozhi_half_duplex_acceptance.v1` reports, require
+  `ACCEPT_A21_XIAOZHI_PHYSICAL_PRD`, and only then write an accepted physical
+  report for `product-readiness`. This closes the tooling gap without flashing,
+  writing NVS, executing providers, or reinterpreting internal test 3
+  candidate evidence.
+- `T-OFFICIAL-XIAOZHI-COMPATIBLE-NVS-WIFI-OVERRIDE-001` unblocks the current
+  foreground hardware window when preserved Wi-Fi is unavailable. The
+  official-compatible NVS writer can now take explicit Wi-Fi SSID/password env
+  or CLI options while preserving calibration, mutating only the Xiaozhi
+  connection keys and requested Wi-Fi keys, and redacting credentials from
+  stdout/reports.
 
 ## Not In Scope For This First Cut
 

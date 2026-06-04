@@ -12791,6 +12791,122 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 16:15 CST - Internal Test 4 Hardware Window Control and PRD Promote Gate
+
+Round goal:
+
+- Regain control of the active Internal Test 4 threads, avoid repeating
+  already-merged internal-test3/protocol work, unblock foreground StackChan
+  hardware progress, and add the missing product-readiness promote boundary for
+  stock Xiaozhi physical evidence.
+
+Actual completed work:
+
+- Kept internal test 3 protocol/audio changes intact and worked on the
+  foreground hardware-window branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- Created and pushed `codex/a21-internal-test4-mainline-20260604` from
+  current HEAD `87579cf` as the clean internal-test4 coordination branch.
+- Confirmed public `47.103.57.217` was not usable from this Mac during this
+  window (`curl` empty replies; SSH closed), then used a local LAN Gateway on
+  `0.0.0.0:21080` / `http://10.98.141.239:21080`.
+- Ran a guarded product-lane official-compatible NVS write on
+  `/dev/cu.usbmodem1101`; report
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-155946-1780559986794566000.json`
+  passed with servo calibration and existing Wi-Fi credentials preserved.
+- Reset the device and observed the real current blocker:
+  `WifiStation: No AP found`. The Mac has LAN IP `10.98.141.239` but is not on
+  Wi-Fi, so the product device needs a reachable AP restored or explicit Wi-Fi
+  credentials written through the guarded NVS lane.
+- Added optional explicit Wi-Fi SSID/password support to the official-compatible
+  NVS writer. It mutates only requested Wi-Fi keys plus Xiaozhi connection keys
+  and keeps stdout/reports redacted.
+- Added `a21 xiaozhi-physical-prd-review`,
+  `stackchan-accept --check xiaozhi-prd-review`, and
+  `make xiaozhi-physical-prd-review`. The new command consumes matching
+  `a21.xiaozhi_physical_evidence.v1` and
+  `a21.xiaozhi_half_duplex_acceptance.v1` reports, requires
+  `ACCEPT_A21_XIAOZHI_PHYSICAL_PRD`, verifies playback-start, audible
+  observation, mic, barge-in stop, `device.playback.stop_done`, target matching,
+  and redaction, then writes an accepted
+  `a21.xiaozhi_physical_evidence.v1` report for `product-readiness`.
+- Updated Makefile, protocol, doctor, firmware-release discipline, current
+  control, internal-test4 plan, and project state documents.
+
+Files changed:
+
+- `Makefile`
+- `internal/app/app.go`
+- `internal/app/app_stackchan_common.go`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `internal/app/xiaozhi_physical_prd_review.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/FIRMWARE_RELEASE_DISCIPLINE.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- The physical device is not yet online after the local-LAN NVS update because
+  its preserved Wi-Fi AP was not found.
+- No accepted Xiaozhi physical PRD report was generated against the real device
+  in this round; fresh physical evidence and half-duplex evidence still need to
+  be collected after Wi-Fi is restored.
+- Public ECS remains a separate access/runtime path from this Mac during this
+  window and was not repaired here.
+
+Known risks/blockers:
+
+- Writing explicit Wi-Fi credentials requires the operator to provide a
+  reachable AP SSID/password or restore the previous AP. Credential values must
+  not be printed or committed.
+- `xiaozhi-physical-prd-review` cannot invent missing evidence. If
+  `device.playback.stop_done`, audible observation, playback-start, mic, or
+  target matching are absent, it blocks and writes no accepted report.
+
+Recommended next action:
+
+- Provide or restore a reachable Wi-Fi AP, then rerun guarded
+  `a21-stackchan-official-xiaozhi-compatible-nvs-execute` with explicit Wi-Fi
+  credentials if needed.
+- Restart/keep local LAN Gateway, wait for product StackChan to register on
+  `/v1/devices`, collect fresh `xiaozhi-physical-evidence` and
+  `stackchan-accept --check xiaozhi-half-duplex` reports with trusted audible
+  observation, then run `make xiaozhi-physical-prd-review` and
+  `a21 product-readiness --use-latest-reports`.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestRunXiaozhiPhysicalPRDReview|TestRunStackChanOfficialXiaozhiCompatibleNVS|TestOfficialXiaozhiCompatibleNVSCSV' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestRunXiaozhiPhysicalPRDReview|TestProductReadinessIngestsAcceptedXiaozhiPhysicalEvidence|TestRunXiaozhiHalfDuplexAcceptance|TestRunXiaozhiPhysicalEvidence|TestRunStackChanOfficialXiaozhiCompatibleNVS|TestOfficialXiaozhiCompatibleNVSCSV' -count=1`:
+  passed.
+- `go test ./internal/app -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- Initial `xiaozhi-physical-prd-review` focused test failed because the
+  half-duplex report includes runtimeguard metadata with local/proxy state that
+  is not copied into the accepted physical report. The reader was corrected to
+  validate bounded single JSON, schema, redaction, and target fields for the
+  half-duplex input instead of applying the generic raw physical-report scanner
+  to metadata. Focused tests and full verify then passed.
+
+Forbidden actions avoided:
+
+- No repository prune/gc, generic `xiaozhi.bin` product flash, unguarded raw
+  firmware upload, provider key exposure, provider key firmware storage, V21
+  internals copy, or rollback of internal test 3 protocol/audio changes
+  occurred. The only hardware mutation was the guarded official-compatible
+  product NVS write described above.
+
 ## 2026-06-04 15:06 CST - Roleplay Voice Runtime Probe Closure
 
 Round goal:

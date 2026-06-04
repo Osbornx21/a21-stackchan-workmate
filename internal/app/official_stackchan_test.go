@@ -1478,6 +1478,49 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanBuildsRedactedNoWriteReceip
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanRedactsExplicitWiFiCredentials(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-nvs-plan",
+		"--port", "/dev/cu.usbmodemA21",
+		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
+		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
+		"--wifi-ssid", "A21-Lab-WiFi",
+		"--wifi-password", "secret-password-123",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"preserves_wifi_credentials": false`,
+		`"allows_explicit_wifi_credential_write": true`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("nvs plan missing %q: %s", want, stdout.String())
+		}
+	}
+	for _, forbidden := range []string{
+		"A21-Lab-WiFi",
+		"secret-password-123",
+		"ssid",
+		"password",
+	} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("nvs plan leaked forbidden Wi-Fi value/key %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatibleNVSPlanRejectsLoopbackGateway(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
@@ -1670,7 +1713,7 @@ func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *
 	}
 
 	var csv bytes.Buffer
-	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1)
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "", "")
 	if err != nil {
 		t.Fatalf("write csv: %v", err)
 	}
@@ -1702,6 +1745,45 @@ func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *
 		summary.MutatedEntryCount != 3 ||
 		summary.ExistingConnectionEntryCount != 4 ||
 		!summary.WiFiCredentialsPreserved ||
+		!summary.ServoCalibrationPresent {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestOfficialXiaozhiCompatibleNVSCSVCanWriteExplicitWiFiCredentials(t *testing.T) {
+	entries := []stackChanNVSMinimalEntry{
+		{Namespace: "wifi", Key: "ssid", Encoding: "string", Data: "old-wifi", State: "Written"},
+		{Namespace: "wifi", Key: "password", Encoding: "string", Data: "old-secret", State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_1", Encoding: "int32_t", Data: float64(460), State: "Written"},
+		{Namespace: "servo", Key: "zero_pos_2", Encoding: "int32_t", Data: float64(620), State: "Written"},
+	}
+
+	var csv bytes.Buffer
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123")
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	text := csv.String()
+	for _, want := range []string{
+		"wifi,namespace,,",
+		"ssid,data,string,A21-Lab-WiFi",
+		"password,data,string,secret-password-123",
+		"ota_url,data,string,http://192.0.2.10:21080/xiaozhi/ota/",
+		"url,data,string,ws://192.0.2.10:21080/v1/xiaozhi",
+		"version,data,u32,1",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("csv missing %q:\n%s", want, text)
+		}
+	}
+	for _, forbidden := range []string{"old-wifi", "old-secret"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("csv retained stale Wi-Fi credential %q:\n%s", forbidden, text)
+		}
+	}
+	if summary.MutatedEntryCount != 5 ||
+		summary.WiFiCredentialsPreserved ||
+		!summary.WiFiCredentialsWritten ||
 		!summary.ServoCalibrationPresent {
 		t.Fatalf("summary = %+v", summary)
 	}

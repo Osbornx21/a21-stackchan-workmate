@@ -1069,6 +1069,184 @@ func TestRunXiaozhiHalfDuplexAcceptanceMarksMissingPlaybackStopDoneAndTrustedObs
 	}
 }
 
+func TestRunXiaozhiPhysicalPRDReviewPromotesCandidateEvidence(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true, true)
+	sourceDir := t.TempDir()
+	reviewDir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"device_playback_observed":                           true,
+		"device_playback_observation_source":                 "device_runtime_echo",
+		"gateway_first_downlink_to_device_playback_start_ms": 30,
+	})
+
+	var physicalStdout bytes.Buffer
+	var physicalStderr bytes.Buffer
+	physicalCode := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", sourceDir,
+	}, &physicalStdout, &physicalStderr)
+	if physicalCode != 0 {
+		t.Fatalf("physical evidence code = %d, want 0: stdout=%s stderr=%s", physicalCode, physicalStdout.String(), physicalStderr.String())
+	}
+	physicalPath := singleXiaozhiReportPath(t, sourceDir, "a21-xiaozhi-physical-evidence-*.json")
+
+	var halfStdout bytes.Buffer
+	var halfStderr bytes.Buffer
+	halfCode := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-half-duplex",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", sourceDir,
+	}, &halfStdout, &halfStderr)
+	if halfCode != 0 {
+		t.Fatalf("half-duplex code = %d, want 0: stdout=%s stderr=%s", halfCode, halfStdout.String(), halfStderr.String())
+	}
+	halfPath := singleXiaozhiReportPath(t, sourceDir, "a21-xiaozhi-half-duplex-acceptance-*.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-prd-review",
+		"--physical-evidence-report", physicalPath,
+		"--half-duplex-report", halfPath,
+		"--confirm", xiaozhiPhysicalPRDReviewConfirm,
+		"--output-dir", reviewDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	acceptedPath := singleXiaozhiReportPath(t, reviewDir, "a21-xiaozhi-physical-evidence-*.json")
+	reportJSON := readTextFile(t, acceptedPath)
+	for _, want := range []string{
+		`"promotion_gate": "accepted"`,
+		`"acceptance_status": "prd_accepted"`,
+		`"prd_accepted": true`,
+		`"code": "xiaozhi_physical_prd_accepted"`,
+	} {
+		if !strings.Contains(stdout.String(), want) || !strings.Contains(reportJSON, want) {
+			t.Fatalf("accepted report missing %q: stdout=%s report=%s", want, stdout.String(), reportJSON)
+		}
+	}
+	for _, forbidden := range []string{
+		server.URL,
+		sourceDir,
+		reviewDir,
+		"candidate_gateway_downlink",
+		"transcript",
+		"data_base64",
+		"raw_audio",
+	} {
+		if strings.Contains(stdout.String(), forbidden) || strings.Contains(reportJSON, forbidden) || strings.Contains(stderr.String(), forbidden) {
+			t.Fatalf("accepted report leaked or retained forbidden marker %q: stdout=%s report=%s stderr=%s", forbidden, stdout.String(), reportJSON, stderr.String())
+		}
+	}
+
+	var accepted xiaozhiPhysicalEvidenceReport
+	if err := json.Unmarshal([]byte(reportJSON), &accepted); err != nil {
+		t.Fatal(err)
+	}
+	readiness := buildProductXiaozhiPhysicalReadiness(filepath.Base(acceptedPath), accepted)
+	if !readiness.PRDPhysicalAccepted ||
+		!readiness.RequiredPhysicalMetricsAvailable ||
+		!readiness.MicEvidenceAvailable ||
+		!readiness.OperatorInstrumentObservationAvailable ||
+		readiness.CandidatePhysicalVoiceEvidence ||
+		readiness.PromotionGate != "accepted" ||
+		readiness.AcceptanceStatus != "prd_accepted" {
+		t.Fatalf("readiness = %+v, want PRD physical accepted", readiness)
+	}
+}
+
+func TestRunXiaozhiPhysicalPRDReviewRejectsMissingConfirm(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"xiaozhi-physical-prd-review",
+		"--physical-evidence-report", "reports/a21-xiaozhi-physical-evidence.json",
+		"--half-duplex-report", "reports/a21-xiaozhi-half-duplex-acceptance.json",
+	}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), xiaozhiPhysicalPRDReviewConfirm) {
+		t.Fatalf("stderr = %s, want explicit confirmation marker", stderr.String())
+	}
+}
+
+func TestRunXiaozhiPhysicalPRDReviewRejectsMissingStopDone(t *testing.T) {
+	server := newXiaozhiPhysicalEvidenceTestServer(t, false, true, true)
+	sourceDir := t.TempDir()
+	reviewDir := t.TempDir()
+	observation := writeXiaozhiInstrumentObservationReport(t, map[string]any{
+		"device_playback_observed":                           true,
+		"device_playback_observation_source":                 "device_runtime_echo",
+		"gateway_first_downlink_to_device_playback_start_ms": 30,
+	})
+
+	var physicalStdout bytes.Buffer
+	var physicalStderr bytes.Buffer
+	physicalCode := Run([]string{
+		"xiaozhi-physical-evidence",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", sourceDir,
+	}, &physicalStdout, &physicalStderr)
+	if physicalCode != 0 {
+		t.Fatalf("physical evidence code = %d, want 0: stdout=%s stderr=%s", physicalCode, physicalStdout.String(), physicalStderr.String())
+	}
+	physicalPath := singleXiaozhiReportPath(t, sourceDir, "a21-xiaozhi-physical-evidence-*.json")
+
+	var halfStdout bytes.Buffer
+	var halfStderr bytes.Buffer
+	halfCode := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-half-duplex",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--trace-id", "a21-trace-44-1b-f6-e2-6a-60",
+		"--session-id", "a21-session-44-1b-f6-e2-6a-60",
+		"--instrument-observation-report", observation,
+		"--output-dir", sourceDir,
+	}, &halfStdout, &halfStderr)
+	if halfCode != 0 {
+		t.Fatalf("half-duplex code = %d, want 0 candidate: stdout=%s stderr=%s", halfCode, halfStdout.String(), halfStderr.String())
+	}
+	halfPath := singleXiaozhiReportPath(t, sourceDir, "a21-xiaozhi-half-duplex-acceptance-*.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-accept",
+		"--check", "xiaozhi-prd-review",
+		"--physical-evidence-report", physicalPath,
+		"--half-duplex-report", halfPath,
+		"--confirm", xiaozhiPhysicalPRDReviewConfirm,
+		"--output-dir", reviewDir,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("code = %d, want 1: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "blocked") {
+		t.Fatalf("stderr = %s, want blocked review", stderr.String())
+	}
+	if matches, err := filepath.Glob(filepath.Join(reviewDir, "a21-xiaozhi-physical-evidence-*.json")); err != nil || len(matches) != 0 {
+		t.Fatalf("promoted reports = %v err=%v, want none", matches, err)
+	}
+}
+
 func newXiaozhiPhysicalEvidenceTestServer(t *testing.T, unsafe bool, playback ...bool) *httptest.Server {
 	t.Helper()
 	includePlayback := len(playback) > 0 && playback[0]
@@ -1270,6 +1448,18 @@ func newestXiaozhiPhysicalEvidenceReport(t *testing.T, outputDir string, stdout 
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func singleXiaozhiReportPath(t *testing.T, outputDir string, pattern string) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(outputDir, pattern))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("reports = %d, want 1 for %s: %v", len(matches), pattern, matches)
+	}
+	return matches[0]
 }
 
 func newestXiaozhiInstrumentObservationReport(t *testing.T, outputDir string, stdout string) string {

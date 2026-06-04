@@ -161,6 +161,8 @@ type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
 	OTAURL           string
 	WebSocketURL     string
 	WebSocketVersion int
+	WiFiSSID         string
+	WiFiPassword     string
 	Confirm          string
 	Execute          bool
 }
@@ -339,11 +341,12 @@ type stackChanOfficialXiaozhiNVSWebSocket struct {
 }
 
 type stackChanOfficialXiaozhiCompatibleNVSSafety struct {
-	BackupBeforeWrite                bool `json:"backup_before_write"`
-	PreserveExistingEntries          bool `json:"preserve_existing_entries"`
-	OnlyMutatesXiaozhiConnectionKeys bool `json:"only_mutates_xiaozhi_connection_keys"`
-	PreservesWiFiCredentials         bool `json:"preserves_wifi_credentials"`
-	ReportRedactsValues              bool `json:"report_redacts_values"`
+	BackupBeforeWrite                 bool `json:"backup_before_write"`
+	PreserveExistingEntries           bool `json:"preserve_existing_entries"`
+	OnlyMutatesXiaozhiConnectionKeys  bool `json:"only_mutates_xiaozhi_connection_keys"`
+	PreservesWiFiCredentials          bool `json:"preserves_wifi_credentials"`
+	AllowsExplicitWiFiCredentialWrite bool `json:"allows_explicit_wifi_credential_write"`
+	ReportRedactsValues               bool `json:"report_redacts_values"`
 }
 
 type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
@@ -352,6 +355,7 @@ type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
 	ExistingConnectionEntryCount int  `json:"existing_connection_entry_count"`
 	ServoCalibrationPresent      bool `json:"servo_calibration_present"`
 	WiFiCredentialsPreserved     bool `json:"wifi_credentials_preserved"`
+	WiFiCredentialsWritten       bool `json:"wifi_credentials_written"`
 }
 
 type officialStackChanProductLaneArtifactEvidence struct {
@@ -849,6 +853,8 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 		RunDir:           firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS_RUN_DIR"), filepath.Join(".a21-run", "firmware", "official-xiaozhi-compatible-nvs")),
 		OTAURL:           strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OTA_URL")),
 		WebSocketURL:     strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_URL")),
+		WiFiSSID:         strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_SSID")),
+		WiFiPassword:     strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_PASSWORD")),
 		WebSocketVersion: 1,
 		Execute:          execute,
 	}
@@ -864,7 +870,7 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--wifi-ssid SSID --wifi-password PASSWORD] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
 			return 0
 		case "--idf-export":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -913,6 +919,20 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 				return 2
 			}
 			options.WebSocketVersion = version
+		case "--wifi-ssid":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--wifi-ssid requires a value")
+				return 2
+			}
+			i++
+			options.WiFiSSID = strings.TrimSpace(args[i])
+		case "--wifi-password":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--wifi-password requires a value")
+				return 2
+			}
+			i++
+			options.WiFiPassword = strings.TrimSpace(args[i])
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -1350,6 +1370,10 @@ func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialX
 	if err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
 	}
+	wifiCredentialsRequested, err := validateOfficialXiaozhiNVSWiFiCredentials(options.WiFiSSID, options.WiFiPassword)
+	if err != nil {
+		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
+	}
 	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSReport{}, err
 	}
@@ -1386,11 +1410,12 @@ func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialX
 			SizeBytes: stackChanOfficialPCMBridgeNVSSizeBytes,
 		},
 		Safety: stackChanOfficialXiaozhiCompatibleNVSSafety{
-			BackupBeforeWrite:                true,
-			PreserveExistingEntries:          true,
-			OnlyMutatesXiaozhiConnectionKeys: true,
-			PreservesWiFiCredentials:         true,
-			ReportRedactsValues:              true,
+			BackupBeforeWrite:                 true,
+			PreserveExistingEntries:           true,
+			OnlyMutatesXiaozhiConnectionKeys:  true,
+			PreservesWiFiCredentials:          !wifiCredentialsRequested,
+			AllowsExplicitWiFiCredentialWrite: wifiCredentialsRequested,
+			ReportRedactsValues:               true,
 		},
 		Tools: stackChanOfficialPCMBridgeNVSTools{
 			NVSToolPath:       officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_tool/nvs_tool.py"),
@@ -1935,6 +1960,29 @@ func parseOfficialXiaozhiNVSWebSocketURL(rawURL string, version int) (stackChanO
 	}, nil
 }
 
+func validateOfficialXiaozhiNVSWiFiCredentials(ssid string, password string) (bool, error) {
+	ssid = strings.TrimSpace(ssid)
+	password = strings.TrimSpace(password)
+	if ssid == "" && password == "" {
+		return false, nil
+	}
+	if ssid == "" || password == "" {
+		return false, fmt.Errorf("wifi ssid and password must be provided together")
+	}
+	if len(ssid) > 32 {
+		return false, fmt.Errorf("wifi ssid is too long")
+	}
+	if len(password) < 8 || len(password) > 63 {
+		return false, fmt.Errorf("wifi password length is invalid")
+	}
+	for _, value := range []string{ssid, password} {
+		if containsLegacyIdentity(value) || strings.Contains(value, "\n") || strings.Contains(value, "\r") || strings.Contains(value, "\x00") {
+			return false, fmt.Errorf("wifi credentials are invalid")
+		}
+	}
+	return true, nil
+}
+
 type stackChanNVSMinimalEntry struct {
 	Namespace string      `json:"namespace"`
 	Key       string      `json:"key"`
@@ -2026,11 +2074,12 @@ func writeOfficialPCMBridgeNVSCSV(writer io.Writer, entries []stackChanNVSMinima
 	return summary, nil
 }
 
-func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, otaURL string, websocketURL string, websocketVersion int) (stackChanOfficialXiaozhiCompatibleNVSSummary, error) {
+func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanNVSMinimalEntry, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string) (stackChanOfficialXiaozhiCompatibleNVSSummary, error) {
 	csvWriter := csv.NewWriter(writer)
 	if err := csvWriter.Write([]string{"key", "type", "encoding", "value"}); err != nil {
 		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
 	}
+	wifiCredentialsRequested := strings.TrimSpace(wifiSSID) != "" || strings.TrimSpace(wifiPassword) != ""
 
 	namespaceOrder := make([]string, 0)
 	seenNamespaces := make(map[string]bool)
@@ -2069,12 +2118,20 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 			}
 		}
 	}
-	summary.WiFiCredentialsPreserved = hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
+	summary.WiFiCredentialsPreserved = !wifiCredentialsRequested && hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
 	for _, namespace := range []string{"wifi", "websocket"} {
 		if !seenNamespaces[namespace] {
 			seenNamespaces[namespace] = true
 			namespaceOrder = append(namespaceOrder, namespace)
 		}
+	}
+	if wifiCredentialsRequested {
+		grouped["wifi"] = removeNVSRows(grouped["wifi"], "ssid", "password")
+		grouped["wifi"] = append(grouped["wifi"],
+			[]string{"ssid", "data", "string", strings.TrimSpace(wifiSSID)},
+			[]string{"password", "data", "string", strings.TrimSpace(wifiPassword)},
+		)
+		summary.WiFiCredentialsWritten = true
 	}
 	grouped["wifi"] = append(grouped["wifi"], []string{"ota_url", "data", "string", otaURL})
 	grouped["websocket"] = append(grouped["websocket"],
@@ -2082,6 +2139,9 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 		[]string{"version", "data", "u32", strconv.Itoa(websocketVersion)},
 	)
 	summary.MutatedEntryCount = 3
+	if wifiCredentialsRequested {
+		summary.MutatedEntryCount += 2
+	}
 
 	for _, namespace := range namespaceOrder {
 		if err := csvWriter.Write([]string{namespace, "namespace", "", ""}); err != nil {
@@ -2098,6 +2158,24 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 		return stackChanOfficialXiaozhiCompatibleNVSSummary{}, err
 	}
 	return summary, nil
+}
+
+func removeNVSRows(rows [][]string, keys ...string) [][]string {
+	if len(rows) == 0 || len(keys) == 0 {
+		return rows
+	}
+	remove := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		remove[key] = true
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		if len(row) > 0 && remove[row[0]] {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
 }
 
 func isOfficialXiaozhiConnectionNVSKey(namespace string, key string) bool {
@@ -2184,10 +2262,19 @@ func verifyOfficialPCMBridgeNVSProvision(path string, deviceID string, audioWSUR
 	return nil
 }
 
-func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, websocketURL string, websocketVersion int) error {
+func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, websocketURL string, websocketVersion int, wifiSSID string, wifiPassword string) error {
 	entries, err := readStackChanNVSMinimalEntries(path)
 	if err != nil {
 		return err
+	}
+	wifiCredentialsRequested := strings.TrimSpace(wifiSSID) != "" || strings.TrimSpace(wifiPassword) != ""
+	if wifiCredentialsRequested {
+		if !nvsEntryEquals(entries, "wifi", "ssid", strings.TrimSpace(wifiSSID)) {
+			return fmt.Errorf("provisioned NVS missing wifi/ssid")
+		}
+		if !nvsEntryEquals(entries, "wifi", "password", strings.TrimSpace(wifiPassword)) {
+			return fmt.Errorf("provisioned NVS missing wifi/password")
+		}
 	}
 	if !nvsEntryEquals(entries, "wifi", "ota_url", otaURL) {
 		return fmt.Errorf("provisioned NVS missing wifi/ota_url")
@@ -2359,7 +2446,7 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	if err != nil {
 		return fmt.Errorf("create NVS provision CSV: %w", err)
 	}
-	summary, csvErr := writeOfficialXiaozhiCompatibleNVSCSV(csvFile, entries, options.OTAURL, options.WebSocketURL, options.WebSocketVersion)
+	summary, csvErr := writeOfficialXiaozhiCompatibleNVSCSV(csvFile, entries, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword)
 	closeErr := csvFile.Close()
 	if csvErr != nil {
 		return csvErr
@@ -2398,7 +2485,7 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.VerifyLogPath, verifyScript); err != nil {
 		return fmt.Errorf("verify provisioned NVS partition: %w", err)
 	}
-	if err := verifyOfficialXiaozhiCompatibleNVSProvision(afterJSONPath, options.OTAURL, options.WebSocketURL, options.WebSocketVersion); err != nil {
+	if err := verifyOfficialXiaozhiCompatibleNVSProvision(afterJSONPath, options.OTAURL, options.WebSocketURL, options.WebSocketVersion, options.WiFiSSID, options.WiFiPassword); err != nil {
 		return err
 	}
 

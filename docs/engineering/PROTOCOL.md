@@ -1079,6 +1079,19 @@ scope is `stock_xiaozhi_mic_to_tts_downlink`, and
 itself; a passing machine trace is still `physical_review_required`, while a
 hello-only or downlink-only trace remains blocked/candidate evidence.
 
+`a21 xiaozhi-physical-prd-review` is the explicit promote boundary from
+candidate stock-Xiaozhi physical evidence to PRD-accepted physical evidence.
+It consumes a matching `a21.xiaozhi_physical_evidence.v1` report and
+`a21.xiaozhi_half_duplex_acceptance.v1` report only after the operator provides
+`--confirm ACCEPT_A21_XIAOZHI_PHYSICAL_PRD`. The command verifies target
+identity, stock/debug profile, Gateway downlink, mic ingress, playback-start,
+operator/instrument audible observation, barge-in stop, bounded
+`device.playback.stop_done`, and redaction. Its output is another
+`a21.xiaozhi_physical_evidence.v1` report with
+`promotion_gate=accepted`, `acceptance_status=prd_accepted`, and
+`prd_accepted=true`. It is a report promotion gate only: no device command,
+provider execution, V21 execution, flash, or NVS write is performed.
+
 This endpoint is not a provider path, not a conversation transcript API, and not a replacement for real VAD/STT/LLM/TTS. It exists so office acceptance can command a real device into `listening` or play a bounded validation beep while preserving trace/session evidence.
 
 Professional `control.event` payloads can now include explicit evidence fields:

@@ -1526,3 +1526,44 @@ Current conclusion:
 - No provider key was printed, committed, stored in firmware, or put into a
   report body. No ECS/root-secret change, firmware build, flash, serial, NVS,
   or physical hardware action occurred.
+
+## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Hardware Window
+
+Current implementation state:
+
+- Mainline branch `codex/a21-internal-test4-mainline-20260604` was created
+  from HEAD `87579cf` and pushed. The active foreground hardware branch is
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- Local Gateway was run on `0.0.0.0:21080` with public LAN URL
+  `http://10.98.141.239:21080`; `/healthz`, `/xiaozhi/ota/`, and local
+  stock-WebSocket OTA discovery responded.
+- Product StackChan serial `/dev/cu.usbmodem1101` was reachable. A guarded
+  official-compatible product NVS write passed on the hardware-window branch
+  and changed only `wifi/ota_url`, `websocket/url`, and `websocket/version`.
+  Servo calibration and existing Wi-Fi credentials were preserved.
+- After reset, the device repeatedly reported `WifiStation: No AP found`. The
+  control Mac is on LAN at `10.98.141.239` but not associated with a Wi-Fi AP,
+  so the physical blocker is now network provisioning, not Gateway URL/NVS
+  product-lane routing.
+- The official-compatible NVS writer now supports explicit
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_SSID` and
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_PASSWORD` values for this
+  foreground case. It writes only requested Wi-Fi keys plus Xiaozhi connection
+  keys and redacts values from reports/stdout.
+- `a21 xiaozhi-physical-prd-review` and `make xiaozhi-physical-prd-review`
+  now provide the missing report-only promote boundary from matching
+  `physical_review_required` Xiaozhi physical and half-duplex reports to an
+  accepted `a21.xiaozhi_physical_evidence.v1` report.
+
+Current conclusion:
+
+- Server-side candidate remains closed locally; full PRD is still waiting on
+  the device joining a reachable Wi-Fi network, then fresh stock Xiaozhi
+  physical evidence, stock half-duplex evidence, and the explicit PRD review
+  promote command.
+- Public ECS direct curl from this Mac still returned empty replies during this
+  window, and SSH was closed from this machine; local LAN Gateway was used for
+  guarded hardware work instead.
+- No firmware app flash, provider key exposure, generic `xiaozhi.bin` product
+  flash, repository prune/gc, or rollback of internal test 3 protocol/audio
+  changes occurred.

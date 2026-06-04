@@ -71,6 +71,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runXiaozhiProfessionalBench(args[1:], stdout, stderr)
 	case "xiaozhi-physical-evidence":
 		return runXiaozhiPhysicalEvidence(args[1:], stdout, stderr)
+	case "xiaozhi-physical-prd-review":
+		return runXiaozhiPhysicalPRDReview(args[1:], stdout, stderr)
 	case "xiaozhi-instrument-observation":
 		return runXiaozhiInstrumentObservation(args[1:], stdout, stderr)
 	case "physical-stackchan-evidence":

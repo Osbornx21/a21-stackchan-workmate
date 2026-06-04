@@ -267,6 +267,28 @@ flash, and never converts the generic Xiaozhi `xiaozhi.bin` app into a product
 StackChan artifact. Newer dry-run plans must not override an older executed
 official-compatible flash receipt.
 
+The matching official-compatible NVS lane can point a product StackChan at an
+A21 Gateway OTA/stock WebSocket endpoint without reflashing the app:
+
+```bash
+A21_UPLOAD_PORT=/dev/cu.usbmodemXXXX \
+A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OTA_URL=http://HOST:21080/xiaozhi/ota/ \
+A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_URL=ws://HOST:21080/v1/xiaozhi \
+make a21-stackchan-official-xiaozhi-compatible-nvs-plan
+```
+
+Execution still requires a foreground hardware-window branch, the A21 hardware
+gate, USB serial readiness, NVS backup, and
+`WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS`. By default it preserves
+existing Wi-Fi credentials and servo calibration. If the physical device cannot
+find the preserved AP, an operator may provide
+`A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_SSID` and
+`A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WIFI_PASSWORD`; the writer mutates
+only `wifi/ssid`, `wifi/password`, `wifi/ota_url`, `websocket/url`, and
+`websocket/version`, while stdout/report bodies keep endpoint and credential
+values redacted. Provider keys, proxy settings, V21 data, and generic
+`xiaozhi.bin` product flashing remain forbidden.
+
 When a real microphone bring-up window is available, mic-probe flashing uses its own explicit diagnostic lane:
 
 ```bash
@@ -366,6 +388,26 @@ make stackchan-half-duplex-acceptance
 ```
 
 This writes `reports/a21-stackchan-half-duplex-acceptance-YYYYMMDD-HHMMSS.json`. The command snapshots Gateway/device state and Gateway metrics, sends `LISTENING` without `audio_probe_only`, arms exactly one `mock_playback_on_next_audio_frame`, waits for live microphone frames to trigger Gateway mock downlink, checks microphone capture/send deltas, Gateway ingress/playback deltas, firmware playback-buffer deltas, and speaker-pump deltas, then clears back to `IDLE`. A passing report confirms the connected StackChan can drive a minimal half-duplex A21 loop through Gateway mock playback instrumentation. It still records `physical_sound_observed=false` and does not claim production ASR, LLM, TTS, AEC, full-duplex, or human-accepted audio quality.
+
+For stock Xiaozhi product firmware, the PRD physical promote step is separate
+from the half-duplex machine trace:
+
+```bash
+A21_XIAOZHI_PHYSICAL_EVIDENCE_REPORT=reports/a21-xiaozhi-physical-evidence-YYYYMMDD-HHMMSS.NNNNNNNNN.json \
+A21_XIAOZHI_HALF_DUPLEX_ACCEPTANCE_REPORT=reports/a21-xiaozhi-half-duplex-acceptance-YYYYMMDD-HHMMSS.NNNNNNNNN.json \
+A21_XIAOZHI_PHYSICAL_PRD_REVIEW_CONFIRM=ACCEPT_A21_XIAOZHI_PHYSICAL_PRD \
+make xiaozhi-physical-prd-review
+```
+
+This command is read-only against hardware. It requires a reviewable
+`physical_review_required` Xiaozhi physical evidence report, a matching
+`physical_review_required` stock half-duplex report, playback-start evidence,
+operator/instrument audible observation, mic evidence, barge-in stop and
+`device.playback.stop_done`, redaction pass, and the explicit confirmation
+token. It then writes a new accepted
+`a21.xiaozhi_physical_evidence.v1` report for `product-readiness`; it does not
+flash firmware, write NVS, execute a provider, or invent missing physical
+evidence.
 
 For instrumented speaker/downlink evidence, use:
 

@@ -57,7 +57,7 @@ func runStackChanAccept(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if check == "" {
 		if showHelp {
-			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity|physical-evidence|capability|mic-probe|imu-probe|sensor-probe|half-duplex|xiaozhi-half-duplex|speaker|touch|hardware-mainline [check options]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity|physical-evidence|capability|mic-probe|imu-probe|sensor-probe|half-duplex|xiaozhi-half-duplex|xiaozhi-prd-review|speaker|touch|hardware-mainline [check options]")
 			return 0
 		}
 		fmt.Fprintln(stderr, "--check requires a value")
@@ -124,6 +124,8 @@ func dispatchStackChanAccept(check string, args []string, stdout io.Writer, stde
 		return runStackChanHalfDuplexAcceptance(args, stdout, stderr)
 	case "xiaozhi-half-duplex", "stock-half-duplex", "xiaozhi-physical-half-duplex":
 		return runXiaozhiHalfDuplexAcceptance(args, stdout, stderr)
+	case "xiaozhi-prd-review", "xiaozhi-physical-prd-review":
+		return runXiaozhiPhysicalPRDReview(args, stdout, stderr)
 	case "speaker":
 		return runStackChanSpeakerAcceptance(args, stdout, stderr)
 	case "touch":

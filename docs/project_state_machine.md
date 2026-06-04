@@ -42,6 +42,8 @@ Active child transitions:
 - `T-STEPFUN-ROUTE-001-LAUNCH-POLICY-PROMOTION`
 - `T-V21-PROFESSIONAL-EXECUTION-001`
 - `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001`
+- `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001`
+- `T-OFFICIAL-XIAOZHI-COMPATIBLE-NVS-WIFI-OVERRIDE-001`
 
 A21 has a Go-first Gateway/Core foundation, stock-compatible Xiaozhi transport,
 official StackChan avatar/action relay, provider/V21 boundaries, a repo-carried
