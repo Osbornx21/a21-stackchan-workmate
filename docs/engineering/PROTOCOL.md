@@ -964,8 +964,11 @@ keep `physical_accepted=false` until visible screen/operator or instrument
 evidence proves the effect on the product device. Official action controls
 must keep `official_action_physical_accepted=false`, and must show the
 disconnected `/stackChan/ws` path as a blocked control state rather than
-pretending the face/motion/dance packet was delivered. Device binding state
-must remain metadata-only and show `open_until_binding_configured` or
+pretending the face/motion/dance packet was delivered. The console may then
+run an explicit MCP-backed body-preset/body-motion fallback so the product
+still moves; exported metadata must keep `official_action_blocked_reason` and
+`official_action_fallback` separate from official-frame delivery. Device
+binding state must remain metadata-only and show `open_until_binding_configured` or
 `bound_devices_only` honestly. Custom wake-word intent must show built-in
 Xiaozhi WakeNet as active until guarded firmware evidence exists. The Voice
 Probe, body-preset, screen/status, and official-action trace views must

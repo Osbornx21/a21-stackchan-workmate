@@ -1157,6 +1157,7 @@ const workspaceConsoleHTML = `<!doctype html>
       renderBodyPresetResponse(payload);
       await refreshBodyPresetTrace();
       log('body preset ' + (payload.preset || preset) + ' ' + (payload.status || 'sent'));
+      return payload;
     }
     async function runBodyMotion(motion) {
       const ids = nextBodyMotionIDs(motion);
@@ -1190,6 +1191,70 @@ const workspaceConsoleHTML = `<!doctype html>
       await refreshBodyPresetTrace();
       state.bodyMotion.trace_markers = (state.bodyPreset && state.bodyPreset.trace_markers) || [];
       log('body motion ' + (payload.motion || motion) + ' ' + (payload.status || 'sent'));
+      return payload;
+    }
+    function officialActionFallback(kind, value) {
+      if (kind === 'motion') {
+        return { type: 'body_motion', value: value };
+      }
+      if (kind === 'state') {
+        const presets = {
+          idle: 'reset_idle',
+          listening: 'listening',
+          thinking: 'thinking',
+          speaking: 'speaking'
+        };
+        return presets[value] ? { type: 'body_preset', value: presets[value] } : null;
+      }
+      if (kind === 'face') {
+        const presets = {
+          happy: 'celebrate',
+          attentive: 'listening'
+        };
+        return presets[value] ? { type: 'body_preset', value: presets[value] } : null;
+      }
+      return null;
+    }
+    async function runOfficialActionFallback(kind, value, blockedReason) {
+      const fallback = officialActionFallback(kind, value);
+      if (!fallback) {
+        throw new Error(blockedReason);
+      }
+      const payload = fallback.type === 'body_motion'
+        ? await runBodyMotion(fallback.value)
+        : await runBodyPreset(fallback.value);
+      state.officialAction = {
+        action: kind + '-' + value,
+        trace_id: payload.trace_id || '',
+        session_id: payload.session_id || '',
+        status: 'fallback_delivered',
+        delivered_transport: payload.delivered_transport || 'xiaozhi_mcp_sequence',
+        event: kind,
+        value: value,
+        packet_count: 0,
+        official_action_physical_accepted: false,
+        official_action_surfaces: {
+          official_relay: 'blocked',
+          fallback: fallback.type,
+          fallback_value: fallback.value
+        },
+        blocked_reason: blockedReason,
+        fallback: fallback.type + ':' + fallback.value
+      };
+      renderOfficialActionResponse({
+        trace_id: state.officialAction.trace_id,
+        status: 'fallback_delivered',
+        delivered_transport: state.officialAction.delivered_transport,
+        event: kind,
+        value: value,
+        packet_count: 0,
+        official_action_physical_accepted: false,
+        official_action_surfaces: state.officialAction.official_action_surfaces
+      });
+      setText(ui.officialActionStatus, 'fallback=' + fallback.type + ':' + fallback.value);
+      await refreshOfficialActionTrace();
+      log('official action fallback ' + fallback.type + ':' + fallback.value + ' after ' + blockedReason);
+      return payload;
     }
     function renderHardwareScreenResponse(response, action) {
       const args = (response && response.arguments) || {};
@@ -1357,25 +1422,30 @@ const workspaceConsoleHTML = `<!doctype html>
         await refreshOfficialActionTrace();
         log('official action ' + action + ' ' + (payload.status || 'sent'));
       } catch (err) {
-        state.officialAction = {
-          action: action,
-          trace_id: ids.trace_id,
-          session_id: ids.session_id,
-          status: 'blocked',
-          error: err.message,
-          event: kind,
-          value: value,
-          official_action_physical_accepted: false
-        };
-        setText(ui.officialActionStatus, 'blocked=' + err.message);
-        setText(ui.officialActionPhysicalStatus, 'physical_accepted=false');
-        setText(ui.officialActionTraceStatus, 'trace=' + ids.trace_id);
-        setText(ui.officialActionEventStatus, 'event=' + kind + ':' + value);
-        setText(ui.officialActionPacketStatus, 'packets=0');
-        setText(ui.officialActionTransportStatus, 'stackchan_official_ws');
-        setText(ui.officialActionSurfaceStatus, 'surfaces=blocked');
-        renderOfficialActionTrace({ trace_id: ids.trace_id, events: [], summary: { event_count: 0 } });
-        log('official action ' + action + ' blocked ' + err.message);
+        try {
+          await runOfficialActionFallback(kind, value, err.message);
+        } catch (fallbackErr) {
+          state.officialAction = {
+            action: action,
+            trace_id: ids.trace_id,
+            session_id: ids.session_id,
+            status: 'blocked',
+            error: fallbackErr.message,
+            blocked_reason: err.message,
+            event: kind,
+            value: value,
+            official_action_physical_accepted: false
+          };
+          setText(ui.officialActionStatus, 'blocked=' + fallbackErr.message);
+          setText(ui.officialActionPhysicalStatus, 'physical_accepted=false');
+          setText(ui.officialActionTraceStatus, 'trace=' + ids.trace_id);
+          setText(ui.officialActionEventStatus, 'event=' + kind + ':' + value);
+          setText(ui.officialActionPacketStatus, 'packets=0');
+          setText(ui.officialActionTransportStatus, 'stackchan_official_ws');
+          setText(ui.officialActionSurfaceStatus, 'surfaces=blocked');
+          renderOfficialActionTrace({ trace_id: ids.trace_id, events: [], summary: { event_count: 0 } });
+          log('official action ' + action + ' blocked ' + fallbackErr.message);
+        }
       }
     }
     async function runRoleplayProbe() {
@@ -1838,6 +1908,8 @@ const workspaceConsoleHTML = `<!doctype html>
         official_action_packet_count: (state.officialAction && state.officialAction.packet_count) || 0,
         official_action_physical_accepted: !!(state.officialAction && state.officialAction.official_action_physical_accepted),
         official_action_surfaces: (state.officialAction && state.officialAction.official_action_surfaces) || {},
+        official_action_blocked_reason: (state.officialAction && state.officialAction.blocked_reason) || '',
+        official_action_fallback: (state.officialAction && state.officialAction.fallback) || '',
         official_action_trace_markers: (state.officialAction && state.officialAction.trace_markers) || [],
         professional_cue: ui.professionalCue.textContent,
         redaction: {
