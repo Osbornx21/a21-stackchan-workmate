@@ -470,6 +470,13 @@ surfaces:
   body-scene evidence for that foreground observation only; it is not camera,
   NFC, infrared, official avatar/action relay, voice-chain, wake, provider,
   V21, or full PRD acceptance.
+- `GET /v1/hardware-acceptance?device_id=<device>` summarizes the foreground
+  hardware acceptance state from the redacted device registry. It reports
+  schema `a21.gateway.hardware_acceptance.v1`, `overall_status`, and per-item
+  entries for `mode_ritual` and `full_check` with delivery status, trace /
+  session IDs, physical acceptance booleans, the matching acceptance endpoint,
+  and the next operator action. This endpoint is read-only and never upgrades
+  machine-delivered evidence into physical acceptance.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

@@ -1089,6 +1089,27 @@ type DeviceRegistryResponse struct {
 	Devices       []DeviceRecord `json:"devices"`
 }
 
+type HardwareAcceptanceResponse struct {
+	SchemaVersion    string                   `json:"schema_version"`
+	Service          string                   `json:"service"`
+	DeviceID         string                   `json:"device_id"`
+	ConnectionStatus string                   `json:"connection_status"`
+	OverallStatus    string                   `json:"overall_status"`
+	PhysicalAccepted bool                     `json:"physical_accepted"`
+	Items            []HardwareAcceptanceItem `json:"items"`
+}
+
+type HardwareAcceptanceItem struct {
+	ID                 string `json:"id"`
+	Label              string `json:"label"`
+	DeliveryStatus     string `json:"delivery_status"`
+	PhysicalAccepted   bool   `json:"physical_accepted"`
+	TraceID            string `json:"trace_id,omitempty"`
+	SessionID          string `json:"session_id,omitempty"`
+	AcceptanceEndpoint string `json:"acceptance_endpoint,omitempty"`
+	NextAction         string `json:"next_action"`
+}
+
 type VoiceModeOption struct {
 	ID          string          `json:"id"`
 	Label       string          `json:"label"`
@@ -1281,6 +1302,7 @@ type XiaozhiOTAWebSocketConfig struct {
 const (
 	DeviceRegistrySchemaVersion               = "a21.gateway.devices.v1"
 	DeviceRegistryServiceName                 = "a21-gateway"
+	HardwareAcceptanceSchemaVersion           = "a21.gateway.hardware_acceptance.v1"
 	VoiceModeSchemaVersion                    = "a21.gateway.voice_modes.v1"
 	VoiceModeDialogue                         = "dialogue"
 	VoiceModeRoleplay                         = "roleplay"
@@ -1550,6 +1572,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/workspace", s.handleWorkspaceConsole)
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
+	mux.HandleFunc("/v1/hardware-acceptance", s.handleHardwareAcceptance)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/voice-mode-ritual", s.handleVoiceModeRitual)
@@ -1607,6 +1630,19 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		Service:       DeviceRegistryServiceName,
 		Devices:       s.deviceRecords(),
 	})
+}
+
+func (s *Server) handleHardwareAcceptance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.hardwareAcceptance(deviceID))
 }
 
 func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
@@ -12014,6 +12050,110 @@ func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceI
 
 func boolValue(value bool) *bool {
 	return &value
+}
+
+func (s *Server) hardwareAcceptance(deviceID string) HardwareAcceptanceResponse {
+	record, found := s.deviceRecord(deviceID)
+	items := []HardwareAcceptanceItem{
+		hardwareModeRitualAcceptanceItem(record, found),
+		hardwareFullCheckAcceptanceItem(record, found),
+	}
+	acceptedCount := 0
+	deliveredCount := 0
+	for _, item := range items {
+		if item.PhysicalAccepted {
+			acceptedCount++
+		}
+		if item.DeliveryStatus == "delivered" {
+			deliveredCount++
+		}
+	}
+	overall := "machine_evidence_pending"
+	if !found {
+		overall = "device_missing"
+	} else if acceptedCount == len(items) {
+		overall = "accepted"
+	} else if deliveredCount > 0 {
+		overall = "physical_pending"
+	}
+	return HardwareAcceptanceResponse{
+		SchemaVersion:    HardwareAcceptanceSchemaVersion,
+		Service:          DeviceRegistryServiceName,
+		DeviceID:         deviceID,
+		ConnectionStatus: record.ConnectionStatus,
+		OverallStatus:    overall,
+		PhysicalAccepted: found && acceptedCount == len(items),
+		Items:            items,
+	}
+}
+
+func (s *Server) deviceRecord(deviceID string) (DeviceRecord, bool) {
+	for _, record := range s.deviceRecords() {
+		if record.DeviceID == deviceID {
+			return record, true
+		}
+	}
+	return DeviceRecord{DeviceID: deviceID, ConnectionStatus: "missing"}, false
+}
+
+func hardwareModeRitualAcceptanceItem(record DeviceRecord, found bool) HardwareAcceptanceItem {
+	capabilities := record.Capabilities
+	delivered := found &&
+		capabilities["last_voice_mode_ritual_status"] == "delivered" &&
+		capabilities["last_voice_mode_ritual_completed"] == "true"
+	accepted := found && capabilities["voice_mode_ritual_physical_accepted"] == "true"
+	return hardwareAcceptanceItem(
+		"mode_ritual",
+		"Mode ritual",
+		delivered,
+		accepted,
+		capabilities["last_voice_mode_ritual_trace_id"],
+		capabilities["last_voice_mode_ritual_session_id"],
+		"/v1/voice-mode-ritual-acceptance",
+		"run_mode_ritual",
+		"accept_visible_mode_ritual",
+	)
+}
+
+func hardwareFullCheckAcceptanceItem(record DeviceRecord, found bool) HardwareAcceptanceItem {
+	capabilities := record.Capabilities
+	delivered := found &&
+		capabilities["last_body_scene"] == "full_check" &&
+		capabilities["last_body_scene_status"] == "delivered"
+	accepted := found && capabilities["body_scene_physical_accepted"] == "true"
+	return hardwareAcceptanceItem(
+		"full_check",
+		"Full check",
+		delivered,
+		accepted,
+		capabilities["last_body_scene_trace_id"],
+		capabilities["last_body_scene_session_id"],
+		"/v1/xiaozhi/body-scene-acceptance",
+		"run_full_check",
+		"accept_visible_full_check",
+	)
+}
+
+func hardwareAcceptanceItem(id string, label string, delivered bool, accepted bool, traceID string, sessionID string, endpoint string, runAction string, acceptAction string) HardwareAcceptanceItem {
+	deliveryStatus := "not_delivered"
+	nextAction := runAction
+	if delivered {
+		deliveryStatus = "delivered"
+		nextAction = acceptAction
+	}
+	if accepted {
+		nextAction = "accepted"
+	}
+	return HardwareAcceptanceItem{
+		ID:                 id,
+		Label:              label,
+		DeliveryStatus:     deliveryStatus,
+		PhysicalAccepted:   accepted,
+		TraceID:            strings.TrimSpace(traceID),
+		SessionID:          strings.TrimSpace(sessionID),
+		AcceptanceEndpoint: endpoint,
+		NextAction:         nextAction,
+	}
 }
 
 func (s *Server) deviceRecords() []DeviceRecord {

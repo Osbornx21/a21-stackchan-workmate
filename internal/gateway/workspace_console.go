@@ -698,6 +698,28 @@ const workspaceConsoleHTML = `<!doctype html>
           <div class="log" id="eventLog" aria-label="Workspace event log">workspace console ready</div>
         </div>
       </section>
+
+      <section class="wide" aria-label="Hardware acceptance">
+        <div class="panel-head">
+          <h2>Acceptance Board</h2>
+          <div class="tagline">
+            <span class="tag warn" id="hardwareAcceptanceStatus">physical_pending</span>
+            <span class="tag off" id="hardwareAcceptanceDeviceStatus">device=unknown</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="actions">
+            <button class="secondary" id="refreshHardwareAcceptance">Refresh Acceptance</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Device</span><strong id="hardwareAcceptanceDevice">device=none</strong></div>
+            <div class="metric"><span>Connection</span><strong id="hardwareAcceptanceConnection">missing</strong></div>
+            <div class="metric"><span>Physical</span><strong id="hardwareAcceptancePhysical">physical_accepted=false</strong></div>
+            <div class="metric"><span>Next</span><strong id="hardwareAcceptanceNext">run_full_check</strong></div>
+          </div>
+          <div class="row-list" id="hardwareAcceptanceItems" aria-label="Hardware acceptance items"></div>
+        </div>
+      </section>
     </main>
   </div>
   <script>
@@ -719,6 +741,7 @@ const workspaceConsoleHTML = `<!doctype html>
       bodyPreset: null,
       bodyMotion: null,
       hardwareScene: null,
+      hardwareAcceptance: null,
       hardwareScreen: null,
       officialAction: null,
       lastExport: null
@@ -859,6 +882,14 @@ const workspaceConsoleHTML = `<!doctype html>
       modeRitualStatus: document.getElementById('modeRitualStatus'),
       modeRitualTraceStatus: document.getElementById('modeRitualTraceStatus'),
       modeRitualPhysicalStatus: document.getElementById('modeRitualPhysicalStatus'),
+      refreshHardwareAcceptance: document.getElementById('refreshHardwareAcceptance'),
+      hardwareAcceptanceStatus: document.getElementById('hardwareAcceptanceStatus'),
+      hardwareAcceptanceDeviceStatus: document.getElementById('hardwareAcceptanceDeviceStatus'),
+      hardwareAcceptanceDevice: document.getElementById('hardwareAcceptanceDevice'),
+      hardwareAcceptanceConnection: document.getElementById('hardwareAcceptanceConnection'),
+      hardwareAcceptancePhysical: document.getElementById('hardwareAcceptancePhysical'),
+      hardwareAcceptanceNext: document.getElementById('hardwareAcceptanceNext'),
+      hardwareAcceptanceItems: document.getElementById('hardwareAcceptanceItems'),
       eventLog: document.getElementById('eventLog'),
       serviceStatus: document.getElementById('serviceStatus')
     };
@@ -1359,6 +1390,7 @@ const workspaceConsoleHTML = `<!doctype html>
       await refreshHardwareSceneTrace();
       state.bodyPreset.trace_markers = (state.hardwareScene && state.hardwareScene.trace_markers) || [];
       state.hardwareScreen.trace_markers = (state.hardwareScene && state.hardwareScene.trace_markers) || [];
+      await refreshHardwareAcceptance();
       log('hardware scene ' + (payload.scene || scene) + ' ' + (payload.status || 'sent'));
       return payload;
     }
@@ -1394,6 +1426,7 @@ const workspaceConsoleHTML = `<!doctype html>
       });
       renderHardwareSceneAcceptance(payload);
       await refreshHardwareSceneTrace();
+      await refreshHardwareAcceptance();
       log('hardware scene acceptance ' + (payload.status || 'accepted'));
       return payload;
     }
@@ -1786,6 +1819,35 @@ const workspaceConsoleHTML = `<!doctype html>
         setText(ui.professionalCue, payload.screen_label + ' / mode ritual');
       }
     }
+    function renderHardwareAcceptance(payload) {
+      state.hardwareAcceptance = payload || null;
+      const status = (payload && payload.overall_status) || 'device_missing';
+      const items = (payload && payload.items) || [];
+      const pending = items.find((item) => item.next_action && item.next_action !== 'accepted') || {};
+      setText(ui.hardwareAcceptanceStatus, status);
+      setText(ui.hardwareAcceptanceDeviceStatus, 'device=' + ((payload && payload.device_id) || currentDeviceID()));
+      setText(ui.hardwareAcceptanceDevice, 'device=' + ((payload && payload.device_id) || currentDeviceID()));
+      setText(ui.hardwareAcceptanceConnection, (payload && payload.connection_status) || 'missing');
+      setText(ui.hardwareAcceptancePhysical, 'physical_accepted=' + String(!!(payload && payload.physical_accepted)));
+      setText(ui.hardwareAcceptanceNext, pending.next_action || 'accepted');
+      ui.hardwareAcceptanceItems.textContent = '';
+      if (!items.length) {
+        ui.hardwareAcceptanceItems.append(row('No acceptance items', 'device missing', 'pending', 'warn'));
+        return;
+      }
+      items.forEach((item) => {
+        const tone = item.physical_accepted ? 'ready' : (item.delivery_status === 'delivered' ? 'warn' : 'off');
+        const left = [item.delivery_status || 'not_delivered', item.trace_id || 'trace=none'].join(' / ');
+        const right = item.physical_accepted ? 'accepted' : (item.next_action || 'pending');
+        ui.hardwareAcceptanceItems.append(row(item.label || item.id, left, right, tone, item.acceptance_endpoint || ''));
+      });
+    }
+    async function refreshHardwareAcceptance() {
+      const payload = await fetchJSON('/v1/hardware-acceptance?device_id=' + encodeURIComponent(currentDeviceID()), { cache: 'no-store' });
+      renderHardwareAcceptance(payload);
+      log('hardware acceptance ' + ((payload && payload.overall_status) || 'missing'));
+      return payload;
+    }
     async function refreshWorkspace() {
       const payload = await fetchJSON('/v1/professional-workspace', { cache: 'no-store' });
       setWorkspace(payload);
@@ -1963,6 +2025,7 @@ const workspaceConsoleHTML = `<!doctype html>
       setModeRitual(payload);
       const modes = await fetchJSON('/v1/voice-modes', { cache: 'no-store' });
       setVoiceModes(modes);
+      await refreshHardwareAcceptance();
       log('mode ritual ' + ((payload && payload.selected_voice_mode) || mode) + ' ' + ((payload && payload.status) || 'sent'));
       return payload;
     }
@@ -1986,6 +2049,7 @@ const workspaceConsoleHTML = `<!doctype html>
         acceptance_status: payload.status || '',
         accepted_surfaces: payload.accepted_surfaces || []
       }));
+      await refreshHardwareAcceptance();
       log('mode ritual physical ' + mode + ' ' + (payload.status || 'accepted'));
       return payload;
     }
@@ -2156,6 +2220,9 @@ const workspaceConsoleHTML = `<!doctype html>
         hardware_scene_accepted_surfaces: (state.hardwareScene && state.hardwareScene.accepted_surfaces) || [],
         hardware_scene_step_count: ((state.hardwareScene && state.hardwareScene.steps) || []).length,
         hardware_scene_trace_markers: (state.hardwareScene && state.hardwareScene.trace_markers) || [],
+        hardware_acceptance_status: (state.hardwareAcceptance && state.hardwareAcceptance.overall_status) || '',
+        hardware_acceptance_physical_accepted: !!(state.hardwareAcceptance && state.hardwareAcceptance.physical_accepted),
+        hardware_acceptance_items: (state.hardwareAcceptance && state.hardwareAcceptance.items) || [],
         screen_control_action: (state.hardwareScreen && state.hardwareScreen.action) || '',
         screen_control_trace_id: (state.hardwareScreen && state.hardwareScreen.trace_id) || '',
         screen_control_session_id: (state.hardwareScreen && state.hardwareScreen.session_id) || '',
@@ -2222,6 +2289,7 @@ const workspaceConsoleHTML = `<!doctype html>
         renderHardwareSceneTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         renderHardwareScreenTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         renderOfficialActionTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        await refreshHardwareAcceptance();
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -2252,6 +2320,7 @@ const workspaceConsoleHTML = `<!doctype html>
       runModeRitual(button.dataset.modeRitual).catch((err) => log('mode ritual ' + err.message));
     });
     ui.acceptModeRitualPhysical.addEventListener('click', () => acceptModeRitualPhysical().catch((err) => log('mode ritual physical ' + err.message)));
+    ui.refreshHardwareAcceptance.addEventListener('click', () => refreshHardwareAcceptance().catch((err) => log('hardware acceptance ' + err.message)));
     ui.saveWakeWordSetup.addEventListener('click', () => saveWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.resetWakeWordSetup.addEventListener('click', () => resetWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.runRoleplayProbe.addEventListener('click', () => runRoleplayProbe().catch((err) => log('probe roleplay ' + err.message)));

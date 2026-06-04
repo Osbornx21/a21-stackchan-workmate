@@ -494,6 +494,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/voice-modes",
 		"/v1/voice-mode-ritual",
 		"/v1/voice-mode-ritual-acceptance",
+		"/v1/hardware-acceptance",
 		"/v1/fast-companion/turn",
 		"/v1/professional-query",
 		"/v1/xiaozhi/body-preset",
@@ -630,6 +631,10 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`Run Roleplay Ritual`,
 		`Run Professional Ritual`,
 		`Accept Visible Mode Ritual`,
+		`id="hardwareAcceptanceStatus"`,
+		`id="hardwareAcceptanceItems"`,
+		`Refresh Acceptance`,
+		`Acceptance Board`,
 		`data-body-preset="ready"`,
 		`data-body-preset="listening"`,
 		`data-body-preset="thinking"`,
@@ -1523,6 +1528,65 @@ func TestVoiceModeRitualPhysicalAcceptanceRequiresMatchingEvidence(t *testing.T)
 	NewServer().Handler().ServeHTTP(resp, req)
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("mode ritual acceptance status = %d, want 409: %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestHardwareAcceptanceSummaryReportsMachineEvidenceAndPhysicalPending(t *testing.T) {
+	server := NewServer()
+	deviceID := "44:1b:f6:e2:6a:60"
+	server.recordVoiceModeRitualCompleted(deviceID, VoiceModeRoleplay, "a21-trace-mode-summary", "a21-session-mode-summary", server.now().UnixMilli())
+	server.mu.Lock()
+	record := server.devices[deviceID]
+	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, map[string]string{
+		"last_body_scene":                 "full_check",
+		"last_body_scene_status":          "delivered",
+		"last_body_scene_trace_id":        "a21-trace-full-check-summary",
+		"last_body_scene_session_id":      "a21-session-full-check-summary",
+		"body_scene_physical_accepted":    "false",
+		"xiaozhi_product_touch_reactions": "true",
+	})
+	server.devices[deviceID] = record
+	server.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/hardware-acceptance?device_id="+url.QueryEscape(deviceID), nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("hardware acceptance status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var response map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":    "a21.gateway.hardware_acceptance.v1",
+		"device_id":         deviceID,
+		"overall_status":    "physical_pending",
+		"physical_accepted": false,
+	} {
+		if response[key] != want {
+			t.Fatalf("response[%s] = %#v, want %#v in %#v", key, response[key], want, response)
+		}
+	}
+	items, ok := response["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("items = %#v, want two acceptance items", response["items"])
+	}
+	byID := map[string]map[string]any{}
+	for _, item := range items {
+		value, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("item = %#v, want object", item)
+		}
+		byID[value["id"].(string)] = value
+	}
+	mode := byID["mode_ritual"]
+	if mode["delivery_status"] != "delivered" || mode["physical_accepted"] != false || mode["next_action"] != "accept_visible_mode_ritual" {
+		t.Fatalf("mode item = %#v, want delivered physical pending", mode)
+	}
+	body := byID["full_check"]
+	if body["delivery_status"] != "delivered" || body["physical_accepted"] != false || body["next_action"] != "accept_visible_full_check" {
+		t.Fatalf("body item = %#v, want delivered physical pending", body)
 	}
 }
 
