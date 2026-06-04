@@ -132,7 +132,7 @@ Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
   `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
   voice/protocol rollback occurred.
 
-Live truth after the 2026-06-05 06:02 CST official StackChan relay runtime
+Live truth after the 2026-06-05 06:12 CST official StackChan relay runtime
 build:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was compared against
@@ -144,9 +144,10 @@ build:
   `WebsocketAvatarWorker`, so the official `WebSocketAvatar` was not being
   ticked after WDT-safe direct `GetHAL().startXiaozhi()`.
 - The product overlay now keeps direct Xiaozhi start and starts an A21 direct
-  official StackChan avatar relay runtime. The parked loop calls
-  `GetHAL().updateA21WebSocketAvatarRuntime()` every 20 ms while continuing to
-  feed the watchdog.
+  official StackChan avatar relay runtime before entering the blocking
+  `GetHAL().startXiaozhi()` call. The parked loop still calls
+  `GetHAL().updateA21WebSocketAvatarRuntime()` every 20 ms if control returns,
+  while continuing to feed the watchdog.
 - The official avatar relay base URL is now controlled by
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`, and
   the official socket appends `device_id` from
@@ -159,13 +160,20 @@ build:
 - Gateway official/power capability tests passed:
   `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan|PowerLifecycle|MCPCapabilities' -count=1`.
 - `git diff --check` passed.
-- Guarded product build passed. Build report:
-  `reports/a21-stackchan-official-baseline-20260605-060158-1780610518624307000.json`.
+- First product flash of commit `02955a6c9c28` proved the previous ordering was
+  wrong: Xiaozhi reconnected and remained online, but official control still
+  returned 409. Boot serial logs showed `A21 starting Xiaozhi mode directly`
+  and `HAL start xiaozhi`, but no `A21 starting official StackChan avatar
+  relay runtime`, proving `GetHAL().startXiaozhi()` blocks before the later
+  relay-start code.
+- Guarded product rebuild after the ordering fix passed. Build report:
+  `reports/a21-stackchan-official-baseline-20260605-061145-1780611105314101000.json`.
   Product app artifact:
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
-  SHA `4158bdd7a584cb4f915b717f858c1e86339f74484d514c25854297de3a610721`.
+  SHA `1ef4b72146c307ea9d5d3e6cfcf8ce7e3d83e780128366857da389625531a6e5`.
 - This is not yet physical acceptance. Required next evidence is guarded
-  product flash on `/dev/cu.usbmodem1101`, reconnect of device
+  product flash of the ordering-fixed artifact on `/dev/cu.usbmodem1101`,
+  reconnect of device
   `44:1b:f6:e2:6a:60`, `/stackChan/ws` online evidence, successful
   `/v1/stackchan/official/control` delivery to the product MAC, and visible
   physical confirmation.

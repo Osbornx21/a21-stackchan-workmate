@@ -263,12 +263,13 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
+	startAvatarIndex := strings.Index(overlay, `+    GetHAL().startA21WebSocketAvatarRuntime`)
 	startRuntimeIndex := strings.Index(overlay, `+    GetHAL().startXiaozhi();`)
-	if volumeIndex < 0 || startRuntimeIndex < 0 {
+	if volumeIndex < 0 || startAvatarIndex < 0 || startRuntimeIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if volumeIndex > startRuntimeIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before starting Xiaozhi")
+	if volumeIndex > startAvatarIndex || startAvatarIndex > startRuntimeIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must set volume, start avatar relay, then enter blocking Xiaozhi runtime")
 	}
 	mainLoopIndex := strings.Index(overlay, `     // Main loop`)
 	feedIndex := strings.Index(overlay, `+        GetHAL().feedTheDog();`)

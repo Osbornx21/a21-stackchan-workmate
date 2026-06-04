@@ -185,12 +185,12 @@ index 164a751..199a17d 100644
 +    if (codec != nullptr) {
 +        codec->SetOutputVolume(92);
 +    }
-+    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
-+    GetHAL().startXiaozhi();
 +    mclog::tagInfo("main", "A21 starting official StackChan avatar relay runtime");
 +    GetHAL().startA21WebSocketAvatarRuntime([](std::string_view msg) {
 +        mclog::tagInfo("main", "A21 avatar relay: {}", msg);
 +    });
++    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
++    GetHAL().startXiaozhi();
 +    while (1) {
 +        GetHAL().feedTheDog();
 +        GetHAL().updateA21WebSocketAvatarRuntime();

@@ -11,31 +11,37 @@ are the project memory.
 
 Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-BODY-SCENE-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-VOICE-MODE-HARDWARE-RITUAL-PACED-DEPLOYED-VOICE-MODE-RITUAL-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-HARDWARE-ACCEPTANCE-SUMMARY-BOARD-DEPLOYED-CONNECTED-HARDWARE-AUTO-ADOPTION-DEPLOYED-PRODUCT-OFFICIAL-COMPATIBLE-FLASHED-AFTER-FLASH-BODY-EVIDENCE-READY-PHYSICAL-PENDING-PRODUCT-DIRECT-START-WDT-SAFE-RESTORED-GATEWAY-XIAOZHI-REVIEW-REMEDIATED-POWER-LIFECYCLE-STATE-MACHINE-DEPLOYED-STACKCHAN-PMIC-POWER-KEY-PARITY-FLASHED-NO-CABLE-POWER-PHYSICAL-PENDING-STOCK-PROFESSIONAL-ROUTE-MODE-GATED-SERVER-SIDE-CANDIDATE-READY-OFFICIAL-STACKCHAN-RELAY-RUNTIME-BUILD-READY`
 
-Latest control update, 2026-06-05 06:02 CST:
+Latest control update, 2026-06-05 06:12 CST:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was compared against
   current HEAD after the stock professional route and PMIC remediation. The
   remaining official StackChan body gap was traced to the product firmware
   overlay: WDT-safe direct `startXiaozhi()` parked before the Mooncake worker
   that normally ticks official `WebSocketAvatar`.
-- The product overlay now keeps direct Xiaozhi start, but also starts an A21
-  direct official StackChan avatar relay runtime and calls
-  `updateA21WebSocketAvatarRuntime()` every 20 ms in the parked loop.
+- The product overlay now keeps direct Xiaozhi start, but starts the A21 direct
+  official StackChan avatar relay runtime before entering the blocking
+  `GetHAL().startXiaozhi()` call. If control ever returns, the parked loop
+  still calls `updateA21WebSocketAvatarRuntime()` every 20 ms.
 - The official avatar socket URL now uses
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"` and
   appends `device_id` from `GetHAL().getFactoryMacString(":")`, so Gateway
   controls addressed to product MAC `44:1b:f6:e2:6a:60` can match the
   official `/stackChan/ws` socket instead of the fallback `stackchan-official`
   registry key.
+- The first product flash of commit `02955a6c9c28` preserved Xiaozhi online
+  behavior but left official control at HTTP 409. Serial boot logs proved the
+  relay-start code did not run because `GetHAL().startXiaozhi()` is blocking.
 - Focused overlay tests, official firmware/App tests, Gateway official/power
-  tests, `git diff --check`, and a guarded product firmware build passed.
-- Product build report:
-  `reports/a21-stackchan-official-baseline-20260605-060158-1780610518624307000.json`.
+  tests, `git diff --check`, and a guarded product firmware rebuild passed
+  after the order fix.
+- Product rebuild report:
+  `reports/a21-stackchan-official-baseline-20260605-061145-1780611105314101000.json`.
   App artifact:
   `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
-  SHA `4158bdd7a584cb4f915b717f858c1e86339f74484d514c25854297de3a610721`.
+  SHA `1ef4b72146c307ea9d5d3e6cfcf8ce7e3d83e780128366857da389625531a6e5`.
 - This is build-ready, not product accepted. The next state requires guarded
-  product flash, device reconnect, `/stackChan/ws` online evidence, a
+  product flash of the order-fixed artifact, device reconnect, `/stackChan/ws`
+  online evidence, a
   successful `/v1/stackchan/official/control` delivery to the product MAC, and
   physical/operator confirmation of visible head/RGB/screen behavior.
 

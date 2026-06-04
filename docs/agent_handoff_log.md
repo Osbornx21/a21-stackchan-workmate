@@ -19,7 +19,7 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
-## 2026-06-05 06:02 CST - Official StackChan Relay Runtime Build Ready
+## 2026-06-05 06:12 CST - Official StackChan Relay Runtime Build Ready
 
 Round goal:
 
@@ -43,6 +43,11 @@ Actual completed work:
   runtime:
   `startA21WebSocketAvatarRuntime()` starts the official `WebSocketAvatar`;
   `updateA21WebSocketAvatarRuntime()` ticks it every 20 ms in the parked loop.
+- First flash of commit `02955a6c9c28` proved the initial order was wrong:
+  Xiaozhi reconnected, but official control still returned HTTP 409, and boot
+  serial logs did not show the relay-start log line after `HAL start xiaozhi`.
+- Moved the official avatar relay start before `GetHAL().startXiaozhi()`
+  because the Xiaozhi start call blocks in the product runtime.
 - Updated the official avatar URL to use
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"` and
   append `device_id` from `GetHAL().getFactoryMacString(":")` so controls to
@@ -70,16 +75,27 @@ Tests/build/runtime results:
 - Gateway official/power capability tests passed:
   `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan|PowerLifecycle|MCPCapabilities' -count=1`.
 - `git diff --check` passed.
-- Guarded product build passed:
+- Guarded product build passed before the first flash:
   `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`.
   Report:
   `reports/a21-stackchan-official-baseline-20260605-060158-1780610518624307000.json`.
   Product app SHA:
   `4158bdd7a584cb4f915b717f858c1e86339f74484d514c25854297de3a610721`.
+- Guarded product flash of commit `02955a6c9c28` passed, report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-060619-1780610779050566000.json`.
+- After that flash, device `44:1b:f6:e2:6a:60` reconnected to Xiaozhi and
+  remained `connection_status=online`; direct official control still returned
+  HTTP 409.
+- Serial boot capture showed the firmware entered `GetHAL().startXiaozhi()`
+  and never reached the later relay-start code.
+- Guarded product rebuild after moving relay start before Xiaozhi passed:
+  `reports/a21-stackchan-official-baseline-20260605-061145-1780611105314101000.json`.
+  Product app SHA:
+  `1ef4b72146c307ea9d5d3e6cfcf8ce7e3d83e780128366857da389625531a6e5`.
 
 Unfinished items:
 
-- Product app has not yet been flashed in this round.
+- The order-fixed product app has not yet been flashed in this round.
 - `/stackChan/ws` online evidence after the new firmware is still pending.
 - Official `/v1/stackchan/official/control` delivery to the product MAC and
   visible physical confirmation remain pending.
