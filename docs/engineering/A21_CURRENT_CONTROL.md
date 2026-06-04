@@ -1567,3 +1567,35 @@ Current conclusion:
 - No firmware app flash, provider key exposure, generic `xiaozhi.bin` product
   flash, repository prune/gc, or rollback of internal test 3 protocol/audio
   changes occurred.
+
+## Latest Control-Tower Result - 2026-06-04 Wi-Fi Credential NVS Attempt
+
+Current implementation state:
+
+- The operator provided a target AP SSID/password out of band. The password was
+  used only as stdin for the guarded NVS writer and was not committed or copied
+  into documentation.
+- The official-compatible NVS plan and execute reports were generated:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-162056-1780561256235353000.json`
+  and
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-162103-1780561263934023000.json`.
+- The execution report passed with `wifi_credentials_written=true`,
+  `mutated_entry_count=5`, `servo_calibration_present=true`, and a clean
+  hardware-window control guard on commit `a216fe6fcaa1`.
+- Local Gateway was restarted on `0.0.0.0:21080` with public LAN URL
+  `http://10.98.141.239:21080`; health and `/xiaozhi/ota/` returned the
+  expected stock WebSocket URL.
+- After hard reset, the device attempted the provided SSID but serial logs
+  showed Wi-Fi disconnect reason `201`, exhausted 5 attempts, then entered
+  Xiaozhi hotspot provisioning as `Xiaozhi-6A61`.
+- Gateway `/v1/devices` stayed empty during the polling window.
+
+Current conclusion:
+
+- The NVS write path is now proven for explicit Wi-Fi credentials, but the
+  provided AP was not visible/reachable to the device in this physical location
+  or band. The next hardware action needs a 2.4 GHz AP the ESP32-S3 can see, or
+  the operator should use the `Xiaozhi-6A61` captive portal to provision a
+  reachable network.
+- No firmware app flash, generic Xiaozhi product flash, provider execution,
+  V21 execution, repository prune/gc, or internal-test3 rollback occurred.

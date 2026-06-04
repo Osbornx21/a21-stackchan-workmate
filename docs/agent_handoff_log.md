@@ -12907,6 +12907,78 @@ Forbidden actions avoided:
   occurred. The only hardware mutation was the guarded official-compatible
   product NVS write described above.
 
+## 2026-06-04 16:25 CST - Explicit Wi-Fi Credential NVS Attempt
+
+Round goal:
+
+- Use the operator-provided Wi-Fi credentials to connect the product StackChan
+  through the official-compatible Xiaozhi product NVS lane without exposing the
+  password or flashing the app.
+
+Actual completed work:
+
+- Confirmed the hardware-window branch was clean at commit `a216fe6`.
+- Attempted to connect the Mac Wi-Fi to the provided SSID; the Mac could not
+  find that network and remained on LAN `10.98.141.239`.
+- Ran guarded product-lane NVS plan and execute on `/dev/cu.usbmodem1101` using
+  the provided SSID/password via stdin, not command arguments.
+- NVS execute passed with explicit Wi-Fi write enabled:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-162103-1780561263934023000.json`.
+- Restarted the local LAN Gateway on `0.0.0.0:21080` and confirmed
+  `/healthz` plus `/xiaozhi/ota/`.
+- Hard-reset the device. Serial logs showed the device trying the provided
+  SSID, then Wi-Fi disconnect reason `201`, 5 reconnect attempts, and fallback
+  to Xiaozhi provisioning hotspot `Xiaozhi-6A61`.
+- Gateway `/v1/devices` stayed empty during 12 polling attempts.
+
+Files changed:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Device is still not online because it cannot see/connect to the provided AP.
+- No Xiaozhi physical evidence, half-duplex evidence, or PRD accepted physical
+  report was generated in this attempt.
+
+Known risks/blockers:
+
+- ESP32-S3 requires a reachable 2.4 GHz AP. The provided SSID may be out of
+  range, typoed, hidden/unsupported, or 5 GHz only.
+
+Recommended next action:
+
+- Provide a reachable 2.4 GHz SSID/password, move the device/AP into range, or
+  use the `Xiaozhi-6A61` captive portal to provision a visible AP. Then rerun
+  the same guarded NVS path only if NVS needs to be changed.
+
+Test/build/runtime results:
+
+- NVS plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-162056-1780561256235353000.json`
+  was `status=ready`.
+- NVS execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-162103-1780561263934023000.json`
+  was `status=passed`, `write_executed=true`,
+  `wifi_credentials_written=true`, `mutated_entry_count=5`, and
+  `servo_calibration_present=true`.
+- Gateway local health and OTA discovery passed before device reset.
+- Serial evidence after reset showed Wi-Fi reason `201` and fallback to
+  `wifi_configuring`.
+
+Failure location/reason:
+
+- Physical AP availability. The device tried the configured SSID but did not
+  find/connect to it from the current location.
+
+Forbidden actions avoided:
+
+- No password was written to repository docs, no provider key was exposed, no
+  firmware app flash occurred, no generic `xiaozhi.bin` product lane was used,
+  no V21/provider execution occurred, no repository prune/gc was run, and no
+  internal-test3 protocol/audio changes were reverted.
+
 ## 2026-06-04 15:06 CST - Roleplay Voice Runtime Probe Closure
 
 Round goal:
