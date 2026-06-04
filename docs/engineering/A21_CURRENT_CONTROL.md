@@ -71,6 +71,54 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 05:13 CST review remediation and power
+lifecycle state-machine deployment:
+
+- Code-review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read.
+  Its P0/P1 software findings were mapped to the current worktree and
+  remediated where software can safely act: Xiaozhi Gateway session races,
+  abort/barge-in pacer blocking, fast-ack roleplay interruption risk, and the
+  namespace gate that had blocked `make preflight` / `make doctor`.
+- Gateway now has a product power lifecycle state machine:
+  `GET /v1/power-lifecycle`, `POST /v1/power-lifecycle-acceptance`, and a
+  `power_lifecycle` item in `GET /v1/hardware-acceptance`.
+- Power shutdown, sleep, reboot, and firmware upgrade remain blocked from the
+  low-risk Xiaozhi MCP surface. `/v1/xiaozhi/mcp-capabilities` reports
+  `power_shutdown` and `power_sleep` as blocked tool classes.
+- Local verification passed: focused power/hardware Gateway tests, touched
+  packages, focused Gateway `-race`, `git diff --check`,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- ECS `47.103.57.217` was deployed through `/opt/a21.next` safe swap. Remote
+  focused Gateway/App/runtimeguard tests passed, remote build passed,
+  `a21-gateway.service` restarted active, and loopback/public `/healthz`
+  passed.
+- Public `/xiaozhi/ota/` returned the product WebSocket
+  `ws://47.103.57.217/v1/xiaozhi`.
+- Public `GET /v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60` returned
+  `overall_status=physical_pending`, `xiaozhi_ws_online=true`, and
+  `battery_telemetry=missing`; no-cable cold boot and physical power-button
+  start remain `physical_accepted=false`.
+- Live product roleplay ritual trace
+  `a21-trace-mode-ritual-power-state-20260605-0509` and live `full_check`
+  trace `a21-trace-full-check-power-state-20260605-0509` both returned HTTP
+  200 `status=delivered`.
+- Final public hardware acceptance returned `overall_status=physical_pending`:
+  `mode_ritual` and `full_check` are machine-delivered, while
+  `power_lifecycle` is online but not physically accepted.
+- Public repeat-3 Xiaozhi voice bench
+  `reports/a21-xiaozhi-voice-bench-20260605-051249.326210000.json` passed
+  with 3/3 answers, 3/3 barge-in turns, `failure_count=0`, answer first-audio
+  P95 `1493 ms`, and barge-in stop P95 `22 ms`.
+- Product readiness
+  `reports/a21-product-readiness-20260605-051255.json` remains
+  `server_side_blocked`, `launch_ready=false`, `demo_ready=true`.
+  Remaining real evidence gaps are `real_provider_smoke`,
+  `physical_stackchan_prd_acceptance`, and `roleplay_voice_runtime`.
+- No firmware flash, no NVS write, no provider secret output, no generic
+  `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
+  voice/protocol rollback occurred.
+
 Live truth after the 2026-06-05 03:24 CST product deployment and guarded
 official-compatible flash:
 

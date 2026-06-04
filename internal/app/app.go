@@ -1062,9 +1062,10 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 		return applyXiaozhiCloudEdgeProductChainEnvDefaults(env)
 	case "host_local", "host-local", "product", "real":
 	default:
-		return env
+		return applyXiaozhiFastAckDelayEnvDefaults(env)
 	}
 	out := append([]string(nil), env...)
+	out = applyXiaozhiFastAckDelayEnvDefaults(out)
 	if strings.TrimSpace(appEnvValue(out, "A21_ASR_LOCAL_PROFILE")) == "" {
 		out = append(out, "A21_ASR_LOCAL_PROFILE=sherpa_onnx")
 	}
@@ -1088,7 +1089,10 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 }
 
 func applyXiaozhiCloudEdgeProductChainEnvDefaults(env []string) []string {
-	out := append([]string(nil), env...)
+	out := applyXiaozhiFastAckDelayEnvDefaults(env)
+	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS")) == "" {
+		out = append(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS=700")
+	}
 	if strings.TrimSpace(appEnvValue(out, "A21_ASR_PROFILE")) == "" {
 		out = append(out, "A21_ASR_PROFILE=cloud")
 	}
@@ -1117,6 +1121,17 @@ func applyXiaozhiCloudEdgeProductChainEnvDefaults(env []string) []string {
 		} else {
 			out = append(out, "A21_TTS_FAST_PROFILE=doubao_tts_realtime")
 		}
+	}
+	return out
+}
+
+func applyXiaozhiFastAckDelayEnvDefaults(env []string) []string {
+	out := append([]string(nil), env...)
+	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_ENABLED")) == "" {
+		out = append(out, "A21_XIAOZHI_FAST_ACK_ENABLED=true")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS")) == "" {
+		out = append(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS=700")
 	}
 	return out
 }

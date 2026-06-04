@@ -8,13 +8,16 @@ func TestAuditNamespacePathsAllowsA21AndV21AdapterBoundary(t *testing.T) {
 		"internal/v21adapter/client.go",
 		"docs/engineering/V21_INTEGRATION.md",
 		"docs/engineering/PHASE6A_V21_ADAPTER.md",
+		"docs/plans/2026-06-04-a21-v21-native-voice-query-bridge.md",
+		"docs/plans/2026-06-04-v21-a21-v2-workspace-query-scope-native-contract.md",
+		"docs/plans/2026-06-04-v21-professional-execution-validation.md",
 	})
 
 	if !report.Result.OK {
 		t.Fatalf("Result.OK = false, findings = %#v", report.Result.Findings)
 	}
-	if report.FilesScanned != 4 {
-		t.Fatalf("FilesScanned = %d, want 4", report.FilesScanned)
+	if report.FilesScanned != 7 {
+		t.Fatalf("FilesScanned = %d, want 7", report.FilesScanned)
 	}
 }
 

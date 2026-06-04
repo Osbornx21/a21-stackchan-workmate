@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1577,8 +1578,8 @@ func TestHardwareAcceptanceSummaryReportsMachineEvidenceAndPhysicalPending(t *te
 		}
 	}
 	items, ok := response["items"].([]any)
-	if !ok || len(items) != 2 {
-		t.Fatalf("items = %#v, want two acceptance items", response["items"])
+	if !ok || len(items) != 3 {
+		t.Fatalf("items = %#v, want three acceptance items", response["items"])
 	}
 	byID := map[string]map[string]any{}
 	for _, item := range items {
@@ -1595,6 +1596,118 @@ func TestHardwareAcceptanceSummaryReportsMachineEvidenceAndPhysicalPending(t *te
 	body := byID["full_check"]
 	if body["delivery_status"] != "delivered" || body["physical_accepted"] != false || body["next_action"] != "accept_visible_full_check" {
 		t.Fatalf("body item = %#v, want delivered physical pending", body)
+	}
+	power := byID["power_lifecycle"]
+	if power["delivery_status"] != "delivered" || power["physical_accepted"] != false || power["next_action"] != "accept_no_cable_power_button_boot" {
+		t.Fatalf("power item = %#v, want online but physical pending", power)
+	}
+}
+
+func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-power-hello",
+		"session_id": "a21-session-power-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Get(httpServer.URL + "/v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("power lifecycle status = %d: %s", resp.StatusCode, body)
+	}
+	var pending map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&pending); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":    "a21.gateway.power_lifecycle.v1",
+		"overall_status":    "physical_pending",
+		"physical_accepted": false,
+		"xiaozhi_ws_online": true,
+		"result_redacted":   true,
+		"connection_status": "online",
+	} {
+		if pending[key] != want {
+			t.Fatalf("pending[%s] = %#v, want %#v in %#v", key, pending[key], want, pending)
+		}
+	}
+
+	acceptResp, err := http.Post(
+		httpServer.URL+"/v1/power-lifecycle-acceptance",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-acceptance","session_id":"a21-session-power-acceptance","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"observer":"operator"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acceptResp.Body.Close()
+	if acceptResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(acceptResp.Body)
+		t.Fatalf("power lifecycle acceptance status = %d: %s", acceptResp.StatusCode, body)
+	}
+	var accepted map[string]any
+	if err := json.NewDecoder(acceptResp.Body).Decode(&accepted); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":    "a21.gateway.power_lifecycle_acceptance.v1",
+		"status":            "accepted",
+		"physical_accepted": true,
+		"result_redacted":   true,
+	} {
+		if accepted[key] != want {
+			t.Fatalf("accepted[%s] = %#v, want %#v in %#v", key, accepted[key], want, accepted)
+		}
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-power-acceptance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "power_lifecycle.physical_acceptance.accepted") {
+		t.Fatalf("trace missing power acceptance marker: %+v", traces.Events)
+	}
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	for key, want := range map[string]any{
+		"power_lifecycle_physical_accepted":             "true",
+		"no_cable_cold_boot_physical_accepted":          "true",
+		"physical_power_button_start_physical_accepted": "true",
+		"last_power_lifecycle_acceptance_status":        "operator_power_button_accepted",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestPowerLifecycleAcceptanceRequiresOnlineXiaozhiSocket(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/power-lifecycle-acceptance", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-missing","session_id":"a21-session-power-missing","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"observer":"operator"}`))
+	rec := httptest.NewRecorder()
+	NewServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("power lifecycle acceptance status = %d, want 409: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -6724,7 +6837,7 @@ func TestXiaozhiDeviceRegistryRestoresOnlineAfterReconnect(t *testing.T) {
 	}
 }
 
-func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
+func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnWithoutBlockingPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
 	if turn.id != 1 {
@@ -6754,8 +6867,8 @@ func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing
 	if !session.shouldAbortXiaozhiTurn(turn) {
 		t.Fatal("cancelled turn should abort frame send checks")
 	}
-	if turn.pacer.SentFrames() != 0 {
-		t.Fatalf("sent frames = %d, want pacer reset on cancel", turn.pacer.SentFrames())
+	if turn.pacer.SentFrames() != 1 {
+		t.Fatalf("sent frames = %d, want cancelled turn pacer left untouched", turn.pacer.SentFrames())
 	}
 
 	next := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
@@ -7884,7 +7997,9 @@ func TestXiaozhiMCPCapabilitiesEndpointReportsAllowedAndBlockedTools(t *testing.
 	if !containsString(response.AllowedTools, xiaozhiMCPScreenSetBrightnessToolName) || !containsString(response.AllowedTools, xiaozhiMCPRobotSetLEDColorToolName) {
 		t.Fatalf("allowed tools = %#v", response.AllowedTools)
 	}
-	if !containsString(response.BlockedToolClasses, "nfc") || !containsString(response.BlockedToolClasses, "firmware_upgrade") {
+	if !containsString(response.BlockedToolClasses, "nfc") ||
+		!containsString(response.BlockedToolClasses, "firmware_upgrade") ||
+		!containsString(response.BlockedToolClasses, "power_shutdown") {
 		t.Fatalf("blocked tool classes = %#v", response.BlockedToolClasses)
 	}
 }
@@ -10814,10 +10929,9 @@ func TestXiaozhiWebSocketMaxListenDurationAutoStopsAfterSpeech(t *testing.T) {
 	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
 		return runner
 	}
-	nowMS := int64(1000)
+	var nowMS int64 = 1000
 	server.now = func() time.Time {
-		nowMS += 60
-		return time.UnixMilli(nowMS)
+		return time.UnixMilli(atomic.AddInt64(&nowMS, 60))
 	}
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
@@ -11800,6 +11914,302 @@ func TestXiaozhiWebSocketSendsFastAckBeforeVoicePipelineCompletes(t *testing.T) 
 		t.Fatalf("tts stop = %#v", ttsStop)
 	}
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+}
+
+func TestXiaozhiWebSocketFastAckDisabledWaitsForAnswer(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		CloudVoiceEnv: []string{"A21_XIAOZHI_FAST_ACK_ENABLED=false"},
+	})
+	runner := newSlowAnswerXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.releaseAnswer)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-fast-ack-disabled",
+		"session_id": "a21-session-xiaozhi-fast-ack-disabled",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("voice pipeline did not start")
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	audioIngress, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio ingress = %#v", ttsStart["audio_ingress"])
+	}
+	if audioIngress["asr_status"] != "pipeline_running" || audioIngress["tts_status"] != "answer_only" {
+		t.Fatalf("audio ingress = %#v, want running answer-only status", audioIngress)
+	}
+	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
+	}
+	if pipeline["stage"] != "answer_pending" || pipeline["fast_ack_enabled"] != false {
+		t.Fatalf("voice pipeline = %#v, want fast ack disabled answer pending", pipeline)
+	}
+	time.Sleep(80 * time.Millisecond)
+	traceReqBeforeAnswer := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-fast-ack-disabled", nil)
+	traceRecBeforeAnswer := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRecBeforeAnswer, traceReqBeforeAnswer)
+	if traceRecBeforeAnswer.Code != http.StatusOK {
+		t.Fatalf("trace status before answer = %d: %s", traceRecBeforeAnswer.Code, traceRecBeforeAnswer.Body.String())
+	}
+	var tracesBeforeAnswer TraceResponse
+	if err := json.NewDecoder(traceRecBeforeAnswer.Body).Decode(&tracesBeforeAnswer); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(tracesBeforeAnswer.Events, "xiaozhi.fast_ack.disabled") {
+		t.Fatalf("trace missing fast ack disabled marker before answer: %+v", tracesBeforeAnswer.Events)
+	}
+	if traceContains(tracesBeforeAnswer.Events, "xiaozhi.fast_ack.downlink") {
+		t.Fatalf("trace must not include fast ack downlink before answer: %+v", tracesBeforeAnswer.Events)
+	}
+
+	runner.releaseAnswer()
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-xiaozhi-fast-ack-disabled", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if traceContains(traces.Events, "xiaozhi.fast_ack.downlink") {
+		t.Fatalf("trace must not include fast ack downlink when disabled: %+v", traces.Events)
+	}
+}
+
+func TestXiaozhiWebSocketDelayedFastAckWaitsForThreshold(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		CloudVoiceEnv: []string{
+			"A21_XIAOZHI_FAST_ACK_ENABLED=true",
+			"A21_XIAOZHI_FAST_ACK_DELAY_MS=80",
+		},
+	})
+	runner := newSlowAnswerXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	t.Cleanup(runner.releaseAnswer)
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-delayed-fast-ack",
+		"session_id": "a21-session-xiaozhi-delayed-fast-ack",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runner.entered:
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("voice pipeline did not start")
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	audioIngress, ok := ttsStart["audio_ingress"].(map[string]any)
+	if !ok {
+		t.Fatalf("audio ingress = %#v", ttsStart["audio_ingress"])
+	}
+	if audioIngress["tts_status"] != "delayed_fast_ack_then_answer" {
+		t.Fatalf("audio ingress = %#v, want delayed fast ack status", audioIngress)
+	}
+	pipeline, ok := ttsStart["voice_pipeline"].(map[string]any)
+	if !ok {
+		t.Fatalf("voice pipeline = %#v", ttsStart["voice_pipeline"])
+	}
+	if pipeline["schema_version"] != "a21.voice_pipeline.delayed_fast_ack.v1" ||
+		pipeline["stage"] != "answer_pending" ||
+		pipeline["fast_ack_delay_ms"] != float64(80) {
+		t.Fatalf("voice pipeline = %#v, want delayed fast ack summary", pipeline)
+	}
+	time.Sleep(30 * time.Millisecond)
+	tracesBeforeDelay := server.traceEvents("a21-trace-xiaozhi-delayed-fast-ack")
+	if traceContains(tracesBeforeDelay, "xiaozhi.fast_ack.downlink") {
+		t.Fatalf("trace must not include fast ack downlink before threshold: %+v", tracesBeforeDelay)
+	}
+
+	ackSentence := readXiaozhiJSON(t, ctx, conn)
+	if ackSentence["type"] != "tts" || ackSentence["state"] != "sentence_start" || ackSentence["phase"] != "fast_ack" {
+		t.Fatalf("ack sentence = %#v", ackSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("ack downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+
+	runner.releaseAnswer()
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v", answerSentence)
+	}
+	messageType, data, err = conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	traces := server.traceEvents("a21-trace-xiaozhi-delayed-fast-ack")
+	for _, want := range []string{"xiaozhi.fast_ack.delay_elapsed", "xiaozhi.fast_ack.delayed", "xiaozhi.fast_ack.downlink"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces)
+		}
+	}
+}
+
+func TestXiaozhiWebSocketDelayedFastAckSkipsWhenAnswerReady(t *testing.T) {
+	server := NewServerWithOptions(ServerOptions{
+		CloudVoiceEnv: []string{
+			"A21_XIAOZHI_FAST_ACK_ENABLED=true",
+			"A21_XIAOZHI_FAST_ACK_DELAY_MS=200",
+		},
+	})
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return fallbackReportingXiaozhiPipelineRunner{}
+	}
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-delayed-fast-ack-skip",
+		"session_id": "a21-session-xiaozhi-delayed-fast-ack-skip",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Write(ctx, websocket.MessageBinary, xiaozhiTestSpeechOpusPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "stop"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ttsStart := readXiaozhiJSON(t, ctx, conn)
+	if ttsStart["type"] != "tts" || ttsStart["state"] != "start" {
+		t.Fatalf("tts start = %#v", ttsStart)
+	}
+	answerSentence := readXiaozhiJSON(t, ctx, conn)
+	if answerSentence["type"] != "tts" || answerSentence["state"] != "sentence_start" || answerSentence["phase"] != "answer" {
+		t.Fatalf("answer sentence = %#v, want answer without fast ack", answerSentence)
+	}
+	messageType, data, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if messageType != websocket.MessageBinary || len(data) == 0 {
+		t.Fatalf("answer downlink message type=%v bytes=%d, want non-empty binary opus", messageType, len(data))
+	}
+	ttsStop := readXiaozhiJSON(t, ctx, conn)
+	if ttsStop["type"] != "tts" || ttsStop["state"] != "stop" || ttsStop["reason"] != "voice_pipeline_answer_completed" {
+		t.Fatalf("tts stop = %#v", ttsStop)
+	}
+	assertNoXiaozhiMessage(t, conn, 120*time.Millisecond)
+
+	var traces []TraceEvent
+	for i := 0; i < 10; i++ {
+		traces = server.traceEvents("a21-trace-xiaozhi-delayed-fast-ack-skip")
+		if traceContains(traces, "xiaozhi.fast_ack.skipped_answer_ready") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !traceContains(traces, "xiaozhi.fast_ack.skipped_answer_ready") {
+		t.Fatalf("trace missing delayed fast ack skip marker: %+v", traces)
+	}
+	if traceContains(traces, "xiaozhi.fast_ack.downlink") {
+		t.Fatalf("trace must not include fast ack downlink when answer is ready: %+v", traces)
+	}
 }
 
 func TestXiaozhiWebSocketStreamsFirstAnswerSegmentBeforeTextStreamDone(t *testing.T) {

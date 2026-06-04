@@ -595,7 +595,8 @@ func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiPr
 	if err := wsjson.Write(turnCtx, conn, stopListen); err != nil {
 		return result
 	}
-	for index := 0; index < 4; index++ {
+	abortDeadline := time.Now().Add(options.Timeout)
+	for time.Now().Before(abortDeadline) {
 		message, ok := readXiaozhiVoiceBenchJSON(turnCtx, conn)
 		if !ok {
 			return result
@@ -607,7 +608,8 @@ func runXiaozhiProfessionalBenchAbortTurn(ctx context.Context, options xiaozhiPr
 			break
 		}
 	}
-	for index := 0; index < 4; index++ {
+	stopDeadline := time.Now().Add(options.Timeout)
+	for time.Now().Before(stopDeadline) {
 		message, ok := readXiaozhiVoiceBenchJSON(turnCtx, conn)
 		if !ok {
 			return result

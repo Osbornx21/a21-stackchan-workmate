@@ -19,6 +19,130 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 05:13 CST - Review Remediation, Gateway Stabilization, And Power Lifecycle State Machine
+
+Round goal:
+
+- Consume code-review thread `019e941c-761b-7ee0-a4b8-68103a0850a1`,
+  compare its findings against the current implementation, remediate the
+  blocking Gateway/voice/hardware issues that can be fixed in software, deploy
+  the result, and keep physical power-button truth honest.
+
+Actual completed work:
+
+- Fixed the Xiaozhi Gateway session-state race class by locking/snapshotting
+  session identity, features, listening state, ASR/Opus counters, and downlink
+  activity before cross-goroutine use.
+- Fixed a real abort/barge-in blocking path by removing the pacer reset from
+  `cancelCurrentXiaozhiTurnLocked`; canceled turns now rely on context
+  cancellation and stale-turn checks instead of blocking the abort handler
+  behind pacer locks.
+- Changed product-chain fast ack from immediate "我在" toward delayed
+  backchannel behavior: app defaults now set
+  `A21_XIAOZHI_FAST_ACK_ENABLED=true` and
+  `A21_XIAOZHI_FAST_ACK_DELAY_MS=700`; Gateway skips the backchannel when the
+  real answer is ready first.
+- Fixed the explicit V21 adapter plan namespace gate so `make preflight` and
+  `make doctor` pass without allowing accidental V21/X21 naming in A21 code.
+- Added `GET /v1/power-lifecycle` and
+  `POST /v1/power-lifecycle-acceptance`; power lifecycle is now part of
+  `GET /v1/hardware-acceptance`.
+- Kept power shutdown/sleep/reboot/firmware upgrade out of the low-risk
+  Xiaozhi MCP whitelist. `/v1/xiaozhi/mcp-capabilities` now lists
+  `power_shutdown` and `power_sleep` as blocked tool classes.
+- Deployed the latest Gateway to ECS `47.103.57.217` through `/opt/a21.next`
+  safe swap; no firmware flash, NVS write, serial write, provider secret
+  printing, or Git prune/gc occurred.
+- Replayed live product mode ritual and `full_check` after ECS restart so the
+  in-memory hardware acceptance board has fresh machine-delivered evidence.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `internal/app/xiaozhi_professional_bench.go`
+- `internal/audio/ratecontroller.go`
+- `internal/runtimeguard/namespace.go`
+- `internal/runtimeguard/namespace_test.go`
+- `docs/engineering/PROTOCOL.md`
+
+Tests/build/runtime results:
+
+- Local focused Gateway power/hardware/MCP tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestHardwareAcceptance|TestPowerLifecycle|TestXiaozhiMCPCapabilitiesEndpointReportsAllowedAndBlockedTools' -count=1`.
+- Local touched packages passed:
+  `GOMAXPROCS=2 go test ./internal/gateway ./internal/app ./internal/audio ./internal/runtimeguard -count=1`.
+- Local focused Gateway race suite passed:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|VoiceModeRitual|HardwareAcceptance|PowerLifecycle|WorkspaceConsole' -count=1`.
+- `git diff --check`, `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, and `GOMAXPROCS=2 make doctor` passed.
+- Remote `/opt/a21.next` focused Gateway/App/runtimeguard tests passed, remote
+  build passed, `a21-gateway.service` restarted active, and remote loopback
+  `/healthz` returned `status=ok`.
+
+Runtime or physical evidence:
+
+- Public direct `/healthz` returned `status=ok`.
+- Public direct `/xiaozhi/ota/` returned
+  `ws://47.103.57.217/v1/xiaozhi` with version `1`.
+- Public `GET /v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60` returned
+  `overall_status=physical_pending`, `xiaozhi_ws_online=true`,
+  `battery_telemetry=missing`, and physical power-button/cold-boot items
+  `physical_accepted=false`.
+- Public `/v1/xiaozhi/mcp-capabilities` reported allowed tools for speaker
+  volume, device status, screen brightness/theme/info, robot head, and LED;
+  it reported blocked classes including `reboot`, `firmware_upgrade`,
+  `nfc`, `infrared`, `power_shutdown`, `power_sleep`, and `app_lifecycle`.
+- Live product mode ritual trace
+  `a21-trace-mode-ritual-power-state-20260605-0509` returned HTTP 200
+  `status=delivered`.
+- Live product `full_check` trace
+  `a21-trace-full-check-power-state-20260605-0509` returned HTTP 200
+  `status=delivered`.
+- Final public hardware acceptance for product device
+  `44:1b:f6:e2:6a:60` returned `overall_status=physical_pending` with
+  `mode_ritual`, `full_check`, and `power_lifecycle` all present; the first
+  two are machine-delivered and all three are physically unaccepted.
+- Public repeat-3 Xiaozhi voice bench
+  `reports/a21-xiaozhi-voice-bench-20260605-051249.326210000.json` passed
+  3/3 answer and 3/3 barge-in turns, `failure_count=0`,
+  answer first-audio P95 `1493 ms`, and barge-in stop P95 `22 ms`.
+- Product readiness
+  `reports/a21-product-readiness-20260605-051255.json` remained
+  `server_side_blocked`, `launch_ready=false`, `demo_ready=true`.
+
+Remaining issues:
+
+- Physical no-cable cold boot and physical power-button start are still not
+  accepted. Gateway can now track this accurately, but it cannot prove battery
+  / PMIC / button electrical behavior without foreground observation or
+  instrumented power evidence.
+- Battery telemetry is still missing in the product firmware runtime echo; it
+  remains a sensor/battery diagnostic track.
+- Physical StackChan PRD voice acceptance remains blocked by missing physical
+  mic/Opus/PCM/VAD/answer-downlink/operator evidence.
+- Product readiness is still blocked by real provider smoke, roleplay voice
+  runtime report mismatch, and physical StackChan PRD acceptance.
+- Official `/stackChan/ws` avatar/action relay remains not product-closed; the
+  live body effects are currently Xiaozhi MCP-backed.
+
+Next suggested action:
+
+- Run a foreground physical power window: attempt no-USB cold boot from the
+  physical power button, watch for device boot/Gateway reconnect/Xiaozhi socket,
+  and only then call `/v1/power-lifecycle-acceptance`.
+- In parallel, promote sensor/battery diagnostic evidence, run a fresh roleplay
+  voice runtime probe against the current profile, and close physical
+  mic/playback PRD evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no generic `xiaozhi.bin`, no provider secret
+  output, no V21 internals copied into A21, no internal-test3 voice protocol
+  rollback, no Git prune/gc, and no hidden MCP power/reboot expansion.
+
 ## 2026-06-05 03:24 CST - Latest Product Deployment And Guarded Flash
 
 Round goal:

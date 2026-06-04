@@ -5859,6 +5859,12 @@ func TestGatewayServerOptionsFromEnvCloudEdgeProductChainDoesNotDefaultToLocalSh
 	if options.XiaozhiVoicePipelineAdapters == nil {
 		t.Fatal("xiaozhi voice pipeline adapters not configured")
 	}
+	if got := appEnvValue(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_ENABLED"); got != "true" {
+		t.Fatalf("A21_XIAOZHI_FAST_ACK_ENABLED = %q, want true for cloud_edge product chain", got)
+	}
+	if got := appEnvValue(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_DELAY_MS"); got != "700" {
+		t.Fatalf("A21_XIAOZHI_FAST_ACK_DELAY_MS = %q, want 700 for cloud_edge product chain", got)
+	}
 	adapters := *options.XiaozhiVoicePipelineAdapters
 	if adapters.ExecutionMode != "cloud_edge" {
 		t.Fatalf("execution mode = %q, want cloud_edge", adapters.ExecutionMode)

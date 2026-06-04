@@ -39,6 +39,12 @@ func isAllowedLegacyNamespacePath(path string) bool {
 		return true
 	case path == "docs/engineering/phase6a_v21_adapter.md":
 		return true
+	case path == "docs/plans/2026-06-04-a21-v21-native-voice-query-bridge.md":
+		return true
+	case path == "docs/plans/2026-06-04-v21-a21-v2-workspace-query-scope-native-contract.md":
+		return true
+	case path == "docs/plans/2026-06-04-v21-professional-execution-validation.md":
+		return true
 	default:
 		return false
 	}

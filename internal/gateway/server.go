@@ -79,6 +79,8 @@ type Server struct {
 	xiaozhiVoicePipelineASR      providers.ASRAdapter
 	xiaozhiProfessionalASR       providers.ASRAdapter
 	xiaozhiFastAckTTS            providers.TTSAdapter
+	xiaozhiFastAckEnabled        bool
+	xiaozhiFastAckDelay          time.Duration
 	xiaozhiStockProfessional     bool
 	xiaozhiProductPlaybackEvents bool
 	xiaozhiProductTouchEvents    bool
@@ -910,6 +912,31 @@ type XiaozhiBodySceneAcceptanceRequest struct {
 	Observer      string `json:"observer"`
 }
 
+type PowerLifecycleAcceptanceRequest struct {
+	DeviceID            string `json:"device_id"`
+	TraceID             string `json:"trace_id"`
+	SessionID           string `json:"session_id"`
+	ColdBootWithoutUSB  bool   `json:"cold_boot_without_usb"`
+	PowerButtonStarted  bool   `json:"power_button_started"`
+	GatewayConnected    bool   `json:"gateway_connected"`
+	XiaozhiSocketOnline bool   `json:"xiaozhi_socket_online"`
+	StandaloneRuntimeOK bool   `json:"standalone_runtime_ok"`
+	Observer            string `json:"observer"`
+}
+
+type PowerLifecycleAcceptanceResponse struct {
+	SchemaVersion     string   `json:"schema_version"`
+	TraceID           string   `json:"trace_id"`
+	SessionID         string   `json:"session_id"`
+	DeviceID          string   `json:"device_id"`
+	Status            string   `json:"status"`
+	Observer          string   `json:"observer"`
+	AcceptedSurfaces  []string `json:"accepted_surfaces"`
+	PhysicalAccepted  bool     `json:"physical_accepted"`
+	ResultRedacted    bool     `json:"result_redacted"`
+	AcceptanceEventMS int64    `json:"acceptance_event_ms"`
+}
+
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
 	SessionID          string         `json:"session_id"`
@@ -1108,6 +1135,28 @@ type HardwareAcceptanceItem struct {
 	SessionID          string `json:"session_id,omitempty"`
 	AcceptanceEndpoint string `json:"acceptance_endpoint,omitempty"`
 	NextAction         string `json:"next_action"`
+}
+
+type PowerLifecycleResponse struct {
+	SchemaVersion    string               `json:"schema_version"`
+	Service          string               `json:"service"`
+	DeviceID         string               `json:"device_id"`
+	ConnectionStatus string               `json:"connection_status"`
+	OverallStatus    string               `json:"overall_status"`
+	PhysicalAccepted bool                 `json:"physical_accepted"`
+	XiaozhiWSOnline  bool                 `json:"xiaozhi_ws_online"`
+	BatteryTelemetry string               `json:"battery_telemetry"`
+	Items            []PowerLifecycleItem `json:"items"`
+	ResultRedacted   bool                 `json:"result_redacted"`
+}
+
+type PowerLifecycleItem struct {
+	ID               string `json:"id"`
+	Label            string `json:"label"`
+	Status           string `json:"status"`
+	PhysicalAccepted bool   `json:"physical_accepted"`
+	EvidenceSource   string `json:"evidence_source"`
+	NextAction       string `json:"next_action"`
 }
 
 type VoiceModeOption struct {
@@ -1442,6 +1491,8 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	xiaozhiVoicePipelineASR := providers.NewMockASRAdapter("mock-local-asr")
 	xiaozhiProfessionalASR := providers.NewMockASRAdapter("mock-local-asr")
 	xiaozhiFastAckTTS := providers.NewMockTTSAdapter("mock-fast-tts")
+	xiaozhiFastAckEnabled := gatewayEnvBoolDefault(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_ENABLED", true)
+	xiaozhiFastAckDelay := gatewayEnvDurationMSDefault(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_DELAY_MS", 0)
 	if options.XiaozhiVoicePipelineAdapters != nil {
 		adapters := *options.XiaozhiVoicePipelineAdapters
 		xiaozhiRunnerFactory = func() xiaozhiVoicePipelineRunner {
@@ -1500,6 +1551,8 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiVoicePipelineASR:      xiaozhiVoicePipelineASR,
 		xiaozhiProfessionalASR:       xiaozhiProfessionalASR,
 		xiaozhiFastAckTTS:            xiaozhiFastAckTTS,
+		xiaozhiFastAckEnabled:        xiaozhiFastAckEnabled,
+		xiaozhiFastAckDelay:          xiaozhiFastAckDelay,
 		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
 		xiaozhiProductPlaybackEvents: options.XiaozhiProductPlaybackEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
 		xiaozhiProductTouchEvents:    options.XiaozhiProductTouchEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
@@ -1554,6 +1607,33 @@ func gatewayEnvBool(env []string, key string) bool {
 	}
 }
 
+func gatewayEnvBoolDefault(env []string, key string, defaultValue bool) bool {
+	value := strings.ToLower(strings.TrimSpace(gatewayEnvValue(env, key)))
+	if value == "" {
+		return defaultValue
+	}
+	switch value {
+	case "1", "true", "yes", "on", "enabled":
+		return true
+	case "0", "false", "no", "off", "disabled":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
+func gatewayEnvDurationMSDefault(env []string, key string, defaultValue time.Duration) time.Duration {
+	value := strings.TrimSpace(gatewayEnvValue(env, key))
+	if value == "" {
+		return defaultValue
+	}
+	ms, err := strconv.Atoi(value)
+	if err != nil || ms < 0 {
+		return defaultValue
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func isZeroGatewayVoicePipelineSelection(selection providers.VoicePipelineSelection) bool {
 	return selection.ASRMode == "" &&
 		selection.ASRProfile == "" &&
@@ -1573,6 +1653,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/metrics", s.metrics.handler())
 	mux.HandleFunc("/v1/devices", s.handleDevices)
 	mux.HandleFunc("/v1/hardware-acceptance", s.handleHardwareAcceptance)
+	mux.HandleFunc("/v1/power-lifecycle", s.handlePowerLifecycle)
+	mux.HandleFunc("/v1/power-lifecycle-acceptance", s.handlePowerLifecycleAcceptance)
 	mux.HandleFunc("/v1/devices/control", s.handleDeviceControl)
 	mux.HandleFunc("/v1/voice-modes", s.handleVoiceModes)
 	mux.HandleFunc("/v1/voice-mode-ritual", s.handleVoiceModeRitual)
@@ -1643,6 +1725,75 @@ func (s *Server) handleHardwareAcceptance(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, s.hardwareAcceptance(deviceID))
+}
+
+func (s *Server) handlePowerLifecycle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.powerLifecycle(deviceID))
+}
+
+func (s *Server) handlePowerLifecycleAcceptance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req PowerLifecycleAcceptanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	traceID := strings.TrimSpace(req.TraceID)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if traceID == "" || sessionID == "" {
+		http.Error(w, "trace_id and session_id are required", http.StatusBadRequest)
+		return
+	}
+	observer := strings.ToLower(strings.TrimSpace(req.Observer))
+	if observer == "" {
+		observer = "operator"
+	}
+	if observer != "operator" && observer != "instrument" {
+		http.Error(w, "observer must be operator or instrument", http.StatusBadRequest)
+		return
+	}
+	if !req.ColdBootWithoutUSB || !req.PowerButtonStarted || !req.GatewayConnected || !req.XiaozhiSocketOnline || !req.StandaloneRuntimeOK {
+		http.Error(w, "cold_boot_without_usb, power_button_started, gateway_connected, xiaozhi_socket_online, and standalone_runtime_ok must be true", http.StatusBadRequest)
+		return
+	}
+	state := s.powerLifecycle(req.DeviceID)
+	if state.ConnectionStatus != "online" || !state.XiaozhiWSOnline {
+		http.Error(w, "online device and Xiaozhi websocket evidence are required before power lifecycle acceptance", http.StatusConflict)
+		return
+	}
+
+	nowMS := s.now().UnixMilli()
+	marker := "power_lifecycle.physical_acceptance.accepted"
+	s.recordTrace(traceID, sessionID, req.DeviceID, marker, nowMS)
+	s.recordPowerLifecyclePhysicalAcceptance(req.DeviceID, traceID, sessionID, observer, nowMS, marker)
+	writeJSON(w, http.StatusOK, PowerLifecycleAcceptanceResponse{
+		SchemaVersion:     "a21.gateway.power_lifecycle_acceptance.v1",
+		TraceID:           traceID,
+		SessionID:         sessionID,
+		DeviceID:          req.DeviceID,
+		Status:            "accepted",
+		Observer:          observer,
+		AcceptedSurfaces:  []string{"no_cable_cold_boot", "physical_power_button", "gateway_reconnect", "xiaozhi_socket"},
+		PhysicalAccepted:  true,
+		ResultRedacted:    true,
+		AcceptanceEventMS: nowMS,
+	})
 }
 
 func (s *Server) handleVoiceModes(w http.ResponseWriter, r *http.Request) {
@@ -6453,6 +6604,42 @@ func (s *Server) recordBodyScenePhysicalAcceptance(deviceID string, scene string
 	s.devices[deviceID] = record
 }
 
+func (s *Server) recordPowerLifecyclePhysicalAcceptance(deviceID string, traceID string, sessionID string, observer string, atMS int64, event string) {
+	capabilities := map[string]string{
+		"power_lifecycle_physical_accepted":             "true",
+		"no_cable_cold_boot_physical_accepted":          "true",
+		"physical_power_button_start_physical_accepted": "true",
+		"gateway_reconnect_after_power_button_accepted": "true",
+		"xiaozhi_socket_after_power_button_accepted":    "true",
+		"last_power_lifecycle_acceptance_status":        "operator_power_button_accepted",
+		"last_power_lifecycle_acceptance_trace_id":      traceID,
+		"last_power_lifecycle_acceptance_session_id":    sessionID,
+		"last_power_lifecycle_acceptance_observer":      observer,
+		"last_power_lifecycle_acceptance_at_ms":         strconv.FormatInt(atMS, 10),
+	}
+	if observer == "instrument" {
+		capabilities["last_power_lifecycle_acceptance_status"] = "instrument_power_button_accepted"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = atMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
+	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
+		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
+	}
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = atMS
+	s.devices[deviceID] = record
+}
+
 func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -6938,6 +7125,8 @@ func xiaozhiMCPBlockedToolClasses() []string {
 		"camera_stream_video",
 		"nfc",
 		"infrared",
+		"power_shutdown",
+		"power_sleep",
 		"app_lifecycle",
 	}
 }
@@ -7506,6 +7695,12 @@ type xiaozhiTurnTask struct {
 	mode                      protocol.Mode
 }
 
+type xiaozhiSessionIdentity struct {
+	deviceID  string
+	traceID   string
+	sessionID string
+}
+
 func defaultXiaozhiVoicePipelineRunner() xiaozhiVoicePipelineRunner {
 	return providers.NewVoicePipelineRunner(providers.VoicePipelineAdapters{
 		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
@@ -7515,18 +7710,88 @@ func defaultXiaozhiVoicePipelineRunner() xiaozhiVoicePipelineRunner {
 	})
 }
 
+func (session *xiaozhiSession) identitySnapshot() xiaozhiSessionIdentity {
+	if session == nil {
+		return xiaozhiSessionIdentity{}
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.identityLocked()
+}
+
+func (session *xiaozhiSession) identityLocked() xiaozhiSessionIdentity {
+	return xiaozhiSessionIdentity{
+		deviceID:  session.deviceID,
+		traceID:   session.traceID,
+		sessionID: session.sessionID,
+	}
+}
+
 func (session *xiaozhiSession) identity() xiaozhitransport.Identity {
+	id := session.identitySnapshot()
 	return xiaozhitransport.Identity{
-		DeviceID:  session.deviceID,
-		TraceID:   session.traceID,
-		SessionID: session.sessionID,
+		DeviceID:  id.deviceID,
+		TraceID:   id.traceID,
+		SessionID: id.sessionID,
 	}
 }
 
 func (session *xiaozhiSession) adoptFrame(frame xiaozhitransport.Frame) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
 	session.deviceID = frame.DeviceID
 	session.traceID = frame.TraceID
 	session.sessionID = frame.SessionID
+}
+
+func (session *xiaozhiSession) featuresSnapshot() xiaozhitransport.HelloFeatures {
+	if session == nil {
+		return xiaozhitransport.HelloFeatures{}
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.features
+}
+
+func (session *xiaozhiSession) helloReceivedSnapshot() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.helloReceived
+}
+
+func (session *xiaozhiSession) binaryProtocolVersionSnapshot() int {
+	if session == nil {
+		return 1
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.binaryProtocolVersion
+}
+
+func (session *xiaozhiSession) setXiaozhiListening(listening bool, startedAtMS int64) {
+	if session == nil {
+		return
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.listening = listening
+	if listening {
+		session.listenStartedAtMS = startedAtMS
+	} else {
+		session.listenStartedAtMS = 0
+	}
+}
+
+func (session *xiaozhiSession) xiaozhiListening() bool {
+	if session == nil {
+		return false
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.listening
 }
 
 func (session *xiaozhiSession) startXiaozhiTurn(parent context.Context, mode protocol.Mode) *xiaozhiTurn {
@@ -7580,8 +7845,9 @@ func (session *xiaozhiSession) currentXiaozhiTurnID() string {
 
 func (session *xiaozhiSession) cancelCurrentXiaozhiTurn(reason string) *xiaozhiTurn {
 	session.mu.Lock()
-	defer session.mu.Unlock()
-	return session.cancelCurrentXiaozhiTurnLocked(reason)
+	turn := session.cancelCurrentXiaozhiTurnLocked(reason)
+	session.mu.Unlock()
+	return turn
 }
 
 func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xiaozhiTurn {
@@ -7591,35 +7857,35 @@ func (session *xiaozhiSession) cancelCurrentXiaozhiTurnLocked(reason string) *xi
 	turn := session.currentTurn
 	turn.cancelReason = strings.TrimSpace(reason)
 	turn.cancel(xiaozhiTurnCancelCause(reason))
-	if turn.pacer != nil {
-		turn.pacer.Reset()
-	}
 	session.currentTurn = nil
 	return turn
 }
 
 func (session *xiaozhiSession) prepareXiaozhiListenStartBargeIn(reason string, nowMS int64, recentWindowMS int64) (xiaozhiTurnTask, bool) {
 	session.mu.Lock()
-	defer session.mu.Unlock()
 	turn := session.cancelCurrentXiaozhiTurnLocked(reason)
 	turnID := xiaozhiTurnID(turn)
 	if turnID == "" && session.lastDownlinkTurnID != "" && nowMS-session.lastDownlinkAtMS >= 0 && nowMS-session.lastDownlinkAtMS <= recentWindowMS {
 		if session.lastPlaybackStopDoneAtMS >= session.lastDownlinkAtMS && session.lastPlaybackStopDoneAtMS <= nowMS {
+			session.mu.Unlock()
 			return xiaozhiTurnTask{}, false
 		}
 		turnID = session.lastDownlinkTurnID
 	}
 	if turnID == "" {
+		session.mu.Unlock()
 		return xiaozhiTurnTask{}, false
 	}
-	return xiaozhiTurnTask{
+	task := xiaozhiTurnTask{
 		turn:      turn,
 		turnID:    turnID,
 		traceID:   session.traceID,
 		sessionID: session.sessionID,
 		deviceID:  session.deviceID,
 		mode:      xiaozhiTurnMode(turn),
-	}, true
+	}
+	session.mu.Unlock()
+	return task, true
 }
 
 func (session *xiaozhiSession) suppressXiaozhiInputUntil(untilMS int64, reason string) {
@@ -7829,15 +8095,29 @@ func (session *xiaozhiSession) configureXiaozhiAudio(params xiaozhitransport.Aud
 	if err != nil {
 		return err
 	}
+	session.mu.Lock()
 	session.opusCodec = codec
 	session.opusSampleRateHz = params.SampleRate
 	session.opusChannels = params.Channels
 	session.opusFrameDurationMS = params.FrameDuration
-	session.resetXiaozhiOpusIngress()
+	stream, shouldCancel := session.resetXiaozhiOpusIngressLocked()
+	session.mu.Unlock()
+	if shouldCancel {
+		stream.Cancel(context.Canceled)
+	}
 	return nil
 }
 
 func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
+	session.mu.Lock()
+	stream, shouldCancel := session.resetXiaozhiOpusIngressLocked()
+	session.mu.Unlock()
+	if shouldCancel {
+		stream.Cancel(context.Canceled)
+	}
+}
+
+func (session *xiaozhiSession) resetXiaozhiOpusIngressLocked() (providers.StreamingASRSession, bool) {
 	session.opusFrameCount = 0
 	session.opusByteCount = 0
 	session.opusDecodedFrameCount = 0
@@ -7846,8 +8126,10 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.opusIngressProcessedFrameCount = 0
 	session.voicePipelineFrames = nil
 	session.voicePipelineHasSpeech = false
+	stream := session.streamingASRSession
+	shouldCancel := stream != nil && !session.streamingASRClosed
 	if session.streamingASRSession != nil && !session.streamingASRClosed {
-		session.streamingASRSession.Cancel(context.Canceled)
+		session.streamingASRClosed = true
 	}
 	session.streamingASRSession = nil
 	session.streamingASRHasPartial = false
@@ -7856,6 +8138,7 @@ func (session *xiaozhiSession) resetXiaozhiOpusIngress() {
 	session.streamingASRFinalText = ""
 	session.streamingASRClosed = false
 	session.streamingASRAnswerStarted = false
+	return stream, shouldCancel
 }
 
 func (session *xiaozhiSession) xiaozhiOpusIngressQueue() chan xiaozhiOpusIngressFrame {
@@ -7868,6 +8151,8 @@ func (session *xiaozhiSession) xiaozhiOpusIngressQueue() chan xiaozhiOpusIngress
 }
 
 func (session *xiaozhiSession) resetXiaozhiWakePreroll() {
+	session.mu.Lock()
+	defer session.mu.Unlock()
 	session.wakePrerollFrames = nil
 	session.wakePrerollPayloadBytes = nil
 	session.wakePrerollHasSpeech = false
@@ -7889,23 +8174,52 @@ func (session *xiaozhiSession) shouldBufferXiaozhiWakePreroll(nowMS int64) bool 
 }
 
 func (session *xiaozhiSession) xiaozhiOpusDecodeStatus() string {
-	if session.opusDecodeErrorCount > 0 && session.opusDecodedFrameCount > 0 {
-		return XiaozhiOpusPartialDecodeErrorState
-	}
-	if session.opusDecodeErrorCount > 0 {
+	if session == nil {
 		return XiaozhiOpusDecodeErrorState
 	}
-	if session.opusDecodedFrameCount > 0 {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return xiaozhiOpusDecodeStatusFromCounts(session.opusDecodedFrameCount, session.opusDecodeErrorCount)
+}
+
+func xiaozhiOpusDecodeStatusFromCounts(decodedFrameCount int, decodeErrorCount int) string {
+	if decodeErrorCount > 0 && decodedFrameCount > 0 {
+		return XiaozhiOpusPartialDecodeErrorState
+	}
+	if decodeErrorCount > 0 {
+		return XiaozhiOpusDecodeErrorState
+	}
+	if decodedFrameCount > 0 {
 		return XiaozhiOpusDecodedPCMState
 	}
 	return XiaozhiOpusNoFramesState
 }
 
 func (session *xiaozhiSession) xiaozhiDecodedDurationMS() int {
+	if session == nil {
+		return 0
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return session.xiaozhiDecodedDurationMSLocked()
+}
+
+func (session *xiaozhiSession) xiaozhiDecodedDurationMSLocked() int {
 	if session.opusSampleRateHz <= 0 {
 		return 0
 	}
 	return session.opusDecodedSampleCount * 1000 / session.opusSampleRateHz
+}
+
+func copyXiaozhiVoicePipelineFrames(frames []providers.VoicePipelinePCMFrame) []providers.VoicePipelinePCMFrame {
+	if len(frames) == 0 {
+		return nil
+	}
+	copied := append([]providers.VoicePipelinePCMFrame(nil), frames...)
+	for i := range copied {
+		copied[i].PCM16LE = append([]byte(nil), copied[i].PCM16LE...)
+	}
+	return copied
 }
 
 func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, mode protocol.Mode) {
@@ -7920,17 +8234,18 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	if !ok {
 		return
 	}
+	id := session.identitySnapshot()
 	stream, err := streaming.StartStreamingASR(ctx, providers.StreamingASRStartRequest{
 		Session: providers.VoiceSession{
-			TraceID:   session.traceID,
-			SessionID: session.sessionID,
-			DeviceID:  session.deviceID,
+			TraceID:   id.traceID,
+			SessionID: id.sessionID,
+			DeviceID:  id.deviceID,
 		},
 		Mode: string(mode),
 	})
 	if err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.unavailable", s.now().UnixMilli())
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start_failed."+xiaozhiStreamingASRErrorCode(err), s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.unavailable", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.start_failed."+xiaozhiStreamingASRErrorCode(err), s.now().UnixMilli())
 		return
 	}
 	session.mu.Lock()
@@ -7943,7 +8258,7 @@ func (s *Server) startXiaozhiStreamingASR(ctx context.Context, conn *websocket.C
 	session.streamingASRCommitStarted = false
 	session.streamingASRAnswerStarted = false
 	session.mu.Unlock()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.start", s.now().UnixMilli())
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.start", s.now().UnixMilli())
 	go s.consumeXiaozhiStreamingASREvents(ctx, conn, session, stream)
 }
 
@@ -7973,7 +8288,8 @@ func errString(err error) string {
 func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, stream providers.StreamingASRSession) {
 	for event := range stream.Events() {
 		if event.Err != nil {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.error", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.error", s.now().UnixMilli())
 			continue
 		}
 		partialText := strings.TrimSpace(event.Text)
@@ -7987,7 +8303,8 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 			}
 			session.mu.Unlock()
 			if recordPartial {
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.first_partial", s.now().UnixMilli())
+				id := session.identitySnapshot()
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.first_partial", s.now().UnixMilli())
 				s.startXiaozhiPartialVoicePipeline(ctx, conn, session, partialText)
 			}
 		}
@@ -7999,7 +8316,8 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 				session.voicePipelineHasSpeech = true
 			}
 			session.mu.Unlock()
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.final", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.final", s.now().UnixMilli())
 			s.maybeStartXiaozhiStreamingASRFinalAnswer(ctx, conn, session)
 		}
 	}
@@ -8022,7 +8340,8 @@ func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *web
 	session.voicePipelineHasSpeech = true
 	session.mu.Unlock()
 
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.voice_pipeline.partial_prewarm_deferred", s.now().UnixMilli())
+	id := session.identitySnapshot()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.voice_pipeline.partial_prewarm_deferred", s.now().UnixMilli())
 }
 
 func (session *xiaozhiSession) claimXiaozhiStreamingASRAnswer(turn *xiaozhiTurn) bool {
@@ -8050,10 +8369,12 @@ func (s *Server) appendXiaozhiStreamingASRFrame(ctx context.Context, session *xi
 		return
 	}
 	if err := stream.AppendFrame(ctx, frame); err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.audio.append_error", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.audio.append_error", s.now().UnixMilli())
 		return
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.audio.append", s.now().UnixMilli())
+	id := session.identitySnapshot()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.audio.append", s.now().UnixMilli())
 }
 
 func (s *Server) startXiaozhiStreamingASRCommit(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn) bool {
@@ -8081,13 +8402,14 @@ func (s *Server) startXiaozhiStreamingASRCommit(ctx context.Context, conn *webso
 func (s *Server) finishXiaozhiStreamingASRCommit(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, stream providers.StreamingASRSession) {
 	commitCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.commit", s.now().UnixMilli())
+	id := session.identitySnapshot()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.commit", s.now().UnixMilli())
 	if err := stream.Commit(commitCtx); err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.commit_error", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.commit_error", s.now().UnixMilli())
 		return
 	}
 	if !s.waitXiaozhiStreamingASRFinal(session, 200*time.Millisecond) {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_timeout", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.final_timeout", s.now().UnixMilli())
 		return
 	}
 	s.maybeStartXiaozhiStreamingASRFinalAnswer(ctx, conn, session)
@@ -8111,7 +8433,8 @@ func (s *Server) maybeStartXiaozhiStreamingASRFinalAnswer(ctx context.Context, c
 	}
 	task := s.newXiaozhiTurnTask(session, turn)
 	if strings.TrimSpace(task.streamingASRFinalText) == "" {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.final_empty", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.final_empty", s.now().UnixMilli())
 		return false
 	}
 	s.startXiaozhiTurnTask(ctx, conn, session, task)
@@ -8149,7 +8472,8 @@ func (s *Server) cancelXiaozhiStreamingASR(session *xiaozhiSession, reason strin
 	session.mu.Unlock()
 	stream.Cancel(context.Canceled)
 	if strings.TrimSpace(reason) != "" {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "asr.stream.cancelled", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.cancelled", s.now().UnixMilli())
 	}
 }
 
@@ -8182,7 +8506,8 @@ func (s *Server) handleXiaozhiWS(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.cancelXiaozhiStreamingASR(session, "socket_closed")
 		s.cancelXiaozhiOpusIngressQueue(session, "socket_closed")
-		s.unregisterXiaozhiSocket(session.deviceID, conn)
+		id := session.identitySnapshot()
+		s.unregisterXiaozhiSocket(id.deviceID, conn)
 	}()
 	for {
 		messageType, data, err := conn.Read(ctx)
@@ -8234,36 +8559,45 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_audio_params", err.Error()))
 			return true
 		}
+		session.mu.Lock()
 		session.helloReceived = true
 		session.listening = false
 		session.listenStartedAtMS = 0
 		session.suppressedListenActive = false
-		session.resetXiaozhiTTSStop()
-		session.resetXiaozhiWakePreroll()
+		session.ttsStopSent = false
+		session.wakePrerollFrames = nil
+		session.wakePrerollPayloadBytes = nil
+		session.wakePrerollHasSpeech = false
 		session.binaryProtocolVersion = frame.Control.Hello.AudioParams.BinaryProtocolVersion
 		session.features = frame.Control.Hello.Features
-		s.registerXiaozhiSocket(session.deviceID, conn, &session.writeMu, session, session.features)
+		id := session.identityLocked()
+		features := session.features
+		session.mu.Unlock()
+		s.registerXiaozhiSocket(id.deviceID, conn, &session.writeMu, session, features)
 		s.recordXiaozhiDeviceSeen(frame)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.hello.received", s.now().UnixMilli())
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiHelloReply(session))
 	case xiaozhitransport.MessageTypeListen:
-		if !session.helloReceived {
+		if !session.helloReceivedSnapshot() {
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before listen"))
 			return true
 		}
 		rawListenMode := frame.Control.Listen.Mode
-		mode := s.xiaozhiListenMode(rawListenMode, session.features)
+		features := session.featuresSnapshot()
+		mode := s.xiaozhiListenMode(rawListenMode, features)
 		switch frame.Control.Listen.State {
 		case "start":
 			nowMS := s.now().UnixMilli()
 			if suppressed, reason := session.xiaozhiInputSuppression(nowMS); suppressed {
-				session.listening = false
-				session.listenStartedAtMS = 0
+				session.setXiaozhiListening(false, 0)
+				session.mu.Lock()
 				session.suppressedListenActive = true
+				session.mu.Unlock()
 				session.resetXiaozhiOpusIngress()
 				session.resetXiaozhiWakePreroll()
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start.suppressed_"+reason, nowMS)
+				id := session.identitySnapshot()
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.start.input_suppressed", nowMS)
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.start.suppressed_"+reason, nowMS)
 				s.writeXiaozhiListenReply(ctx, conn, session, "start", "ignored", "")
 				return true
 			}
@@ -8273,70 +8607,69 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 				s.writeXiaozhiTTSStopForce(ctx, conn, session, bargeTask.turn, bargeTask, "barge_in")
 			}
 			turn := session.startXiaozhiTurn(ctx, mode)
-			session.listening = true
-			session.listenStartedAtMS = nowMS
+			session.setXiaozhiListening(true, nowMS)
 			session.resetXiaozhiOpusIngress()
 			s.startXiaozhiOpusIngressQueue(ctx, session)
 			s.startXiaozhiStreamingASR(ctx, conn, session, mode)
 			s.attachXiaozhiWakePreroll(ctx, session)
 			session.resetXiaozhiTTSStop()
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.turn.start", s.now().UnixMilli())
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.start", s.now().UnixMilli())
 			s.writeXiaozhiOfficialStackChanState(ctx, session, "listening", "listen_start", true)
-			if s.xiaozhiStockProfessionalRouteSelected(rawListenMode, session.features) {
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.professional_route.stock_override", s.now().UnixMilli())
+			if s.xiaozhiStockProfessionalRouteSelected(rawListenMode, features) {
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.professional_route.stock_override", s.now().UnixMilli())
 			}
 			s.writeXiaozhiListenReply(ctx, conn, session, "start", "accepted", xiaozhiTurnID(turn))
 		case "detect":
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.detect", s.now().UnixMilli())
 			s.writeXiaozhiListenReply(ctx, conn, session, "detect", "accepted", session.currentXiaozhiTurnID())
 		case "stop":
-			if !session.listening {
+			if !session.xiaozhiListening() {
 				if session.clearSuppressedXiaozhiListen() {
 					nowMS := s.now().UnixMilli()
 					session.suppressXiaozhiInputUntil(nowMS+xiaozhiSuppressedListenDrainMS, "after_suppressed_listen")
-					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_ended", nowMS)
-					s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.suppressed_session_drain_armed", nowMS)
+					id := session.identitySnapshot()
+					s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.stop.suppressed_session_ended", nowMS)
+					s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.stop.suppressed_session_drain_armed", nowMS)
 				}
-				s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
+				id := session.identitySnapshot()
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.stop.ignored", s.now().UnixMilli())
 				s.writeXiaozhiListenReply(ctx, conn, session, "stop", "ignored", "")
 				return true
 			}
-			session.listening = false
-			session.listenStartedAtMS = 0
+			session.setXiaozhiListening(false, 0)
 			if mode == protocol.ModeProfessional {
 				session.setCurrentXiaozhiTurnMode(mode)
 			}
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.stop", s.now().UnixMilli())
 			s.startXiaozhiListenStopAfterIngressDrain(ctx, conn, session, session.currentXiaozhiTurn())
 		}
 	case xiaozhitransport.MessageTypeAbort:
-		if !session.helloReceived {
+		if !session.helloReceivedSnapshot() {
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before abort"))
 			return true
 		}
-		session.listening = false
-		session.listenStartedAtMS = 0
+		session.setXiaozhiListening(false, 0)
 		abortReason := frame.Control.Abort.Reason
 		s.cancelXiaozhiStreamingASR(session, "abort")
-		turn := session.cancelCurrentXiaozhiTurn(abortReason)
-		s.recordXiaozhiAbortMarkers(session, abortReason, turn != nil)
+		abortTask, shouldStopPlayback := session.prepareXiaozhiListenStartBargeIn(abortReason, s.now().UnixMilli(), xiaozhiPlaybackInterruptWindowMS)
+		s.recordXiaozhiAbortMarkers(session, abortReason, shouldStopPlayback)
 		if strings.TrimSpace(abortReason) == "" {
 			session.suppressXiaozhiInputUntil(s.now().UnixMilli()+xiaozhiTouchBargeInInputCooldownMS, "after_barge")
 		}
-		s.writeXiaozhiTTSStop(ctx, conn, session, nil, xiaozhiTurnTask{
-			turn:      turn,
-			turnID:    xiaozhiTurnID(turn),
-			traceID:   session.traceID,
-			sessionID: session.sessionID,
-			deviceID:  session.deviceID,
-		}, "abort")
+		if shouldStopPlayback {
+			s.writeXiaozhiTTSStopForce(ctx, conn, session, abortTask.turn, abortTask, "abort")
+		}
 	case xiaozhitransport.MessageTypeMCP:
-		if !session.helloReceived {
+		if !session.helloReceivedSnapshot() {
 			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before mcp"))
 			return true
 		}
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.mcp.response.received", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.mcp.response.received", s.now().UnixMilli())
 		s.recordXiaozhiDeviceActivity(session, "xiaozhi.mcp.response.received", map[string]string{
 			"xiaozhi_mcp_response": "received_redacted",
 		})
@@ -8346,7 +8679,8 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 
 func (s *Server) writeXiaozhiListenReply(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, state string, status string, turnID string) {
 	if !session.shouldSendXiaozhiListenReply() {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen."+state+".reply_suppressed_stock_physical", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen."+state+".reply_suppressed_stock_physical", s.now().UnixMilli())
 		return
 	}
 	_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiBaseReply(session, "listen", state, status, turnID))
@@ -8356,21 +8690,24 @@ func (session *xiaozhiSession) shouldSendXiaozhiListenReply() bool {
 	if session == nil {
 		return false
 	}
-	if xiaozhiClientProfile(session.features) == "debug" {
+	features := session.featuresSnapshot()
+	id := session.identitySnapshot()
+	if xiaozhiClientProfile(features) == "debug" {
 		return true
 	}
-	return !hardwareMACDeviceID(session.deviceID)
+	return !hardwareMACDeviceID(id.deviceID)
 }
 
 func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
-	if !session.helloReceived {
+	if !session.helloReceivedSnapshot() {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before device events"))
 		return true
 	}
+	features := session.featuresSnapshot()
 	productPlaybackEvents := s.xiaozhiProductPlaybackEventsAllowed(session)
 	productKeepaliveEvents := s.xiaozhiProductKeepaliveEventsAllowed(session)
 	productTouchEvents := s.xiaozhiProductTouchEventsAllowed(session)
-	if !session.features.DeviceEvents && !productPlaybackEvents && !productKeepaliveEvents && !productTouchEvents {
+	if !features.DeviceEvents && !productPlaybackEvents && !productKeepaliveEvents && !productTouchEvents {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product allowance"))
 		return true
 	}
@@ -8379,7 +8716,7 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
 		return true
 	}
-	if !session.features.DeviceEvents {
+	if !features.DeviceEvents {
 		switch event.Kind {
 		case xiaozhitransport.DeviceEventKindPlayback:
 			if !productPlaybackEvents {
@@ -8449,31 +8786,39 @@ func xiaozhiTextMessageType(data []byte) string {
 }
 
 func (s *Server) handleXiaozhiBinary(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, data []byte) bool {
-	if !session.helloReceived {
+	if !session.helloReceivedSnapshot() {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before binary audio"))
 		return true
 	}
-	frame, err := xiaozhitransport.ParseBinaryFrameVersion(data, xiaozhitransport.DirectionDeviceToServer, session.identity(), session.binaryProtocolVersion)
+	frame, err := xiaozhitransport.ParseBinaryFrameVersion(data, xiaozhitransport.DirectionDeviceToServer, session.identity(), session.binaryProtocolVersionSnapshot())
 	if err != nil {
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
 		return true
 	}
 	session.adoptFrame(frame)
-	if !session.listening {
-		if session.xiaozhiSuppressedListenActive() {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.ignored_suppressed_listen", s.now().UnixMilli())
+	session.mu.Lock()
+	listening := session.listening
+	suppressedListenActive := session.suppressedListenActive
+	id := session.identityLocked()
+	session.mu.Unlock()
+	if !listening {
+		if suppressedListenActive {
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.ignored_suppressed_listen", s.now().UnixMilli())
 			return true
 		}
 		if session.shouldBufferXiaozhiWakePreroll(s.now().UnixMilli()) {
 			return s.bufferXiaozhiWakePreroll(session, frame)
 		}
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.ignored_not_listening", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.ignored_not_listening", s.now().UnixMilli())
 		return true
 	}
+	session.mu.Lock()
 	session.opusFrameCount++
 	session.opusByteCount += frame.Opus.PayloadBytes
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.received", s.now().UnixMilli())
 	seq := uint64(session.opusFrameCount)
+	id = session.identityLocked()
+	session.mu.Unlock()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.received", s.now().UnixMilli())
 	turn := session.currentXiaozhiTurn()
 	if s.enqueueXiaozhiOpusIngressFrame(ctx, conn, session, frame, turn, seq) {
 		return true
@@ -8514,7 +8859,8 @@ func (s *Server) cancelXiaozhiOpusIngressQueue(session *xiaozhiSession, reason s
 	session.mu.Unlock()
 	if cancel != nil {
 		cancel()
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queue_cancelled."+safeGatewayFallbackToken(reason, "unknown"), s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_ingress.queue_cancelled."+safeGatewayFallbackToken(reason, "unknown"), s.now().UnixMilli())
 	}
 }
 
@@ -8532,9 +8878,11 @@ func (s *Server) enqueueXiaozhiOpusIngressFrame(ctx context.Context, conn *webso
 	}
 	select {
 	case queue <- item:
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queued", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_ingress.queued", s.now().UnixMilli())
 	default:
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.queue_dropped", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_ingress.queue_dropped", s.now().UnixMilli())
 	}
 	return true
 }
@@ -8558,7 +8906,8 @@ func (s *Server) startXiaozhiListenStopAfterIngressDrain(ctx context.Context, co
 		waitCtx, cancel := context.WithTimeout(firstNonNilContext(turn.ctx, ctx), 300*time.Millisecond)
 		defer cancel()
 		if !s.waitXiaozhiOpusIngressDrained(waitCtx, session) {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.drain_timeout", s.now().UnixMilli())
+			id := session.identitySnapshot()
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_ingress.drain_timeout", s.now().UnixMilli())
 		}
 		if session.shouldAbortXiaozhiTurn(turn) {
 			return
@@ -8606,26 +8955,36 @@ func firstNonNilContext(contexts ...context.Context) context.Context {
 
 func (s *Server) processXiaozhiOpusIngressFrame(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, frame xiaozhitransport.Frame, seq uint64) {
 	defer func() {
+		session.mu.Lock()
 		session.opusIngressProcessedFrameCount++
+		session.mu.Unlock()
 	}()
 	if ctx != nil && ctx.Err() != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_ingress.stale_frame_suppressed", s.now().UnixMilli())
+		id := session.identitySnapshot()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_ingress.stale_frame_suppressed", s.now().UnixMilli())
 		return
 	}
+	session.mu.Lock()
 	if session.opusCodec == nil {
 		session.opusDecodeErrorCount++
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
+		id := session.identityLocked()
+		session.mu.Unlock()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
 		return
 	}
 	pcm, err := session.opusCodec.DecodePCM16(frame.Opus.Payload)
 	if err != nil {
 		session.opusDecodeErrorCount++
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
+		id := session.identityLocked()
+		session.mu.Unlock()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.decode_error", s.now().UnixMilli())
 		return
 	}
 	session.opusDecodedFrameCount++
 	session.opusDecodedSampleCount += len(pcm)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
+	id := session.identityLocked()
+	session.mu.Unlock()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.opus_frame.decoded", s.now().UnixMilli())
 	s.recordXiaozhiDeviceActivity(session, "xiaozhi.opus_frame.decoded", map[string]string{
 		"microphone": "available_xiaozhi_opus_ingress",
 	})
@@ -8636,40 +8995,44 @@ func (s *Server) bufferXiaozhiWakePreroll(session *xiaozhiSession, frame xiaozhi
 	if session == nil || frame.Opus == nil {
 		return true
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.received", s.now().UnixMilli())
+	id := session.identitySnapshot()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.wake_preroll.opus_frame.received", s.now().UnixMilli())
+	session.mu.Lock()
 	if session.opusCodec == nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
+		session.mu.Unlock()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
 		return true
 	}
+	sampleRateHz := session.opusSampleRateHz
+	channels := session.opusChannels
 	pcm, err := session.opusCodec.DecodePCM16(frame.Opus.Payload)
+	session.mu.Unlock()
 	if err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.wake_preroll.opus_frame.decode_error", s.now().UnixMilli())
 		return true
 	}
-	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
+	if len(pcm) == 0 || sampleRateHz <= 0 || channels <= 0 {
 		return true
 	}
-	durationMS := len(pcm) * 1000 / session.opusSampleRateHz / session.opusChannels
+	durationMS := len(pcm) * 1000 / sampleRateHz / channels
 	chunk := protocol.AudioChunk{
 		Codec:        protocol.AudioCodecPCMS16LE,
-		SampleRateHz: session.opusSampleRateHz,
-		Channels:     session.opusChannels,
+		SampleRateHz: sampleRateHz,
+		Channels:     channels,
 		DurationMS:   durationMS,
 		DataBase64:   pcm16Base64(pcm),
 	}
-	seq := uint64(len(session.wakePrerollFrames) + 1)
 	result := s.audioIngress.Push(audio.Frame{
-		DeviceID:     session.deviceID,
-		TraceID:      session.traceID,
-		SessionID:    session.sessionID,
-		Seq:          seq,
+		DeviceID:     id.deviceID,
+		TraceID:      id.traceID,
+		SessionID:    id.sessionID,
+		Seq:          0,
 		SampleRateHz: chunk.SampleRateHz,
 		Channels:     chunk.Channels,
 		DurationMS:   chunk.DurationMS,
 		DataBase64:   chunk.DataBase64,
 	})
 	pipelineFrame := providers.VoicePipelinePCMFrame{
-		Seq:          seq,
 		Codec:        string(chunk.Codec),
 		SampleRateHz: chunk.SampleRateHz,
 		Channels:     chunk.Channels,
@@ -8678,6 +9041,9 @@ func (s *Server) bufferXiaozhiWakePreroll(session *xiaozhiSession, frame xiaozhi
 		RMS:          result.RMS,
 		PCM16LE:      pcm16Bytes(pcm),
 	}
+	session.mu.Lock()
+	seq := uint64(len(session.wakePrerollFrames) + 1)
+	pipelineFrame.Seq = seq
 	session.wakePrerollFrames = append(session.wakePrerollFrames, pipelineFrame)
 	session.wakePrerollPayloadBytes = append(session.wakePrerollPayloadBytes, frame.Opus.PayloadBytes)
 	if len(session.wakePrerollFrames) > maxXiaozhiWakePrerollFrames {
@@ -8687,30 +9053,39 @@ func (s *Server) bufferXiaozhiWakePreroll(session *xiaozhiSession, frame xiaozhi
 	if result.SpeechDetected || result.SpeechActive || containsAudioIngressEvent(result.Events, audio.EventVADSpeechStart) {
 		session.wakePrerollHasSpeech = true
 	}
+	session.mu.Unlock()
 	s.recordAudioCaptureFrame(protocol.Envelope{
 		Protocol:  protocol.ProtocolVersion,
-		DeviceID:  session.deviceID,
+		DeviceID:  id.deviceID,
 		Kind:      protocol.KindAudioFrame,
 		Seq:       seq,
-		TraceID:   session.traceID,
-		SessionID: session.sessionID,
+		TraceID:   id.traceID,
+		SessionID: id.sessionID,
 		SentAtMS:  s.now().UnixMilli(),
-	}, chunk, result, session.traceID, session.sessionID)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.opus_frame.buffered", s.now().UnixMilli())
+	}, chunk, result, id.traceID, id.sessionID)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.wake_preroll.opus_frame.buffered", s.now().UnixMilli())
 	return true
 }
 
 func (s *Server) attachXiaozhiWakePreroll(ctx context.Context, session *xiaozhiSession) {
-	if session == nil || len(session.wakePrerollFrames) == 0 {
+	if session == nil {
 		return
 	}
+	session.mu.Lock()
+	if len(session.wakePrerollFrames) == 0 {
+		session.mu.Unlock()
+		return
+	}
+	id := session.identityLocked()
 	frames := append([]providers.VoicePipelinePCMFrame(nil), session.wakePrerollFrames...)
 	payloadBytes := append([]int(nil), session.wakePrerollPayloadBytes...)
 	for i := range frames {
 		frames[i].PCM16LE = append([]byte(nil), session.wakePrerollFrames[i].PCM16LE...)
 	}
 	hasSpeech := session.wakePrerollHasSpeech
-	session.resetXiaozhiWakePreroll()
+	session.wakePrerollFrames = nil
+	session.wakePrerollPayloadBytes = nil
+	session.wakePrerollHasSpeech = false
 	session.voicePipelineFrames = append(session.voicePipelineFrames, frames...)
 	for i, frame := range frames {
 		session.opusFrameCount++
@@ -8723,37 +9098,43 @@ func (s *Server) attachXiaozhiWakePreroll(ctx context.Context, session *xiaozhiS
 	if hasSpeech {
 		session.voicePipelineHasSpeech = true
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.wake_preroll.attached", s.now().UnixMilli())
+	session.mu.Unlock()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.wake_preroll.attached", s.now().UnixMilli())
 	for _, frame := range frames {
 		s.appendXiaozhiStreamingASRFrame(ctx, session, frame)
 	}
 }
 
 func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, pcm []int16, seq uint64) {
-	if len(pcm) == 0 || session.opusSampleRateHz <= 0 || session.opusChannels <= 0 {
+	session.mu.Lock()
+	id := session.identityLocked()
+	sampleRateHz := session.opusSampleRateHz
+	channels := session.opusChannels
+	session.mu.Unlock()
+	if len(pcm) == 0 || sampleRateHz <= 0 || channels <= 0 {
 		return
 	}
-	durationMS := len(pcm) * 1000 / session.opusSampleRateHz / session.opusChannels
+	durationMS := len(pcm) * 1000 / sampleRateHz / channels
 	chunk := protocol.AudioChunk{
 		Codec:        protocol.AudioCodecPCMS16LE,
-		SampleRateHz: session.opusSampleRateHz,
-		Channels:     session.opusChannels,
+		SampleRateHz: sampleRateHz,
+		Channels:     channels,
 		DurationMS:   durationMS,
 		DataBase64:   pcm16Base64(pcm),
 	}
 	frame := protocol.Envelope{
 		Protocol:  protocol.ProtocolVersion,
-		DeviceID:  session.deviceID,
+		DeviceID:  id.deviceID,
 		Kind:      protocol.KindAudioFrame,
 		Seq:       seq,
-		TraceID:   session.traceID,
-		SessionID: session.sessionID,
+		TraceID:   id.traceID,
+		SessionID: id.sessionID,
 		SentAtMS:  s.now().UnixMilli(),
 	}
 	result := s.audioIngress.Push(audio.Frame{
-		DeviceID:     session.deviceID,
-		TraceID:      session.traceID,
-		SessionID:    session.sessionID,
+		DeviceID:     id.deviceID,
+		TraceID:      id.traceID,
+		SessionID:    id.sessionID,
 		Seq:          frame.Seq,
 		SampleRateHz: chunk.SampleRateHz,
 		Channels:     chunk.Channels,
@@ -8770,12 +9151,14 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 		RMS:          result.RMS,
 		PCM16LE:      pcm16Bytes(pcm),
 	}
+	session.mu.Lock()
 	session.voicePipelineFrames = append(session.voicePipelineFrames, pipelineFrame)
 	if result.SpeechDetected || result.SpeechActive || containsAudioIngressEvent(result.Events, audio.EventVADSpeechStart) {
 		session.voicePipelineHasSpeech = true
 	}
+	session.mu.Unlock()
 	s.appendXiaozhiStreamingASRFrame(ctx, session, pipelineFrame)
-	s.recordAudioCaptureFrame(frame, chunk, result, session.traceID, session.sessionID)
+	s.recordAudioCaptureFrame(frame, chunk, result, id.traceID, id.sessionID)
 	s.metrics.audioIngressFramesTotal.Inc()
 	if result.DroppedFrameDelta > 0 {
 		s.metrics.audioIngressDroppedTotal.Add(float64(result.DroppedFrameDelta))
@@ -8783,7 +9166,7 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 	s.metrics.audioIngressBufferDepth.Set(float64(result.BufferedFrames))
 	s.metrics.audioIngressRMS.Set(result.RMS)
 	s.metrics.vadDetectorDecisions.WithLabelValues(vadDetectorLabel(result.VADDetector), vadDecisionLabel(result.SpeechDetected)).Inc()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "audio.ingress.buffered", s.now().UnixMilli())
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "audio.ingress.buffered", s.now().UnixMilli())
 	for _, event := range result.Events {
 		switch event {
 		case audio.EventVADSpeechStart:
@@ -8791,7 +9174,7 @@ func (s *Server) observeXiaozhiDecodedIngress(ctx context.Context, conn *websock
 		case audio.EventVADSpeechEnd:
 			s.metrics.vadSpeechEndTotal.Inc()
 		}
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, string(event), s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, string(event), s.now().UnixMilli())
 	}
 	s.maybeAutoStopXiaozhiTurnOnIngress(ctx, conn, session, result.Events)
 }
@@ -8830,15 +9213,16 @@ func (s *Server) recordXiaozhiDeviceSeen(frame xiaozhitransport.Frame) {
 }
 
 func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event string, capabilities map[string]string) {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
 	nowMS := s.now().UnixMilli()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record := s.devices[session.deviceID]
+	record := s.devices[id.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = session.deviceID
+		record.DeviceID = id.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -8851,10 +9235,10 @@ func (s *Server) recordXiaozhiDeviceActivity(session *xiaozhiSession, event stri
 	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
 		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
 	}
-	record.LastTraceID = session.traceID
-	record.LastSessionID = session.sessionID
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
 	record.LastSeenMS = nowMS
-	s.devices[session.deviceID] = record
+	s.devices[id.deviceID] = record
 }
 
 func (s *Server) recordDeviceDisplayState(deviceID string, traceID string, sessionID string, source string, rawState string) bool {
@@ -8917,15 +9301,17 @@ func (s *Server) recordXiaozhiPlaybackStopDone(session *xiaozhiSession, streamID
 }
 
 func (s *Server) recordXiaozhiHeartbeat(session *xiaozhiSession) {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "device.heartbeat", s.now().UnixMilli())
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "device.heartbeat", s.now().UnixMilli())
 	s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
 }
 
 func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) bool {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return false
 	}
 	deviceEvent, source, ok := xiaozhiTouchEventKindAndSource(event)
@@ -8934,11 +9320,11 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 	}
 	nowMS := s.now().UnixMilli()
 	traceName := "device." + string(deviceEvent) + ".received"
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, traceName, nowMS)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, traceName, nowMS)
 	s.mu.Lock()
-	record := s.devices[session.deviceID]
+	record := s.devices[id.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = session.deviceID
+		record.DeviceID = id.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -8948,13 +9334,13 @@ func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhit
 	record.LastEvent = deviceEvent
 	record.LastTouchEvent = deviceEvent
 	record.LastTouchSource = source
-	record.LastTouchTraceID = session.traceID
-	record.LastTouchSessionID = session.sessionID
+	record.LastTouchTraceID = id.traceID
+	record.LastTouchSessionID = id.sessionID
 	record.LastTouchSeenMS = nowMS
-	record.LastTraceID = session.traceID
-	record.LastSessionID = session.sessionID
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
 	record.LastSeenMS = nowMS
-	s.devices[session.deviceID] = record
+	s.devices[id.deviceID] = record
 	s.mu.Unlock()
 	return true
 }
@@ -9005,6 +9391,7 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 	if !s.xiaozhiProductTouchReactionsAllowed(session) {
 		return
 	}
+	id := session.identitySnapshot()
 	plans := xiaozhiTouchReactionPlans(session, event)
 	if len(plans) == 0 {
 		return
@@ -9012,7 +9399,7 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 	for _, req := range plans {
 		delivery, status, message := s.sendXiaozhiMCPControl(ctx, req)
 		if status != 0 {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.touch_reaction.failed", s.now().UnixMilli())
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.failed", s.now().UnixMilli())
 			if message != "" {
 				s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
 					"last_touch_reaction_status": "failed_" + strconv.Itoa(status),
@@ -9035,8 +9422,9 @@ func (s *Server) maybeSendXiaozhiStateReaction(ctx context.Context, session *xia
 	if !s.xiaozhiProductStateReactionsAllowed(session) {
 		return
 	}
+	id := session.identitySnapshot()
 	if xiaozhiStateReactionSuppressed(state, reason) {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.state_reaction.listen_start_suppressed", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.state_reaction.listen_start_suppressed", s.now().UnixMilli())
 		s.recordXiaozhiStateReactionEcho(session, state, reason, map[string]string{
 			"last_state_reaction_status": "suppressed_listen_start",
 		})
@@ -9052,7 +9440,7 @@ func (s *Server) maybeSendXiaozhiStateReaction(ctx context.Context, session *xia
 	for _, req := range plans {
 		delivery, status, _ := s.sendXiaozhiMCPControl(ctx, req)
 		if status != 0 {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.state_reaction.failed", s.now().UnixMilli())
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.state_reaction.failed", s.now().UnixMilli())
 			s.recordXiaozhiStateReactionEcho(session, state, reason, map[string]string{
 				"last_state_reaction_status": "failed_" + strconv.Itoa(status),
 			})
@@ -9078,10 +9466,11 @@ func xiaozhiStateReactionPlans(session *xiaozhiSession, state string) []XiaozhiM
 	if session == nil {
 		return nil
 	}
+	id := session.identitySnapshot()
 	base := XiaozhiMCPControlRequest{
-		DeviceID:  session.deviceID,
-		TraceID:   session.traceID,
-		SessionID: session.sessionID,
+		DeviceID:  id.deviceID,
+		TraceID:   id.traceID,
+		SessionID: id.sessionID,
 	}
 	led := func(red, green, blue int) XiaozhiMCPControlRequest {
 		req := base
@@ -9134,10 +9523,11 @@ func xiaozhiTouchReactionPlans(session *xiaozhiSession, event xiaozhitransport.D
 	if session == nil {
 		return nil
 	}
+	id := session.identitySnapshot()
 	base := XiaozhiMCPControlRequest{
-		DeviceID:  session.deviceID,
-		TraceID:   session.traceID,
-		SessionID: session.sessionID,
+		DeviceID:  id.deviceID,
+		TraceID:   id.traceID,
+		SessionID: id.sessionID,
 	}
 	led := func(red, green, blue int) XiaozhiMCPControlRequest {
 		req := base
@@ -9196,7 +9586,8 @@ func xiaozhiReactionInt(value int) *int {
 }
 
 func (s *Server) recordXiaozhiTouchReactionEcho(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent, echo map[string]string) {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
 	deviceEvent, source, ok := xiaozhiTouchEventKindAndSource(event)
@@ -9212,9 +9603,9 @@ func (s *Server) recordXiaozhiTouchReactionEcho(session *xiaozhiSession, event x
 		reactionEcho[key] = value
 	}
 	s.mu.Lock()
-	record := s.devices[session.deviceID]
+	record := s.devices[id.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = session.deviceID
+		record.DeviceID = id.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -9224,19 +9615,20 @@ func (s *Server) recordXiaozhiTouchReactionEcho(session *xiaozhiSession, event x
 	record.LastEvent = deviceEvent
 	record.LastTouchEvent = deviceEvent
 	record.LastTouchSource = source
-	record.LastTouchTraceID = session.traceID
-	record.LastTouchSessionID = session.sessionID
+	record.LastTouchTraceID = id.traceID
+	record.LastTouchSessionID = id.sessionID
 	record.LastTouchSeenMS = nowMS
-	record.LastTraceID = session.traceID
-	record.LastSessionID = session.sessionID
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
 	record.LastSeenMS = nowMS
 	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, reactionEcho)
-	s.devices[session.deviceID] = record
+	s.devices[id.deviceID] = record
 	s.mu.Unlock()
 }
 
 func (s *Server) recordXiaozhiStateReactionEcho(session *xiaozhiSession, state string, reason string, echo map[string]string) {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
 	nowMS := s.now().UnixMilli()
@@ -9248,25 +9640,26 @@ func (s *Server) recordXiaozhiStateReactionEcho(session *xiaozhiSession, state s
 		reactionEcho[key] = value
 	}
 	s.mu.Lock()
-	record := s.devices[session.deviceID]
+	record := s.devices[id.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = session.deviceID
+		record.DeviceID = id.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
 		record.IdentityStatus = "unknown"
 	}
 	record.ConnectionStatus = "online"
-	record.LastTraceID = session.traceID
-	record.LastSessionID = session.sessionID
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
 	record.LastSeenMS = nowMS
 	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, reactionEcho)
-	s.devices[session.deviceID] = record
+	s.devices[id.deviceID] = record
 	s.mu.Unlock()
 }
 
 func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event string, streamID string) {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
 	nowMS := s.now().UnixMilli()
@@ -9275,12 +9668,12 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 		session.lastPlaybackStopDoneAtMS = nowMS
 		session.mu.Unlock()
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, event, nowMS)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, event, nowMS)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record := s.devices[session.deviceID]
+	record := s.devices[id.deviceID]
 	if record.DeviceID == "" {
-		record.DeviceID = session.deviceID
+		record.DeviceID = id.deviceID
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -9288,13 +9681,13 @@ func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event strin
 	}
 	record.ConnectionStatus = "online"
 	record.LastEvent = protocol.DeviceEventKind(event)
-	record.LastTraceID = session.traceID
-	record.LastSessionID = session.sessionID
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
 	record.LastSeenMS = nowMS
 	if streamID != "" {
 		record.PlaybackStream = streamID
 	}
-	s.devices[session.deviceID] = record
+	s.devices[id.deviceID] = record
 }
 
 func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatures, session *xiaozhiSession) map[string]string {
@@ -9346,50 +9739,55 @@ func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatu
 }
 
 func (s *Server) xiaozhiProductPlaybackEventsAllowed(session *xiaozhiSession) bool {
+	features := session.featuresSnapshot()
+	id := session.identitySnapshot()
 	return s != nil &&
 		s.xiaozhiProductPlaybackEvents &&
-		session != nil &&
-		session.features.PlaybackEvents &&
-		!session.features.DeviceEvents &&
-		!session.features.DebugMetrics &&
-		hardwareMACDeviceID(session.deviceID)
+		features.PlaybackEvents &&
+		!features.DeviceEvents &&
+		!features.DebugMetrics &&
+		hardwareMACDeviceID(id.deviceID)
 }
 
 func (s *Server) xiaozhiProductKeepaliveEventsAllowed(session *xiaozhiSession) bool {
+	features := session.featuresSnapshot()
+	id := session.identitySnapshot()
 	return s != nil &&
 		s.xiaozhiProductPlaybackEvents &&
-		session != nil &&
-		session.features.KeepaliveEvents &&
-		!session.features.DeviceEvents &&
-		!session.features.DebugMetrics &&
-		hardwareMACDeviceID(session.deviceID)
+		features.KeepaliveEvents &&
+		!features.DeviceEvents &&
+		!features.DebugMetrics &&
+		hardwareMACDeviceID(id.deviceID)
 }
 
 func (s *Server) xiaozhiProductTouchEventsAllowed(session *xiaozhiSession) bool {
+	features := session.featuresSnapshot()
+	id := session.identitySnapshot()
 	return s != nil &&
 		s.xiaozhiProductTouchEvents &&
-		session != nil &&
-		session.features.TouchEvents &&
-		!session.features.DeviceEvents &&
-		!session.features.DebugMetrics &&
-		hardwareMACDeviceID(session.deviceID)
+		features.TouchEvents &&
+		!features.DeviceEvents &&
+		!features.DebugMetrics &&
+		hardwareMACDeviceID(id.deviceID)
 }
 
 func (s *Server) xiaozhiProductTouchReactionsAllowed(session *xiaozhiSession) bool {
+	features := session.featuresSnapshot()
 	return s != nil &&
 		s.xiaozhiProductTouchReactions &&
 		s.xiaozhiProductTouchEventsAllowed(session) &&
-		session.features.MCP
+		features.MCP
 }
 
 func (s *Server) xiaozhiProductStateReactionsAllowed(session *xiaozhiSession) bool {
+	features := session.featuresSnapshot()
+	id := session.identitySnapshot()
 	return s != nil &&
 		s.xiaozhiProductStateReactions &&
-		session != nil &&
-		session.features.MCP &&
-		!session.features.DeviceEvents &&
-		!session.features.DebugMetrics &&
-		hardwareMACDeviceID(session.deviceID)
+		features.MCP &&
+		!features.DeviceEvents &&
+		!features.DebugMetrics &&
+		hardwareMACDeviceID(id.deviceID)
 }
 
 func xiaozhiClientProfile(features xiaozhitransport.HelloFeatures) string {
@@ -9434,36 +9832,49 @@ func mergeDeviceCapabilities(existing map[string]string, additions map[string]st
 }
 
 func (s *Server) newXiaozhiTurnTask(session *xiaozhiSession, turn *xiaozhiTurn) xiaozhiTurnTask {
-	decodeStatus := session.xiaozhiOpusDecodeStatus()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	session.mu.Lock()
+	id := session.identityLocked()
+	decodeStatus := xiaozhiOpusDecodeStatusFromCounts(session.opusDecodedFrameCount, session.opusDecodeErrorCount)
+	decodedDurationMS := session.xiaozhiDecodedDurationMSLocked()
 	streamingASRPartialText := session.streamingASRPartialText
 	streamingASRFinalText := session.streamingASRFinalText
 	streamingASRUsed := session.streamingASRHasFinal && strings.TrimSpace(session.streamingASRFinalText) != ""
+	binaryProtocolVersion := session.binaryProtocolVersion
+	opusSampleRateHz := session.opusSampleRateHz
+	opusChannels := session.opusChannels
+	opusFrameDurationMS := session.opusFrameDurationMS
+	opusFrameCount := session.opusFrameCount
+	opusByteCount := session.opusByteCount
+	opusDecodedFrameCount := session.opusDecodedFrameCount
+	opusDecodedSampleCount := session.opusDecodedSampleCount
+	opusDecodeErrorCount := session.opusDecodeErrorCount
+	voicePipelineFrames := copyXiaozhiVoicePipelineFrames(session.voicePipelineFrames)
+	voicePipelineHasSpeech := session.voicePipelineHasSpeech
 	session.mu.Unlock()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	return xiaozhiTurnTask{
 		turn:      turn,
 		turnID:    xiaozhiTurnID(turn),
-		traceID:   session.traceID,
-		sessionID: session.sessionID,
-		deviceID:  session.deviceID,
+		traceID:   id.traceID,
+		sessionID: id.sessionID,
+		deviceID:  id.deviceID,
 		mode:      xiaozhiTurnMode(turn),
 		audioIngressBase: map[string]any{
 			"codec":                "opus",
-			"profile":              xiaozhiBinaryProfile(session.binaryProtocolVersion),
-			"sample_rate_hz":       session.opusSampleRateHz,
-			"channels":             session.opusChannels,
-			"frame_duration_ms":    session.opusFrameDurationMS,
+			"profile":              xiaozhiBinaryProfile(binaryProtocolVersion),
+			"sample_rate_hz":       opusSampleRateHz,
+			"channels":             opusChannels,
+			"frame_duration_ms":    opusFrameDurationMS,
 			"decode_status":        decodeStatus,
-			"frame_count":          session.opusFrameCount,
-			"byte_count":           session.opusByteCount,
-			"decoded_frame_count":  session.opusDecodedFrameCount,
-			"decoded_sample_count": session.opusDecodedSampleCount,
-			"decoded_duration_ms":  session.xiaozhiDecodedDurationMS(),
-			"decode_error_count":   session.opusDecodeErrorCount,
+			"frame_count":          opusFrameCount,
+			"byte_count":           opusByteCount,
+			"decoded_frame_count":  opusDecodedFrameCount,
+			"decoded_sample_count": opusDecodedSampleCount,
+			"decoded_duration_ms":  decodedDurationMS,
+			"decode_error_count":   opusDecodeErrorCount,
 		},
-		voicePipelineFrames:     append([]providers.VoicePipelinePCMFrame(nil), session.voicePipelineFrames...),
-		voicePipelineHasSpeech:  session.voicePipelineHasSpeech,
+		voicePipelineFrames:     voicePipelineFrames,
+		voicePipelineHasSpeech:  voicePipelineHasSpeech,
 		streamingASRPartialText: streamingASRPartialText,
 		streamingASRFinalText:   streamingASRFinalText,
 		streamingASRUsed:        streamingASRUsed,
@@ -9494,23 +9905,33 @@ func (s *Server) maybeAutoStopXiaozhiTurnOnIngress(ctx context.Context, conn *we
 	} else if s.xiaozhiListenMaxDurationReached(session, s.now().UnixMilli()) {
 		autoStopReason = "max_duration"
 	}
-	if autoStopReason == "" || !session.voicePipelineHasSpeech || !session.listening {
+	if autoStopReason == "" {
 		return
 	}
-	if autoStopReason == "speech_end" && session.xiaozhiUsesStockPhysicalStop() {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.gateway_vad_stop_deferred_stock_physical", s.now().UnixMilli())
+	session.mu.Lock()
+	if !session.voicePipelineHasSpeech || !session.listening {
+		session.mu.Unlock()
 		return
 	}
-	turn := session.currentXiaozhiTurn()
+	stockPhysicalStop := autoStopReason == "speech_end" && hardwareMACDeviceID(session.deviceID) && xiaozhiClientProfile(session.features) == "stock"
+	turn := session.currentTurn
+	id := session.identityLocked()
+	if stockPhysicalStop {
+		session.mu.Unlock()
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.gateway_vad_stop_deferred_stock_physical", s.now().UnixMilli())
+		return
+	}
 	if turn == nil {
+		session.mu.Unlock()
 		return
 	}
 	session.listening = false
 	session.listenStartedAtMS = 0
+	session.mu.Unlock()
 	if autoStopReason == "max_duration" {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.max_duration_auto_stop", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.max_duration_auto_stop", s.now().UnixMilli())
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.auto_stop", s.now().UnixMilli())
 	if s.startXiaozhiStreamingASRCommit(ctx, conn, session, turn) {
 		return
 	}
@@ -9522,6 +9943,8 @@ func (s *Server) xiaozhiListenMaxDurationReached(session *xiaozhiSession, nowMS 
 	if s == nil || session == nil || s.xiaozhiListenMaxDurationMS <= 0 || nowMS <= 0 {
 		return false
 	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
 	if !session.listening || !session.voicePipelineHasSpeech || session.listenStartedAtMS <= 0 {
 		return false
 	}
@@ -9532,64 +9955,69 @@ func (session *xiaozhiSession) xiaozhiUsesStockPhysicalStop() bool {
 	if session == nil {
 		return false
 	}
-	return hardwareMACDeviceID(session.deviceID) && xiaozhiClientProfile(session.features) == "stock"
+	id := session.identitySnapshot()
+	features := session.featuresSnapshot()
+	return hardwareMACDeviceID(id.deviceID) && xiaozhiClientProfile(features) == "stock"
 }
 
 func (s *Server) recordXiaozhiAbortMarkers(session *xiaozhiSession, reason string, hadTurn bool) {
 	now := s.now().UnixMilli()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.abort.received", now)
+	id := session.identitySnapshot()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.abort.received", now)
 	if !hadTurn {
 		return
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.start", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.end", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.turn.cancel", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "turn_cancelled", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "downlink_queue_cleared", now)
 	if !xiaozhiAbortIsBargeIn(reason) {
 		return
 	}
 	s.metrics.bargeInTotal.Inc()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in_detected", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "barge_in.detected", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "barge_in_detected", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "playback.stop", now)
 }
 
 func (s *Server) recordXiaozhiListenBargeInMarkers(session *xiaozhiSession, hadActiveTurn bool) {
 	now := s.now().UnixMilli()
+	id := session.identitySnapshot()
 	s.metrics.bargeInTotal.Inc()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.listen.barge_in", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.listen.barge_in", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "barge_in.detected", now)
 	if hadActiveTurn {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.start", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.end", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.turn.cancel", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "turn_cancelled", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "downlink_queue_cleared", now)
 	} else {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop.recent_downlink", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "playback.stop.recent_downlink", now)
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "playback.stop", now)
 }
 
 func (s *Server) recordXiaozhiTouchBargeInMarkers(session *xiaozhiSession, hadActiveTurn bool) {
 	now := s.now().UnixMilli()
+	id := session.identitySnapshot()
 	s.metrics.bargeInTotal.Inc()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.touch.barge_in", now)
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "barge_in.detected", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch.barge_in", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "barge_in.detected", now)
 	if hadActiveTurn {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.start", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "provider.cancel.end", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.turn.cancel", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "turn_cancelled", now)
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "downlink_queue_cleared", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.start", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "provider.cancel.end", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.turn.cancel", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "turn_cancelled", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "downlink_queue_cleared", now)
 	} else {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop.recent_downlink", now)
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "playback.stop.recent_downlink", now)
 	}
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "playback.stop", now)
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "playback.stop", now)
 }
 
 func (s *Server) writeXiaozhiTTS(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, task xiaozhiTurnTask) {
@@ -9977,14 +10405,9 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		"trace_id":       task.traceID,
 		"session_id":     task.sessionID,
 		"device_id":      task.deviceID,
-		"audio_ingress":  task.audioIngressSummary("pipeline_running", "fast_ack_then_answer"),
-		"voice_pipeline": s.xiaozhiVoicePipelineFastAckSummary(),
+		"audio_ingress":  task.audioIngressSummary("pipeline_running", s.xiaozhiVoicePipelineInitialTTSStatus()),
+		"voice_pipeline": s.xiaozhiVoicePipelineInitialSummary(),
 	}); err != nil {
-		return true
-	}
-	fastAckWrote := s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task)
-	if !fastAckWrote && session.shouldAbortXiaozhiTurn(turn) {
-		s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "fast_ack_aborted")
 		return true
 	}
 	request := providers.VoicePipelineRequest{
@@ -10008,8 +10431,10 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "roleplay.voice_clone_profile.used", s.now().UnixMilli())
 		}
 	}
+	markAnswerReady := s.startXiaozhiFastAckBackchannel(ctx, conn, session, turn, task)
+	defer markAnswerReady()
 	if streamer, ok := runner.(xiaozhiVoicePipelineStreamer); ok {
-		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS)
+		return s.writeXiaozhiStreamingVoicePipelineAnswer(ctx, conn, session, turn, task, streamer, request, startAtMS, markAnswerReady)
 	}
 	result, err := runner.Run(turn.ctx, request)
 	s.recordVoicePipelineFallback(task.traceID, task.sessionID, task.deviceID, result.Report)
@@ -10018,6 +10443,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.cancelled", s.now().UnixMilli())
 			return true
 		}
+		markAnswerReady()
 		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, result.Report)
 		s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, result.Report, result, err)
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
@@ -10025,6 +10451,7 @@ func (s *Server) writeXiaozhiVoicePipelineTTS(ctx context.Context, conn *websock
 		return true
 	}
 	s.recordXiaozhiVoicePipelineStageMarkers(task.traceID, task.sessionID, task.deviceID, startAtMS, result.Timing)
+	markAnswerReady()
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
 		"type":           "tts",
 		"state":          "sentence_start",
@@ -10081,9 +10508,10 @@ func (s *Server) writeXiaozhiSTT(ctx context.Context, conn *websocket.Conn, sess
 	return true
 }
 
-func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, runner xiaozhiVoicePipelineStreamer, req providers.VoicePipelineRequest, startAtMS int64) bool {
+func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, runner xiaozhiVoicePipelineStreamer, req providers.VoicePipelineRequest, startAtMS int64, markAnswerReady func()) bool {
 	events, err := runner.RunStream(turn.ctx, req)
 	if err != nil {
+		markAnswerReady()
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
 		s.writeXiaozhiLocalFallback(ctx, conn, session, turn, task, "voice_pipeline_unavailable_after_fast_ack")
 		return true
@@ -10102,6 +10530,7 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 		switch event.Kind {
 		case providers.VoicePipelineStreamAudioChunk:
 			if !answerStarted || event.SegmentSeq != lastSegmentSeq {
+				markAnswerReady()
 				answerStarted = true
 				lastSegmentSeq = event.SegmentSeq
 				if err := session.writeXiaozhiJSON(ctx, conn, turn, map[string]any{
@@ -10156,12 +10585,14 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 			return true
 		}
 		if answerStarted {
+			markAnswerReady()
 			s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
 			s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report, finalResult, err)
 			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed_degraded_after_audio", s.now().UnixMilli())
 			s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed_degraded")
 			return true
 		}
+		markAnswerReady()
 		s.recordXiaozhiVoicePipelineProfileMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report)
 		s.recordXiaozhiVoicePipelineFailureMarkers(task.traceID, task.sessionID, task.deviceID, finalResult.Report, finalResult, err)
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.unavailable", s.now().UnixMilli())
@@ -10177,6 +10608,46 @@ func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, c
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.voice_pipeline.completed", s.now().UnixMilli())
 	s.writeXiaozhiTTSStop(ctx, conn, session, turn, task, "voice_pipeline_answer_completed")
 	return true
+}
+
+func (s *Server) startXiaozhiFastAckBackchannel(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask) func() {
+	if !s.xiaozhiFastAckEnabled {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.disabled", s.now().UnixMilli())
+		return func() {}
+	}
+	delay := s.xiaozhiFastAckDelay
+	if delay <= 0 {
+		s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task)
+		return func() {}
+	}
+	answerReady := make(chan struct{})
+	var answerReadyOnce sync.Once
+	go func() {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-turn.ctx.Done():
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.cancelled_before_delay", s.now().UnixMilli())
+			return
+		case <-answerReady:
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.skipped_answer_ready", s.now().UnixMilli())
+			return
+		case <-timer.C:
+		}
+		if session.shouldAbortXiaozhiTurn(turn) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.cancelled_after_delay", s.now().UnixMilli())
+			return
+		}
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.delay_elapsed", s.now().UnixMilli())
+		if s.writeXiaozhiFastAckDownlink(ctx, conn, session, turn, task) {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.delayed", s.now().UnixMilli())
+		}
+	}()
+	return func() {
+		answerReadyOnce.Do(func() {
+			close(answerReady)
+		})
+	}
 }
 
 func (s *Server) writeXiaozhiFastAckDownlink(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask) bool {
@@ -10228,6 +10699,30 @@ func (s *Server) writeXiaozhiFastAckDownlink(ctx context.Context, conn *websocke
 	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.fast_ack.unavailable", s.now().UnixMilli())
 	return false
+}
+
+func (s *Server) xiaozhiVoicePipelineInitialTTSStatus() string {
+	if s.xiaozhiFastAckEnabled && s.xiaozhiFastAckDelay > 0 {
+		return "delayed_fast_ack_then_answer"
+	}
+	if s.xiaozhiFastAckEnabled {
+		return "fast_ack_then_answer"
+	}
+	return "answer_only"
+}
+
+func (s *Server) xiaozhiVoicePipelineInitialSummary() map[string]any {
+	summary := s.xiaozhiVoicePipelineFastAckSummary()
+	summary["fast_ack_enabled"] = s.xiaozhiFastAckEnabled
+	if s.xiaozhiFastAckEnabled && s.xiaozhiFastAckDelay > 0 {
+		summary["schema_version"] = "a21.voice_pipeline.delayed_fast_ack.v1"
+		summary["stage"] = "answer_pending"
+		summary["fast_ack_delay_ms"] = s.xiaozhiFastAckDelay.Milliseconds()
+	} else if !s.xiaozhiFastAckEnabled {
+		summary["schema_version"] = "a21.voice_pipeline.answer_only.v1"
+		summary["stage"] = "answer_pending"
+	}
+	return summary
 }
 
 func (s *Server) xiaozhiVoicePipelineFastAckSummary() map[string]any {
@@ -10452,21 +10947,34 @@ func gatewayStringSliceHas(values []string, want string) bool {
 }
 
 func (s *Server) xiaozhiAudioIngressSummary(session *xiaozhiSession, asrStatus string, ttsStatus string) map[string]any {
-	decodeStatus := session.xiaozhiOpusDecodeStatus()
-	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
+	session.mu.Lock()
+	id := session.identityLocked()
+	decodeStatus := xiaozhiOpusDecodeStatusFromCounts(session.opusDecodedFrameCount, session.opusDecodeErrorCount)
+	decodedDurationMS := session.xiaozhiDecodedDurationMSLocked()
+	binaryProtocolVersion := session.binaryProtocolVersion
+	opusSampleRateHz := session.opusSampleRateHz
+	opusChannels := session.opusChannels
+	opusFrameDurationMS := session.opusFrameDurationMS
+	opusFrameCount := session.opusFrameCount
+	opusByteCount := session.opusByteCount
+	opusDecodedFrameCount := session.opusDecodedFrameCount
+	opusDecodedSampleCount := session.opusDecodedSampleCount
+	opusDecodeErrorCount := session.opusDecodeErrorCount
+	session.mu.Unlock()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi."+decodeStatus, s.now().UnixMilli())
 	return map[string]any{
 		"codec":                "opus",
-		"profile":              xiaozhiBinaryProfile(session.binaryProtocolVersion),
-		"sample_rate_hz":       session.opusSampleRateHz,
-		"channels":             session.opusChannels,
-		"frame_duration_ms":    session.opusFrameDurationMS,
+		"profile":              xiaozhiBinaryProfile(binaryProtocolVersion),
+		"sample_rate_hz":       opusSampleRateHz,
+		"channels":             opusChannels,
+		"frame_duration_ms":    opusFrameDurationMS,
 		"decode_status":        decodeStatus,
-		"frame_count":          session.opusFrameCount,
-		"byte_count":           session.opusByteCount,
-		"decoded_frame_count":  session.opusDecodedFrameCount,
-		"decoded_sample_count": session.opusDecodedSampleCount,
-		"decoded_duration_ms":  session.xiaozhiDecodedDurationMS(),
-		"decode_error_count":   session.opusDecodeErrorCount,
+		"frame_count":          opusFrameCount,
+		"byte_count":           opusByteCount,
+		"decoded_frame_count":  opusDecodedFrameCount,
+		"decoded_sample_count": opusDecodedSampleCount,
+		"decoded_duration_ms":  decodedDurationMS,
+		"decode_error_count":   opusDecodeErrorCount,
 		"asr_status":           asrStatus,
 		"tts_status":           ttsStatus,
 	}
@@ -11897,24 +12405,25 @@ func (s *Server) recordOfficialStackChanConnected(deviceID string) {
 }
 
 func (s *Server) writeXiaozhiOfficialStackChanState(ctx context.Context, session *xiaozhiSession, state string, reason string, force bool) bool {
-	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+	id := session.identitySnapshot()
+	if strings.TrimSpace(id.deviceID) == "" {
 		return false
 	}
 	event := xiaozhitransport.DeviceExtensionEvent{
 		Kind:  xiaozhitransport.DeviceEventKindState,
 		Value: state,
 	}
-	s.recordDeviceDisplayState(session.deviceID, session.traceID, session.sessionID, "xiaozhi", state)
+	s.recordDeviceDisplayState(id.deviceID, id.traceID, id.sessionID, "xiaozhi", state)
 	s.maybeSendXiaozhiStateReaction(ctx, session, state, reason, force)
 	packets, err := stackchantransport.BuildOfficialPackets(event)
 	if err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.unsupported", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "stackchan.official_auto.unsupported", s.now().UnixMilli())
 		return false
 	}
-	socket, officialDeviceID, ok := s.officialStackChanSocketForXiaozhiDevice(session.deviceID)
+	socket, officialDeviceID, ok := s.officialStackChanSocketForXiaozhiDevice(id.deviceID)
 	if !ok {
 		if reason != "opus_downlink" {
-			s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.not_connected", s.now().UnixMilli())
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "stackchan.official_auto.not_connected", s.now().UnixMilli())
 		}
 		return false
 	}
@@ -11935,10 +12444,10 @@ func (s *Server) writeXiaozhiOfficialStackChanState(ctx context.Context, session
 	}
 	socket.writeMu.Unlock()
 	if err != nil {
-		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "stackchan.official_auto.delivery_error", s.now().UnixMilli())
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "stackchan.official_auto.delivery_error", s.now().UnixMilli())
 		return false
 	}
-	s.recordOfficialStackChanAutoDelivered(session.deviceID, officialDeviceID, session.traceID, session.sessionID, event, len(packets), reason)
+	s.recordOfficialStackChanAutoDelivered(id.deviceID, officialDeviceID, id.traceID, id.sessionID, event, len(packets), reason)
 	return true
 }
 
@@ -12057,6 +12566,7 @@ func (s *Server) hardwareAcceptance(deviceID string) HardwareAcceptanceResponse 
 	items := []HardwareAcceptanceItem{
 		hardwareModeRitualAcceptanceItem(record, found),
 		hardwareFullCheckAcceptanceItem(record, found),
+		hardwarePowerLifecycleAcceptanceItem(record, found),
 	}
 	acceptedCount := 0
 	deliveredCount := 0
@@ -12085,6 +12595,57 @@ func (s *Server) hardwareAcceptance(deviceID string) HardwareAcceptanceResponse 
 		PhysicalAccepted: found && acceptedCount == len(items),
 		Items:            items,
 	}
+}
+
+func (s *Server) powerLifecycle(deviceID string) PowerLifecycleResponse {
+	record, found := s.deviceRecord(deviceID)
+	xiaozhiOnline := s.xiaozhiSocketOnline(deviceID)
+	capabilities := record.Capabilities
+	runtimeEcho := record.RuntimeEcho
+	batteryTelemetry := "missing"
+	if status := strings.TrimSpace(capabilities["battery"]); status != "" {
+		batteryTelemetry = status
+	}
+	if strings.TrimSpace(runtimeEcho["battery_mv"]) != "" {
+		batteryTelemetry = "diagnostic_runtime_echo"
+	}
+	physicalAccepted := found && capabilities["power_lifecycle_physical_accepted"] == "true"
+	items := []PowerLifecycleItem{
+		powerLifecycleItem("runtime_online", "Runtime online", found && record.ConnectionStatus == "online", false, record.ConnectionStatus, "gateway_registry", "reconnect_device"),
+		powerLifecycleItem("xiaozhi_socket", "Xiaozhi socket", xiaozhiOnline, false, boolStatus(xiaozhiOnline), "gateway_socket_registry", "restore_xiaozhi_socket"),
+		powerLifecycleItem("battery_telemetry", "Battery telemetry", strings.TrimSpace(runtimeEcho["battery_mv"]) != "", false, batteryTelemetry, "device_runtime_echo", "run_sensor_battery_diagnostic_probe"),
+		powerLifecycleItem("no_cable_cold_boot", "No-cable cold boot", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_no_cable_cold_boot"),
+		powerLifecycleItem("physical_power_button", "Physical power button", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_power_button_start"),
+	}
+	overall := "device_missing"
+	switch {
+	case !found:
+		overall = "device_missing"
+	case physicalAccepted:
+		overall = "accepted"
+	case record.ConnectionStatus != "online" || !xiaozhiOnline:
+		overall = "blocked"
+	default:
+		overall = "physical_pending"
+	}
+	return PowerLifecycleResponse{
+		SchemaVersion:    "a21.gateway.power_lifecycle.v1",
+		Service:          DeviceRegistryServiceName,
+		DeviceID:         deviceID,
+		ConnectionStatus: record.ConnectionStatus,
+		OverallStatus:    overall,
+		PhysicalAccepted: physicalAccepted,
+		XiaozhiWSOnline:  xiaozhiOnline,
+		BatteryTelemetry: batteryTelemetry,
+		Items:            items,
+		ResultRedacted:   true,
+	}
+}
+
+func (s *Server) xiaozhiSocketOnline(deviceID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.xiaozhiSockets[deviceID] != nil
 }
 
 func (s *Server) deviceRecord(deviceID string) (DeviceRecord, bool) {
@@ -12134,6 +12695,23 @@ func hardwareFullCheckAcceptanceItem(record DeviceRecord, found bool) HardwareAc
 	)
 }
 
+func hardwarePowerLifecycleAcceptanceItem(record DeviceRecord, found bool) HardwareAcceptanceItem {
+	capabilities := record.Capabilities
+	delivered := found && record.ConnectionStatus == "online"
+	accepted := found && capabilities["power_lifecycle_physical_accepted"] == "true"
+	return hardwareAcceptanceItem(
+		"power_lifecycle",
+		"Power lifecycle",
+		delivered,
+		accepted,
+		capabilities["last_power_lifecycle_acceptance_trace_id"],
+		capabilities["last_power_lifecycle_acceptance_session_id"],
+		"/v1/power-lifecycle-acceptance",
+		"verify_no_cable_power_button_boot",
+		"accept_no_cable_power_button_boot",
+	)
+}
+
 func hardwareAcceptanceItem(id string, label string, delivered bool, accepted bool, traceID string, sessionID string, endpoint string, runAction string, acceptAction string) HardwareAcceptanceItem {
 	deliveryStatus := "not_delivered"
 	nextAction := runAction
@@ -12154,6 +12732,35 @@ func hardwareAcceptanceItem(id string, label string, delivered bool, accepted bo
 		AcceptanceEndpoint: endpoint,
 		NextAction:         nextAction,
 	}
+}
+
+func powerLifecycleItem(id string, label string, ready bool, accepted bool, status string, source string, nextAction string) PowerLifecycleItem {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "missing"
+	}
+	if ready && !accepted {
+		status = "ready"
+	}
+	if accepted {
+		status = "accepted"
+		nextAction = "accepted"
+	}
+	return PowerLifecycleItem{
+		ID:               id,
+		Label:            label,
+		Status:           status,
+		PhysicalAccepted: accepted,
+		EvidenceSource:   source,
+		NextAction:       nextAction,
+	}
+}
+
+func boolStatus(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func (s *Server) deviceRecords() []DeviceRecord {

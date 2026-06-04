@@ -405,7 +405,10 @@ surfaces:
   blocked tool classes with `result_redacted=true` and
   `physical_accepted=false`. Named endpoints require the connected device to
   advertise `hello.features.mcp=true`, return redacted metadata only, and do
-  not persist raw MCP result bodies.
+  not persist raw MCP result bodies. Power shutdown/sleep/reboot and firmware
+  upgrade classes remain blocked from MCP; no-cable boot and physical
+  power-button proof uses the explicit `/v1/power-lifecycle` state machine
+  instead.
 - `POST /v1/xiaozhi/body-preset` is the product-operation alias for bounded
   visible body-expression sequences. The request accepts `device_id`, a
   `preset` of `ready`, `listening`, `thinking`, `speaking`, `celebrate`, or
@@ -473,10 +476,31 @@ surfaces:
 - `GET /v1/hardware-acceptance?device_id=<device>` summarizes the foreground
   hardware acceptance state from the redacted device registry. It reports
   schema `a21.gateway.hardware_acceptance.v1`, `overall_status`, and per-item
-  entries for `mode_ritual` and `full_check` with delivery status, trace /
-  session IDs, physical acceptance booleans, the matching acceptance endpoint,
-  and the next operator action. This endpoint is read-only and never upgrades
-  machine-delivered evidence into physical acceptance.
+  entries for `mode_ritual`, `full_check`, and `power_lifecycle` with delivery
+  status, trace/session IDs, physical acceptance booleans, the matching
+  acceptance endpoint, and the next operator action. This endpoint is
+  read-only and never upgrades machine-delivered evidence into physical
+  acceptance.
+- `GET /v1/power-lifecycle?device_id=<device>` is the product power lifecycle
+  state-machine view for StackChan no-cable boot and physical power-button
+  acceptance. It derives only redacted facts from the Gateway registry:
+  device connection state, Xiaozhi socket presence, battery telemetry status,
+  and whether a foreground operator/instrument has accepted no-USB cold boot
+  plus power-button start. It uses schema `a21.gateway.power_lifecycle.v1` and
+  reports `device_missing`, `blocked`, `physical_pending`, or `accepted`.
+- `POST /v1/power-lifecycle-acceptance` is the only Gateway endpoint that can
+  mark power lifecycle physical acceptance. It requires `device_id`, matching
+  `trace_id` / `session_id`, `cold_boot_without_usb=true`,
+  `power_button_started=true`, `gateway_connected=true`,
+  `xiaozhi_socket_online=true`, `standalone_runtime_ok=true`, and
+  `observer=operator` or `observer=instrument`. Gateway also requires the
+  device to be online with an active `/v1/xiaozhi` socket before accepting.
+  Successful acceptance records trace marker
+  `power_lifecycle.physical_acceptance.accepted` and registry fields such as
+  `power_lifecycle_physical_accepted=true`,
+  `no_cable_cold_boot_physical_accepted=true`, and
+  `physical_power_button_start_physical_accepted=true`. If the physical button
+  still fails to start the device, this endpoint must remain unaccepted.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

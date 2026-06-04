@@ -3,6 +3,7 @@ package audio
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type AudioRateControllerConfig struct {
 }
 
 type AudioRateController struct {
+	mu              sync.Mutex
 	frameDuration   time.Duration
 	prebufferFrames int
 	now             func() time.Time
@@ -50,11 +52,15 @@ func NewAudioRateController(config AudioRateControllerConfig) *AudioRateControll
 }
 
 func (c *AudioRateController) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.sentFrames = 0
 	c.startedAt = time.Time{}
 }
 
 func (c *AudioRateController) SentFrames() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.sentFrames
 }
 
@@ -74,6 +80,8 @@ func (c *AudioRateController) Send(ctx context.Context, frame []byte, send func(
 	if aborted() {
 		return false, nil
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.sentFrames >= c.prebufferFrames {
 		if err := c.waitForSlot(ctx); err != nil {
 			return false, err
