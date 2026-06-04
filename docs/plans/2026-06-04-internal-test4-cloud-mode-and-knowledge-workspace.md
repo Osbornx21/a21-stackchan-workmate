@@ -509,6 +509,13 @@ Execution update:
   `core_identity`. A fresh local `roleplay-voice-probe --require-ready` passed;
   the refreshed server-side bundle now has only real provider smoke as the
   no-hardware server-side blocker.
+- `T-STEPFUN-PROVIDER-SMOKE-SERVER-CANDIDATE-CLOSURE-001` closes that remaining
+  no-hardware blocker. StepFun executed streaming provider smoke passed with
+  `repeat=3`, and the local bundle with
+  `--provider-smoke-report reports/provider-live/a21-provider-smoke-20260604-153030-291957000.json`
+  plus `--require-candidate` returned `server_side_candidate_ready`. Full PRD
+  launch still requires physical StackChan online evidence and physical PRD
+  acceptance.
 
 ## Not In Scope For This First Cut
 
@@ -554,3 +561,8 @@ On this first cut:
 After V21 upload/query-scope and A21 professional workspace context land:
 
 - `S-INTERNAL-TEST4-CLOUD-KNOWLEDGE-WORKSPACE-ADAPTER-READY-HARDWARE-CONSULT-PENDING`
+
+After server-side provider/professional/roleplay/wake/voice-chain evidence
+lands:
+
+- `S-INTERNAL-TEST4-SERVER-SIDE-CANDIDATE-READY-PHYSICAL-STACKCHAN-PENDING`

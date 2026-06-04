@@ -1494,3 +1494,35 @@ Current conclusion:
   PRD blockers are physical StackChan online and physical PRD acceptance.
 - This does not prove real clone-audio quality, real provider quality, ECS
   deployment, firmware, serial, NVS, or physical StackChan roleplay acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 StepFun Provider Smoke Closure
+
+The no-hardware server-side candidate gate is now closed on the local runtime.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-stepfun-provider-smoke-server-candidate-closure.md`.
+- `.a21-run/provider.env` was sourced without printing secret values.
+- `A21_PROVIDER_PRIMARY=stepfun`, `A21_TEXT_STREAM_PROFILE=stepfun`, and
+  `A21_STEPFUN_MODEL=step-1-8k` were used for the launch-policy text provider.
+- Dry-run provider smoke first reported `configured=true`.
+- Executed streaming provider smoke then passed:
+  `reports/provider-live/a21-provider-smoke-20260604-153030-291957000.json`.
+- Local Gateway was started with the same StepFun launch-policy env.
+- `a21 server-side-readiness-bundle --provider-smoke-report <stepfun-report>
+  --use-latest-reports --require-candidate` passed and wrote
+  `reports/a21-server-side-readiness-bundle-20260604-153129.json`.
+
+Current conclusion:
+
+- `server_side.candidate_ready=true` and
+  `status=server_side_candidate_ready`.
+- The server-side candidate now has Gateway, executed provider smoke,
+  professional ritual, professional read-record, host voice, roleplay voice
+  runtime, wake-word, and selected voice-chain evidence.
+- Full PRD launch remains blocked only by physical StackChan online evidence
+  and physical PRD acceptance.
+- No provider key was printed, committed, stored in firmware, or put into a
+  report body. No ECS/root-secret change, firmware build, flash, serial, NVS,
+  or physical hardware action occurred.

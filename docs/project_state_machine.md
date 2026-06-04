@@ -2647,3 +2647,16 @@ Priority candidate added from the 2026-06-04 internal test 4 workspace plan:
     - Next action: configure real A21 provider env and run executed provider
       smoke, then collect physical StackChan PRD acceptance in a foreground
       hardware window.
+
+16. `T-STEPFUN-PROVIDER-SMOKE-SERVER-CANDIDATE-CLOSURE-001`
+    - Current phase: completed runtime/docs transition on 2026-06-04.
+      StepFun executed streaming provider smoke passed with the local
+      A21-namespaced provider env and `A21_STEPFUN_MODEL=step-1-8k`.
+      Server-side readiness with the executed StepFun provider report now
+      returns `server_side_candidate_ready`.
+    - Runtime evidence:
+      `reports/provider-live/a21-provider-smoke-20260604-153030-291957000.json`
+      and `reports/a21-server-side-readiness-bundle-20260604-153129.json`.
+    - Next action: foreground physical StackChan acceptance: device online,
+      wake/listen/Opus ingress, ASR/TTS downlink, playback-start/audible
+      evidence, roleplay/professional mode behavior, and PRD acceptance.

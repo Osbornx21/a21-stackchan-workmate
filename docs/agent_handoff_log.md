@@ -12890,6 +12890,89 @@ Forbidden actions avoided:
   write, V21 repo mutation, report deletion, prune/gc, or physical hardware
   action occurred.
 
+## 2026-06-04 15:31 CST - StepFun Provider Smoke Server Candidate Closure
+
+Round goal:
+
+- Close the remaining no-hardware server-side blocker `provider_smoke` without
+  weakening the physical StackChan PRD gate.
+
+Actual completed work:
+
+- Found `.a21-run/provider.env` with A21-namespaced provider key variables and
+  used it without printing secret values.
+- Confirmed current shell had no active `A21_` provider env.
+- Ran StepFun provider dry-run first:
+  - initial dry-run showed only `A21_STEPFUN_MODEL` missing;
+  - rerun with `A21_STEPFUN_MODEL=step-1-8k` returned `configured=true`.
+- Ran executed StepFun streaming provider smoke:
+  - report:
+    `reports/provider-live/a21-provider-smoke-20260604-153030-291957000.json`;
+  - `status=passed`, `executed=true`, `repeat=3`, HTTP status `200`;
+  - first-content p50 `467.607ms`, p95 `2235.073ms`.
+- Started local Gateway with StepFun launch-policy env and ran
+  `server-side-readiness-bundle --provider-smoke-report <report>
+  --use-latest-reports --require-candidate`.
+- The resulting bundle
+  `reports/a21-server-side-readiness-bundle-20260604-153129.json` returned
+  `status=server_side_candidate_ready` and `candidate_ready=true`.
+
+Changed files:
+
+- `docs/plans/2026-06-04-stepfun-provider-smoke-server-candidate-closure.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Full PRD launch still needs physical StackChan online evidence and physical
+  PRD acceptance.
+- Public ECS `47.103.57.217` was previously observed timing out on `/healthz`
+  and has not been repaired in this round.
+
+Known risks/blockers:
+
+- The server-side candidate is no-hardware only. It proves the software
+  evidence chain through Gateway/provider/professional/read-record/roleplay/
+  wake/voice-chain readiness, but not physical wake, real speaker audibility,
+  physical roleplay expression, or physical professional consultation.
+
+Recommended next action:
+
+- Move to foreground physical StackChan acceptance with the product lane:
+  device online, wake/listen.start, Opus ingress, ASR, TTS downlink,
+  playback-start/audible evidence, roleplay/professional mode behavior, and
+  final PRD acceptance. Keep `a21-stackchan-official-xiaozhi-compatible.bin`
+  as the product flash artifact if a guarded flash is needed.
+
+Test/build/runtime results:
+
+- `go run ./cmd/a21 provider-smoke --provider stepfun --stream --repeat 3
+  --output-dir reports/provider-live` with `A21_STEPFUN_MODEL=step-1-8k`:
+  configured dry-run passed.
+- `go run ./cmd/a21 provider-smoke --provider stepfun --execute --stream
+  --repeat 3 --output-dir reports/provider-live`: passed.
+- `go run ./cmd/a21 server-side-readiness-bundle --gateway-url
+  http://127.0.0.1:21080 --device-id stackchan-sim-001
+  --provider-smoke-report reports/provider-live/a21-provider-smoke-20260604-153030-291957000.json
+  --use-latest-reports --require-candidate --output-dir reports`: passed with
+  `server_side_candidate_ready`.
+
+Failure location/reason:
+
+- Initial StepFun dry-run was not configured because `A21_STEPFUN_MODEL` was
+  absent from `.a21-run/provider.env`. The model was set to the documented
+  launch value `step-1-8k`, then dry-run and executed smoke both passed.
+
+Forbidden actions avoided:
+
+- No provider secret was printed, committed, written into firmware, or stored
+  in report bodies. No ECS/root-secret change, firmware build, flash, serial,
+  NVS, V21 repo mutation, report deletion, prune/gc, or physical hardware
+  action occurred.
+
 ## 2026-06-04 14:04 CST - Professional Ritual Gate Landed
 
 Round goal:
