@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `b0c7ea5 feat(gateway): expose professional mode ritual contract`
+  `6faab06 feat(gateway): record professional workspace reads`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,13 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-professional-workspace-read-records.md`
+- `docs/plans/2026-06-04-simulator-workspace-audit-surface.md`
 - Transition:
-  `T-INTERNAL-TEST4-PROFESSIONAL-WORKSPACE-READ-RECORDS-001`
+  `T-INTERNAL-TEST4-SIMULATOR-WORKSPACE-AUDIT-001`
 - Target:
-  record memory-only professional read metadata for mock professional turns and
-  stock Xiaozhi professional turns before/after V21 adapter execution, without
-  storing utterance text, retrieved text, evidence bodies, provider output,
-  document text, URLs, paths, credentials, voice transcripts, or audio.
+  expose upload-job status and professional read-record ledger state in the
+  simulator's Workspace Audit surface, using only safe metadata and without
+  adding real ingest, provider/V21 execution, or hardware actions.
 
 ## Scoped Hardware Parity Transition
 

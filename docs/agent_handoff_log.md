@@ -11155,3 +11155,88 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 08:34 CST - Simulator Workspace Audit Surface
+
+Round goal:
+
+- Make the upload/read-record discipline visible in the simulator so internal
+  test 4 operators can inspect workspace job status and professional read
+  ledger metadata without querying raw APIs.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-simulator-workspace-audit-surface.md`.
+- Added a simulator `Workspace Audit` section.
+- Added a `Read Records` control that calls
+  `GET /v1/professional-read-records`, filtered by current `trace_id` when
+  available.
+- Added visible simulator readouts for:
+  - last no-execute workspace upload job status;
+  - professional read-record count;
+  - read status / failure code;
+  - query scope / utterance bucket;
+  - public/personal source-scope counts;
+  - workspace status / privacy scope.
+- Workspace job creation now updates the visible job readout.
+- Professional evidence responses now trigger a read-record refresh for the
+  current trace.
+- Updated the simulator smoke test to assert the new endpoint and DOM IDs.
+- Updated internal-test4 plan, current control, and project state machine.
+
+Changed files:
+
+- `internal/gateway/simulator.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-simulator-workspace-audit-surface.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is still a simulator/internal-test control surface, not a production
+  web app, real document upload, indexing, ACL enforcement, persistence, V21
+  tenant migration, or physical StackChan proof.
+- Browser plugin tooling was not exposed in this Codex session, and the local
+  Node runtime did not have `playwright`; visual screenshot automation was
+  therefore not available in this round.
+
+Known risks/blockers:
+
+- The readout reflects the Gateway's memory-only read ledger. It will reset on
+  Gateway restart until a future persistent workspace/audit store is scoped.
+- The simulator intentionally displays only metadata. It should not be expanded
+  to show raw queries or evidence bodies without a new privacy design.
+
+Recommended next action:
+
+- Continue toward internal test 4 by either adding the next real workspace
+  ingest/index readiness slice behind the existing no-execute guard or opening
+  a foreground hardware evidence window for professional cue, readout, and
+  playback proof.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestSimulatorPageServed|TestProfessionalReadRecords' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- Local HTTP smoke against `go run ./cmd/a21 gateway --addr 127.0.0.1:21083`:
+  `/simulator` contained `Workspace Audit`, `professionalReadRecordsRefresh`,
+  `professionalReadRecordCount`, and `/v1/professional-read-records`;
+  `/v1/professional-read-records` returned schema
+  `a21.gateway.professional_read_records.v1`.
+- The local verification Gateway on `127.0.0.1:21083` was stopped after the
+  smoke check.
+- `GOMAXPROCS=2 make verify`: passed.
+- No provider or real V21 execution occurred, and no firmware build, flash,
+  serial, NVS, ECS change, or physical hardware action occurred.
+
+Failure location/reason:
+
+- Browser/Playwright screenshot automation unavailable because the Browser tool
+  was not exposed and Node `playwright` module was not installed. HTTP smoke
+  covered the served page and endpoint presence instead.

@@ -82,6 +82,12 @@ StackChan hardware.
   with only safe scope/status/count/timing metadata: no utterance text,
   retrieved text, evidence bodies, screen-card text, speech blocks, provider
   output, document text, URLs, paths, credentials, voice transcript, or audio.
+- The simulator now has a Workspace Audit surface. It can create the existing
+  no-execute workspace upload job, show the last job status, manually refresh
+  professional read records, and refresh the read ledger after professional
+  evidence appears. The surface displays only safe metadata: count, status,
+  query scope, utterance bucket, source-scope counts, workspace status, and
+  privacy scope.
 
 ## Product Form
 

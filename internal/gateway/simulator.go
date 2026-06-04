@@ -389,6 +389,7 @@ const simulatorHTML = `<!doctype html>
           <button class="warn" id="interrupt">Interrupt</button>
           <button id="audioFrame">Audio Frame</button>
           <button id="workspaceJob">Workspace Job</button>
+          <button id="professionalReadRecordsRefresh">Read Records</button>
         </div>
         <div class="fields">
           <select id="mode" aria-label="mode">
@@ -486,6 +487,17 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>Buffer</label><div id="playbackBufferedChunks">0</div></div>
             <div class="metric"><label>Stream</label><div id="playbackStream">none</div></div>
             <div class="metric"><label>Scheduled</label><div id="playbackScheduledChunks">0</div></div>
+          </div>
+        </section>
+        <section class="workspace-audit" aria-label="Workspace Audit">
+          <h2>Workspace Audit</h2>
+          <div class="registry-grid">
+            <div class="metric"><label>Upload Job</label><div id="workspaceJobReadout">none</div></div>
+            <div class="metric"><label>Read Records</label><div id="professionalReadRecordCount">0</div></div>
+            <div class="metric"><label>Read Status</label><div id="professionalReadRecordStatus">none</div></div>
+            <div class="metric"><label>Read Scope</label><div id="professionalReadRecordScope">none</div></div>
+            <div class="metric"><label>Sources</label><div id="professionalReadRecordSources">none</div></div>
+            <div class="metric"><label>Workspace</label><div id="professionalReadRecordWorkspace">none</div></div>
           </div>
         </section>
         <section class="wake-word" aria-label="Wake Word">
@@ -590,6 +602,12 @@ const simulatorHTML = `<!doctype html>
       playbackStream: document.getElementById('playbackStream'),
       playbackScheduledChunks: document.getElementById('playbackScheduledChunks'),
       mockPlayback: document.getElementById('mockPlayback'),
+      workspaceJobReadout: document.getElementById('workspaceJobReadout'),
+      professionalReadRecordCount: document.getElementById('professionalReadRecordCount'),
+      professionalReadRecordStatus: document.getElementById('professionalReadRecordStatus'),
+      professionalReadRecordScope: document.getElementById('professionalReadRecordScope'),
+      professionalReadRecordSources: document.getElementById('professionalReadRecordSources'),
+      professionalReadRecordWorkspace: document.getElementById('professionalReadRecordWorkspace'),
       registryDevice: document.getElementById('registryDevice'),
       registryIdentity: document.getElementById('registryIdentity'),
       registryConnection: document.getElementById('registryConnection'),
@@ -823,7 +841,10 @@ const simulatorHTML = `<!doctype html>
       if (payload.mode) setMode(payload.mode);
       updatePlaybackState(payload);
       if (payload.mode && payload.mode !== 'professional') clearProfessionalEvidence();
-      if (payload.evidence || payload.screen_cards || payload.speech_blocks) renderProfessionalEvidence(payload);
+      if (payload.evidence || payload.screen_cards || payload.speech_blocks) {
+        renderProfessionalEvidence(payload);
+        refreshProfessionalReadRecords();
+      }
       log(envelope.kind + ' seq=' + envelope.seq + ' state=' + (payload.state || 'n/a') + ' text=' + (payload.text || ''));
       refreshWaterfall();
     }
@@ -987,6 +1008,52 @@ const simulatorHTML = `<!doctype html>
         cards.push('<div class="evidence-card"><strong>follow-ups</strong><span>' + escapeText(payload.follow_ups.join(' / ')) + '</span></div>');
       }
       ui.professionalEvidence.innerHTML = cards.join('') || '<div class="evidence-card"><strong>professional</strong><span>No evidence returned.</span></div>';
+    }
+    function renderWorkspaceJob(job) {
+      if (!job || !job.job_id) {
+        ui.workspaceJobReadout.textContent = 'none';
+        return;
+      }
+      ui.workspaceJobReadout.textContent = job.job_id + ' / ' + (job.status || 'unknown') + ' / ' + (job.index_status || 'index unknown');
+    }
+    function formatSourceCounts(counts) {
+      counts = counts || {};
+      const parts = [];
+      if (typeof counts.public === 'number') parts.push('public ' + counts.public);
+      if (typeof counts.personal === 'number') parts.push('personal ' + counts.personal);
+      return parts.join(' / ') || 'none';
+    }
+    function renderProfessionalReadRecords(payload) {
+      const records = (payload && payload.records) || [];
+      ui.professionalReadRecordCount.textContent = String(records.length);
+      if (!records.length) {
+        ui.professionalReadRecordStatus.textContent = (payload && payload.status) || 'none';
+        ui.professionalReadRecordScope.textContent = 'none';
+        ui.professionalReadRecordSources.textContent = 'none';
+        ui.professionalReadRecordWorkspace.textContent = 'none';
+        return;
+      }
+      const record = records[records.length - 1] || {};
+      ui.professionalReadRecordStatus.textContent = record.status || 'unknown';
+      if (record.failure_code) {
+        ui.professionalReadRecordStatus.textContent += ' / ' + record.failure_code;
+      }
+      ui.professionalReadRecordScope.textContent = [record.query_scope, record.utterance_bucket].filter(Boolean).join(' / ') || 'none';
+      ui.professionalReadRecordSources.textContent = formatSourceCounts(record.source_scope_counts);
+      ui.professionalReadRecordWorkspace.textContent = [record.workspace_status, record.privacy_scope].filter(Boolean).join(' / ') || 'none';
+    }
+    async function refreshProfessionalReadRecords() {
+      try {
+        const query = sim.traceId ? '?trace_id=' + encodeURIComponent(sim.traceId) : '';
+        const response = await fetch('/v1/professional-read-records' + query, { cache: 'no-store' });
+        if (!response.ok) {
+          log('professional read records error ' + response.status);
+          return;
+        }
+        renderProfessionalReadRecords(await response.json());
+      } catch (err) {
+        log('professional read records unavailable');
+      }
     }
     async function refreshRegistry() {
       try {
@@ -1208,6 +1275,7 @@ const simulatorHTML = `<!doctype html>
         }
         const payload = await response.json();
         const job = (payload.jobs || [])[0] || {};
+        renderWorkspaceJob(job);
         log('workspace job ' + (job.job_id || 'accepted') + ' ' + (job.status || 'no_execute'));
       } catch (err) {
         log('workspace job unavailable');
@@ -1542,6 +1610,7 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
     document.getElementById('workspaceJob').addEventListener('click', createWorkspaceUploadJob);
+    document.getElementById('professionalReadRecordsRefresh').addEventListener('click', refreshProfessionalReadRecords);
     ui.mode.addEventListener('change', () => setMode(ui.mode.value));
     document.getElementById('startMic').addEventListener('click', startMicrophoneStream);
     document.getElementById('stopMic').addEventListener('click', stopMicrophoneStream);
@@ -1572,6 +1641,7 @@ const simulatorHTML = `<!doctype html>
     refreshCloudVoiceProfiles();
     refreshVoiceChainProfiles();
     refreshWakeWordConfig();
+    refreshProfessionalReadRecords();
     setMode(ui.mode.value);
     updateVisibilityBadges();
   </script>
