@@ -9,9 +9,43 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DEPLOYED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-BUILT-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 01:43 CST:
+Latest control update, 2026-06-05 02:00 CST:
+
+- `T-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESS-001` is pushed and
+  deployed on ECS. Commit `72e6bcc` suppresses automatic
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS` MCP writes for the stock physical
+  `listening/listen_start` boundary and records
+  `xiaozhi.state_reaction.listen_start_suppressed` plus redacted runtime echo
+  instead. `thinking` and other accepted state reactions remain covered in
+  tests.
+- Root evidence before the fix: after the product device sent `xiaozhi.hello`,
+  trace `a21-trace-44-1b-f6-e2-6a-60` showed `xiaozhi.listen.start`, immediate
+  state-reaction `robot_led_color`, `xiaozhi.state_reaction.failed`, then
+  `asr.stream.error`, `asr.stream.cancelled`, and
+  `xiaozhi.opus_ingress.queue_cancelled.socket_closed` within 232 ms.
+- Runtime safety action: `/etc/a21/runtime.env` on ECS now has
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false` while keeping playback events,
+  touch events, and touch reactions enabled. This is a runtime gate rollback
+  for the regressed automatic state reaction path, not a code rollback.
+- Commit `b9c0baa` is pushed as a firmware overlay candidate. It moves
+  `EnsureA21ControlChannel()` from VAD-change-only probing to periodic
+  `MAIN_EVENT_CLOCK_TICK` probing, so an idle product device can keep trying
+  the quiet Xiaozhi control websocket even without new VAD events.
+- No-flash firmware validation passed:
+  `make a21-stackchan-official-xiaozhi-compatible-build`, producing
+  `a21-stackchan-official-xiaozhi-compatible.bin` with app SHA-256
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Post-deploy public `/healthz` and `/workspace` smoke passed. Public
+  `/v1/devices` remained empty for the immediate post-deploy poll, so live
+  scene physical acceptance is still pending product device reconnection or a
+  foreground guarded firmware flash/power-cycle window.
+- No firmware flash, no NVS write, no provider/V21 execution, no camera/NFC/IR
+  expansion, no reboot/OTA/snapshot/video/app-lifecycle exposure, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback occurred.
+
+Previous control update, 2026-06-05 01:43 CST:
 
 - `T-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-001` is pushed and deployed on
   ECS. Commit `88e1549` adds `POST /v1/xiaozhi/body-scene` plus a

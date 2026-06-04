@@ -71,6 +71,48 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 02:00 CST listen-start state-reaction
+suppression and reconnect-candidate cut:
+
+- Commit `72e6bcc fix(gateway): suppress listen-start state reactions` is
+  pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- Root evidence: product trace `a21-trace-44-1b-f6-e2-6a-60` showed device
+  `xiaozhi.hello`, then `xiaozhi.listen.start`, automatic state-reaction MCP
+  `robot_led_color`, `xiaozhi.state_reaction.failed`, and socket close
+  cancellation markers within 232 ms. This made the hardware scene live smoke
+  impossible after Gateway restart.
+- Gateway now suppresses automatic state-reaction MCP writes at the stock
+  physical `listening/listen_start` boundary and records
+  `xiaozhi.state_reaction.listen_start_suppressed` plus
+  `last_state_reaction_status=suppressed_listen_start`. Non-listen-start
+  state reactions such as `thinking` remain tested.
+- Runtime safety action on ECS:
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false`; playback events, touch events,
+  and touch reactions remain enabled. This is a runtime gate rollback for a
+  regressed automatic state reaction, not a source rollback.
+- Local focused state-reaction/body-scene tests passed, full local
+  `GOMAXPROCS=2 make verify` passed, remote focused Gateway tests/build
+  passed, `a21-gateway` restarted active, and public `/healthz` plus
+  `/workspace` smoke passed.
+- Commit `b9c0baa fix(firmware): tick quiet xiaozhi reconnect checks` is
+  pushed as a no-flash firmware overlay candidate. It moves the quiet Xiaozhi
+  control websocket reconnect check from VAD-change-only probing to periodic
+  `MAIN_EVENT_CLOCK_TICK` probing, so idle devices can keep retrying even when
+  no new VAD events arrive.
+- No-flash firmware build passed:
+  `make a21-stackchan-official-xiaozhi-compatible-build`. The generated app
+  artifact is
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  with SHA-256
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Public `/v1/devices` stayed empty during the post-deploy poll, so physical
+  hardware-scene acceptance is still pending device reconnection or a
+  foreground guarded product-lane firmware flash/power-cycle window.
+- No firmware flash, no NVS write, no provider/V21 execution, no camera/NFC/IR
+  expansion, no reboot/OTA/snapshot/video/app-lifecycle exposure, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback occurred.
+
 Live truth after the 2026-06-05 01:43 CST workspace hardware-scene cut:
 
 - Commit `88e1549 feat(gateway): add xiaozhi hardware scene sequences` is

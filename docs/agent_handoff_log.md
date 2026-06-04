@@ -16312,3 +16312,108 @@ Forbidden actions avoided:
 - This is not a voice/protocol rollback. No firmware build/flash, NVS write,
   provider/V21 execution, camera/NFC/IR expansion, reboot/OTA/snapshot/video/
   app lifecycle exposure, or Git prune/gc occurred.
+
+## 2026-06-05 02:00 CST - Listen-Start State Reaction Suppressed And Reconnect Candidate Built
+
+Round goal:
+
+- Recover the hardware-scene path from the immediate post-deploy device socket
+  instability without reopening internal-test3 voice acceptance, and prepare a
+  firmware-side reconnect resilience candidate without flashing.
+
+Actual completed work:
+
+- Investigated the post-deploy `showtime` HTTP 409.
+- Found the product device did reconnect once and then closed quickly:
+  trace `a21-trace-44-1b-f6-e2-6a-60` showed `xiaozhi.hello`,
+  `xiaozhi.listen.start`, automatic state-reaction MCP
+  `robot_led_color`, `xiaozhi.state_reaction.failed`, `asr.stream.error`,
+  `asr.stream.cancelled`, and
+  `xiaozhi.opus_ingress.queue_cancelled.socket_closed` within 232 ms.
+- Changed Gateway state reactions so stock physical
+  `listening/listen_start` records
+  `xiaozhi.state_reaction.listen_start_suppressed` and
+  `last_state_reaction_status=suppressed_listen_start` instead of sending MCP.
+- Kept non-listen-start state reaction coverage by moving the positive test to
+  `thinking`.
+- On ECS, changed `/etc/a21/runtime.env` to
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false` while keeping playback events,
+  touch events, and touch reactions enabled.
+- Added a firmware overlay candidate that moves
+  `EnsureA21ControlChannel()` from VAD-change-only probing to periodic
+  `MAIN_EVENT_CLOCK_TICK` probing, improving idle reconnect resilience.
+- Committed and pushed:
+  `72e6bcc fix(gateway): suppress listen-start state reactions`.
+- Deployed `72e6bcc` to ECS through `/opt/a21.next` safe-swap.
+- Committed and pushed:
+  `b9c0baa fix(firmware): tick quiet xiaozhi reconnect checks`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red test first failed as expected:
+  `TestXiaozhiProductStateReactionsSuppressListenStartMCP` observed an
+  unexpected MCP `self.robot.set_led_color` on `listen_start`.
+- Focused Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiProductStateReactions|TestXiaozhiBodyScene' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active; loopback and public `/healthz`
+  returned ok.
+- Public `/workspace` smoke still found Hardware Scenes and
+  `/v1/xiaozhi/body-scene`.
+- No-flash firmware build passed:
+  `make a21-stackchan-official-xiaozhi-compatible-build`.
+
+Runtime or physical evidence:
+
+- ECS runtime env now shows:
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`,
+  `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true`,
+  `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`,
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false`.
+- Built firmware candidate:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`.
+- App SHA-256:
+  `3eef974929aed78cdd77232897485aaac25bce8aa98daa4d8d78b3d96662b7ac`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-020021-1780596021736181000.json`.
+- Public `/v1/devices` remained empty during the post-deploy poll, so the
+  product device still needs reconnection or a foreground guarded
+  flash/power-cycle window before scene physical acceptance can be collected.
+
+Remaining issues:
+
+- Product scene delivery cannot be physically accepted until device
+  `44:1b:f6:e2:6a:60` is online on `/v1/xiaozhi`.
+- The reconnect resilience firmware candidate is built but not flashed.
+- Runtime state reactions are intentionally off on ECS until a foreground
+  hardware window proves the listen-start suppression and non-listening state
+  reactions do not destabilize the socket.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+
+Next suggested action:
+
+- In the next foreground hardware window, either power-cycle/reconnect the
+  current flashed device or use the guarded product lane to flash the built
+  reconnect candidate, then run `/workspace` Showtime and record visible
+  screen/RGB/servo evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret printing, no provider or
+  V21 execution, no generic product flash lane, no camera/NFC/IR expansion, no
+  reboot/OTA/snapshot/video/app-lifecycle exposure, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
