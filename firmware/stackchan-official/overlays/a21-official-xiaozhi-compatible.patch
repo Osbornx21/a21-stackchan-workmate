@@ -220,6 +220,11 @@ index 3b6f07e..396b23a 100644
 +        return;
 +    }
 +    if (protocol_->IsAudioChannelOpened()) {
++        if (!protocol_->SendA21Keepalive()) {
++            ESP_LOGW(TAG, "A21 quiet control websocket heartbeat failed");
++            protocol_->CloseAudioChannel(false);
++            a21_ready_notified_ = false;
++        }
 +        return;
 +    }
 +
@@ -549,6 +554,7 @@ index 28ef604..edfc5b4 100644
 @@ -75,2 +75,4 @@ public:
      virtual void SendMcpMessage(const std::string& message);
 -
++    virtual bool SendA21Keepalive();
 +    virtual void SendA21PlaybackStart();
 +    virtual void SendA21PlaybackStopDone();
 +
@@ -558,6 +564,8 @@ index 28ef604..edfc5b4 100644
 +    std::string trace_id_;
 +    std::string device_id_;
 +    bool a21_product_playback_events_allowed_ = false;
++    bool a21_product_keepalive_events_allowed_ = false;
++    bool SendA21DeviceHeartbeat();
 +    void SendA21PlaybackEvent(const char* playback);
      std::chrono::time_point<std::chrono::steady_clock> last_incoming_time_;
 diff --git a/firmware/xiaozhi-esp32/main/protocols/protocol.cc b/firmware/xiaozhi-esp32/main/protocols/protocol.cc
@@ -568,6 +576,40 @@ index 470cc91..d825a04 100644
      SendText(message);
  }
 -
++
++bool Protocol::SendA21Keepalive() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (!a21_product_keepalive_events_allowed_) {
++        return true;
++    }
++    return SendA21DeviceHeartbeat();
++#else
++    return true;
++#endif
++}
++
++bool Protocol::SendA21DeviceHeartbeat() {
++    cJSON* root = cJSON_CreateObject();
++    cJSON_AddStringToObject(root, "type", "device");
++    cJSON_AddStringToObject(root, "kind", "heartbeat");
++    if (!session_id_.empty()) {
++        cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
++    }
++    if (!trace_id_.empty()) {
++        cJSON_AddStringToObject(root, "trace_id", trace_id_.c_str());
++    }
++    if (!device_id_.empty()) {
++        cJSON_AddStringToObject(root, "device_id", device_id_.c_str());
++    }
++    auto json_str = cJSON_PrintUnformatted(root);
++    bool sent = false;
++    if (json_str != nullptr) {
++        sent = SendText(json_str);
++        cJSON_free(json_str);
++    }
++    cJSON_Delete(root);
++    return sent;
++}
 +
 +void Protocol::SendA21PlaybackStart() {
 +    SendA21PlaybackEvent("start");
@@ -615,6 +657,7 @@ index 4b74a5e..51cc6a2 100644
      cJSON_AddBoolToObject(features, "mcp", true);
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
 +    cJSON_AddBoolToObject(features, "playback_events", true);
++    cJSON_AddBoolToObject(features, "keepalive_events", true);
 +#endif
      cJSON_AddItemToObject(root, "features", features);
 @@ -238,3 +241,27 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
@@ -632,15 +675,21 @@ index 4b74a5e..51cc6a2 100644
 +    }
 +
 +    a21_product_playback_events_allowed_ = false;
++    a21_product_keepalive_events_allowed_ = false;
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
 +    auto a21 = cJSON_GetObjectItem(root, "a21");
 +    if (cJSON_IsObject(a21)) {
 +        auto profile = cJSON_GetObjectItem(a21, "profile");
 +        auto playback_events = cJSON_GetObjectItem(a21, "playback_events");
++        auto keepalive_events = cJSON_GetObjectItem(a21, "keepalive_events");
 +        a21_product_playback_events_allowed_ =
 +            cJSON_IsString(profile) &&
 +            strcmp(profile->valuestring, "product") == 0 &&
 +            cJSON_IsTrue(playback_events);
++        a21_product_keepalive_events_allowed_ =
++            cJSON_IsString(profile) &&
++            strcmp(profile->valuestring, "product") == 0 &&
++            cJSON_IsTrue(keepalive_events);
 +    }
 +#endif
 +

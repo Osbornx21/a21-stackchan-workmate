@@ -5423,9 +5423,10 @@ func TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart(t *testing.T)
 		"session_id": "a21-session-xiaozhi-product-playback",
 		"device_id":  "44:1b:f6:e2:6a:60",
 		"features": map[string]any{
-			"mcp":             true,
-			"aec":             true,
-			"playback_events": true,
+			"mcp":              true,
+			"aec":              true,
+			"playback_events":  true,
+			"keepalive_events": true,
 		},
 	})
 	reply := readXiaozhiJSON(t, ctx, conn)
@@ -5436,7 +5437,7 @@ func TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart(t *testing.T)
 		}
 	}
 	a21, ok := reply["a21"].(map[string]any)
-	if !ok || a21["profile"] != "product" || a21["playback_events"] != true {
+	if !ok || a21["profile"] != "product" || a21["playback_events"] != true || a21["keepalive_events"] != true {
 		t.Fatalf("a21 hello extension = %#v, want product playback allowance", reply["a21"])
 	}
 
@@ -5488,6 +5489,93 @@ func TestXiaozhiProductPlaybackEventsAllowanceRecordsPlaybackStart(t *testing.T)
 	}
 	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
 		t.Fatalf("product playback allowance marked debug capabilities: %#v", capabilities)
+	}
+}
+
+func TestXiaozhiProductKeepaliveEventsAllowanceRecordsHeartbeat(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{XiaozhiProductPlaybackEvents: true}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-keepalive",
+		"session_id": "a21-session-xiaozhi-product-keepalive",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":              true,
+			"aec":              true,
+			"playback_events":  true,
+			"keepalive_events": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	replyJSON := mustJSON(t, reply)
+	for _, forbidden := range []string{"debug_metrics", `"device_events":true`, `"profile":"debug"`} {
+		if strings.Contains(strings.ToLower(replyJSON), strings.ToLower(forbidden)) {
+			t.Fatalf("product keepalive hello leaked debug field %q: %s", forbidden, replyJSON)
+		}
+	}
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["keepalive_events"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product keepalive allowance", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":  "device",
+		"kind":  "state",
+		"state": "speaking",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rejected := readXiaozhiJSON(t, ctx, conn)
+	if rejected["type"] != "error" || rejected["code"] != "unsupported_device_event" {
+		t.Fatalf("product keepalive allowance accepted state event: %#v", rejected)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "heartbeat",
+		"trace_id":   "a21-trace-xiaozhi-product-keepalive",
+		"session_id": "a21-session-xiaozhi-product-keepalive",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-keepalive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "device.heartbeat") {
+		t.Fatalf("trace missing product heartbeat: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "device.heartbeat" {
+		t.Fatalf("registry heartbeat = %#v, want device.heartbeat", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok ||
+		capabilities["xiaozhi_feature_keepalive_events"] != "true" ||
+		capabilities["xiaozhi_product_keepalive_events"] != "true" {
+		t.Fatalf("registry capabilities = %#v, want product keepalive events", registry["capabilities"])
+	}
+	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
+		t.Fatalf("product keepalive allowance marked debug capabilities: %#v", capabilities)
 	}
 }
 

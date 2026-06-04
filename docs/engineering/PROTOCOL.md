@@ -47,15 +47,17 @@ stock-style xiaozhi JSON control messages:
 
 The server hello includes stock downlink `audio_params` (`opus`, `24000 Hz`,
 mono, `60 ms`) and an `audio` alias for current local tests. The client
-`hello.features` object is parsed for `mcp`, `aec`,
-`playback_events`, `device_events`, and `debug_metrics`; `mcp` and `aec`
+`hello.features` object is parsed for `mcp`, `aec`, `playback_events`,
+`keepalive_events`, `device_events`, and `debug_metrics`; `mcp` and `aec`
 remain stock xiaozhi capability hints, `playback_events` is the product-lane
-minimal playback acknowledgement hint, and `device_events` plus
-`debug_metrics` still mark an isolated debug profile in the device registry.
-Ordinary stock server hellos never echo debug fields. A hardware StackChan
-client that advertises `playback_events` may receive only the A21-namespaced
-product allowance when `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` is set on the
-Gateway. It also accepts xiaozhi binary protocol versions 1, 2, and 3 after a
+minimal playback acknowledgement hint, `keepalive_events` is the product-lane
+idle control-channel liveness hint, and `device_events` plus `debug_metrics`
+still mark an isolated debug profile in the device registry. Ordinary stock
+server hellos never echo debug fields. A hardware StackChan client that
+advertises `playback_events` and/or `keepalive_events` may receive only the
+A21-namespaced product allowance when
+`A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` is set on the Gateway. It also
+accepts xiaozhi binary protocol versions 1, 2, and 3 after a
 valid `hello` and active `listen/start`. Version 1 is a raw Opus payload.
 Version 2 unwraps the 16-byte metadata header and preserves the timestamp.
 Version 3 unwraps the compact 4-byte header. The current server seam records
@@ -478,13 +480,16 @@ Stock hello and server hello remain free of debug or device-extension
 requirements. A debug client that explicitly advertises
 `features.device_events=true` receives only an A21-namespaced server allowance:
 `a21.profile=debug` and `a21.device_events=true`. A product client may
-separately advertise `features.playback_events=true`; when
-`A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`, the device ID is a hardware MAC,
-and the client has not requested `device_events` or `debug_metrics`, the server
-returns only `a21.profile=product` and `a21.playback_events=true`. This product
-allowance accepts playback `start` / `stop_done` acknowledgements and rejects
+separately advertise `features.playback_events=true` and
+`features.keepalive_events=true`; when `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`,
+the device ID is a hardware MAC, and the client has not requested
+`device_events` or `debug_metrics`, the server returns only
+`a21.profile=product` plus the allowed `a21.playback_events` and/or
+`a21.keepalive_events` booleans. This product allowance accepts playback
+`start` / `stop_done` acknowledgements and idle `heartbeat` events; it rejects
 all other `type=device` event kinds. Ordinary stock server hellos remain free
-of `a21`, `device_events`, `playback_events`, and `debug_metrics`. A host may build
+of `a21`, `device_events`, `playback_events`, `keepalive_events`, and
+`debug_metrics`. A host may build
 `type=device` extension events only when the connected profile explicitly
 advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
@@ -497,10 +502,14 @@ semantics:
 - `face`: `idle`, `attentive`, `thinking`, `speaking`, `happy`, `error`
 - `display`: `status`, `asr`, `tts`
 - `motion`: `look_up`, `nod`, `shake`, `stop`, `dance`
+- `heartbeat`: no value; accepted after `features.device_events=true` or the
+  product `keepalive_events` allowance above. Product heartbeat is recorded as
+  `device.heartbeat` and is used only as liveness evidence for the idle
+  control channel.
 - `playback`: `start` or `stop_done`, with optional `stream_id`; accepted only
   after `features.device_events=true` or the product playback-events allowance
-  above. Product allowance does not accept `state`, `face`, `display`,
-  `motion`, or `heartbeat`. `start` is recorded as `device.playback.start`;
+  above. Product allowance does not accept `state`, `face`, `display`, or
+  `motion`. `start` is recorded as `device.playback.start`;
   `stop_done` is recorded as `device.playback.stop_done` and may prove
   barge-in stop completion when it follows `barge_in.detected`.
 
@@ -512,12 +521,17 @@ of `state`, `face`, `display`, or `motion` is not PRD screen/action acceptance.
 The repo-owned firmware overlay
 `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
 now adds the product-side minimum: `CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
-`hello.features.playback_events=true`, server-hello parsing for
-`a21.profile=product` / `a21.playback_events=true`, playback `start` after the
-official Xiaozhi audio task reaches `AudioOutputTask()`, and `stop_done` after
-server TTS stop or local abort clears the decoder queue. It does not advertise
-`features.device_events`, does not enable debug display/motion events, and does
-not store provider keys in firmware.
+`hello.features.playback_events=true`,
+`hello.features.keepalive_events=true`, server-hello parsing for
+`a21.profile=product` / `a21.playback_events=true` /
+`a21.keepalive_events=true`, idle product heartbeat sends through
+`type=device, kind=heartbeat`, playback `start` after the official Xiaozhi
+audio task reaches `AudioOutputTask()`, and `stop_done` after server TTS stop
+or local abort clears the decoder queue. If the idle heartbeat send fails, the
+overlay closes the stale control channel so the existing A21 reconnect loop can
+open a fresh websocket. It does not advertise `features.device_events`, does
+not enable debug display/motion events, and does not store provider keys in
+firmware.
 
 The repo-owned diagnostic firmware overlay
 `firmware/xiaozhi/overlays/a21-debug-playback-ack.patch` keeps this out of the

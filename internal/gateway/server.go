@@ -7240,8 +7240,9 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 		return true
 	}
 	productPlaybackEvents := s.xiaozhiProductPlaybackEventsAllowed(session)
-	if !session.features.DeviceEvents && !productPlaybackEvents {
-		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product playback-events allowance"))
+	productKeepaliveEvents := s.xiaozhiProductKeepaliveEventsAllowed(session)
+	if !session.features.DeviceEvents && !productPlaybackEvents && !productKeepaliveEvents {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product playback/keepalive allowance"))
 		return true
 	}
 	event, err := xiaozhitransport.ParseDeviceExtensionEvent(data)
@@ -7249,9 +7250,22 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, xiaozhiErrorCode(err), xiaozhiErrorDetail(err)))
 		return true
 	}
-	if productPlaybackEvents && !session.features.DeviceEvents && event.Kind != xiaozhitransport.DeviceEventKindPlayback {
-		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product playback-events allowance only accepts playback acknowledgements"))
-		return true
+	if !session.features.DeviceEvents {
+		switch event.Kind {
+		case xiaozhitransport.DeviceEventKindPlayback:
+			if !productPlaybackEvents {
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product keepalive allowance does not accept playback acknowledgements"))
+				return true
+			}
+		case xiaozhitransport.DeviceEventKindHeartbeat:
+			if !productKeepaliveEvents {
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product playback allowance does not accept keepalive heartbeats"))
+				return true
+			}
+		default:
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product allowance only accepts playback acknowledgements and keepalive heartbeats"))
+			return true
+		}
 	}
 	switch event.Kind {
 	case xiaozhitransport.DeviceEventKindPlayback:
@@ -7267,7 +7281,7 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 			return true
 		}
 	case xiaozhitransport.DeviceEventKindHeartbeat:
-		s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
+		s.recordXiaozhiHeartbeat(session)
 		return true
 	default:
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
@@ -7752,6 +7766,14 @@ func (s *Server) recordXiaozhiPlaybackStopDone(session *xiaozhiSession, streamID
 	s.recordXiaozhiPlaybackEvent(session, "device.playback.stop_done", streamID)
 }
 
+func (s *Server) recordXiaozhiHeartbeat(session *xiaozhiSession) {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return
+	}
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, "device.heartbeat", s.now().UnixMilli())
+	s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
+}
+
 func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event string, streamID string) {
 	if session == nil || strings.TrimSpace(session.deviceID) == "" {
 		return
@@ -7804,6 +7826,12 @@ func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatu
 			capabilities["xiaozhi_product_playback_events"] = "true"
 		}
 	}
+	if features.KeepaliveEvents {
+		capabilities["xiaozhi_feature_keepalive_events"] = "true"
+		if s.xiaozhiProductKeepaliveEventsAllowed(session) {
+			capabilities["xiaozhi_product_keepalive_events"] = "true"
+		}
+	}
 	if features.DebugMetrics {
 		capabilities["xiaozhi_feature_debug_metrics"] = "true"
 	}
@@ -7818,6 +7846,16 @@ func (s *Server) xiaozhiProductPlaybackEventsAllowed(session *xiaozhiSession) bo
 		s.xiaozhiProductPlaybackEvents &&
 		session != nil &&
 		session.features.PlaybackEvents &&
+		!session.features.DeviceEvents &&
+		!session.features.DebugMetrics &&
+		hardwareMACDeviceID(session.deviceID)
+}
+
+func (s *Server) xiaozhiProductKeepaliveEventsAllowed(session *xiaozhiSession) bool {
+	return s != nil &&
+		s.xiaozhiProductPlaybackEvents &&
+		session != nil &&
+		session.features.KeepaliveEvents &&
 		!session.features.DeviceEvents &&
 		!session.features.DebugMetrics &&
 		hardwareMACDeviceID(session.deviceID)
@@ -9264,11 +9302,17 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 			"profile":       "debug",
 			"device_events": true,
 		}
-	} else if s.xiaozhiProductPlaybackEventsAllowed(session) {
-		reply["a21"] = map[string]any{
-			"profile":         "product",
-			"playback_events": true,
+	} else if s.xiaozhiProductPlaybackEventsAllowed(session) || s.xiaozhiProductKeepaliveEventsAllowed(session) {
+		a21 := map[string]any{
+			"profile": "product",
 		}
+		if s.xiaozhiProductPlaybackEventsAllowed(session) {
+			a21["playback_events"] = true
+		}
+		if s.xiaozhiProductKeepaliveEventsAllowed(session) {
+			a21["keepalive_events"] = true
+		}
+		reply["a21"] = a21
 	}
 	return reply
 }

@@ -14655,3 +14655,94 @@ Forbidden actions avoided:
   provider secret printing, no provider key in firmware, no prune/gc, no V21
   internal execution, no internal-test3 rollback, and no false screen/product
   acceptance claim occurred.
+
+## 2026-06-04 21:02 CST - Xiaozhi Control Channel Keepalive Candidate
+
+Round goal:
+
+- Fix the real lifecycle gap observed after ECS Gateway safe-swap: the product
+  device did not reliably reconnect to `/v1/xiaozhi` without a hard reset.
+
+Actual completed work:
+
+- Root-caused the gap to the idle official Xiaozhi websocket lacking a product
+  heartbeat. Existing A21 `EnsureA21ControlChannel()` only reopens when
+  `IsAudioChannelOpened()` is false, while the official websocket can remain
+  apparently open on a dead idle socket until timeout or traffic.
+- Added a product-only keepalive contract:
+  `hello.features.keepalive_events=true` from the product overlay,
+  `a21.keepalive_events=true` from Gateway only for hardware-MAC product
+  clients under the existing product playback-events gate, and
+  `type=device, kind=heartbeat` as the only new product device event.
+- Kept debug-only `state`, `face`, `display`, and `motion` device events
+  blocked for product clients.
+- Updated the official-compatible product overlay so an open idle control
+  websocket sends heartbeat and closes the stale channel when heartbeat send
+  fails; the existing 10 second A21 reconnect loop can then open a fresh
+  websocket.
+- Verified the guarded official-compatible product build, no flash:
+  app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  sha256 `f6bf04d007d6531112403a0c8518105201222b88c5cc052f2172f84bf3875fc9`,
+  report
+  `reports/a21-stackchan-official-baseline-20260604-210158-1780578118998849000.json`.
+
+Changed files:
+
+- `internal/transport/xiaozhi/frame.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `docs/plans/2026-06-04-stackchan-xiaozhi-control-channel-keepalive.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- ECS Gateway has not yet been redeployed with keepalive support.
+- Product device has not yet been flashed with the new
+  `a21-stackchan-official-xiaozhi-compatible.bin` artifact.
+- Foreground proof is still required: after Gateway safe-swap/restart, device
+  `44:1b:f6:e2:6a:60` must reconnect and reappear in `/v1/devices` without
+  hard reset.
+
+Known risks/blockers:
+
+- The official source worktree is dirty. The guarded build exported from
+  official Git HEAD and used the dependency cache; do not mutate or clean the
+  official source tree.
+- The repair depends on an idle send detecting stale TCP/WebSocket state; this
+  is the right minimal product fix, but physical restart evidence is still the
+  acceptance gate.
+- Continue using `curl --interface 192.168.1.20 --noproxy '*' ...` while TUN is
+  active.
+
+Recommended next action:
+
+- Run full local verification, commit/push the candidate, deploy Gateway to
+  ECS, flash only the guarded official-compatible product app artifact, then
+  run the Gateway restart reconnect proof before returning to touch/action
+  physical acceptance.
+
+Test/build/runtime results so far:
+
+- Failing tests were created first and failed at the expected missing
+  `keepalive_events`/overlay contract points.
+- `go test ./internal/gateway -run 'TestXiaozhiProduct(Playback|Keepalive)' -count=1`
+  passed after implementation.
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay(KeepsA21IdleSocketReady|AddsProductPlaybackAckOnly)' -count=1`
+  passed.
+- `go test ./internal/transport/xiaozhi -count=1` passed.
+- `go test ./internal/gateway -run 'TestXiaozhi(WebSocketHello|Product|StockProfileRejectsPlayback|DebugProfile|MCPResponse)' -count=1`
+  passed.
+- `A21_STACKCHAN_OFFICIAL_DEP_CACHE='/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan' GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`
+  passed.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no firmware flash, no NVS write, no
+  provider secret printing, no provider key in firmware, no prune/gc, no V21
+  internal execution, no internal-test3 rollback, and no false reconnect
+  product-acceptance claim occurred.

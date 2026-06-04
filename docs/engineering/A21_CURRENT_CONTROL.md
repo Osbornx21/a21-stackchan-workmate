@@ -159,7 +159,31 @@ Live truth after the 2026-06-04 20:48 CST named screen/status MCP endpoint cut:
 - Reconfirmed lifecycle gap: after the public Gateway safe-swap restart,
   `/v1/devices` was empty until a hardware reset of the product device. The
   reset used repo-local esptool `chip_id` with `--after hard_reset` only; no
-  firmware flash or NVS write occurred.
+  firmware flash or NVS write occurred. The first product keepalive repair is
+  now implemented locally but not yet deployed/flashed.
+
+Live truth after the 2026-06-04 21:02 CST Xiaozhi control-channel keepalive cut:
+
+- `T-STACKCHAN-XIAOZHI-CONTROL-KEEPALIVE-001` adds a product-only idle
+  control-channel liveness contract for the official-compatible Xiaozhi path.
+- Gateway parses `hello.features.keepalive_events`, returns
+  `a21.keepalive_events=true` only for hardware-MAC product clients under the
+  existing `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true` gate, records
+  `device.heartbeat`, and still rejects product `state`, `face`, `display`,
+  and `motion` device events.
+- The official-compatible product overlay now advertises
+  `features.keepalive_events=true`, parses the product allowance, sends
+  `type=device, kind=heartbeat` while the idle websocket is open, and closes the
+  stale channel when heartbeat send fails so the existing 10 second A21
+  reconnect loop can open a fresh websocket.
+- No-flash product build passed through the guarded lane with
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  at app sha256
+  `f6bf04d007d6531112403a0c8518105201222b88c5cc052f2172f84bf3875fc9`.
+- This is a local code/build candidate. Product acceptance still requires ECS
+  deploy, guarded product flash of the official-compatible app artifact, and a
+  foreground Gateway restart window proving the product device reconnects
+  without hard reset.
 
 ## Active Transition
 
