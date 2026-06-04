@@ -161,6 +161,12 @@ StackChan hardware.
   readiness, refresh professional read records, and see the
   roleplay/professional boundary without adding a new service, port,
   dependency, real indexing, provider/V21 execution, or hardware action.
+- The workspace console now also has first-pass management controls: delete
+  selected source/job through the existing no-execute upload-job lifecycle,
+  export client-side safe metadata as `a21.workspace_console_export.v1`, and
+  filter professional read records by `record_id`, `trace_id`, or
+  `session_id`. These controls do not parse, index, upload, retrieve, call
+  V21/provider services, or claim physical acceptance.
 
 ## Product Form
 

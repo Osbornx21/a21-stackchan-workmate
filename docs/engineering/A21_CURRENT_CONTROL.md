@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this A21 native voice-query bridge cut:
-  `731d4d8 docs(control): record v21 source scope guard`
+- Current source HEAD before this workspace console management-controls cut:
+  `20f6f8d feat(gateway): add workspace console surface`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,15 +90,15 @@ Target:
 
 Current focused cut:
 
-- V21 scoped worker plan:
-  `/Users/jiyurun/.codex/worktrees/b0c0/v21-knowledge-platform/docs/plans/2026-06-04-a21-v2-workspace-scope-retrieval-guard.md`
+- Host-local workspace console management plan:
+  `docs/plans/2026-06-04-workspace-console-management-controls.md`
 - Transition:
-  `T-V21-A21-WORKSPACE-SCOPE-RETRIEVAL-GUARD-001`
+  `T-WORKSPACE-CONSOLE-MANAGEMENT-CONTROLS-001`
 - Target:
-  make V21 native `/internal/v1/knowledge/voice-query` execute A21 v2
-  `query_scope` against classified `source_scope=public|personal` evidence
-  before answer generation, without claiming full tenant/account ACL or real
-  personal upload indexing.
+  let `/workspace` delete selected source/job metadata, export safe metadata,
+  and filter professional read records while reusing existing Gateway APIs only
+  and avoiding provider/V21 execution, real indexing, firmware, serial, NVS,
+  or physical hardware action.
 
 ## Scoped Hardware Parity Transition
 

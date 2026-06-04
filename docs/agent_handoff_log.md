@@ -12388,3 +12388,80 @@ Forbidden actions avoided:
 
 - No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
   hardware action occurred.
+
+## 2026-06-04 12:02 CST - Workspace Console Management Controls
+
+Transition:
+
+- `T-WORKSPACE-CONSOLE-MANAGEMENT-CONTROLS-001`
+
+What changed:
+
+- Extended `GET /workspace` with first-pass management controls over existing
+  safe Gateway APIs only.
+- Added a delete-source control that calls existing
+  `PUT /v1/workspace-upload-jobs` with `action=delete` and leaves an honest
+  `deleted_metadata_only` source tombstone.
+- Added a client-side safe metadata export with schema
+  `a21.workspace_console_export.v1` and explicit redaction flags.
+- Added professional read-record filters for `record_id`, `trace_id`, and
+  `session_id`.
+- Tuned the workspace console status grid so long A21 status tokens remain
+  readable on desktop and mobile.
+
+Files changed:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-workspace-console-management-controls.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestWorkspaceDocumentUpload|TestWorkspaceIndex|TestWorkspaceSource|TestProfessionalWorkspace' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- Local Gateway was started on `127.0.0.1:21080` only for page verification,
+  then stopped.
+- Playwright opened `/workspace` at desktop `1270x900` and mobile `390x900`.
+- Playwright exercised dummy local upload, no-execute index request, metadata
+  export, filtered read-record refresh, filter clear, and delete-source flow.
+- Observed states included `indexing_requested_no_execute`,
+  `deleted_metadata_only`, `deleted_no_execute`, and `searchable=false`.
+- Export evidence schema was `a21.workspace_console_export.v1` with no raw
+  content, private location, secret value, provider result, voice data, or
+  evidence body included.
+- Screenshots were written under `.a21-run/evidence/` for local runtime
+  evidence only.
+
+Deviations from plan:
+
+- Browser/IAB control was not exposed in this context, so Playwright was used
+  as the browser automation fallback.
+
+Remaining issues:
+
+- This is still no-execute workspace management. It is not real parsing,
+  chunking, embedding, OCR, cloud upload, V21 indexing, provider execution,
+  durable account/device binding, or physical StackChan professional consult
+  acceptance.
+
+Next suggested action:
+
+- Move to the next internal test 4 slice: either real adapter-indexing worker
+  staging with strict redaction, or account/device binding for the workspace
+  console, while keeping physical/hardware acceptance in a separate foreground
+  evidence window.
+
+Forbidden actions avoided:
+
+- No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
+  hardware action occurred.

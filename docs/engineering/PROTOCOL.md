@@ -704,7 +704,10 @@ It is a product-oriented web surface over the existing safe Gateway APIs, not a
 new service or port. The page lets a user select professional `query_scope`,
 upload a local document through `/v1/workspace-documents`, request the
 no-execute indexing ledger through `/v1/workspace-index-jobs`, refresh
-`/v1/workspace-sources`, refresh `/v1/professional-read-records`, and view the
+`/v1/workspace-sources`, refresh or filter `/v1/professional-read-records` by
+safe `record_id`, `trace_id`, or `session_id`, delete the selected source/job
+through existing `PUT /v1/workspace-upload-jobs` with `action=delete`, export
+client-side safe metadata as `a21.workspace_console_export.v1`, and view the
 roleplay/professional boundary from `/v1/roleplay-profile` and
 `/v1/voice-modes`. The console must keep state labels honest:
 `storage_status=stored_local`, `index_status=indexing_requested_no_execute`
