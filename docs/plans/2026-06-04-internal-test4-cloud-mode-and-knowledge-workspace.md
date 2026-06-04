@@ -527,12 +527,17 @@ Execution update:
   writing NVS, executing providers, or reinterpreting internal test 3
   candidate evidence.
 - The current follow-on adaptation for that gate adds a product-safe playback
-  acknowledgement channel: `hello.features.playback_events` plus explicit
-  Gateway env `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`, defaulting off. When
-  enabled, a hardware-MAC product device may receive `a21.profile=product` /
-  `a21.playback_events=true` and send only playback `start` / `stop_done`
-  events. This is not a debug-device-events expansion and still does not close
-  physical PRD acceptance without real device and audible evidence.
+  acknowledgement channel on both Gateway and product overlay:
+  `hello.features.playback_events` plus explicit Gateway env
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`, defaulting off. The
+  official-compatible product overlay advertises the feature and sends only
+  playback `start` / `stop_done` after receiving `a21.profile=product` /
+  `a21.playback_events=true`. This is not a debug-device-events expansion and
+  still does not close physical PRD acceptance without real device and audible
+  evidence. The no-flash product build passed with report
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`
+  and app artifact SHA-256
+  `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
 - `T-OFFICIAL-XIAOZHI-COMPATIBLE-NVS-WIFI-OVERRIDE-001` unblocks the current
   foreground hardware window when preserved Wi-Fi is unavailable. The
   official-compatible NVS writer can now take explicit Wi-Fi SSID/password env

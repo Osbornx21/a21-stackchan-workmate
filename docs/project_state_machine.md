@@ -34,11 +34,20 @@ Latest control update, 2026-06-04 17:23 CST:
 Follow-on physical transition update, 2026-06-04:
 
 - `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` now has a local product-safe
-  playback acknowledgement adaptation path in progress. Gateway can parse
-  `hello.features.playback_events`; with explicit
+  playback acknowledgement adaptation path on Gateway and product overlay.
+  Gateway can parse `hello.features.playback_events`; with explicit
   `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS=true`, a hardware-MAC product device
   that does not request debug features receives only `a21.profile=product` /
-  `a21.playback_events=true` and may report playback `start` / `stop_done`.
+  `a21.playback_events=true`. The official-compatible product overlay now
+  advertises that feature and may report playback `start` / `stop_done` after
+  server allowance.
+- The guarded no-flash official-compatible product build has passed for this
+  overlay, producing
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  with SHA-256
+  `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`
+  and report
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`.
 - This is a protocol adaptation for collecting the missing physical evidence.
   It does not change the total state away from `PHYSICAL-PENDING` until a real
   StackChan run supplies playback-start, bounded stop_done/barge-in evidence,

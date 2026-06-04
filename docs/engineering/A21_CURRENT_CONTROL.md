@@ -119,14 +119,25 @@ Current next cut:
   instrumented audible observation. Do not treat Gateway downlink or host-only
   voice bench as physical PRD acceptance.
 - Current implementation cut:
-  product-safe playback acknowledgement negotiation is landing locally as
-  `hello.features.playback_events` plus Gateway env
-  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`. The env defaults off. When enabled,
-  only a hardware-MAC device that advertises `playback_events` and does not
-  request debug features receives `a21.profile=product` /
+  product-safe playback acknowledgement negotiation is now implemented on both
+  sides locally. Gateway parses `hello.features.playback_events` and exposes
+  explicit env `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS`, default off. The
+  official-compatible product overlay advertises `playback_events`, parses the
+  product allowance, sends playback `start` after the official audio output
+  task begins playback, and sends `stop_done` after TTS stop or local abort
+  queue clear. When enabled, only a hardware-MAC device that does not request
+  debug features receives `a21.profile=product` /
   `a21.playback_events=true`; only playback `start` / `stop_done` events are
   accepted. This is an adaptation path for physical evidence collection, not
   accepted PRD evidence by itself.
+- Build evidence:
+  no-flash product build passed with local dependency cache. Report
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`
+  produced app artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  at offset `0x20000`, SHA-256
+  `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+  This is build evidence only; no flash or NVS write occurred.
 
 ## Scoped Hardware Parity Transition
 

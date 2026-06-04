@@ -463,7 +463,7 @@ advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
 
 Current extension event kinds are `state`, `face`, `display`, `motion`,
-`heartbeat`, and debug-profile-only `playback`. Values are provider-neutral A21
+`heartbeat`, and playback acknowledgements. Values are provider-neutral A21
 semantics:
 
 - `state`: `idle`, `listening`, `thinking`, `speaking`, `error`
@@ -483,6 +483,16 @@ adapter emits physical observation or accepted runtime echo. Gateway delivery
 of `state`, `face`, `display`, or `motion` is not PRD screen/action acceptance.
 
 The repo-owned firmware overlay
+`firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+now adds the product-side minimum: `CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
+`hello.features.playback_events=true`, server-hello parsing for
+`a21.profile=product` / `a21.playback_events=true`, playback `start` after the
+official Xiaozhi audio task reaches `AudioOutputTask()`, and `stop_done` after
+server TTS stop or local abort clears the decoder queue. It does not advertise
+`features.device_events`, does not enable debug display/motion events, and does
+not store provider keys in firmware.
+
+The repo-owned diagnostic firmware overlay
 `firmware/xiaozhi/overlays/a21-debug-playback-ack.patch` keeps this out of the
 stock profile by default. It adds `CONFIG_A21_DEBUG_DEVICE_EVENTS=n`,
 advertises client `features.device_events=true` only in that debug build,

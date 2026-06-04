@@ -1025,6 +1025,22 @@ debug overlay for a stock-compatible playback-start marker. That overlay must:
 - preserve no-welcome behavior;
 - keep flash guarded by confirmation token and board/artifact checks.
 
+Execution update, 2026-06-04:
+
+- The marker path is now product-safe rather than debug-only for the
+  official-compatible lane. Gateway already owns the explicit
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS` allowance, and
+  `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+  now advertises `hello.features.playback_events` and emits only playback
+  `start` / `stop_done` after the server grants `a21.profile=product`.
+- The guarded no-flash product build passed:
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`.
+  App artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+  This still needs a foreground flash/evidence window before Task 7 acceptance
+  can be marked complete.
+
 - [ ] Step 4: Verify.
 
 Run:

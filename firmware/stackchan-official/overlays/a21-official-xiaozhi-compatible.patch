@@ -27,6 +27,15 @@ index 304e48d..f8b985e 100644
 +        Keep a websocket channel open while idle so A21 can keep the device
 +        online without starting listening audio.
 +
++config A21_PRODUCT_PLAYBACK_EVENTS
++    bool "A21 product playback acknowledgements"
++    depends on BOARD_TYPE_M5STACK_STACK_CHAN
++    default n
++    help
++        Advertise the product-safe A21 playback acknowledgement hint. The
++        device sends only playback start/stop_done after the server returns
++        a21.profile=product and a21.playback_events=true.
++
  choice
 diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
 index 164a751..c94a8b0 100644
@@ -65,6 +74,7 @@ index 4db623a..aa977b5 100644
 +# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set
 +# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set
 +CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y
++CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y
 +# CONFIG_WAKE_WORD_DISABLED is not set
 +# CONFIG_USE_ESP_WAKE_WORD is not set
 +# CONFIG_USE_AFE_WAKE_WORD is not set
@@ -121,13 +131,26 @@ index 3b6f07e..396b23a 100644
 +        esp_timer_delete(vad_stop_timer_handle_);
 +    }
      vEventGroupDelete(event_group_);
-@@ -83,2 +103,6 @@ void Application::Initialize() {
+@@ -83,6 +103,19 @@ void Application::Initialize() {
      callbacks.on_vad_change = [this](bool speaking) {
 +        vad_speaking_ = speaking;
 +        if (speaking) {
 +            vad_speech_seen_ = true;
 +        }
          xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
+     };
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    callbacks.on_playback_started = [this]() {
++        if (GetDeviceState() == kDeviceStateSpeaking && !a21_playback_ack_sent_.exchange(true)) {
++            Schedule([this]() {
++                if (protocol_) {
++                    protocol_->SendA21PlaybackStart();
++                }
++            });
++        }
++    };
++#endif
+     audio_service_.SetCallbacks(callbacks);
 @@ -181,3 +205,4 @@ void Application::Run() {
          MAIN_EVENT_ACTIVATION_DONE |
 -        MAIN_EVENT_STATE_CHANGED;
@@ -225,6 +248,52 @@ index 3b6f07e..396b23a 100644
 +}
 +
  void Application::ActivationTask() {
+@@ -528,16 +570,41 @@ void Application::InitializeProtocol() {
+         if (strcmp(type->valuestring, "tts") == 0) {
+             auto state = cJSON_GetObjectItem(root, "state");
+             if (strcmp(state->valuestring, "start") == 0) {
+                 Schedule([this]() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++                    a21_playback_ack_sent_ = false;
++                    a21_playback_stop_ack_sent_ = false;
++#endif
+                     aborted_ = false;
+                     SetDeviceState(kDeviceStateSpeaking);
+                 });
+             } else if (strcmp(state->valuestring, "stop") == 0) {
+-                Schedule([this]() {
++                auto reason = cJSON_GetObjectItem(root, "reason");
++                bool a21_force_clear_playback =
++                    cJSON_IsString(reason) &&
++                    (strstr(reason->valuestring, "abort") != nullptr ||
++                     strstr(reason->valuestring, "barge") != nullptr ||
++                     strstr(reason->valuestring, "wake") != nullptr);
++                Schedule([this, a21_force_clear_playback]() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++                    bool was_speaking = GetDeviceState() == kDeviceStateSpeaking;
++                    bool had_playback = a21_playback_ack_sent_.load();
++                    if (a21_force_clear_playback && (was_speaking || had_playback)) {
++                        audio_service_.ResetDecoder();
++                    }
++#endif
+                     if (GetDeviceState() == kDeviceStateSpeaking) {
+                         if (listening_mode_ == kListeningModeManualStop) {
+                             SetDeviceState(kDeviceStateIdle);
+                         } else {
+                             SetDeviceState(kDeviceStateListening);
+                         }
+                     }
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++                    if ((was_speaking || had_playback) && !a21_playback_stop_ack_sent_.exchange(true)) {
++                        if (protocol_) {
++                            protocol_->SendA21PlaybackStopDone();
++                        }
++                    }
++                    a21_playback_ack_sent_ = false;
++#endif
+                 });
+             } else if (strcmp(state->valuestring, "sentence_start") == 0) {
+                 auto text = cJSON_GetObjectItem(root, "text");
 @@ -780,2 +858,6 @@ void Application::HandleWakeWordDetectedEvent() {
      if (!protocol_) {
 +        auto display = Board::GetInstance().GetDisplay();
@@ -280,6 +349,18 @@ index 3b6f07e..396b23a 100644
 +            vad_speaking_ = false;
 +            vad_speech_seen_ = false;
 
+@@ -937,6 +1032,11 @@ void Application::AbortSpeaking(AbortReason reason) {
+     ESP_LOGI(TAG, "Abort speaking");
+     aborted_ = true;
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (GetDeviceState() == kDeviceStateSpeaking) {
++        audio_service_.ResetDecoder();
++    }
++#endif
+     if (protocol_) {
+         protocol_->SendAbortSpeaking(reason);
+     }
+ }
 @@ -947,4 +1042,64 @@ void Application::AbortSpeaking(AbortReason reason) {
 
 +void Application::HandleVadChange(bool speaking) {
@@ -408,6 +489,10 @@ diff --git a/firmware/xiaozhi-esp32/main/application.h b/firmware/xiaozhi-esp32/
 index 7ca7af4..46cfdac 100644
 --- a/firmware/xiaozhi-esp32/main/application.h
 +++ b/firmware/xiaozhi-esp32/main/application.h
+@@ -9,2 +9,3 @@
++#include <atomic>
+ #include <string>
+ #include <mutex>
 @@ -33,2 +33,3 @@
  #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
 +#define MAIN_EVENT_VAD_STOP_TIMEOUT     (1 << 13)
@@ -423,6 +508,8 @@ index 7ca7af4..46cfdac 100644
 +    bool a21_ready_notified_ = false;
 +    bool a21_control_retry_notified_ = false;
 +    int64_t listening_started_at_us_ = 0;
++    std::atomic_bool a21_playback_ack_sent_{false};
++    std::atomic_bool a21_playback_stop_ack_sent_{false};
      int clock_ticks_ = 0;
 @@ -155,5 +162,8 @@ private:
      void HandleWakeWordDetectedEvent();
@@ -433,3 +520,128 @@ index 7ca7af4..46cfdac 100644
 +    void EnsureA21ControlChannel();
 
      // Activation task (runs in background)
+diff --git a/firmware/xiaozhi-esp32/main/audio/audio_service.h b/firmware/xiaozhi-esp32/main/audio/audio_service.h
+index 99db546..9ac0b56 100644
+--- a/firmware/xiaozhi-esp32/main/audio/audio_service.h
++++ b/firmware/xiaozhi-esp32/main/audio/audio_service.h
+@@ -80,3 +80,4 @@ struct AudioServiceCallbacks {
+     std::function<void(bool)> on_vad_change;
+     std::function<void(void)> on_audio_testing_queue_full;
++    std::function<void(void)> on_playback_started;
+ };
+diff --git a/firmware/xiaozhi-esp32/main/audio/audio_service.cc b/firmware/xiaozhi-esp32/main/audio/audio_service.cc
+index 350ac58..d0baf42 100644
+--- a/firmware/xiaozhi-esp32/main/audio/audio_service.cc
++++ b/firmware/xiaozhi-esp32/main/audio/audio_service.cc
+@@ -309,2 +309,6 @@ void AudioService::AudioOutputTask() {
+         codec_->OutputData(task->pcm);
+-
++
++        if (callbacks_.on_playback_started) {
++            callbacks_.on_playback_started();
++        }
++
+         /* Update the last output time */
+diff --git a/firmware/xiaozhi-esp32/main/protocols/protocol.h b/firmware/xiaozhi-esp32/main/protocols/protocol.h
+index 28ef604..edfc5b4 100644
+--- a/firmware/xiaozhi-esp32/main/protocols/protocol.h
++++ b/firmware/xiaozhi-esp32/main/protocols/protocol.h
+@@ -75,2 +75,4 @@ public:
+     virtual void SendMcpMessage(const std::string& message);
+-
++    virtual void SendA21PlaybackStart();
++    virtual void SendA21PlaybackStopDone();
++
+ protected:
+@@ -89,2 +91,6 @@ protected:
+     std::string session_id_;
++    std::string trace_id_;
++    std::string device_id_;
++    bool a21_product_playback_events_allowed_ = false;
++    void SendA21PlaybackEvent(const char* playback);
+     std::chrono::time_point<std::chrono::steady_clock> last_incoming_time_;
+diff --git a/firmware/xiaozhi-esp32/main/protocols/protocol.cc b/firmware/xiaozhi-esp32/main/protocols/protocol.cc
+index 470cc91..d825a04 100644
+--- a/firmware/xiaozhi-esp32/main/protocols/protocol.cc
++++ b/firmware/xiaozhi-esp32/main/protocols/protocol.cc
+@@ -78,3 +78,41 @@ void Protocol::SendMcpMessage(const std::string& payload) {
+     SendText(message);
+ }
+-
++
++void Protocol::SendA21PlaybackStart() {
++    SendA21PlaybackEvent("start");
++}
++
++void Protocol::SendA21PlaybackStopDone() {
++    SendA21PlaybackEvent("stop_done");
++}
++
++void Protocol::SendA21PlaybackEvent(const char* playback) {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (!a21_product_playback_events_allowed_) {
++        return;
++    }
++    cJSON* root = cJSON_CreateObject();
++    cJSON_AddStringToObject(root, "type", "device");
++    cJSON_AddStringToObject(root, "kind", "playback");
++    cJSON_AddStringToObject(root, "playback", playback);
++    if (!session_id_.empty()) {
++        cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
++    }
++    if (!trace_id_.empty()) {
++        cJSON_AddStringToObject(root, "trace_id", trace_id_.c_str());
++    }
++    if (!device_id_.empty()) {
++        cJSON_AddStringToObject(root, "device_id", device_id_.c_str());
++    }
++    auto json_str = cJSON_PrintUnformatted(root);
++    if (json_str != nullptr) {
++        SendText(json_str);
++        cJSON_free(json_str);
++    }
++    cJSON_Delete(root);
++#else
++    (void)playback;
++#endif
++}
++
+ bool Protocol::IsTimeout() const {
+diff --git a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
+index 4b74a5e..51cc6a2 100644
+--- a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
++++ b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
+@@ -212,2 +212,5 @@ std::string WebsocketProtocol::GetHelloMessage() {
+     cJSON_AddBoolToObject(features, "mcp", true);
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    cJSON_AddBoolToObject(features, "playback_events", true);
++#endif
+     cJSON_AddItemToObject(root, "features", features);
+@@ -238,3 +241,27 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
+         ESP_LOGI(TAG, "Session ID: %s", session_id_.c_str());
+     }
+-
++
++    auto trace_id = cJSON_GetObjectItem(root, "trace_id");
++    if (cJSON_IsString(trace_id)) {
++        trace_id_ = trace_id->valuestring;
++    }
++    auto device_id = cJSON_GetObjectItem(root, "device_id");
++    if (cJSON_IsString(device_id)) {
++        device_id_ = device_id->valuestring;
++    }
++
++    a21_product_playback_events_allowed_ = false;
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    auto a21 = cJSON_GetObjectItem(root, "a21");
++    if (cJSON_IsObject(a21)) {
++        auto profile = cJSON_GetObjectItem(a21, "profile");
++        auto playback_events = cJSON_GetObjectItem(a21, "playback_events");
++        a21_product_playback_events_allowed_ =
++            cJSON_IsString(profile) &&
++            strcmp(profile->valuestring, "product") == 0 &&
++            cJSON_IsTrue(playback_events);
++    }
++#endif
++
+     auto audio_params = cJSON_GetObjectItem(root, "audio_params");

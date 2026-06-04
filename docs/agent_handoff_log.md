@@ -12791,6 +12791,113 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 17:55 CST - Official Product Playback Ack Overlay
+
+Round goal:
+
+- Continue `T-XIAOZHI-PHYSICAL-PRD-PROMOTE-GATE-001` from the Gateway
+  product playback allowance without repeating closed roleplay/provider/V21
+  work. Add the matching official-compatible product firmware overlay surface
+  so a real StackChan can eventually emit playback `start` / `stop_done`
+  evidence.
+
+Actual completed work:
+
+- Updated
+  `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+  with product-safe playback acknowledgement support.
+- Added `CONFIG_A21_PRODUCT_PLAYBACK_EVENTS` and enabled it in the
+  official-compatible product lane.
+- The product firmware hello now advertises only
+  `hello.features.playback_events=true`; it does not advertise
+  `features.device_events`.
+- Product firmware parses server hello `a21.profile=product` /
+  `a21.playback_events=true` before sending any playback ack.
+- Playback `start` is emitted after the official Xiaozhi audio output task
+  reaches playback. Playback `stop_done` is emitted after server TTS stop or
+  local abort queue clear. Local abort while speaking clears the decoder queue
+  immediately.
+- Added official overlay contract tests to forbid debug/legacy
+  `device_events` in the product ack path.
+- Updated protocol, firmware README, current-control, internal-test4 plan,
+  hardware parity plan, and project state docs.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `firmware/stackchan/README.md`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No ECS/runtime env was changed. The Gateway env
+  `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS` remains default-off unless explicitly
+  enabled in a guarded runtime window.
+- No firmware flash, NVS write, serial access, provider execution, V21
+  execution, or physical evidence collection occurred.
+- Product readiness remains blocked on `physical_stackchan_prd_acceptance`.
+
+Known risks/blockers:
+
+- The overlay has been verified to apply to the official top-level HEAD plus
+  clean `firmware/xiaozhi-esp32` dependency HEAD, and the guarded no-flash
+  product build now passes. It still needs foreground flash/physical evidence
+  before any PRD acceptance claim.
+- Physical PRD promotion still needs real device playback-start, bounded
+  stop_done/barge-in evidence, and operator or instrumented audible
+  observation.
+
+Recommended next action:
+
+- Review the passed no-flash build report, then schedule a foreground product
+  flash/evidence window only with the guarded
+  `a21-stackchan-official-xiaozhi-compatible-*` lane and explicit operator
+  approval. Keep `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS` disabled until that
+  runtime window is ready to collect playback ack evidence.
+
+Test/build/runtime results:
+
+- Overlay apply check against temporary official top-level HEAD plus clean
+  `firmware/xiaozhi-esp32` dependency HEAD:
+  `git apply --check --recount firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`:
+  passed.
+- `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay(AddsProductPlaybackAckOnly|KeepsA21IdleSocketReady|SetsCodecVolumeBeforeRuntime|SetsZiYueCustomWake|PreservesXiaozhiWifiProvisioning)' -count=1`:
+  passed.
+- `A21_STACKCHAN_OFFICIAL_DEP_CACHE='/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan' GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`:
+  passed. Report:
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`.
+  App artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- First temporary overlay apply check used a top-level `git archive HEAD` only,
+  which omitted the official dependency directory
+  `firmware/xiaozhi-esp32`. The check was rerun with the clean dependency HEAD
+  archived into the temporary tree.
+- One intermediate patch shape used blank context lines that failed
+  `git diff --check`.
+- First no-flash product build failed because zero-context insertions drifted
+  in C++ files, placing `Protocol` declarations outside the class and the audio
+  callback outside `AudioOutputTask`. The overlay hunks now use stable nonblank
+  anchors and the no-flash build passes.
+
+Forbidden actions avoided:
+
+- No repeated roleplay/provider/V21 evidence runs.
+- No ECS deployment or runtime env mutation.
+- No firmware flash, serial access, NVS write, Wi-Fi change, report deletion,
+  repository prune/gc, or rollback of internal test 3 protocol/audio changes.
+
 ## 2026-06-04 17:39 CST - Product Playback Ack Channel Adaptation
 
 Round goal:
@@ -13928,3 +14035,59 @@ Forbidden actions avoided:
 - No provider execution, V21 execution, ECS/root-secret/runtime change, Gateway
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
+
+## 2026-06-04 18:00 CST - Latest Mainline Checkpoint
+
+Round goal:
+
+- Keep the control thread recoverable after the product playback ack overlay
+  work and prevent the next environment from repeating closed roleplay,
+  provider, V21, or Gateway-only tasks.
+
+Actual completed work:
+
+- Gateway product playback allowance is already committed at `4c70b14`.
+- This round added the matching official-compatible product overlay support
+  and verified it with apply check, Go contract tests, full `make verify`, and
+  guarded no-flash product build.
+- Passed build report:
+  `reports/a21-stackchan-official-baseline-20260604-175756-1780567076043462000.json`.
+- Built app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `firmware/stackchan/README.md`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No flash, NVS write, serial access, ECS env change, provider execution, V21
+  execution, or physical PRD promotion occurred.
+- Next real transition is foreground physical: guarded product flash if
+  approved, enable `A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS` only for the evidence
+  window, collect playback `start` / `stop_done`, barge-in, wake, and audible
+  observation, then run `xiaozhi-physical-prd-review`.
+
+Test/build/runtime results:
+
+- Overlay apply check with official top-level HEAD plus clean
+  `firmware/xiaozhi-esp32` dependency HEAD: passed.
+- Focused official overlay tests: passed.
+- `A21_STACKCHAN_OFFICIAL_DEP_CACHE='/Users/jiyurun/Documents/小马暴力/sources/m5stack-stackchan' GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`:
+  passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Forbidden actions avoided:
+
+- No repeated roleplay/provider/V21 evidence runs, no bare `xiaozhi.bin`, no
+  generic `xiaozhi-firmware-flash-*`, no flash/NVS/serial, no prune/gc, and no
+  rollback of internal test 3 protocol/audio changes.

@@ -392,6 +392,50 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 	}
 }
 
+func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`config A21_PRODUCT_PLAYBACK_EVENTS`,
+		`CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
+		`cJSON_AddBoolToObject(features, "playback_events", true);`,
+		`strcmp(profile->valuestring, "product") == 0`,
+		`cJSON_IsTrue(playback_events)`,
+		`a21_product_playback_events_allowed_`,
+		`SendA21PlaybackStart`,
+		`SendA21PlaybackStopDone`,
+		`callbacks.on_playback_started`,
+		`AudioOutputTask()`,
+		`audio_service_.ResetDecoder();`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing product playback ack contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		`CONFIG_A21_DEBUG_DEVICE_EVENTS`,
+		`a21_debug_device_events_allowed_`,
+		`cJSON_AddBoolToObject(features, "device_events", true);`,
+		`"profile", "debug"`,
+		`"device_events"`,
+		`ENABLE_X21_DEVICE_EVENTS`,
+	} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("product playback ack overlay must not enable debug/legacy device events %q", forbidden)
+		}
+	}
+}
+
 func TestOfficialXiaozhiCompatibleOverlayPreservesXiaozhiWifiProvisioning(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
