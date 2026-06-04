@@ -222,11 +222,14 @@ type FastCompanionTurnResponse struct {
 }
 
 type RoleplayProfileOption struct {
-	ID          string `json:"id"`
-	Label       string `json:"label"`
-	Status      string `json:"status"`
-	Default     bool   `json:"default,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID             string   `json:"id"`
+	Label          string   `json:"label"`
+	Status         string   `json:"status"`
+	Default        bool     `json:"default,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	VoiceHint      string   `json:"voice_hint,omitempty"`
+	ExpressionHint string   `json:"expression_hint,omitempty"`
+	PromptParts    []string `json:"prompt_parts,omitempty"`
 }
 
 type RoleplayProfileSelectionRequest struct {
@@ -250,23 +253,25 @@ type RoleplayProfileResponse struct {
 }
 
 type RoleplayRuntimeSummary struct {
-	SchemaVersion            string `json:"schema_version"`
-	Mode                     string `json:"mode"`
-	RoleplayProfile          string `json:"roleplay_profile"`
-	Scenario                 string `json:"scenario"`
-	VoiceCloneProfile        string `json:"voice_clone_profile"`
-	MemoryPolicy             string `json:"memory_policy"`
-	MemoryConfigured         bool   `json:"memory_configured"`
-	MemoryPromptInputReady   bool   `json:"memory_prompt_input_ready"`
-	MemoryHintCount          int    `json:"memory_hint_count"`
-	PromptComposed           bool   `json:"prompt_composed"`
-	PromptStored             bool   `json:"prompt_stored"`
-	MemoryTextStored         bool   `json:"memory_text_stored"`
-	TranscriptStored         bool   `json:"transcript_stored"`
-	ProviderOutputStored     bool   `json:"provider_output_stored"`
-	VoiceCloneSampleStored   bool   `json:"voice_clone_sample_stored"`
-	ProfessionalRouteAllowed bool   `json:"professional_route_allowed"`
-	V21Executed              bool   `json:"v21_executed"`
+	SchemaVersion            string   `json:"schema_version"`
+	Mode                     string   `json:"mode"`
+	RoleplayProfile          string   `json:"roleplay_profile"`
+	Scenario                 string   `json:"scenario"`
+	VoiceCloneProfile        string   `json:"voice_clone_profile"`
+	SoulPromptInputReady     bool     `json:"soul_prompt_input_ready"`
+	PromptParts              []string `json:"prompt_parts,omitempty"`
+	MemoryPolicy             string   `json:"memory_policy"`
+	MemoryConfigured         bool     `json:"memory_configured"`
+	MemoryPromptInputReady   bool     `json:"memory_prompt_input_ready"`
+	MemoryHintCount          int      `json:"memory_hint_count"`
+	PromptComposed           bool     `json:"prompt_composed"`
+	PromptStored             bool     `json:"prompt_stored"`
+	MemoryTextStored         bool     `json:"memory_text_stored"`
+	TranscriptStored         bool     `json:"transcript_stored"`
+	ProviderOutputStored     bool     `json:"provider_output_stored"`
+	VoiceCloneSampleStored   bool     `json:"voice_clone_sample_stored"`
+	ProfessionalRouteAllowed bool     `json:"professional_route_allowed"`
+	V21Executed              bool     `json:"v21_executed"`
 }
 
 type ProfessionalWorkspaceOption struct {
@@ -853,7 +858,9 @@ const (
 	VoiceModeRoleplay                         = "roleplay"
 	VoiceModeProfessional                     = "professional"
 	RoleplayProfileSchemaVersion              = "a21.gateway.roleplay_profile.v1"
-	DefaultRoleplayProfile                    = "a21_roleplay_default"
+	DefaultRoleplayProfile                    = string(personality.RoleSoulA21Default)
+	RoleplayProfileWryPeer                    = string(personality.RoleSoulWryPeer)
+	RoleplayProfileCalmAnchor                 = string(personality.RoleSoulCalmAnchor)
 	DefaultRoleplayScenario                   = "desk_mouthpiece"
 	ProfessionalWorkspaceSchemaVersion        = "a21.gateway.professional_workspace.v1"
 	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
@@ -1596,6 +1603,7 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 	promptComposed := false
 	if _, err := personality.Compose(personality.Options{
 		Mode:             personality.ModeRoleplay,
+		RoleSoul:         roleplayPersonalitySoul(profile),
 		Scenario:         roleplayPersonalityScenario(scenario),
 		UserText:         "我在。",
 		MemoryHints:      hints,
@@ -1603,12 +1611,15 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 	}); err == nil {
 		promptComposed = true
 	}
+	promptParts := roleplayPromptParts(profile, scenario, memory.PromptInputReady)
 	return RoleplayRuntimeSummary{
 		SchemaVersion:            "a21.roleplay_runtime.v1",
 		Mode:                     VoiceModeRoleplay,
 		RoleplayProfile:          profile,
 		Scenario:                 scenario,
 		VoiceCloneProfile:        voiceClone,
+		SoulPromptInputReady:     roleplayPersonalitySoul(profile) != "",
+		PromptParts:              promptParts,
 		MemoryPolicy:             memory.Policy,
 		MemoryConfigured:         memory.Configured,
 		MemoryPromptInputReady:   memory.PromptInputReady,
@@ -1625,13 +1636,14 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 }
 
 func (s *Server) roleplayPromptInput(override RoleplayProfileSelectionRequest, userText string) (string, error) {
-	_, scenario, _, err := s.resolveRoleplaySelection(override)
+	profile, scenario, _, err := s.resolveRoleplaySelection(override)
 	if err != nil {
 		return "", err
 	}
 	_, hints := s.roleplayMemoryHints()
 	prompt, err := personality.Compose(personality.Options{
 		Mode:             personality.ModeRoleplay,
+		RoleSoul:         roleplayPersonalitySoul(profile),
 		Scenario:         roleplayPersonalityScenario(scenario),
 		UserText:         userText,
 		MemoryHints:      hints,
@@ -1749,12 +1761,7 @@ func defaultRoleplayProfile(profile string) string {
 }
 
 func validRoleplayProfile(profile string) bool {
-	switch strings.ToLower(strings.TrimSpace(profile)) {
-	case DefaultRoleplayProfile:
-		return true
-	default:
-		return false
-	}
+	return roleplayPersonalitySoul(profile) != ""
 }
 
 func defaultRoleplayScenario(scenario string) string {
@@ -1790,15 +1797,68 @@ func roleplayPersonalityScenario(scenario string) personality.Scenario {
 	}
 }
 
+func roleplayPersonalitySoul(profile string) personality.RoleSoul {
+	switch strings.ToLower(strings.TrimSpace(profile)) {
+	case DefaultRoleplayProfile:
+		return personality.RoleSoulA21Default
+	case RoleplayProfileWryPeer:
+		return personality.RoleSoulWryPeer
+	case RoleplayProfileCalmAnchor:
+		return personality.RoleSoulCalmAnchor
+	default:
+		return ""
+	}
+}
+
+func roleplayPromptParts(profile string, scenario string, memoryReady bool) []string {
+	parts := []string{
+		"core_identity",
+		"tone_rules",
+		"role_soul:" + defaultRoleplayProfile(profile),
+		"mode:roleplay",
+		"scenario:" + defaultRoleplayScenario(scenario),
+	}
+	if memoryReady {
+		parts = append(parts, "memory_hints")
+	}
+	return parts
+}
+
 func roleplayProfileOptions(selected string) []RoleplayProfileOption {
 	selected = defaultRoleplayProfile(selected)
-	return []RoleplayProfileOption{{
-		ID:          DefaultRoleplayProfile,
-		Label:       "A21 roleplay soul",
-		Status:      "available",
-		Default:     selected == DefaultRoleplayProfile,
-		Description: "A21 role/personality prompt with bounded memory hints and voice clone selection",
-	}}
+	options := []RoleplayProfileOption{
+		{
+			ID:             DefaultRoleplayProfile,
+			Label:          "A21 desk workmate",
+			Status:         "available",
+			Description:    "close desk workmate that listens first and turns pressure into usable words",
+			VoiceHint:      "natural_short_warm",
+			ExpressionHint: "idle_listening_thinking_speaking",
+			PromptParts:    roleplayPromptParts(DefaultRoleplayProfile, DefaultRoleplayScenario, false),
+		},
+		{
+			ID:             RoleplayProfileWryPeer,
+			Label:          "Wry peer",
+			Status:         "available",
+			Description:    "sharp loyal peer with dry humor for boundary pressure and review defense",
+			VoiceHint:      "short_wry_clear",
+			ExpressionHint: "thinking_speaking_interrupted",
+			PromptParts:    roleplayPromptParts(RoleplayProfileWryPeer, DefaultRoleplayScenario, false),
+		},
+		{
+			ID:             RoleplayProfileCalmAnchor,
+			Label:          "Calm anchor",
+			Status:         "available",
+			Description:    "steady late-night co-thinker for overloaded work without therapy drift",
+			VoiceHint:      "calm_low_noise",
+			ExpressionHint: "idle_listening_local_fallback",
+			PromptParts:    roleplayPromptParts(RoleplayProfileCalmAnchor, DefaultRoleplayScenario, false),
+		},
+	}
+	for i := range options {
+		options[i].Default = options[i].ID == selected
+	}
+	return options
 }
 
 func roleplayScenarioOptions(selected string) []RoleplayProfileOption {

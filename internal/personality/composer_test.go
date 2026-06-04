@@ -74,6 +74,37 @@ func TestPersonalityComposeAddsOneScenarioAndFailureOnlyWhenRequested(t *testing
 	}
 }
 
+func TestPersonalityComposeRoleSoulAddsOnlySelectedSoul(t *testing.T) {
+	prompt, err := Compose(Options{
+		Mode:     ModeRoleplay,
+		RoleSoul: RoleSoulWryPeer,
+		Scenario: ScenarioDeskMouthpiece,
+		UserText: "这个需求边界又变了",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Role Soul: Wry Peer",
+		"Roleplay Mode",
+		"Desk Mouthpiece Playbook",
+		"这个需求边界又变了",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q:\n%s", want, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"Role Soul: Calm Anchor",
+		"Role Soul: A21 Desk Workmate",
+		"Boss Challenge Playbook",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("prompt included unselected role soul/scenario %q:\n%s", forbidden, prompt)
+		}
+	}
+}
+
 func TestPersonalityComposeProfessionalIncludesEvidenceBoundaryAndPublicPrivateSafety(t *testing.T) {
 	prompt, err := Compose(Options{
 		Mode:     ModeProfessional,

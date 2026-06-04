@@ -11077,6 +11077,98 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 09:46 CST - Roleplay Soul Profile Contract
+
+Round goal:
+
+- Move internal test 4 roleplay from a single default `roleplay_profile`
+  placeholder to a selectable A21-owned role-soul layer that can affect actual
+  voice-pipeline prompt input while preserving upload/read-record redaction
+  discipline.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-roleplay-soul-profile-contract.md`.
+- Added role-soul personality assets:
+  `docs/personality/role_souls/default.md`,
+  `docs/personality/role_souls/wry_peer.md`, and
+  `docs/personality/role_souls/calm_anchor.md`.
+- Extended `personality.Compose` with an optional `RoleSoul` layer loaded
+  between `tone_rules` and `mode_prompts`.
+- Expanded `/v1/roleplay-profile` so `roleplay_profile` can select
+  `a21_roleplay_default`, `a21_roleplay_wry_peer`, or
+  `a21_roleplay_calm_anchor` together with scenario, voice-clone profile, and
+  bounded memory hints.
+- Runtime summaries now expose `soul_prompt_input_ready` and safe
+  `prompt_parts` such as `role_soul:a21_roleplay_wry_peer` without returning
+  prompt bodies.
+- Fast-companion and stock Xiaozhi roleplay prompt composition now use the
+  selected role soul before passing prompt input to the provider-neutral voice
+  pipeline.
+- Simulator controls now include `roleplayProfile` and `roleplaySoulReadout`
+  beside scenario, voice-clone, and memory controls.
+
+Changed files:
+
+- `internal/personality/composer.go`
+- `internal/personality/composer_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/personality/README.md`
+- `docs/personality/role_souls/default.md`
+- `docs/personality/role_souls/wry_peer.md`
+- `docs/personality/role_souls/calm_anchor.md`
+- `docs/plans/2026-06-04-roleplay-soul-profile-contract.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not physical StackChan roleplay audio acceptance and does not prove a
+  real cloned voice provider executed.
+- This is not durable long-term memory, account/persona sync, role marketplace,
+  cloud profile storage, V21 professional retrieval, or agent bridge runtime.
+- Selected soul currently affects prompt input; hardware expression/RGB/servo
+  semantic mapping for each soul remains a separate hardware/action parity
+  promotion.
+
+Known risks/blockers:
+
+- Persona quality still needs subjective voice-turn review on the live product
+  chain; this slice proves contract/path correctness, not final taste.
+- API responses expose safe role-soul labels/descriptions and prompt-part IDs;
+  future production UI may tighten what is user-visible.
+- Physical acceptance still depends on a foreground device window and current
+  Gateway/provider configuration.
+
+Recommended next action:
+
+- Continue internal test 4 with a hardware/runtime evidence window for selected
+  role soul + selected voice clone on stock `/v1/xiaozhi`, or move to the next
+  no-hardware slice: professional/workspace indexing adapter boundary. Do not
+  treat role-soul contract evidence as provider execution or physical audio
+  acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/personality ./internal/gateway -run 'TestPersonalityComposeRoleSoulAddsOnlySelectedSoul|TestRoleplayProfileEndpointSelectsSoulProfileAndReturnsSafeCatalog|TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/personality ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, prune/gc, or physical
+  hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
+
 ## 2026-06-04 09:04 CST - Workspace Source Readiness Registry
 
 Round goal:

@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD:
-  `1f0ed0c feat(gateway): expose workspace source readiness`
+- Current source HEAD before this focused role-soul cut:
+  `57cdfb7 feat(gateway): accept local workspace document uploads`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,14 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-workspace-source-readiness-registry.md`
+- `docs/plans/2026-06-04-roleplay-soul-profile-contract.md`
 - Transition:
-  `T-INTERNAL-TEST4-WORKSPACE-SOURCE-READINESS-001`
+  `T-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-001`
 - Target:
-  expose safe public/personal workspace source readiness derived from redacted
-  upload/import job metadata, without storing document contents, running real
-  indexing, executing providers/V21, or weakening internal test 3 Xiaozhi
-  behavior.
+  make `roleplay_profile` a real A21 role-soul selector, compose the selected
+  soul into roleplay voice-pipeline prompt input, and expose simulator controls
+  without storing prompt bodies, executing providers/V21, or weakening internal
+  test 3 Xiaozhi behavior.
 
 ## Scoped Hardware Parity Transition
 
@@ -1000,3 +1000,34 @@ Current conclusion:
 - This still does not parse, chunk, embed, index, upload to cloud storage,
   enforce durable auth/ACLs, execute provider/V21, start Gateway as a service,
   deploy ECS, or prove physical StackChan professional consult acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Soul Profile Contract
+
+The roleplay profile selector now controls a real A21-owned role-soul layer
+instead of a single default placeholder.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-soul-profile-contract.md`.
+- Personality composition now supports an optional `role_souls/*.md` layer
+  between `tone_rules` and `mode_prompts`.
+- A21 roleplay profiles now include `a21_roleplay_default`,
+  `a21_roleplay_wry_peer`, and `a21_roleplay_calm_anchor`.
+- `/v1/roleplay-profile` accepts the selected `roleplay_profile` together with
+  scenario, voice-clone profile, and bounded memory hints.
+- Runtime summaries expose safe prompt-part identifiers such as
+  `role_soul:a21_roleplay_wry_peer`, `soul_prompt_input_ready`, memory counts,
+  and redaction flags, but not prompt bodies or memory text.
+- Fast-companion and stock Xiaozhi roleplay prompt composition use the selected
+  role soul before passing prompt input to the provider-neutral voice pipeline.
+- Simulator controls now include a role soul selector and readout alongside
+  scenario, voice clone, and memory controls.
+
+Current conclusion:
+
+- Internal test 4 roleplay now has a configurable persona/soul surface that can
+  affect actual voice-pipeline prompt input, not only metadata.
+- This is host-local contract evidence only. It does not execute provider/V21,
+  start Gateway as a runtime service, deploy ECS, build/flash firmware, write
+  serial/NVS, or prove physical StackChan roleplay audio acceptance.

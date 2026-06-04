@@ -344,10 +344,12 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="registryConnection"`,
 		`id="registryMode"`,
 		`id="voiceMode"`,
+		`id="roleplayProfile"`,
 		`id="roleplayScenario"`,
 		`id="roleplayMemoryHint"`,
 		`id="saveRoleplayMemory"`,
 		`id="clearRoleplayMemory"`,
+		`id="roleplaySoulReadout"`,
 		`id="roleplayMemoryReadout"`,
 		`id="modeRitualReadout"`,
 		`id="professionalQueryScope"`,
@@ -1071,6 +1073,55 @@ func TestRoleplayProfileEndpointPersistsScenarioVoiceCloneAndRedactsMemory(t *te
 	if !strings.Contains(chainRec.Body.String(), `"selected_voice_clone_profile":"a21_voice_clone_default"`) ||
 		!strings.Contains(chainRec.Body.String(), `"selected_tts_profile":"voice_clone_cli"`) {
 		t.Fatalf("voice clone selection did not reach voice chain: %s", chainRec.Body.String())
+	}
+}
+
+func TestRoleplayProfileEndpointSelectsSoulProfileAndReturnsSafeCatalog(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{
+		"roleplay_profile":"a21_roleplay_wry_peer",
+		"scenario":"engineer_pushback",
+		"voice_clone_profile":"a21_voice_clone_default"
+	}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response RoleplayProfileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SelectedRoleplayProfile != "a21_roleplay_wry_peer" ||
+		response.SelectedScenario != "engineer_pushback" ||
+		response.Runtime.RoleplayProfile != "a21_roleplay_wry_peer" ||
+		!response.Runtime.SoulPromptInputReady ||
+		!response.Runtime.PromptComposed {
+		t.Fatalf("roleplay soul response = %+v", response)
+	}
+	if len(response.Profiles) < 3 {
+		t.Fatalf("profiles = %+v, want multiple selectable role souls", response.Profiles)
+	}
+	if !stringSliceContains(response.Runtime.PromptParts, "role_soul:a21_roleplay_wry_peer") ||
+		!stringSliceContains(response.Runtime.PromptParts, "scenario:engineer_pushback") {
+		t.Fatalf("prompt parts = %+v, want selected soul and scenario", response.Runtime.PromptParts)
+	}
+	for _, forbidden := range []string{
+		"Role Soul: Wry Peer",
+		"这句会上说会炸",
+		"Roleplay Mode",
+		"Engineer Pushback Playbook",
+		"provider output",
+		"voice clone sample",
+		"/Users/",
+		"http://",
+		"https://",
+	} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("roleplay profile leaked prompt/private text %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 
@@ -2376,7 +2427,7 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 		return runner
 	}
 	handler := server.Handler()
-	profileReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"voice_clone_profile":"a21_voice_clone_default","memory_hints":["角色语气只给短句"]}`))
+	profileReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{"roleplay_profile":"a21_roleplay_wry_peer","voice_clone_profile":"a21_voice_clone_default","memory_hints":["角色语气只给短句"]}`))
 	profileRec := httptest.NewRecorder()
 	handler.ServeHTTP(profileRec, profileReq)
 	if profileRec.Code != http.StatusOK {
@@ -2451,7 +2502,9 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("voice pipeline runner did not capture request")
 	}
-	if !strings.Contains(captured.TextPrompt, "Memory Hints") ||
+	if !strings.Contains(captured.TextPrompt, "Role Soul: Wry Peer") ||
+		strings.Contains(captured.TextPrompt, "Role Soul: Calm Anchor") ||
+		!strings.Contains(captured.TextPrompt, "Memory Hints") ||
 		!strings.Contains(captured.TextPrompt, "session_memory:session_memory_1") ||
 		!strings.Contains(captured.TextPrompt, "角色语气只给短句") {
 		t.Fatalf("voice pipeline request missing redacted roleplay prompt input")

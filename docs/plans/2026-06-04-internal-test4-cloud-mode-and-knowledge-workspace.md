@@ -348,6 +348,9 @@ Acceptance:
    - first-class `roleplay`;
    - `dialogue` compatibility alias;
    - roleplay profile/scenario/voice-clone runtime selector;
+   - roleplay profile now selects A21-owned role-soul assets
+     (`a21_roleplay_default`, `a21_roleplay_wry_peer`,
+     `a21_roleplay_calm_anchor`) that compose into voice-pipeline prompt input;
    - professional-only V21 boundary unchanged.
 2. Add v2 adapter-plan docs for query scope and workspace fields. Completed
    for the Gateway/V21 adapter contract; V21 repository implementation remains

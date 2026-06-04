@@ -425,6 +425,9 @@ const simulatorHTML = `<!doctype html>
           <select id="voiceCloneProfile" aria-label="voice clone profile">
             <option value="a21_voice_default_dashscope">A21 natural voice</option>
           </select>
+          <select id="roleplayProfile" aria-label="roleplay soul profile">
+            <option value="a21_roleplay_default">A21 desk workmate</option>
+          </select>
           <select id="roleplayScenario" aria-label="roleplay scenario">
             <option value="desk_mouthpiece">desk_mouthpiece</option>
             <option value="boss_challenge">boss_challenge</option>
@@ -455,6 +458,7 @@ const simulatorHTML = `<!doctype html>
           <div class="metric"><label>TTS</label><div id="selectedTTSProfileReadout">dashscope_qwen_tts_realtime</div></div>
           <div class="metric"><label>Realtime</label><div id="realtimeProviderReadout">doubao_realtime</div></div>
           <div class="metric"><label>Voice Name</label><div id="voiceCloneProfileReadout">A21 natural voice</div></div>
+          <div class="metric"><label>Soul</label><div id="roleplaySoulReadout">A21 desk workmate</div></div>
           <div class="metric"><label>Memory</label><div id="roleplayMemoryReadout">empty / 0</div></div>
           <div class="metric"><label>Trace</label><div id="trace">none</div></div>
         </div>
@@ -590,6 +594,7 @@ const simulatorHTML = `<!doctype html>
       selectedTTSProfileReadout: document.getElementById('selectedTTSProfileReadout'),
       realtimeProviderReadout: document.getElementById('realtimeProviderReadout'),
       voiceCloneProfileReadout: document.getElementById('voiceCloneProfileReadout'),
+      roleplaySoulReadout: document.getElementById('roleplaySoulReadout'),
       roleplayMemoryReadout: document.getElementById('roleplayMemoryReadout'),
       trace: document.getElementById('trace'),
       session: document.getElementById('session'),
@@ -662,6 +667,7 @@ const simulatorHTML = `<!doctype html>
       cascadeLLMProfile: document.getElementById('cascadeLLMProfile'),
       realtimeProvider: document.getElementById('realtimeProvider'),
       voiceCloneProfile: document.getElementById('voiceCloneProfile'),
+      roleplayProfile: document.getElementById('roleplayProfile'),
       roleplayScenario: document.getElementById('roleplayScenario'),
       roleplayMemoryHint: document.getElementById('roleplayMemoryHint'),
       saveRoleplayMemory: document.getElementById('saveRoleplayMemory'),
@@ -750,6 +756,14 @@ const simulatorHTML = `<!doctype html>
       ui.modeRitualReadout.textContent = screen + ' / ' + cue;
     }
     function setRoleplayProfile(catalog) {
+      const selectedProfile = catalog.selected_roleplay_profile || 'a21_roleplay_default';
+      const profiles = catalog.profiles || [];
+      if (profiles.length) {
+        ui.roleplayProfile.innerHTML = profiles.map((profile) => optionHTML(profile, selectedProfile)).join('');
+      }
+      ui.roleplayProfile.value = selectedProfile;
+      const selectedProfileMeta = profiles.find((profile) => (profile.id || '') === selectedProfile) || {};
+      ui.roleplaySoulReadout.textContent = selectedProfileMeta.label || selectedProfile;
       const selectedScenario = catalog.selected_scenario || 'desk_mouthpiece';
       const scenarios = catalog.scenarios || [];
       if (scenarios.length) {
@@ -1248,6 +1262,7 @@ const simulatorHTML = `<!doctype html>
       options = options || {};
       try {
         const body = {
+          roleplay_profile: ui.roleplayProfile.value,
           scenario: ui.roleplayScenario.value,
           voice_clone_profile: ui.voiceCloneProfile.value
         };
@@ -1703,6 +1718,7 @@ const simulatorHTML = `<!doctype html>
     ui.resetWakeWord.addEventListener('click', resetWakeWordConfig);
     ui.exportWakeWord.addEventListener('click', exportWakeWordConfig);
     ui.voiceMode.addEventListener('change', saveVoiceMode);
+    ui.roleplayProfile.addEventListener('change', saveRoleplayProfile);
     ui.roleplayScenario.addEventListener('change', saveRoleplayProfile);
     ui.saveRoleplayMemory.addEventListener('click', () => saveRoleplayProfile({ includeMemory: true }));
     ui.clearRoleplayMemory.addEventListener('click', () => saveRoleplayProfile({ clearMemory: true }));

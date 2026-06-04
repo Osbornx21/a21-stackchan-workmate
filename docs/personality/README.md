@@ -9,11 +9,13 @@ reviewable parts instead of one giant prompt.
 Build a live instruction set with:
 
 ```text
-core_identity + tone_rules + one mode + optional one scenario + optional bounded memory hints + failure overlay
+core_identity + tone_rules + optional one role_soul + one mode + optional one scenario + optional bounded memory hints + failure overlay
 ```
 
 Rules:
 
+- Load at most one `role_souls/*.md` file for the selected A21
+  `roleplay_profile`.
 - Load exactly one `mode_prompts/*.md` file for the current A21 mode.
 - Load at most one `scenario_playbooks/*.md` file when a scenario is active.
 - Add `mode_prompts/failure.md` only as an overlay when execution fails or confidence is too low.
@@ -36,5 +38,6 @@ paths, or credential values.
 
 - `core_identity.md`: stable A21 identity, boundaries, and default stance.
 - `tone_rules.md`: style rules, banned customer-service phrasing, failure tone, and privacy limits.
+- `role_souls/`: selectable A21-owned role soul profiles for roleplay immersion.
 - `mode_prompts/`: mode-specific deltas only.
 - `scenario_playbooks/`: situational behavior patterns and short sample lines.

@@ -557,24 +557,30 @@ roleplay runtime under `voice_mode=roleplay`. `GET /v1/roleplay-profile`
 returns `a21.gateway.roleplay_profile.v1`, the selected roleplay profile,
 scenario, voice-clone profile, redacted memory readiness, a redacted runtime
 summary, and safe option catalogs. `POST` or `PUT /v1/roleplay-profile` can
-change the selected roleplay scenario, voice-clone profile, and bounded
-session memory hints through `memory_hints`; `clear_memory=true` clears only
-Gateway runtime roleplay hints, not environment-provided operator hints or any
-professional/V21 workspace. Selecting a voice-clone profile through this
+change the selected role soul/profile, roleplay scenario, voice-clone profile,
+and bounded session memory hints through `memory_hints`; `clear_memory=true`
+clears only Gateway runtime roleplay hints, not environment-provided operator
+hints or any professional/V21 workspace. The profile catalog is an A21-owned
+role-soul catalog and currently includes `a21_roleplay_default`,
+`a21_roleplay_wry_peer`, and `a21_roleplay_calm_anchor`. The response may
+return safe labels, voice/expression hints, and prompt-part identifiers such as
+`role_soul:a21_roleplay_wry_peer`, but it must not return the role-soul asset
+body or composed prompt text. Selecting a voice-clone profile through this
 endpoint also updates the existing
 `voice_chain_profile` selection so roleplay voice clone reaches the selected
-TTS boundary without adding a second provider selector. The current profile
-catalog intentionally exposes only `a21_roleplay_default`; scenario options are
+TTS boundary without adding a second provider selector. Scenario options are
 playbook labels under the roleplay product mode, not new product modes.
 
 The roleplay runtime composes personality prompt input only in memory and only
-from safe memory hints exposed by the personality package. Runtime memory hints
-are filtered by the same bounded policy as `A21_MEMORY_*`: unsafe URLs, local
-paths, and credential-looking strings are rejected before storage, long hints
-are truncated, and only sanitized prompt-input text is kept in Gateway memory.
-For roleplay voice turns, Gateway passes the composed personality/scenario/
-memory prompt to the provider-neutral voice pipeline text-stream request while
-keeping the prompt out of `VoicePipelineReport`, traces, and API responses.
+from the selected role soul, mode prompt, scenario, and safe memory hints
+exposed by the personality package. Runtime memory hints are filtered by the
+same bounded policy as `A21_MEMORY_*`: unsafe URLs, local paths, and
+credential-looking strings are rejected before storage, long hints are
+truncated, and only sanitized prompt-input text is kept in Gateway memory. For
+roleplay voice turns, Gateway passes the composed role-soul/personality/
+scenario/memory prompt to the provider-neutral voice pipeline text-stream
+request while keeping the prompt out of `VoicePipelineReport`, traces, and API
+responses.
 Reports may expose `prompt_input_ready` and redaction policy
 `prompt_input_not_recorded`, but must not expose the prompt body. Responses,
 simulator readouts, and traces must report readiness booleans, counts, and

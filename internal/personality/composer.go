@@ -32,9 +32,18 @@ const (
 	ScenarioLateNightRadio   Scenario = "late_night_radio"
 )
 
+type RoleSoul string
+
+const (
+	RoleSoulA21Default RoleSoul = "a21_roleplay_default"
+	RoleSoulWryPeer    RoleSoul = "a21_roleplay_wry_peer"
+	RoleSoulCalmAnchor RoleSoul = "a21_roleplay_calm_anchor"
+)
+
 type Options struct {
 	AssetRoot        string
 	Mode             Mode
+	RoleSoul         RoleSoul
 	Scenario         Scenario
 	FailureOverlay   bool
 	UserText         string
@@ -51,6 +60,12 @@ var modeFiles = map[Mode]string{
 	ModeFocus:        "focus.md",
 	ModePublic:       "public.md",
 	ModePrivate:      "private.md",
+}
+
+var roleSoulFiles = map[RoleSoul]string{
+	RoleSoulA21Default: "default.md",
+	RoleSoulWryPeer:    "wry_peer.md",
+	RoleSoulCalmAnchor: "calm_anchor.md",
 }
 
 var scenarioFiles = map[Scenario]string{
@@ -82,7 +97,6 @@ func Compose(options Options) (string, error) {
 	for _, rel := range []string{
 		"core_identity.md",
 		"tone_rules.md",
-		filepath.Join("mode_prompts", modeFile),
 	} {
 		part, err := readPersonalityAsset(root, rel)
 		if err != nil {
@@ -90,6 +104,24 @@ func Compose(options Options) (string, error) {
 		}
 		parts = append(parts, part)
 	}
+
+	if strings.TrimSpace(string(options.RoleSoul)) != "" {
+		soulFile, ok := roleSoulFiles[options.RoleSoul]
+		if !ok {
+			return "", fmt.Errorf("unknown A21 role soul %q", options.RoleSoul)
+		}
+		part, err := readPersonalityAsset(root, filepath.Join("role_souls", soulFile))
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, part)
+	}
+
+	part, err := readPersonalityAsset(root, filepath.Join("mode_prompts", modeFile))
+	if err != nil {
+		return "", err
+	}
+	parts = append(parts, part)
 
 	if strings.TrimSpace(string(options.Scenario)) != "" {
 		scenarioFile, ok := scenarioFiles[options.Scenario]
