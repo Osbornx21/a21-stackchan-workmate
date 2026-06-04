@@ -490,6 +490,13 @@ Execution update:
   wires `--collect-missing` to run `a21 roleplay-voice-probe --require-ready`.
   Provider/V21/host-voice evidence alone can no longer produce a server-side
   candidate without roleplay voice runtime.
+- `T-SERVER-SIDE-PROFESSIONAL-RITUAL-EXECUTION-GATE-001` makes external
+  Gateway professional ritual evidence a separate server-side candidate gate.
+  Adapter smoke still proves the V21 boundary, but
+  `professional_ritual_ready` now requires an accepted
+  `a21.xiaozhi_professional_bench.v1` report with checking feedback, result
+  ordering, stale-result suppression, abort stop, V21 execution, and redaction
+  checks.
 
 ## Not In Scope For This First Cut
 

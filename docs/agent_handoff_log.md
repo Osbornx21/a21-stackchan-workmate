@@ -12791,6 +12791,81 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 14:04 CST - Professional Ritual Gate Landed
+
+Round goal:
+
+- Stop server-side readiness from treating V21 adapter smoke as sufficient
+  professional-mode launch evidence.
+
+Actual completed work:
+
+- Added `professional_ritual_ready` and
+  `professional_ritual_source_report` to product/server-side readiness.
+- Server-side candidate readiness now requires accepted external Gateway
+  `a21.xiaozhi_professional_bench.v1` evidence. Adapter smoke still closes the
+  V21 adapter evidence gate, but cannot close the professional ritual gate by
+  itself.
+- `product-readiness --use-latest-reports` now prefers accepted
+  `a21-xiaozhi-professional-bench-*.json` reports over newer adapter smoke so
+  stronger ritual evidence is not overwritten.
+- `server-side-readiness-bundle` now exposes `professional_ritual` and can
+  collect `professional_ritual_execution` through
+  `a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports`
+  only when `--execute-v21-smoke` is explicitly supplied.
+- Updated protocol/current-control/state/internal-test4 plan docs.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/server_side_readiness_bundle.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-server-side-professional-ritual-execution-gate.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This does not prove physical StackChan professional consult acceptance,
+  audible `PRO` cue playback, screen/avatar/motion/RGB/servo behavior, ECS
+  runtime readiness, or live provider/V21 production latency.
+
+Known risks/blockers:
+
+- Fresh runtime reports still need to be collected against the intended
+  Gateway/provider/V21 environment. Physical PRD acceptance remains separate.
+
+Recommended next action:
+
+- Run `server-side-readiness-bundle --collect-missing --execute-provider-smoke
+  --execute-v21-smoke --require-candidate` against the intended runtime once
+  provider/V21 access is intentionally enabled, then move to the foreground
+  StackChan hardware window for wake/roleplay/professional acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/app -run 'TestProductReadiness(ReportsServerSideCandidateWhenEvidenceSlicesPass|ReportsServerSideBlockedWhenWakeWordBlocksRealSlices|CountsExecutedProfessionalReportWithoutLiveV21Health|ExposesV21ProfessionalExecutionForRealAdapterReport)|TestRun(ProductReadinessCommandUsesLatestReportsWithoutPathLeak|ProductReadinessLatestV21SelectionPrefersProfessionalBenchOverNewerAdapterSmoke|ServerSideReadinessBundleUsesLatestReportsWithoutPathLeak|ServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthorization|ServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence)' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent|TestRunServerSideReadinessBundleCollectsMissingRoleplayVoiceRuntime' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Failure location/reason:
+
+- First full verify failed because older launch/roleplay-collection tests had
+  not supplied professional ritual evidence. Tests were updated to preserve
+  the new gate rather than weakening it.
+
+Forbidden actions avoided:
+
+- No firmware build, flash, serial, NVS, provider key persistence in firmware,
+  ECS/root-secret change, report deletion, prune/gc, destructive git, or
+  physical hardware action occurred.
+
 ## 2026-06-04 13:39 CST - Roleplay Voice Probe Report Generator
 
 Round goal:

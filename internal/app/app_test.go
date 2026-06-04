@@ -166,6 +166,7 @@ func TestProductReadinessCanReachRealLaunchReadyWhenInputsArePresent(t *testing.
 		GatewayURL:              server.URL,
 		DeviceID:                "stackchan-001",
 		ProviderSmokeReport:     writeProductReadinessProviderSmokeReportFixture(t),
+		V21ProfessionalReport:   writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
 		V21AdapterSmokeReport:   writeProductReadinessV21AdapterSmokeReportFixture(t),
 		PhysicalStackChanReport: writeProductReadinessPhysicalStackChanReportFixture(t, map[string]any{"promotion_gate": "accepted", "acceptance_status": "prd_accepted", "prd_accepted": true}),
 	}, []string{
@@ -813,6 +814,7 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 		GatewayURL:            server.URL,
 		DeviceID:              "stackchan-001",
 		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21ProfessionalReport: writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
 		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
 		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
 		RoleplayVoiceReport:   writeProductReadinessRoleplayVoiceReportFixture(t, "ready"),
@@ -835,6 +837,7 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 		!report.ServerSide.GatewayReady ||
 		!report.ServerSide.ProviderEvidenceReady ||
 		!report.ServerSide.V21ProfessionalEvidenceReady ||
+		!report.ServerSide.ProfessionalRitualReady ||
 		!report.ServerSide.HostVoiceLoopbackReady ||
 		!report.ServerSide.RoleplayVoiceRuntimeReady ||
 		!report.ServerSide.WakeWordReady ||
@@ -842,7 +845,8 @@ func TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass(t *tes
 		t.Fatalf("server-side readiness = %+v, want full no-hardware candidate and physical gate preserved", report.ServerSide)
 	}
 	if report.ServerSide.ProviderSmokeSourceReport != "a21-provider-smoke-real.json" ||
-		report.ServerSide.V21ProfessionalSourceReport != "a21-v21-adapter-smoke-real.json" ||
+		report.ServerSide.V21ProfessionalSourceReport != "a21-xiaozhi-professional-gateway.json" ||
+		report.ServerSide.ProfessionalRitualSourceReport != "a21-xiaozhi-professional-gateway.json" ||
 		report.ServerSide.HostVoiceSourceReport != "a21-xiaozhi-host-local-report.json" ||
 		report.ServerSide.RoleplayVoiceSourceReport != "a21-roleplay-voice-probe-ready.json" {
 		t.Fatalf("server-side source reports = %+v, want basename-only sources", report.ServerSide)
@@ -878,6 +882,7 @@ func TestProductReadinessBlocksServerSideCandidateWhenStepFunNotSelected(t *test
 		GatewayURL:            server.URL,
 		DeviceID:              "stackchan-001",
 		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21ProfessionalReport: writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
 		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
 		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
 		RoleplayVoiceReport:   writeProductReadinessRoleplayVoiceReportFixture(t, "ready"),
@@ -1512,6 +1517,7 @@ func TestProductReadinessReportsServerSideBlockedWhenWakeWordBlocksRealSlices(t 
 		GatewayURL:            server.URL,
 		DeviceID:              "stackchan-001",
 		ProviderSmokeReport:   writeProductReadinessProviderSmokeReportFixture(t),
+		V21ProfessionalReport: writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t),
 		V21AdapterSmokeReport: writeProductReadinessV21AdapterSmokeReportFixture(t),
 		XiaozhiReport:         writeProductReadinessXiaozhiHostReportFixture(t),
 		RoleplayVoiceReport:   writeProductReadinessRoleplayVoiceReportFixture(t, "ready"),
@@ -1529,6 +1535,7 @@ func TestProductReadinessReportsServerSideBlockedWhenWakeWordBlocksRealSlices(t 
 	if !report.Provider.RealProviderReady ||
 		!report.ServerSide.ProviderEvidenceReady ||
 		!report.ServerSide.V21ProfessionalEvidenceReady ||
+		!report.ServerSide.ProfessionalRitualReady ||
 		!report.ServerSide.HostVoiceLoopbackReady ||
 		!report.ServerSide.RoleplayVoiceRuntimeReady ||
 		report.ServerSide.WakeWordReady {
@@ -2429,6 +2436,12 @@ func TestProductReadinessExposesV21ProfessionalExecutionForRealAdapterReport(t *
 		execution.PRDAccepted {
 		t.Fatalf("v21 professional execution = %+v, want explicit redacted executed adapter evidence", execution)
 	}
+	if !report.ServerSide.V21ProfessionalEvidenceReady ||
+		report.ServerSide.ProfessionalRitualReady ||
+		containsExactProductString(report.ServerSide.MissingEvidence, "v21_professional_smoke") ||
+		!containsExactProductString(report.ServerSide.MissingEvidence, "professional_ritual_execution") {
+		t.Fatalf("server-side readiness = %+v, want adapter smoke to close V21 evidence but not professional ritual", report.ServerSide)
+	}
 	var encoded bytes.Buffer
 	if err := writeJSONProductReadiness(&encoded, report); err != nil {
 		t.Fatal(err)
@@ -2480,7 +2493,9 @@ func TestProductReadinessCountsExecutedProfessionalReportWithoutLiveV21Health(t 
 		t.Fatalf("v21 health/execution = %v/%+v, want no live health but accepted external execution", report.V21.Healthy, report.V21.ProfessionalExecution)
 	}
 	if !report.ServerSide.V21ProfessionalEvidenceReady ||
+		!report.ServerSide.ProfessionalRitualReady ||
 		containsExactProductString(report.ServerSide.MissingEvidence, "v21_professional_smoke") ||
+		containsExactProductString(report.ServerSide.MissingEvidence, "professional_ritual_execution") ||
 		containsExactProductString(report.CanonicalDecision.MissingRealEvidence, "v21_professional_execution") {
 		t.Fatalf("server/canonical = %+v/%+v, want executed professional report to close V21 evidence gap", report.ServerSide, report.CanonicalDecision)
 	}
@@ -2740,7 +2755,7 @@ func TestRunProductReadinessUsesLatestRealtimeFixtureWithoutPathLeak(t *testing.
 	}
 }
 
-func TestRunProductReadinessLatestV21SelectionPrefersNewestUsableAdapterSmoke(t *testing.T) {
+func TestRunProductReadinessLatestV21SelectionPrefersProfessionalBenchOverNewerAdapterSmoke(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	dir := t.TempDir()
 	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
@@ -2778,11 +2793,13 @@ func TestRunProductReadinessLatestV21SelectionPrefersNewestUsableAdapterSmoke(t 
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("decode product readiness report: %v\n%s", err, stdout.String())
 	}
-	if report.V21.Professional.SourceReport != "a21-v21-adapter-smoke-20260602-100300.json" ||
-		report.V21.Professional.ProfessionalAcceptanceStatus != "adapter_smoke_passed" ||
-		report.V21.ProfessionalExecution.SourceKind != "v21_adapter_smoke_report" ||
+	if report.V21.Professional.SourceReport != "a21-xiaozhi-professional-bench-20260602-100200.json" ||
+		report.V21.Professional.ProfessionalAcceptanceStatus != "external_gateway_ready" ||
+		report.V21.ProfessionalExecution.SourceKind != "xiaozhi_professional_bench_report" ||
+		report.ServerSide.ProfessionalRitualSourceReport != "a21-xiaozhi-professional-bench-20260602-100200.json" ||
+		!report.ServerSide.ProfessionalRitualReady ||
 		!report.V21.Professional.AdapterExecuted {
-		t.Fatalf("v21 professional selection = %+v execution = %+v, want newest usable adapter smoke", report.V21.Professional, report.V21.ProfessionalExecution)
+		t.Fatalf("v21 professional selection = %+v execution = %+v server=%+v, want professional bench to preserve ritual evidence", report.V21.Professional, report.V21.ProfessionalExecution, report.ServerSide)
 	}
 	for _, forbidden := range []string{server.URL, dir, professionalFixture, professionalPath, adapterPath, "http://", "https://", "/Users/", "secret-value"} {
 		if strings.Contains(stdout.String(), forbidden) || strings.Contains(stderr.String(), forbidden) {
@@ -2800,6 +2817,8 @@ func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing
 	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	professionalFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	copyProductReadinessReportFixture(t, professionalFixture, filepath.Join(dir, "a21-xiaozhi-professional-bench-20260602-100250.json"))
 	writeProductReadinessReportFixtureFile(t, dir, "a21-roleplay-voice-probe-20260602-100300.json", productReadinessRoleplayVoiceReportFixtureJSON("ready"))
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
 	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
@@ -2834,7 +2853,10 @@ func TestRunServerSideReadinessBundleUsesLatestReportsWithoutPathLeak(t *testing
 		`"requires_physical_acceptance": true`,
 		`"product_readiness_status": "server_side_candidate_ready"`,
 		`"provider_smoke_source_report": "a21-provider-smoke-20260602-100000.json"`,
-		`"v21_professional_source_report": "a21-v21-adapter-smoke-20260602-100200.json"`,
+		`"v21_professional_source_report": "a21-xiaozhi-professional-bench-20260602-100250.json"`,
+		`"professional_ritual_ready": true`,
+		`"professional_ritual_source_report": "a21-xiaozhi-professional-bench-20260602-100250.json"`,
+		`"professional_ritual"`,
 		`"host_voice_source_report": "a21-xiaozhi-voice-bench-20260602-100100.json"`,
 		`"roleplay_voice_source_report": "a21-roleplay-voice-probe-20260602-100300.json"`,
 		`"payloads_stored": false`,
@@ -3044,6 +3066,8 @@ func TestRunServerSideReadinessBundleCollectsMissingRoleplayVoiceRuntime(t *test
 	writeProductReadinessReportFixtureFile(t, dir, "a21-provider-smoke-20260602-100000.json", productReadinessProviderSmokeReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
 	writeProductReadinessReportFixtureFile(t, dir, "a21-v21-adapter-smoke-20260602-100200.json", productReadinessV21AdapterSmokeReportFixtureJSON())
+	professionalRitualFixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	copyProductReadinessReportFixture(t, professionalRitualFixture, filepath.Join(dir, "a21-xiaozhi-professional-bench-20260602-100250.json"))
 	t.Setenv("A21_PROVIDER_PRIMARY", "deepseek")
 	t.Setenv("A21_LAB_DEEPSEEK_API_KEY", "secret-value")
 	t.Setenv("A21_V21_ADAPTER_URL", server.URL)
@@ -3079,6 +3103,8 @@ func TestRunServerSideReadinessBundleCollectsMissingRoleplayVoiceRuntime(t *test
 		`"command": "go run ./cmd/a21 roleplay-voice-probe --require-ready --output-dir reports"`,
 		`"source_report": "a21-roleplay-voice-probe-`,
 		`"absorbed_by_readiness": true`,
+		`"professional_ritual_ready": true`,
+		`"professional_ritual_source_report": "a21-xiaozhi-professional-bench-20260602-100250.json"`,
 		`"roleplay_voice_runtime_ready": true`,
 		`"roleplay_voice_source_report": "a21-roleplay-voice-probe-`,
 		`"launch_ready": false`,
@@ -3132,8 +3158,11 @@ func TestRunServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthoriza
 		`"reason": "requires --execute-provider-smoke"`,
 		`"name": "v21_professional_smoke"`,
 		`"reason": "requires --execute-v21-smoke"`,
+		`"name": "professional_ritual_execution"`,
+		`"command": "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url \u003cgateway\u003e --output-dir reports"`,
 		`"provider_smoke"`,
 		`"v21_professional_smoke"`,
+		`"professional_ritual_execution"`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("stdout missing %q: %s", want, rendered)
@@ -3152,6 +3181,13 @@ func TestRunServerSideReadinessBundleCollectMissingSkipsExternalWithoutAuthoriza
 	}
 	if len(v21Reports) != 0 {
 		t.Fatalf("v21 reports = %v, want no implicit v21 execution", v21Reports)
+	}
+	professionalReports, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-professional-bench-*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(professionalReports) != 0 {
+		t.Fatalf("professional reports = %v, want no implicit professional execution", professionalReports)
 	}
 	for _, forbidden := range []string{server.URL, dir, "http://", "https://", "/Users/", "secret-value", `"candidate_ready": true`} {
 		if strings.Contains(rendered, forbidden) || strings.Contains(stderr.String(), forbidden) {
@@ -3228,7 +3264,23 @@ func TestRunServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence(t 
 		t.Fatal(err)
 	}
 	writeProductReadinessReportFixtureFile(t, dir, "a21-xiaozhi-voice-bench-20260602-100100.json", productReadinessXiaozhiHostReportFixtureJSON())
-	writeProductReadinessReportFixtureFile(t, dir, "a21-roleplay-voice-probe-20260602-100300.json", productReadinessRoleplayVoiceReportFixtureJSON("ready"))
+	roleplayReadyPath := writeProductReadinessReportFixtureFile(t, dir, "a21-roleplay-voice-probe-20260602-100300.json", productReadinessRoleplayVoiceReportFixtureJSON("ready"))
+	roleplayReadyTime := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(roleplayReadyPath, roleplayReadyTime, roleplayReadyTime); err != nil {
+		t.Fatal(err)
+	}
+	professionalV21 := &xiaozhiProfessionalBenchV21Client{delay: 25 * time.Millisecond}
+	professionalAdapters := providers.VoicePipelineAdapters{
+		ASR:        xiaozhiProfessionalBenchASRAdapter{text: xiaozhiProfessionalBenchASRSentinel},
+		TextStream: xiaozhiProfessionalBenchTextStreamAdapter{},
+		TTS:        providers.NewMockTTSAdapter("a21-bundle-professional-tts"),
+	}
+	professionalGateway := gateway.NewServerWithOptions(gateway.ServerOptions{
+		V21Client:                    professionalV21,
+		XiaozhiVoicePipelineAdapters: &professionalAdapters,
+	})
+	professionalHTTP := httptest.NewServer(professionalGateway.Handler())
+	t.Cleanup(professionalHTTP.Close)
 	t.Setenv("A21_PROVIDER_PROFILES_PATH", profilePath)
 	t.Setenv("A21_PROVIDER_PRIMARY", "a21_bundle_vendor")
 	t.Setenv("A21_BUNDLE_VENDOR_API_KEY", "sk-a21-bundle-secret")
@@ -3247,37 +3299,37 @@ func TestRunServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence(t 
 
 	code := Run([]string{
 		"server-side-readiness-bundle",
-		"--gateway-url", newProductReadinessTestServerWithRoleplay(t,
-			`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`,
-			productReadinessRoleplayProfileFixtureJSON("ready"),
-		).URL,
+		"--gateway-url", professionalHTTP.URL,
 		"--use-latest-reports",
 		"--collect-missing",
 		"--execute-provider-smoke",
 		"--execute-v21-smoke",
-		"--require-candidate",
 		"--output-dir", dir,
 	}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
-	if providerCalls != 3 || v21Calls != 1 {
-		t.Fatalf("provider/v21 calls = %d/%d, want 3/1", providerCalls, v21Calls)
+	if providerCalls != 3 || v21Calls != 1 || professionalV21.lastUtterance() != xiaozhiProfessionalBenchASRSentinel {
+		t.Fatalf("provider/v21/professional utterance = %d/%d/%q, want 3/1/sentinel", providerCalls, v21Calls, professionalV21.lastUtterance())
 	}
 	rendered := stdout.String()
 	for _, want := range []string{
-		`"status": "server_side_candidate_ready"`,
-		`"candidate_ready": true`,
+		`"status": "server_side_blocked"`,
+		`"candidate_ready": false`,
 		`"name": "provider_smoke"`,
 		`"name": "v21_professional_smoke"`,
+		`"name": "professional_ritual_execution"`,
 		`"execution_authorized": true`,
 		`"external_execution": true`,
 		`"absorbed_by_readiness": true`,
 		`"source_report": "a21-provider-smoke-`,
 		`"source_report": "a21-v21-adapter-smoke-`,
+		`"source_report": "a21-xiaozhi-professional-bench-`,
 		`"provider_smoke_source_report": "a21-provider-smoke-`,
-		`"v21_professional_source_report": "a21-v21-adapter-smoke-`,
+		`"v21_professional_source_report": "a21-xiaozhi-professional-bench-`,
+		`"professional_ritual_source_report": "a21-xiaozhi-professional-bench-`,
+		`"professional_ritual_ready": true`,
 		`"launch_ready": false`,
 		`"prd_accepted": false`,
 	} {
@@ -3293,9 +3345,14 @@ func TestRunServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence(t 
 	if err != nil || len(v21Reports) != 1 {
 		t.Fatalf("v21 reports = %d, %v: %v", len(v21Reports), err, v21Reports)
 	}
+	professionalReports, err := filepath.Glob(filepath.Join(dir, "a21-xiaozhi-professional-bench-*.json"))
+	if err != nil || len(professionalReports) != 1 {
+		t.Fatalf("professional reports = %d, %v: %v", len(professionalReports), err, professionalReports)
+	}
 	for _, forbidden := range []string{
 		provider.URL,
 		v21.URL,
+		professionalHTTP.URL,
 		dir,
 		profilePath,
 		"http://",

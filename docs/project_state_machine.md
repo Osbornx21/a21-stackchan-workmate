@@ -2616,3 +2616,13 @@ Priority candidate added from the 2026-06-04 internal test 4 workspace plan:
     - Next action: record and, if evidence supports it, align CoreS3/StackChan
       codec constants and init order such as ES7210 input gain, AFE/AEC/VAD,
       AW88298 output, and runtime MCP/NVS volume behavior.
+
+13. `T-SERVER-SIDE-PROFESSIONAL-RITUAL-EXECUTION-GATE-001`
+    - Current phase: completed code/test/doc transition on 2026-06-04.
+      Server-side readiness now requires `professional_ritual_ready` from an
+      accepted external Gateway `a21.xiaozhi_professional_bench.v1` report.
+      V21 adapter smoke remains adapter-boundary evidence but no longer
+      satisfies the professional ritual by itself.
+    - Next action: collect fresh provider/V21/professional/roleplay/wake
+      reports against the intended runtime, then move the remaining acceptance
+      work into the foreground physical StackChan window.

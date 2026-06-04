@@ -288,23 +288,25 @@ type productWakeWordReadiness struct {
 }
 
 type productServerSideReadiness struct {
-	Status                       string                     `json:"status"`
-	CandidateReady               bool                       `json:"candidate_ready"`
-	AcceptanceStatus             string                     `json:"acceptance_status"`
-	PRDAccepted                  bool                       `json:"prd_accepted"`
-	GatewayReady                 bool                       `json:"gateway_ready"`
-	ProviderEvidenceReady        bool                       `json:"provider_evidence_ready"`
-	V21ProfessionalEvidenceReady bool                       `json:"v21_professional_evidence_ready"`
-	HostVoiceLoopbackReady       bool                       `json:"host_voice_loopback_ready"`
-	RoleplayVoiceRuntimeReady    bool                       `json:"roleplay_voice_runtime_ready"`
-	WakeWordReady                bool                       `json:"wake_word_ready"`
-	RequiresPhysicalAcceptance   bool                       `json:"requires_physical_acceptance"`
-	VoiceChain                   productVoiceChainReadiness `json:"voice_chain"`
-	ProviderSmokeSourceReport    string                     `json:"provider_smoke_source_report,omitempty"`
-	V21ProfessionalSourceReport  string                     `json:"v21_professional_source_report,omitempty"`
-	HostVoiceSourceReport        string                     `json:"host_voice_source_report,omitempty"`
-	RoleplayVoiceSourceReport    string                     `json:"roleplay_voice_source_report,omitempty"`
-	MissingEvidence              []string                   `json:"missing_evidence,omitempty"`
+	Status                         string                     `json:"status"`
+	CandidateReady                 bool                       `json:"candidate_ready"`
+	AcceptanceStatus               string                     `json:"acceptance_status"`
+	PRDAccepted                    bool                       `json:"prd_accepted"`
+	GatewayReady                   bool                       `json:"gateway_ready"`
+	ProviderEvidenceReady          bool                       `json:"provider_evidence_ready"`
+	V21ProfessionalEvidenceReady   bool                       `json:"v21_professional_evidence_ready"`
+	ProfessionalRitualReady        bool                       `json:"professional_ritual_ready"`
+	HostVoiceLoopbackReady         bool                       `json:"host_voice_loopback_ready"`
+	RoleplayVoiceRuntimeReady      bool                       `json:"roleplay_voice_runtime_ready"`
+	WakeWordReady                  bool                       `json:"wake_word_ready"`
+	RequiresPhysicalAcceptance     bool                       `json:"requires_physical_acceptance"`
+	VoiceChain                     productVoiceChainReadiness `json:"voice_chain"`
+	ProviderSmokeSourceReport      string                     `json:"provider_smoke_source_report,omitempty"`
+	V21ProfessionalSourceReport    string                     `json:"v21_professional_source_report,omitempty"`
+	ProfessionalRitualSourceReport string                     `json:"professional_ritual_source_report,omitempty"`
+	HostVoiceSourceReport          string                     `json:"host_voice_source_report,omitempty"`
+	RoleplayVoiceSourceReport      string                     `json:"roleplay_voice_source_report,omitempty"`
+	MissingEvidence                []string                   `json:"missing_evidence,omitempty"`
 }
 
 type productCanonicalReadinessDecision struct {
@@ -711,31 +713,25 @@ func resolveLatestProductV21Reports(options *productReadinessOptions, v21 produc
 		return nil
 	}
 	reportDir := firstNonEmpty(strings.TrimSpace(options.OutputDir), "reports")
-	selected, kind, findings := latestAcceptedProductReadinessReportAcrossKinds(reportDir, []productLatestReadinessReportKind{
-		{
-			Kind:     "v21_professional",
-			Patterns: []string{"a21-xiaozhi-professional-bench-*.json", "a21-v21-professional-readiness-*.json"},
-			Accept: func(path string) bool {
-				evidence, _ := loadProductV21ProfessionalReportEvidence(path)
-				return evidence.Valid && evidence.AdapterExecuted
-			},
-		},
-		{
-			Kind:     "v21_adapter_smoke",
-			Patterns: []string{"a21-v21-adapter-smoke-*.json"},
-			Accept: func(path string) bool {
-				evidence, _ := loadProductV21AdapterSmokeReportEvidence(path, v21)
-				return evidence.Valid && evidence.AdapterExecuted
-			},
-		},
+	selected, findings := latestAcceptedProductReadinessReportPath(reportDir, "v21_professional", []string{
+		"a21-xiaozhi-professional-bench-*.json",
+		"a21-v21-professional-readiness-*.json",
+	}, func(path string) bool {
+		evidence, _ := loadProductV21ProfessionalReportEvidence(path)
+		return evidence.Valid && evidence.AdapterExecuted
 	})
-	switch kind {
-	case "v21_professional":
+	if selected != "" {
 		options.V21ProfessionalReport = selected
-	case "v21_adapter_smoke":
-		options.V21AdapterSmokeReport = selected
+		return findings
 	}
-	return findings
+	adapterSelected, adapterFindings := latestAcceptedProductReadinessReportPath(reportDir, "v21_adapter_smoke", []string{
+		"a21-v21-adapter-smoke-*.json",
+	}, func(path string) bool {
+		evidence, _ := loadProductV21AdapterSmokeReportEvidence(path, v21)
+		return evidence.Valid && evidence.AdapterExecuted
+	})
+	options.V21AdapterSmokeReport = adapterSelected
+	return append(findings, adapterFindings...)
 }
 
 func resolveLatestProductWakeWordFirmwarePlan(options *productReadinessOptions, wakeWord productWakeWordReadiness) []productReadinessFinding {
@@ -921,21 +917,23 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.Findings = append(report.Findings, attachProductWakeWordPhysicalAcceptance(&report.WakeWord, wakeWordPackage, wakeWordPhysicalAcceptance)...)
 	}
 	report.Findings = append(report.Findings, resolveLatestProductV21Reports(&options, report.V21)...)
-	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
-	report.Findings = append(report.Findings, professionalFindings...)
-	if professionalEvidence.Valid {
-		report.V21.Professional = professionalEvidence
-		if professionalEvidence.AdapterExecuted {
-			report.V21.QueryExecuted = true
-		}
-		report.V21.ProfessionalExecution = buildProductV21ProfessionalExecutionReadiness(professionalEvidence)
-	}
 	adapterSmokeEvidence, adapterSmokeFindings := loadProductV21AdapterSmokeReportEvidence(options.V21AdapterSmokeReport, report.V21)
 	report.Findings = append(report.Findings, adapterSmokeFindings...)
 	if adapterSmokeEvidence.Valid {
 		report.V21.QueryExecuted = true
 		report.V21.Professional = adapterSmokeEvidence
 		report.V21.ProfessionalExecution = buildProductV21ProfessionalExecutionReadiness(adapterSmokeEvidence)
+	}
+	professionalEvidence, professionalFindings := loadProductV21ProfessionalReportEvidence(options.V21ProfessionalReport)
+	report.Findings = append(report.Findings, professionalFindings...)
+	if professionalEvidence.Valid {
+		if professionalEvidence.AdapterExecuted {
+			report.V21.QueryExecuted = true
+			report.V21.Professional = professionalEvidence
+			report.V21.ProfessionalExecution = buildProductV21ProfessionalExecutionReadiness(professionalEvidence)
+		} else if !report.V21.Professional.Valid {
+			report.V21.Professional = professionalEvidence
+		}
 	}
 	xiaozhiEvidence, xiaozhiFindings := loadProductXiaozhiReportEvidence(options.XiaozhiReport)
 	report.Findings = append(report.Findings, xiaozhiFindings...)
@@ -949,6 +947,7 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.Provider.RealProviderReady &&
 		report.V21.Healthy &&
 		productV21ProfessionalReady(report.V21) &&
+		productProfessionalRitualReady(report.V21) &&
 		report.StackChan.PhysicalDeviceOnline &&
 		report.StackChan.PhysicalEvidence.PRDPhysicalAccepted &&
 		report.Voice.ContinuousVoiceReady &&
@@ -2867,6 +2866,19 @@ func productV21ProfessionalExecutionReady(execution productV21ProfessionalExecut
 		execution.RedactionOK
 }
 
+func productProfessionalRitualReady(v21 productV21Readiness) bool {
+	return productV21ProfessionalExecutionReady(v21.ProfessionalExecution) &&
+		v21.ProfessionalExecution.SourceKind == "xiaozhi_professional_bench_report" &&
+		v21.ProfessionalExecution.ProfessionalAcceptanceStatus == "external_gateway_ready"
+}
+
+func productProfessionalRitualSourceReport(v21 productV21Readiness) string {
+	if v21.ProfessionalExecution.SourceKind != "xiaozhi_professional_bench_report" {
+		return ""
+	}
+	return v21.ProfessionalExecution.SourceReport
+}
+
 func buildProductV21ProfessionalExecutionReadiness(professional productV21ProfessionalReadiness) productV21ProfessionalExecutionReadiness {
 	if !professional.Valid || !professional.AdapterExecuted {
 		return productV21ProfessionalExecutionReadiness{}
@@ -2940,20 +2952,22 @@ func productV21ProfessionalExecutionSourceKind(status string) string {
 
 func buildProductServerSideReadiness(report productReadinessReport) productServerSideReadiness {
 	readiness := productServerSideReadiness{
-		Status:                      "blocked",
-		AcceptanceStatus:            "server_side_blocked",
-		ProviderSmokeSourceReport:   report.Provider.SmokeSourceReport,
-		V21ProfessionalSourceReport: report.V21.Professional.SourceReport,
-		HostVoiceSourceReport:       report.Voice.VoicePipeline.SourceReport,
-		RoleplayVoiceSourceReport:   report.Roleplay.VoiceRuntimeSourceReport,
-		RequiresPhysicalAcceptance:  !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
-		VoiceChain:                  report.Voice.VoiceChain,
+		Status:                         "blocked",
+		AcceptanceStatus:               "server_side_blocked",
+		ProviderSmokeSourceReport:      report.Provider.SmokeSourceReport,
+		V21ProfessionalSourceReport:    report.V21.Professional.SourceReport,
+		ProfessionalRitualSourceReport: productProfessionalRitualSourceReport(report.V21),
+		HostVoiceSourceReport:          report.Voice.VoicePipeline.SourceReport,
+		RoleplayVoiceSourceReport:      report.Roleplay.VoiceRuntimeSourceReport,
+		RequiresPhysicalAcceptance:     !report.StackChan.PhysicalEvidence.PRDPhysicalAccepted,
+		VoiceChain:                     report.Voice.VoiceChain,
 	}
 	readiness.GatewayReady = report.Gateway.Healthy && report.Gateway.SimulatorReady
 	readiness.ProviderEvidenceReady = report.Provider.RealProviderReady &&
 		report.Provider.SmokeEvidenceValid &&
 		report.Provider.SmokeExecuted
 	readiness.V21ProfessionalEvidenceReady = productV21ProfessionalReady(report.V21)
+	readiness.ProfessionalRitualReady = productProfessionalRitualReady(report.V21)
 	readiness.HostVoiceLoopbackReady = report.Voice.VoicePipeline.HostProductChainReady
 	readiness.RoleplayVoiceRuntimeReady = report.Roleplay.VoiceRuntimeReady
 	readiness.WakeWordReady = report.WakeWord.ProductReady
@@ -2965,6 +2979,9 @@ func buildProductServerSideReadiness(report productReadinessReport) productServe
 	}
 	if !readiness.V21ProfessionalEvidenceReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "v21_professional_smoke")
+	}
+	if !readiness.ProfessionalRitualReady {
+		readiness.MissingEvidence = append(readiness.MissingEvidence, "professional_ritual_execution")
 	}
 	if !readiness.HostVoiceLoopbackReady {
 		readiness.MissingEvidence = append(readiness.MissingEvidence, "host_voice_loopback")
@@ -3674,6 +3691,9 @@ func productMissingRealEvidence(report productReadinessReport) []string {
 	}
 	if !productV21ProfessionalReady(report.V21) {
 		missing = append(missing, "v21_professional_execution")
+	}
+	if !productProfessionalRitualReady(report.V21) {
+		missing = append(missing, "professional_ritual_execution")
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		missing = append(missing, "physical_stackchan_online")
@@ -4979,8 +4999,11 @@ func buildProductNextActions(report productReadinessReport) []string {
 	}
 	if !report.V21.Healthy {
 		actions = append(actions, "start/configure the A21 V21 adapter boundary with A21_V21_ADAPTER_URL")
-	} else if !productV21ProfessionalReady(report.V21) {
+	}
+	if !productV21ProfessionalReady(report.V21) {
 		actions = append(actions, "run `go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports` and pass it to product-readiness with --v21-adapter-smoke-report")
+	} else if !productProfessionalRitualReady(report.V21) {
+		actions = append(actions, "run `go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports` and pass it to product-readiness with --v21-professional-report")
 	}
 	if !report.StackChan.PhysicalDeviceOnline {
 		actions = append(actions, "bring a physical StackChan online against the A21 Gateway")

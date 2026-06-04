@@ -1394,3 +1394,37 @@ Current conclusion:
 - This is not a real provider execution, voice-clone audio quality acceptance,
   real V21 execution, Gateway deployment, ECS runtime acceptance, firmware,
   serial, NVS, or physical StackChan roleplay acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Professional Ritual Gate
+
+Server-side readiness now separates V21 adapter evidence from the user-facing
+professional ritual/execution evidence.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-server-side-professional-ritual-execution-gate.md`.
+- `a21 product-readiness` now reports
+  `server_side.professional_ritual_ready` and
+  `server_side.professional_ritual_source_report`.
+- Adapter smoke still closes `v21_professional_evidence_ready`, but only a
+  safe `a21.xiaozhi_professional_bench.v1` report with
+  `acceptance_status=external_gateway_ready` closes
+  `professional_ritual_ready`.
+- `a21 product-readiness --use-latest-reports` prefers an accepted
+  `a21-xiaozhi-professional-bench-*.json` report over newer adapter smoke so a
+  fresh adapter smoke cannot overwrite stronger professional ritual evidence.
+- `a21 server-side-readiness-bundle` now exposes a `professional_ritual`
+  evidence block and can collect missing ritual evidence with
+  `a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports`
+  only when `--execute-v21-smoke` is explicitly supplied.
+
+Current conclusion:
+
+- Provider smoke, V21 adapter smoke, host voice, roleplay voice, wake-word, and
+  voice-chain evidence are no longer enough for a server-side candidate unless
+  the professional checking cue/result-order/stale-suppression/abort-stop path
+  is also proven.
+- This is still below physical StackChan PRD acceptance and does not flash
+  firmware, touch serial/NVS, persist provider keys in firmware, deploy ECS, or
+  prove audible/visible hardware professional consult behavior.

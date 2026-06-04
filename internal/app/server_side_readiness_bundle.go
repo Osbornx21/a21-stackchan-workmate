@@ -45,6 +45,7 @@ type serverSideReadinessBundleReport struct {
 	Gateway                    serverSideReadinessBundleEvidence  `json:"gateway"`
 	Provider                   serverSideReadinessBundleEvidence  `json:"provider"`
 	V21                        serverSideReadinessBundleEvidence  `json:"v21"`
+	ProfessionalRitual         serverSideReadinessBundleEvidence  `json:"professional_ritual"`
 	HostVoice                  serverSideReadinessBundleEvidence  `json:"host_voice"`
 	RoleplayVoice              serverSideReadinessBundleEvidence  `json:"roleplay_voice"`
 	WakeWord                   serverSideReadinessBundleEvidence  `json:"wake_word"`
@@ -255,6 +256,11 @@ func buildServerSideReadinessBundleReport(ctx context.Context, options productRe
 			Status:       productReport.V21.Professional.ProfessionalAcceptanceStatus,
 			SourceReport: productReport.V21.Professional.SourceReport,
 		},
+		ProfessionalRitual: serverSideReadinessBundleEvidence{
+			Ready:        productReport.ServerSide.ProfessionalRitualReady,
+			Status:       productReport.V21.ProfessionalExecution.ProfessionalAcceptanceStatus,
+			SourceReport: productReport.ServerSide.ProfessionalRitualSourceReport,
+		},
 		HostVoice: serverSideReadinessBundleEvidence{
 			Ready:        productReport.ServerSide.HostVoiceLoopbackReady,
 			Status:       productReport.Voice.VoicePipeline.AcceptanceStatus,
@@ -307,6 +313,8 @@ func collectServerSideReadinessStep(options serverSideReadinessBundleOptions, re
 		return collectServerSideProviderSmoke(options, report)
 	case "v21_professional_smoke":
 		return collectServerSideV21Smoke(options)
+	case "professional_ritual_execution":
+		return collectServerSideProfessionalRitual(options)
 	case "host_voice_loopback":
 		return collectServerSideHostVoice(options)
 	case "roleplay_voice_runtime":
@@ -361,6 +369,24 @@ func collectServerSideV21Smoke(options serverSideReadinessBundleOptions) serverS
 	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-v21-adapter-smoke-*.json"})
 }
 
+func collectServerSideProfessionalRitual(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
+	step := serverSideReadinessCollectionStep{
+		Name:                "professional_ritual_execution",
+		Status:              "skipped",
+		Reason:              "requires --execute-v21-smoke",
+		Command:             "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports",
+		ExecutionAuthorized: options.ExecuteV21Smoke,
+		ExternalExecution:   true,
+	}
+	if !options.ExecuteV21Smoke {
+		return step
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"xiaozhi-professional-bench", "--gateway-url", options.GatewayURL, "--device-id", options.DeviceID, "--output-dir", options.OutputDir}, &stdout, &stderr)
+	return serverSideExecutedCollectionStep(step, code, options.OutputDir, []string{"a21-xiaozhi-professional-bench-*.json"})
+}
+
 func collectServerSideHostVoice(options serverSideReadinessBundleOptions) serverSideReadinessCollectionStep {
 	repeat := options.CollectRepeat
 	if repeat <= 0 {
@@ -401,8 +427,13 @@ func markServerSideCollectionAbsorbed(collection serverSideReadinessCollection, 
 				report.ServerSide.ProviderEvidenceReady
 		case "v21_professional_smoke":
 			step.AbsorbedByReadiness = step.SourceReport != "" &&
-				step.SourceReport == report.V21.Professional.SourceReport &&
+				(step.SourceReport == report.V21.Professional.SourceReport ||
+					strings.HasPrefix(step.SourceReport, "a21-v21-adapter-smoke-")) &&
 				report.ServerSide.V21ProfessionalEvidenceReady
+		case "professional_ritual_execution":
+			step.AbsorbedByReadiness = step.SourceReport != "" &&
+				step.SourceReport == report.ServerSide.ProfessionalRitualSourceReport &&
+				report.ServerSide.ProfessionalRitualReady
 		case "host_voice_loopback":
 			step.AbsorbedByReadiness = step.SourceReport != "" &&
 				step.SourceReport == report.Voice.VoicePipeline.SourceReport &&
@@ -443,6 +474,8 @@ func buildServerSideReadinessCollectionCommands(report productReadinessReport) [
 			}
 		case "v21_professional_smoke":
 			commands = append(commands, "go run ./cmd/a21 v21-adapter-smoke --execute --output-dir reports")
+		case "professional_ritual_execution":
+			commands = append(commands, "go run ./cmd/a21 xiaozhi-professional-bench --gateway-url <gateway> --output-dir reports")
 		case "host_voice_loopback":
 			commands = append(commands, "go run ./cmd/a21 xiaozhi-voice-bench --repeat 3 --require-product-chain --output-dir reports")
 		case "roleplay_voice_runtime":

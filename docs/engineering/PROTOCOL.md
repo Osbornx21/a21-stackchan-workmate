@@ -552,6 +552,17 @@ cue text is the same checking acknowledgement used before V21 query execution:
 utterances, workspace text, evidence bodies, provider output, URLs, paths,
 credentials, or raw audio.
 
+Server-side launch readiness treats this ritual as a distinct evidence gate:
+`professional_ritual_ready` is true only when `a21 product-readiness` ingests a
+safe `a21.xiaozhi_professional_bench.v1` report from an external Gateway run
+with `acceptance_status=external_gateway_ready`. V21 adapter smoke remains
+valid adapter-boundary evidence, but it cannot by itself satisfy the ritual
+gate. `server-side-readiness-bundle --collect-missing --execute-v21-smoke` may
+collect the ritual by running `a21 xiaozhi-professional-bench --gateway-url
+<gateway> --output-dir reports`; without the explicit execution flag, the
+bundle must list `professional_ritual_execution` as skipped and must not call
+V21 or the professional Gateway route.
+
 Explicit spoken professional triggers are allowed only as a user-initiated mode
 switch from default/roleplay/workmate/companion contexts into the existing
 professional path. Recognized phrases include "专业模式", "认真查一下",
