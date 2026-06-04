@@ -699,6 +699,20 @@ raw bytes, base64 payloads, original private filenames, local storage paths,
 import URLs, credentials, provider output, V21 evidence, or document-derived
 text.
 
+`GET /workspace` is the host-local A21 workspace console for internal test 4.
+It is a product-oriented web surface over the existing safe Gateway APIs, not a
+new service or port. The page lets a user select professional `query_scope`,
+upload a local document through `/v1/workspace-documents`, request the
+no-execute indexing ledger through `/v1/workspace-index-jobs`, refresh
+`/v1/workspace-sources`, refresh `/v1/professional-read-records`, and view the
+roleplay/professional boundary from `/v1/roleplay-profile` and
+`/v1/voice-modes`. The console must keep state labels honest:
+`storage_status=stored_local`, `index_status=indexing_requested_no_execute`
+when requested, `searchable=false`, `v21_execution_allowed=false`, and
+`physical_accepted=false`. It must not display document text, raw bytes, local
+paths, credentials, prompt text, transcripts, provider output, evidence bodies,
+voice samples, audio, or document-derived text.
+
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns
 `a21.gateway.workspace_sources.v1` and can filter by `source_id`, `user_id`,

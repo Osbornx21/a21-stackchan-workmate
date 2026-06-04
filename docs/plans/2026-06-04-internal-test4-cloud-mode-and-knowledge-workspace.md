@@ -155,6 +155,12 @@ StackChan hardware.
   semantic surfaces, and redaction flags. It keeps
   `delivery_policy=no_send_plan_only` and `physical_accepted=false`; it is not
   hardware delivery or roleplay physical acceptance.
+- Gateway now exposes `GET /workspace` as the first product-oriented
+  workspace console over existing safe APIs. It lets a user select query
+  scope, upload a local document, request no-execute indexing, refresh source
+  readiness, refresh professional read records, and see the
+  roleplay/professional boundary without adding a new service, port,
+  dependency, real indexing, provider/V21 execution, or hardware action.
 
 ## Product Form
 

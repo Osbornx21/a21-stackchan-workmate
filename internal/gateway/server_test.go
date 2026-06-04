@@ -464,6 +464,69 @@ func TestSimulatorPageServed(t *testing.T) {
 	}
 }
 
+func TestWorkspaceConsolePageServed(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodGet, "/workspace", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("content-type = %q, want text/html", rec.Header().Get("Content-Type"))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"A21 Workspace Console",
+		`data-testid="workspace-console-root"`,
+		"/v1/professional-workspace",
+		"/v1/workspace-documents",
+		"/v1/workspace-index-jobs",
+		"/v1/workspace-sources",
+		"/v1/professional-read-records",
+		"/v1/roleplay-profile",
+		"/v1/voice-modes",
+		`id="queryScope"`,
+		`id="documentLabel"`,
+		`id="documentFile"`,
+		`id="uploadDocument"`,
+		`id="requestIndex"`,
+		`id="refreshSources"`,
+		`id="refreshReads"`,
+		`id="sourceList"`,
+		`id="readList"`,
+		`id="roleplayExpression"`,
+		"stored_local pending",
+		"not_started_no_execute",
+		"indexing_requested_no_execute",
+		"searchable=false",
+		"physical_accepted=false",
+		"v21_execution_allowed=false",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("workspace console missing %q", want)
+		}
+	}
+	lowerBody := strings.ToLower(body)
+	for _, forbidden := range []string{
+		"provider output",
+		"voice sample",
+		"local path",
+		"credential",
+		"document text",
+		"transcript",
+		"audio payload",
+		"http://",
+		"https://",
+	} {
+		if strings.Contains(lowerBody, forbidden) {
+			t.Fatalf("workspace console leaked forbidden term %q", forbidden)
+		}
+	}
+}
+
 func TestVoiceChainProfilesCatalogDefaultsToCascadeStepFunAndShowsRealtimeProviders(t *testing.T) {
 	server := NewServer()
 	req := httptest.NewRequest(http.MethodGet, "/v1/voice-chain-profiles", nil)

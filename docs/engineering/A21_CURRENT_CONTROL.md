@@ -1237,3 +1237,34 @@ Current conclusion:
   `delivery_policy=no_send_plan_only` and `physical_accepted=false`. It does
   not execute providers, V21, voice-clone CLI, Gateway runtime delivery,
   `/stackChan/ws`, firmware, serial, NVS, ECS, or physical hardware action.
+
+## Latest Control-Tower Result - 2026-06-04 Workspace Console Product Surface
+
+Internal test 4 workspace progress is now visible as a user-facing web console,
+not only as simulator/debug controls.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-workspace-console-product-surface.md`.
+- Gateway serves `GET /workspace` with a compact app shell for workspace setup,
+  upload/index, readiness, and mode-boundary state.
+- The console calls existing safe APIs only:
+  `/v1/professional-workspace`, `/v1/workspace-documents`,
+  `/v1/workspace-index-jobs`, `/v1/workspace-sources`,
+  `/v1/professional-read-records`, `/v1/roleplay-profile`, and
+  `/v1/voice-modes`.
+- Playwright rendered the page at desktop `1270x900` and mobile `390x900`
+  with no overflow findings.
+- A dummy local upload through the page produced `stored_local`, and the page's
+  index request produced `indexing_requested_no_execute`, source count `1`,
+  and `searchable=false`.
+
+Current conclusion:
+
+- This is visible product movement for the cloud/web/app workspace shape:
+  users can now operate the safe upload/index/readiness contract from a web
+  surface.
+- This is not real parsing, embedding, indexing, cloud storage, auth/device
+  binding, provider execution, V21 execution, Gateway deployment, ECS,
+  firmware, serial, NVS, or physical StackChan professional consult acceptance.

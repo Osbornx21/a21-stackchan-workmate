@@ -12311,3 +12311,80 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None.
+
+## 2026-06-04 11:51 CST - Workspace Console Product Surface
+
+Transition:
+
+- `T-INTERNAL-TEST4-WORKSPACE-CONSOLE-PRODUCT-SURFACE-001`
+
+What changed:
+
+- Added `GET /workspace` as a product-oriented web console over the existing
+  safe A21 workspace APIs.
+- The console exposes query-scope selection, local document upload,
+  no-execute index request, source readiness refresh, professional read-record
+  refresh, and roleplay/professional boundary readouts.
+- The page keeps status labels honest: `stored_local`,
+  `indexing_requested_no_execute`, `searchable=false`,
+  `v21_execution_allowed=false`, and `physical_accepted=false`.
+- The implementation uses static Go-served HTML/CSS/JS and adds no new
+  package, service, port, auth provider, database, cloud storage, or runtime
+  process.
+
+Files changed:
+
+- `internal/gateway/server.go`
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-workspace-console-product-surface.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestSimulatorPageServed|TestWorkspaceDocumentUpload|TestWorkspaceIndex|TestWorkspaceSource|TestProfessionalWorkspace' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- Local Gateway was started on `127.0.0.1:21080` only for page verification.
+- `curl http://127.0.0.1:21080/healthz`: returned ok.
+- `curl http://127.0.0.1:21080/workspace`: returned HTML.
+- Browser/IAB tool was unavailable from this context, so Playwright was used as
+  fallback.
+- Playwright rendered `/workspace` at desktop `1270x900` and mobile `390x900`;
+  both had zero overflow findings.
+- Playwright exercised the product console with a dummy local text fixture:
+  upload produced `stored_local`, index request produced
+  `indexing_requested_no_execute`, source count became `1`, and
+  `searchable=false` remained visible.
+
+Deviations from plan:
+
+- None. The console stayed on existing safe Gateway APIs and did not add a new
+  frontend build stack.
+
+Remaining issues:
+
+- This is not real parsing, OCR, chunking, embedding, cloud storage, durable
+  account/device binding, real V21 indexing, V21 merge/release, provider
+  execution, or physical StackChan professional consult acceptance.
+- The dummy upload written during browser verification is local runtime test
+  data, not product knowledge evidence.
+
+Next suggested action:
+
+- Move from no-execute workspace console to the real indexing adapter path, or
+  add account/device binding and source deletion/export UX, while keeping V21
+  execution behind the A21 adapter contract.
+
+Forbidden actions avoided:
+
+- No provider, V21, ECS, firmware, serial, NVS, prune/gc, flash, or physical
+  hardware action occurred.
