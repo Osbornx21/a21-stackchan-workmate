@@ -249,8 +249,11 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 		`codec->SetOutputVolume(92);`,
 		`A21 starting Xiaozhi mode directly after official apps preload`,
 		`GetHAL().startXiaozhi();`,
+		`A21 starting official StackChan avatar relay runtime`,
+		`GetHAL().startA21WebSocketAvatarRuntime`,
+		`GetHAL().updateA21WebSocketAvatarRuntime();`,
 		`GetHAL().feedTheDog();`,
-		`GetHAL().delay(1000);`,
+		`GetHAL().delay(20);`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
@@ -274,6 +277,42 @@ func TestOfficialXiaozhiCompatibleOverlayStartsXiaozhiDirectlyBeforeMooncakeTear
 	}
 	if strings.Contains(overlay, `+    GetHAL().requestXiaozhiStart();`) {
 		t.Fatalf("official Xiaozhi-compatible overlay must not enter the Mooncake teardown lifecycle")
+	}
+}
+
+func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeWorker(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`config A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL`,
+		`CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`,
+		`#include "secret_logic.h"`,
+		`return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;`,
+		`void startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog);`,
+		`void updateA21WebSocketAvatarRuntime();`,
+		`static std::unique_ptr<WebSocketAvatar> _a21_avatar_runtime;`,
+		`start A21 direct websocket avatar runtime`,
+		`_a21_avatar_runtime = std::make_unique<WebSocketAvatar>();`,
+		`_a21_avatar_runtime->update();`,
+		`GetHAL().getFactoryMacString(":")`,
+		`device_id={}`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing official avatar relay runtime contract %q", required)
+		}
+	}
+	if strings.Contains(overlay, `+    mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());`) {
+		t.Fatalf("A21 direct avatar runtime must not depend on the Mooncake worker in the parked Xiaozhi path")
 	}
 }
 

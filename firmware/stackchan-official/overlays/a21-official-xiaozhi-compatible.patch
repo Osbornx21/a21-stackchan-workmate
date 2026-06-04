@@ -51,6 +51,14 @@ index 304e48d..8db937f 100644
 +        screen/top touch semantics after the server returns
 +        a21.profile=product and a21.touch_events=true.
 +
++config A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL
++    string "A21 official StackChan Gateway base URL"
++    depends on BOARD_TYPE_M5STACK_STACK_CHAN
++    default "ws://47.103.57.217"
++    help
++        WebSocket base URL for the official StackChan avatar/action relay.
++        This is the Gateway origin only; the firmware appends /stackChan/ws.
++
  choice
      prompt "Default Language"
      default LANGUAGE_ZH_CN
@@ -99,6 +107,61 @@ index 5f9efcf..cc670b6 100644
      /* ----------------------------------- RGB ---------------------------------- */
      void setRgbColor(uint8_t index, uint8_t r, uint8_t g, uint8_t b);
      void showRgbColor(uint8_t r, uint8_t g, uint8_t b);
+@@ -253,3 +256,7 @@ public:
+     void startWebSocketAvatarService(std::function<void(std::string_view)> onStartLog);
+-
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++    void startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog);
++    void updateA21WebSocketAvatarRuntime();
++#endif
++
+     /* ----------------------------------- IMU ---------------------------------- */
+diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avatar.cpp
+index 3ff4871..334a27d 100644
+--- a/firmware/main/hal/hal_ws_avatar.cpp
++++ b/firmware/main/hal/hal_ws_avatar.cpp
+@@ -66,3 +66,5 @@ public:
+-        _url = fmt::format("{}/stackChan/ws?deviceType=StackChan", secret_logic::get_server_url());
+-
++        _url = fmt::format("{}/stackChan/ws?deviceType=StackChan&device_id={}",
++                           secret_logic::get_server_url(),
++                           GetHAL().getFactoryMacString(":"));
++
+         connect();
+@@ -478,7 +480,31 @@ private:
+         // mclog::info("send time: {} ms, size: {}", _interval / 1000, packet.size());
+     }
+ };
+-
+-class WebsocketAvatarWorker : public mooncake::BasicAbility {
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++static std::unique_ptr<WebSocketAvatar> _a21_avatar_runtime;
++static uint32_t _a21_avatar_last_tick = 0;
++
++void Hal::startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog)
++{
++    mclog::tagInfo(_tag, "start A21 direct websocket avatar runtime");
++    startNetwork(onStartLog);
++    onStartLog("Connecting to\nA21 relay...");
++    if (!_a21_avatar_runtime) {
++        _a21_avatar_runtime = std::make_unique<WebSocketAvatar>();
++        _a21_avatar_runtime->init();
++    }
++}
++
++void Hal::updateA21WebSocketAvatarRuntime()
++{
++    if (!_a21_avatar_runtime || GetHAL().millis() - _a21_avatar_last_tick < 20) {
++        return;
++    }
++    _a21_avatar_last_tick = GetHAL().millis();
++    _a21_avatar_runtime->update();
++}
++#endif
++
++class WebsocketAvatarWorker : public mooncake::BasicAbility {
+ public:
+     WebsocketAvatarWorker()
 diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
 index 164a751..199a17d 100644
 --- a/firmware/main/main.cpp
@@ -109,10 +172,11 @@ index 164a751..199a17d 100644
   */
 +#include <audio/audio_codec.h>
 +#include <board.h>
++#include <string_view>
  #include <smooth_ui_toolkit.hpp>
  #include <uitk/short_namespace.hpp>
  #include <mooncake_log.h>
-@@ -36,6 +38,18 @@ extern "C" void app_main(void)
+@@ -36,6 +39,23 @@ extern "C" void app_main(void)
      GetMooncake().installApp(std::make_unique<AppDance>());
      GetMooncake().installApp(std::make_unique<AppSetup>());
 -
@@ -123,9 +187,14 @@ index 164a751..199a17d 100644
 +    }
 +    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
 +    GetHAL().startXiaozhi();
++    mclog::tagInfo("main", "A21 starting official StackChan avatar relay runtime");
++    GetHAL().startA21WebSocketAvatarRuntime([](std::string_view msg) {
++        mclog::tagInfo("main", "A21 avatar relay: {}", msg);
++    });
 +    while (1) {
 +        GetHAL().feedTheDog();
-+        GetHAL().delay(1000);
++        GetHAL().updateA21WebSocketAvatarRuntime();
++        GetHAL().delay(20);
 +    }
 +#endif
 +
@@ -168,6 +237,7 @@ index 4db623a..998b27b 100644
  CONFIG_SEND_WAKE_WORD_DATA=n
 -CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3=y
 +CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"
++CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"
 +CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y
 +# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set
 +# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set
@@ -188,6 +258,26 @@ index 4db623a..998b27b 100644
  CONFIG_COMPILER_OPTIMIZATION_SIZE=y
  CONFIG_COMPILER_CXX_EXCEPTIONS=y
  CONFIG_COMPILER_CXX_EXCEPTIONS_EMG_POOL_SIZE=1024
+diff --git a/firmware/main/hal/utils/secret_logic/secret_logic.cpp b/firmware/main/hal/utils/secret_logic/secret_logic.cpp
+index 4c2701d..eb0e63f 100644
+--- a/firmware/main/hal/utils/secret_logic/secret_logic.cpp
++++ b/firmware/main/hal/utils/secret_logic/secret_logic.cpp
+@@ -6,3 +6,4 @@
+ #include "secret_logic.h"
+-
++#include <sdkconfig.h>
++
+ namespace secret_logic {
+@@ -10,5 +11,10 @@ namespace secret_logic {
+ __attribute__((weak)) std::string get_server_url()
+ {
+-    return "http://localhost:3000";
++#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
++    return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;
++#else
++    return "http://localhost:3000";
++#endif
+ }
 diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32/main/application.cc
 index 3b6f07e..ec1e05d 100644
 --- a/firmware/xiaozhi-esp32/main/application.cc

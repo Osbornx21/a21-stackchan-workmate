@@ -19,6 +19,92 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 06:02 CST - Official StackChan Relay Runtime Build Ready
+
+Round goal:
+
+- Close the review thread's remaining official StackChan body-channel finding
+  at the firmware/runtime level: keep the WDT-safe direct Xiaozhi product
+  start, but restore the official `/stackChan/ws` avatar/action runtime that
+  was bypassed by parking before the Mooncake worker.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` via the Codex
+  thread tool and compared its conclusions against the current implementation.
+- Confirmed prior P0 findings were already remediated in current HEAD:
+  Gateway Xiaozhi race, namespace/preflight gate, stock professional route
+  mode gating, and PMIC power-key parity.
+- Identified the remaining official body gap: Gateway `/stackChan/ws` and
+  `/v1/stackchan/official/control` are implemented, but the product overlay
+  direct-started Xiaozhi and parked before official `WebsocketAvatarWorker`
+  could tick `WebSocketAvatar`.
+- Updated the product overlay to add an A21 direct official avatar relay
+  runtime:
+  `startA21WebSocketAvatarRuntime()` starts the official `WebSocketAvatar`;
+  `updateA21WebSocketAvatarRuntime()` ticks it every 20 ms in the parked loop.
+- Updated the official avatar URL to use
+  `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"` and
+  append `device_id` from `GetHAL().getFactoryMacString(":")` so controls to
+  product MAC `44:1b:f6:e2:6a:60` can match the registered official socket.
+- Added focused overlay guard tests to prevent losing the relay runtime,
+  Gateway base URL, MAC device_id query, 20 ms tick, and no-Mooncake-teardown
+  product path.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Failing tests first confirmed the missing relay runtime:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay(StartsXiaozhiDirectly|RunsOfficialAvatarRelay)' -count=1`
+  failed before the overlay update.
+- Focused overlay tests passed after the fix.
+- Product firmware/app contract tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'StackChanOfficial|Official|Firmware|Xiaozhi|Frozen' -count=1`.
+- Gateway official/power capability tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan|PowerLifecycle|MCPCapabilities' -count=1`.
+- `git diff --check` passed.
+- Guarded product build passed:
+  `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`.
+  Report:
+  `reports/a21-stackchan-official-baseline-20260605-060158-1780610518624307000.json`.
+  Product app SHA:
+  `4158bdd7a584cb4f915b717f858c1e86339f74484d514c25854297de3a610721`.
+
+Unfinished items:
+
+- Product app has not yet been flashed in this round.
+- `/stackChan/ws` online evidence after the new firmware is still pending.
+- Official `/v1/stackchan/official/control` delivery to the product MAC and
+  visible physical confirmation remain pending.
+- No-cable cold boot and physical power-button acceptance remain pending.
+
+Known risks/blockers:
+
+- The official source checkout is dirty, but the build exported the official
+  source from git HEAD only; the report records that dirty-source finding.
+- Running Xiaozhi and official avatar WebSockets together is now compiled but
+  needs product-device runtime proof.
+
+Recommended next action:
+
+- Commit the firmware overlay/test/docs, flash the guarded product artifact on
+  `/dev/cu.usbmodem1101`, wait for device reconnect, verify `/stackChan/ws`
+  registration, send an official motion command to device
+  `44:1b:f6:e2:6a:60`, and then collect operator physical acceptance.
+
+Forbidden actions avoided:
+
+- No NVS write, provider secret output, generic `xiaozhi.bin` product flash,
+  unguarded upload, Git prune/gc, or internal-test3 voice/protocol rollback
+  occurred.
+
 ## 2026-06-05 05:31 CST - StackChan PMIC Power-Key Parity Product Flash
 
 Round goal:

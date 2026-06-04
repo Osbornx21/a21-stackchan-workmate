@@ -132,6 +132,46 @@ Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
   `xiaozhi.bin` product flash, no Git prune/gc, and no internal-test3
   voice/protocol rollback occurred.
 
+Live truth after the 2026-06-05 06:02 CST official StackChan relay runtime
+build:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was compared against
+  the current code after the stock professional route, Gateway race, and PMIC
+  power-key remediations. The remaining official StackChan body gap is not an
+  ECS endpoint problem: Gateway already exposes `/stackChan/ws`, heartbeat,
+  binary official action packets, and `/v1/stackchan/official/control`.
+- The product firmware overlay had parked before the Mooncake
+  `WebsocketAvatarWorker`, so the official `WebSocketAvatar` was not being
+  ticked after WDT-safe direct `GetHAL().startXiaozhi()`.
+- The product overlay now keeps direct Xiaozhi start and starts an A21 direct
+  official StackChan avatar relay runtime. The parked loop calls
+  `GetHAL().updateA21WebSocketAvatarRuntime()` every 20 ms while continuing to
+  feed the watchdog.
+- The official avatar relay base URL is now controlled by
+  `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`, and
+  the official socket appends `device_id` from
+  `GetHAL().getFactoryMacString(":")` so product MAC-address controls match
+  the registered `/stackChan/ws` socket.
+- Focused overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay(StartsXiaozhiDirectly|RunsOfficialAvatarRelay)' -count=1`.
+- Product firmware/app contract tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'StackChanOfficial|Official|Firmware|Xiaozhi|Frozen' -count=1`.
+- Gateway official/power capability tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan|PowerLifecycle|MCPCapabilities' -count=1`.
+- `git diff --check` passed.
+- Guarded product build passed. Build report:
+  `reports/a21-stackchan-official-baseline-20260605-060158-1780610518624307000.json`.
+  Product app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA `4158bdd7a584cb4f915b717f858c1e86339f74484d514c25854297de3a610721`.
+- This is not yet physical acceptance. Required next evidence is guarded
+  product flash on `/dev/cu.usbmodem1101`, reconnect of device
+  `44:1b:f6:e2:6a:60`, `/stackChan/ws` online evidence, successful
+  `/v1/stackchan/official/control` delivery to the product MAC, and visible
+  physical confirmation.
+- No NVS write, provider secret output, generic `xiaozhi.bin` product flash,
+  Git prune/gc, or internal-test3 voice/protocol rollback occurred.
+
 Live truth after the 2026-06-05 05:31 CST StackChan PMIC power-key parity
 product flash:
 
