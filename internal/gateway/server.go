@@ -899,6 +899,17 @@ type XiaozhiBodySceneRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
+type XiaozhiBodySceneAcceptanceRequest struct {
+	DeviceID      string `json:"device_id"`
+	Scene         string `json:"scene"`
+	TraceID       string `json:"trace_id"`
+	SessionID     string `json:"session_id"`
+	ScreenVisible bool   `json:"screen_visible"`
+	RGBVisible    bool   `json:"rgb_visible"`
+	ServoVisible  bool   `json:"servo_visible"`
+	Observer      string `json:"observer"`
+}
+
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
 	SessionID          string         `json:"session_id"`
@@ -957,6 +968,20 @@ type XiaozhiBodySceneResponse struct {
 	TotalPlannedDelayMS int64                           `json:"total_planned_delay_ms"`
 	ResultRedacted      bool                            `json:"result_redacted"`
 	PhysicalAccepted    bool                            `json:"physical_accepted"`
+}
+
+type XiaozhiBodySceneAcceptanceResponse struct {
+	SchemaVersion     string   `json:"schema_version"`
+	TraceID           string   `json:"trace_id"`
+	SessionID         string   `json:"session_id"`
+	DeviceID          string   `json:"device_id"`
+	Status            string   `json:"status"`
+	Scene             string   `json:"scene"`
+	Observer          string   `json:"observer"`
+	AcceptedSurfaces  []string `json:"accepted_surfaces"`
+	PhysicalAccepted  bool     `json:"physical_accepted"`
+	ResultRedacted    bool     `json:"result_redacted"`
+	AcceptanceEventMS int64    `json:"acceptance_event_ms"`
 }
 
 type XiaozhiMCPCapabilitiesResponse struct {
@@ -1504,6 +1529,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/xiaozhi/body-preset", s.handleXiaozhiBodyPreset)
 	mux.HandleFunc("/v1/xiaozhi/body-motion", s.handleXiaozhiBodyMotion)
 	mux.HandleFunc("/v1/xiaozhi/body-scene", s.handleXiaozhiBodyScene)
+	mux.HandleFunc("/v1/xiaozhi/body-scene-acceptance", s.handleXiaozhiBodySceneAcceptance)
 	mux.HandleFunc("/v1/xiaozhi/mcp-capabilities", s.handleXiaozhiMCPCapabilities)
 	mux.HandleFunc("/v1/xiaozhi/mcp-control", s.handleXiaozhiMCPControl)
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
@@ -5881,6 +5907,8 @@ func (s *Server) handleXiaozhiBodyScene(w http.ResponseWriter, r *http.Request) 
 		activity["last_body_scene_status"] = "delivered"
 		activity["last_body_scene_step"] = strconv.Itoa(index + 1)
 		activity["last_body_scene_tool"] = delivery.Marker
+		activity["last_body_scene_trace_id"] = delivery.Response.TraceID
+		activity["last_body_scene_session_id"] = delivery.Response.SessionID
 		s.recordXiaozhiDeviceActivity(&xiaozhiSession{
 			deviceID:  delivery.Response.DeviceID,
 			traceID:   delivery.Response.TraceID,
@@ -5938,6 +5966,120 @@ func bodySceneTotalPlannedDelayMS(delay time.Duration, stepCount int) int64 {
 		return 0
 	}
 	return int64(delay/time.Millisecond) * int64(stepCount-1)
+}
+
+func (s *Server) handleXiaozhiBodySceneAcceptance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req XiaozhiBodySceneAcceptanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if !validA21DeviceID(req.DeviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	scene, _, err := xiaozhiBodyScenePlans(req.DeviceID, req.Scene)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if scene != "full_check" {
+		http.Error(w, "body scene physical acceptance requires full_check", http.StatusBadRequest)
+		return
+	}
+	traceID := strings.TrimSpace(req.TraceID)
+	sessionID := strings.TrimSpace(req.SessionID)
+	if traceID == "" || sessionID == "" {
+		http.Error(w, "trace_id and session_id are required", http.StatusBadRequest)
+		return
+	}
+	observer := strings.ToLower(strings.TrimSpace(req.Observer))
+	if observer == "" {
+		observer = "operator"
+	}
+	if observer != "operator" && observer != "instrument" {
+		http.Error(w, "observer must be operator or instrument", http.StatusBadRequest)
+		return
+	}
+	if !req.ScreenVisible || !req.RGBVisible || !req.ServoVisible {
+		http.Error(w, "screen_visible, rgb_visible, and servo_visible must be true", http.StatusBadRequest)
+		return
+	}
+	if !s.hasMatchingBodySceneEvidence(req.DeviceID, scene, traceID, sessionID) {
+		http.Error(w, "matching body scene evidence is required before physical acceptance", http.StatusConflict)
+		return
+	}
+
+	nowMS := s.now().UnixMilli()
+	marker := "xiaozhi.body_scene." + scene + ".physical_acceptance.accepted"
+	s.recordTrace(traceID, sessionID, req.DeviceID, marker, nowMS)
+	s.recordBodyScenePhysicalAcceptance(req.DeviceID, scene, traceID, sessionID, observer, nowMS, marker)
+	writeJSON(w, http.StatusOK, XiaozhiBodySceneAcceptanceResponse{
+		SchemaVersion:     "a21.gateway.xiaozhi_body_scene_acceptance.v1",
+		TraceID:           traceID,
+		SessionID:         sessionID,
+		DeviceID:          req.DeviceID,
+		Status:            "accepted",
+		Scene:             scene,
+		Observer:          observer,
+		AcceptedSurfaces:  []string{"screen", "rgb", "servo"},
+		PhysicalAccepted:  true,
+		ResultRedacted:    true,
+		AcceptanceEventMS: nowMS,
+	})
+}
+
+func (s *Server) hasMatchingBodySceneEvidence(deviceID string, scene string, traceID string, sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" || record.Capabilities == nil {
+		return false
+	}
+	return record.Capabilities["last_body_scene"] == scene &&
+		record.Capabilities["last_body_scene_status"] == "delivered" &&
+		record.Capabilities["last_body_scene_trace_id"] == traceID &&
+		record.Capabilities["last_body_scene_session_id"] == sessionID
+}
+
+func (s *Server) recordBodyScenePhysicalAcceptance(deviceID string, scene string, traceID string, sessionID string, observer string, atMS int64, event string) {
+	capabilities := map[string]string{
+		"body_scene_physical_accepted":          "true",
+		"body_scene_screen_physical_accepted":   "true",
+		"body_scene_rgb_physical_accepted":      "true",
+		"body_scene_servo_physical_accepted":    "true",
+		"last_body_scene_acceptance_status":     "operator_visible_accepted",
+		"last_body_scene_acceptance_scene":      scene,
+		"last_body_scene_acceptance_trace_id":   traceID,
+		"last_body_scene_acceptance_session_id": sessionID,
+		"last_body_scene_acceptance_observer":   observer,
+		"last_body_scene_acceptance_at_ms":      strconv.FormatInt(atMS, 10),
+	}
+	if observer == "instrument" {
+		capabilities["last_body_scene_acceptance_status"] = "instrument_visible_accepted"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = atMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.Capabilities = mergeDeviceCapabilities(record.Capabilities, capabilities)
+	if cleanEvent := strings.TrimSpace(event); cleanEvent != "" {
+		record.LastEvent = protocol.DeviceEventKind(cleanEvent)
+	}
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = atMS
+	s.devices[deviceID] = record
 }
 
 func (s *Server) handleXiaozhiMCPCapabilities(w http.ResponseWriter, r *http.Request) {

@@ -497,6 +497,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/xiaozhi/body-preset",
 		"/v1/xiaozhi/body-motion",
 		"/v1/xiaozhi/body-scene",
+		"/v1/xiaozhi/body-scene-acceptance",
 		"/v1/xiaozhi/device-status",
 		"/v1/xiaozhi/screen-brightness",
 		"/v1/xiaozhi/screen-theme",
@@ -587,6 +588,8 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`id="hardwareSceneBodyStatus"`,
 		`id="hardwareSceneStepStatus"`,
 		`id="hardwareSceneTransportStatus"`,
+		`id="acceptHardwareScenePhysical"`,
+		`id="hardwareSceneAcceptanceStatus"`,
 		`id="hardwareSceneTraceList"`,
 		`id="hardwareScreenStatus"`,
 		`id="hardwareScreenPhysicalStatus"`,
@@ -630,6 +633,8 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`data-hardware-scene="focus"`,
 		`data-hardware-scene="reset"`,
 		`data-hardware-scene="full_check"`,
+		`Accept Visible Full Check`,
+		`acceptHardwareScenePhysical`,
 		`data-screen-theme="light"`,
 		`data-screen-theme="dark"`,
 		`data-screen-theme="auto"`,
@@ -7353,6 +7358,111 @@ func TestXiaozhiBodySceneReportsAndAppliesStepPacing(t *testing.T) {
 	}
 	if traces.Summary.EventCount < 16 || traces.Summary.LastOffsetMS < int64(totalDelay)-20 {
 		t.Fatalf("trace summary = %+v, want paced offsets near total planned delay %v", traces.Summary, totalDelay)
+	}
+}
+
+func TestXiaozhiBodyScenePhysicalAcceptanceRecordsOperatorEvidence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-scene-acceptance-hello",
+		"session_id": "a21-session-body-scene-acceptance-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	sceneResp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-scene",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"full_check","trace_id":"a21-trace-body-scene-acceptance","session_id":"a21-session-body-scene-acceptance"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sceneResp.Body.Close()
+	if sceneResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(sceneResp.Body)
+		t.Fatalf("body scene status = %d: %s", sceneResp.StatusCode, string(body))
+	}
+	for i := 0; i < 16; i++ {
+		readXiaozhiJSON(t, ctx, conn)
+	}
+
+	acceptResp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-scene-acceptance",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"full_check","trace_id":"a21-trace-body-scene-acceptance","session_id":"a21-session-body-scene-acceptance","screen_visible":true,"rgb_visible":true,"servo_visible":true,"observer":"operator"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acceptResp.Body.Close()
+	if acceptResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(acceptResp.Body)
+		t.Fatalf("body scene acceptance status = %d: %s", acceptResp.StatusCode, string(body))
+	}
+	var response map[string]any
+	if err := json.NewDecoder(acceptResp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"schema_version":    "a21.gateway.xiaozhi_body_scene_acceptance.v1",
+		"status":            "accepted",
+		"scene":             "full_check",
+		"physical_accepted": true,
+		"result_redacted":   true,
+	} {
+		if response[key] != want {
+			t.Fatalf("response[%s] = %#v, want %#v in %#v", key, response[key], want, response)
+		}
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-scene-acceptance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.body_scene.full_check.physical_acceptance.accepted") {
+		t.Fatalf("trace missing physical acceptance marker: %+v", traces.Events)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities := registry["capabilities"].(map[string]any)
+	for key, want := range map[string]any{
+		"body_scene_physical_accepted":        "true",
+		"last_body_scene_acceptance_status":   "operator_visible_accepted",
+		"last_body_scene_acceptance_scene":    "full_check",
+		"body_scene_screen_physical_accepted": "true",
+		"body_scene_rgb_physical_accepted":    "true",
+		"body_scene_servo_physical_accepted":  "true",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiBodyScenePhysicalAcceptanceRequiresMatchingSceneEvidence(t *testing.T) {
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/body-scene-acceptance", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","scene":"full_check","trace_id":"a21-trace-missing-scene","session_id":"a21-session-missing-scene","screen_visible":true,"rgb_visible":true,"servo_visible":true,"observer":"operator"}`))
+	NewServer().Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("body scene acceptance status = %d, want 409: %s", resp.Code, resp.Body.String())
 	}
 }
 

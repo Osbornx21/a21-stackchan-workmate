@@ -578,6 +578,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <button class="secondary" data-hardware-scene="showtime">Showtime</button>
             <button class="secondary" data-hardware-scene="focus">Focus</button>
             <button class="secondary" data-hardware-scene="reset">Reset</button>
+            <button class="secondary" id="acceptHardwareScenePhysical">Accept Visible Full Check</button>
             <button class="secondary" id="refreshHardwareSceneTrace">Trace markers</button>
           </div>
           <div class="status-strip">
@@ -586,6 +587,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <div class="metric"><span>Body</span><strong id="hardwareSceneBodyStatus">body=none</strong></div>
             <div class="metric"><span>Steps</span><strong id="hardwareSceneStepStatus">steps=0</strong></div>
             <div class="metric"><span>Transport</span><strong id="hardwareSceneTransportStatus">xiaozhi_mcp_sequence</strong></div>
+            <div class="metric"><span>Acceptance</span><strong id="hardwareSceneAcceptanceStatus">operator_pending</strong></div>
           </div>
           <div class="row-list" id="hardwareSceneTraceList" aria-label="Hardware scene trace markers"></div>
         </div>
@@ -791,6 +793,7 @@ const workspaceConsoleHTML = `<!doctype html>
       bodyPresetTransportStatus: document.getElementById('bodyPresetTransportStatus'),
       bodyPresetTraceList: document.getElementById('bodyPresetTraceList'),
       hardwareSceneActions: document.getElementById('hardwareSceneActions'),
+      acceptHardwareScenePhysical: document.getElementById('acceptHardwareScenePhysical'),
       refreshHardwareSceneTrace: document.getElementById('refreshHardwareSceneTrace'),
       hardwareSceneStatus: document.getElementById('hardwareSceneStatus'),
       hardwareScenePhysicalStatus: document.getElementById('hardwareScenePhysicalStatus'),
@@ -799,6 +802,7 @@ const workspaceConsoleHTML = `<!doctype html>
       hardwareSceneBodyStatus: document.getElementById('hardwareSceneBodyStatus'),
       hardwareSceneStepStatus: document.getElementById('hardwareSceneStepStatus'),
       hardwareSceneTransportStatus: document.getElementById('hardwareSceneTransportStatus'),
+      hardwareSceneAcceptanceStatus: document.getElementById('hardwareSceneAcceptanceStatus'),
       hardwareSceneTraceList: document.getElementById('hardwareSceneTraceList'),
       screenBrightness: document.getElementById('screenBrightness'),
       screenBrightnessValue: document.getElementById('screenBrightnessValue'),
@@ -1252,6 +1256,7 @@ const workspaceConsoleHTML = `<!doctype html>
       setText(ui.hardwareSceneScreenStatus, 'screen=' + ['theme:' + (theme.theme || 'none'), 'brightness:' + (brightness.brightness == null ? 'none' : brightness.brightness)].join(' / '));
       setText(ui.hardwareSceneBodyStatus, 'body=' + ['rgb:' + [led.red, led.green, led.blue].map((value) => value == null ? 'none' : value).join('/'), 'pitch:' + (head.pitch == null ? 'none' : head.pitch)].join(' / '));
       setText(ui.hardwareSceneStepStatus, 'steps=' + steps);
+      setText(ui.hardwareSceneAcceptanceStatus, (response && response.physical_accepted) ? 'operator_visible_accepted' : 'operator_pending');
       setText(ui.bodyPresetStatus, 'scene=' + scene);
       setText(ui.bodyPresetPhysicalStatus, 'physical_accepted=' + String(!!(response && response.physical_accepted)));
       setText(ui.bodyPresetTraceStatus, 'trace=' + ((response && response.trace_id) || 'none'));
@@ -1264,6 +1269,17 @@ const workspaceConsoleHTML = `<!doctype html>
       setText(ui.screenBrightnessStatus, 'brightness=' + (brightness.brightness == null ? ui.screenBrightness.value : brightness.brightness));
       setText(ui.screenThemeStatus, 'theme=' + (theme.theme || 'none'));
       setText(ui.screenToolStatus, 'body-scene');
+    }
+    function renderHardwareSceneAcceptance(response) {
+      const accepted = !!(response && response.physical_accepted);
+      const status = accepted ? ((response && response.status) || 'accepted') : 'operator_pending';
+      setText(ui.hardwareScenePhysicalStatus, 'physical_accepted=' + String(accepted));
+      setText(ui.bodyPresetPhysicalStatus, 'physical_accepted=' + String(accepted));
+      setText(ui.hardwareScreenPhysicalStatus, 'physical_accepted=' + String(accepted));
+      setText(ui.hardwareSceneAcceptanceStatus, status);
+      if (response && response.trace_id) {
+        setText(ui.hardwareSceneTraceStatus, 'trace=' + response.trace_id);
+      }
     }
     function renderHardwareSceneTrace(payload) {
       const events = (payload && payload.events) || [];
@@ -1303,6 +1319,7 @@ const workspaceConsoleHTML = `<!doctype html>
         status: payload.status || '',
         delivered_transport: payload.delivered_transport || '',
         physical_accepted: !!payload.physical_accepted,
+        acceptance_status: 'operator_pending',
         steps: payload.steps || []
       };
       state.bodyPreset = Object.assign({}, state.bodyPreset || {}, {
@@ -1323,6 +1340,41 @@ const workspaceConsoleHTML = `<!doctype html>
       state.bodyPreset.trace_markers = (state.hardwareScene && state.hardwareScene.trace_markers) || [];
       state.hardwareScreen.trace_markers = (state.hardwareScene && state.hardwareScene.trace_markers) || [];
       log('hardware scene ' + (payload.scene || scene) + ' ' + (payload.status || 'sent'));
+      return payload;
+    }
+    async function acceptHardwareScenePhysical() {
+      if (!state.hardwareScene || !state.hardwareScene.trace_id || !state.hardwareScene.session_id) {
+        throw new Error('run Full Check first');
+      }
+      if ((state.hardwareScene.scene || '') !== 'full_check') {
+        throw new Error('run Full Check first');
+      }
+      const payload = await postJSON('/v1/xiaozhi/body-scene-acceptance', {
+        device_id: currentDeviceID(),
+        scene: state.hardwareScene.scene || 'full_check',
+        trace_id: state.hardwareScene.trace_id,
+        session_id: state.hardwareScene.session_id,
+        screen_visible: true,
+        rgb_visible: true,
+        servo_visible: true,
+        observer: 'operator'
+      });
+      state.hardwareScene.physical_accepted = !!payload.physical_accepted;
+      state.hardwareScene.acceptance_status = payload.status || '';
+      state.hardwareScene.accepted_surfaces = payload.accepted_surfaces || [];
+      state.bodyPreset = Object.assign({}, state.bodyPreset || {}, {
+        trace_id: state.hardwareScene.trace_id,
+        session_id: state.hardwareScene.session_id,
+        physical_accepted: state.hardwareScene.physical_accepted
+      });
+      state.hardwareScreen = Object.assign({}, state.hardwareScreen || {}, {
+        trace_id: state.hardwareScene.trace_id,
+        session_id: state.hardwareScene.session_id,
+        physical_accepted: state.hardwareScene.physical_accepted
+      });
+      renderHardwareSceneAcceptance(payload);
+      await refreshHardwareSceneTrace();
+      log('hardware scene acceptance ' + (payload.status || 'accepted'));
       return payload;
     }
     function officialActionFallback(kind, value) {
@@ -2027,6 +2079,8 @@ const workspaceConsoleHTML = `<!doctype html>
         hardware_scene_status: (state.hardwareScene && state.hardwareScene.status) || '',
         hardware_scene_transport: (state.hardwareScene && state.hardwareScene.delivered_transport) || '',
         hardware_scene_physical_accepted: !!(state.hardwareScene && state.hardwareScene.physical_accepted),
+        hardware_scene_acceptance_status: (state.hardwareScene && state.hardwareScene.acceptance_status) || '',
+        hardware_scene_accepted_surfaces: (state.hardwareScene && state.hardwareScene.accepted_surfaces) || [],
         hardware_scene_step_count: ((state.hardwareScene && state.hardwareScene.steps) || []).length,
         hardware_scene_trace_markers: (state.hardwareScene && state.hardwareScene.trace_markers) || [],
         screen_control_action: (state.hardwareScreen && state.hardwareScreen.action) || '',
@@ -2141,6 +2195,7 @@ const workspaceConsoleHTML = `<!doctype html>
       if (!button) return;
       runHardwareScene(button.dataset.hardwareScene).catch((err) => log('hardware scene ' + err.message));
     });
+    ui.acceptHardwareScenePhysical.addEventListener('click', () => acceptHardwareScenePhysical().catch((err) => log('hardware scene acceptance ' + err.message)));
     ui.refreshHardwareSceneTrace.addEventListener('click', () => refreshHardwareSceneTrace().catch((err) => log('hardware scene trace ' + err.message)));
     ui.screenBrightness.addEventListener('input', () => {
       ui.screenBrightnessValue.value = ui.screenBrightness.value;

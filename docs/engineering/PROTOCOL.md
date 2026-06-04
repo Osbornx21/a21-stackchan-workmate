@@ -453,6 +453,23 @@ surfaces:
   surface for foreground operator checks, not official avatar/action relay
   acceptance and not physical proof until visible or instrumented evidence
   confirms the screen, RGB, and servo movement.
+- `POST /v1/xiaozhi/body-scene-acceptance` records the foreground physical
+  acceptance for the latest `full_check` scene only. The request must include
+  `device_id`, `scene=full_check`, the matching `trace_id` / `session_id` from
+  the delivered body scene, `screen_visible=true`, `rgb_visible=true`,
+  `servo_visible=true`, and `observer=operator` or `observer=instrument`.
+  Gateway rejects acceptance without matching delivered scene evidence. A
+  successful response uses schema
+  `a21.gateway.xiaozhi_body_scene_acceptance.v1`, records the trace marker
+  `xiaozhi.body_scene.full_check.physical_acceptance.accepted`, and updates the
+  device registry with redacted fields such as
+  `body_scene_physical_accepted=true`,
+  `body_scene_screen_physical_accepted=true`,
+  `body_scene_rgb_physical_accepted=true`, and
+  `body_scene_servo_physical_accepted=true`. This closes the screen/RGB/servo
+  body-scene evidence for that foreground observation only; it is not camera,
+  NFC, infrared, official avatar/action relay, voice-chain, wake, provider,
+  V21, or full PRD acceptance.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,
