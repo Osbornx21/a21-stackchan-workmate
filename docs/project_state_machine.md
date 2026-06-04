@@ -9,7 +9,7 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
 Latest control update, 2026-06-04 17:23 CST:
 
@@ -52,6 +52,24 @@ Follow-on physical transition update, 2026-06-04:
   It does not change the total state away from `PHYSICAL-PENDING` until a real
   StackChan run supplies playback-start, bounded stop_done/barge-in evidence,
   and operator or instrumented audible observation.
+
+Workspace device-binding update, 2026-06-04 18:13 CST:
+
+- `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001` now has a concrete
+  cloud/workspace device-access guard rather than only PRD language. Gateway
+  exposes memory-only `GET/POST/PUT /v1/workspace-device-bindings`, records
+  safe bindings between A21 `device_id`, redacted `user_id`, redacted
+  `workspace_id`, and allowed professional `query_scope` values, and adds a
+  binding summary to `/v1/professional-workspace`.
+- Professional mock turns and stock Xiaozhi professional turns now check the
+  binding registry before V21 execution once a workspace has any binding
+  record. Bound devices can proceed; unbound, revoked, deleted, or
+  query-scope-denied devices fail before `v21.query.start` with safe
+  read-ledger failure codes.
+- `/workspace` now exposes device ID, bind, revoke, refresh, binding status,
+  active binding count, and safe binding metadata export. This is not physical
+  PRD evidence, real indexing, V21 merge/release, provider execution, firmware
+  flash, or NVS work.
 
 Active child transitions:
 

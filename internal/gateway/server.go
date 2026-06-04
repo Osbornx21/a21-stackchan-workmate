@@ -100,6 +100,8 @@ type Server struct {
 	workspaceSourceSeq           uint64
 	workspaceDocuments           map[string]WorkspaceDocument
 	workspaceDocumentSeq         uint64
+	workspaceDeviceBindings      map[string]WorkspaceDeviceBinding
+	workspaceDeviceBindingSeq    uint64
 	workspaceDocumentStoreDir    string
 	workspaceDocumentMaxBytes    int64
 	voiceChainModeConfig         string
@@ -353,22 +355,27 @@ type ProfessionalWorkspaceResponse struct {
 }
 
 type ProfessionalWorkspaceRuntime struct {
-	SchemaVersion                      string         `json:"schema_version"`
-	Mode                               string         `json:"mode"`
-	UserID                             string         `json:"user_id"`
-	WorkspaceID                        string         `json:"workspace_id"`
-	QueryScope                         string         `json:"query_scope"`
-	PrivacyScope                       string         `json:"privacy_scope"`
-	AdapterContractVersion             string         `json:"adapter_contract_version"`
-	WorkspaceStatus                    string         `json:"workspace_status"`
-	QueryScopeReadiness                string         `json:"query_scope_readiness,omitempty"`
-	SourceScopeCounts                  map[string]int `json:"source_scope_counts,omitempty"`
-	IndexingRequestedSourceScopeCounts map[string]int `json:"indexing_requested_source_scope_counts,omitempty"`
-	SearchableSourceScopeCounts        map[string]int `json:"searchable_source_scope_counts,omitempty"`
-	UploadAPIReady                     bool           `json:"upload_api_ready"`
-	IndexingAPIReady                   bool           `json:"indexing_api_ready"`
-	QueryScopeReady                    bool           `json:"query_scope_ready"`
-	V21ExecutionAllowed                bool           `json:"v21_execution_allowed"`
+	SchemaVersion                      string                        `json:"schema_version"`
+	Mode                               string                        `json:"mode"`
+	UserID                             string                        `json:"user_id"`
+	WorkspaceID                        string                        `json:"workspace_id"`
+	QueryScope                         string                        `json:"query_scope"`
+	PrivacyScope                       string                        `json:"privacy_scope"`
+	AdapterContractVersion             string                        `json:"adapter_contract_version"`
+	WorkspaceStatus                    string                        `json:"workspace_status"`
+	QueryScopeReadiness                string                        `json:"query_scope_readiness,omitempty"`
+	SourceScopeCounts                  map[string]int                `json:"source_scope_counts,omitempty"`
+	IndexingRequestedSourceScopeCounts map[string]int                `json:"indexing_requested_source_scope_counts,omitempty"`
+	SearchableSourceScopeCounts        map[string]int                `json:"searchable_source_scope_counts,omitempty"`
+	UploadAPIReady                     bool                          `json:"upload_api_ready"`
+	IndexingAPIReady                   bool                          `json:"indexing_api_ready"`
+	QueryScopeReady                    bool                          `json:"query_scope_ready"`
+	V21ExecutionAllowed                bool                          `json:"v21_execution_allowed"`
+	DeviceBindingPolicy                string                        `json:"device_binding_policy"`
+	BoundDeviceCount                   int                           `json:"bound_device_count"`
+	ActiveDeviceBindingCount           int                           `json:"active_device_binding_count"`
+	RevokedDeviceBindingCount          int                           `json:"revoked_device_binding_count"`
+	DeviceBindingSummary               WorkspaceDeviceBindingSummary `json:"device_binding_summary"`
 }
 
 type ProfessionalWorkspaceRedaction struct {
@@ -628,6 +635,80 @@ type WorkspaceDocumentRedaction struct {
 	LocalPathReturned      bool `json:"local_path_returned"`
 	CredentialValueStored  bool `json:"credential_value_stored"`
 	ProviderOutputStored   bool `json:"provider_output_stored"`
+}
+
+type WorkspaceDeviceBindingRequest struct {
+	BindingID          string   `json:"binding_id,omitempty"`
+	Action             string   `json:"action,omitempty"`
+	DeviceID           string   `json:"device_id,omitempty"`
+	DeviceLabel        string   `json:"device_label,omitempty"`
+	UserID             string   `json:"user_id,omitempty"`
+	WorkspaceID        string   `json:"workspace_id,omitempty"`
+	AllowedQueryScopes []string `json:"allowed_query_scopes,omitempty"`
+	TraceID            string   `json:"trace_id,omitempty"`
+	SessionID          string   `json:"session_id,omitempty"`
+}
+
+type WorkspaceDeviceBindingsResponse struct {
+	SchemaVersion string                          `json:"schema_version"`
+	Service       string                          `json:"service"`
+	Status        string                          `json:"status"`
+	Bindings      []WorkspaceDeviceBinding        `json:"bindings"`
+	Summary       WorkspaceDeviceBindingSummary   `json:"summary"`
+	Redaction     WorkspaceDeviceBindingRedaction `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding     `json:"findings,omitempty"`
+}
+
+type WorkspaceDeviceBinding struct {
+	BindingID           string                          `json:"binding_id"`
+	DeviceID            string                          `json:"device_id"`
+	DeviceLabel         string                          `json:"device_label,omitempty"`
+	UserID              string                          `json:"user_id"`
+	WorkspaceID         string                          `json:"workspace_id"`
+	Status              string                          `json:"status"`
+	AccessScope         string                          `json:"access_scope"`
+	AllowedQueryScopes  []string                        `json:"allowed_query_scopes"`
+	ProfessionalAllowed bool                            `json:"professional_allowed"`
+	PhysicalAccepted    bool                            `json:"physical_accepted"`
+	CreatedAtMS         int64                           `json:"created_at_ms"`
+	UpdatedAtMS         int64                           `json:"updated_at_ms"`
+	RevokedAtMS         int64                           `json:"revoked_at_ms,omitempty"`
+	TraceID             string                          `json:"trace_id,omitempty"`
+	SessionID           string                          `json:"session_id,omitempty"`
+	Redaction           WorkspaceDeviceBindingRedaction `json:"redaction"`
+	Findings            []WorkspaceUploadJobFinding     `json:"findings,omitempty"`
+}
+
+type WorkspaceDeviceBindingSummary struct {
+	TotalBindings              int    `json:"total_bindings"`
+	ActiveBindings             int    `json:"active_bindings"`
+	RevokedBindings            int    `json:"revoked_bindings"`
+	DeletedBindings            int    `json:"deleted_bindings"`
+	ProfessionalAllowedDevices int    `json:"professional_allowed_devices"`
+	DeviceBindingPolicy        string `json:"device_binding_policy"`
+	WorkspaceAccessStatus      string `json:"workspace_access_status"`
+}
+
+type WorkspaceDeviceBindingRedaction struct {
+	PairingSecretStored    bool `json:"pairing_secret_stored"`
+	DeviceCredentialStored bool `json:"device_credential_stored"`
+	DocumentTextStored     bool `json:"document_text_stored"`
+	QueryTextStored        bool `json:"query_text_stored"`
+	RetrievedTextStored    bool `json:"retrieved_text_stored"`
+	FullURLStored          bool `json:"full_url_stored"`
+	LocalPathStored        bool `json:"local_path_stored"`
+	CredentialValueStored  bool `json:"credential_value_stored"`
+	ProviderOutputStored   bool `json:"provider_output_stored"`
+	VoiceTranscriptStored  bool `json:"voice_transcript_stored"`
+}
+
+type professionalDeviceBindingDecision struct {
+	Allowed     bool
+	Policy      string
+	BindingID   string
+	Status      string
+	FailureCode string
+	TraceMarker string
 }
 
 type DeviceControlRequest struct {
@@ -977,6 +1058,7 @@ const (
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
 	WorkspaceIndexJobsSchemaVersion           = "a21.gateway.workspace_index_jobs.v1"
 	WorkspaceSourcesSchemaVersion             = "a21.gateway.workspace_sources.v1"
+	WorkspaceDeviceBindingsSchemaVersion      = "a21.gateway.workspace_device_bindings.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
 	VoiceChainModeCascade                     = "cascade"
 	VoiceChainModeRealtime                    = "realtime"
@@ -1168,6 +1250,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		workspaceIndexJobs:           make(map[string]WorkspaceIndexJob),
 		workspaceSources:             make(map[string]WorkspaceSource),
 		workspaceDocuments:           make(map[string]WorkspaceDocument),
+		workspaceDeviceBindings:      make(map[string]WorkspaceDeviceBinding),
 		workspaceDocumentStoreDir:    workspaceDocumentStoreDir(options.WorkspaceDocumentStoreDir),
 		workspaceDocumentMaxBytes:    workspaceDocumentMaxBytes,
 		voiceChainModeConfig:         VoiceChainModeCascade,
@@ -1230,6 +1313,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
 	mux.HandleFunc("/v1/workspace-index-jobs", s.handleWorkspaceIndexJobs)
 	mux.HandleFunc("/v1/workspace-sources", s.handleWorkspaceSources)
+	mux.HandleFunc("/v1/workspace-device-bindings", s.handleWorkspaceDeviceBindings)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
 	mux.HandleFunc("/v1/gateway-profiles", s.handleGatewayProfiles)
 	mux.HandleFunc("/v1/cloud-voice-profiles", s.handleCloudVoiceProfiles)
@@ -1470,6 +1554,44 @@ func (s *Server) handleWorkspaceSources(w http.ResponseWriter, r *http.Request) 
 			strings.TrimSpace(r.URL.Query().Get("workspace_id")),
 			strings.TrimSpace(r.URL.Query().Get("source_scope")),
 		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWorkspaceDeviceBindings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		response, err := s.workspaceDeviceBindingsResponse(
+			strings.TrimSpace(r.URL.Query().Get("binding_id")),
+			strings.TrimSpace(r.URL.Query().Get("device_id")),
+			strings.TrimSpace(r.URL.Query().Get("user_id")),
+			strings.TrimSpace(r.URL.Query().Get("workspace_id")),
+			strings.TrimSpace(r.URL.Query().Get("status")),
+			nil,
+		)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, response)
+	case http.MethodPost, http.MethodPut:
+		req, err := decodeWorkspaceDeviceBindingRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var response WorkspaceDeviceBindingsResponse
+		if r.Method == http.MethodPost && strings.TrimSpace(req.Action) == "" {
+			response, err = s.createWorkspaceDeviceBinding(req)
+		} else {
+			response, err = s.applyWorkspaceDeviceBindingAction(req)
+		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -2229,6 +2351,7 @@ func (s *Server) professionalWorkspaceRuntime(override ProfessionalWorkspaceSele
 		return ProfessionalWorkspaceRuntime{}, err
 	}
 	sourceSummary := s.workspaceSourceSummaryForWorkspace(userID, workspaceID)
+	deviceBindingSummary := s.workspaceDeviceBindingSummaryForWorkspace(userID, workspaceID)
 	queryScopeReadiness := workspaceQueryScopeReadiness(queryScope, sourceSummary)
 	workspaceStatus := "contract_ready"
 	if sourceSummary.TotalSources > 0 {
@@ -2251,29 +2374,39 @@ func (s *Server) professionalWorkspaceRuntime(override ProfessionalWorkspaceSele
 		IndexingAPIReady:                   sourceSummary.IndexingRequestedSources > 0,
 		QueryScopeReady:                    true,
 		V21ExecutionAllowed:                false,
+		DeviceBindingPolicy:                deviceBindingSummary.DeviceBindingPolicy,
+		BoundDeviceCount:                   deviceBindingSummary.TotalBindings,
+		ActiveDeviceBindingCount:           deviceBindingSummary.ActiveBindings,
+		RevokedDeviceBindingCount:          deviceBindingSummary.RevokedBindings,
+		DeviceBindingSummary:               deviceBindingSummary,
 	}, nil
 }
 
 func (s *Server) resolveProfessionalWorkspace(override ProfessionalWorkspaceSelectionRequest) (string, string, string, error) {
 	s.mu.Lock()
+	userID, workspaceID, queryScope, err := s.resolveProfessionalWorkspaceNoLock(override.UserID, override.WorkspaceID, override.QueryScope)
+	s.mu.Unlock()
+	return userID, workspaceID, queryScope, err
+}
+
+func (s *Server) resolveProfessionalWorkspaceNoLock(userOverride string, workspaceOverride string, queryScopeOverride string) (string, string, string, error) {
 	userID := defaultProfessionalLabel(s.professionalUserIDConfig, v21adapter.DefaultUserID)
 	workspaceID := defaultProfessionalLabel(s.professionalWorkspaceConfig, v21adapter.DefaultWorkspaceID)
 	queryScope := defaultProfessionalQueryScope(s.professionalQueryScopeConfig)
-	s.mu.Unlock()
-	if strings.TrimSpace(override.UserID) != "" {
-		userID = strings.ToLower(strings.TrimSpace(override.UserID))
+	if strings.TrimSpace(userOverride) != "" {
+		userID = strings.ToLower(strings.TrimSpace(userOverride))
 		if !validProfessionalLabel(userID) {
 			return "", "", "", fmt.Errorf("valid redacted user_id is required")
 		}
 	}
-	if strings.TrimSpace(override.WorkspaceID) != "" {
-		workspaceID = strings.ToLower(strings.TrimSpace(override.WorkspaceID))
+	if strings.TrimSpace(workspaceOverride) != "" {
+		workspaceID = strings.ToLower(strings.TrimSpace(workspaceOverride))
 		if !validProfessionalLabel(workspaceID) {
 			return "", "", "", fmt.Errorf("valid redacted workspace_id is required")
 		}
 	}
-	if strings.TrimSpace(override.QueryScope) != "" {
-		queryScope = strings.ToLower(strings.TrimSpace(override.QueryScope))
+	if strings.TrimSpace(queryScopeOverride) != "" {
+		queryScope = strings.ToLower(strings.TrimSpace(queryScopeOverride))
 		if !v21adapter.ValidQueryScope(queryScope) {
 			return "", "", "", fmt.Errorf("query_scope must be public_only, personal_only, or personal_plus_public")
 		}
@@ -2553,7 +2686,7 @@ func professionalReadFailureCode(err error, queryCtx context.Context) string {
 
 func safeProfessionalReadFailureCode(code string) string {
 	switch strings.TrimSpace(code) {
-	case "timeout", "contract_invalid", "upstream_status", "no_evidence", "adapter_status", "transport_error", "query_error", "suppressed", "upstream_4xx", "upstream_5xx":
+	case "timeout", "contract_invalid", "upstream_status", "no_evidence", "adapter_status", "transport_error", "query_error", "suppressed", "upstream_4xx", "upstream_5xx", "device_unbound", "device_binding_revoked", "device_scope_denied":
 		return strings.TrimSpace(code)
 	default:
 		return "query_error"
@@ -3413,6 +3546,441 @@ func (s *Server) workspaceSourceSummaryForWorkspace(userID string, workspaceID s
 	return workspaceSourceSummary(sources)
 }
 
+func decodeWorkspaceDeviceBindingRequest(r *http.Request) (WorkspaceDeviceBindingRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		return WorkspaceDeviceBindingRequest{}, fmt.Errorf("invalid json")
+	}
+	for key := range raw {
+		if workspaceDeviceBindingForbiddenKey(key) {
+			return WorkspaceDeviceBindingRequest{}, fmt.Errorf("workspace device binding request must not include pairing secrets, URLs, paths, credentials, document text, provider output, or audio")
+		}
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return WorkspaceDeviceBindingRequest{}, fmt.Errorf("invalid json")
+	}
+	var req WorkspaceDeviceBindingRequest
+	if err := json.Unmarshal(encoded, &req); err != nil {
+		return WorkspaceDeviceBindingRequest{}, fmt.Errorf("invalid json")
+	}
+	return req, nil
+}
+
+func workspaceDeviceBindingForbiddenKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if workspaceUploadJobForbiddenKey(key) {
+		return true
+	}
+	for _, forbidden := range []string{
+		"pairing_secret",
+		"pairing_code",
+		"device_secret",
+		"device_credential",
+		"wifi_password",
+		"authorization",
+		"cookie",
+	} {
+		if key == forbidden || strings.Contains(key, forbidden) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) createWorkspaceDeviceBinding(req WorkspaceDeviceBindingRequest) (WorkspaceDeviceBindingsResponse, error) {
+	userID, workspaceID, _, err := s.resolveProfessionalWorkspace(ProfessionalWorkspaceSelectionRequest{
+		UserID:      req.UserID,
+		WorkspaceID: req.WorkspaceID,
+	})
+	if err != nil {
+		return WorkspaceDeviceBindingsResponse{}, err
+	}
+	deviceID := safeWorkspaceDeviceID(req.DeviceID)
+	if deviceID == "" {
+		return WorkspaceDeviceBindingsResponse{}, fmt.Errorf("valid A21 device_id is required")
+	}
+	deviceLabel := safeWorkspaceDeviceLabel(req.DeviceLabel, deviceID)
+	if strings.TrimSpace(req.DeviceLabel) != "" && deviceLabel == "" {
+		return WorkspaceDeviceBindingsResponse{}, fmt.Errorf("valid redacted device_label is required")
+	}
+	allowedScopes, err := normalizeWorkspaceBindingQueryScopes(req.AllowedQueryScopes)
+	if err != nil {
+		return WorkspaceDeviceBindingsResponse{}, err
+	}
+	traceID := safeOptionalWorkspaceLabel(req.TraceID)
+	sessionID := safeOptionalWorkspaceLabel(req.SessionID)
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	for existingID, existing := range s.workspaceDeviceBindings {
+		if existing.DeviceID == deviceID && existing.UserID == userID && existing.WorkspaceID == workspaceID && existing.Status != "deleted_metadata_only" {
+			existing.DeviceLabel = deviceLabel
+			existing.Status = "bound"
+			existing.AccessScope = "professional_workspace"
+			existing.AllowedQueryScopes = allowedScopes
+			existing.ProfessionalAllowed = true
+			existing.RevokedAtMS = 0
+			existing.UpdatedAtMS = nowMS
+			if traceID != "" {
+				existing.TraceID = traceID
+			}
+			if sessionID != "" {
+				existing.SessionID = sessionID
+			}
+			existing.Findings = append(existing.Findings, WorkspaceUploadJobFinding{
+				Code:    "workspace_device_binding_updated",
+				Message: "A21 refreshed an existing metadata-only device binding for this professional workspace",
+			})
+			s.workspaceDeviceBindings[existingID] = existing
+			s.mu.Unlock()
+			if traceID != "" {
+				s.recordTrace(traceID, sessionID, deviceID, "workspace.device.bound", nowMS)
+			}
+			return s.workspaceDeviceBindingsResponse(existingID, "", "", "", "", nil)
+		}
+	}
+	s.workspaceDeviceBindingSeq++
+	bindingID := fmt.Sprintf("a21-workspace-device-binding-%06d", s.workspaceDeviceBindingSeq)
+	binding := WorkspaceDeviceBinding{
+		BindingID:           bindingID,
+		DeviceID:            deviceID,
+		DeviceLabel:         deviceLabel,
+		UserID:              userID,
+		WorkspaceID:         workspaceID,
+		Status:              "bound",
+		AccessScope:         "professional_workspace",
+		AllowedQueryScopes:  allowedScopes,
+		ProfessionalAllowed: true,
+		PhysicalAccepted:    false,
+		CreatedAtMS:         nowMS,
+		UpdatedAtMS:         nowMS,
+		TraceID:             traceID,
+		SessionID:           sessionID,
+		Redaction:           workspaceDeviceBindingRedaction(),
+		Findings: []WorkspaceUploadJobFinding{{
+			Code:    "workspace_device_bound",
+			Message: "A21 bound this device to the selected professional workspace using metadata only; no pairing secret or provider credential is stored",
+		}},
+	}
+	s.workspaceDeviceBindings[bindingID] = binding
+	s.mu.Unlock()
+	if traceID != "" {
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.device.bound", nowMS)
+	}
+	return s.workspaceDeviceBindingsResponse(bindingID, "", "", "", "", nil)
+}
+
+func (s *Server) applyWorkspaceDeviceBindingAction(req WorkspaceDeviceBindingRequest) (WorkspaceDeviceBindingsResponse, error) {
+	action := strings.ToLower(strings.TrimSpace(req.Action))
+	if action == "" {
+		action = "revoke"
+	}
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	bindingID, err := s.resolveWorkspaceDeviceBindingIDLocked(req)
+	if err != nil {
+		s.mu.Unlock()
+		return WorkspaceDeviceBindingsResponse{}, err
+	}
+	binding, ok := s.workspaceDeviceBindings[bindingID]
+	if !ok {
+		s.mu.Unlock()
+		return WorkspaceDeviceBindingsResponse{}, fmt.Errorf("workspace device binding not found")
+	}
+	switch action {
+	case "revoke":
+		binding.Status = "revoked"
+		binding.ProfessionalAllowed = false
+		binding.RevokedAtMS = nowMS
+		binding.UpdatedAtMS = nowMS
+		binding.Findings = append(binding.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_device_binding_revoked",
+			Message: "A21 revoked professional workspace access for this device without requiring firmware or NVS changes",
+		})
+	case "restore":
+		binding.Status = "bound"
+		binding.ProfessionalAllowed = true
+		binding.RevokedAtMS = 0
+		binding.UpdatedAtMS = nowMS
+		binding.Findings = append(binding.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_device_binding_restored",
+			Message: "A21 restored metadata-only professional workspace access for this device",
+		})
+	case "delete":
+		binding.Status = "deleted_metadata_only"
+		binding.ProfessionalAllowed = false
+		binding.RevokedAtMS = nowMS
+		binding.UpdatedAtMS = nowMS
+		binding.DeviceLabel = "deleted"
+		binding.Findings = append(binding.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_device_binding_deleted",
+			Message: "A21 retained only a redacted binding tombstone",
+		})
+	default:
+		s.mu.Unlock()
+		return WorkspaceDeviceBindingsResponse{}, fmt.Errorf("action must be revoke, restore, or delete")
+	}
+	s.workspaceDeviceBindings[bindingID] = binding
+	s.mu.Unlock()
+	if binding.TraceID != "" {
+		s.recordTrace(binding.TraceID, binding.SessionID, binding.DeviceID, "workspace.device."+binding.Status, nowMS)
+	}
+	return s.workspaceDeviceBindingsResponse(bindingID, "", "", "", "", nil)
+}
+
+func (s *Server) resolveWorkspaceDeviceBindingIDLocked(req WorkspaceDeviceBindingRequest) (string, error) {
+	if id := strings.ToLower(strings.TrimSpace(req.BindingID)); id != "" {
+		if safeOptionalWorkspaceLabel(id) == "" {
+			return "", fmt.Errorf("valid redacted binding_id is required")
+		}
+		return id, nil
+	}
+	deviceID := safeWorkspaceDeviceID(req.DeviceID)
+	if deviceID == "" {
+		return "", fmt.Errorf("binding_id or valid A21 device_id is required")
+	}
+	userID, workspaceID, _, err := s.resolveProfessionalWorkspaceNoLock(req.UserID, req.WorkspaceID, "")
+	if err != nil {
+		return "", err
+	}
+	for bindingID, binding := range s.workspaceDeviceBindings {
+		if binding.DeviceID == deviceID && binding.UserID == userID && binding.WorkspaceID == workspaceID && binding.Status != "deleted_metadata_only" {
+			return bindingID, nil
+		}
+	}
+	return "", fmt.Errorf("workspace device binding not found")
+}
+
+func (s *Server) workspaceDeviceBindingsResponse(bindingID string, deviceID string, userID string, workspaceID string, status string, findings []WorkspaceUploadJobFinding) (WorkspaceDeviceBindingsResponse, error) {
+	bindings, err := s.workspaceDeviceBindingsSnapshot(bindingID, deviceID, userID, workspaceID, status)
+	if err != nil {
+		return WorkspaceDeviceBindingsResponse{}, err
+	}
+	responseStatus := "ok"
+	if (strings.TrimSpace(bindingID) != "" || strings.TrimSpace(deviceID) != "" || strings.TrimSpace(userID) != "" || strings.TrimSpace(workspaceID) != "" || strings.TrimSpace(status) != "") && len(bindings) == 0 {
+		responseStatus = "not_found"
+		findings = append(findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_device_binding_not_found",
+			Message: "A21 has no redacted workspace device binding matching those filters",
+		})
+	} else if len(bindings) == 1 && strings.TrimSpace(bindingID) != "" {
+		responseStatus = bindings[0].Status
+	}
+	return WorkspaceDeviceBindingsResponse{
+		SchemaVersion: WorkspaceDeviceBindingsSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        responseStatus,
+		Bindings:      bindings,
+		Summary:       workspaceDeviceBindingSummary(bindings),
+		Redaction:     workspaceDeviceBindingRedaction(),
+		Findings:      findings,
+	}, nil
+}
+
+func (s *Server) workspaceDeviceBindingsSnapshot(bindingID string, deviceID string, userID string, workspaceID string, status string) ([]WorkspaceDeviceBinding, error) {
+	bindingID = strings.ToLower(strings.TrimSpace(bindingID))
+	rawDeviceID := strings.TrimSpace(deviceID)
+	deviceID = safeWorkspaceDeviceID(deviceID)
+	userID = strings.ToLower(strings.TrimSpace(userID))
+	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
+	status = strings.ToLower(strings.TrimSpace(status))
+	if bindingID != "" && safeOptionalWorkspaceLabel(bindingID) == "" {
+		return nil, fmt.Errorf("valid redacted binding_id is required")
+	}
+	if rawDeviceID != "" && deviceID == "" {
+		return nil, fmt.Errorf("valid A21 device_id is required")
+	}
+	if userID != "" && !validProfessionalLabel(userID) {
+		return nil, fmt.Errorf("valid redacted user_id is required")
+	}
+	if workspaceID != "" && !validProfessionalLabel(workspaceID) {
+		return nil, fmt.Errorf("valid redacted workspace_id is required")
+	}
+	if status != "" && !validWorkspaceDeviceBindingStatus(status) {
+		return nil, fmt.Errorf("status must be bound, revoked, or deleted_metadata_only")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]string, 0, len(s.workspaceDeviceBindings))
+	if bindingID != "" {
+		keys = append(keys, bindingID)
+	} else {
+		for key := range s.workspaceDeviceBindings {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	bindings := make([]WorkspaceDeviceBinding, 0, len(keys))
+	for _, key := range keys {
+		binding, ok := s.workspaceDeviceBindings[key]
+		if !ok {
+			continue
+		}
+		if deviceID != "" && binding.DeviceID != deviceID {
+			continue
+		}
+		if userID != "" && binding.UserID != userID {
+			continue
+		}
+		if workspaceID != "" && binding.WorkspaceID != workspaceID {
+			continue
+		}
+		if status != "" && binding.Status != status {
+			continue
+		}
+		bindings = append(bindings, copyWorkspaceDeviceBinding(binding))
+	}
+	return bindings, nil
+}
+
+func (s *Server) workspaceDeviceBindingSummaryForWorkspace(userID string, workspaceID string) WorkspaceDeviceBindingSummary {
+	bindings, err := s.workspaceDeviceBindingsSnapshot("", "", userID, workspaceID, "")
+	if err != nil {
+		return emptyWorkspaceDeviceBindingSummary()
+	}
+	return workspaceDeviceBindingSummary(bindings)
+}
+
+func workspaceDeviceBindingSummary(bindings []WorkspaceDeviceBinding) WorkspaceDeviceBindingSummary {
+	summary := emptyWorkspaceDeviceBindingSummary()
+	summary.TotalBindings = 0
+	for _, binding := range bindings {
+		summary.TotalBindings++
+		switch binding.Status {
+		case "bound":
+			summary.ActiveBindings++
+			if binding.ProfessionalAllowed {
+				summary.ProfessionalAllowedDevices++
+			}
+		case "revoked":
+			summary.RevokedBindings++
+		case "deleted_metadata_only":
+			summary.DeletedBindings++
+		}
+	}
+	switch {
+	case summary.ActiveBindings > 0:
+		summary.DeviceBindingPolicy = "bound_devices_only"
+		summary.WorkspaceAccessStatus = "bound_device_ready"
+	case summary.TotalBindings > 0:
+		summary.DeviceBindingPolicy = "bound_devices_only"
+		summary.WorkspaceAccessStatus = "no_active_device_binding"
+	default:
+		summary.DeviceBindingPolicy = "open_until_binding_configured"
+		summary.WorkspaceAccessStatus = "binding_not_configured"
+	}
+	return summary
+}
+
+func emptyWorkspaceDeviceBindingSummary() WorkspaceDeviceBindingSummary {
+	return WorkspaceDeviceBindingSummary{
+		DeviceBindingPolicy:   "open_until_binding_configured",
+		WorkspaceAccessStatus: "binding_not_configured",
+	}
+}
+
+func copyWorkspaceDeviceBinding(binding WorkspaceDeviceBinding) WorkspaceDeviceBinding {
+	binding.AllowedQueryScopes = append([]string(nil), binding.AllowedQueryScopes...)
+	binding.Findings = append([]WorkspaceUploadJobFinding(nil), binding.Findings...)
+	return binding
+}
+
+func workspaceDeviceBindingRedaction() WorkspaceDeviceBindingRedaction {
+	return WorkspaceDeviceBindingRedaction{
+		PairingSecretStored:    false,
+		DeviceCredentialStored: false,
+		DocumentTextStored:     false,
+		QueryTextStored:        false,
+		RetrievedTextStored:    false,
+		FullURLStored:          false,
+		LocalPathStored:        false,
+		CredentialValueStored:  false,
+		ProviderOutputStored:   false,
+		VoiceTranscriptStored:  false,
+	}
+}
+
+func (s *Server) professionalDeviceBindingDecision(deviceID string, userID string, workspaceID string, queryScope string) professionalDeviceBindingDecision {
+	deviceID = safeWorkspaceDeviceID(deviceID)
+	userID = defaultProfessionalLabel(userID, v21adapter.DefaultUserID)
+	workspaceID = defaultProfessionalLabel(workspaceID, v21adapter.DefaultWorkspaceID)
+	queryScope = defaultProfessionalQueryScope(queryScope)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	candidates := make([]WorkspaceDeviceBinding, 0)
+	for _, binding := range s.workspaceDeviceBindings {
+		if binding.UserID == userID && binding.WorkspaceID == workspaceID {
+			candidates = append(candidates, binding)
+		}
+	}
+	if len(candidates) == 0 {
+		return professionalDeviceBindingDecision{
+			Allowed:     true,
+			Policy:      "open_until_binding_configured",
+			Status:      "not_configured",
+			TraceMarker: "professional.device_binding.open_until_configured",
+		}
+	}
+	if deviceID == "" {
+		return professionalDeviceBindingDecision{
+			Allowed:     false,
+			Policy:      "bound_devices_only",
+			Status:      "device_id_invalid",
+			FailureCode: "device_unbound",
+			TraceMarker: "professional.device_binding.blocked.device_unbound",
+		}
+	}
+	for _, binding := range candidates {
+		if binding.DeviceID != deviceID {
+			continue
+		}
+		if binding.Status == "deleted_metadata_only" {
+			return professionalDeviceBindingDecision{
+				Allowed:     false,
+				Policy:      "bound_devices_only",
+				BindingID:   binding.BindingID,
+				Status:      "deleted_metadata_only",
+				FailureCode: "device_unbound",
+				TraceMarker: "professional.device_binding.blocked.device_unbound",
+			}
+		}
+		if binding.Status == "revoked" || !binding.ProfessionalAllowed {
+			return professionalDeviceBindingDecision{
+				Allowed:     false,
+				Policy:      "bound_devices_only",
+				BindingID:   binding.BindingID,
+				Status:      "revoked",
+				FailureCode: "device_binding_revoked",
+				TraceMarker: "professional.device_binding.blocked.revoked",
+			}
+		}
+		if !workspaceBindingAllowsQueryScope(binding, queryScope) {
+			return professionalDeviceBindingDecision{
+				Allowed:     false,
+				Policy:      "bound_devices_only",
+				BindingID:   binding.BindingID,
+				Status:      "scope_denied",
+				FailureCode: "device_scope_denied",
+				TraceMarker: "professional.device_binding.blocked.scope_denied",
+			}
+		}
+		return professionalDeviceBindingDecision{
+			Allowed:     true,
+			Policy:      "bound_devices_only",
+			BindingID:   binding.BindingID,
+			Status:      "bound",
+			TraceMarker: "professional.device_binding.bound",
+		}
+	}
+	return professionalDeviceBindingDecision{
+		Allowed:     false,
+		Policy:      "bound_devices_only",
+		Status:      "unbound",
+		FailureCode: "device_unbound",
+		TraceMarker: "professional.device_binding.blocked.device_unbound",
+	}
+}
+
 func workspaceSourceFromJob(job WorkspaceUploadJob, readiness string) WorkspaceSource {
 	readiness = defaultWorkspaceSourceReadiness(readiness)
 	storedLocal := job.StorageStatus == "stored_local" && readiness != "deleted_metadata_only"
@@ -3669,6 +4237,78 @@ func safeWorkspaceDocumentLabel(label string) string {
 		}
 	}
 	return label
+}
+
+func safeWorkspaceDeviceID(deviceID string) string {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" || len(deviceID) > 96 || !validA21DeviceID(deviceID) {
+		return ""
+	}
+	lower := strings.ToLower(deviceID)
+	for _, forbidden := range []string{"http://", "https://", "/", "\\", "secret", "token", "credential", "api_key", "bearer ", "sk-"} {
+		if strings.Contains(lower, forbidden) {
+			return ""
+		}
+	}
+	for _, r := range deviceID {
+		if r < 33 || r == 127 {
+			return ""
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == ':' || r == '.' {
+			continue
+		}
+		return ""
+	}
+	return deviceID
+}
+
+func safeWorkspaceDeviceLabel(label string, fallback string) string {
+	if strings.TrimSpace(label) == "" {
+		return safeWorkspaceDeviceID(fallback)
+	}
+	return safeWorkspaceDocumentLabel(label)
+}
+
+func normalizeWorkspaceBindingQueryScopes(scopes []string) ([]string, error) {
+	if len(scopes) == 0 {
+		return []string{v21adapter.QueryScopePublic, v21adapter.QueryScopePersonal, v21adapter.QueryScopeCombined}, nil
+	}
+	seen := make(map[string]bool, len(scopes))
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		if !v21adapter.ValidQueryScope(scope) {
+			return nil, fmt.Errorf("allowed_query_scopes must contain only public_only, personal_only, or personal_plus_public")
+		}
+		if seen[scope] {
+			continue
+		}
+		seen[scope] = true
+		out = append(out, scope)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("allowed_query_scopes must contain at least one query scope")
+	}
+	return out, nil
+}
+
+func workspaceBindingAllowsQueryScope(binding WorkspaceDeviceBinding, queryScope string) bool {
+	queryScope = defaultProfessionalQueryScope(queryScope)
+	for _, scope := range binding.AllowedQueryScopes {
+		if scope == queryScope {
+			return true
+		}
+	}
+	return false
+}
+
+func validWorkspaceDeviceBindingStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "bound", "revoked", "deleted_metadata_only":
+		return true
+	default:
+		return false
+	}
 }
 
 func safeWorkspaceContentType(contentType string) string {
@@ -7042,6 +7682,13 @@ func (s *Server) writeXiaozhiProfessionalTTS(ctx context.Context, conn *websocke
 	readRecordID := s.startProfessionalReadRecord(request, utteranceBucket)
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.workspace.ready", s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "professional.query_scope."+workspace.QueryScope, s.now().UnixMilli())
+	bindingDecision := s.professionalDeviceBindingDecision(task.deviceID, workspace.UserID, workspace.WorkspaceID, workspace.QueryScope)
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, bindingDecision.TraceMarker, s.now().UnixMilli())
+	if !bindingDecision.Allowed {
+		s.failProfessionalReadRecord(readRecordID, bindingDecision.FailureCode)
+		s.writeXiaozhiProfessionalFallback(ctx, conn, session, task, "professional_device_binding_blocked")
+		return
+	}
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
 	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(turn.ctx, s.v21TTL)
@@ -9834,6 +10481,18 @@ func (s *Server) professionalTurnResponse(req MockTurnRequest) MockTurnResponse 
 		PrivacyScope:       "professional_only",
 	}
 	readRecordID := s.startProfessionalReadRecord(queryRequest, utteranceBucket)
+	bindingDecision := s.professionalDeviceBindingDecision(req.DeviceID, workspace.UserID, workspace.WorkspaceID, workspace.QueryScope)
+	s.recordTrace(traceID, sessionID, req.DeviceID, bindingDecision.TraceMarker, s.now().UnixMilli())
+	if !bindingDecision.Allowed {
+		s.failProfessionalReadRecord(readRecordID, bindingDecision.FailureCode)
+		events = append(events, s.controlSequenceFrom(req.DeviceID, traceID, sessionID, uint64(len(events)+1), []protocol.ControlEventPayload{{
+			State: protocol.ExpressionError,
+			Mode:  protocol.ModeProfessional,
+			Text:  "这台设备还没绑定到当前专业工作区。我先停在证据边界，避免把个人资料查错地方。",
+			Final: true,
+		}})...)
+		return MockTurnResponse{TraceID: traceID, SessionID: sessionID, DeviceID: req.DeviceID, Events: events}
+	}
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.utterance."+utteranceBucket, s.now().UnixMilli())
 	s.recordTrace(traceID, sessionID, req.DeviceID, "v21.query.start", s.now().UnixMilli())
 	queryCtx, cancel := context.WithTimeout(context.Background(), s.v21TTL)

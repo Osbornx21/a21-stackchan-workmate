@@ -14091,3 +14091,79 @@ Forbidden actions avoided:
 - No repeated roleplay/provider/V21 evidence runs, no bare `xiaozhi.bin`, no
   generic `xiaozhi-firmware-flash-*`, no flash/NVS/serial, no prune/gc, and no
   rollback of internal test 3 protocol/audio changes.
+
+## 2026-06-04 18:13 CST - Workspace Device Binding Guard
+
+Round goal:
+
+- Advance internal test 4 cloud/workspace product shape without repeating
+  closed roleplay/provider/V21 evidence or touching physical firmware state.
+
+Actual completed work:
+
+- Added `GET/POST/PUT /v1/workspace-device-bindings` as a memory-only A21
+  workspace device-access contract.
+- Device bindings connect safe A21 `device_id`, redacted `user_id`, redacted
+  `workspace_id`, and allowed professional `query_scope` values.
+- Repeated binding of the same device/user/workspace is idempotent; revoke,
+  restore, and delete are metadata-only and do not require firmware flash or
+  NVS writes.
+- `/v1/professional-workspace` now reports device-binding policy/count summary.
+- Professional mock turns and stock Xiaozhi professional turns now enforce
+  binding before V21 execution once a workspace has binding records. Unbound,
+  revoked, deleted, or query-scope-denied devices fail before
+  `v21.query.start` and write only safe read-ledger failure codes.
+- `/workspace` now exposes device ID, bind, revoke, refresh, binding status,
+  active binding count, and safe metadata export over existing Gateway APIs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is Gateway/workspace access metadata and route gating only. It does not
+  perform real cloud auth, tenant ACL, real document indexing, V21 merge, V21
+  release, provider execution, firmware flash, NVS write, serial access, or
+  physical StackChan PRD promotion.
+- Physical acceptance still needs the foreground product StackChan window with
+  playback `start` / `stop_done`, barge-in, wake, and audible observation.
+
+Known risks/blockers:
+
+- Device binding is currently memory-only for internal test 4. A production
+  cloud account/device table and durable ACL store remain future work.
+
+Recommended next action:
+
+- Continue either with the foreground physical PRD evidence window, or with the
+  next cloud/workspace cut: durable cloud account/device binding persistence
+  and real index worker handoff while preserving the same safe API surface.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestWorkspace(DeviceBindings|Console)|TestProfessionalReadRecords|TestWorkspaceUploadJobsRejectRawPayloadFields' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- Local runtime check: started `go run ./cmd/a21 gateway --addr
+  127.0.0.1:21080`, confirmed `/workspace` contains
+  `/v1/workspace-device-bindings` controls, posted a safe binding for
+  `stackchan-live-check-001`, observed bound professional mock route proceed,
+  observed unbound professional mock route fail with
+  `failure_code=device_unbound`, and confirmed its trace had no
+  `v21.query.start`. The Gateway was then stopped.
+
+Forbidden actions avoided:
+
+- No provider execution, V21 execution, ECS/root-secret/runtime change, firmware
+  build, flash, serial, NVS, report deletion, prune/gc, or internal-test3
+  rollback occurred.

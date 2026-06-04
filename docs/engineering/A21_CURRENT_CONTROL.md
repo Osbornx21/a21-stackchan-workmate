@@ -139,6 +139,27 @@ Current next cut:
   `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
   This is build evidence only; no flash or NVS write occurred.
 
+Current cloud/workspace product cut:
+
+- `T-INTERNAL-TEST4-CLOUD-MODE-AND-KNOWLEDGE-WORKSPACE-001`
+- Target:
+  make the PRD "users bind devices, upload personal workspace documents, and
+  control what hardware may consult in professional mode" shape concrete
+  without waiting for real indexing or physical PRD promotion.
+- Status:
+  Gateway now exposes memory-only `GET/POST/PUT
+  /v1/workspace-device-bindings`, adds device-binding summary to
+  `/v1/professional-workspace`, exposes bind/revoke controls in `/workspace`,
+  and gates professional mock/Xiaozhi turns before V21 execution whenever a
+  workspace has binding records. No binding records keeps old internal-test
+  flows `open_until_binding_configured`; bound devices may query; unbound,
+  revoked, deleted, or query-scope-denied devices fail before `v21.query.start`
+  with safe read-ledger failure codes.
+- Boundary:
+  this is cloud/workspace access metadata only. It does not execute provider or
+  V21 services, index documents, store pairing secrets, touch firmware, flash,
+  write NVS, or promote physical StackChan PRD acceptance.
+
 ## Scoped Hardware Parity Transition
 
 Transition:

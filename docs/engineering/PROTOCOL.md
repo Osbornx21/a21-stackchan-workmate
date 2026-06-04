@@ -657,6 +657,27 @@ or `personal_plus_public`. This endpoint does not upload files, index
 documents, execute V21, store document text, store utterance text, store
 retrieved text, or persist provider output.
 
+`workspace_device_bindings` is the Gateway-owned cloud/workspace device-access
+contract for internal test 4. `GET /v1/workspace-device-bindings` returns
+`a21.gateway.workspace_device_bindings.v1` and safe memory-only records that
+can be filtered by `binding_id`, `device_id`, `user_id`, `workspace_id`, or
+`status`. `POST /v1/workspace-device-bindings` binds an A21 device ID to a
+redacted `user_id` and `workspace_id` with explicit
+`allowed_query_scopes`; repeated binding of the same device/user/workspace is
+idempotent and refreshes metadata rather than creating conflicting records.
+`PUT /v1/workspace-device-bindings` supports `revoke`, `restore`, and
+`delete`. Revocation is a Gateway/cloud metadata operation and must not require
+firmware flash, NVS writes, provider execution, V21 execution, or device
+secrets. Once a workspace has any device binding record, professional consult
+paths enforce `bound_devices_only`: unbound, revoked, deleted, or query-scope
+denied devices fail before `v21.query.start` and the read ledger records only
+safe failure codes such as `device_unbound`, `device_binding_revoked`, or
+`device_scope_denied`. With no binding records, legacy internal-test paths
+remain `open_until_binding_configured` for compatibility. Responses and traces
+must not store or return pairing secrets, device credentials, document text,
+utterance text, retrieved text, full URLs, local paths, provider output, voice
+transcripts, credentials, API keys, or audio.
+
 When the professional path does execute V21, Gateway sends the same v2 scope
 fields to the A21/V21 adapter: `device_id`, `user_id`, `workspace_id`,
 `query_scope`, `privacy_scope=professional_only`, `latency_profile=fast_first`,
@@ -761,11 +782,13 @@ It is a product-oriented web surface over the existing safe Gateway APIs, not a
 new service or port. The page lets a user select professional `query_scope`,
 upload a local document through `/v1/workspace-documents`, request the
 no-execute indexing ledger through `/v1/workspace-index-jobs`, refresh
-`/v1/workspace-sources`, refresh or filter `/v1/professional-read-records` by
-safe `record_id`, `trace_id`, or `session_id`, delete the selected source/job
-through existing `PUT /v1/workspace-upload-jobs` with `action=delete`, export
-client-side safe metadata as `a21.workspace_console_export.v1`, configure
-roleplay role soul/scenario/voice profile/bounded memory hint through existing
+`/v1/workspace-sources`, bind/revoke/refresh device access through
+`/v1/workspace-device-bindings`, refresh or filter
+`/v1/professional-read-records` by safe `record_id`, `trace_id`, or
+`session_id`, delete the selected source/job through existing
+`PUT /v1/workspace-upload-jobs` with `action=delete`, export client-side safe
+metadata as `a21.workspace_console_export.v1`, configure roleplay role
+soul/scenario/voice profile/bounded memory hint through existing
 `/v1/roleplay-profile` and `/v1/voice-chain-profiles`, configure voice-chain
 mode/ASR/LLM/realtime-provider selection through existing
 `/v1/voice-chain-profiles`, configure wake-word intent through existing
@@ -777,13 +800,14 @@ roleplay/professional boundary from `/v1/roleplay-profile`,
 console must keep state labels honest:
 `storage_status=stored_local`, `index_status=indexing_requested_no_execute`
 when requested, `searchable=false`, `v21_execution_allowed=false`, and
-`physical_accepted=false`; custom wake-word intent must show built-in Xiaozhi
-WakeNet as active until guarded firmware evidence exists. The Voice Probe must
-display only safe route/status, selected role/profile IDs, memory counts, trace
-marker names/counts, and professional read metadata. It must not display
-document text, raw bytes, local paths, credentials, prompt text, transcripts,
-provider output, evidence bodies, voice samples, audio, raw user utterances, or
-document-derived text.
+`physical_accepted=false`; device binding state must remain metadata-only and
+show `open_until_binding_configured` or `bound_devices_only` honestly. Custom
+wake-word intent must show built-in Xiaozhi WakeNet as active until guarded
+firmware evidence exists. The Voice Probe must display only safe route/status,
+selected role/profile IDs, memory counts, trace marker names/counts, and
+professional read metadata. It must not display document text, raw bytes, local
+paths, credentials, prompt text, transcripts, provider output, evidence bodies,
+voice samples, audio, raw user utterances, or document-derived text.
 
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns

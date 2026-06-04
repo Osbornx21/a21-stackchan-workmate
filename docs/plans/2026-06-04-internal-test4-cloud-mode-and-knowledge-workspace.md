@@ -218,6 +218,23 @@ StackChan hardware.
   Probe and launch readiness while still not executing providers/V21, accepting
   voice-clone audio quality, deploying Gateway/ECS, touching firmware, serial,
   NVS, or claiming physical StackChan roleplay acceptance.
+- Gateway now exposes `GET/POST/PUT /v1/workspace-device-bindings` as the
+  internal test 4 cloud/workspace device-access contract. It binds an A21
+  device to redacted `user_id` and `workspace_id` metadata, records allowed
+  professional `query_scope` values, supports revoke/restore/delete without
+  firmware flash or NVS writes, and adds binding summary fields to
+  `/v1/professional-workspace`.
+- Professional mock turns and stock Xiaozhi professional turns now enforce the
+  binding contract before V21 execution once a workspace has any binding
+  record. Bound devices may proceed; unbound, revoked, deleted, or
+  query-scope-denied devices fail before `v21.query.start` and the professional
+  read ledger records only safe failure codes. Legacy internal-test paths remain
+  `open_until_binding_configured` when no binding records exist.
+- The workspace console now exposes device binding controls over the same safe
+  API: device ID input, bind, revoke, refresh, binding status, binding count,
+  and safe metadata export. It does not store pairing secrets, provider/V21
+  credentials, document text, utterance text, evidence bodies, voice data, local
+  paths, URLs, or audio.
 
 ## Product Form
 
@@ -238,13 +255,13 @@ single voice shell:
 2. **A21 Cloud/Web/App Workspace**
    - Users sign in and bind devices.
    - Users upload documents into a personal workspace.
-- Users can query `public_only`, `personal_only`, or
-  `personal_plus_public` scopes.
-- Users can see which uploaded/imported sources are metadata-only,
-  searchable-metadata candidates, failed, or deleted before real indexing is
-  implemented.
-- The same workspace controls what the hardware may consult when the user
-  switches to professional mode.
+   - Users can query `public_only`, `personal_only`, or
+     `personal_plus_public` scopes.
+   - Users can see which uploaded/imported sources are metadata-only,
+     searchable-metadata candidates, failed, or deleted before real indexing is
+     implemented.
+   - The same workspace controls what the hardware may consult when the user
+     switches to professional mode.
    - Upload/index status, source visibility, citations, delete/export, and
      device access are visible to the user.
 

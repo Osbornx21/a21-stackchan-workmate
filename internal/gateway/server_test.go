@@ -485,6 +485,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/workspace-documents",
 		"/v1/workspace-index-jobs",
 		"/v1/workspace-sources",
+		"/v1/workspace-device-bindings",
 		"/v1/workspace-upload-jobs",
 		"/v1/professional-read-records",
 		"/v1/roleplay-profile",
@@ -496,9 +497,13 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/traces",
 		`id="queryScope"`,
 		`id="documentLabel"`,
+		`id="deviceId"`,
 		`id="documentFile"`,
 		`id="uploadDocument"`,
 		`id="requestIndex"`,
+		`id="bindDevice"`,
+		`id="revokeDevice"`,
+		`id="refreshDeviceBindings"`,
 		`id="deleteSource"`,
 		`id="exportMetadata"`,
 		`id="refreshSources"`,
@@ -507,6 +512,8 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`id="readTraceFilter"`,
 		`id="readSessionFilter"`,
 		`id="clearReadFilters"`,
+		`id="deviceBindingStatus"`,
+		`id="deviceBindingCount"`,
 		`id="roleplayProfileSelect"`,
 		`id="roleplayScenarioSelect"`,
 		`id="roleplayVoiceSelect"`,
@@ -582,6 +589,8 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"builtin_active",
 		"stored_local pending",
 		"not_started_no_execute",
+		"binding_not_configured",
+		"open_until_binding_configured",
 		"indexing_requested_no_execute",
 		"deleted_metadata_only",
 		"a21.workspace_console_export.v1",
@@ -2216,6 +2225,161 @@ func TestWorkspaceUploadJobsRejectRawPayloadFields(t *testing.T) {
 		if strings.Contains(rec.Body.String(), forbidden) {
 			t.Fatalf("rejection leaked %q: %s", forbidden, rec.Body.String())
 		}
+	}
+}
+
+func TestWorkspaceDeviceBindingsGateProfessionalQueries(t *testing.T) {
+	v21 := &countingV21Client{}
+	server := NewServerWithOptions(ServerOptions{V21Client: v21})
+	handler := server.Handler()
+
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_device","workspace_id":"a21_workspace_device","query_scope":"public_only"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+
+	bindReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-device-bindings", bytes.NewBufferString(`{"device_id":"stackchan-bound-001","device_label":"desk unit","user_id":"a21_user_device","workspace_id":"a21_workspace_device","allowed_query_scopes":["public_only"],"trace_id":"a21-trace-bind-device","session_id":"a21-session-bind-device"}`))
+	bindRec := httptest.NewRecorder()
+	handler.ServeHTTP(bindRec, bindReq)
+	if bindRec.Code != http.StatusOK {
+		t.Fatalf("bind status = %d: %s", bindRec.Code, bindRec.Body.String())
+	}
+	var bindResponse WorkspaceDeviceBindingsResponse
+	if err := json.Unmarshal(bindRec.Body.Bytes(), &bindResponse); err != nil {
+		t.Fatal(err)
+	}
+	if bindResponse.SchemaVersion != WorkspaceDeviceBindingsSchemaVersion ||
+		bindResponse.Status != "bound" ||
+		len(bindResponse.Bindings) != 1 ||
+		bindResponse.Bindings[0].Status != "bound" ||
+		!bindResponse.Bindings[0].ProfessionalAllowed ||
+		bindResponse.Summary.ActiveBindings != 1 ||
+		bindResponse.Summary.DeviceBindingPolicy != "bound_devices_only" {
+		t.Fatalf("binding response = %+v", bindResponse)
+	}
+	if bindResponse.Redaction.PairingSecretStored || bindResponse.Redaction.DeviceCredentialStored ||
+		bindResponse.Redaction.CredentialValueStored || bindResponse.Redaction.ProviderOutputStored ||
+		bindResponse.Redaction.DocumentTextStored || bindResponse.Redaction.QueryTextStored ||
+		bindResponse.Redaction.VoiceTranscriptStored {
+		t.Fatalf("binding redaction = %+v", bindResponse.Redaction)
+	}
+	bindingID := bindResponse.Bindings[0].BindingID
+
+	allowedReq := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", bytes.NewBufferString(`{"device_id":"stackchan-bound-001","text":"查一下公开资料","mode":"professional","trace_id":"a21-trace-bound-device","session_id":"a21-session-bound-device"}`))
+	allowedRec := httptest.NewRecorder()
+	handler.ServeHTTP(allowedRec, allowedReq)
+	if allowedRec.Code != http.StatusOK {
+		t.Fatalf("allowed turn status = %d: %s", allowedRec.Code, allowedRec.Body.String())
+	}
+	if v21.calls != 1 {
+		t.Fatalf("v21 calls after bound device = %d, want 1", v21.calls)
+	}
+	assertProfessionalReadRecordStatus(t, handler, "a21-trace-bound-device", "completed", "")
+	assertTraceContains(t, handler, "a21-trace-bound-device", "professional.device_binding.bound")
+
+	unboundReq := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", bytes.NewBufferString(`{"device_id":"stackchan-unbound-001","text":"RAW_PRIVATE_DEVICE_SCOPE_QUERY","mode":"professional","trace_id":"a21-trace-unbound-device","session_id":"a21-session-unbound-device"}`))
+	unboundRec := httptest.NewRecorder()
+	handler.ServeHTTP(unboundRec, unboundReq)
+	if unboundRec.Code != http.StatusOK {
+		t.Fatalf("unbound turn status = %d: %s", unboundRec.Code, unboundRec.Body.String())
+	}
+	if v21.calls != 1 {
+		t.Fatalf("v21 calls after unbound device = %d, want still 1", v21.calls)
+	}
+	assertProfessionalReadRecordStatus(t, handler, "a21-trace-unbound-device", "failed", "device_unbound")
+	assertTraceContains(t, handler, "a21-trace-unbound-device", "professional.device_binding.blocked.device_unbound")
+	assertTraceOmits(t, handler, "a21-trace-unbound-device", "v21.query.start")
+
+	revokeReq := httptest.NewRequest(http.MethodPut, "/v1/workspace-device-bindings", bytes.NewBufferString(fmt.Sprintf(`{"binding_id":%q,"action":"revoke"}`, bindingID)))
+	revokeRec := httptest.NewRecorder()
+	handler.ServeHTTP(revokeRec, revokeReq)
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d: %s", revokeRec.Code, revokeRec.Body.String())
+	}
+	if !bytes.Contains(revokeRec.Body.Bytes(), []byte(`"status":"revoked"`)) ||
+		!bytes.Contains(revokeRec.Body.Bytes(), []byte(`"professional_allowed":false`)) {
+		t.Fatalf("revoke response missing revoked metadata: %s", revokeRec.Body.String())
+	}
+
+	revokedReq := httptest.NewRequest(http.MethodPost, "/v1/mock-turn", bytes.NewBufferString(`{"device_id":"stackchan-bound-001","text":"RAW_PRIVATE_REVOKED_DEVICE_QUERY","mode":"professional","trace_id":"a21-trace-revoked-device","session_id":"a21-session-revoked-device"}`))
+	revokedRec := httptest.NewRecorder()
+	handler.ServeHTTP(revokedRec, revokedReq)
+	if revokedRec.Code != http.StatusOK {
+		t.Fatalf("revoked turn status = %d: %s", revokedRec.Code, revokedRec.Body.String())
+	}
+	if v21.calls != 1 {
+		t.Fatalf("v21 calls after revoked device = %d, want still 1", v21.calls)
+	}
+	assertProfessionalReadRecordStatus(t, handler, "a21-trace-revoked-device", "failed", "device_binding_revoked")
+	assertTraceContains(t, handler, "a21-trace-revoked-device", "professional.device_binding.blocked.revoked")
+}
+
+func TestWorkspaceDeviceBindingsRejectUnsafePayloadFields(t *testing.T) {
+	server := NewServer()
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace-device-bindings", bytes.NewBufferString(`{
+		"device_id":"http://secret.example/device",
+		"user_id":"a21_user_device",
+		"workspace_id":"a21_workspace_device",
+		"pairing_secret":"RAW_PAIRING_SECRET",
+		"device_credential":"RAW_DEVICE_CREDENTIAL"
+	}`))
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	for _, forbidden := range []string{"RAW_PAIRING_SECRET", "RAW_DEVICE_CREDENTIAL", "secret.example"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("unsafe binding rejection leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+}
+
+func assertProfessionalReadRecordStatus(t *testing.T, handler http.Handler, traceID string, status string, failureCode string) {
+	t.Helper()
+	recordsReq := httptest.NewRequest(http.MethodGet, "/v1/professional-read-records?trace_id="+url.QueryEscape(traceID), nil)
+	recordsRec := httptest.NewRecorder()
+	handler.ServeHTTP(recordsRec, recordsReq)
+	if recordsRec.Code != http.StatusOK {
+		t.Fatalf("read-record status = %d: %s", recordsRec.Code, recordsRec.Body.String())
+	}
+	var response ProfessionalReadRecordsResponse
+	if err := json.Unmarshal(recordsRec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Records) != 1 {
+		t.Fatalf("read-record response = %+v", response)
+	}
+	record := response.Records[0]
+	if record.Status != status || record.FailureCode != failureCode || record.TraceID != traceID {
+		t.Fatalf("read record = %+v, want status=%s failure=%s trace=%s", record, status, failureCode, traceID)
+	}
+	for _, forbidden := range []string{"RAW_PRIVATE_DEVICE_SCOPE_QUERY", "RAW_PRIVATE_REVOKED_DEVICE_QUERY", "RAW_PAIRING_SECRET", "RAW_DEVICE_CREDENTIAL", "https://", "/Users/", "api_key", "token"} {
+		if strings.Contains(strings.ToLower(recordsRec.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("read records leaked %q: %s", forbidden, recordsRec.Body.String())
+		}
+	}
+}
+
+func assertTraceContains(t *testing.T, handler http.Handler, traceID string, marker string) {
+	t.Helper()
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id="+url.QueryEscape(traceID), nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if !strings.Contains(traceRec.Body.String(), marker) {
+		t.Fatalf("trace %s missing %q: %s", traceID, marker, traceRec.Body.String())
+	}
+}
+
+func assertTraceOmits(t *testing.T, handler http.Handler, traceID string, marker string) {
+	t.Helper()
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id="+url.QueryEscape(traceID), nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if strings.Contains(traceRec.Body.String(), marker) {
+		t.Fatalf("trace %s unexpectedly contained %q: %s", traceID, marker, traceRec.Body.String())
 	}
 }
 

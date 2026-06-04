@@ -313,6 +313,9 @@ const workspaceConsoleHTML = `<!doctype html>
             <label>Document label
               <input id="documentLabel" value="A21 PRD pack" autocomplete="off">
             </label>
+            <label>Device
+              <input id="deviceId" value="stackchan-sim-001" autocomplete="off">
+            </label>
           </div>
           <label>Document
             <input id="documentFile" type="file">
@@ -320,6 +323,9 @@ const workspaceConsoleHTML = `<!doctype html>
           <div class="actions">
             <button id="uploadDocument">Upload</button>
             <button id="requestIndex">Request index</button>
+            <button class="secondary" id="bindDevice">Bind device</button>
+            <button class="secondary" id="revokeDevice">Revoke device</button>
+            <button class="secondary" id="refreshDeviceBindings">Device bindings</button>
             <button class="secondary" id="deleteSource">Delete source</button>
             <button class="secondary" id="exportMetadata">Export metadata</button>
             <button class="secondary" id="refreshSources">Sources</button>
@@ -329,7 +335,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <div class="metric"><span>Storage</span><strong id="storageStatus">stored_local pending</strong></div>
             <div class="metric"><span>Index</span><strong id="indexStatus">not_started_no_execute</strong></div>
             <div class="metric"><span>Searchable</span><strong id="searchableStatus">false</strong></div>
-            <div class="metric"><span>Hardware</span><strong id="physicalStatus">physical_accepted=false</strong></div>
+            <div class="metric"><span>Device binding</span><strong id="deviceBindingStatus">binding_not_configured</strong></div>
           </div>
         </div>
       </section>
@@ -347,6 +353,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <div class="metric"><span>User</span><strong id="userId">a21_local_user</strong></div>
             <div class="metric"><span>Workspace</span><strong id="workspaceId">a21_local_workspace</strong></div>
             <div class="metric"><span>Sources</span><strong id="sourceCount">0</strong></div>
+            <div class="metric"><span>Devices</span><strong id="deviceBindingCount">0</strong></div>
             <div class="metric"><span>Reads</span><strong id="readCount">0</strong></div>
           </div>
           <div class="grid">
@@ -545,6 +552,8 @@ const workspaceConsoleHTML = `<!doctype html>
       source: null,
       indexJob: null,
       sources: [],
+      deviceBindings: [],
+      deviceBinding: null,
       readRecords: [],
       workspace: null,
       roleplay: null,
@@ -557,9 +566,13 @@ const workspaceConsoleHTML = `<!doctype html>
     const ui = {
       queryScope: document.getElementById('queryScope'),
       documentLabel: document.getElementById('documentLabel'),
+      deviceId: document.getElementById('deviceId'),
       documentFile: document.getElementById('documentFile'),
       uploadDocument: document.getElementById('uploadDocument'),
       requestIndex: document.getElementById('requestIndex'),
+      bindDevice: document.getElementById('bindDevice'),
+      revokeDevice: document.getElementById('revokeDevice'),
+      refreshDeviceBindings: document.getElementById('refreshDeviceBindings'),
       deleteSource: document.getElementById('deleteSource'),
       exportMetadata: document.getElementById('exportMetadata'),
       refreshWorkspace: document.getElementById('refreshWorkspace'),
@@ -621,12 +634,13 @@ const workspaceConsoleHTML = `<!doctype html>
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
-      physicalStatus: document.getElementById('physicalStatus'),
+      deviceBindingStatus: document.getElementById('deviceBindingStatus'),
       workspaceStatus: document.getElementById('workspaceStatus'),
       adapterStatus: document.getElementById('adapterStatus'),
       userId: document.getElementById('userId'),
       workspaceId: document.getElementById('workspaceId'),
       sourceCount: document.getElementById('sourceCount'),
+      deviceBindingCount: document.getElementById('deviceBindingCount'),
       readCount: document.getElementById('readCount'),
       sourceList: document.getElementById('sourceList'),
       readList: document.getElementById('readList'),
@@ -676,6 +690,19 @@ const workspaceConsoleHTML = `<!doctype html>
       if (!counts) return 'none';
       const parts = Object.keys(counts).sort().map((key) => key + ':' + counts[key]);
       return parts.length ? parts.join(' / ') : 'none';
+    }
+    function currentDeviceID() {
+      return (ui.deviceId.value || '').trim() || 'stackchan-sim-001';
+    }
+    function renderDeviceBindings(payload) {
+      const bindings = (payload && payload.bindings) || [];
+      const summary = (payload && payload.summary) || {};
+      state.deviceBindings = bindings;
+      const active = bindings.find((binding) => binding.status === 'bound') || bindings[0] || null;
+      state.deviceBinding = active;
+      setText(ui.deviceBindingCount, String(summary.active_bindings || 0) + ' / ' + String(summary.total_bindings || bindings.length));
+      setText(ui.deviceBindingStatus, [summary.workspace_access_status || 'binding_not_configured', summary.device_binding_policy || 'open_until_binding_configured'].join(' / '));
+      if (active && active.device_id) ui.deviceId.value = active.device_id;
     }
     function optionLabel(option) {
       return (option.label || option.id || 'none') + (option.status ? ' [' + option.status + ']' : '');
@@ -934,6 +961,7 @@ const workspaceConsoleHTML = `<!doctype html>
       setText(ui.adapterStatus, payload.adapter_contract_version || runtime.adapter_contract_version || 'a21.v21_adapter_query.v2');
       ui.queryScope.value = payload.selected_query_scope || runtime.query_scope || 'public_only';
       setText(ui.searchableStatus, String(!!runtime.v21_execution_allowed && runtime.workspace_status === 'searchable'));
+      if (runtime.device_binding_summary) renderDeviceBindings({ bindings: state.deviceBindings, summary: runtime.device_binding_summary });
     }
     function setRoleplay(payload) {
       state.roleplay = payload || null;
@@ -1026,6 +1054,7 @@ const workspaceConsoleHTML = `<!doctype html>
       form.append('source_scope', sourceScopeForQueryScope(ui.queryScope.value));
       form.append('document_label', ui.documentLabel.value || 'A21 workspace document');
       form.append('content_type', file.type || 'application/octet-stream');
+      form.append('device_id', currentDeviceID());
       form.append('file', file);
       const payload = await fetchJSON('/v1/workspace-documents', { method: 'POST', body: form });
       state.document = (payload.documents || [])[0] || null;
@@ -1076,6 +1105,44 @@ const workspaceConsoleHTML = `<!doctype html>
       const payload = await fetchJSON('/v1/workspace-sources', { cache: 'no-store' });
       renderSources(payload);
       log('sources ' + (((payload.summary || {}).total_sources) || 0));
+    }
+    function deviceBindingQuery() {
+      const params = new URLSearchParams();
+      const userID = ui.userId.textContent || '';
+      const workspaceID = ui.workspaceId.textContent || '';
+      if (userID && userID !== 'none') params.set('user_id', userID);
+      if (workspaceID && workspaceID !== 'none') params.set('workspace_id', workspaceID);
+      const query = params.toString();
+      return query ? '?' + query : '';
+    }
+    async function refreshDeviceBindings() {
+      const payload = await fetchJSON('/v1/workspace-device-bindings' + deviceBindingQuery(), { cache: 'no-store' });
+      renderDeviceBindings(payload);
+      log('device bindings ' + (((payload.summary || {}).active_bindings) || 0));
+    }
+    async function bindDevice() {
+      const payload = await postJSON('/v1/workspace-device-bindings', {
+        device_id: currentDeviceID(),
+        user_id: ui.userId.textContent || 'a21_local_user',
+        workspace_id: ui.workspaceId.textContent || 'a21_local_workspace',
+        allowed_query_scopes: [ui.queryScope.value]
+      });
+      renderDeviceBindings(payload);
+      await refreshWorkspace();
+      log('device bound ' + currentDeviceID());
+    }
+    async function revokeDevice() {
+      const bindingID = state.deviceBinding && state.deviceBinding.binding_id;
+      const body = bindingID ? { binding_id: bindingID, action: 'revoke' } : {
+        device_id: currentDeviceID(),
+        user_id: ui.userId.textContent || 'a21_local_user',
+        workspace_id: ui.workspaceId.textContent || 'a21_local_workspace',
+        action: 'revoke'
+      };
+      const payload = await putJSON('/v1/workspace-device-bindings', body);
+      renderDeviceBindings(payload);
+      await refreshWorkspace();
+      log('device revoked ' + currentDeviceID());
     }
     function readRecordQuery() {
       const params = new URLSearchParams();
@@ -1211,6 +1278,23 @@ const workspaceConsoleHTML = `<!doctype html>
         failure_code: record.failure_code || ''
       };
     }
+    function safeDeviceBinding(binding) {
+      return {
+        binding_id: binding.binding_id || '',
+        device_id: binding.device_id || '',
+        device_label: binding.device_label || '',
+        user_id: binding.user_id || '',
+        workspace_id: binding.workspace_id || '',
+        status: binding.status || '',
+        access_scope: binding.access_scope || '',
+        allowed_query_scopes: binding.allowed_query_scopes || [],
+        professional_allowed: !!binding.professional_allowed,
+        physical_accepted: !!binding.physical_accepted,
+        created_at_ms: binding.created_at_ms || 0,
+        updated_at_ms: binding.updated_at_ms || 0,
+        revoked_at_ms: binding.revoked_at_ms || 0
+      };
+    }
     function exportMetadata() {
       const payload = {
         schema_version: 'a21.workspace_console_export.v1',
@@ -1221,8 +1305,10 @@ const workspaceConsoleHTML = `<!doctype html>
         workspace_status: ui.workspaceStatus.textContent,
         adapter_contract_version: ui.adapterStatus.textContent,
         source_count: state.sources.length,
+        device_binding_count: state.deviceBindings.length,
         read_record_count: state.readRecords.length,
         sources: state.sources.map(safeSource),
+        device_bindings: state.deviceBindings.map(safeDeviceBinding),
         read_records: state.readRecords.map(safeReadRecord),
         roleplay_profile: ui.roleplayProfileStatus.textContent,
         roleplay_scenario: ui.roleplayScenarioStatus.textContent,
@@ -1281,6 +1367,7 @@ const workspaceConsoleHTML = `<!doctype html>
     async function boot() {
       try {
         await refreshWorkspace();
+        await refreshDeviceBindings();
         await refreshSources();
         await refreshReads();
         await refreshRoleplayAndModes();
@@ -1296,9 +1383,12 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.queryScope.addEventListener('change', () => saveScope().catch((err) => log('scope ' + err.message)));
     ui.refreshWorkspace.addEventListener('click', () => refreshWorkspace().catch((err) => log('workspace ' + err.message)));
     ui.refreshSources.addEventListener('click', () => refreshSources().catch((err) => log('sources ' + err.message)));
+    ui.refreshDeviceBindings.addEventListener('click', () => refreshDeviceBindings().catch((err) => log('device bindings ' + err.message)));
     ui.refreshReads.addEventListener('click', () => refreshReads().catch((err) => log('reads ' + err.message)));
     ui.uploadDocument.addEventListener('click', () => uploadDocument().catch((err) => log('upload ' + err.message)));
     ui.requestIndex.addEventListener('click', () => requestIndex().catch((err) => log('index ' + err.message)));
+    ui.bindDevice.addEventListener('click', () => bindDevice().catch((err) => log('device bind ' + err.message)));
+    ui.revokeDevice.addEventListener('click', () => revokeDevice().catch((err) => log('device revoke ' + err.message)));
     ui.deleteSource.addEventListener('click', () => deleteSource().catch((err) => log('delete ' + err.message)));
     ui.exportMetadata.addEventListener('click', exportMetadata);
     ui.clearReadFilters.addEventListener('click', clearReadFilters);
