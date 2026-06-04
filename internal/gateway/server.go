@@ -616,6 +616,7 @@ type XiaozhiMCPControlRequest struct {
 	DeviceID   string `json:"device_id"`
 	ToolName   string `json:"tool_name"`
 	Brightness *int   `json:"brightness,omitempty"`
+	Volume     *int   `json:"volume,omitempty"`
 	Theme      string `json:"theme,omitempty"`
 	TraceID    string `json:"trace_id,omitempty"`
 	SessionID  string `json:"session_id,omitempty"`
@@ -4149,6 +4150,9 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 	if value, ok := args["brightness"]; ok {
 		activity["screen_brightness"] = fmt.Sprint(value)
 	}
+	if value, ok := args["volume"]; ok {
+		activity["speaker_volume"] = fmt.Sprint(value)
+	}
 	if value, ok := args["theme"]; ok {
 		activity["screen_theme"] = fmt.Sprint(value)
 	}
@@ -4168,8 +4172,19 @@ func (s *Server) handleXiaozhiMCPControl(w http.ResponseWriter, r *http.Request)
 func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[string]any, string, error) {
 	toolName := strings.TrimSpace(req.ToolName)
 	switch toolName {
-	case xiaozhiMCPGetDeviceStatusToolName:
+	case xiaozhiSpeakerVolumeToolName:
+		if req.Volume == nil {
+			return "", nil, "", errors.New("volume is required")
+		}
+		if *req.Volume < 0 || *req.Volume > 100 {
+			return "", nil, "", errors.New("volume must be 0..100")
+		}
 		if req.Brightness != nil || strings.TrimSpace(req.Theme) != "" {
+			return "", nil, "", errors.New("speaker volume does not accept screen arguments")
+		}
+		return toolName, map[string]any{"volume": *req.Volume}, "speaker_volume", nil
+	case xiaozhiMCPGetDeviceStatusToolName:
+		if req.Brightness != nil || req.Volume != nil || strings.TrimSpace(req.Theme) != "" {
 			return "", nil, "", errors.New("device status does not accept screen arguments")
 		}
 		return toolName, nil, "device_status", nil
@@ -4179,6 +4194,9 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 		}
 		if *req.Brightness < 0 || *req.Brightness > 100 {
 			return "", nil, "", errors.New("brightness must be 0..100")
+		}
+		if req.Volume != nil {
+			return "", nil, "", errors.New("brightness control does not accept volume")
 		}
 		if strings.TrimSpace(req.Theme) != "" {
 			return "", nil, "", errors.New("brightness control does not accept theme")
@@ -4192,9 +4210,12 @@ func xiaozhiMCPStatusParityCall(req XiaozhiMCPControlRequest) (string, map[strin
 		if req.Brightness != nil {
 			return "", nil, "", errors.New("theme control does not accept brightness")
 		}
+		if req.Volume != nil {
+			return "", nil, "", errors.New("theme control does not accept volume")
+		}
 		return toolName, map[string]any{"theme": theme}, "screen_theme", nil
 	case xiaozhiMCPScreenGetInfoToolName:
-		if req.Brightness != nil || strings.TrimSpace(req.Theme) != "" {
+		if req.Brightness != nil || req.Volume != nil || strings.TrimSpace(req.Theme) != "" {
 			return "", nil, "", errors.New("screen info does not accept screen arguments")
 		}
 		return toolName, nil, "screen_info", nil

@@ -4796,6 +4796,14 @@ func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
 			marker:   "xiaozhi.mcp.device_status.sent",
 		},
 		{
+			name:     "speaker volume",
+			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":88,"trace_id":"a21-trace-mcp-speaker-volume","session_id":"a21-session-mcp-speaker-volume"}`,
+			toolName: xiaozhiSpeakerVolumeToolName,
+			marker:   "xiaozhi.mcp.speaker_volume.sent",
+			argKey:   "volume",
+			argValue: float64(88),
+		},
+		{
 			name:     "screen brightness",
 			body:     `{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":72,"trace_id":"a21-trace-mcp-brightness","session_id":"a21-session-mcp-brightness"}`,
 			toolName: xiaozhiMCPScreenSetBrightnessToolName,
@@ -4956,12 +4964,21 @@ func TestXiaozhiMCPStatusParityBlocksHighRiskTools(t *testing.T) {
 
 func TestXiaozhiMCPStatusParityRequiresSafeArguments(t *testing.T) {
 	tests := []string{
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":101}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":-1}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":88,"theme":"dark"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.audio_speaker.set_volume","volume":88,"brightness":20}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":101}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_brightness","brightness":72,"volume":88}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"http://example.test/theme"}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"../../theme"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.set_theme","theme":"dark","volume":88}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","theme":"dark"}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.get_device_status","volume":88}`,
 		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","brightness":10}`,
+		`{"device_id":"44:1b:f6:e2:6a:60","tool_name":"self.screen.get_info","volume":88}`,
 	}
 	for _, body := range tests {
 		req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/mcp-control", bytes.NewBufferString(body))

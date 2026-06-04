@@ -338,18 +338,19 @@ surfaces:
   requires operator or instrument evidence.
 - `POST /v1/xiaozhi/mcp-control` is the low-risk official MCP status/control
   parity surface. It sends only whitelisted stock `tools/call` messages for
-  `self.get_device_status`, `self.screen.set_brightness`,
-  `self.screen.set_theme`, and `self.screen.get_info` to an already connected
-  `/v1/xiaozhi` WebSocket. It requires a valid `device_id`, an online socket,
-  `hello.features.mcp=true`, and trace/session/device identity. Missing
-  `trace_id` or `session_id` is filled with A21 IDs. Brightness is bounded to
-  `0..100`; theme is a bounded token without URL/path characters; status and
-  info requests accept no user arguments. The endpoint rejects non-whitelisted
-  tools, including reboot, firmware upgrade, camera/photo, screen snapshot,
-  camera stream/video, NFC, infrared, and app lifecycle controls, before any
-  MCP websocket write. Delivery proves only that the MCP request was sent; it
-  does not capture raw MCP responses and is not physical screen/status product
-  acceptance.
+  `self.audio_speaker.set_volume`, `self.get_device_status`,
+  `self.screen.set_brightness`, `self.screen.set_theme`, and
+  `self.screen.get_info` to an already connected `/v1/xiaozhi` WebSocket. It
+  requires a valid `device_id`, an online socket, `hello.features.mcp=true`,
+  and trace/session/device identity. Missing `trace_id` or `session_id` is
+  filled with A21 IDs. Volume and brightness are bounded to `0..100`; theme is
+  a bounded token without URL/path characters; status and info requests accept
+  no user arguments; speaker volume accepts no screen arguments. The endpoint
+  rejects non-whitelisted tools, including reboot, firmware upgrade,
+  camera/photo, screen snapshot, camera stream/video, NFC, infrared, and app
+  lifecycle controls, before any MCP websocket write. Delivery proves only that
+  the MCP request was sent; it does not capture raw MCP responses and is not
+  physical speaker/screen/status product acceptance.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

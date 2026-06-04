@@ -2,6 +2,13 @@
 
 Transition id: `T-STACKCHAN-OFFICIAL-MCP-STATUS-PARITY-001`
 
+Follow-up freeze:
+`T-STACKCHAN-OFFICIAL-MCP-SPEAKER-VOLUME-FREEZE-001` in
+`docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`
+later folds the already-existing `self.audio_speaker.set_volume` delivery path
+into the same `/v1/xiaozhi/mcp-control` surface while keeping this transition's
+screen/status scope historically intact.
+
 Parent plan:
 `docs/plans/2026-06-04-stackchan-official-hardware-parity-full-landing.md`.
 

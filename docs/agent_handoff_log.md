@@ -11588,3 +11588,82 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 10:02 CST - MCP Speaker Volume Freeze
+
+Round goal:
+
+- Freeze the already-used official Xiaozhi MCP speaker volume tool into the
+  unified low-risk `/v1/xiaozhi/mcp-control` surface, so A21's StackChan MCP
+  control contract is less split while preserving physical-evidence discipline.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`.
+- Added `volume` to `XiaozhiMCPControlRequest`.
+- `/v1/xiaozhi/mcp-control` now allows
+  `self.audio_speaker.set_volume` with bounded `volume=0..100`.
+- Existing `/v1/xiaozhi/speaker-volume` behavior remains available as the
+  compatibility/product shortcut.
+- Unified MCP control now records `xiaozhi.mcp.speaker_volume.sent` and safe
+  bounded `speaker_volume` device activity metadata.
+- Missing volume, out-of-range volume, and mixed screen/volume arguments are
+  rejected before websocket write.
+- High-risk MCP tools remain blocked before websocket write: reboot, firmware
+  upgrade, camera/photo, screen snapshot, stream/video, NFC, infrared, and app
+  lifecycle.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`
+- `docs/plans/2026-06-04-stackchan-official-mcp-status-parity.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/OBSERVABILITY.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not physical loudness, playback-start, playback-stop, or PRD speaker
+  acceptance.
+- This does not add raw MCP response capture, screen snapshot, camera/photo,
+  reboot, firmware upgrade, NFC, infrared, stream/video, or app lifecycle
+  controls.
+- Device-side volume persistence/NVS policy remains separate from this
+  Gateway delivery contract.
+
+Known risks/blockers:
+
+- Delivery proves only that the stock MCP request was sent to an online
+  Xiaozhi socket with MCP support; actual loudness still needs trusted physical
+  evidence.
+- The unified endpoint and dedicated shortcut now overlap intentionally; future
+  UI can prefer `/v1/xiaozhi/mcp-control` while old operator scripts keep using
+  `/v1/xiaozhi/speaker-volume`.
+
+Recommended next action:
+
+- Continue hardware parity with a foreground physical evidence window for
+  speaker playback-start/stop, touch/barge-in, visible action, RGB, and servo
+  proof, or continue no-hardware work on workspace indexing/V21 adapter
+  readiness. Do not promote MCP delivery to product physical acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiSpeakerVolumeUsesStockMCPToolCall|TestXiaozhiMCPStatusParityAllowsOnlyScopedTools|TestXiaozhiMCPStatusParityBlocksHighRiskTools|TestXiaozhiMCPStatusParityRequiresSafeArguments' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, prune/gc, or physical
+  hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.

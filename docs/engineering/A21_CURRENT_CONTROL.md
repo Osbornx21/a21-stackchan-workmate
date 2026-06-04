@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this focused role-soul cut:
-  `57cdfb7 feat(gateway): accept local workspace document uploads`
+- Current source HEAD before this focused MCP speaker-volume cut:
+  `c2a1260 feat(gateway): add selectable roleplay soul profiles`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,14 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-roleplay-soul-profile-contract.md`
+- `docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`
 - Transition:
-  `T-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-001`
+  `T-STACKCHAN-OFFICIAL-MCP-SPEAKER-VOLUME-FREEZE-001`
 - Target:
-  make `roleplay_profile` a real A21 role-soul selector, compose the selected
-  soul into roleplay voice-pipeline prompt input, and expose simulator controls
-  without storing prompt bodies, executing providers/V21, or weakening internal
-  test 3 Xiaozhi behavior.
+  freeze the already-used official `self.audio_speaker.set_volume` tool into
+  the unified `/v1/xiaozhi/mcp-control` whitelist while preserving the existing
+  `/v1/xiaozhi/speaker-volume` compatibility endpoint and avoiding physical
+  acceptance overclaims.
 
 ## Scoped Hardware Parity Transition
 
@@ -117,7 +117,8 @@ Status:
   start Gateway, execute providers or V21, build firmware, flash firmware,
   touch serial, or write NVS.
 - Low-risk MCP/status parity has also landed as a Gateway contract through
-  `POST /v1/xiaozhi/mcp-control` for only `self.get_device_status`,
+  `POST /v1/xiaozhi/mcp-control` for only
+  `self.audio_speaker.set_volume`, `self.get_device_status`,
   `self.screen.set_brightness`, `self.screen.set_theme`, and
   `self.screen.get_info`.
 - Status-display registry parity has landed as Gateway/protocol state:
@@ -1031,3 +1032,33 @@ Current conclusion:
 - This is host-local contract evidence only. It does not execute provider/V21,
   start Gateway as a runtime service, deploy ECS, build/flash firmware, write
   serial/NVS, or prove physical StackChan roleplay audio acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 MCP Speaker Volume Freeze
+
+The already-used official speaker volume MCP tool is now part of the unified
+low-risk MCP control surface.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-stackchan-official-mcp-speaker-volume-freeze.md`.
+- `/v1/xiaozhi/mcp-control` now allows `self.audio_speaker.set_volume` with
+  bounded `volume=0..100`.
+- The existing `/v1/xiaozhi/speaker-volume` compatibility/product shortcut is
+  preserved.
+- Unified MCP control still requires valid A21 `device_id`, an online Xiaozhi
+  socket, `hello.features.mcp=true`, and trace/session/device identity.
+- The endpoint records only the redacted send marker
+  `xiaozhi.mcp.speaker_volume.sent` and safe device activity metadata such as
+  bounded `speaker_volume`.
+- Missing, out-of-range, or mixed screen/volume arguments are rejected before
+  websocket write.
+
+Current conclusion:
+
+- Low-risk MCP parity now has one consistent Gateway control surface for
+  speaker volume, device status, brightness, theme, and screen info.
+- This is delivery-contract evidence only. Physical loudness/playback
+  acceptance still requires fresh device evidence; no provider/V21, Gateway
+  runtime service start, ECS, firmware, serial, NVS, or hardware action
+  occurred.

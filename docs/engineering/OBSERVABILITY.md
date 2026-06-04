@@ -268,10 +268,11 @@ Client `hello.features` are represented only as sanitized `/v1/devices`
 capabilities: stock `mcp`/`aec` hints stay in the stock profile, while
 `device_events` and `debug_metrics` are marked as an isolated debug profile.
 Low-risk MCP status/control delivery records only redacted send markers after a
-successful websocket write: `xiaozhi.mcp.device_status.sent`,
-`xiaozhi.mcp.screen_brightness.sent`, `xiaozhi.mcp.screen_theme.sent`, and
-`xiaozhi.mcp.screen_info.sent`. `/v1/devices` may carry safe metadata such as
-`xiaozhi_mcp_tool`, bounded `screen_brightness`, and bounded `screen_theme`.
+successful websocket write: `xiaozhi.mcp.speaker_volume.sent`,
+`xiaozhi.mcp.device_status.sent`, `xiaozhi.mcp.screen_brightness.sent`,
+`xiaozhi.mcp.screen_theme.sent`, and `xiaozhi.mcp.screen_info.sent`.
+`/v1/devices` may carry safe metadata such as `xiaozhi_mcp_tool`, bounded
+`speaker_volume`, bounded `screen_brightness`, and bounded `screen_theme`.
 Gateway does not store raw MCP response bodies, screenshots, image data,
 provider output, secrets, full URLs, local paths, transcripts, or raw/base64
 audio for these controls, and the markers are not physical screen/status
