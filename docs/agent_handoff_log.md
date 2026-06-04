@@ -11077,6 +11077,81 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 11:02 CST - Roleplay Device State Reflection
+
+Round goal:
+
+- Make the selected A21 roleplay identity visible as safe device/registry state
+  so StackChan/simulator surfaces can reflect role soul, scenario, memory
+  readiness/count, and voice-clone binding without exposing prompt or memory
+  content.
+
+Actual completed work:
+
+- Added plan `docs/plans/2026-06-04-roleplay-device-state-reflection.md`.
+- Extended `/v1/devices` records with safe roleplay fields:
+  `current_roleplay_profile`, `current_roleplay_scenario`,
+  `roleplay_soul_ready`, `roleplay_memory_ready`,
+  `roleplay_memory_hint_count`, and `roleplay_physical_accepted`.
+- Added a lightweight roleplay device-state snapshot derived from the existing
+  roleplay selector and bounded memory policy.
+- Device `runtime_echo` now receives only safe roleplay IDs, booleans, counts,
+  and explicit non-storage flags for prompt text, memory text, and voice
+  samples.
+- Simulator Device Registry now shows role soul, scenario, and role memory next
+  to the existing voice-clone profile.
+- Added tests proving selected `a21_roleplay_wry_peer`,
+  `engineer_pushback`, and one safe memory hint are reflected in `/v1/devices`
+  while unsafe URL hints, memory text, and control text are not leaked.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `docs/plans/2026-06-04-roleplay-device-state-reflection.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not physical StackChan roleplay acceptance; it only reflects safe
+  host-local device state.
+- Provider execution, voice-clone CLI execution, real audio output, and
+  physical screen/servo/RGB reflection remain evidence-gated follow-ups.
+
+Known risks/blockers:
+
+- Runtime echo is a state reflection channel, not proof that firmware displayed
+  or animated the role state.
+- Roleplay memory remains bounded runtime prompt input, not durable long-term
+  memory or user account memory.
+- Git may still warn about historical loose objects/gc; no prune/gc action was
+  taken.
+
+Recommended next action:
+
+- Continue roleplay immersion by mapping safe roleplay state to official
+  StackChan action/screen/servo/RGB semantics in a no-hardware contract cut,
+  then collect physical evidence in an approved hardware window.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestSimulatorPageServed|TestVoiceMode|TestRoleplayProfile|TestFastCompanionHybrid' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider/V21/voice-clone execution
+  occurred, and no firmware build, flash, serial, NVS, ECS change, prune/gc, or
+  physical hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
+
 ## 2026-06-04 10:50 CST - A21 Native V21 Voice-Query Bridge
 
 Round goal:

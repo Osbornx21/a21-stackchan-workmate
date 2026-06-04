@@ -352,6 +352,9 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="clearRoleplayMemory"`,
 		`id="roleplaySoulReadout"`,
 		`id="roleplayMemoryReadout"`,
+		`id="registryRoleplayProfile"`,
+		`id="registryRoleplayScenario"`,
+		`id="registryRoleplayMemory"`,
 		`id="modeRitualReadout"`,
 		`id="professionalQueryScope"`,
 		`id="workspaceDocumentLabel"`,
@@ -1029,11 +1032,83 @@ func TestVoiceModeSelectionAcceptsDialogueAliasAsRoleplayWithoutChangingLegacyTr
 		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
 	}
 	device := registry.Devices[0]
-	if device.CurrentMode != protocol.ModeWorkmate || device.CurrentVoiceMode != "roleplay" {
+	if device.CurrentMode != protocol.ModeWorkmate ||
+		device.CurrentVoiceMode != "roleplay" ||
+		device.CurrentRoleplayProfile != "a21_roleplay_default" ||
+		device.CurrentRoleplayScenario != "desk_mouthpiece" ||
+		!device.RoleplaySoulReady ||
+		device.RoleplayMemoryReady ||
+		device.RoleplayMemoryHintCount != 0 ||
+		device.RoleplayPhysicalAccepted {
 		t.Fatalf("device state = %+v, want legacy transport mode workmate and voice_mode roleplay", device)
 	}
 	if strings.Contains(devicesRec.Body.String(), "selected voice mode must not rewrite product mode") {
 		t.Fatalf("registry leaked control text: %s", devicesRec.Body.String())
+	}
+}
+
+func TestRoleplayProfileReflectsSafeDeviceRegistryState(t *testing.T) {
+	server := NewServer()
+	handler := server.Handler()
+
+	profileReq := httptest.NewRequest(http.MethodPost, "/v1/roleplay-profile", bytes.NewBufferString(`{
+		"roleplay_profile":"a21_roleplay_wry_peer",
+		"scenario":"engineer_pushback",
+		"voice_clone_profile":"a21_voice_clone_default",
+		"memory_hints":["角色语气只给短句","http://secret.example/leak"]
+	}`))
+	profileRec := httptest.NewRecorder()
+	handler.ServeHTTP(profileRec, profileReq)
+	if profileRec.Code != http.StatusOK {
+		t.Fatalf("roleplay profile status = %d, want 200: %s", profileRec.Code, profileRec.Body.String())
+	}
+
+	server.controlSequence("stackchan-sim-001", "a21-trace-roleplay-registry", "a21-session-roleplay-registry", []protocol.ControlEventPayload{{
+		State: protocol.ExpressionThinking,
+		Mode:  protocol.ModeRoleplay,
+		Text:  "roleplay registry must not store this text",
+	}})
+
+	devicesReq := httptest.NewRequest(http.MethodGet, "/v1/devices", nil)
+	devicesRec := httptest.NewRecorder()
+	handler.ServeHTTP(devicesRec, devicesReq)
+	if devicesRec.Code != http.StatusOK {
+		t.Fatalf("devices status = %d, want 200: %s", devicesRec.Code, devicesRec.Body.String())
+	}
+	var registry DeviceRegistryResponse
+	if err := json.Unmarshal(devicesRec.Body.Bytes(), &registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Devices) != 1 {
+		t.Fatalf("devices = %d, want 1: %s", len(registry.Devices), devicesRec.Body.String())
+	}
+	device := registry.Devices[0]
+	if device.CurrentRoleplayProfile != "a21_roleplay_wry_peer" ||
+		device.CurrentRoleplayScenario != "engineer_pushback" ||
+		device.CurrentVoiceCloneProfile != "a21_voice_clone_default" ||
+		!device.RoleplaySoulReady ||
+		!device.RoleplayMemoryReady ||
+		device.RoleplayMemoryHintCount != 1 ||
+		device.RoleplayPhysicalAccepted {
+		t.Fatalf("roleplay device state = %+v", device)
+	}
+	if device.RuntimeEcho["roleplay_profile"] != "a21_roleplay_wry_peer" ||
+		device.RuntimeEcho["roleplay_scenario"] != "engineer_pushback" ||
+		device.RuntimeEcho["roleplay_memory_ready"] != "true" ||
+		device.RuntimeEcho["roleplay_memory_hint_count"] != "1" ||
+		device.RuntimeEcho["roleplay_physical_accepted"] != "false" {
+		t.Fatalf("runtime echo = %+v, want safe roleplay state", device.RuntimeEcho)
+	}
+	for _, forbidden := range []string{
+		"角色语气只给短句",
+		"secret.example",
+		"roleplay registry must not store this text",
+		"http://",
+		"https://",
+	} {
+		if strings.Contains(devicesRec.Body.String(), forbidden) {
+			t.Fatalf("device registry leaked %q: %s", forbidden, devicesRec.Body.String())
+		}
 	}
 }
 

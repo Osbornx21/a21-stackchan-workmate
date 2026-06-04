@@ -550,6 +550,9 @@ const simulatorHTML = `<!doctype html>
             <div class="metric"><label>TTS</label><div id="registryTTSProfile">none</div></div>
             <div class="metric"><label>Realtime</label><div id="registryRealtimeProvider">none</div></div>
             <div class="metric"><label>Voice Name</label><div id="registryVoiceCloneProfile">none</div></div>
+            <div class="metric"><label>Role Soul</label><div id="registryRoleplayProfile">none</div></div>
+            <div class="metric"><label>Scenario</label><div id="registryRoleplayScenario">none</div></div>
+            <div class="metric"><label>Role Memory</label><div id="registryRoleplayMemory">empty / 0</div></div>
             <div class="metric"><label>Cloud Voice</label><div id="registryCloudVoiceProfile">none</div></div>
             <div class="metric"><label>Expression</label><div id="registryExpression">none</div></div>
             <div class="metric"><label>Firmware</label><div id="registryFirmware">none</div></div>
@@ -638,6 +641,9 @@ const simulatorHTML = `<!doctype html>
       registryTTSProfile: document.getElementById('registryTTSProfile'),
       registryRealtimeProvider: document.getElementById('registryRealtimeProvider'),
       registryVoiceCloneProfile: document.getElementById('registryVoiceCloneProfile'),
+      registryRoleplayProfile: document.getElementById('registryRoleplayProfile'),
+      registryRoleplayScenario: document.getElementById('registryRoleplayScenario'),
+      registryRoleplayMemory: document.getElementById('registryRoleplayMemory'),
       registryCloudVoiceProfile: document.getElementById('registryCloudVoiceProfile'),
       registryExpression: document.getElementById('registryExpression'),
       registryFirmware: document.getElementById('registryFirmware'),
@@ -1152,6 +1158,10 @@ const simulatorHTML = `<!doctype html>
         ui.registryTTSProfile.textContent = device.current_tts_profile || 'none';
         ui.registryRealtimeProvider.textContent = device.current_realtime_provider || 'none';
         ui.registryVoiceCloneProfile.textContent = device.current_voice_clone_profile || 'none';
+        ui.registryRoleplayProfile.textContent = device.current_roleplay_profile || 'none';
+        ui.registryRoleplayScenario.textContent = device.current_roleplay_scenario || 'none';
+        const memoryState = device.roleplay_memory_ready ? 'ready' : 'empty';
+        ui.registryRoleplayMemory.textContent = memoryState + ' / ' + (device.roleplay_memory_hint_count || 0);
         ui.registryCloudVoiceProfile.textContent = device.current_cloud_voice_profile || 'none';
         ui.registryExpression.textContent = device.current_expression || 'none';
         ui.registryFirmware.textContent = [firmware.id, firmware.version, firmware.board].filter(Boolean).join(' / ') || 'none';

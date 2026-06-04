@@ -142,6 +142,12 @@ StackChan hardware.
   A21 from bypassing the V21 source-scope guard on the normal professional
   consult path, but it is still adapter-boundary contract evidence rather than
   V21 merge/release, real indexing, or physical consult acceptance.
+- Roleplay device-state reflection now exposes the selected safe role soul,
+  scenario, memory readiness/count, voice clone, and
+  `roleplay_physical_accepted=false` through `/v1/devices` and the simulator
+  registry panel. It records only IDs, booleans, counts, and non-storage flags;
+  it does not expose prompt bodies, memory text, transcripts, provider output,
+  voice-clone samples, or physical acceptance.
 
 ## Product Form
 

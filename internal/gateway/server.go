@@ -276,6 +276,15 @@ type RoleplayRuntimeSummary struct {
 	V21Executed              bool     `json:"v21_executed"`
 }
 
+type roleplayDeviceState struct {
+	Profile          string
+	Scenario         string
+	SoulReady        bool
+	MemoryReady      bool
+	MemoryHintCount  int
+	PhysicalAccepted bool
+}
+
 type ProfessionalWorkspaceOption struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -744,6 +753,12 @@ type DeviceRecord struct {
 	CurrentTTSProfile        string                   `json:"current_tts_profile,omitempty"`
 	CurrentRealtimeProvider  string                   `json:"current_realtime_provider,omitempty"`
 	CurrentVoiceCloneProfile string                   `json:"current_voice_clone_profile,omitempty"`
+	CurrentRoleplayProfile   string                   `json:"current_roleplay_profile,omitempty"`
+	CurrentRoleplayScenario  string                   `json:"current_roleplay_scenario,omitempty"`
+	RoleplaySoulReady        bool                     `json:"roleplay_soul_ready"`
+	RoleplayMemoryReady      bool                     `json:"roleplay_memory_ready"`
+	RoleplayMemoryHintCount  int                      `json:"roleplay_memory_hint_count"`
+	RoleplayPhysicalAccepted bool                     `json:"roleplay_physical_accepted"`
 	CurrentCloudVoiceProfile string                   `json:"current_cloud_voice_profile,omitempty"`
 	CurrentExpr              protocol.ExpressionState `json:"current_expression,omitempty"`
 	DisplayState             protocol.DisplayState    `json:"display_state,omitempty"`
@@ -1722,6 +1737,49 @@ func (s *Server) roleplayRuntimeSummary(override RoleplayProfileSelectionRequest
 		ProfessionalRouteAllowed: false,
 		V21Executed:              false,
 	}, memory, nil
+}
+
+func (s *Server) currentRoleplayDeviceState() roleplayDeviceState {
+	profile, scenario, _, err := s.resolveRoleplaySelection(RoleplayProfileSelectionRequest{})
+	if err != nil {
+		profile = DefaultRoleplayProfile
+		scenario = DefaultRoleplayScenario
+	}
+	memory, _ := s.roleplayMemoryHints()
+	return roleplayDeviceState{
+		Profile:          defaultRoleplayProfile(profile),
+		Scenario:         defaultRoleplayScenario(scenario),
+		SoulReady:        roleplayPersonalitySoul(profile) != "",
+		MemoryReady:      memory.PromptInputReady,
+		MemoryHintCount:  memory.UserPreferenceCount + memory.SessionMemoryCount,
+		PhysicalAccepted: false,
+	}
+}
+
+func applyRoleplayDeviceState(record *DeviceRecord, state roleplayDeviceState) {
+	if record == nil {
+		return
+	}
+	record.CurrentRoleplayProfile = defaultRoleplayProfile(state.Profile)
+	record.CurrentRoleplayScenario = defaultRoleplayScenario(state.Scenario)
+	record.RoleplaySoulReady = state.SoulReady
+	record.RoleplayMemoryReady = state.MemoryReady
+	record.RoleplayMemoryHintCount = state.MemoryHintCount
+	record.RoleplayPhysicalAccepted = state.PhysicalAccepted
+}
+
+func roleplayDeviceRuntimeEcho(state roleplayDeviceState) map[string]string {
+	return map[string]string{
+		"roleplay_profile":             defaultRoleplayProfile(state.Profile),
+		"roleplay_scenario":            defaultRoleplayScenario(state.Scenario),
+		"roleplay_soul_ready":          strconv.FormatBool(state.SoulReady),
+		"roleplay_memory_ready":        strconv.FormatBool(state.MemoryReady),
+		"roleplay_memory_hint_count":   strconv.Itoa(state.MemoryHintCount),
+		"roleplay_physical_accepted":   strconv.FormatBool(state.PhysicalAccepted),
+		"roleplay_prompt_text_stored":  "false",
+		"roleplay_memory_text_stored":  "false",
+		"roleplay_voice_sample_stored": "false",
+	}
 }
 
 func (s *Server) roleplayPromptInput(override RoleplayProfileSelectionRequest, userText string) (string, error) {
@@ -8794,6 +8852,7 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 	if deviceID == "" {
 		return
 	}
+	roleplayState := s.currentRoleplayDeviceState()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record := s.devices[deviceID]
@@ -8812,7 +8871,9 @@ func (s *Server) recordDeviceControl(deviceID string, traceID string, sessionID 
 	record.CurrentTTSProfile = voiceChainTTSForVoice(defaultFixedTTSProfile(s.fixedTTSProfileConfig), defaultVoiceCloneProfile(s.voiceCloneProfileConfig))
 	record.CurrentRealtimeProvider = defaultRealtimeProvider(s.realtimeProviderConfig)
 	record.CurrentVoiceCloneProfile = defaultVoiceCloneProfile(s.voiceCloneProfileConfig)
+	applyRoleplayDeviceState(&record, roleplayState)
 	record.CurrentCloudVoiceProfile = providers.DefaultCloudVoiceProfile(s.cloudVoiceProfileConfig)
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, roleplayDeviceRuntimeEcho(roleplayState))
 	if payload.State != "" {
 		record.CurrentExpr = payload.State
 	}
@@ -9111,6 +9172,7 @@ func boolValue(value bool) *bool {
 }
 
 func (s *Server) deviceRecords() []DeviceRecord {
+	roleplayState := s.currentRoleplayDeviceState()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	nowMS := s.now().UnixMilli()
@@ -9131,7 +9193,9 @@ func (s *Server) deviceRecords() []DeviceRecord {
 		record.CurrentTTSProfile = ttsProfile
 		record.CurrentRealtimeProvider = realtimeProvider
 		record.CurrentVoiceCloneProfile = voiceCloneProfile
+		applyRoleplayDeviceState(&record, roleplayState)
 		record.CurrentCloudVoiceProfile = cloudVoiceProfile
+		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, roleplayDeviceRuntimeEcho(roleplayState))
 		records = append(records, withDeviceFreshness(record, nowMS))
 	}
 	sort.Slice(records, func(i, j int) bool {

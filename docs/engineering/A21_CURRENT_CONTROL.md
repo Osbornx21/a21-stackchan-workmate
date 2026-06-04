@@ -1176,3 +1176,35 @@ Current conclusion:
   real personal upload indexing, durable tenant/account ACL, cloud storage,
   provider execution, Gateway service startup, ECS deployment, firmware,
   serial, NVS, or physical StackChan professional consult acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Device State Reflection
+
+The selected roleplay identity is now visible as safe device/registry state,
+not only as hidden prompt input.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-device-state-reflection.md`.
+- `/v1/devices` now reflects safe roleplay state:
+  `current_roleplay_profile`, `current_roleplay_scenario`,
+  `roleplay_soul_ready`, `roleplay_memory_ready`,
+  `roleplay_memory_hint_count`, and `roleplay_physical_accepted=false`.
+- Device `runtime_echo` now receives only safe roleplay IDs, booleans, counts,
+  and explicit non-storage flags for prompt text, memory text, and voice
+  samples.
+- The simulator Device Registry panel now shows role soul, scenario, and role
+  memory alongside the existing voice-clone profile.
+- Focused tests prove selected `a21_roleplay_wry_peer` +
+  `engineer_pushback` + one safe memory hint reaches the device registry while
+  unsafe URLs, memory text, and control text stay out of `/v1/devices`.
+
+Current conclusion:
+
+- Roleplay is now better reflected as an embodied runtime state: the device
+  registry can tell which persona/scenario/memory posture is active without
+  exposing the role prompt or memory content.
+- This is host-local registry/simulator evidence only. It does not execute
+  providers, V21, or voice-clone CLI; it does not start Gateway as a service,
+  deploy ECS, build/flash firmware, write serial/NVS, or prove physical
+  StackChan roleplay audio/visual acceptance.

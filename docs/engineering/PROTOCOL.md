@@ -882,6 +882,16 @@ Gateway also records the device's current control state for office acceptance:
 - `device_age_ms`: age of the latest observed device/control event at read time
 - `current_mode`: latest semantic mode from A21 `control.event`
 - `current_voice_mode`: current explicit operator voice-mode selection
+- `current_roleplay_profile`: selected safe roleplay soul/profile ID
+- `current_roleplay_scenario`: selected safe roleplay scenario/playbook ID
+- `roleplay_soul_ready`: true when the selected role soul maps to a known A21
+  personality asset
+- `roleplay_memory_ready`: true when bounded memory hints are available as
+  prompt input
+- `roleplay_memory_hint_count`: count of bounded memory hints, never the hint
+  text
+- `roleplay_physical_accepted`: always false until separate physical
+  StackChan roleplay evidence exists
 - `current_expression`: latest expression/render state from A21 `control.event`
 - `display_state`: latest stable A21 status-display state normalized from
   official Xiaozhi/StackChan state words or A21 device events
@@ -895,11 +905,19 @@ Gateway also records the device's current control state for office acceptance:
   screen/status acceptance report exists
 - `playback_stream_id`: active speaking stream when one is present
 - `capabilities`: latest semantic device capability map reported by firmware or simulator
-- `runtime_echo`: latest device-applied screen/servo/RGB echo reported by firmware
+- `runtime_echo`: latest device-applied screen/servo/RGB echo reported by
+  firmware plus safe A21 roleplay IDs/booleans/counts when roleplay state is
+  reflected; it must not include prompt bodies, memory text, transcripts,
+  provider output, or voice-clone sample paths
 
 The current online window is 300000 ms. Anything older is `stale`; this is aligned with the default firmware device identity freshness guard. This field is an operator acceptance aid, not flash permission.
 
-The registry intentionally does not persist utterance text, professional answer text, evidence summaries, or screen-card content. It is an operational state surface for "is this device listening, speaking, professional, private, muted, local, or in error", not a conversation transcript.
+The registry intentionally does not persist utterance text, roleplay prompt
+text, memory text, professional answer text, evidence summaries, screen-card
+content, provider output, audio, or voice-clone samples. It is an operational
+state surface for "is this device listening, speaking, roleplaying,
+professional, private, muted, local, or in error", not a conversation
+transcript.
 
 ## Device Validation Control
 
