@@ -71,6 +71,39 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 07:51 CST product recovery precheck
+transition:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read and
+  compared against current implementation. Its prior P0/P1 software findings
+  are no longer the current blocker: the Gateway review race subset passes,
+  `make preflight` passes, `make doctor` passes when run outside a parallel
+  port collision, and `make verify` passes.
+- Added read-only product recovery command:
+  `a21 stackchan-accept --check product-recovery` and alias
+  `a21 stackchan-product-recovery`.
+- The command checks Gateway `/v1/devices`, official relay status
+  `/v1/stackchan/official/status`, local USB serial candidates, and the latest
+  official-compatible product flash receipt. It never sends device control,
+  never flashes, never writes NVS, and never contacts provider or V21 paths.
+- Local read-only run against the current product inputs wrote
+  `reports/a21-stackchan-product-recovery-20260605-074948.json` and classified
+  the current recovery status as `product_offline_rom_download_required`.
+- The same report records `/dev/cu.usbmodem1101` present and the latest
+  product flash receipt
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json`
+  with `flash_executed=false`, `esptool_before=no_reset`, and
+  `wait_rom_download_mode=true`.
+- Public direct HTTP to `47.103.57.217` remained unstable from this host
+  during the run (`EOF` from the CLI direct client and `502` from shell curl),
+  so the report keeps Gateway reachability as a finding instead of pretending
+  public device state is proven.
+- Next physical action remains unchanged: put the product StackChan into true
+  ESP32-S3 ROM/download mode, rerun the guarded wait-ROM official-compatible
+  product flash if needed, then verify product Xiaozhi, official
+  `/stackChan/ws`, power-key startup, wake/listen/playback, barge-in, and
+  visible screen/RGB/servo/touch behavior.
+
 Live truth after the 2026-06-05 07:30 CST official relay status transition:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was read and compared

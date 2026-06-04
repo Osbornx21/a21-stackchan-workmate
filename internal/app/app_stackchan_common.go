@@ -57,7 +57,7 @@ func runStackChanAccept(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	if check == "" {
 		if showHelp {
-			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity|physical-evidence|capability|mic-probe|imu-probe|sensor-probe|half-duplex|xiaozhi-half-duplex|xiaozhi-prd-review|speaker|touch|hardware-mainline [check options]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check identity|physical-evidence|capability|mic-probe|imu-probe|sensor-probe|half-duplex|xiaozhi-half-duplex|xiaozhi-prd-review|speaker|touch|hardware-mainline|product-recovery [check options]")
 			return 0
 		}
 		fmt.Fprintln(stderr, "--check requires a value")
@@ -101,6 +101,8 @@ func stackChanAcceptAliasCheck(command string) (string, bool) {
 		return "touch", true
 	case "stackchan-hardware-mainline":
 		return "hardware-mainline", true
+	case "stackchan-product-recovery":
+		return "product-recovery", true
 	default:
 		return "", false
 	}
@@ -132,6 +134,8 @@ func dispatchStackChanAccept(check string, args []string, stdout io.Writer, stde
 		return runStackChanTouchAcceptance(args, stdout, stderr)
 	case "hardware-mainline", "mainline":
 		return runStackChanHardwareMainline(args, stdout, stderr)
+	case "product-recovery", "recovery":
+		return runStackChanProductRecovery(args, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown stackchan acceptance check %q\n", check)
 		return 2

@@ -404,6 +404,30 @@ plans, and a generic `xiaozhi.bin` app is ignored for product-lane evidence.
 
 `firmware-device-report` fetches Gateway `/v1/devices` through an A21 direct HTTP client and writes `reports/a21-devices-YYYYMMDD-HHMMSS.json`. It rejects known X21/V21 legacy ports before dialing, then requires the response to declare `schema_version=a21.gateway.devices.v1` and `service=a21-gateway` before any device identity is accepted. Use this instead of hand-written curl captures before device identity or flash-plan checks.
 
+`stackchan-accept --check product-recovery` is the read-only product recovery
+precheck for the official-compatible StackChan device. It reads Gateway
+`/v1/devices`, `GET /v1/stackchan/official/status?device_id=...`, local USB
+serial candidates, and the latest
+`a21-stackchan-official-xiaozhi-compatible-flash-*.json` receipt, then writes
+`reports/a21-stackchan-product-recovery-YYYYMMDD-HHMMSS.json`. It does not send
+device control, does not flash, does not write NVS, and does not contact
+provider or V21 paths. Use it before retrying a recovery flash so the current
+state is explicit:
+
+```bash
+go run ./cmd/a21 stackchan-accept --check product-recovery \
+  --gateway-url http://47.103.57.217 \
+  --device-id 44:1b:f6:e2:6a:60 \
+  --upload-port /dev/cu.usbmodem1101 \
+  --reports-dir reports \
+  --output-dir reports
+```
+
+Status `product_offline_rom_download_required` means the product USB serial
+node exists and the newest guarded product flash receipt did not write flash,
+so the next physical step is true ESP32-S3 ROM/download mode before rerunning
+the guarded wait-ROM official-compatible product flash lane.
+
 `office-preflight` is the no-flash现场验收入口 for taking A21 into the office. It composes the newest current-commit firmware artifact, direct Gateway `/v1/devices` capture, Gateway identity check, device identity freshness check, flash-plan-equivalent device quiescence check, proxy/fingerprint metadata, and serial inventory into `reports/a21-office-preflight-YYYYMMDD-HHMMSS.json`. It also writes the paired `a21-devices-YYYYMMDD-HHMMSS.json` used by downstream guards. It still sets `flash_allowed=false`; success only means the next step may be `firmware-flash-plan` with an explicit USB serial port.
 
 `office-preflight` reports the same

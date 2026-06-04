@@ -5840,6 +5840,194 @@ func TestRunDeprecatedStackChanAcceptAliasStillDispatches(t *testing.T) {
 	}
 }
 
+func TestRunStackChanProductRecoveryRequiresROMDownloadWhenOfflineWithSerial(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.String())
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": []
+}`))
+		case "/v1/stackchan/official/status":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "44:1b:f6:e2:6a:60",
+  "connected": false,
+  "fallback_available": true,
+  "delivered_transport": "xiaozhi_mcp_fallback_available",
+  "physical_accepted": false,
+  "next_action": "connect_official_stackchan_ws"
+}`))
+		default:
+			t.Fatalf("unexpected product recovery request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	outputDir := filepath.Join(tempDir, "out")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	serialPort := filepath.Join(tempDir, "cu.usbmodem1101")
+	if err := os.WriteFile(serialPort, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProductReadinessReportFixtureFile(t, reportsDir, "a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json", `{
+  "schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1",
+  "status": "failed",
+  "flash_allowed": true,
+  "flash_executed": false,
+  "port": "`+serialPort+`",
+  "esptool_before": "no_reset",
+  "wait_rom_download_mode": true,
+  "wait_rom_timeout_seconds": 30,
+  "flash_log_file": "a21-official-xiaozhi-compatible-flash-20260605-074141.log",
+  "findings": [{"code": "flash_execute_failed", "message": "exit status 1"}]
+}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-accept",
+		"--check", "product-recovery",
+		"--gateway-url", server.URL,
+		"--device-id", "44:1b:f6:e2:6a:60",
+		"--upload-port", serialPort,
+		"--serial-glob", filepath.Join(tempDir, "cu.usbmodem*"),
+		"--reports-dir", reportsDir,
+		"--output-dir", outputDir,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report stackChanProductRecoveryReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "product_offline_rom_download_required" {
+		t.Fatalf("status = %q, want product_offline_rom_download_required: %+v", report.Status, report)
+	}
+	if !report.ROMDownloadRequired {
+		t.Fatalf("ROMDownloadRequired = false, want true")
+	}
+	if !report.Serial.UploadPortPresent || len(report.Serial.Candidates) != 1 {
+		t.Fatalf("serial report = %+v, want present candidate", report.Serial)
+	}
+	if report.LatestProductFlash == nil || report.LatestProductFlash.FlashExecuted {
+		t.Fatalf("latest flash = %+v, want failed no-write report", report.LatestProductFlash)
+	}
+	if !containsString(report.NextActions, "enter_esp32s3_rom_download_mode") {
+		t.Fatalf("next actions missing ROM action: %+v", report.NextActions)
+	}
+	if report.ReportPath == "" {
+		t.Fatalf("report path missing")
+	}
+	if _, err := os.Stat(report.ReportPath); err != nil {
+		t.Fatalf("written report missing: %v", err)
+	}
+	if got := strings.Join(requests, "\n"); strings.Contains(got, "/control") {
+		t.Fatalf("product recovery made control request: %s", got)
+	}
+}
+
+func TestRunStackChanProductRecoveryReadyWhenOnlineAndOfficialRelayConnected(t *testing.T) {
+	deviceID := "44:1b:f6:e2:6a:60"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [{
+    "device_id": "` + deviceID + `",
+    "identity_status": "ok",
+    "connection_status": "online",
+    "firmware": {
+      "id": "a21-stackchan",
+      "version": "0.1.0",
+      "board": "m5stack-cores3",
+      "commit": "abcdef1"
+    },
+    "runtime_echo": {
+      "official_stackchan_auto_state": "speaking",
+      "official_stackchan_packet_count": "3",
+      "official_stackchan_surface_avatar": "delivered"
+    },
+    "last_event": "xiaozhi.hello"
+  }]
+}`))
+		case "/v1/stackchan/official/status":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "` + deviceID + `",
+  "official_device_id": "` + deviceID + `",
+  "connected": true,
+  "connected_ms": 1200,
+  "connected_since_ms": 1780610000000,
+  "fallback_available": true,
+  "delivered_transport": "stackchan_official_ws",
+  "last_packet_count": 3,
+  "physical_accepted": true,
+  "official_action_surfaces": {"avatar": "delivered"},
+  "next_action": "official_relay_ready"
+}`))
+		default:
+			t.Fatalf("unexpected product recovery request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeProductReadinessReportFixtureFile(t, reportsDir, "a21-stackchan-official-xiaozhi-compatible-flash-20260605-060619-1780610779050566000.json", `{
+  "schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1",
+  "status": "passed",
+  "flash_allowed": true,
+  "flash_executed": true,
+  "port": "/dev/cu.usbmodem1101"
+}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--gateway-url", server.URL,
+		"--device-id", deviceID,
+		"--serial-glob", filepath.Join(tempDir, "cu.usbmodem*"),
+		"--reports-dir", reportsDir,
+		"--output-dir", filepath.Join(tempDir, "out"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report stackChanProductRecoveryReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "product_online_official_relay_ready" {
+		t.Fatalf("status = %q, want product_online_official_relay_ready: %+v", report.Status, report)
+	}
+	if !report.DeviceOnline || report.Device == nil {
+		t.Fatalf("device online missing: %+v", report)
+	}
+	if !report.OfficialRelay.Checked || !report.OfficialRelay.Connected {
+		t.Fatalf("official relay not connected: %+v", report.OfficialRelay)
+	}
+	if report.ROMDownloadRequired {
+		t.Fatalf("ROMDownloadRequired = true, want false")
+	}
+}
+
 func TestRunNamespaceAuditReadsTrackedFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeNamespaceAuditGitScript(t, dir, "cmd/a21/main.go\ninternal/v21adapter/client.go\n")

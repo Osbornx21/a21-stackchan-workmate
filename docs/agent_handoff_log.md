@@ -18425,3 +18425,92 @@ Forbidden actions avoided:
 - No firmware write occurred, no NVS write, no provider/V21 execution, no
   generic product flash lane, no camera/NFC/IR expansion, no Git prune/gc, and
   no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 07:51 CST - Product Recovery Precheck Added After Review Thread Reconciliation
+
+Round goal:
+
+- Read the full code-review thread
+  `019e941c-761b-7ee0-a4b8-68103a0850a1`, compare its findings against the
+  current implementation, and add a non-flash recovery command so the current
+  product power/ROM/Gateway state is not rediscovered manually each turn.
+
+Actual completed work:
+
+- Confirmed the review thread's former software blockers are not the current
+  active blocker in this checkout: Gateway review race subset passes,
+  `make preflight` passes, `make doctor` passes when run sequentially, and
+  `make verify` passes.
+- Added `stackchan-accept --check product-recovery` and alias
+  `stackchan-product-recovery`.
+- The new command reads Gateway `/v1/devices`, official relay status
+  `/v1/stackchan/official/status`, local USB serial candidates, and latest
+  official-compatible product flash reports.
+- The command writes
+  `reports/a21-stackchan-product-recovery-YYYYMMDD-HHMMSS.json` and is
+  read-only: it does not send device control, flash firmware, write NVS, call
+  providers, or execute V21.
+- Local live run against `http://47.103.57.217`,
+  device `44:1b:f6:e2:6a:60`, and `/dev/cu.usbmodem1101` produced
+  `reports/a21-stackchan-product-recovery-20260605-074948.json` with
+  `status=product_offline_rom_download_required`.
+
+Changed files:
+
+- `internal/app/app_stackchan_common.go`
+- `internal/app/app_stackchan_product_recovery.go`
+- `internal/app/app_test.go`
+- `docs/engineering/DOCTOR.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/app -run 'ProductRecovery|StackChanAccept' -count=1`
+  passed.
+- `go run ./cmd/a21 stackchan-product-recovery --gateway-url
+  http://47.103.57.217 --device-id 44:1b:f6:e2:6a:60 --upload-port
+  /dev/cu.usbmodem1101 --serial-glob '/dev/cu.usbmodem*' --reports-dir
+  reports --output-dir reports` passed and wrote the report above.
+- `GOMAXPROCS=2 go test -race ./internal/gateway -run
+  'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed'
+  -count=1` passed.
+- `GOMAXPROCS=2 make preflight` passed.
+- `GOMAXPROCS=2 make doctor` passed when rerun sequentially; an earlier
+  parallel run collided on reserved port `127.0.0.1:21080` and was discarded
+  as operator-induced noise.
+- `GOMAXPROCS=2 make verify` passed.
+
+Runtime or physical evidence:
+
+- `/dev/cu.usbmodem1101` is present.
+- Latest product flash evidence remains
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-074215-1780616535711678000.json`
+  with `flash_executed=false`, `esptool_before=no_reset`, and
+  `wait_rom_download_mode=true`.
+- Public direct Gateway access from this host was unstable during the live
+  precheck (`EOF` from the CLI direct client and `502` from shell curl), so
+  product-online state was not promoted.
+
+Known risks/blockers:
+
+- Physical recovery is still required: the device must be placed in true
+  ESP32-S3 ROM/download mode before a guarded product flash retry can write.
+- Product Xiaozhi, official `/stackChan/ws`, power-key startup,
+  wake/listen/playback, barge-in, and visible body behavior still need
+  post-recovery physical acceptance.
+
+Recommended next action:
+
+- Use the product recovery precheck before the next hardware attempt, then
+  enter ESP32-S3 ROM/download mode, rerun the guarded wait-ROM
+  official-compatible product flash if needed, and immediately collect
+  Gateway device status, official relay status, power-key, wake, voice, and
+  body evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no device control
+  command, no generic `xiaozhi.bin` product lane, no camera/NFC/IR expansion,
+  no Git prune/gc, and no internal-test3 voice/protocol rollback.
