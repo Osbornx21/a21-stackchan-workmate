@@ -1599,3 +1599,40 @@ Current conclusion:
   reachable network.
 - No firmware app flash, generic Xiaozhi product flash, provider execution,
   V21 execution, repository prune/gc, or internal-test3 rollback occurred.
+
+## Latest Control-Tower Result - 2026-06-04 Cloud Gateway NVS Correction
+
+Current implementation state:
+
+- The operator clarified that the product device should use the cloud Gateway,
+  not the temporary local LAN Gateway.
+- The local LAN Gateway was stopped before any second NVS write. Port `21080`
+  was released.
+- The product-lane NVS writer then wrote the operator-provided phone hotspot
+  credentials together with the canonical cloud Gateway endpoints:
+  `http://47.103.57.217/xiaozhi/ota/` and
+  `ws://47.103.57.217/v1/xiaozhi`.
+- NVS plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163203-1780561923834996000.json`.
+- NVS execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163211-1780561931273006000.json`.
+- The execute report passed with `wifi_credentials_written=true`,
+  `mutated_entry_count=5`, `servo_calibration_present=true`, and a clean
+  hardware-window control guard at commit `bf20e56522aa`.
+- The device was hard-reset after the cloud NVS write. Serial output observed
+  regular `SystemInfo` lines and did not repeat the earlier `No AP found` or
+  hotspot-provisioning fallback in the observed window.
+- From the current Mac/hotspot network, cloud TCP ports `22`, `80`, `443`, and
+  `21081` are reachable, but HTTP/HTTPS application requests to
+  `47.103.57.217` and `47.103.57.217:21081` return empty replies or TLS
+  syscall errors. SSH is also closed by the remote host before authentication.
+
+Current conclusion:
+
+- The product NVS is now aligned with the all-cloud architecture. The remaining
+  blocker is not local Gateway routing; it is cloud Gateway application-layer
+  reachability from this network or ECS runtime/Caddy state.
+- Device registration cannot be confirmed from this control Mac until the cloud
+  Gateway HTTP/WS path responds or an ECS/control-plane path is available.
+- No provider key exposure, firmware app flash, generic Xiaozhi product flash,
+  V21 execution, repository prune/gc, or internal-test3 rollback occurred.

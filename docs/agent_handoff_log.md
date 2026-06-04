@@ -12979,6 +12979,88 @@ Forbidden actions avoided:
   no V21/provider execution occurred, no repository prune/gc was run, and no
   internal-test3 protocol/audio changes were reverted.
 
+## 2026-06-04 16:35 CST - Cloud Gateway NVS Correction
+
+Round goal:
+
+- Correct the foreground hardware path after the operator clarified that the
+  product StackChan should use the cloud Gateway rather than the temporary
+  local LAN Gateway.
+
+Actual completed work:
+
+- Stopped the local Gateway before any second NVS write; port `21080` was no
+  longer listening locally.
+- Verified the control branch was the guarded hardware-window branch and clean.
+- Wrote official-compatible product NVS with the operator-provided phone
+  hotspot credentials and cloud endpoints:
+  `http://47.103.57.217/xiaozhi/ota/` and
+  `ws://47.103.57.217/v1/xiaozhi`.
+- NVS execute passed:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163211-1780561931273006000.json`.
+- Hard-reset the product device after the write.
+- Cloud TCP ports `22`, `80`, `443`, and `21081` were reachable from the
+  current network, but HTTP/HTTPS application requests still returned empty
+  replies or TLS syscall errors. SSH was closed by the remote host before
+  authentication.
+- Serial output after reset showed regular runtime `SystemInfo` lines in the
+  observed window and did not repeat the earlier `No AP found` fallback.
+
+Files changed:
+
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Device registration on cloud `/v1/devices` could not be confirmed because the
+  cloud Gateway HTTP/WS path is not responding from this network.
+- Fresh Xiaozhi physical evidence, half-duplex evidence, and PRD physical
+  promote remain pending.
+
+Known risks/blockers:
+
+- The product NVS now points to the cloud Gateway as intended. If the device is
+  on Wi-Fi but cannot register, the next blocker is cloud runtime/Caddy/Gateway
+  application-layer reachability, not local LAN routing.
+
+Recommended next action:
+
+- Use an ECS/control-plane path or operator cloud console to confirm
+  `a21-gateway` and Caddy health, then restore public
+  `http://47.103.57.217/healthz`, `/xiaozhi/ota/`, and `/v1/devices`.
+- Once cloud HTTP/WS responds, poll `/v1/devices` for
+  `44:1b:f6:e2:6a:60`, collect stock Xiaozhi physical evidence and
+  half-duplex evidence, then run `make xiaozhi-physical-prd-review`.
+
+Test/build/runtime results:
+
+- NVS plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163203-1780561923834996000.json`
+  was `status=ready`.
+- NVS execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-163211-1780561931273006000.json`
+  was `status=passed`, `write_executed=true`,
+  `wifi_credentials_written=true`, `mutated_entry_count=5`, and
+  `servo_calibration_present=true`.
+- Direct cloud HTTP checks returned empty replies; direct HTTPS checks returned
+  TLS syscall errors; direct TCP probes to ports `22`, `80`, `443`, and
+  `21081` succeeded.
+
+Failure location/reason:
+
+- Cloud application-layer reachability. The all-cloud product endpoint is
+  selected in device NVS, but public HTTP/WS cannot currently be verified from
+  this control Mac.
+
+Forbidden actions avoided:
+
+- No password or hotspot name was written to repository docs, no provider key
+  was exposed, no firmware app flash occurred, no generic Xiaozhi product lane
+  was used, no local Gateway endpoint was written in the corrected NVS attempt,
+  no V21/provider execution occurred, no repository prune/gc was run, and no
+  internal-test3 protocol/audio changes were reverted.
+
 ## 2026-06-04 15:06 CST - Roleplay Voice Runtime Probe Closure
 
 Round goal:
