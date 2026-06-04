@@ -688,6 +688,54 @@ func TestVoicePipelineAdaptersFromEnvSelectsVoiceCloneCLI(t *testing.T) {
 	}
 }
 
+func TestVoicePipelineAdaptersFromEnvAcceptsVoiceCloneCLIAlias(t *testing.T) {
+	refAudio := filepath.Join(t.TempDir(), "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refTextPath := filepath.Join(t.TempDir(), "a21-reference.txt")
+	if err := os.WriteFile(refTextPath, []byte("reference text"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var captured audio.LocalTTSOptions
+	outputDir := t.TempDir()
+	command := "/opt/a21/bin/a21-index-tts2-wrapper"
+	adapters := VoicePipelineAdaptersFromEnv([]string{
+		"A21_TTS_FAST_PROFILE=voice_clone_cli",
+		"A21_VOICE_CLONE_CLI=" + command,
+		"A21_VOICE_CLONE_MODEL=Index-TTS2",
+		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
+		"A21_VOICE_CLONE_REF_TEXT_FILE=" + refTextPath,
+	}, VoicePipelineAdapterOptions{
+		TTSOptions: audio.LocalTTSOptions{OutputDir: outputDir},
+		TTSSynthesizer: func(ctx context.Context, options audio.LocalTTSOptions) (audio.LocalTTSReport, error) {
+			captured = options
+			if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(options.OutputDir, "a21-voice-clone-alias-adapter.wav")
+			if err := audio.WritePCM16MonoWAV(path, 24000, make([]byte, 2880)); err != nil {
+				t.Fatal(err)
+			}
+			return audio.LocalTTSReport{Status: "passed", OutputPath: path}, nil
+		},
+	})
+
+	chunks, err := adapters.TTS.Synthesize(context.Background(), TTSAdapterRequest{Text: "voice clone alias", VoiceCloneProfile: "a21_voice_clone_default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collected := collectVoiceChunks(t, chunks); len(collected) != 1 {
+		t.Fatalf("chunks = %+v, want one chunk", collected)
+	}
+	if captured.VoiceCloneCommand != command ||
+		captured.VoiceCloneModel != "Index-TTS2" ||
+		captured.VoiceCloneReferenceAudioPath != refAudio ||
+		captured.VoiceCloneReferenceTextPath != refTextPath {
+		t.Fatalf("captured TTS options = %+v", captured)
+	}
+}
+
 func createProviderStreamingASRModelFiles(t *testing.T, modelDir string) {
 	t.Helper()
 	if err := os.MkdirAll(modelDir, 0o755); err != nil {

@@ -1316,7 +1316,10 @@ func localTTSOptionsFromEnv(env []string, base audio.LocalTTSOptions) audio.Loca
 		}
 	}
 	if strings.TrimSpace(out.VoiceCloneCommand) == "" {
-		out.VoiceCloneCommand = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_COMMAND"))
+		out.VoiceCloneCommand = strings.TrimSpace(firstNonEmptyPipelineValue(
+			envValue(env, "A21_VOICE_CLONE_COMMAND"),
+			envValue(env, "A21_VOICE_CLONE_CLI"),
+		))
 	}
 	if strings.TrimSpace(out.VoiceCloneModel) == "" {
 		out.VoiceCloneModel = strings.TrimSpace(envValue(env, "A21_VOICE_CLONE_MODEL"))
