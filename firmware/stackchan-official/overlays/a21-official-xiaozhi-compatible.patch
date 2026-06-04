@@ -112,26 +112,22 @@ index 164a751..199a17d 100644
  #include <smooth_ui_toolkit.hpp>
  #include <uitk/short_namespace.hpp>
  #include <mooncake_log.h>
-@@ -36,6 +38,19 @@ extern "C" void app_main(void)
-     GetMooncake().installApp(std::make_unique<AppDance>());
+@@ -37,6 +39,14 @@ extern "C" void app_main(void)
      GetMooncake().installApp(std::make_unique<AppSetup>());
-
+-
 +#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
 +    auto* codec = Board::GetInstance().GetAudioCodec();
 +    if (codec != nullptr) {
 +        codec->SetOutputVolume(92);
 +    }
-+    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
-+    GetHAL().startXiaozhi();
-+    while (1) {
-+        GetHAL().feedTheDog();
-+        GetHAL().delay(1000);
-+    }
++    mclog::tagInfo("main", "A21 requesting Xiaozhi mode after official apps preload");
++    GetHAL().requestXiaozhiStart();
 +#endif
 +
      // Main loop
      while (1) {
          GetHAL().feedTheDog();
+         GetHAL().updateHeapStatusLog();
 diff --git a/firmware/partitions.csv b/firmware/partitions.csv
 index 0656b16..8b9bc5a 100644
 --- a/firmware/partitions.csv
@@ -275,7 +271,7 @@ index 3b6f07e..ec1e05d 100644
 
      while (true) {
          auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
-@@ -230,10 +280,20 @@ void Application::Run() {
+@@ -230,10 +280,15 @@ void Application::Run() {
          }
 
          if (bits & MAIN_EVENT_VAD_CHANGE) {

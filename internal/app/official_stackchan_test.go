@@ -231,7 +231,7 @@ func TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecu
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayRequestsXiaozhiThroughOfficialLifecycle(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -247,10 +247,8 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 	for _, required := range []string{
 		`Board::GetInstance().GetAudioCodec()`,
 		`codec->SetOutputVolume(92);`,
-		`A21 starting Xiaozhi mode directly after official apps preload`,
-		`GetHAL().startXiaozhi();`,
-		`GetHAL().feedTheDog();`,
-		`GetHAL().delay(1000);`,
+		`A21 requesting Xiaozhi mode after official apps preload`,
+		`GetHAL().requestXiaozhiStart();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing %q", required)
@@ -260,20 +258,18 @@ func TestOfficialXiaozhiCompatibleOverlaySetsCodecVolumeBeforeRuntime(t *testing
 		t.Fatalf("official Xiaozhi-compatible overlay must preserve GetHAL().startXiaozhi()")
 	}
 	volumeIndex := strings.Index(overlay, `codec->SetOutputVolume(92);`)
-	startRuntimeIndex := strings.Index(overlay, `+    GetHAL().startXiaozhi();`)
-	if volumeIndex < 0 || startRuntimeIndex < 0 {
+	if volumeIndex < 0 {
 		t.Fatalf("official Xiaozhi-compatible overlay missing order anchors")
 	}
-	if volumeIndex > startRuntimeIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must set codec volume before starting Xiaozhi")
-	}
+	requestIndex := strings.Index(overlay, `+    GetHAL().requestXiaozhiStart();`)
 	mainLoopIndex := strings.Index(overlay, `     // Main loop`)
-	feedIndex := strings.Index(overlay, `+        GetHAL().feedTheDog();`)
-	if mainLoopIndex < 0 || feedIndex < 0 || feedIndex > mainLoopIndex {
-		t.Fatalf("official Xiaozhi-compatible overlay must park app_main after direct Xiaozhi start before Mooncake main loop")
+	if requestIndex < 0 || mainLoopIndex < 0 || requestIndex > mainLoopIndex {
+		t.Fatalf("official Xiaozhi-compatible overlay must request Xiaozhi before entering the official lifecycle loop")
 	}
-	if strings.Contains(overlay, `+    GetHAL().requestXiaozhiStart();`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must not request through the welcome/setup loop")
+	if strings.Contains(overlay, `+    GetHAL().startXiaozhi();`) ||
+		strings.Contains(overlay, `A21 starting Xiaozhi mode directly after official apps preload`) ||
+		strings.Contains(overlay, `+        GetHAL().delay(1000);`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must not bypass the official start lifecycle")
 	}
 }
 
