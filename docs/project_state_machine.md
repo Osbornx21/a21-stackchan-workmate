@@ -1,7 +1,7 @@
 # A21 Project State Machine
 
 Status: active state document.
-Last updated: 2026-06-04.
+Last updated: 2026-06-05.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
@@ -11,7 +11,32 @@ are the project memory.
 
 Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-04 17:23 CST:
+Latest control update, 2026-06-05 00:36 CST:
+
+- `T-XIAOZHI-PHYSICAL-BARGE-IN-STOP-DONE-001` is partially promoted from
+  blocked to product trace candidate for the touch/body path. The product app
+  at `9413ed5` was flashed through the guarded official-compatible lane on
+  `/dev/cu.usbmodem1101` without NVS write, using
+  `a21-stackchan-official-xiaozhi-compatible.bin` SHA-256
+  `4af28d25013111777f2bc82befd6b697ea27da3484e1acd7b8eff661007b0de6`.
+- Live trace `a21-trace-speaking-barge-cn-20260605003524` on device
+  `44:1b:f6:e2:6a:60` recorded real top-touch barge-in during a speaking
+  window: `device.touch.barge_in.received`, `barge_in.detected`,
+  `playback.stop`, and `device.playback.stop_done`.
+- Fresh evidence
+  `reports/a21-xiaozhi-physical-evidence-20260605-003553.699946000.json`
+  remains `candidate_gateway_downlink` but now proves playback start `59 ms`
+  and stop_done `26 ms`. Fresh half-duplex report
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260605-003553.730698000.json`
+  remains `blocked` only for mic-ingress and trusted audible observation.
+- Local evidence-reader code now accepts same-trace product runtime session
+  drift from explicit request session to normalized device default session
+  while preserving strict trace/device matching.
+- Next action: collect a single physical window with wake/listen mic ingress,
+  audible/instrument observation, and either top-touch or wake-word barge-in in
+  the same reviewable evidence set; then rerun `xiaozhi-physical-prd-review`.
+
+Previous control update, 2026-06-04 17:23 CST:
 
 - `T-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-001` now has fresh cloud runtime
   evidence rather than only static readiness. Pre-deploy report

@@ -15499,3 +15499,88 @@ Forbidden actions avoided:
 - No NVS write, no provider secret printing, no provider key in firmware, no
   V21 internal execution, no generic `xiaozhi.bin` product flash, no Git
   prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 00:37 CST - StackChan Touch Barge-In StopDone Candidate
+
+Round goal:
+
+- Continue internal test 4 hardware/body parity without redoing or rolling back
+  internal test 3 voice acceptance.
+- Flash the latest product official-compatible app and prove that speaking
+  barge-in can reach playback stop and device stop_done.
+
+Actual completed work:
+
+- Confirmed branch
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs` was clean
+  at `9413ed5 fix(stackchan): keep product barge-in alive while speaking`.
+- Confirmed product artifact
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`
+  SHA-256 `4af28d25013111777f2bc82befd6b697ea27da3484e1acd7b8eff661007b0de6`.
+- Executed the guarded official-compatible product flash on
+  `/dev/cu.usbmodem1101` with no NVS write and no generic `xiaozhi.bin` lane.
+- Confirmed the device reconnected to public Gateway `47.103.57.217`.
+- Ran live speaking-window tests. A medium Chinese host-say run produced a real
+  product top-touch barge-in trace with `barge_in.detected`, `playback.stop`,
+  and `device.playback.stop_done`.
+- Fixed local evidence matching so reports can consume same-trace product
+  runtime echo that uses the normalized device default session
+  `a21-session-44-1b-f6-e2-6a-60`, while still requiring the requested session
+  to appear in trace and still rejecting cross-device/cross-trace evidence.
+- Recovered a stuck `speaking` display state with a short host-say; short
+  host-say delivered, sent `xiaozhi.tts.stop`, and produced
+  `device.playback.stop_done`.
+
+Changed files:
+
+- `internal/app/xiaozhi_physical_evidence.go`
+- `internal/app/xiaozhi_physical_evidence_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Runtime evidence:
+
+- Product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-002920-1780590560252437000.json`,
+  status `passed`.
+- Touch barge-in trace:
+  `a21-trace-speaking-barge-cn-20260605003524`.
+- Physical evidence report:
+  `reports/a21-xiaozhi-physical-evidence-20260605-003553.699946000.json`,
+  status `candidate_gateway_downlink`, playback start `59 ms`, barge-in
+  detected/stopped true, stop_done `26 ms`.
+- Half-duplex report:
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260605-003553.730698000.json`,
+  still `blocked`, now only for `xiaozhi_half_duplex_mic_ingress_missing` and
+  `xiaozhi_half_duplex_audible_observation_missing`.
+
+Tests/build/runtime results:
+
+- Focused app tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestRunXiaozhiPhysicalEvidence(AcceptsProductRuntimeSessionDrift|RejectsTargetMismatches|AcceptsGatewayTraceMarkers)|TestRunXiaozhiHalfDuplexAcceptance' -count=1`.
+- Full verification passed:
+  `GOMAXPROCS=2 make verify`.
+
+Unfinished items:
+
+- Generate a single reviewable physical window that includes wake/listen mic
+  ingress, answer downlink, playback start, audible or instrument observation,
+  and touch or wake-word barge-in stop_done in one target evidence set.
+- Investigate medium/long host-say `502` after long downlink windows. Short
+  host-say recovers and proves stop_done, so do not treat this as a voice-chain
+  rollback.
+- Rerun `xiaozhi-physical-prd-review` only after mic ingress and audible
+  observation are present with the stop_done evidence.
+
+Recommended next action:
+
+- First close the evidence quality gap: combine a wake/listen turn with a
+  speaking top-touch barge-in in one operator-supervised physical window.
+  Then address the long host-say 502 recovery path if it still reproduces.
+
+Forbidden actions avoided:
+
+- No NVS write, no provider secret printing, no provider key in firmware, no
+  V21 internal execution, no generic product flash lane, no Git prune/gc, and
+  no internal-test3 voice/protocol rollback.

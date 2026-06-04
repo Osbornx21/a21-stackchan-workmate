@@ -918,32 +918,62 @@ func xiaozhiPhysicalEvidenceMatchesTarget(options xiaozhiPhysicalEvidenceOptions
 	targetDeviceID := strings.TrimSpace(options.DeviceID)
 	targetTraceID := strings.TrimSpace(options.TraceID)
 	targetSessionID := strings.TrimSpace(options.SessionID)
+	deviceSessionID := xiaozhiPhysicalDeviceRuntimeSessionID(targetDeviceID)
 	if strings.TrimSpace(device.DeviceID) != targetDeviceID ||
 		strings.TrimSpace(trace.TraceID) != targetTraceID ||
 		strings.TrimSpace(audioRecent.DeviceID) != targetDeviceID ||
 		strings.TrimSpace(audioRecent.TraceID) != targetTraceID ||
-		strings.TrimSpace(audioRecent.SessionID) != targetSessionID {
+		!xiaozhiPhysicalTargetSessionMatch(audioRecent.SessionID, targetSessionID, deviceSessionID) {
 		return false
 	}
 	if !xiaozhiPhysicalOptionalTargetMatch(device.LastTraceID, targetTraceID) ||
-		!xiaozhiPhysicalOptionalTargetMatch(device.LastSessionID, targetSessionID) {
+		!xiaozhiPhysicalTargetSessionMatch(device.LastSessionID, targetSessionID, deviceSessionID) ||
+		!xiaozhiPhysicalTraceHasTargetSession(trace, targetSessionID) {
 		return false
 	}
 	for _, event := range trace.Events {
 		if !xiaozhiPhysicalOptionalTargetMatch(event.DeviceID, targetDeviceID) ||
 			!xiaozhiPhysicalOptionalTargetMatch(event.TraceID, targetTraceID) ||
-			!xiaozhiPhysicalOptionalTargetMatch(event.SessionID, targetSessionID) {
+			!xiaozhiPhysicalTargetSessionMatch(event.SessionID, targetSessionID, deviceSessionID) {
 			return false
 		}
 	}
 	for _, frame := range audioRecent.Frames {
 		if !xiaozhiPhysicalOptionalTargetMatch(frame.DeviceID, targetDeviceID) ||
 			!xiaozhiPhysicalOptionalTargetMatch(frame.TraceID, targetTraceID) ||
-			!xiaozhiPhysicalOptionalTargetMatch(frame.SessionID, targetSessionID) {
+			!xiaozhiPhysicalTargetSessionMatch(frame.SessionID, targetSessionID, deviceSessionID) {
 			return false
 		}
 	}
 	return true
+}
+
+func xiaozhiPhysicalDeviceRuntimeSessionID(deviceID string) string {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return ""
+	}
+	return "a21-session-" + strings.ReplaceAll(deviceID, ":", "-")
+}
+
+func xiaozhiPhysicalTargetSessionMatch(value string, target string, deviceRuntimeSession string) bool {
+	value = strings.TrimSpace(value)
+	target = strings.TrimSpace(target)
+	deviceRuntimeSession = strings.TrimSpace(deviceRuntimeSession)
+	return value == "" || value == target || (deviceRuntimeSession != "" && value == deviceRuntimeSession)
+}
+
+func xiaozhiPhysicalTraceHasTargetSession(trace gateway.TraceResponse, targetSessionID string) bool {
+	targetSessionID = strings.TrimSpace(targetSessionID)
+	if targetSessionID == "" {
+		return false
+	}
+	for _, event := range trace.Events {
+		if strings.TrimSpace(event.SessionID) == targetSessionID {
+			return true
+		}
+	}
+	return false
 }
 
 func xiaozhiPhysicalOptionalTargetMatch(value string, target string) bool {

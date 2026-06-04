@@ -71,6 +71,45 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 00:36 CST StackChan touch barge-in/body cut:
+
+- Current source HEAD for the flashed product app:
+  `9413ed5 fix(stackchan): keep product barge-in alive while speaking`.
+- ECS Gateway was already safe-swapped to `9413ed5`; public `/healthz` is ok
+  and device `44:1b:f6:e2:6a:60` is online on `47.103.57.217`.
+- Guarded official-compatible product flash passed on `/dev/cu.usbmodem1101`
+  with report
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-002920-1780590560252437000.json`.
+  The flashed app artifact was
+  `a21-stackchan-official-xiaozhi-compatible.bin` with SHA-256
+  `4af28d25013111777f2bc82befd6b697ea27da3484e1acd7b8eff661007b0de6`.
+- The physical speaking/touch trace
+  `a21-trace-speaking-barge-cn-20260605003524` proved top-touch barge-in while
+  the product device was in a speaking/downlink window. Gateway markers include
+  `device.touch.barge_in.received`, `xiaozhi.touch.barge_in`,
+  `barge_in.detected`, `playback.stop`, `xiaozhi.abort.received`, and
+  `device.playback.stop_done`.
+- Fresh physical report
+  `reports/a21-xiaozhi-physical-evidence-20260605-003553.699946000.json`
+  is still `candidate_gateway_downlink`, but now carries real barge-in stop
+  evidence: playback start `59 ms`, `barge_in.detected=true`,
+  `barge_in.stop=true`, and stop_done `26 ms`.
+- Fresh half-duplex report
+  `reports/a21-xiaozhi-half-duplex-acceptance-20260605-003553.730698000.json`
+  remains `blocked` only for the remaining physical review blockers:
+  `xiaozhi_half_duplex_mic_ingress_missing` and
+  `xiaozhi_half_duplex_audible_observation_missing`. It no longer lacks
+  barge-in detection, playback stop, or stop_done.
+- Evidence reader adaptation: product runtime echo may use the normalized
+  device default session `a21-session-44-1b-f6-e2-6a-60` within the same trace
+  while the report target remains the explicit request session. The matcher
+  still requires the requested session to appear in the trace and still rejects
+  cross-device or cross-trace evidence.
+- Observed behavior that still needs a follow-up: medium/long host-say downlink
+  can return `502` after a long speaking window, but short host-say recovers
+  the device to `idle` and records `device.playback.stop_done`. Do not treat
+  this as an internal-test3 voice rollback.
+
 Live truth after the 2026-06-04 20:07 CST hardware/network recovery:
 
 - Product app flash is complete through the official-compatible product lane:
