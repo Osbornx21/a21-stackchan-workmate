@@ -237,6 +237,23 @@ func TestParseTextFrameErrorsAreClear(t *testing.T) {
 	}
 }
 
+func TestParseTextFrameAcceptsMCPResponseEnvelope(t *testing.T) {
+	frame, err := ParseTextFrame([]byte(`{"type":"mcp","payload":{"jsonrpc":"2.0","id":1,"result":{"content":[]}}}`), DirectionDeviceToServer, Identity{
+		DeviceID:  "stackchan-001",
+		TraceID:   "a21-trace-mcp-response",
+		SessionID: "a21-session-mcp-response",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Control == nil || frame.Control.Type != MessageTypeMCP {
+		t.Fatalf("frame = %+v, want mcp control frame", frame)
+	}
+	if frame.TraceID != "a21-trace-mcp-response" || frame.SessionID != "a21-session-mcp-response" || frame.DeviceID != "stackchan-001" {
+		t.Fatalf("identity = trace:%q session:%q device:%q", frame.TraceID, frame.SessionID, frame.DeviceID)
+	}
+}
+
 func TestParseBinaryFrameRecognizesOpusWithoutDecoding(t *testing.T) {
 	payload := []byte{0xf8, 0xff, 0xfe, 0x01}
 

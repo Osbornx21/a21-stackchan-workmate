@@ -44,6 +44,7 @@ const (
 	MessageTypeHello  MessageType = "hello"
 	MessageTypeListen MessageType = "listen"
 	MessageTypeAbort  MessageType = "abort"
+	MessageTypeMCP    MessageType = "mcp"
 )
 
 type Identity struct {
@@ -407,7 +408,7 @@ func supportedListenState(state string) bool {
 
 func supportedMessageType(messageType MessageType) bool {
 	switch messageType {
-	case MessageTypeHello, MessageTypeListen, MessageTypeAbort:
+	case MessageTypeHello, MessageTypeListen, MessageTypeAbort, MessageTypeMCP:
 		return true
 	default:
 		return false

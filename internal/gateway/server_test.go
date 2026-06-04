@@ -5874,6 +5874,59 @@ func TestXiaozhiMCPStatusParityAllowsOnlyScopedTools(t *testing.T) {
 	}
 }
 
+func TestXiaozhiMCPResponseFromDeviceIsAcceptedWithoutErrorReply(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-mcp-device-response",
+		"session_id": "a21-session-mcp-device-response",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type": "mcp",
+		"payload": map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"result": map[string]any{
+				"content": []any{},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiWebSocketMessage(t, conn, 120*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-mcp-device-response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.mcp.response.received") {
+		t.Fatalf("trace missing mcp response marker: %+v", traces.Events)
+	}
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "xiaozhi.mcp.response.received" {
+		t.Fatalf("last event = %#v, want mcp response received", registry["last_event"])
+	}
+}
+
 func TestXiaozhiMCPStatusParityBlocksHighRiskTools(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())

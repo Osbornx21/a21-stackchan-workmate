@@ -7026,6 +7026,15 @@ func (s *Server) handleXiaozhiText(ctx context.Context, conn *websocket.Conn, se
 			sessionID: session.sessionID,
 			deviceID:  session.deviceID,
 		}, "abort")
+	case xiaozhitransport.MessageTypeMCP:
+		if !session.helloReceived {
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "hello_required", "hello is required before mcp"))
+			return true
+		}
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.mcp.response.received", s.now().UnixMilli())
+		s.recordXiaozhiDeviceActivity(session, "xiaozhi.mcp.response.received", map[string]string{
+			"xiaozhi_mcp_response": "received_redacted",
+		})
 	}
 	return true
 }
