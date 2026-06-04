@@ -71,7 +71,60 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 03:31 CST voice-mode hardware ritual pacing
+Live truth after the 2026-06-05 03:45 CST voice-mode ritual physical
+acceptance surface deployment:
+
+- Commit `87625a2 feat(gateway): record mode ritual physical acceptance` is
+  pushed and deployed to ECS `47.103.57.217` through `/opt/a21.next` safe
+  swap.
+- This is a physical-acceptance recording surface for the explicit roleplay /
+  professional mode-switch body feedback. It is not internal-test3 voice-chain
+  revalidation and did not change ASR, TTS, wake, audio protocol, provider
+  execution, V21 execution, firmware, flash, NVS, camera, NFC, infrared, or
+  app lifecycle.
+- Gateway now exposes `POST /v1/voice-mode-ritual-acceptance`. The endpoint
+  requires matching delivered mode-ritual `trace_id` and `session_id`,
+  `screen_visible=true`, `rgb_visible=true`, `servo_visible=true`, and
+  `observer=operator` or `observer=instrument`; otherwise it rejects instead
+  of overclaiming.
+- `/workspace` Mode Boundary now includes `Accept Visible Mode Ritual` and
+  posts to the new acceptance endpoint only from the latest ritual
+  trace/session in the browser state.
+- Local red/green evidence: before implementation,
+  `TestWorkspaceConsolePageServed` missed
+  `/v1/voice-mode-ritual-acceptance`, and the endpoint returned HTTP 404.
+  After implementation:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`
+  passed, `git diff --check` passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`.
+  Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+  `a21-gateway.service` restarted active; loopback `/healthz` and public
+  direct `/healthz` passed.
+- Public `/workspace` smoke found `Accept Visible Mode Ritual`,
+  `acceptModeRitualPhysical`, `modeRitualPhysicalStatus`, and
+  `/v1/voice-mode-ritual-acceptance`.
+- Public negative acceptance smoke without matching delivered ritual evidence
+  returned HTTP 409 with
+  `matching voice mode ritual evidence is required before physical acceptance`.
+- Live roleplay trace
+  `a21-trace-mode-ritual-roleplay-acceptance-ready-87625a2-202606050345`
+  returned HTTP 200 with `selected_voice_mode=roleplay`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`, and trace summary
+  `last_offset_ms=543`.
+- Final public `/v1/devices` check showed product device
+  `44:1b:f6:e2:6a:60` online, `current_voice_mode=roleplay`,
+  `screen_theme=auto`, `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`.
+- No physical acceptance was recorded in this round because no operator or
+  instrument confirmation was provided. The user can now watch the ritual and
+  click `Accept Visible Mode Ritual` to persist the acceptance marker.
+- Git still emits the historical loose objects/gc warning during commits; no
+  `git prune` or manual cleanup was run.
+
+Previous live truth after the 2026-06-05 03:31 CST voice-mode hardware ritual pacing
 deployment:
 
 - Commit `a5d9b9d fix(gateway): pace voice mode rituals` is pushed and

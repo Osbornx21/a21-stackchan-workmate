@@ -16806,6 +16806,109 @@ Forbidden actions avoided:
   exposure, no Git prune/gc despite the historical loose-object warning, and
   no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 03:45 CST - Mode Ritual Physical Acceptance Surface Deployed
+
+Round goal:
+
+- Move the PRD roleplay/professional mode-switch body feedback from paced
+  machine evidence toward product acceptance by adding a controlled
+  operator/instrument acceptance path.
+
+Actual completed work:
+
+- Added `POST /v1/voice-mode-ritual-acceptance`.
+- Added `/workspace` `Accept Visible Mode Ritual` control.
+- The endpoint requires matching delivered mode-ritual `trace_id` and
+  `session_id`, visible `screen`, `rgb`, and `servo` confirmations, plus
+  `observer=operator` or `observer=instrument`.
+- Documented the acceptance contract in `docs/engineering/PROTOCOL.md` and
+  updated the active voice-mode ritual plan.
+- Committed and pushed:
+  `87625a2 feat(gateway): record mode ritual physical acceptance`.
+- Deployed `87625a2` to ECS through `/opt/a21.next` safe-swap.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/plans/2026-06-05-voice-mode-hardware-ritual.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red tests first failed as expected:
+  `TestWorkspaceConsolePageServed` missed
+  `/v1/voice-mode-ritual-acceptance`, and the acceptance endpoint returned
+  HTTP 404.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`.
+- `git diff --check` passed.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway tests passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestVoiceModeRitual' -count=1`.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback and public direct
+  `/healthz` passed.
+
+Runtime or physical evidence:
+
+- Public `/workspace` smoke found `Accept Visible Mode Ritual`,
+  `acceptModeRitualPhysical`, `modeRitualPhysicalStatus`, and
+  `/v1/voice-mode-ritual-acceptance`.
+- Public negative acceptance smoke without matching delivered ritual evidence
+  returned HTTP 409:
+  `matching voice mode ritual evidence is required before physical acceptance`.
+- Live roleplay trace
+  `a21-trace-mode-ritual-roleplay-acceptance-ready-87625a2-202606050345`
+  returned HTTP 200 with `selected_voice_mode=roleplay`,
+  `step_delay_ms=180`, `total_planned_delay_ms=540`, and trace summary
+  `last_offset_ms=543`.
+- Final public `/v1/devices` check showed the product device online and in
+  `current_voice_mode=roleplay`, with `screen_theme=auto`,
+  `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`.
+- No physical acceptance was recorded in this round because no operator or
+  instrument confirmation was provided.
+
+Deviations from plan:
+
+- None for this scoped transition. Physical acceptance remains explicit and
+  operator/instrument gated.
+
+Remaining issues:
+
+- The operator still needs to watch a roleplay/professional ritual and click
+  `Accept Visible Mode Ritual` to persist accepted physical evidence.
+- Body-scene `full_check` physical acceptance is still pending operator or
+  instrument confirmation.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+- Natural microphone-triggered voice-chain physical PRD acceptance remains a
+  separate foreground evidence path; it was not reopened in this round.
+
+Next suggested action:
+
+- During the next foreground operator window, run roleplay and professional
+  rituals from `/workspace`, visually confirm screen/RGB/head movement, click
+  `Accept Visible Mode Ritual`, and capture the resulting trace/registry
+  acceptance evidence. Then either accept `full_check` the same way or move to
+  official avatar/action relay parity.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite the historical loose-object warning, and
+  no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 02:50 CST - Body Scene Physical Acceptance Surface Deployed
 
 Round goal:

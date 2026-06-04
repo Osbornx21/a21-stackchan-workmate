@@ -66,6 +66,25 @@ ritual over the existing safe Xiaozhi MCP product path.
   delivered `trace_id` / `session_id`, visible screen/RGB/servo booleans, and
   an `operator` or `instrument` observer; missing matching evidence returns
   HTTP 409.
+- Commit `87625a2 feat(gateway): record mode ritual physical acceptance` is
+  pushed and deployed to ECS `47.103.57.217`. Remote focused Gateway tests,
+  remote Go build, systemd restart, loopback `/healthz`, and public direct
+  `/healthz` passed.
+- Public `/workspace` smoke found `Accept Visible Mode Ritual`,
+  `acceptModeRitualPhysical`, and `/v1/voice-mode-ritual-acceptance`.
+- Public negative acceptance smoke without matching delivered ritual evidence
+  returned HTTP 409:
+  `matching voice mode ritual evidence is required before physical acceptance`.
+- Live roleplay trace
+  `a21-trace-mode-ritual-roleplay-acceptance-ready-87625a2-202606050345`
+  returned HTTP 200 with `step_delay_ms=180`,
+  `total_planned_delay_ms=540`, and trace `summary.last_offset_ms=543`.
+- Final public `/v1/devices` check showed product device
+  `44:1b:f6:e2:6a:60` online, `current_voice_mode=roleplay`,
+  `screen_theme=auto`, `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`. No physical acceptance was
+  recorded because no operator or instrument confirmation was provided.
 
 This transition is machine-readable product-socket evidence for the PRD mode
 switch body feedback. It is not physical acceptance until the operator or an

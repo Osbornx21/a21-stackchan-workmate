@@ -9,9 +9,55 @@ are the project memory.
 
 ## Project State
 
-Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-BODY-SCENE-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-VOICE-MODE-HARDWARE-RITUAL-PACED-DEPLOYED-PHYSICAL-PENDING`
+Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-WORKSPACE-BODY-PRESET-CONTROL-SURFACE-DEPLOYED-WORKSPACE-HARDWARE-SCREEN-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-CONTROL-SURFACE-DEPLOYED-WORKSPACE-OFFICIAL-ACTION-FALLBACK-READY-WORKSPACE-HARDWARE-SCENE-CONTROL-SURFACE-DELIVERED-WORKSPACE-HARDWARE-FULL-CHECK-DEPLOYED-XIAOZHI-LISTEN-START-STATE-REACTION-SUPPRESSED-XIAOZHI-BODY-MOTION-SEQUENCE-DEPLOYED-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-FIRMWARE-QUIET-RECONNECT-CANDIDATE-FLASHED-BODY-SCENE-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-MACHINE-EVIDENCE-READY-BODY-FULL-CHECK-PACED-MACHINE-EVIDENCE-READY-BODY-SCENE-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-VOICE-MODE-HARDWARE-RITUAL-PACED-DEPLOYED-VOICE-MODE-RITUAL-PHYSICAL-ACCEPTANCE-SURFACE-DEPLOYED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 03:31 CST:
+Latest control update, 2026-06-05 03:45 CST:
+
+- `T-VOICE-MODE-RITUAL-PHYSICAL-ACCEPTANCE-SURFACE-001` is pushed and
+  deployed on ECS. Commit `87625a2` adds
+  `POST /v1/voice-mode-ritual-acceptance` and the `/workspace`
+  `Accept Visible Mode Ritual` control.
+- The endpoint is intentionally narrow: it requires `device_id`,
+  `voice_mode`, matching delivered `trace_id` and `session_id`,
+  `screen_visible=true`, `rgb_visible=true`, `servo_visible=true`, and
+  `observer=operator` or `observer=instrument`. Missing matching evidence
+  returns HTTP 409 instead of overclaiming physical acceptance.
+- Successful acceptance records schema
+  `a21.gateway.voice_mode_ritual_acceptance.v1`, trace marker
+  `voice_mode.ritual.<mode>.physical_acceptance.accepted`, and redacted
+  registry fields such as `voice_mode_ritual_physical_accepted=true`,
+  `voice_mode_ritual_screen_physical_accepted=true`,
+  `voice_mode_ritual_rgb_physical_accepted=true`, and
+  `voice_mode_ritual_servo_physical_accepted=true`.
+- Local TDD evidence: before implementation,
+  `TestWorkspaceConsolePageServed` missed
+  `/v1/voice-mode-ritual-acceptance`, and the acceptance endpoint returned
+  HTTP 404. After implementation, focused Gateway tests, `git diff --check`,
+  and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway tests and build passed, then
+  `a21-gateway.service` safe-swapped active. Loopback and public direct
+  `/healthz` passed.
+- Public `/workspace` smoke found `Accept Visible Mode Ritual`,
+  `acceptModeRitualPhysical`, and `/v1/voice-mode-ritual-acceptance`.
+- Public negative acceptance smoke without matching delivered ritual evidence
+  returned HTTP 409
+  `matching voice mode ritual evidence is required before physical acceptance`.
+- Live roleplay trace
+  `a21-trace-mode-ritual-roleplay-acceptance-ready-87625a2-202606050345`
+  returned HTTP 200 with `step_delay_ms=180`,
+  `total_planned_delay_ms=540`, and trace summary `last_offset_ms=543`.
+- Final public `/v1/devices` check showed product device
+  `44:1b:f6:e2:6a:60` online, `current_voice_mode=roleplay`,
+  `screen_theme=auto`, `screen_brightness=58`, RGB `120/48/96`, head
+  `yaw=0,pitch=24,speed=180`, and
+  `voice_mode_ritual_physical_accepted=false`. No physical acceptance was
+  recorded because no operator or instrument confirmation was provided.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred.
+
+Previous control update, 2026-06-05 03:31 CST:
 
 - `T-VOICE-MODE-HARDWARE-RITUAL-PACING-001` is pushed and deployed on ECS.
   Commit `a5d9b9d` adds visible pacing to
