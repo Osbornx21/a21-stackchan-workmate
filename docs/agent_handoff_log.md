@@ -11077,6 +11077,109 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 11:09 CST - Environment Switch Handoff And Product Gap Report
+
+Round goal:
+
+- Pause active implementation for a development-environment switch, preserve
+  the current control-tower progress, and record what is still missing from a
+  user-visible PRD/product perspective.
+
+Actual completed work:
+
+- Latest pushed commits on
+  `codex/a21-hardware-window-20260603-wifi-provisioning-flash`:
+  - `976a1d2 feat(gateway): reflect roleplay state in device registry`
+  - `6498ede feat(app): route v21 bridge through native voice query`
+  - `731d4d8 docs(control): record v21 source scope guard`
+- Current worktree before this handoff had only one uncommitted file:
+  `docs/plans/2026-06-04-roleplay-official-expression-plan.md`.
+- Added that plan as the next no-hardware roleplay immersion cut:
+  `T-INTERNAL-TEST4-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-001`.
+
+Current product truth:
+
+- Internal test 3 voice chain is preserved; do not revert the user's端侧语音
+ 实机验收/protocol changes.
+- Internal test 4 has gained many necessary product contracts, but much of it
+  is not yet obvious to a user because it is adapter/state/readiness work:
+  roleplay profile/soul/memory/voice-clone selection, safe device registry
+  reflection, professional mode/read ledgers, upload/index request ledgers, V21
+  source-scope guard wiring, and low-risk MCP controls.
+- User-visible product progress still needs to be forced into visible/audible
+  experiences: roleplay expression on StackChan, physical voice/latency proof,
+  professional consult against real searchable V21 evidence, and production
+  web/app workspace flows.
+
+Unfinished items:
+
+- Roleplay immersion:
+  - Next planned cut is `roleplay_official_expression_plan`: expose a safe
+    no-send `expression_plan` from `/v1/roleplay-profile` using existing
+    official StackChan action metadata.
+  - Still missing after that: actually delivering selected roleplay expression
+    to StackChan screen/servo/RGB in an approved hardware/runtime window and
+    collecting physical evidence.
+- Professional/V21:
+  - A21 bridge now targets V21 native voice-query, but V21 branch
+    `origin/codex/a21-v2-workspace-scope-retrieval-guard` still needs
+    merge/release into the environment that A21 will call.
+  - Stored uploaded documents are not parsed/chunked/embedded/indexed.
+  - No durable account/device/workspace ACL or cloud object storage is done.
+- Workspace/web/app:
+  - Upload intake exists, but current ledgers are mostly in-memory and not a
+    polished production web workspace.
+  - The 2 GB personal corpus expectation is not implemented as durable storage
+    or searchable index.
+- Voice/provider:
+  - Internal test 3 public voice path is the protected baseline, but full
+    low-latency roleplay + voice clone + hardware expression physical
+    acceptance is still not proven.
+  - StepFun selection on ECS remains dependent on root-only secret injection if
+    that path is still desired.
+- Hardware/MCP:
+  - Low-risk MCP/status/volume/action contracts exist, but full physical
+    coverage of camera, IMU/sensors, battery, NFC, infrared, RGB, servos,
+    touch/barge-in, and playback-start/stop remains evidence-gated.
+
+Known risks/blockers:
+
+- A lot of repo progress is below the user's visual product threshold; the next
+  developer should prioritize cuts that produce visible/audible simulator or
+  hardware behavior, not more control-plane-only paperwork.
+- Do not do Git prune/gc; historical loose-object warnings remain expected.
+- Do not flash firmware, touch serial/NVS, execute providers/V21, or start real
+  runtime services unless the new environment has an explicit scoped window.
+
+Recommended next action:
+
+1. Implement
+   `docs/plans/2026-06-04-roleplay-official-expression-plan.md`:
+   `/v1/roleplay-profile.expression_plan` with official StackChan action
+   metadata and `physical_accepted=false`.
+2. Then add a simulator-visible roleplay expression preview/readout so the
+   user can see product movement without hardware.
+3. In parallel, prepare the V21 merge/release or indexing adapter cut so
+   professional mode can consult actual searchable resources rather than
+   metadata/index-request ledgers.
+4. After the environment switch, run fresh:
+   `git status --short --branch`, read this handoff, then run
+   `GOMAXPROCS=2 make verify` before making claims.
+
+Test/build/runtime results:
+
+- Latest code commits before this handoff passed `GOMAXPROCS=2 make verify`.
+- This handoff/plan round is docs-only; run `git diff --check` before commit.
+- No Gateway service was started, no provider/V21/voice-clone execution
+  occurred, and no firmware build, flash, serial, NVS, ECS change, prune/gc, or
+  physical hardware action occurred.
+
+Failure location/reason:
+
+- Product gap remains: visible/audible roleplay immersion, real searchable
+  professional consult, durable workspace storage/indexing, and physical
+  full-hardware acceptance are not complete.
+
 ## 2026-06-04 11:02 CST - Roleplay Device State Reflection
 
 Round goal:
