@@ -7027,6 +7027,218 @@ func TestXiaozhiSayDeliversTextAsStockTTSDownlink(t *testing.T) {
 	}
 }
 
+func TestXiaozhiSayReportsInterruptedWhenProductTouchBargeInCancelsDownlink(t *testing.T) {
+	releaseSecondChunk := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			close(releaseSecondChunk)
+		})
+	}
+	t.Cleanup(release)
+
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+		TTS:        gatedSecondChunkTTSAdapter{release: releaseSecondChunk},
+		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+	}
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiProductTouchEvents:    true,
+		XiaozhiVoicePipelineAdapters: &adapters,
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-say-touch-interrupt",
+		"session_id": "a21-session-say-touch-interrupt",
+		"features": map[string]any{
+			"mcp":          true,
+			"aec":          true,
+			"touch_events": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 2 * time.Second}).Post(
+			httpServer.URL+"/v1/xiaozhi/say",
+			"application/json",
+			bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","text":"这是一段会被用户触摸打断的长播放测试。","trace_id":"a21-trace-say-touch-interrupt","session_id":"a21-session-say-touch-interrupt"}`),
+		)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	start := readXiaozhiJSON(t, ctx, conn)
+	if start["type"] != "tts" || start["state"] != "start" || start["phase"] != "host_say" {
+		t.Fatalf("say start = %#v", start)
+	}
+	sentence := readXiaozhiJSON(t, ctx, conn)
+	if sentence["type"] != "tts" || sentence["state"] != "sentence_start" || sentence["phase"] != "host_say" {
+		t.Fatalf("say sentence = %#v", sentence)
+	}
+	if packet := readXiaozhiBinary(t, ctx, conn); len(packet) == 0 {
+		t.Fatal("say binary packet is empty")
+	}
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "touch",
+		"touch":      "top_barge_in",
+		"source":     "top_sensor",
+		"trace_id":   "a21-trace-say-touch-interrupt",
+		"session_id": "a21-session-say-touch-interrupt",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stop := readXiaozhiJSON(t, ctx, conn)
+	if stop["type"] != "tts" || stop["state"] != "stop" || stop["reason"] != "touch_barge_in" {
+		t.Fatalf("touch barge stop = %#v", stop)
+	}
+	release()
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("say interrupted status = %d: %s", resp.StatusCode, string(body))
+		}
+		var response XiaozhiSayResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Status != "interrupted" || response.DeliveredTransport != "xiaozhi_ws" || response.AudioChunks != 1 || response.InterruptReason != "touch_barge_in" {
+			t.Fatalf("say interrupted response = %+v", response)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-say-touch-interrupt", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"device.touch.barge_in.received", "barge_in.detected", "playback.stop", "xiaozhi.say.interrupted"} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	if traceContains(traces.Events, "xiaozhi.say.delivered") {
+		t.Fatalf("trace marked interrupted say as delivered: %+v", traces.Events)
+	}
+}
+
+func TestXiaozhiSayKeepsBadGatewayForActualDownlinkError(t *testing.T) {
+	adapters := providers.VoicePipelineAdapters{
+		ASR:        providers.NewMockASRAdapter("mock-local-asr"),
+		TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+		TTS:        chunkThenErrorTTSAdapter{},
+		Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+	}
+	server := NewServerWithOptions(ServerOptions{XiaozhiVoicePipelineAdapters: &adapters})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-say-downlink-error",
+		"session_id": "a21-session-say-downlink-error",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := (&http.Client{Timeout: 2 * time.Second}).Post(
+			httpServer.URL+"/v1/xiaozhi/say",
+			"application/json",
+			bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","text":"这是一段真实下行错误测试。","trace_id":"a21-trace-say-downlink-error","session_id":"a21-session-say-downlink-error"}`),
+		)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	readXiaozhiJSON(t, ctx, conn)
+	readXiaozhiJSON(t, ctx, conn)
+	if packet := readXiaozhiBinary(t, ctx, conn); len(packet) == 0 {
+		t.Fatal("say binary packet is empty")
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Fatalf("say downlink error status = %d, body %s", resp.StatusCode, string(body))
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-say-downlink-error", nil)
+	traceRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d: %s", traceRec.Code, traceRec.Body.String())
+	}
+	var traces TraceResponse
+	if err := json.NewDecoder(traceRec.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.say.downlink_error") {
+		t.Fatalf("trace missing downlink error: %+v", traces.Events)
+	}
+	if traceContains(traces.Events, "xiaozhi.say.interrupted") {
+		t.Fatalf("trace misclassified downlink error as interrupted: %+v", traces.Events)
+	}
+}
+
 func TestXiaozhiSayDeliversWAVAsStockTTSDownlink(t *testing.T) {
 	server := NewServer()
 	httpServer := httptest.NewServer(server.Handler())
@@ -14245,6 +14457,34 @@ func (segmentChunkTTSAdapter) Synthesize(ctx context.Context, req providers.TTSA
 		select {
 		case <-ctx.Done():
 		case out <- xiaozhiTestVoiceAudioChunk():
+		}
+	}()
+	return out, nil
+}
+
+type gatedSecondChunkTTSAdapter struct {
+	release <-chan struct{}
+}
+
+func (g gatedSecondChunkTTSAdapter) Name() string {
+	return "a21-gated-second-chunk-tts"
+}
+
+func (g gatedSecondChunkTTSAdapter) Synthesize(ctx context.Context, req providers.TTSAdapterRequest) (<-chan providers.VoiceAudioChunk, error) {
+	out := make(chan providers.VoiceAudioChunk)
+	go func() {
+		defer close(out)
+		select {
+		case <-ctx.Done():
+			return
+		case out <- xiaozhiTestVoiceAudioChunk():
+		}
+		if g.release != nil {
+			<-g.release
+		}
+		select {
+		case out <- xiaozhiTestVoiceAudioChunk():
+		case <-time.After(500 * time.Millisecond):
 		}
 	}()
 	return out, nil

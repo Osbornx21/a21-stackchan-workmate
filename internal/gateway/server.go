@@ -915,6 +915,7 @@ type XiaozhiSayResponse struct {
 	DeliveredTransport string `json:"delivered_transport"`
 	TextChars          int    `json:"text_chars"`
 	AudioChunks        int    `json:"audio_chunks"`
+	InterruptReason    string `json:"interrupt_reason,omitempty"`
 	AudioSource        string `json:"audio_source,omitempty"`
 	AudioBasename      string `json:"audio_basename,omitempty"`
 }
@@ -5439,6 +5440,22 @@ func (s *Server) handleXiaozhiSay(w http.ResponseWriter, r *http.Request) {
 		audioChunks, ok = s.writeXiaozhiTextAudioDownlink(r.Context(), socket.conn, session, task, text, mode, "xiaozhi.say")
 	}
 	if !ok {
+		if interruptReason, interrupted := xiaozhiUserInterruptReason(session.xiaozhiTurnCancelReason(turn)); interrupted {
+			s.recordTrace(traceID, sessionID, req.DeviceID, "xiaozhi.say.interrupted", s.now().UnixMilli())
+			writeJSON(w, http.StatusOK, XiaozhiSayResponse{
+				TraceID:            traceID,
+				SessionID:          sessionID,
+				DeviceID:           req.DeviceID,
+				Status:             "interrupted",
+				DeliveredTransport: "xiaozhi_ws",
+				TextChars:          len([]rune(text)),
+				AudioChunks:        audioChunks,
+				InterruptReason:    interruptReason,
+				AudioSource:        audioSource,
+				AudioBasename:      audioBasename,
+			})
+			return
+		}
 		s.writeXiaozhiTTSStop(r.Context(), socket.conn, session, turn, task, "host_say_unavailable")
 		http.Error(w, "xiaozhi say audio delivery failed", http.StatusBadGateway)
 		return
@@ -6626,6 +6643,15 @@ func (session *xiaozhiSession) cancelXiaozhiTurnContext(turn *xiaozhiTurn, reaso
 	}
 }
 
+func (session *xiaozhiSession) xiaozhiTurnCancelReason(turn *xiaozhiTurn) string {
+	if session == nil || turn == nil {
+		return ""
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	return strings.TrimSpace(turn.cancelReason)
+}
+
 func (session *xiaozhiSession) shouldAbortXiaozhiTurn(turn *xiaozhiTurn) bool {
 	if turn == nil {
 		return true
@@ -6634,6 +6660,24 @@ func (session *xiaozhiSession) shouldAbortXiaozhiTurn(turn *xiaozhiTurn) bool {
 	currentTurn := session.currentTurn
 	session.mu.Unlock()
 	return currentTurn != turn || turn.ctx.Err() != nil
+}
+
+func xiaozhiUserInterruptReason(reason string) (string, bool) {
+	reason = safeGatewayFallbackToken(reason, "")
+	if reason == "" {
+		return "", false
+	}
+	lower := strings.ToLower(reason)
+	if strings.Contains(lower, "error") || strings.Contains(lower, "unavailable") {
+		return "", false
+	}
+	if strings.Contains(lower, "barge") ||
+		strings.Contains(lower, "wake") ||
+		strings.Contains(lower, "abort") ||
+		strings.Contains(lower, "interrupt") {
+		return reason, true
+	}
+	return "", false
 }
 
 func (session *xiaozhiSession) completeXiaozhiTurn(turn *xiaozhiTurn) {

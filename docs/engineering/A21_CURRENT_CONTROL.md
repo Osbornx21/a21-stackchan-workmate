@@ -71,6 +71,32 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 00:48 CST Gateway host-say interrupt
+classification cut:
+
+- Root cause of the medium/long `/v1/xiaozhi/say` `502` observation is now
+  classified: a user/device touch barge-in cancels the active Xiaozhi turn, but
+  the HTTP host-say handler previously treated all aborted downlinks as
+  BadGateway.
+- Gateway now distinguishes intentional user/device interruption from true
+  downlink failure. `barge`, `wake`, `abort`, or `interrupt` cancellation
+  reasons return HTTP 200 with `status=interrupted`,
+  `interrupt_reason=<safe reason>`, partial `audio_chunks`, and trace marker
+  `xiaozhi.say.interrupted`.
+- Actual downlink/TTS errors still remain HTTP 502 and continue to record
+  `xiaozhi.say.downlink_error`; this cut does not mask provider, codec,
+  websocket, or audio delivery failures.
+- Focused tests passed for normal host-say delivery, touch interruption, real
+  downlink error, WAV host-say delivery, post-host-say suppression, product
+  touch barge-in, and product touch reactions. Full
+  `GOMAXPROCS=2 make verify` also passed.
+- No firmware build/flash, no ECS swap, no NVS write, no provider or V21
+  execution, and no internal-test3 voice/protocol rollback occurred in this
+  cut.
+- Remaining physical PRD blockers are unchanged: collect one operator-side
+  window with wake/listen mic ingress, answer downlink/playback, trusted
+  audible or instrument observation, and touch/wake barge-in stop_done.
+
 Live truth after the 2026-06-05 00:36 CST StackChan touch barge-in/body cut:
 
 - Current source HEAD for the flashed product app:

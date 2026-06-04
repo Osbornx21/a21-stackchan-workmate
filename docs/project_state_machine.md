@@ -11,7 +11,28 @@ are the project memory.
 
 Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROMPT-VOICE-CLONE-PIPELINE-READY-ROLEPLAY-DEVICE-STATE-REFLECTION-READY-ROLEPLAY-OFFICIAL-EXPRESSION-PLAN-READY-ROLEPLAY-IMMERSION-READINESS-READY-ROLEPLAY-VOICE-RUNTIME-EVIDENCE-READY-ROLEPLAY-VOICE-PROBE-REPORT-GENERATOR-READY-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-READY-WORKSPACE-CONSOLE-PRODUCT-SURFACE-READY-WORKSPACE-DEVICE-BINDING-GUARD-READY-WORKSPACE-PROFESSIONAL-QUERY-ENDPOINT-READY-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-READY-SELECTED-VOICE-CHAIN-READINESS-INGRESS-READY-WORKSPACE-SOURCE-READINESS-READY-WORKSPACE-DOCUMENT-UPLOAD-INTAKE-READY-WORKSPACE-INDEX-REQUEST-LEDGER-READY-V21-SOURCE-SCOPE-RETRIEVAL-GUARD-READY-A21-V21-NATIVE-VOICE-QUERY-BRIDGE-READY-PROFESSIONAL-VOICE-TRIGGER-READY-MCP-SPEAKER-VOLUME-FROZEN-OFFICIAL-ROBOT-MCP-BODY-CONTROLS-DEPLOYED-CLOUD-UPLOAD-INDEX-EXECUTION-PLANNED-PHYSICAL-PENDING`
 
-Latest control update, 2026-06-05 00:36 CST:
+Latest control update, 2026-06-05 00:48 CST:
+
+- `T-XIAOZHI-HOST-SAY-INTERRUPT-CLASSIFICATION-001` is ready in code and
+  tests. The previously observed medium/long `/v1/xiaozhi/say` `502` is now
+  classified as a Gateway control-surface semantics bug when a product
+  touch/wake/barge/abort cancellation intentionally interrupts an active
+  downlink.
+- Gateway `/v1/xiaozhi/say` now returns HTTP 200 with `status=interrupted`,
+  safe `interrupt_reason`, partial `audio_chunks`, and
+  `xiaozhi.say.interrupted` trace marker for intentional user/device
+  interruption. True downlink/TTS errors remain HTTP 502 and are covered by
+  `xiaozhi.say.downlink_error` tests.
+- Focused Gateway tests passed for normal host-say, touch interruption, actual
+  downlink error, WAV host-say, post-host-say suppression, product touch
+  barge-in, and product touch reactions. Full `GOMAXPROCS=2 make verify`
+  passed.
+- This transition did not flash firmware, swap ECS runtime, write NVS, execute
+  providers/V21, or roll back internal-test3 voice/protocol changes. Total
+  state remains `PHYSICAL-PENDING` because mic ingress and trusted audible or
+  instrument observation are still missing from one product physical window.
+
+Previous control update, 2026-06-05 00:36 CST:
 
 - `T-XIAOZHI-PHYSICAL-BARGE-IN-STOP-DONE-001` is partially promoted from
   blocked to product trace candidate for the touch/body path. The product app

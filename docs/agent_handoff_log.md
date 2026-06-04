@@ -15636,3 +15636,72 @@ Forbidden actions avoided:
 
 - No NVS write, no provider secret printing, no firmware flash, no provider or
   V21 execution, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 00:48 CST - Xiaozhi Host-Say Touch Interrupt Classification
+
+Round goal:
+
+- Continue internal test 4 hardware/body parity without redoing internal test 3
+  voice acceptance.
+- Fix the product-facing `/v1/xiaozhi/say` behavior where a normal
+  user/device touch barge-in could surface as HTTP 502 after a speaking
+  window.
+
+Actual completed work:
+
+- Reproduced the control-surface bug with a deterministic Gateway test: host
+  say starts, first audio frame is delivered, product top-touch barge-in sends
+  `touch_barge_in` stop, then the second TTS chunk observes the canceled turn.
+- Added Gateway response semantics for intentional interruption. Safe
+  cancellation reasons containing `barge`, `wake`, `abort`, or `interrupt`
+  now return HTTP 200 with `status=interrupted`, safe `interrupt_reason`,
+  partial `audio_chunks`, and trace marker `xiaozhi.say.interrupted`.
+- Preserved the failure boundary: actual TTS/downlink errors still return HTTP
+  502 and record `xiaozhi.say.downlink_error`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Failing test before implementation:
+  `GOMAXPROCS=2 go test ./internal/gateway -run TestXiaozhiSayReportsInterruptedWhenProductTouchBargeInCancelsDownlink -count=1`
+  failed because `XiaozhiSayResponse` had no `InterruptReason`.
+- Focused test passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run TestXiaozhiSayReportsInterruptedWhenProductTouchBargeInCancelsDownlink -count=1`.
+- Focused Gateway regression suite passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhi(ProductTouchBargeInCancelsActiveTurnAndStopsPlayback|ProductTouchReactionsSendBoundedBodyMCP|Say(DeliversTextAsStockTTSDownlink|ReportsInterruptedWhenProductTouchBargeInCancelsDownlink|KeepsBadGatewayForActualDownlinkError|DeliversWAVAsStockTTSDownlink|SuppressesImmediateListenRestartForStockPhysical))' -count=1`.
+- Full verification passed:
+  `GOMAXPROCS=2 make verify`.
+
+Runtime or physical evidence:
+
+- No new physical evidence was promoted in this round. This was a Gateway
+  control-surface repair for the previously observed host-say 502 after
+  touch/barge-in.
+
+Remaining issues:
+
+- Full physical PRD acceptance still needs one operator-side product window
+  with wake/listen mic ingress, answer downlink/playback, trusted audible or
+  instrument observation, and touch/wake barge-in stop_done.
+- Screen/servo/RGB/body parity should continue after this control-surface fix;
+  camera/NFC/IR remain higher-risk parity spikes.
+
+Next suggested action:
+
+- If ECS deployment is desired for the public product Gateway, safe-swap this
+  commit and rerun a short host-say interrupted by top touch to confirm public
+  HTTP now reports `interrupted` instead of 502. Then return to physical
+  screen/servo/RGB/touch body parity and the operator-side mic/audible window.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, and no internal-test3 voice/protocol rollback.
