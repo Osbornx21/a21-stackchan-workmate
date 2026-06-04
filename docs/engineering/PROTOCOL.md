@@ -1169,7 +1169,10 @@ The `/v1/devices` registry response must identify the serving process before any
 
 Gateway also records the device's current control state for office acceptance:
 
-- `connection_status`: computed at `/v1/devices` read time as `online`, `stale`, or `unknown`
+- `connection_status`: computed at `/v1/devices` read time as `online`,
+  `stale`, or `unknown`; explicit Xiaozhi socket close preserves
+  `xiaozhi_ws_disconnected` so MCP/body-control acceptance does not trust a
+  stale registry row as a writable socket
 - `device_age_ms`: age of the latest observed device/control event at read time
 - `current_mode`: latest semantic mode from A21 `control.event`
 - `current_voice_mode`: current explicit operator voice-mode selection

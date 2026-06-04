@@ -6022,6 +6022,48 @@ func TestXiaozhiProductStateReactionsRequireMCP(t *testing.T) {
 	}
 }
 
+func TestXiaozhiDeviceRegistryMarksSocketDisconnectedOnClose(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-disconnect",
+		"session_id": "a21-session-xiaozhi-disconnect",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp": true,
+			"aec": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := conn.Close(websocket.StatusNormalClosure, "test disconnect"); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	var registry map[string]any
+	for time.Now().Before(deadline) {
+		registry = fetchSingleDeviceRegistryItem(t, httpServer.URL)
+		if registry["connection_status"] == "xiaozhi_ws_disconnected" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if registry["connection_status"] != "xiaozhi_ws_disconnected" ||
+		registry["last_trace_id"] != "a21-trace-xiaozhi-disconnect" ||
+		registry["last_session_id"] != "a21-session-xiaozhi-disconnect" {
+		t.Fatalf("registry after disconnect = %#v, want xiaozhi_ws_disconnected", registry)
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)

@@ -10683,6 +10683,22 @@ func (s *Server) unregisterXiaozhiSocket(deviceID string, conn *websocket.Conn) 
 	socket := s.xiaozhiSockets[deviceID]
 	if socket != nil && socket.conn == conn {
 		delete(s.xiaozhiSockets, deviceID)
+		nowMS := s.now().UnixMilli()
+		record := s.devices[deviceID]
+		if record.DeviceID == "" {
+			record.DeviceID = deviceID
+			record.FirstSeenMS = nowMS
+		}
+		if record.IdentityStatus == "" {
+			record.IdentityStatus = "unknown"
+		}
+		record.ConnectionStatus = "xiaozhi_ws_disconnected"
+		if socket.session != nil {
+			record.LastTraceID = socket.session.traceID
+			record.LastSessionID = socket.session.sessionID
+		}
+		record.LastSeenMS = nowMS
+		s.devices[deviceID] = record
 	}
 }
 
@@ -10953,6 +10969,9 @@ func withDeviceFreshness(record DeviceRecord, nowMS int64) DeviceRecord {
 		ageMS = 0
 	}
 	record.DeviceAgeMS = ageMS
+	if record.ConnectionStatus == "xiaozhi_ws_disconnected" {
+		return record
+	}
 	if ageMS <= deviceOnlineWindowMS {
 		record.ConnectionStatus = "online"
 	} else {

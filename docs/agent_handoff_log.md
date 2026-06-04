@@ -15032,6 +15032,10 @@ Actual completed work:
 - Device registry records only redacted runtime echo:
   `last_state_reaction_status`, `last_state_reaction_state`,
   `last_state_reaction_reason`, and bounded robot LED/head fields.
+- Added a reliability guard so Xiaozhi websocket close marks the registry
+  `connection_status=xiaozhi_ws_disconnected` while preserving the previous
+  semantic `last_event`; stale registry rows can no longer be mistaken for a
+  writable MCP/body-control socket.
 
 Changed files:
 
@@ -15048,7 +15052,7 @@ Changed files:
 
 Tests/build/runtime results:
 
-- `go test ./internal/gateway -run 'TestXiaozhiProductStateReactions|TestXiaozhiProductTouchReactions' -count=1`
+- `go test ./internal/gateway -run 'TestXiaozhiDeviceRegistryMarksSocketDisconnectedOnClose|TestXiaozhiProductStateReactions|TestXiaozhiProductTouchReactions' -count=1`
   passed.
 - `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresProduct(State|Touch|Playback)Events|TestGatewayServerOptionsFromEnvWiresProductTouchReactions|TestGatewayServerOptionsFromEnvWiresProductStateReactions' -count=1`
   passed.

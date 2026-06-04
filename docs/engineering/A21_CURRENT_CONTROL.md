@@ -1926,6 +1926,10 @@ Current implementation state:
 - This does not depend on `/stackChan/ws`, does not broaden accepted
   firmware-originated `type=device` events, and does not touch firmware,
   flash, NVS, provider execution, or V21.
+- Follow-up reliability guard: when the Xiaozhi websocket closes, Gateway now
+  preserves prior semantic `last_event` evidence but reports
+  `connection_status=xiaozhi_ws_disconnected`, so MCP/body-control probes do
+  not trust stale registry rows as writable sockets.
 - Focused local tests pass for state reaction delivery, MCP-required gating,
   and app env wiring. `GOMAXPROCS=2 make verify` passed after docs/state
   updates. ECS deployment and physical evidence are still pending in this
