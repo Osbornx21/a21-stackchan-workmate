@@ -5858,6 +5858,170 @@ func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
 	}
 }
 
+func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+		XiaozhiProductStateReactions: true,
+	}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-state-reaction",
+		"session_id": "a21-session-xiaozhi-product-state-reaction",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp": true,
+			"aec": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["state_reactions"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product state reactions", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":  "listen",
+		"state": "start",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	readMCP := func() (string, map[string]any) {
+		message := readXiaozhiJSON(t, ctx, conn)
+		if message["type"] != "mcp" || message["trace_id"] != "a21-trace-xiaozhi-product-state-reaction" || message["device_id"] != "44:1b:f6:e2:6a:60" {
+			t.Fatalf("state reaction mcp wrapper = %#v", message)
+		}
+		payload, ok := message["payload"].(map[string]any)
+		if !ok {
+			t.Fatalf("state reaction payload = %#v", message["payload"])
+		}
+		params, ok := payload["params"].(map[string]any)
+		if !ok {
+			t.Fatalf("state reaction params = %#v", payload["params"])
+		}
+		args, ok := params["arguments"].(map[string]any)
+		if !ok {
+			t.Fatalf("state reaction args = %#v", params["arguments"])
+		}
+		return fmt.Sprint(params["name"]), args
+	}
+
+	tool, args := readMCP()
+	if tool != xiaozhiMCPRobotSetLEDColorToolName ||
+		args["red"] != float64(0) ||
+		args["green"] != float64(72) ||
+		args["blue"] != float64(168) {
+		t.Fatalf("led state reaction = tool:%s args:%#v", tool, args)
+	}
+	tool, args = readMCP()
+	if tool != xiaozhiMCPRobotSetHeadAnglesToolName ||
+		args["yaw"] != float64(0) ||
+		args["pitch"] != float64(30) ||
+		args["speed"] != float64(180) {
+		t.Fatalf("head state reaction = tool:%s args:%#v", tool, args)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-state-reaction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.listen.start",
+		"stackchan.display_state.registry_updated",
+		"xiaozhi.state_reaction.robot_led_color.sent",
+		"xiaozhi.state_reaction.robot_head_angles_set.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["display_state"] != "listening" || registry["display_state_source"] != "xiaozhi" {
+		t.Fatalf("registry display state = %#v, want xiaozhi/listening", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok || capabilities["xiaozhi_product_state_reactions"] != "true" {
+		t.Fatalf("registry capabilities = %#v, want product state reactions", registry["capabilities"])
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok ||
+		runtimeEcho["last_state_reaction_status"] != "delivered" ||
+		runtimeEcho["last_state_reaction_state"] != "listening" ||
+		runtimeEcho["last_state_reaction_reason"] != "listen_start" ||
+		runtimeEcho["robot_head_pitch"] != "30" ||
+		runtimeEcho["robot_led_blue"] != "168" {
+		t.Fatalf("registry runtime_echo = %#v, want state reaction echo", registry["runtime_echo"])
+	}
+}
+
+func TestXiaozhiProductStateReactionsRequireMCP(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+		XiaozhiProductStateReactions: true,
+	}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-state-no-mcp",
+		"session_id": "a21-session-xiaozhi-product-state-no-mcp",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"aec": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	if _, ok := reply["a21"]; ok {
+		t.Fatalf("a21 hello extension without mcp = %#v, want omitted", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":  "listen",
+		"state": "start",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["display_state"] != "listening" {
+		t.Fatalf("registry display state without mcp = %#v, want listening", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if ok {
+		if _, ok := capabilities["xiaozhi_product_state_reactions"]; ok {
+			t.Fatalf("state reactions capability present without mcp: %#v", capabilities)
+		}
+	}
+	if runtimeEcho, ok := registry["runtime_echo"].(map[string]any); ok {
+		if _, ok := runtimeEcho["last_state_reaction_status"]; ok {
+			t.Fatalf("state reaction echo present without mcp: %#v", runtimeEcho)
+		}
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)

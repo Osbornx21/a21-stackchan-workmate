@@ -1028,6 +1028,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		XiaozhiProductPlaybackEvents: appEnvBool(env, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
 		XiaozhiProductTouchEvents:    appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
 		XiaozhiProductTouchReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS"),
+		XiaozhiProductStateReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_STATE_REACTIONS"),
 		MacLocalGatewayURL:           appEnvValue(env, "A21_MAC_LOCAL_GATEWAY_URL"),
 		PublicGatewayURL:             appEnvValue(env, "A21_PUBLIC_GATEWAY_URL"),
 		CloudVoiceProfile:            appEnvValue(env, "A21_CLOUD_VOICE_PROFILE"),

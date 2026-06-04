@@ -6041,6 +6041,15 @@ func TestGatewayServerOptionsFromEnvWiresProductTouchReactions(t *testing.T) {
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresProductStateReactions(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true",
+	})
+	if !options.XiaozhiProductStateReactions {
+		t.Fatal("xiaozhi product state reactions not configured")
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_LISTEN_MAX_MS=4500",

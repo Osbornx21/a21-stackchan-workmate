@@ -1907,3 +1907,36 @@ Current conclusion:
   direct-source path while TUN is active.
 - No provider key exposure, firmware app flash, generic Xiaozhi product flash,
   V21 execution, repository prune/gc, or internal-test3 rollback occurred.
+
+## Latest Control-Tower Result - 2026-06-04 State Body Reactions
+
+Current implementation state:
+
+- Current branch:
+  `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- After the accepted touch body-reaction proof, the next visible expression
+  slice is implemented locally behind
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true`.
+- The new gate returns `a21.state_reactions=true` only for hardware-MAC stock
+  Xiaozhi clients that advertise stock `hello.features.mcp=true`.
+- Gateway-generated `idle`, `listening`, `thinking`, `speaking`, `error`, and
+  `fatal_error` states now map to bounded official MCP
+  `self.robot.set_led_color` and `self.robot.set_head_angles` calls on the
+  live product `/v1/xiaozhi` socket.
+- This does not depend on `/stackChan/ws`, does not broaden accepted
+  firmware-originated `type=device` events, and does not touch firmware,
+  flash, NVS, provider execution, or V21.
+- Focused local tests pass for state reaction delivery, MCP-required gating,
+  and app env wiring. `GOMAXPROCS=2 make verify` passed after docs/state
+  updates. ECS deployment and physical evidence are still pending in this
+  active cut.
+
+Current conclusion:
+
+- State/body reaction is ready for ECS deployment with a root-only runtime env
+  toggle.
+- Physical product acceptance still requires a fresh device report after
+  deploy showing the state reaction on device `44:1b:f6:e2:6a:60`; this local
+  implementation does not by itself close screen visual acceptance, app
+  lifecycle, camera, NFC, infrared, no-cable boot/power, or full PRD
+  acceptance.

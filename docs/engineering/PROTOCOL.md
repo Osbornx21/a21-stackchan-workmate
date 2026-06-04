@@ -61,7 +61,12 @@ Gateway runtime gate is enabled. If the product touch allowance is active and
 the same client advertises `mcp`, Gateway may also return the separate
 server-side `a21.touch_reactions=true` allowance under
 `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true`; this does not broaden accepted
-device event kinds. It also
+device event kinds. A hardware StackChan client that advertises stock
+`hello.features.mcp=true` may also receive the separate server-side
+`a21.state_reactions=true` allowance under
+`A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true`; this uses Gateway-initiated MCP
+body feedback for Gateway state transitions and does not require or accept new
+firmware-originated event kinds. It also
 accepts xiaozhi binary protocol versions 1, 2, and 3 after a
 valid `hello` and active `listen/start`. Version 1 is a raw Opus payload.
 Version 2 unwraps the 16-byte metadata header and preserves the timestamp.
@@ -496,12 +501,15 @@ keepalive evidence; `A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true` gates physical
 touch evidence. `A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS=true` is a separate
 server-side body-reaction gate; it is returned as `a21.touch_reactions=true`
 only when the product touch allowance is active and the same hardware client
-advertises stock `hello.features.mcp=true`. This product allowance accepts
-playback `start` / `stop_done` acknowledgements, idle `heartbeat` events, and
-screen/top `touch` events; it rejects all other `type=device` event kinds.
-Ordinary stock server hellos remain free of `a21`, `device_events`,
-`playback_events`, `keepalive_events`, `touch_events`, `touch_reactions`, and
-`debug_metrics`. A host may build
+advertises stock `hello.features.mcp=true`.
+`A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` is another separate server-side
+body-reaction gate; it is returned as `a21.state_reactions=true` only for
+hardware-MAC stock clients with stock MCP support. This product allowance
+accepts playback `start` / `stop_done` acknowledgements, idle `heartbeat`
+events, and screen/top `touch` events; it rejects all other `type=device`
+event kinds. Ordinary stock server hellos remain free of `a21`,
+`device_events`, `playback_events`, `keepalive_events`, `touch_events`,
+`touch_reactions`, `state_reactions`, and `debug_metrics`. A host may build
 `type=device` extension events only when the connected profile explicitly
 advertises `features.device_events=true` or the host has selected an A21
 debug/StackChan extension profile.
@@ -548,6 +556,20 @@ provider-neutral A21 semantics:
   `last_touch_reaction_event`, `robot_head_yaw`, and `robot_led_green`. Failed
   reactions record `xiaozhi.touch_reaction.failed` and do not reject or erase
   the original touch event.
+
+Gateway-generated Xiaozhi state transitions may also trigger product-gated
+body feedback when `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` is active for a
+hardware-MAC stock client with `hello.features.mcp=true`. The current bounded
+map covers `idle`, `listening`, `thinking`, `speaking`, `error`, and
+`fatal_error`, and sends only `self.robot.set_led_color` plus
+`self.robot.set_head_angles` over the same live `/v1/xiaozhi` MCP socket.
+State reaction delivery records `xiaozhi.state_reaction.robot_led_color.sent`
+and `xiaozhi.state_reaction.robot_head_angles_set.sent`; failures record
+`xiaozhi.state_reaction.failed`. The device registry stores only redacted
+runtime echo such as `last_state_reaction_status`,
+`last_state_reaction_state`, `last_state_reaction_reason`, `robot_head_pitch`,
+and `robot_led_blue`. This is runtime body-expression evidence, not full
+screen visual acceptance or full PRD physical acceptance.
 
 For launch readiness, the extension's visual/action events are candidate
 transport evidence only until a flashed official StackChan avatar/action

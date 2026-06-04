@@ -15003,3 +15003,80 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no serial write, no provider execution,
   no V21 execution, no provider key in firmware, no generic `xiaozhi.bin`
   product lane, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-04 23:20 CST - StackChan Product State Body Reaction Implementation
+
+Round goal:
+
+- Continue hardware/body parity after accepted touch reactions by making
+  ordinary Xiaozhi states visibly drive the StackChan body, without reopening
+  keepalive/touch bridge work or touching internal-test3 voice/protocol.
+
+Actual completed work:
+
+- Archived currently controllable old delegation worker threads to reduce
+  control-tower noise; no repository branch, worktree, commit, or report was
+  deleted.
+- Added plan
+  `docs/plans/2026-06-04-stackchan-product-state-body-reactions.md`.
+- Added `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true` as a separate server-side
+  Gateway gate.
+- Gateway returns `a21.state_reactions=true` only for hardware-MAC stock
+  Xiaozhi clients with `hello.features.mcp=true`.
+- Gateway-generated `idle`, `listening`, `thinking`, `speaking`, `error`, and
+  `fatal_error` states now send bounded official MCP
+  `self.robot.set_led_color` and `self.robot.set_head_angles` reactions over
+  the live `/v1/xiaozhi` socket.
+- State reactions are independent from `/stackChan/ws`, touch reactions, and
+  firmware-originated `type=device` event allowances.
+- Device registry records only redacted runtime echo:
+  `last_state_reaction_status`, `last_state_reaction_state`,
+  `last_state_reaction_reason`, and bounded robot LED/head fields.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-stackchan-product-state-body-reactions.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestXiaozhiProductStateReactions|TestXiaozhiProductTouchReactions' -count=1`
+  passed.
+- `go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresProduct(State|Touch|Playback)Events|TestGatewayServerOptionsFromEnvWiresProductTouchReactions|TestGatewayServerOptionsFromEnvWiresProductStateReactions' -count=1`
+  passed.
+- `git diff --check` passed before this handoff update.
+- `GOMAXPROCS=2 make verify` passed after docs/state updates.
+- ECS deployment and physical device evidence are still pending at this log
+  point.
+
+Unfinished items:
+
+- Deploy to ECS with root-only
+  `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=true`.
+- Collect fresh runtime/physical evidence on device `44:1b:f6:e2:6a:60`,
+  ideally a `listen_start` state reaction showing LED/head movement and
+  `xiaozhi.state_reaction.*` markers.
+- This does not close screen visual acceptance, richer choreography,
+  camera/NFC/infrared, no-cable boot/power, app lifecycle, or full PRD
+  acceptance.
+
+Recommended next action:
+
+- Commit/push this state-reaction cut, deploy the Gateway to ECS, enable the
+  env gate, restart `a21-gateway`, and collect one physical state-reaction
+  report.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no serial write, no
+  provider execution, no V21 execution, no provider key in firmware, no generic
+  `xiaozhi.bin` product lane, no Git prune/gc, and no internal-test3
+  voice/protocol rollback.
