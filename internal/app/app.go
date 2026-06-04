@@ -1063,7 +1063,7 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 	if strings.TrimSpace(appEnvValue(out, "A21_TTS_FAST_PROFILE")) == "" &&
 		strings.TrimSpace(appEnvValue(out, "A21_TTS_BALANCED_PROFILE")) == "" &&
 		strings.TrimSpace(appEnvValue(out, "A21_TTS_QUALITY_PROFILE")) == "" {
-		if strings.TrimSpace(appEnvValue(out, "A21_VOICE_CLONE_COMMAND")) != "" &&
+		if voiceCloneCommandFromEnv(out) != "" &&
 			strings.TrimSpace(appEnvValue(out, "A21_VOICE_CLONE_REF_AUDIO")) != "" {
 			out = append(out, "A21_TTS_FAST_PROFILE=voice_clone_cli")
 		} else {

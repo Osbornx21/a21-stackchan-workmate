@@ -33,6 +33,12 @@ A21_VOICE_PERSONA=a21_workmate
 A21_VOICE_STYLE=workmate_warm
 ```
 
+`A21_VOICE_CLONE_CLI` is accepted as a compatibility alias for
+`A21_VOICE_CLONE_COMMAND` when an existing deployment already uses that env
+name. `A21_VOICE_CLONE_COMMAND` remains the canonical name and takes priority
+when both are set. Reports must record only env-name presence and safe profile
+IDs, never command values or reference text.
+
 `A21_VOICE_CLONE_REF_TEXT` may be used instead of `A21_VOICE_CLONE_REF_TEXT_FILE` for short lab-only runs. Reports must never record the reference text.
 
 ## Wrapper Args

@@ -350,7 +350,7 @@ func normalizeLocalTTSEngine(raw string) (string, error) {
 
 func voiceCloneRuntimeOptionsFromEnv(env []string) voiceCloneRuntimeOptions {
 	return voiceCloneRuntimeOptions{
-		Command:            strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_COMMAND")),
+		Command:            voiceCloneCommandFromEnv(env),
 		Model:              strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_CLONE_MODEL"), "index_tts2")),
 		ReferenceAudioPath: strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_AUDIO")),
 		ReferenceText:      strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_TEXT")),
@@ -358,6 +358,10 @@ func voiceCloneRuntimeOptionsFromEnv(env []string) voiceCloneRuntimeOptions {
 		Persona:            strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_PERSONA"), "a21_workmate")),
 		Style:              strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_STYLE"), "workmate_warm")),
 	}
+}
+
+func voiceCloneCommandFromEnv(env []string) string {
+	return strings.TrimSpace(firstNonEmpty(appEnvValue(env, "A21_VOICE_CLONE_COMMAND"), appEnvValue(env, "A21_VOICE_CLONE_CLI")))
 }
 func runLocalASRSmoke(args []string, stdout io.Writer, stderr io.Writer) int {
 	engine := strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_ENGINE"), "sherpa_onnx"))

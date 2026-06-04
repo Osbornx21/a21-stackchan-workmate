@@ -5100,7 +5100,7 @@ func productSherpaTTSReady(env []string) bool {
 }
 
 func productVoiceCloneTTSReady(env []string) bool {
-	command := strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_COMMAND"))
+	command := voiceCloneCommandFromEnv(env)
 	refAudio := strings.TrimSpace(appEnvValue(env, "A21_VOICE_CLONE_REF_AUDIO"))
 	if command == "" || refAudio == "" {
 		return false

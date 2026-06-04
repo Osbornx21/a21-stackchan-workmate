@@ -4114,6 +4114,28 @@ func TestProductVoiceReadinessAcceptsConfiguredVoiceCloneTTS(t *testing.T) {
 	}
 }
 
+func TestProductVoiceReadinessAcceptsVoiceCloneCLIAlias(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, "a21-voice-clone-wrapper")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	refAudio := filepath.Join(dir, "a21-persona-reference.wav")
+	if err := os.WriteFile(refAudio, []byte("RIFF-a21-reference"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	voice := buildProductVoiceReadiness([]string{
+		"A21_TTS_FAST_PROFILE=voice_clone_cli",
+		"A21_VOICE_CLONE_CLI=" + commandPath,
+		"A21_VOICE_CLONE_REF_AUDIO=" + refAudio,
+	}, productProviderReadiness{}, productStackChanReadiness{})
+
+	if !voice.LocalTTSReady || !voice.VoicePipeline.HostLocalTTSReady {
+		t.Fatalf("voice readiness = %+v, want A21_VOICE_CLONE_CLI alias to enable clone TTS", voice)
+	}
+}
+
 func TestProductVoiceReadinessRejectsLegacyVoiceClonePaths(t *testing.T) {
 	dir := t.TempDir()
 	legacyDir := filepath.Join(dir, "x21-voice")
