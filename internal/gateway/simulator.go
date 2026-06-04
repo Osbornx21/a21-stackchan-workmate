@@ -215,14 +215,14 @@ const simulatorHTML = `<!doctype html>
     .badge.private[data-active="true"] { border-color: #82c68f; background: #16231b; }
     .badge.public[data-active="true"] { border-color: #d6b15f; background: #2a2315; }
     .badge.muted[data-active="true"] { border-color: #95a6aa; background: #1c2225; }
-    .registry, .audio-link, .latency-summary, .wake-word {
+    .registry, .audio-link, .latency-summary, .wake-word, .workspace-audit {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 12px;
       background: #141a1d;
       min-width: 0;
     }
-    .registry h2, .audio-link h2, .latency-summary h2, .wake-word h2 {
+    .registry h2, .audio-link h2, .latency-summary h2, .wake-word h2, .workspace-audit h2 {
       margin: 0 0 10px;
       font-size: 13px;
       font-weight: 680;
@@ -389,6 +389,7 @@ const simulatorHTML = `<!doctype html>
           <button class="warn" id="interrupt">Interrupt</button>
           <button id="audioFrame">Audio Frame</button>
           <button id="workspaceJob">Workspace Job</button>
+          <button id="workspaceDocumentUpload">Upload Doc</button>
           <button id="workspaceSourcesRefresh">Sources</button>
           <button id="professionalReadRecordsRefresh">Read Records</button>
         </div>
@@ -438,6 +439,7 @@ const simulatorHTML = `<!doctype html>
             <option value="personal_plus_public">personal_plus_public</option>
           </select>
           <input id="workspaceDocumentLabel" value="PRD pack" aria-label="workspace document label">
+          <input id="workspaceDocumentFile" type="file" aria-label="workspace document file">
           <input id="utterance" value="先说，我在" aria-label="utterance">
         </div>
         <div class="readout">
@@ -494,6 +496,8 @@ const simulatorHTML = `<!doctype html>
           <h2>Workspace Audit</h2>
           <div class="registry-grid">
             <div class="metric"><label>Upload Job</label><div id="workspaceJobReadout">none</div></div>
+            <div class="metric"><label>Document</label><div id="workspaceDocumentReadout">none</div></div>
+            <div class="metric"><label>Storage</label><div id="workspaceDocumentStorage">none</div></div>
             <div class="metric"><label>Source Count</label><div id="workspaceSourceCount">0</div></div>
             <div class="metric"><label>Source Ready</label><div id="workspaceSourceReadiness">none</div></div>
             <div class="metric"><label>Read Records</label><div id="professionalReadRecordCount">0</div></div>
@@ -606,6 +610,8 @@ const simulatorHTML = `<!doctype html>
       playbackScheduledChunks: document.getElementById('playbackScheduledChunks'),
       mockPlayback: document.getElementById('mockPlayback'),
       workspaceJobReadout: document.getElementById('workspaceJobReadout'),
+      workspaceDocumentReadout: document.getElementById('workspaceDocumentReadout'),
+      workspaceDocumentStorage: document.getElementById('workspaceDocumentStorage'),
       workspaceSourceCount: document.getElementById('workspaceSourceCount'),
       workspaceSourceReadiness: document.getElementById('workspaceSourceReadiness'),
       professionalReadRecordCount: document.getElementById('professionalReadRecordCount'),
@@ -662,6 +668,7 @@ const simulatorHTML = `<!doctype html>
       clearRoleplayMemory: document.getElementById('clearRoleplayMemory'),
       professionalQueryScope: document.getElementById('professionalQueryScope'),
       workspaceDocumentLabel: document.getElementById('workspaceDocumentLabel'),
+      workspaceDocumentFile: document.getElementById('workspaceDocumentFile'),
       utterance: document.getElementById('utterance')
     };
     let latestWakeWordConfig = null;
@@ -1021,6 +1028,16 @@ const simulatorHTML = `<!doctype html>
       }
       ui.workspaceJobReadout.textContent = job.job_id + ' / ' + (job.status || 'unknown') + ' / ' + (job.index_status || 'index unknown');
     }
+    function renderWorkspaceDocument(document) {
+      if (!document || !document.document_id) {
+        ui.workspaceDocumentReadout.textContent = 'none';
+        ui.workspaceDocumentStorage.textContent = 'none';
+        return;
+      }
+      const shortHash = (document.document_hash || '').replace('sha256:', '').slice(0, 10);
+      ui.workspaceDocumentReadout.textContent = document.document_id + ' / ' + (document.size_bytes || 0) + ' bytes' + (shortHash ? ' / ' + shortHash : '');
+      ui.workspaceDocumentStorage.textContent = (document.storage_status || 'unknown') + ' / ' + (document.readiness || 'pending');
+    }
     function renderWorkspaceSources(payload) {
       const sources = (payload && payload.sources) || [];
       const summary = (payload && payload.summary) || {};
@@ -1307,6 +1324,43 @@ const simulatorHTML = `<!doctype html>
         log('workspace job ' + (job.job_id || 'accepted') + ' ' + (job.status || 'no_execute'));
       } catch (err) {
         log('workspace job unavailable');
+      }
+    }
+    async function uploadWorkspaceDocument() {
+      const file = (ui.workspaceDocumentFile.files || [])[0];
+      if (!file) {
+        log('select a workspace document file first');
+        return;
+      }
+      try {
+        const queryScope = ui.professionalQueryScope.value;
+        const form = new FormData();
+        form.append('workspace_id', 'a21_local_workspace');
+        form.append('user_id', 'a21_local_user');
+        form.append('source_scope', queryScope === 'public_only' ? 'public' : 'personal');
+        form.append('document_label', ui.workspaceDocumentLabel.value || 'workspace document');
+        form.append('content_type', file.type || 'application/octet-stream');
+        form.append('trace_id', sim.traceId || '');
+        form.append('session_id', sim.sessionId || '');
+        form.append('device_id', deviceId());
+        form.append('file', file);
+        const response = await fetch('/v1/workspace-documents', {
+          method: 'POST',
+          body: form
+        });
+        if (!response.ok) {
+          log('workspace document upload failed ' + response.status);
+          return;
+        }
+        const payload = await response.json();
+        const document = (payload.documents || [])[0] || {};
+        const job = (payload.jobs || [])[0] || {};
+        renderWorkspaceDocument(document);
+        renderWorkspaceJob(job);
+        refreshWorkspaceSources();
+        log('workspace document ' + (document.document_id || 'stored') + ' ' + (document.status || 'pending'));
+      } catch (err) {
+        log('workspace document upload unavailable');
       }
     }
     async function saveGatewayProfile() {
@@ -1638,6 +1692,7 @@ const simulatorHTML = `<!doctype html>
     document.getElementById('interrupt').addEventListener('click', () => sendDeviceEvent('interrupt'));
     document.getElementById('audioFrame').addEventListener('click', sendAudioFrame);
     document.getElementById('workspaceJob').addEventListener('click', createWorkspaceUploadJob);
+    document.getElementById('workspaceDocumentUpload').addEventListener('click', uploadWorkspaceDocument);
     document.getElementById('workspaceSourcesRefresh').addEventListener('click', refreshWorkspaceSources);
     document.getElementById('professionalReadRecordsRefresh').addEventListener('click', refreshProfessionalReadRecords);
     ui.mode.addEventListener('change', () => setMode(ui.mode.value));

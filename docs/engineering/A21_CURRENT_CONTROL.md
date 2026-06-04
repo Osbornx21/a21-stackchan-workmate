@@ -16,7 +16,7 @@ execution plan.
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
 - Current source HEAD:
-  `491134e feat(gateway): route professional voice triggers`
+  `1f0ed0c feat(gateway): expose workspace source readiness`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -964,3 +964,39 @@ Current conclusion:
 - This still does not store documents, run indexing, enforce V21 ACLs, execute
   providers/V21, start Gateway, deploy ECS, or prove physical hardware
   professional consult.
+
+## Latest Control-Tower Result - 2026-06-04 Workspace Document Upload Intake
+
+The workspace surface now accepts real local document upload bytes without
+promoting indexing or V21 execution.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-workspace-document-upload-intake.md`.
+- Gateway exposes `POST /v1/workspace-documents` with schema
+  `a21.gateway.workspace_documents.v1`.
+- The endpoint accepts `multipart/form-data` only, stores bytes in an A21
+  Gateway runtime directory, computes a safe `sha256:` document hash, and links
+  the document to a workspace job/source pair.
+- Linked jobs and sources report `stored_local_pending_index`,
+  `storage_status=stored_local`, and `index_status=not_started_no_execute`.
+- The local store defaults to `.a21-run/gateway/workspace-documents` and can
+  be overridden by `A21_WORKSPACE_DOCUMENT_STORE_DIR`; a conservative per-file
+  limit can be overridden by `A21_WORKSPACE_DOCUMENT_MAX_BYTES`.
+- `/v1/professional-workspace` now shows `stored_local_pending_index` readiness
+  when the selected scope has local stored uploads but no searchable source.
+- Simulator Workspace Audit now includes a file picker and upload control, then
+  displays only document/job/source metadata.
+- Existing `/v1/workspace-upload-jobs` direct creation remains metadata-only
+  and still rejects raw document text, bytes, base64 payloads, import URLs,
+  local paths, credentials, and provider output.
+
+Current conclusion:
+
+- Internal test 4 has a real local upload intake layer: user file bytes can
+  enter A21-controlled local storage and become visible as a safe pending-index
+  source.
+- This still does not parse, chunk, embed, index, upload to cloud storage,
+  enforce durable auth/ACLs, execute provider/V21, start Gateway as a service,
+  deploy ECS, or prove physical StackChan professional consult acceptance.

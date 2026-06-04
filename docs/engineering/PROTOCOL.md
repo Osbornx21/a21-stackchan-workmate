@@ -629,19 +629,43 @@ endpoint must reject raw document text, file bytes, base64 payloads, import
 URLs, local paths, credentials, API keys, and provider outputs. Current job
 status values such as `accepted_no_execute`, `failed`, `deleted`, and index
 statuses such as `not_started_no_execute` or `searchable_metadata_only` are
-contract/readiness metadata only; they do not mean upload bytes were stored or
-V21 indexing ran.
+contract/readiness metadata only. Jobs created directly on this endpoint do not
+mean upload bytes were stored or V21 indexing ran. Jobs linked from
+`/v1/workspace-documents` may carry `status=stored_local_pending_index`,
+`storage_status=stored_local`, and a safe `document_hash`; they still keep
+`index_status=not_started_no_execute` and `v21_execution_allowed=false`.
+
+`workspace_documents` is the local document-upload intake contract for the A21
+workspace surface. `POST /v1/workspace-documents` accepts only
+`multipart/form-data` with one `file` part plus safe metadata fields:
+`user_id`, `workspace_id`, `source_scope`, `document_label`, `content_type`,
+`trace_id`, `session_id`, and `device_id`. Gateway stores bytes only in an
+A21-owned runtime store, using `A21_WORKSPACE_DOCUMENT_STORE_DIR` when set or
+`.a21-run/gateway/workspace-documents` by default. Single-upload size is
+conservatively bounded by `A21_WORKSPACE_DOCUMENT_MAX_BYTES` when set or the
+Gateway default. The response schema is
+`a21.gateway.workspace_documents.v1` and returns only safe document/source/job
+metadata: IDs, source scope, content type, size, `sha256:` document hash,
+`storage_status=stored_local`, `readiness=stored_local_pending_index`, and
+redaction flags. It must not return or trace document text, raw bytes, base64
+payloads, original private filenames, local storage paths, import URLs,
+credentials, provider output, V21 evidence, or document-derived text. This
+endpoint does not parse, chunk, embed, OCR, index, upload to cloud storage, or
+execute V21.
 
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns
 `a21.gateway.workspace_sources.v1` and can filter by `source_id`, `user_id`,
 `workspace_id`, and `source_scope`. Source records are limited to redacted
 source/job IDs, redacted user/workspace labels, source scope, source kind,
-document label, content type, size, readiness, index status, safe timestamps,
-and redaction flags. Readiness values such as `metadata_only`,
+document ID/hash when present, document label, content type, size, readiness,
+storage status, index status, safe timestamps, and redaction flags. Readiness
+values such as `metadata_only`, `stored_local_pending_index`,
 `searchable_metadata_only`, `failed_metadata_only`, and
-`deleted_metadata_only` are explicitly not proof of real document storage,
-retrieval, or V21 indexing. `/v1/professional-workspace` may surface
+`deleted_metadata_only` are explicitly scoped: `stored_local_pending_index`
+means A21 accepted local bytes and has not indexed them; the other metadata
+statuses are not proof of real document storage, retrieval, or V21 indexing.
+`/v1/professional-workspace` may surface
 `source_scope_counts`, `searchable_source_scope_counts`, and
 `query_scope_readiness` from this registry while keeping
 `v21_execution_allowed=false` until a separately verified adapter execution

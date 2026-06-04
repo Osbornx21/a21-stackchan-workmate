@@ -2,11 +2,14 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/url"
@@ -41,6 +44,8 @@ const xiaozhiSuppressedListenDrainMS int64 = 1200
 const defaultXiaozhiListenMaxDurationMS int64 = 7000
 const maxXiaozhiWakePrerollFrames = 5
 const maxXiaozhiOpusIngressQueueFrames = 16
+const defaultWorkspaceDocumentMaxBytes int64 = 16 << 20
+const workspaceDocumentMultipartOverheadBytes int64 = 1 << 20
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
 
@@ -90,6 +95,10 @@ type Server struct {
 	workspaceUploadJobSeq        uint64
 	workspaceSources             map[string]WorkspaceSource
 	workspaceSourceSeq           uint64
+	workspaceDocuments           map[string]WorkspaceDocument
+	workspaceDocumentSeq         uint64
+	workspaceDocumentStoreDir    string
+	workspaceDocumentMaxBytes    int64
 	voiceChainModeConfig         string
 	cascadeASRProfileConfig      string
 	cascadeLLMProfileConfig      string
@@ -112,6 +121,8 @@ type ServerOptions struct {
 	XiaozhiStockProfessional     bool
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
+	WorkspaceDocumentStoreDir    string
+	WorkspaceDocumentMaxBytes    int64
 	GatewayProfile               string
 	CloudVoiceProfile            string
 	CloudVoiceEnv                []string
@@ -372,6 +383,9 @@ type WorkspaceUploadJobsResponse struct {
 type WorkspaceUploadJob struct {
 	JobID            string                      `json:"job_id"`
 	SourceID         string                      `json:"source_id,omitempty"`
+	DocumentID       string                      `json:"document_id,omitempty"`
+	DocumentHash     string                      `json:"document_hash,omitempty"`
+	StorageStatus    string                      `json:"storage_status,omitempty"`
 	UserID           string                      `json:"user_id"`
 	WorkspaceID      string                      `json:"workspace_id"`
 	SourceScope      string                      `json:"source_scope"`
@@ -410,6 +424,9 @@ type WorkspaceSourcesResponse struct {
 type WorkspaceSource struct {
 	SourceID      string                      `json:"source_id"`
 	JobID         string                      `json:"job_id"`
+	DocumentID    string                      `json:"document_id,omitempty"`
+	DocumentHash  string                      `json:"document_hash,omitempty"`
+	StorageStatus string                      `json:"storage_status,omitempty"`
 	UserID        string                      `json:"user_id"`
 	WorkspaceID   string                      `json:"workspace_id"`
 	SourceScope   string                      `json:"source_scope"`
@@ -425,6 +442,7 @@ type WorkspaceSource struct {
 	SessionID     string                      `json:"session_id,omitempty"`
 	DeviceID      string                      `json:"device_id,omitempty"`
 	MetadataOnly  bool                        `json:"metadata_only"`
+	StoredLocal   bool                        `json:"stored_local"`
 	Searchable    bool                        `json:"searchable"`
 	Deleted       bool                        `json:"deleted"`
 	Redaction     WorkspaceUploadJobRedaction `json:"redaction"`
@@ -432,13 +450,15 @@ type WorkspaceSource struct {
 }
 
 type WorkspaceSourceSummary struct {
-	TotalSources                int            `json:"total_sources"`
-	MetadataOnlySources         int            `json:"metadata_only_sources"`
-	SearchableSources           int            `json:"searchable_sources"`
-	DeletedSources              int            `json:"deleted_sources"`
-	SourceScopeCounts           map[string]int `json:"source_scope_counts"`
-	SearchableSourceScopeCounts map[string]int `json:"searchable_source_scope_counts"`
-	WorkspaceStatus             string         `json:"workspace_status"`
+	TotalSources                 int            `json:"total_sources"`
+	MetadataOnlySources          int            `json:"metadata_only_sources"`
+	StoredLocalSources           int            `json:"stored_local_sources"`
+	SearchableSources            int            `json:"searchable_sources"`
+	DeletedSources               int            `json:"deleted_sources"`
+	SourceScopeCounts            map[string]int `json:"source_scope_counts"`
+	StoredLocalSourceScopeCounts map[string]int `json:"stored_local_source_scope_counts"`
+	SearchableSourceScopeCounts  map[string]int `json:"searchable_source_scope_counts"`
+	WorkspaceStatus              string         `json:"workspace_status"`
 }
 
 type WorkspaceUploadJobRedaction struct {
@@ -454,6 +474,55 @@ type WorkspaceUploadJobRedaction struct {
 type WorkspaceUploadJobFinding struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+type WorkspaceDocumentsResponse struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Service       string                      `json:"service"`
+	Status        string                      `json:"status"`
+	Documents     []WorkspaceDocument         `json:"documents"`
+	Jobs          []WorkspaceUploadJob        `json:"jobs,omitempty"`
+	Sources       []WorkspaceSource           `json:"sources,omitempty"`
+	Redaction     WorkspaceDocumentRedaction  `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceDocument struct {
+	DocumentID    string                      `json:"document_id"`
+	SourceID      string                      `json:"source_id"`
+	JobID         string                      `json:"job_id"`
+	UserID        string                      `json:"user_id"`
+	WorkspaceID   string                      `json:"workspace_id"`
+	SourceScope   string                      `json:"source_scope"`
+	SourceKind    string                      `json:"source_kind"`
+	DocumentLabel string                      `json:"document_label"`
+	ContentType   string                      `json:"content_type,omitempty"`
+	SizeBytes     int64                       `json:"size_bytes"`
+	DocumentHash  string                      `json:"document_hash"`
+	Status        string                      `json:"status"`
+	StorageStatus string                      `json:"storage_status"`
+	IndexStatus   string                      `json:"index_status"`
+	Readiness     string                      `json:"readiness"`
+	CreatedAtMS   int64                       `json:"created_at_ms"`
+	UpdatedAtMS   int64                       `json:"updated_at_ms"`
+	TraceID       string                      `json:"trace_id,omitempty"`
+	SessionID     string                      `json:"session_id,omitempty"`
+	DeviceID      string                      `json:"device_id,omitempty"`
+	Redaction     WorkspaceDocumentRedaction  `json:"redaction"`
+	Findings      []WorkspaceUploadJobFinding `json:"findings,omitempty"`
+}
+
+type WorkspaceDocumentRedaction struct {
+	DocumentTextStored     bool `json:"document_text_stored"`
+	DocumentBytesStored    bool `json:"document_bytes_stored"`
+	DocumentBytesReturned  bool `json:"document_bytes_returned"`
+	OriginalFilenameStored bool `json:"original_filename_stored"`
+	Base64PayloadStored    bool `json:"base64_payload_stored"`
+	ImportURLStored        bool `json:"import_url_stored"`
+	LocalPathStored        bool `json:"local_path_stored"`
+	LocalPathReturned      bool `json:"local_path_returned"`
+	CredentialValueStored  bool `json:"credential_value_stored"`
+	ProviderOutputStored   bool `json:"provider_output_stored"`
 }
 
 type DeviceControlRequest struct {
@@ -790,6 +859,7 @@ const (
 	ProfessionalWorkspaceRuntimeSchemaVersion = "a21.professional_workspace_runtime.v1"
 	ProfessionalAdapterContractVersion        = "a21.v21_adapter_query.v2"
 	ProfessionalReadRecordsSchemaVersion      = "a21.gateway.professional_read_records.v1"
+	WorkspaceDocumentsSchemaVersion           = "a21.gateway.workspace_documents.v1"
 	WorkspaceUploadJobsSchemaVersion          = "a21.gateway.workspace_upload_jobs.v1"
 	WorkspaceSourcesSchemaVersion             = "a21.gateway.workspace_sources.v1"
 	VoiceChainProfileSchemaVersion            = "a21.gateway.voice_chain_profiles.v1"
@@ -939,6 +1009,10 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	initialTTSProfile := defaultFixedTTSProfile(xiaozhiPipelineMeta.Selection.TTSProfile)
 	initialRealtimeProvider := defaultRealtimeProvider(gatewayEnvValue(options.CloudVoiceEnv, "A21_PROVIDER_PRIMARY"))
 	initialVoiceCloneProfile := defaultVoiceCloneProfile(gatewayEnvValue(options.CloudVoiceEnv, "A21_VOICE_CLONE_PROFILE"))
+	workspaceDocumentMaxBytes := options.WorkspaceDocumentMaxBytes
+	if workspaceDocumentMaxBytes <= 0 {
+		workspaceDocumentMaxBytes = defaultWorkspaceDocumentMaxBytes
+	}
 	return &Server{
 		now:                          time.Now,
 		metrics:                      newMetrics(),
@@ -976,6 +1050,9 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		professionalReadRecords:      make(map[string]ProfessionalReadRecord),
 		workspaceUploadJobs:          make(map[string]WorkspaceUploadJob),
 		workspaceSources:             make(map[string]WorkspaceSource),
+		workspaceDocuments:           make(map[string]WorkspaceDocument),
+		workspaceDocumentStoreDir:    workspaceDocumentStoreDir(options.WorkspaceDocumentStoreDir),
+		workspaceDocumentMaxBytes:    workspaceDocumentMaxBytes,
 		voiceChainModeConfig:         VoiceChainModeCascade,
 		cascadeASRProfileConfig:      initialASRProfile,
 		cascadeLLMProfileConfig:      initialLLMProfile,
@@ -1022,6 +1099,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/roleplay-profile", s.handleRoleplayProfile)
 	mux.HandleFunc("/v1/professional-workspace", s.handleProfessionalWorkspace)
 	mux.HandleFunc("/v1/professional-read-records", s.handleProfessionalReadRecords)
+	mux.HandleFunc("/v1/workspace-documents", s.handleWorkspaceDocuments)
 	mux.HandleFunc("/v1/workspace-upload-jobs", s.handleWorkspaceUploadJobs)
 	mux.HandleFunc("/v1/workspace-sources", s.handleWorkspaceSources)
 	mux.HandleFunc("/v1/voice-chain-profiles", s.handleVoiceChainProfiles)
@@ -1151,6 +1229,46 @@ func (s *Server) handleProfessionalReadRecords(w http.ResponseWriter, r *http.Re
 			strings.TrimSpace(r.URL.Query().Get("trace_id")),
 			strings.TrimSpace(r.URL.Query().Get("session_id")),
 		)
+		writeJSON(w, http.StatusOK, response)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleWorkspaceDocuments(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "multipart/form-data") {
+			http.Error(w, "workspace document upload requires multipart/form-data", http.StatusUnsupportedMediaType)
+			return
+		}
+		maxBytes := s.workspaceDocumentMaxBytes
+		if maxBytes <= 0 {
+			maxBytes = defaultWorkspaceDocumentMaxBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes+workspaceDocumentMultipartOverheadBytes)
+		if err := r.ParseMultipartForm(workspaceDocumentMultipartOverheadBytes); err != nil {
+			http.Error(w, "workspace document upload invalid", http.StatusBadRequest)
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "workspace document file is required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		response, err := s.storeWorkspaceDocumentUpload(workspaceDocumentUploadRequestFromForm(r), file, header)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errWorkspaceDocumentTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
 		writeJSON(w, http.StatusOK, response)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2070,6 +2188,255 @@ func safeProfessionalReadFailureCode(code string) string {
 	}
 }
 
+var errWorkspaceDocumentTooLarge = errors.New("workspace document exceeds A21 local intake limit")
+
+type WorkspaceDocumentUploadRequest struct {
+	UserID        string
+	WorkspaceID   string
+	SourceScope   string
+	DocumentLabel string
+	ContentType   string
+	TraceID       string
+	SessionID     string
+	DeviceID      string
+}
+
+func workspaceDocumentUploadRequestFromForm(r *http.Request) WorkspaceDocumentUploadRequest {
+	return WorkspaceDocumentUploadRequest{
+		UserID:        strings.TrimSpace(r.FormValue("user_id")),
+		WorkspaceID:   strings.TrimSpace(r.FormValue("workspace_id")),
+		SourceScope:   strings.TrimSpace(r.FormValue("source_scope")),
+		DocumentLabel: strings.TrimSpace(r.FormValue("document_label")),
+		ContentType:   strings.TrimSpace(r.FormValue("content_type")),
+		TraceID:       strings.TrimSpace(r.FormValue("trace_id")),
+		SessionID:     strings.TrimSpace(r.FormValue("session_id")),
+		DeviceID:      strings.TrimSpace(r.FormValue("device_id")),
+	}
+}
+
+func (s *Server) storeWorkspaceDocumentUpload(req WorkspaceDocumentUploadRequest, file multipart.File, header *multipart.FileHeader) (WorkspaceDocumentsResponse, error) {
+	userID, workspaceID, _, err := s.resolveProfessionalWorkspace(ProfessionalWorkspaceSelectionRequest{
+		UserID:      req.UserID,
+		WorkspaceID: req.WorkspaceID,
+	})
+	if err != nil {
+		return WorkspaceDocumentsResponse{}, err
+	}
+	sourceScope := defaultWorkspaceSourceScope(req.SourceScope)
+	if !validWorkspaceSourceScope(sourceScope) {
+		return WorkspaceDocumentsResponse{}, fmt.Errorf("source_scope must be personal or public")
+	}
+	documentLabel := safeWorkspaceDocumentLabel(req.DocumentLabel)
+	if documentLabel == "" {
+		return WorkspaceDocumentsResponse{}, fmt.Errorf("valid redacted document_label is required")
+	}
+	contentType := safeWorkspaceContentType(req.ContentType)
+	if contentType == "" && header != nil {
+		contentType = safeWorkspaceContentType(header.Header.Get("Content-Type"))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	traceID := safeOptionalWorkspaceLabel(req.TraceID)
+	sessionID := safeOptionalWorkspaceLabel(req.SessionID)
+	deviceID := safeOptionalWorkspaceLabel(req.DeviceID)
+	maxBytes := s.workspaceDocumentMaxBytes
+	if maxBytes <= 0 {
+		maxBytes = defaultWorkspaceDocumentMaxBytes
+	}
+	hash, sizeBytes, err := s.storeWorkspaceDocumentFile(userID, workspaceID, sourceScope, file, maxBytes)
+	if err != nil {
+		if errors.Is(err, errWorkspaceDocumentTooLarge) {
+			return WorkspaceDocumentsResponse{}, err
+		}
+		return WorkspaceDocumentsResponse{}, fmt.Errorf("workspace document local storage unavailable")
+	}
+	nowMS := s.now().UnixMilli()
+	s.mu.Lock()
+	s.workspaceDocumentSeq++
+	documentID := fmt.Sprintf("a21-workspace-document-%06d", s.workspaceDocumentSeq)
+	s.workspaceUploadJobSeq++
+	jobID := fmt.Sprintf("a21-workspace-job-%06d", s.workspaceUploadJobSeq)
+	s.workspaceSourceSeq++
+	sourceID := fmt.Sprintf("a21-workspace-source-%06d", s.workspaceSourceSeq)
+	documentHash := "sha256:" + hash
+	findings := []WorkspaceUploadJobFinding{{
+		Code:    "workspace_document_stored_local_pending_index",
+		Message: "A21 stored the upload in the local workspace intake store; indexing and V21 execution remain disabled",
+	}}
+	document := WorkspaceDocument{
+		DocumentID:    documentID,
+		SourceID:      sourceID,
+		JobID:         jobID,
+		UserID:        userID,
+		WorkspaceID:   workspaceID,
+		SourceScope:   sourceScope,
+		SourceKind:    "upload",
+		DocumentLabel: documentLabel,
+		ContentType:   contentType,
+		SizeBytes:     sizeBytes,
+		DocumentHash:  documentHash,
+		Status:        "stored_local_pending_index",
+		StorageStatus: "stored_local",
+		IndexStatus:   "not_started_no_execute",
+		Readiness:     "stored_local_pending_index",
+		CreatedAtMS:   nowMS,
+		UpdatedAtMS:   nowMS,
+		TraceID:       traceID,
+		SessionID:     sessionID,
+		DeviceID:      deviceID,
+		Redaction:     workspaceDocumentStoredRedaction(),
+		Findings:      append([]WorkspaceUploadJobFinding(nil), findings...),
+	}
+	job := WorkspaceUploadJob{
+		JobID:            jobID,
+		SourceID:         sourceID,
+		DocumentID:       documentID,
+		DocumentHash:     documentHash,
+		StorageStatus:    "stored_local",
+		UserID:           userID,
+		WorkspaceID:      workspaceID,
+		SourceScope:      sourceScope,
+		SourceKind:       "upload",
+		DocumentLabel:    documentLabel,
+		ContentType:      contentType,
+		SizeBytes:        sizeBytes,
+		Status:           "stored_local_pending_index",
+		IndexStatus:      "not_started_no_execute",
+		Attempt:          1,
+		CreatedAtMS:      nowMS,
+		UpdatedAtMS:      nowMS,
+		TraceID:          traceID,
+		SessionID:        sessionID,
+		DeviceID:         deviceID,
+		UploadAPIReady:   true,
+		ImportAPIReady:   false,
+		IndexingAPIReady: false,
+		ExecutionStarted: false,
+		RetryAllowed:     true,
+		DeleteAllowed:    true,
+		Redaction:        workspaceUploadJobStoredDocumentRedaction(),
+		Findings:         append([]WorkspaceUploadJobFinding(nil), findings...),
+	}
+	source := workspaceSourceFromJob(job, "stored_local_pending_index")
+	s.workspaceDocuments[documentID] = document
+	s.workspaceUploadJobs[jobID] = job
+	s.workspaceSources[sourceID] = source
+	s.mu.Unlock()
+	if traceID != "" {
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.document.stored_local", nowMS)
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.source.stored_local_pending_index", nowMS)
+		s.recordTrace(traceID, sessionID, deviceID, "workspace.index_job.not_started_no_execute", nowMS)
+	}
+	return WorkspaceDocumentsResponse{
+		SchemaVersion: WorkspaceDocumentsSchemaVersion,
+		Service:       DeviceRegistryServiceName,
+		Status:        "stored_local_pending_index",
+		Documents:     []WorkspaceDocument{document},
+		Jobs:          []WorkspaceUploadJob{job},
+		Sources:       []WorkspaceSource{source},
+		Redaction:     workspaceDocumentStoredRedaction(),
+	}, nil
+}
+
+func (s *Server) storeWorkspaceDocumentFile(userID string, workspaceID string, sourceScope string, file multipart.File, maxBytes int64) (string, int64, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultWorkspaceDocumentMaxBytes
+	}
+	storeDir := strings.TrimSpace(s.workspaceDocumentStoreDir)
+	if storeDir == "" {
+		storeDir = workspaceDocumentStoreDir("")
+	}
+	targetDir := filepath.Join(storeDir, userID, workspaceID, sourceScope)
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		return "", 0, err
+	}
+	tmp, err := os.CreateTemp(targetDir, "a21-upload-*.tmp")
+	if err != nil {
+		return "", 0, err
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = os.Remove(tmpName)
+	}()
+	hasher := sha256.New()
+	written, copyErr := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(file, maxBytes+1))
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return "", 0, copyErr
+	}
+	if closeErr != nil {
+		return "", 0, closeErr
+	}
+	if written == 0 {
+		return "", 0, fmt.Errorf("workspace document file is empty")
+	}
+	if written > maxBytes {
+		return "", 0, errWorkspaceDocumentTooLarge
+	}
+	hash := fmt.Sprintf("%x", hasher.Sum(nil))
+	finalPath := filepath.Join(targetDir, "sha256-"+hash+".bin")
+	if err := os.Rename(tmpName, finalPath); err != nil {
+		return "", 0, err
+	}
+	return hash, written, nil
+}
+
+func (s *Server) deleteWorkspaceDocumentForJobLocked(job *WorkspaceUploadJob, nowMS int64) {
+	if job == nil || strings.TrimSpace(job.DocumentID) == "" {
+		return
+	}
+	document, ok := s.workspaceDocuments[job.DocumentID]
+	if ok {
+		if path := s.workspaceDocumentPath(document); path != "" {
+			_ = os.Remove(path)
+		}
+		document.Status = "deleted"
+		document.StorageStatus = "deleted_local"
+		document.IndexStatus = "deleted_no_execute"
+		document.Readiness = "deleted_metadata_only"
+		document.DocumentLabel = "deleted"
+		document.ContentType = ""
+		document.SizeBytes = 0
+		document.DocumentHash = ""
+		document.UpdatedAtMS = nowMS
+		document.Redaction = WorkspaceDocumentRedaction{}
+		document.Findings = append(document.Findings, WorkspaceUploadJobFinding{
+			Code:    "workspace_document_deleted",
+			Message: "A21 deleted the local intake file and retained only a redacted tombstone",
+		})
+		s.workspaceDocuments[document.DocumentID] = document
+	}
+	job.DocumentHash = ""
+	job.StorageStatus = "deleted_local"
+	job.Redaction = workspaceUploadJobRedaction()
+}
+
+func (s *Server) workspaceDocumentPath(document WorkspaceDocument) string {
+	hash := strings.TrimPrefix(strings.TrimSpace(document.DocumentHash), "sha256:")
+	if !validWorkspaceDocumentSHA256(hash) {
+		return ""
+	}
+	storeDir := strings.TrimSpace(s.workspaceDocumentStoreDir)
+	if storeDir == "" {
+		storeDir = workspaceDocumentStoreDir("")
+	}
+	return filepath.Join(storeDir, document.UserID, document.WorkspaceID, document.SourceScope, "sha256-"+hash+".bin")
+}
+
+func validWorkspaceDocumentSHA256(hash string) bool {
+	if len(hash) != 64 {
+		return false
+	}
+	for _, r := range hash {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func decodeWorkspaceUploadJobRequest(r *http.Request) (WorkspaceUploadJobRequest, error) {
 	var raw map[string]json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
@@ -2237,7 +2604,11 @@ func (s *Server) applyWorkspaceUploadJobAction(req WorkspaceUploadJobRequest) (W
 			Message: "A21 marked this redacted source searchable as metadata-only readiness; no indexing execution occurred",
 		})
 	case "retry":
-		job.Status = "accepted_no_execute"
+		if job.DocumentID != "" && job.StorageStatus == "stored_local" {
+			job.Status = "stored_local_pending_index"
+		} else {
+			job.Status = "accepted_no_execute"
+		}
 		job.IndexStatus = "not_started_no_execute"
 		job.Attempt++
 		job.UpdatedAtMS = nowMS
@@ -2256,6 +2627,9 @@ func (s *Server) applyWorkspaceUploadJobAction(req WorkspaceUploadJobRequest) (W
 		job.UpdatedAtMS = nowMS
 		job.RetryAllowed = false
 		job.DeleteAllowed = false
+		if job.DocumentID != "" {
+			s.deleteWorkspaceDocumentForJobLocked(&job, nowMS)
+		}
 		job.Findings = append(job.Findings, WorkspaceUploadJobFinding{
 			Code:    "workspace_job_deleted",
 			Message: "A21 retained only a redacted deletion tombstone",
@@ -2293,7 +2667,7 @@ func (s *Server) workspaceUploadJobsResponse(jobID string, findings []WorkspaceU
 		Service:       DeviceRegistryServiceName,
 		Status:        status,
 		Jobs:          jobs,
-		Redaction:     workspaceUploadJobRedaction(),
+		Redaction:     workspaceUploadJobRedactionForJobs(jobs),
 		Findings:      findings,
 	}
 }
@@ -2340,7 +2714,7 @@ func (s *Server) workspaceSourcesResponse(sourceID string, userID string, worksp
 		Status:        status,
 		Sources:       sources,
 		Summary:       workspaceSourceSummary(sources),
-		Redaction:     workspaceUploadJobRedaction(),
+		Redaction:     workspaceUploadJobRedactionForSources(sources),
 		Findings:      findings,
 	}, nil
 }
@@ -2403,9 +2777,14 @@ func (s *Server) workspaceSourceSummaryForWorkspace(userID string, workspaceID s
 
 func workspaceSourceFromJob(job WorkspaceUploadJob, readiness string) WorkspaceSource {
 	readiness = defaultWorkspaceSourceReadiness(readiness)
+	storedLocal := job.StorageStatus == "stored_local" && readiness != "deleted_metadata_only"
+	redaction := job.Redaction
 	return WorkspaceSource{
 		SourceID:      job.SourceID,
 		JobID:         job.JobID,
+		DocumentID:    job.DocumentID,
+		DocumentHash:  job.DocumentHash,
+		StorageStatus: job.StorageStatus,
 		UserID:        job.UserID,
 		WorkspaceID:   job.WorkspaceID,
 		SourceScope:   job.SourceScope,
@@ -2420,10 +2799,11 @@ func workspaceSourceFromJob(job WorkspaceUploadJob, readiness string) WorkspaceS
 		TraceID:       job.TraceID,
 		SessionID:     job.SessionID,
 		DeviceID:      job.DeviceID,
-		MetadataOnly:  true,
+		MetadataOnly:  !storedLocal,
+		StoredLocal:   storedLocal,
 		Searchable:    readiness == "searchable_metadata_only",
 		Deleted:       readiness == "deleted_metadata_only",
-		Redaction:     workspaceUploadJobRedaction(),
+		Redaction:     redaction,
 		Findings:      append([]WorkspaceUploadJobFinding(nil), job.Findings...),
 	}
 }
@@ -2434,6 +2814,8 @@ func workspaceSourceReadinessForJob(job WorkspaceUploadJob) string {
 		return "deleted_metadata_only"
 	case job.Status == "failed":
 		return "failed_metadata_only"
+	case job.Status == "stored_local_pending_index":
+		return "stored_local_pending_index"
 	case job.IndexStatus == "searchable_metadata_only":
 		return "searchable_metadata_only"
 	default:
@@ -2443,7 +2825,7 @@ func workspaceSourceReadinessForJob(job WorkspaceUploadJob) string {
 
 func defaultWorkspaceSourceReadiness(readiness string) string {
 	switch strings.TrimSpace(readiness) {
-	case "metadata_only", "searchable_metadata_only", "failed_metadata_only", "deleted_metadata_only":
+	case "metadata_only", "stored_local_pending_index", "searchable_metadata_only", "failed_metadata_only", "deleted_metadata_only":
 		return strings.TrimSpace(readiness)
 	default:
 		return "metadata_only"
@@ -2462,6 +2844,9 @@ func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
 		if source.MetadataOnly {
 			summary.MetadataOnlySources++
 		}
+		if source.StoredLocal {
+			summary.StoredLocalSources++
+		}
 		if source.Deleted {
 			summary.DeletedSources++
 			continue
@@ -2475,12 +2860,17 @@ func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
 				summary.SearchableSourceScopeCounts[source.SourceScope]++
 			}
 		}
+		if source.StoredLocal && validWorkspaceSourceScope(source.SourceScope) {
+			summary.StoredLocalSourceScopeCounts[source.SourceScope]++
+		}
 	}
 	switch {
 	case summary.SearchableSources > 0:
 		summary.WorkspaceStatus = "searchable_metadata_only"
 	case summary.TotalSources == summary.DeletedSources && summary.TotalSources > 0:
 		summary.WorkspaceStatus = "deleted_metadata_only"
+	case summary.StoredLocalSources > 0:
+		summary.WorkspaceStatus = "stored_local_pending_index"
 	case summary.TotalSources > 0:
 		summary.WorkspaceStatus = "metadata_only"
 	default:
@@ -2491,9 +2881,10 @@ func workspaceSourceSummary(sources []WorkspaceSource) WorkspaceSourceSummary {
 
 func emptyWorkspaceSourceSummary() WorkspaceSourceSummary {
 	return WorkspaceSourceSummary{
-		SourceScopeCounts:           map[string]int{"public": 0, "personal": 0},
-		SearchableSourceScopeCounts: map[string]int{"public": 0, "personal": 0},
-		WorkspaceStatus:             "no_sources_metadata_only",
+		SourceScopeCounts:            map[string]int{"public": 0, "personal": 0},
+		StoredLocalSourceScopeCounts: map[string]int{"public": 0, "personal": 0},
+		SearchableSourceScopeCounts:  map[string]int{"public": 0, "personal": 0},
+		WorkspaceStatus:              "no_sources_metadata_only",
 	}
 }
 
@@ -2506,11 +2897,15 @@ func workspaceQueryScopeReadiness(queryScope string, summary WorkspaceSourceSumm
 	case v21adapter.QueryScopeCombined:
 		publicReady := summary.SearchableSourceScopeCounts["public"] > 0
 		personalReady := summary.SearchableSourceScopeCounts["personal"] > 0
+		publicStored := summary.StoredLocalSourceScopeCounts["public"] > 0
+		personalStored := summary.StoredLocalSourceScopeCounts["personal"] > 0
 		switch {
 		case publicReady && personalReady:
 			return "combined_searchable_metadata_only"
 		case publicReady || personalReady:
 			return "partial_searchable_metadata_only"
+		case publicStored || personalStored:
+			return "stored_local_pending_index"
 		case summary.SourceScopeCounts["public"] > 0 || summary.SourceScopeCounts["personal"] > 0:
 			return "metadata_only"
 		default:
@@ -2525,6 +2920,8 @@ func workspaceSingleScopeReadiness(scope string, summary WorkspaceSourceSummary)
 	switch {
 	case summary.SearchableSourceScopeCounts[scope] > 0:
 		return "searchable_metadata_only"
+	case summary.StoredLocalSourceScopeCounts[scope] > 0:
+		return "stored_local_pending_index"
 	case summary.SourceScopeCounts[scope] > 0:
 		return "metadata_only"
 	default:
@@ -2624,6 +3021,16 @@ func safeOptionalWorkspaceLabel(label string) string {
 	return ""
 }
 
+func workspaceDocumentStoreDir(configured string) string {
+	if strings.TrimSpace(configured) != "" {
+		return strings.TrimSpace(configured)
+	}
+	if envDir := strings.TrimSpace(os.Getenv("A21_WORKSPACE_DOCUMENT_STORE_DIR")); envDir != "" {
+		return envDir
+	}
+	return filepath.Join(".a21-run", "gateway", "workspace-documents")
+}
+
 func workspaceUploadJobRedaction() WorkspaceUploadJobRedaction {
 	return WorkspaceUploadJobRedaction{
 		DocumentTextStored:    false,
@@ -2633,6 +3040,54 @@ func workspaceUploadJobRedaction() WorkspaceUploadJobRedaction {
 		LocalPathStored:       false,
 		CredentialValueStored: false,
 		ProviderOutputStored:  false,
+	}
+}
+
+func workspaceUploadJobStoredDocumentRedaction() WorkspaceUploadJobRedaction {
+	redaction := workspaceUploadJobRedaction()
+	redaction.DocumentBytesStored = true
+	return redaction
+}
+
+func workspaceUploadJobRedactionForJobs(jobs []WorkspaceUploadJob) WorkspaceUploadJobRedaction {
+	redaction := workspaceUploadJobRedaction()
+	for _, job := range jobs {
+		redaction = mergeWorkspaceUploadJobRedaction(redaction, job.Redaction)
+	}
+	return redaction
+}
+
+func workspaceUploadJobRedactionForSources(sources []WorkspaceSource) WorkspaceUploadJobRedaction {
+	redaction := workspaceUploadJobRedaction()
+	for _, source := range sources {
+		redaction = mergeWorkspaceUploadJobRedaction(redaction, source.Redaction)
+	}
+	return redaction
+}
+
+func mergeWorkspaceUploadJobRedaction(base WorkspaceUploadJobRedaction, next WorkspaceUploadJobRedaction) WorkspaceUploadJobRedaction {
+	base.DocumentTextStored = base.DocumentTextStored || next.DocumentTextStored
+	base.DocumentBytesStored = base.DocumentBytesStored || next.DocumentBytesStored
+	base.Base64PayloadStored = base.Base64PayloadStored || next.Base64PayloadStored
+	base.ImportURLStored = base.ImportURLStored || next.ImportURLStored
+	base.LocalPathStored = base.LocalPathStored || next.LocalPathStored
+	base.CredentialValueStored = base.CredentialValueStored || next.CredentialValueStored
+	base.ProviderOutputStored = base.ProviderOutputStored || next.ProviderOutputStored
+	return base
+}
+
+func workspaceDocumentStoredRedaction() WorkspaceDocumentRedaction {
+	return WorkspaceDocumentRedaction{
+		DocumentTextStored:     false,
+		DocumentBytesStored:    true,
+		DocumentBytesReturned:  false,
+		OriginalFilenameStored: false,
+		Base64PayloadStored:    false,
+		ImportURLStored:        false,
+		LocalPathStored:        false,
+		LocalPathReturned:      false,
+		CredentialValueStored:  false,
+		ProviderOutputStored:   false,
 	}
 }
 

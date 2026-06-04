@@ -78,6 +78,15 @@ StackChan hardware.
   source-scope counts. A narrow `mark_searchable`/`mark_indexed_metadata_only`
   job action promotes a source to `searchable_metadata_only` for internal test
   readiness without running real indexing or storing document contents.
+- Gateway now exposes `POST /v1/workspace-documents` as the local upload intake
+  slice. It accepts multipart file bytes, stores them under the A21 Gateway
+  runtime store, and returns only safe document/source/job metadata:
+  `document_id`, `source_id`, `job_id`, `document_hash`, byte size,
+  `storage_status=stored_local`, and `readiness=stored_local_pending_index`.
+  It does not parse, chunk, embed, OCR, index, upload to cloud storage, or
+  execute V21; API responses, traces, simulator readouts, and tests keep raw
+  content, base64 payloads, original private filenames, local paths,
+  credentials, provider output, and evidence bodies out of the surface.
 - Gateway now exposes a professional mode ritual contract in
   `GET/POST /v1/voice-modes`. Selecting `professional` returns a `PRO` screen
   label, evidence-first cue text, professional expression, trace marker,
@@ -345,7 +354,9 @@ Acceptance:
    a separate worker task.
 3. Add a no-execute upload/workspace PRD spec and API contract. Completed for
    `/v1/professional-workspace`, `/v1/workspace-upload-jobs`, and
-   `/v1/workspace-sources`; file upload/import/index job execution is still not
+   `/v1/workspace-sources`; local file upload intake is now completed through
+   `/v1/workspace-documents` as `stored_local_pending_index`. Import, parsing,
+   chunking, embedding, indexing, cloud storage, and V21 execution are still not
    implemented.
 4. Add fake/fixture tests for:
    - roleplay voice-mode selection;

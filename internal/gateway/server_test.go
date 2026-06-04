@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -335,6 +337,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/professional-workspace",
 		"/v1/professional-read-records",
 		"/v1/workspace-upload-jobs",
+		"/v1/workspace-documents",
 		"/v1/workspace-sources",
 		"/v1/traces",
 		"Device Registry",
@@ -349,7 +352,11 @@ func TestSimulatorPageServed(t *testing.T) {
 		`id="modeRitualReadout"`,
 		`id="professionalQueryScope"`,
 		`id="workspaceDocumentLabel"`,
+		`id="workspaceDocumentFile"`,
 		`id="workspaceJob"`,
+		`id="workspaceDocumentUpload"`,
+		`id="workspaceDocumentReadout"`,
+		`id="workspaceDocumentStorage"`,
 		`id="workspaceJobReadout"`,
 		`id="workspaceSourcesRefresh"`,
 		`id="workspaceSourceCount"`,
@@ -413,6 +420,7 @@ func TestSimulatorPageServed(t *testing.T) {
 		"/v1/gateway-profiles",
 		"refreshGatewayProfiles",
 		"saveGatewayProfile",
+		"uploadWorkspaceDocument",
 		"/v1/cloud-voice-profiles",
 		"refreshCloudVoiceProfiles",
 		"saveCloudVoiceProfile",
@@ -1190,6 +1198,181 @@ func TestProfessionalWorkspaceEndpointPersistsQueryScopeAndRedactsDocumentBounda
 	handler.ServeHTTP(badRec, badReq)
 	if badRec.Code != http.StatusBadRequest {
 		t.Fatalf("bad workspace status = %d, want 400: %s", badRec.Code, badRec.Body.String())
+	}
+}
+
+func TestWorkspaceDocumentUploadIntakeStoresBytesAndRedactsResponse(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "a21-workspace-documents")
+	server := NewServerWithOptions(ServerOptions{
+		WorkspaceDocumentStoreDir: storeDir,
+		WorkspaceDocumentMaxBytes: 1 << 20,
+	})
+	handler := server.Handler()
+	privateContent := "RAW_PRIVATE_DOCUMENT_CONTENT_FOR_A21_UPLOAD_TEST"
+	body, contentType := multipartWorkspaceDocumentBody(t, map[string]string{
+		"user_id":        "a21_user_upload",
+		"workspace_id":   "a21_workspace_upload",
+		"source_scope":   "personal",
+		"document_label": "PRD pack",
+		"content_type":   "text/plain",
+		"trace_id":       "a21-trace-document-upload",
+		"session_id":     "a21-session-document-upload",
+		"device_id":      "stackchan-sim-001",
+	}, "SECRET-roadmap.txt", privateContent)
+	req := httptest.NewRequest(http.MethodPost, "/v1/workspace-documents", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var response WorkspaceDocumentsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.workspace_documents.v1" || len(response.Documents) != 1 {
+		t.Fatalf("document response = %+v", response)
+	}
+	document := response.Documents[0]
+	if document.DocumentID == "" ||
+		document.JobID == "" ||
+		document.SourceID == "" ||
+		document.UserID != "a21_user_upload" ||
+		document.WorkspaceID != "a21_workspace_upload" ||
+		document.SourceScope != "personal" ||
+		document.DocumentLabel != "PRD pack" ||
+		document.ContentType != "text/plain" ||
+		document.SizeBytes != int64(len(privateContent)) ||
+		!strings.HasPrefix(document.DocumentHash, "sha256:") ||
+		document.Status != "stored_local_pending_index" ||
+		document.StorageStatus != "stored_local" ||
+		document.IndexStatus != "not_started_no_execute" ||
+		document.Readiness != "stored_local_pending_index" {
+		t.Fatalf("document = %+v", document)
+	}
+	if document.Redaction.DocumentTextStored ||
+		!document.Redaction.DocumentBytesStored ||
+		document.Redaction.DocumentBytesReturned ||
+		document.Redaction.OriginalFilenameStored ||
+		document.Redaction.LocalPathStored ||
+		document.Redaction.LocalPathReturned ||
+		document.Redaction.CredentialValueStored ||
+		document.Redaction.ProviderOutputStored {
+		t.Fatalf("document redaction = %+v", document.Redaction)
+	}
+	for _, forbidden := range []string{privateContent, "SECRET-roadmap", storeDir, "/Users/", "api_key", "bearer "} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("document upload leaked %q: %s", forbidden, rec.Body.String())
+		}
+	}
+	if stored := readAllFilesUnder(t, storeDir); !strings.Contains(stored, privateContent) {
+		t.Fatalf("stored files did not contain uploaded bytes, got %q", stored)
+	}
+
+	var jobs WorkspaceUploadJobsResponse
+	jobReq := httptest.NewRequest(http.MethodGet, "/v1/workspace-upload-jobs?job_id="+url.QueryEscape(document.JobID), nil)
+	jobRec := httptest.NewRecorder()
+	handler.ServeHTTP(jobRec, jobReq)
+	if jobRec.Code != http.StatusOK {
+		t.Fatalf("job status = %d, want 200: %s", jobRec.Code, jobRec.Body.String())
+	}
+	if err := json.Unmarshal(jobRec.Body.Bytes(), &jobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Jobs) != 1 ||
+		jobs.Jobs[0].Status != "stored_local_pending_index" ||
+		jobs.Jobs[0].IndexStatus != "not_started_no_execute" ||
+		jobs.Jobs[0].DocumentID != document.DocumentID ||
+		jobs.Jobs[0].DocumentHash != document.DocumentHash ||
+		jobs.Jobs[0].StorageStatus != "stored_local" ||
+		!jobs.Jobs[0].Redaction.DocumentBytesStored {
+		t.Fatalf("linked job = %+v", jobs)
+	}
+
+	source := fetchSingleWorkspaceSource(t, handler, document.SourceID)
+	if source.Readiness != "stored_local_pending_index" ||
+		source.IndexStatus != "not_started_no_execute" ||
+		source.DocumentID != document.DocumentID ||
+		source.DocumentHash != document.DocumentHash ||
+		source.StorageStatus != "stored_local" ||
+		!source.StoredLocal ||
+		source.MetadataOnly ||
+		source.Searchable {
+		t.Fatalf("linked source = %+v", source)
+	}
+
+	workspaceReq := httptest.NewRequest(http.MethodPost, "/v1/professional-workspace", bytes.NewBufferString(`{"user_id":"a21_user_upload","workspace_id":"a21_workspace_upload","query_scope":"personal_only"}`))
+	workspaceRec := httptest.NewRecorder()
+	handler.ServeHTTP(workspaceRec, workspaceReq)
+	if workspaceRec.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d, want 200: %s", workspaceRec.Code, workspaceRec.Body.String())
+	}
+	var workspace ProfessionalWorkspaceResponse
+	if err := json.Unmarshal(workspaceRec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.WorkspaceStatus != "stored_local_pending_index" ||
+		workspace.Runtime.SourceScopeCounts["personal"] != 1 ||
+		workspace.Runtime.SearchableSourceScopeCounts["personal"] != 0 ||
+		workspace.Runtime.QueryScopeReadiness != "stored_local_pending_index" ||
+		workspace.Runtime.V21ExecutionAllowed {
+		t.Fatalf("workspace = %+v runtime=%+v", workspace, workspace.Runtime)
+	}
+
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-document-upload", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	for _, want := range []string{"workspace.document.stored_local", "workspace.source.stored_local_pending_index", "workspace.index_job.not_started_no_execute"} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
+	}
+	for _, forbidden := range []string{privateContent, "SECRET-roadmap", storeDir, "/Users/", "api_key", "bearer "} {
+		if strings.Contains(jobRec.Body.String()+fetchWorkspaceSourcesBody(t, handler, document.SourceID)+workspaceRec.Body.String()+traceRec.Body.String(), forbidden) {
+			t.Fatalf("linked workspace surfaces leaked %q", forbidden)
+		}
+	}
+}
+
+func TestWorkspaceDocumentUploadRejectsRawJSONAndUnsafeLabelsWithoutStoring(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "a21-workspace-documents")
+	server := NewServerWithOptions(ServerOptions{WorkspaceDocumentStoreDir: storeDir})
+	handler := server.Handler()
+
+	jsonReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-documents", bytes.NewBufferString(`{"document_text":"RAW_PRIVATE_JSON_DOCUMENT","file_path":"/Users/private/secret.pdf"}`))
+	jsonReq.Header.Set("Content-Type", "application/json")
+	jsonRec := httptest.NewRecorder()
+	handler.ServeHTTP(jsonRec, jsonReq)
+	if jsonRec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("json status = %d, want 415: %s", jsonRec.Code, jsonRec.Body.String())
+	}
+	for _, forbidden := range []string{"RAW_PRIVATE_JSON_DOCUMENT", "/Users/private", "secret.pdf"} {
+		if strings.Contains(jsonRec.Body.String(), forbidden) {
+			t.Fatalf("json rejection leaked %q: %s", forbidden, jsonRec.Body.String())
+		}
+	}
+
+	body, contentType := multipartWorkspaceDocumentBody(t, map[string]string{
+		"workspace_id":   "a21_workspace_upload",
+		"document_label": "https://secret.example/file.pdf",
+		"source_scope":   "personal",
+	}, "unsafe-secret.pdf", "RAW_PRIVATE_MULTIPART_DOCUMENT")
+	unsafeReq := httptest.NewRequest(http.MethodPost, "/v1/workspace-documents", body)
+	unsafeReq.Header.Set("Content-Type", contentType)
+	unsafeRec := httptest.NewRecorder()
+	handler.ServeHTTP(unsafeRec, unsafeReq)
+	if unsafeRec.Code != http.StatusBadRequest {
+		t.Fatalf("unsafe status = %d, want 400: %s", unsafeRec.Code, unsafeRec.Body.String())
+	}
+	for _, forbidden := range []string{"secret.example", "unsafe-secret.pdf", "RAW_PRIVATE_MULTIPART_DOCUMENT"} {
+		if strings.Contains(unsafeRec.Body.String(), forbidden) {
+			t.Fatalf("unsafe rejection leaked %q: %s", forbidden, unsafeRec.Body.String())
+		}
+	}
+	if stored := readAllFilesUnder(t, storeDir); stored != "" {
+		t.Fatalf("unsafe uploads stored bytes: %q", stored)
 	}
 }
 
@@ -12654,6 +12837,54 @@ func fetchWorkspaceSourcesBody(t *testing.T, handler http.Handler, sourceID stri
 		t.Fatalf("workspace sources status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	return rec.Body.String()
+}
+
+func multipartWorkspaceDocumentBody(t *testing.T, fields map[string]string, filename string, content string) (*bytes.Buffer, string) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(part, strings.NewReader(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &body, writer.FormDataContentType()
+}
+
+func readAllFilesUnder(t *testing.T, root string) string {
+	t.Helper()
+	var out strings.Builder
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		out.Write(data)
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
 }
 
 func webSocketURL(serverURL string, path string) string {

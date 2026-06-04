@@ -11406,3 +11406,93 @@ Test/build/runtime results:
 Failure location/reason:
 
 - None in this focused round.
+
+## 2026-06-04 09:18 CST - Workspace Document Upload Intake
+
+Round goal:
+
+- Move internal test 4 knowledge workspace beyond metadata-only job/source
+  readiness by accepting real local document upload bytes into an A21-owned
+  Gateway runtime store, without indexing, V21 execution, cloud storage, or
+  hardware action.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-04-workspace-document-upload-intake.md`.
+- Added `POST /v1/workspace-documents` with schema
+  `a21.gateway.workspace_documents.v1`.
+- Multipart uploads now store bytes under the A21 local runtime store
+  (`A21_WORKSPACE_DOCUMENT_STORE_DIR` or
+  `.a21-run/gateway/workspace-documents`) and compute a `sha256:` document
+  hash.
+- Stored documents create linked workspace job/source records with
+  `stored_local_pending_index`, `storage_status=stored_local`, and
+  `index_status=not_started_no_execute`.
+- `/v1/professional-workspace` now reports pending-index readiness for the
+  selected scope when local stored uploads exist, while keeping
+  `v21_execution_allowed=false`.
+- Simulator Workspace Audit now includes a file picker/upload control and
+  displays only safe document/job/source metadata.
+- The existing direct `/v1/workspace-upload-jobs` endpoint remains
+  metadata-only and still rejects raw document text, bytes, base64 payloads,
+  import URLs, local paths, credentials, and provider output.
+- Hardware parity worker `019e9011-80b2-73c3-a0a8-7390a3e1f153` confirmed
+  `T-STACKCHAN-OFFICIAL-HW-PARITY-GAP-MAP-001` was already merged and made no
+  file changes, avoiding duplicate parity-matrix churn.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/simulator.go`
+- `internal/app/app.go`
+- `docs/plans/2026-06-04-workspace-document-upload-intake.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- This is not parsing, import URL fetch, chunking, OCR, embedding, indexing,
+  cloud object storage, durable account/auth/ACL, V21 personal/public
+  enforcement, or production web workspace.
+- Stored-local documents are not searchable until a separate indexing/V21
+  transition lands.
+- Physical StackChan professional consult acceptance is still pending a
+  foreground hardware evidence window.
+
+Known risks/blockers:
+
+- The document registry remains in memory; Gateway restart forgets job/source
+  metadata even though files remain in the runtime store.
+- The default 16 MiB per-file limit is an intake guard, not the final 2 GB
+  personal corpus product design.
+- Hashes and sizes are exposed as safe metadata for internal test 4, but future
+  production privacy review may further scope what appears in user-facing UI.
+
+Recommended next action:
+
+- Continue with a planned indexing/adapter worker that parses or transfers
+  stored files into V21 behind the v2 query-scope contract, or start the
+  hardware professional-consult evidence window. Do not treat
+  `stored_local_pending_index` as searchable or V21-ready.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceDocumentUpload' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestWorkspaceDocumentUpload|TestWorkspaceSource|TestWorkspaceUploadJobs|TestProfessionalWorkspace|TestSimulatorPageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- No Gateway service was started, no provider or real V21 execution occurred,
+  and no firmware build, flash, serial, NVS, ECS change, prune/gc, or physical
+  hardware action occurred.
+
+Failure location/reason:
+
+- None in this focused round.
