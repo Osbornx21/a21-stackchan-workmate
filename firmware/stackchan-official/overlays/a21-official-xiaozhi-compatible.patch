@@ -653,11 +653,12 @@ diff --git a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc b/firmw
 index 4b74a5e..51cc6a2 100644
 --- a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
 +++ b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
-@@ -9,2 +9,3 @@
+@@ -9,2 +9,4 @@
  #include <esp_log.h>
 +#include <esp_timer.h>
++#include <freertos/task.h>
  #include <arpa/inet.h>
-@@ -15,2 +16,19 @@ WebsocketProtocol::WebsocketProtocol() {
+@@ -15,2 +17,30 @@ WebsocketProtocol::WebsocketProtocol() {
  WebsocketProtocol::WebsocketProtocol() {
      event_group_handle_ = xEventGroupCreate();
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
@@ -665,8 +666,20 @@ index 4b74a5e..51cc6a2 100644
 +        .callback = [](void* arg) {
 +            auto* protocol = static_cast<WebsocketProtocol*>(arg);
 +            if (protocol != nullptr && !protocol->SendA21Keepalive()) {
-+                ESP_LOGW(TAG, "A21 product websocket keepalive failed; closing stale channel");
-+                protocol->CloseAudioChannel(false);
++                ESP_LOGW(TAG, "A21 product websocket keepalive failed; reconnecting stale channel");
++                if (protocol->a21_keepalive_timer_handle_ != nullptr) {
++                    esp_timer_stop(protocol->a21_keepalive_timer_handle_);
++                }
++                xTaskCreate([](void* task_arg) {
++                    auto* protocol = static_cast<WebsocketProtocol*>(task_arg);
++                    if (protocol != nullptr) {
++                        protocol->CloseAudioChannel(false);
++                        if (!protocol->OpenAudioChannel()) {
++                            ESP_LOGW(TAG, "A21 product websocket reconnect failed");
++                        }
++                    }
++                    vTaskDelete(nullptr);
++                }, "a21_ws_reconnect", 8192, protocol, 5, nullptr);
 +            }
 +        },
 +        .arg = this,
