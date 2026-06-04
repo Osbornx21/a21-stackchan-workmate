@@ -15912,6 +15912,98 @@ Forbidden actions avoided:
   prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
   lifecycle exposure, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 01:32 CST - Workspace Official Action Fallback Deployed
+
+Round goal:
+
+- Improve foreground product ergonomics after the official action relay
+  surfaced HTTP 409 for the disconnected `/stackChan/ws` socket, without
+  hiding that runtime gap or claiming official-frame physical acceptance.
+
+Actual completed work:
+
+- Updated `/workspace` Official Actions so each click still attempts
+  `/v1/stackchan/official/control` first.
+- If the official relay is disconnected or blocked, the UI now runs an explicit
+  MCP-backed fallback:
+  - `motion` actions fall back to `/v1/xiaozhi/body-motion`.
+  - `state` actions fall back to matching `/v1/xiaozhi/body-preset` values.
+  - `face=happy` falls back to `celebrate`; `face=attentive` falls back to
+    `listening`.
+- Official action UI now shows `fallback=<type>:<value>` and
+  `fallback_delivered` instead of leaving the product action dead.
+- Metadata export now preserves `official_action_blocked_reason` and
+  `official_action_fallback` separately from official-frame delivery.
+- Updated `docs/engineering/PROTOCOL.md` to document the fallback behavior and
+  the official-frame acceptance boundary.
+- Committed and pushed:
+  `7dfbb10 feat(gateway): fallback official actions to body motion`.
+- Deployed `7dfbb10` to ECS `47.103.57.217` through `/opt/a21.next`
+  safe-swap.
+
+Changed files:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestXiaozhiBodyMotion|TestOfficialStackChanControlEndpoint' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote build passed:
+  `/usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- Remote `a21-gateway` restarted active, loopback `/healthz` passed, and
+  public direct-source `/healthz` passed.
+- Public `/workspace` HTML smoke found `officialActionFallback`,
+  `runOfficialActionFallback`, `fallback_delivered`,
+  `official_action_blocked_reason`, `official_action_fallback`,
+  `/v1/stackchan/official/control`, and `/v1/xiaozhi/body-motion`.
+
+Runtime or physical evidence:
+
+- Public official action relay on product device `44:1b:f6:e2:6a:60` still
+  truthfully returns HTTP 409:
+  `official stackchan websocket is not connected`.
+- Public fallback body-motion `dance` response for trace
+  `a21-trace-workspace-body-motion-dance-7dfbb10` returned
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`, 5 redacted
+  steps, and `physical_accepted=false`.
+- Live trace recorded 10 generic robot MCP and ordered body-motion markers.
+- Public `/v1/devices` recorded `last_body_motion=dance`, final robot head
+  `yaw=0,pitch=24,speed=220`, LED `red=0,green=168,blue=80`, and the product
+  device remained online.
+
+Remaining issues:
+
+- Browser-click evidence was not collected in this environment; validation is
+  from page contract tests, public HTML smoke, and public API/runtime traces.
+- The official avatar/action relay remains disconnected until a `/stackChan/ws`
+  socket or app-lifecycle reconciliation path is connected and accepted.
+- Fallback body motion is product-socket delivery evidence, not
+  operator/instrument physical acceptance.
+- Full PRD physical acceptance remains `PHYSICAL-PENDING`.
+
+Next suggested action:
+
+- Continue toward official app lifecycle or `/stackChan/ws` reconciliation so
+  Official Actions can eventually deliver official-frame evidence. Until then,
+  use the fallback-backed Official Actions and Body Motion controls for
+  foreground prototype demos and visible movement checks.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no Git
+  prune/gc, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 01:26 CST - Workspace Official Actions And Body Motion Deployed
 
 Round goal:

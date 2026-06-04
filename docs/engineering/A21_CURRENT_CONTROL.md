@@ -71,6 +71,41 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 01:32 CST workspace official-action fallback cut:
+
+- Commit `7dfbb10 feat(gateway): fallback official actions to body motion` is
+  pushed and deployed to ECS `47.103.57.217` through the existing
+  `/opt/a21.next` safe-swap path.
+- `/workspace` Official Actions still attempts the real
+  `/v1/stackchan/official/control` relay first. If the separate `/stackChan/ws`
+  official avatar/action socket is disconnected, the UI now records the
+  blocked reason and automatically runs the matching
+  `/v1/xiaozhi/body-preset` or `/v1/xiaozhi/body-motion` fallback so the
+  product still moves through the live Xiaozhi MCP socket.
+- Exported metadata now keeps `official_action_blocked_reason` and
+  `official_action_fallback` separate from official-frame delivery, and the UI
+  shows `fallback_delivered` rather than pretending official packets were sent.
+- Local focused workspace/body-motion/official-action tests passed and full
+  local `GOMAXPROCS=2 make verify` passed. Remote focused Gateway tests and
+  build passed in `/opt/a21.next`; `a21-gateway` restarted active; loopback
+  and public direct-source `/healthz` returned ok.
+- Public `/workspace` HTML smoke found `officialActionFallback`,
+  `runOfficialActionFallback`, `fallback_delivered`,
+  `official_action_blocked_reason`, `official_action_fallback`,
+  `/v1/stackchan/official/control`, and `/v1/xiaozhi/body-motion`.
+- Public official action relay on product device `44:1b:f6:e2:6a:60` still
+  truthfully returns HTTP 409 `official stackchan websocket is not connected`.
+  Public fallback body-motion `dance` passed for trace
+  `a21-trace-workspace-body-motion-dance-7dfbb10`, with 10 generic/body-motion
+  markers and `/v1/devices` recording `last_body_motion=dance`, final robot
+  head `yaw=0,pitch=24,speed=220`, LED `red=0,green=168,blue=80`, and the
+  device online.
+- This cut is a product-control ergonomics deployment. It is not a renewed
+  internal-test3 voice-chain acceptance run and not an official-frame physical
+  acceptance claim. No firmware build/flash, no NVS write, no provider or V21
+  execution, no camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app
+  lifecycle exposure, and no Git prune/gc occurred.
+
 Live truth after the 2026-06-05 01:26 CST workspace official-action/body-motion cut:
 
 - Commit `6ce372e feat(gateway): expose official actions in workspace console`
