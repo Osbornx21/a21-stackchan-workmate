@@ -99,9 +99,35 @@ Live truth after the 2026-06-04 20:07 CST hardware/network recovery:
 - Live trace `a21-trace-44-1b-f6-e2-6a-60` has physical Opus ingress/decode,
   ASR partial/final, provider first content, TTS first audio, Opus downlink,
   four voice-pipeline completions, and one barge-in/playback-stop marker.
-- SSH with source bind reaches the real auth state but fails
-  `Permission denied (publickey)`. ECS deploy/restart is blocked by missing
-  accepted SSH key or workbench access, not by Gateway app health.
+- The earlier default SSH path failed because the default key was not accepted.
+  A source-bound explicit local Aliyun identity has since been used to deploy
+  and restart the public Gateway; SSH is not the current product blocker.
+
+Live truth after the 2026-06-04 20:36 CST official robot MCP body-control cut:
+
+- Gateway commits `8e2f890`, `e93d5d4`, and `60a2132` are deployed on ECS.
+  They whitelist official robot head/LED MCP tools, send official-compatible
+  numeric JSON-RPC ids, and accept redacted device-side `type=mcp` responses
+  without replying with stock-unknown `type=error`.
+- Physical serial evidence on `/dev/cu.usbmodem1101` showed official HAL
+  execution on product device `44:1b:f6:e2:6a:60`:
+  `[HAL-MCP] set_led_color: r=20, g=0, b=168` and
+  `[HAL-MCP] motion set_angles: yaw: 12, pitch: 30, speed: 150`.
+- Command traces `a21-trace-live-robot-led-responsefix` and
+  `a21-trace-live-robot-head-responsefix` recorded the send markers, while
+  device session trace `a21-trace-44-1b-f6-e2-6a-60` recorded two
+  `xiaozhi.mcp.response.received` markers.
+- `/v1/devices` now records `robot_led_red=20`, `robot_led_green=0`,
+  `robot_led_blue=168`, `robot_head_yaw=12`, `robot_head_pitch=30`,
+  `robot_head_speed=150`, and `xiaozhi_mcp_response=received_redacted`.
+- This closes the first visible body-control gap for RGB and head servo MCP
+  execution. It does not promote camera, NFC, infrared, no-cable boot,
+  app-lifecycle parity, screen visual acceptance, or full PRD physical
+  acceptance.
+- Operational caveat: after a public Gateway restart, the current device path
+  does not reliably auto-reconnect; a hard reset brought the device back
+  online for this evidence window. Treat that as a firmware/app-lifecycle
+  follow-up, not as a reason to roll back internal-test3 voice changes.
 
 ## Active Transition
 

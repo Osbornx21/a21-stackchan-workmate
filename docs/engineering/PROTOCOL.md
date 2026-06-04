@@ -346,6 +346,13 @@ surfaces:
   `tools/call` request shapes. The transport package builds and parses the
   envelopes; Gateway execution is explicitly limited to documented, whitelisted
   live tools.
+- Gateway-to-device MCP JSON-RPC request `id` values are emitted as stable
+  positive numbers for official Xiaozhi compatibility. The public HTTP
+  response still returns the A21 string `mcp_id` for traceability, but the
+  stock device payload does not use a string JSON-RPC id. Device-to-Gateway
+  `type=mcp` responses are accepted after `hello`, traced as
+  `xiaozhi.mcp.response.received`, and recorded in the device registry only as
+  a redacted response marker. Raw MCP results are not persisted.
 - `POST /v1/xiaozhi/speaker-volume` sends the official stock firmware MCP
   `tools/call` for `self.audio_speaker.set_volume` to the already connected
   `/v1/xiaozhi` WebSocket. It requires a valid `device_id`, `volume` in
@@ -356,17 +363,24 @@ surfaces:
   parity surface. It sends only whitelisted stock `tools/call` messages for
   `self.audio_speaker.set_volume`, `self.get_device_status`,
   `self.screen.set_brightness`, `self.screen.set_theme`, and
-  `self.screen.get_info` to an already connected `/v1/xiaozhi` WebSocket. It
-  requires a valid `device_id`, an online socket, `hello.features.mcp=true`,
+  `self.screen.get_info`, plus official robot body tools
+  `self.robot.get_head_angles`, `self.robot.set_head_angles`, and
+  `self.robot.set_led_color`, to an already connected `/v1/xiaozhi` WebSocket.
+  It requires a valid `device_id`, an online socket, `hello.features.mcp=true`,
   and trace/session/device identity. Missing `trace_id` or `session_id` is
   filled with A21 IDs. Volume and brightness are bounded to `0..100`; theme is
-  a bounded token without URL/path characters; status and info requests accept
-  no user arguments; speaker volume accepts no screen arguments. The endpoint
+  a bounded token without URL/path characters; status, screen info, and robot
+  head-angle reads accept no user arguments. Robot head writes bound `yaw` to
+  `-128..128`, `pitch` to `0..90`, and `speed` to `100..1000` with a safe
+  default. Robot LED writes bound `red`, `green`, and `blue` to `0..168`.
+  Tool-specific argument validation rejects unrelated fields. The endpoint
   rejects non-whitelisted tools, including reboot, firmware upgrade,
   camera/photo, screen snapshot, camera stream/video, NFC, infrared, and app
   lifecycle controls, before any MCP websocket write. Delivery proves only that
-  the MCP request was sent; it does not capture raw MCP responses and is not
-  physical speaker/screen/status product acceptance.
+  the MCP request was sent; robot LED/head controls have separate 2026-06-04
+  physical serial evidence on device `44:1b:f6:e2:6a:60`, while speaker,
+  screen/status, camera, NFC, infrared, and app-lifecycle product acceptance
+  remain separate evidence gates.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

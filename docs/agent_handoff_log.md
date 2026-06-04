@@ -14438,3 +14438,109 @@ Forbidden actions avoided:
 - No generic `xiaozhi.bin` product flash, no provider secret printing, no
   provider key in firmware, no prune/gc, no V21 internal execution, no
   internal-test3 rollback, and no false PRD acceptance claim occurred.
+
+## 2026-06-04 20:36 CST - Official Robot MCP Body Controls Deployed And Physically Executed
+
+Round goal:
+
+- Move the StackChan hardware parity work from "Gateway can remember/control
+  some things" to a real official-runtime body-control slice for visible RGB
+  and head servo behavior, without rolling back internal-test3 voice protocol
+  changes or flashing firmware again.
+
+Actual completed work:
+
+- Root-caused the first failed live robot MCP attempt to official Xiaozhi MCP
+  JSON-RPC id validation: the official firmware rejects string `id` values for
+  `tools/call`.
+- Expanded `POST /v1/xiaozhi/mcp-control` only for bounded official robot MCP
+  tools:
+  - `self.robot.get_head_angles`
+  - `self.robot.set_head_angles`
+  - `self.robot.set_led_color`
+- Kept high-risk official tools blocked before WebSocket write, including
+  camera/photo, screen snapshot, camera stream/video, NFC, infrared, app
+  lifecycle, reboot, and OTA/upgrade controls.
+- Changed Gateway-to-device MCP envelopes to use stable positive numeric
+  JSON-RPC ids while keeping the public A21 `mcp_id` string in HTTP responses
+  for traceability.
+- Root-caused the second failed live robot MCP response to Gateway rejecting
+  device-side `type=mcp` replies and replying with stock-unknown `type=error`.
+- Accepted redacted device-side `type=mcp` responses after `hello`, traced
+  `xiaozhi.mcp.response.received`, and stored only
+  `xiaozhi_mcp_response=received_redacted` in the device registry.
+- Deployed commits `8e2f890`, `e93d5d4`, and `60a2132` to ECS, restarted the
+  public Gateway, and hard-reset the product device to reconnect after the
+  restart.
+- Verified physical execution on product device `44:1b:f6:e2:6a:60` through
+  serial:
+  - `[HAL-MCP] set_led_color: r=20, g=0, b=168`
+  - `[HAL-MCP] motion set_angles: yaw: 12, pitch: 30, speed: 150`
+- Verified that the post-fix serial window did not show
+  `Unknown message type: error`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/transport/xiaozhi/builders.go`
+- `internal/transport/xiaozhi/builders_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/STACKCHAN_HARDWARE_CAPABILITY_CHARTER.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Full PRD physical acceptance is still open.
+- Camera, NFC, infrared, screen visual acceptance, no-cable boot/power
+  behavior, and official app-lifecycle parity remain open transitions.
+- The current device path did not reliably auto-reconnect after a Gateway
+  restart; a hard reset was needed for the latest evidence window.
+
+Known risks/blockers:
+
+- Robot MCP controls are now live execution evidence for official RGB/head
+  tools, not a blanket product claim for every StackChan body surface.
+- Yaw and pitch movement still need mechanical safety/product semantics before
+  richer motion sequences are promoted.
+- While TUN mode is active on the Mac, public A21 checks still need
+  `curl --interface 192.168.1.20 --noproxy '*' ...` or equivalent
+  `A21_DIRECT_SOURCE_IP=192.168.1.20` handling.
+- The local SSH private key filename may contain historical naming, but that
+  name is only a local credential label. It must not be copied into A21
+  runtime identity, protocol, firmware, docs, or product claims.
+
+Recommended next action:
+
+- Continue hardware parity from the next visible surfaces in order:
+  screen/status visual acceptance, touch/barge-in/action evidence, no-cable
+  boot/power diagnostics, then camera/NFC/IR as explicit high-risk spikes.
+  Keep using official-compatible product lane guards and do not flash again
+  unless a scoped hardware window requires it.
+
+Test/build/runtime results:
+
+- Local focused tests passed before deployment:
+  `go test ./internal/transport/xiaozhi ./internal/gateway -run 'TestMCP|TestXiaozhiMCP|TestXiaozhiHandleMCPResponse|TestXiaozhiMessageTypeMCP' -count=1`.
+- Local `GOMAXPROCS=2 make verify` passed after the MCP response fix.
+- Remote focused tests passed after deployment, and `systemctl is-active
+  a21-gateway` returned active.
+- Direct-source public `/v1/devices` confirmed product device online.
+- Command trace `a21-trace-live-robot-led-responsefix` recorded
+  `xiaozhi.mcp.robot_led_color.sent`.
+- Command trace `a21-trace-live-robot-head-responsefix` recorded
+  `xiaozhi.mcp.robot_head_angles_set.sent`.
+- Device session trace `a21-trace-44-1b-f6-e2-6a-60` recorded two
+  `xiaozhi.mcp.response.received` events.
+- `/v1/devices` recorded `robot_led_red=20`, `robot_led_green=0`,
+  `robot_led_blue=168`, `robot_head_yaw=12`, `robot_head_pitch=30`,
+  `robot_head_speed=150`, and `xiaozhi_mcp_response=received_redacted`.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no firmware flash, no NVS write, no
+  provider secret printing, no provider key in firmware, no prune/gc, no V21
+  internal execution, no internal-test3 rollback, and no false PRD acceptance
+  claim occurred.
