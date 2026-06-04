@@ -3228,7 +3228,11 @@ func productRoleplayExpressionPlanSafe(plan gateway.RoleplayExpressionPlan) bool
 }
 
 func productRoleplayPromptPartSafe(part string) bool {
-	left, right, ok := strings.Cut(strings.TrimSpace(part), ":")
+	part = strings.TrimSpace(part)
+	if productVoiceChainSafeID(part) {
+		return true
+	}
+	left, right, ok := strings.Cut(part, ":")
 	return ok && productVoiceChainSafeID(left) && productVoiceChainSafeID(right)
 }
 

@@ -12791,6 +12791,105 @@ Forbidden actions avoided:
   protocol change, firmware build, flash, serial, NVS, report deletion,
   prune/gc, or physical hardware action occurred.
 
+## 2026-06-04 15:06 CST - Roleplay Voice Runtime Probe Closure
+
+Round goal:
+
+- Stop repeating readiness gate work and close the live local
+  `roleplay_voice_runtime` blocker from the active server-side bundle.
+
+Actual completed work:
+
+- Started a local A21 Gateway on `127.0.0.1:21080` and ran
+  `server-side-readiness-bundle --collect-missing --execute-provider-smoke
+  --execute-v21-smoke`.
+- Confirmed Gateway, professional ritual, professional read-record, wake-word,
+  and voice-chain selector could become ready when the local Gateway is live.
+- Diagnosed the remaining roleplay runtime blocker:
+  - default safe voice profile reached the voice pipeline but was not traced as
+    used;
+  - the voice-pipeline branch emitted audio chunks but did not record
+    `device.playback.start`;
+  - product readiness rejected live prompt parts `core_identity` and
+    `tone_rules` because only `key:value` prompt-part markers were accepted.
+- Updated Gateway trace behavior so the roleplay voice-pipeline branch records
+  selected safe voice-profile use and host/simulator playback-start.
+- Updated product readiness prompt-part safety to accept safe single-token
+  roleplay prompt-part IDs while keeping unsafe prompt/body/path/credential
+  values forbidden.
+- Re-ran live `a21 roleplay-voice-probe --require-ready`; it passed and wrote
+  `a21-roleplay-voice-probe-20260604-150552.json`.
+- Re-ran server-side readiness collection; it wrote
+  `a21-server-side-readiness-bundle-20260604-150611.json` and now reports only
+  `provider_smoke` as the no-hardware server-side blocker.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-04-roleplay-voice-runtime-probe-closure.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- No real provider smoke is available in the current shell because no
+  `A21_` provider env names are present.
+- Full launch still requires physical StackChan online and physical PRD
+  acceptance.
+
+Known risks/blockers:
+
+- `roleplay_voice_runtime_ready=true` is no-hardware host/simulator runtime
+  evidence only. It proves selected voice-profile propagation, prompt input,
+  audio downlink, and playback-start boundary; it does not prove real clone
+  audio quality or physical speaker output.
+- Public ECS `47.103.57.217` `/healthz` timed out during this round; local
+  Gateway was used for runtime closure.
+
+Recommended next action:
+
+- Configure a real A21 provider (`A21_PROVIDER_PRIMARY` plus its required
+  A21-namespaced key/model env), rerun executed provider smoke and
+  `server-side-readiness-bundle --require-candidate`, then move to foreground
+  physical StackChan acceptance.
+
+Test/build/runtime results:
+
+- `go test ./internal/gateway -run 'TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided|TestFastCompanionVoicePipelineRecordsDefaultVoiceProfileAndPlaybackStart|TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary' -count=1`:
+  passed.
+- `go test ./internal/app -run 'TestRunRoleplayVoiceProbeWritesReadyReportAndProductReadinessCanIngest|TestRunServerSideReadinessBundleCollectsAuthorizedProviderAndV21Evidence|TestProductReadinessReportsServerSideCandidateWhenEvidenceSlicesPass' -count=1`:
+  passed.
+- `go test ./internal/gateway -count=1`: passed.
+- `go test ./internal/app -count=1`: passed in 465.595s.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+- Runtime: `a21 roleplay-voice-probe --gateway-url http://127.0.0.1:21080
+  --device-id stackchan-sim-001 --require-ready --output-dir reports`: passed.
+- Runtime: `a21 server-side-readiness-bundle --gateway-url
+  http://127.0.0.1:21080 --device-id stackchan-sim-001 --use-latest-reports
+  --collect-missing --execute-provider-smoke --execute-v21-smoke
+  --collect-repeat 3 --output-dir reports`: passed with
+  `missing_evidence=["provider_smoke"]`.
+
+Failure location/reason:
+
+- First live roleplay probe failed because the default selected voice profile
+  was not traced as used and playback-start was missing. After trace fixes, it
+  still self-classified as blocked because product readiness rejected safe
+  single-token prompt parts. Both causes were fixed.
+
+Forbidden actions avoided:
+
+- No firmware build, flash, serial, NVS, ECS/root-secret change, provider key
+  write, V21 repo mutation, report deletion, prune/gc, or physical hardware
+  action occurred.
+
 ## 2026-06-04 14:04 CST - Professional Ritual Gate Landed
 
 Round goal:

@@ -3018,6 +3018,7 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 		"provider.first_content",
 		"tts.first_audio",
 		"audio.downlink.first_frame",
+		"device.playback.start",
 		"roleplay.prompt_input.used",
 		"roleplay.voice_clone_profile.used",
 		"fast_companion.voice_pipeline.completed",
@@ -3028,6 +3029,64 @@ func TestFastCompanionHybridRunsVoicePipelineWhenFramesProvided(t *testing.T) {
 	}
 	if strings.Contains(traceRec.Body.String(), "角色语气只给短句") {
 		t.Fatalf("trace leaked roleplay prompt hint")
+	}
+}
+
+func TestFastCompanionVoicePipelineRecordsDefaultVoiceProfileAndPlaybackStart(t *testing.T) {
+	provider := &capturingVoiceProvider{
+		startEvents: []providers.VoiceEvent{
+			{Kind: providers.VoiceEventSpeaking, Text: "selected provider should not run", Final: true},
+		},
+	}
+	server := NewServerWithOptions(ServerOptions{VoiceProvider: provider, V21Client: &countingV21Client{}})
+	runner := newRecordingXiaozhiPipelineRunner()
+	server.xiaozhiVoicePipelineRunner = func() xiaozhiVoicePipelineRunner {
+		return runner
+	}
+	handler := server.Handler()
+	frameBase64 := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1, 0}, 960))
+	req := httptest.NewRequest(http.MethodPost, "/v1/fast-companion/turn", bytes.NewBufferString(fmt.Sprintf(`{
+		"device_id":"stackchan-sim-001",
+		"mode":"roleplay",
+		"trace_id":"a21-trace-fast-pipeline-default-voice",
+		"session_id":"a21-session-fast-pipeline-default-voice",
+		"local_audio":{
+			"asr_provider":"mock_asr",
+			"first_partial_ms":42,
+			"final_transcript_chars":11,
+			"frames":[{"seq":1,"codec":"pcm_s16le","sample_rate_hz":16000,"channels":1,"duration_ms":60,"byte_count":1920,"rms":0.04,"data_base64":%q}]
+		}
+	}`, frameBase64)))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var captured providers.VoicePipelineRequest
+	select {
+	case captured = <-runner.requests:
+	case <-time.After(time.Second):
+		t.Fatal("voice pipeline runner did not capture request")
+	}
+	if captured.VoiceCloneProfile != DefaultVoiceCloneProfile {
+		t.Fatalf("captured voice profile = %q, want default %q", captured.VoiceCloneProfile, DefaultVoiceCloneProfile)
+	}
+	traceReq := httptest.NewRequest(http.MethodGet, "/v1/traces?trace_id=a21-trace-fast-pipeline-default-voice", nil)
+	traceRec := httptest.NewRecorder()
+	handler.ServeHTTP(traceRec, traceReq)
+	if traceRec.Code != http.StatusOK {
+		t.Fatalf("trace status = %d, want 200: %s", traceRec.Code, traceRec.Body.String())
+	}
+	for _, want := range []string{
+		"roleplay.voice_clone_profile.used",
+		"audio.downlink.first_frame",
+		"device.playback.start",
+	} {
+		if !strings.Contains(traceRec.Body.String(), want) {
+			t.Fatalf("trace missing %q: %s", want, traceRec.Body.String())
+		}
 	}
 }
 

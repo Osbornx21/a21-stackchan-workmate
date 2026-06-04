@@ -502,6 +502,13 @@ Execution update:
   Gateway professional bench reports now include a safe `read_record` summary,
   and product/server-side readiness require a completed matching read record
   before the professional path can satisfy the server-side candidate gate.
+- `T-ROLEPLAY-VOICE-RUNTIME-PROBE-CLOSURE-001` closes the local live roleplay
+  runtime probe gap. The Gateway now traces selected voice-profile use and
+  host/simulator playback-start in the roleplay voice-pipeline branch, and
+  product readiness accepts safe single-token prompt-part IDs such as
+  `core_identity`. A fresh local `roleplay-voice-probe --require-ready` passed;
+  the refreshed server-side bundle now has only real provider smoke as the
+  no-hardware server-side blocker.
 
 ## Not In Scope For This First Cut
 

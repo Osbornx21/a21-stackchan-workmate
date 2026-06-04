@@ -4619,7 +4619,7 @@ func roleplayVoiceProbeTestRuntime() map[string]any {
 		"scenario":                   "engineer_pushback",
 		"voice_clone_profile":        "a21_voice_clone_default",
 		"soul_prompt_input_ready":    true,
-		"prompt_parts":               []string{"role_soul:a21_roleplay_wry_peer", "scenario:engineer_pushback", "memory:ready"},
+		"prompt_parts":               []string{"core_identity", "tone_rules", "role_soul:a21_roleplay_wry_peer", "scenario:engineer_pushback", "memory:ready"},
 		"memory_policy":              "bounded_prompt_hints",
 		"memory_configured":          true,
 		"memory_prompt_input_ready":  true,

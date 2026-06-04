@@ -9614,7 +9614,7 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 		request.TextPrompt = prompt
 		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.prompt_input.used", s.now().UnixMilli())
 	}
-	if voiceCloneProfileUsesClone(roleplay.VoiceCloneProfile) {
+	if validVoiceCloneProfile(roleplay.VoiceCloneProfile) {
 		s.recordTrace(traceID, sessionID, req.DeviceID, "roleplay.voice_clone_profile.used", s.now().UnixMilli())
 	}
 	result, err := runner.Run(ctx, request)
@@ -9656,11 +9656,14 @@ func (s *Server) fastCompanionVoicePipelineTurnResponse(ctx context.Context, req
 	})
 	sentAt := s.now().UnixMilli()
 	for _, chunk := range result.AudioChunks {
-		if len(events) == 3 {
+		firstChunk := len(events) == 3
+		chunkAtMS := sentAt + int64(len(events)-3)
+		if firstChunk {
 			s.recordTrace(traceID, sessionID, req.DeviceID, "audio.downlink.first_frame", sentAt)
+			s.recordTrace(traceID, sessionID, req.DeviceID, "device.playback.start", chunkAtMS+1)
 		}
 		chunk := chunk
-		events = append(events, s.voiceAudioPlaybackChunk(req.DeviceID, traceID, sessionID, uint64(len(events)+1), sentAt+int64(len(events)-3), streamID, &chunk))
+		events = append(events, s.voiceAudioPlaybackChunk(req.DeviceID, traceID, sessionID, uint64(len(events)+1), chunkAtMS, streamID, &chunk))
 	}
 	return FastCompanionTurnResponse{
 		TraceID:                    traceID,

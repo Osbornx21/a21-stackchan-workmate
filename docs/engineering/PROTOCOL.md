@@ -863,13 +863,16 @@ profile/scenario/voice-clone IDs against the current
 `GET /v1/roleplay-profile` response before marking
 `voice_runtime_ready=true`. The product report surfaces only source basename,
 route/status/execution mode, marker count, and booleans for text-stream
-execution, prompt-input use, voice-clone profile use, audio downlink, and
-playback-start observation. It must not store prompt bodies, memory text, ASR
-text, provider output, audio payloads, voice samples, evidence bodies, URLs,
-paths, credentials, or physical acceptance claims. This runtime evidence closes
-the roleplay voice-path reporting gap; it is still not provider quality
-acceptance, real voice-clone audio acceptance, hardware expression delivery, or
-physical StackChan PRD acceptance.
+execution, prompt-input use, selected voice-profile use, audio downlink, and
+playback-start observation. Safe roleplay prompt-part IDs may be either a
+single identifier such as `core_identity` or a `key:value` marker such as
+`role_soul:a21_roleplay_default`; prompt bodies remain forbidden. It must not
+store prompt bodies, memory text, ASR text, provider output, audio payloads,
+voice samples, evidence bodies, URLs, paths, credentials, or physical
+acceptance claims. This runtime evidence closes the roleplay voice-path
+reporting gap; it is still not provider quality acceptance, real voice-clone
+audio acceptance, hardware expression delivery, or physical StackChan PRD
+acceptance.
 
 `a21 roleplay-voice-probe` generates that report from the live Gateway
 roleplay voice path by sending a short redacted local-audio probe to

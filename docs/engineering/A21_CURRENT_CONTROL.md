@@ -1459,3 +1459,38 @@ Current conclusion:
 - This is still not real personal upload indexing, cloud storage, durable
   account ACL, ECS deployment, firmware, serial, NVS, or physical StackChan
   professional consult acceptance.
+
+## Latest Control-Tower Result - 2026-06-04 Roleplay Voice Runtime Probe Closure
+
+The live local Gateway roleplay voice probe now passes instead of remaining a
+blocked fixture boundary.
+
+Current implementation state:
+
+- The active cut is
+  `docs/plans/2026-06-04-roleplay-voice-runtime-probe-closure.md`.
+- Fast Companion roleplay voice-pipeline traces now record
+  `roleplay.voice_clone_profile.used` whenever a safe selected voice profile is
+  carried into the provider-neutral voice pipeline, including the default
+  `a21_voice_default_dashscope` profile.
+- The same voice-pipeline branch now records `device.playback.start` when the
+  Gateway emits the first host/simulator playback chunk.
+- Product readiness now accepts safe single-token roleplay prompt parts such as
+  `core_identity` and `tone_rules`, in addition to `key:value` prompt-part
+  markers, while still rejecting unsafe text/URL/path/credential-like values.
+- Runtime evidence:
+  - `a21 roleplay-voice-probe --require-ready` passed and wrote
+    `a21-roleplay-voice-probe-20260604-150552.json`.
+  - `a21 server-side-readiness-bundle --collect-missing
+    --execute-provider-smoke --execute-v21-smoke` wrote
+    `a21-server-side-readiness-bundle-20260604-150611.json`.
+
+Current conclusion:
+
+- Local no-hardware server-side readiness now has Gateway, professional
+  ritual, professional read-record, host voice, roleplay voice runtime,
+  wake-word, and voice-chain selector ready.
+- The remaining server-side blocker is real provider smoke. The remaining full
+  PRD blockers are physical StackChan online and physical PRD acceptance.
+- This does not prove real clone-audio quality, real provider quality, ECS
+  deployment, firmware, serial, NVS, or physical StackChan roleplay acceptance.

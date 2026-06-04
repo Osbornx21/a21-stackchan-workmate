@@ -2635,3 +2635,15 @@ Priority candidate added from the 2026-06-04 internal test 4 workspace plan:
     - Next action: collect fresh runtime reports against the intended Gateway
       and keep real upload indexing, durable account ACL, ECS deployment, and
       physical StackChan professional acceptance as separate transitions.
+
+15. `T-ROLEPLAY-VOICE-RUNTIME-PROBE-CLOSURE-001`
+    - Current phase: completed code/test/runtime transition on 2026-06-04.
+      Fast Companion roleplay voice-pipeline traces now show selected safe
+      voice-profile use and host/simulator playback-start. Product readiness
+      accepts safe single-token roleplay prompt-part IDs, so the live local
+      `a21 roleplay-voice-probe --require-ready` report now passes.
+    - Runtime evidence: `a21-roleplay-voice-probe-20260604-150552.json` and
+      `a21-server-side-readiness-bundle-20260604-150611.json`.
+    - Next action: configure real A21 provider env and run executed provider
+      smoke, then collect physical StackChan PRD acceptance in a foreground
+      hardware window.
