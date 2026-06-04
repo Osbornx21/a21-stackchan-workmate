@@ -1104,6 +1104,36 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsUnsupportedBeforeM
 	}
 }
 
+func TestRunStackChanOfficialXiaozhiCompatibleFlashPlanRejectsWaitROMWithoutNoReset(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+		"--wait-rom",
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("wait-rom without no_reset unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "wait-rom requires --esptool-before no_reset") {
+		t.Fatalf("stderr missing wait-rom/no_reset guard: %s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), buildDir) || strings.Contains(stderr.String(), buildDir) {
+		t.Fatalf("wait-rom rejection leaked full build dir: stdout=%s stderr=%s", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRequiresConfirmationToken(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -1165,6 +1195,69 @@ func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand(t *
 		`"esptool_before": "no_reset"`,
 		`"control_guard"`,
 		`"file": "a21-stackchan-official-xiaozhi-compatible.bin"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("execution receipt missing %q: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), buildDir) {
+		t.Fatalf("execution receipt leaked full build dir: %s", stdout.String())
+	}
+}
+
+func TestRunStackChanOfficialXiaozhiCompatibleFlashExecuteCanWaitForManualROM(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialXiaozhiCompatibleFlashCommand
+	var ranScript string
+	runStackChanOfficialXiaozhiCompatibleFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		ranScript = script
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialXiaozhiCompatibleFlashCommand = originalRunner
+	}()
+
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	idfExport := filepath.Join(t.TempDir(), "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"a21-stackchan-official-xiaozhi-compatible-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", idfExport,
+		"--esptool-before", "no_reset",
+		"--wait-rom",
+		"--wait-rom-timeout-seconds", "75",
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"A21_WAIT_ROM_DEADLINE=$((SECONDS + 75))",
+		"until python -m esptool --chip esp32s3 --port '/dev/cu.usbmodemA21' -b 115200 --before no_reset --after no_reset --no-stub chip_id",
+		"--before 'no_reset'",
+		"write_flash @flash_args",
+	} {
+		if !strings.Contains(ranScript, want) {
+			t.Fatalf("flash script missing %q: %s", want, ranScript)
+		}
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1"`,
+		`"wait_rom_download_mode": true`,
+		`"wait_rom_timeout_seconds": 75`,
+		`"flash_executed": true`,
+		`"esptool_before": "no_reset"`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("execution receipt missing %q: %s", want, stdout.String())

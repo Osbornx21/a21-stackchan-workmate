@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD after the latest route-gating remediation:
-  `15a16dc fix(gateway): gate stock professional route by voice mode`
+- Current source HEAD after the latest manual-ROM flash guard remediation:
+  current branch tip for `fix(firmware): wait for manual rom before product flash`
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +70,38 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 07:07 CST manual-ROM flash guard:
+
+- The review thread and current implementation were compared again. The
+  active product blocker remains physical recovery of the product StackChan:
+  the device is enumerated on USB serial, but the safe delayed-relay artifact
+  still needs a guarded product-lane flash after the operator enters
+  ESP32-S3 ROM/download mode.
+- The official Xiaozhi-compatible product flash lane now supports an explicit
+  wait-for-ROM mode:
+  `--wait-rom --wait-rom-timeout-seconds N`.
+- The Makefile exposes the same path through
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM=true` and
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS`.
+- Wait-for-ROM mode is guarded: it requires
+  `--esptool-before no_reset`, probes only `chip_id` with no reset/no stub
+  until the timeout, and then executes the existing exact product artifact
+  flash command. It does not relax the A21 control guard, confirmation token,
+  product artifact name, clean-worktree guard, or upload-target checks.
+- A no-write product flash plan was generated for `/dev/cu.usbmodem1101`:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-070727-1780614447957789000.json`.
+  The receipt is `status=ready`, `dry_run=true`,
+  `wait_rom_download_mode=true`, `wait_rom_timeout_seconds=90`, and app
+  artifact `a21-stackchan-official-xiaozhi-compatible.bin` SHA
+  `6c2ba13982efc7570ad0ac9ec0329232af6bedc58cd5ad9b18cc06b7f8f5b8b9`.
+- No flash was executed in this transition. The next physical step remains:
+  hold BOOT/download, press and release RESET, keep BOOT held until esptool
+  detects ESP32-S3 ROM mode, then execute the guarded product flash with
+  wait-ROM enabled.
+- Verification passed: focused official product flash wait-ROM tests,
+  `git diff --check`, `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, and `GOMAXPROCS=2 make doctor`.
 
 Live truth after the 2026-06-05 06:58 CST wake physical launch gate:
 

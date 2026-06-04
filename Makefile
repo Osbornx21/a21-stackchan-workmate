@@ -42,6 +42,9 @@ A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP_FLASH_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE ?= default_reset
+A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM ?= false
+A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS ?= 60
+A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_FLAGS = $(if $(filter true 1 yes on,$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM)),--wait-rom --wait-rom-timeout-seconds "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS)",)
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS_CONFIRM ?=
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OTA_URL ?=
 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WEBSOCKET_URL ?=
@@ -263,12 +266,12 @@ stackchan-official-pcm-bridge-flash-execute:
 
 a21-stackchan-official-xiaozhi-compatible-flash-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
-	go run ./cmd/a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --esptool-before "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE)" --output-dir reports
+	go run ./cmd/a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --esptool-before "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE)" $(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_FLAGS) --output-dir reports
 
 a21-stackchan-official-xiaozhi-compatible-flash-execute:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)
 	@test -n "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM)" || (echo "A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM is required"; exit 2)
-	go run ./cmd/a21 a21-stackchan-official-xiaozhi-compatible-flash --execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --esptool-before "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE)" --confirm "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM)" --output-dir reports
+	go run ./cmd/a21 a21-stackchan-official-xiaozhi-compatible-flash --execute --build-dir "$(A21_STACKCHAN_OFFICIAL_BUILD_DIR)" --idf-export "$(A21_IDF_EXPORT)" --port "$(A21_UPLOAD_PORT)" --esptool-before "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE)" $(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_FLAGS) --confirm "$(A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM)" --output-dir reports
 
 a21-stackchan-official-xiaozhi-compatible-nvs-plan:
 	@test -n "$(A21_UPLOAD_PORT)" || (echo "A21_UPLOAD_PORT is required"; exit 2)

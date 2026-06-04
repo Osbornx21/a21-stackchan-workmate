@@ -17488,6 +17488,87 @@ Forbidden actions avoided:
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 07:07 CST - Product Flash Wait-ROM Guard Ready
+
+Round goal:
+
+- Convert the remaining manual ESP32-S3 ROM/download recovery step into a
+  guarded product flash workflow so the next physical flash attempt does not
+  miss the BOOT/RESET timing window.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  its P0/P1 findings with current branch state.
+- Added explicit wait-for-ROM support to the official Xiaozhi-compatible
+  product flash command.
+- Added Makefile wiring for wait-ROM execution without changing default flash
+  behavior.
+- Added tests for rejecting wait-ROM without `--esptool-before no_reset` and
+  for generating the guarded wait/probe/flash execution script.
+- Generated a no-write product flash plan for `/dev/cu.usbmodem1101`.
+
+Changed files:
+
+- `Makefile`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Test/build/runtime results:
+
+- Focused test passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleFlash.*WaitROM|OfficialXiaozhiCompatibleFlashExecuteRunsGuardedCommand|OfficialXiaozhiCompatibleFlashPlanBuildsNoFlashReceipt|OfficialXiaozhiCompatibleFlashPlanRejectsUnsupportedBeforeMode' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- `GOMAXPROCS=2 make preflight` passed.
+- `GOMAXPROCS=2 make doctor` passed.
+- `make -n a21-stackchan-official-xiaozhi-compatible-flash-plan ...` showed
+  the expected `--wait-rom --wait-rom-timeout-seconds "60"` expansion.
+- No-write product flash plan passed:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101`
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE=no_reset`
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM=true`
+  `A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS=90`
+  `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-flash-plan`.
+
+Runtime or physical evidence:
+
+- USB serial path `/dev/cu.usbmodem1101` is present and not reported as in use
+  by doctor.
+- Generated plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-070727-1780614447957789000.json`.
+- Plan fields: `status=ready`, `dry_run=true`,
+  `wait_rom_download_mode=true`, `wait_rom_timeout_seconds=90`,
+  `artifact_file=a21-stackchan-official-xiaozhi-compatible.bin`, app SHA
+  `6c2ba13982efc7570ad0ac9ec0329232af6bedc58cd5ad9b18cc06b7f8f5b8b9`.
+- No firmware flash was executed and no physical acceptance was promoted.
+
+Remaining issues:
+
+- Product StackChan still needs physical ROM/download entry and guarded
+  product flash execution.
+- After flash, collect reconnect, official `/stackChan/ws` relay, visible
+  body/full-check, physical wake-word, natural microphone voice, playback, and
+  barge-in evidence.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+
+Recommended next action:
+
+- With the product device connected, hold BOOT/download, press and release
+  RESET, keep BOOT held, then execute the official product flash lane with
+  wait-ROM enabled. After reconnect, run the existing physical acceptance
+  chain instead of promoting server-side evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider secret printing, no provider
+  or V21 execution, no generic product flash lane, no `xiaozhi.bin` product
+  flash, no camera/NFC/IR expansion, no Git prune/gc, and no internal-test3
+  voice/protocol rollback.
+
 ## 2026-06-05 04:10 CST - No-Cable Power/Lifecycle Recovery and WDT-Safe Product Reflash
 
 Round goal:

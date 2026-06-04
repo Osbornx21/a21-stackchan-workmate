@@ -42,6 +42,7 @@ const stackChanOfficialPCMBridgeNVSSizeBytes = 0x4000
 const officialProductLaneArtifactEvidenceSchema = "a21.firmware.product_lane_artifact_evidence.v1"
 const stackChanOfficialXiaozhiCompatibleFirmwareCandidate = "a21-stackchan-official-xiaozhi-compatible"
 const stackChanOfficialXiaozhiCompatibleAppBinary = "a21-stackchan-official-xiaozhi-compatible.bin"
+const stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds = 60
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
@@ -145,13 +146,15 @@ type stackChanOfficialPCMBridgeFlashPlanOptions struct {
 }
 
 type stackChanOfficialXiaozhiCompatibleFlashOptions struct {
-	BuildDir      string
-	IDFExport     string
-	Port          string
-	EsptoolBefore string
-	OutputDir     string
-	Confirm       string
-	Execute       bool
+	BuildDir              string
+	IDFExport             string
+	Port                  string
+	EsptoolBefore         string
+	WaitROM               bool
+	WaitROMTimeoutSeconds int
+	OutputDir             string
+	Confirm               string
+	Execute               bool
 }
 
 type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
@@ -229,6 +232,8 @@ type stackChanOfficialXiaozhiCompatibleFlashReport struct {
 	ControlGuard             *runtimeguard.ControlGuardReport    `json:"control_guard,omitempty"`
 	Port                     string                              `json:"port"`
 	EsptoolBefore            string                              `json:"esptool_before"`
+	WaitROM                  bool                                `json:"wait_rom_download_mode,omitempty"`
+	WaitROMTimeoutSeconds    int                                 `json:"wait_rom_timeout_seconds,omitempty"`
 	BuildDirName             string                              `json:"build_dir_name"`
 	IDFExportName            string                              `json:"idf_export_name,omitempty"`
 	FlashLogFile             string                              `json:"flash_log_file,omitempty"`
@@ -743,13 +748,15 @@ func runStackChanOfficialPCMBridgeFlash(args []string, execute bool, stdout io.W
 
 func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialXiaozhiCompatibleFlashOptions{
-		BuildDir:      firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
-		IDFExport:     firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
-		Port:          strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
-		EsptoolBefore: firstNonEmpty(strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE")), "default_reset"),
-		OutputDir:     "",
-		Confirm:       "",
-		Execute:       execute,
+		BuildDir:              firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport:             firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:                  strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		EsptoolBefore:         firstNonEmpty(strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_ESPTOOL_BEFORE")), "default_reset"),
+		WaitROM:               appEnvBool(os.Environ(), "A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM"),
+		WaitROMTimeoutSeconds: parsePositiveIntOrDefault(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS"), stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds),
+		OutputDir:             "",
+		Confirm:               "",
+		Execute:               execute,
 	}
 	if execute {
 		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM"))
@@ -757,7 +764,7 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP] [--idf-export /path/to/export.sh] [--esptool-before default_reset|usb_reset|no_reset] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP] [--idf-export /path/to/export.sh] [--esptool-before default_reset|usb_reset|no_reset] [--wait-rom --wait-rom-timeout-seconds 60] [--output-dir reports]")
 			return 0
 		case "--build-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -787,6 +794,14 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 			}
 			i++
 			options.EsptoolBefore = args[i]
+		case "--wait-rom":
+			options.WaitROM = true
+		case "--wait-rom-timeout-seconds":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--wait-rom-timeout-seconds")
+			if !ok {
+				return 2
+			}
+			options.WaitROMTimeoutSeconds = value
 		case "--output-dir":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--output-dir requires a value")
@@ -1336,6 +1351,15 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 	if err != nil {
 		return stackChanOfficialXiaozhiCompatibleFlashReport{}, err
 	}
+	waitROMTimeoutSeconds := stackChanOfficialXiaozhiCompatibleWaitROMTimeoutSeconds(options)
+	if options.WaitROM {
+		if esptoolBefore != "no_reset" {
+			return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("wait-rom requires --esptool-before no_reset so the manual ROM download state is not reset before flashing")
+		}
+		if waitROMTimeoutSeconds <= 0 || waitROMTimeoutSeconds > 300 {
+			return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("wait-rom timeout seconds must be between 1 and 300")
+		}
+	}
 	usage, err := detectFirmwareUploadPortUsage(options.Port)
 	if err != nil {
 		return stackChanOfficialXiaozhiCompatibleFlashReport{}, fmt.Errorf("inspect upload port: %w", err)
@@ -1365,6 +1389,8 @@ func buildStackChanOfficialXiaozhiCompatibleFlashReport(options stackChanOfficia
 		FlashExecuted:            false,
 		Port:                     options.Port,
 		EsptoolBefore:            esptoolBefore,
+		WaitROM:                  options.WaitROM,
+		WaitROMTimeoutSeconds:    waitROMTimeoutSeconds,
 		BuildDirName:             filepath.Base(buildDir),
 		IDFExportName:            filepath.Base(filepath.Clean(options.IDFExport)),
 		NextRequiredConfirmation: "a21-stackchan-official-xiaozhi-compatible-flash-execute_with_confirmation_token",
@@ -2385,12 +2411,31 @@ func executeStackChanOfficialXiaozhiCompatibleFlash(ctx context.Context, options
 			return err
 		}
 	}
-	script := strings.Join([]string{
+	scriptLines := []string{
 		"set -euo pipefail",
 		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
 		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
-		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before %s --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port), shellSingleQuote(esptoolBefore)),
-	}, "\n")
+	}
+	if report.WaitROM {
+		waitTimeout := report.WaitROMTimeoutSeconds
+		if waitTimeout <= 0 {
+			waitTimeout = stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds
+		}
+		scriptLines = append(scriptLines,
+			fmt.Sprintf("A21_WAIT_ROM_DEADLINE=$((SECONDS + %d))", waitTimeout),
+			fmt.Sprintf("echo %s", shellSingleQuote("Waiting for ESP32-S3 ROM download mode on "+options.Port)),
+			fmt.Sprintf("until python -m esptool --chip esp32s3 --port %s -b 115200 --before no_reset --after no_reset --no-stub chip_id >/dev/null 2>&1; do", shellSingleQuote(options.Port)),
+			"  if (( SECONDS >= A21_WAIT_ROM_DEADLINE )); then",
+			fmt.Sprintf("    echo %s >&2", shellSingleQuote("Timed out waiting for ESP32-S3 ROM download mode; hold BOOT, press/release RESET, keep holding BOOT, then retry.")),
+			"    exit 1",
+			"  fi",
+			"  sleep 1",
+			"done",
+			fmt.Sprintf("echo %s", shellSingleQuote("ESP32-S3 ROM download mode detected; starting guarded product app flash.")),
+		)
+	}
+	scriptLines = append(scriptLines, fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before %s --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port), shellSingleQuote(esptoolBefore)))
+	script := strings.Join(scriptLines, "\n")
 	if err := runStackChanOfficialXiaozhiCompatibleFlashCommand(ctx, flashLogPath, script); err != nil {
 		return err
 	}
@@ -2688,6 +2733,16 @@ func validateStackChanOfficialXiaozhiCompatibleEsptoolBefore(mode string) (strin
 	default:
 		return "", fmt.Errorf("unsupported esptool before mode %q; want default_reset, usb_reset, or no_reset", mode)
 	}
+}
+
+func stackChanOfficialXiaozhiCompatibleWaitROMTimeoutSeconds(options stackChanOfficialXiaozhiCompatibleFlashOptions) int {
+	if !options.WaitROM {
+		return 0
+	}
+	if options.WaitROMTimeoutSeconds > 0 {
+		return options.WaitROMTimeoutSeconds
+	}
+	return stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds
 }
 
 func shellSingleQuote(value string) string {
