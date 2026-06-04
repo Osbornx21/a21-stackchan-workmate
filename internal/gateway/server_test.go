@@ -495,6 +495,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/fast-companion/turn",
 		"/v1/professional-query",
 		"/v1/xiaozhi/body-preset",
+		"/v1/xiaozhi/body-motion",
 		"/v1/xiaozhi/device-status",
 		"/v1/xiaozhi/screen-brightness",
 		"/v1/xiaozhi/screen-theme",
@@ -609,6 +610,11 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		`data-body-preset="speaking"`,
 		`data-body-preset="celebrate"`,
 		`data-body-preset="reset_idle"`,
+		`data-body-motion="look_up"`,
+		`data-body-motion="nod"`,
+		`data-body-motion="shake"`,
+		`data-body-motion="dance"`,
+		`data-body-motion="stop"`,
 		`data-screen-theme="light"`,
 		`data-screen-theme="dark"`,
 		`data-screen-theme="auto"`,
@@ -662,7 +668,9 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"a21.workspace_console_export.v1",
 		"voice_probe_trace_id",
 		"body_preset_trace_id",
+		"body_motion_trace_id",
 		"runBodyPreset",
+		"runBodyMotion",
 		"refreshBodyPresetTrace",
 		"screen_control_trace_id",
 		"runHardwareScreenAction",
@@ -6897,6 +6905,116 @@ func TestXiaozhiBodyPresetRejectsUnknownPreset(t *testing.T) {
 	NewServer().Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("body preset status = %d, want 400", rec.Code)
+	}
+}
+
+func TestXiaozhiBodyMotionSendsBoundedMCPSequence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-body-motion-hello",
+		"session_id": "a21-session-body-motion-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	resp, err := http.Post(
+		httpServer.URL+"/v1/xiaozhi/body-motion",
+		"application/json",
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","motion":"dance","trace_id":"a21-trace-body-motion","session_id":"a21-session-body-motion"}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("body motion status = %d: %s", resp.StatusCode, string(body))
+	}
+	var response XiaozhiBodyMotionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SchemaVersion != "a21.gateway.xiaozhi_body_motion.v1" ||
+		response.Status != "delivered" ||
+		response.DeliveredTransport != "xiaozhi_mcp_sequence" ||
+		response.Motion != "dance" ||
+		!response.ResultRedacted ||
+		response.PhysicalAccepted ||
+		len(response.Steps) != 5 {
+		t.Fatalf("body motion response = %+v", response)
+	}
+
+	expected := []struct {
+		tool string
+		args map[string]any
+	}{
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(168), "green": float64(80), "blue": float64(0)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(-18), "pitch": float64(36), "speed": float64(260)}},
+		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(0), "green": float64(168), "blue": float64(80)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(18), "pitch": float64(36), "speed": float64(260)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(0), "pitch": float64(24), "speed": float64(220)}},
+	}
+	for _, want := range expected {
+		message := readXiaozhiJSON(t, ctx, conn)
+		assertXiaozhiMCPMessage(t, message, want.tool, want.args)
+	}
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-motion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer traceResp.Body.Close()
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"xiaozhi.body_motion.dance.step1.robot_led_color.sent",
+		"xiaozhi.body_motion.dance.step2.robot_head_angles_set.sent",
+		"xiaozhi.body_motion.dance.step5.robot_head_angles_set.sent",
+	} {
+		if !traceContains(traces.Events, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("capabilities = %#v", registry["capabilities"])
+	}
+	for key, want := range map[string]any{
+		"last_body_motion":        "dance",
+		"last_body_motion_status": "delivered",
+		"last_body_motion_step":   "5",
+		"robot_head_yaw":          "0",
+		"robot_head_pitch":        "24",
+		"robot_led_green":         "168",
+	} {
+		if capabilities[key] != want {
+			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
+		}
+	}
+}
+
+func TestXiaozhiBodyMotionRejectsUnknownMotion(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/xiaozhi/body-motion", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","motion":"camera"}`))
+	rec := httptest.NewRecorder()
+	NewServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("body motion status = %d, want 400", rec.Code)
 	}
 }
 

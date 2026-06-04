@@ -547,6 +547,11 @@ const workspaceConsoleHTML = `<!doctype html>
             <button class="secondary" data-body-preset="speaking">Speak</button>
             <button data-body-preset="celebrate">Celebrate</button>
             <button class="secondary" data-body-preset="reset_idle">Reset</button>
+            <button class="secondary" data-body-motion="look_up">Look up</button>
+            <button class="secondary" data-body-motion="nod">Nod</button>
+            <button class="secondary" data-body-motion="shake">Shake</button>
+            <button class="secondary" data-body-motion="dance">MCP dance</button>
+            <button class="secondary" data-body-motion="stop">Stop motion</button>
             <button class="secondary" id="refreshBodyPresetTrace">Trace markers</button>
           </div>
           <div class="status-strip">
@@ -675,6 +680,7 @@ const workspaceConsoleHTML = `<!doctype html>
       voiceModes: null,
       voiceProbe: null,
       bodyPreset: null,
+      bodyMotion: null,
       hardwareScreen: null,
       officialAction: null,
       lastExport: null
@@ -1006,6 +1012,13 @@ const workspaceConsoleHTML = `<!doctype html>
         session_id: 'a21-session-workspace-body-' + preset + '-' + stamp
       };
     }
+    function nextBodyMotionIDs(motion) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-body-motion-' + motion + '-' + stamp,
+        session_id: 'a21-session-workspace-body-motion-' + motion + '-' + stamp
+      };
+    }
     function nextHardwareScreenIDs(action) {
       const stamp = Date.now();
       return {
@@ -1086,6 +1099,11 @@ const workspaceConsoleHTML = `<!doctype html>
       const step = ((response && response.steps) || []).find((item) => item.marker === marker) || {};
       return step.arguments || {};
     }
+    function lastBodyStepArgs(response, marker) {
+      const steps = ((response && response.steps) || []).filter((item) => item.marker === marker);
+      const step = steps[steps.length - 1] || {};
+      return step.arguments || {};
+    }
     function renderBodyPresetResponse(response) {
       const led = bodyPresetArgs(response, 'robot_led_color');
       const head = bodyPresetArgs(response, 'robot_head_angles_set');
@@ -1139,6 +1157,39 @@ const workspaceConsoleHTML = `<!doctype html>
       renderBodyPresetResponse(payload);
       await refreshBodyPresetTrace();
       log('body preset ' + (payload.preset || preset) + ' ' + (payload.status || 'sent'));
+    }
+    async function runBodyMotion(motion) {
+      const ids = nextBodyMotionIDs(motion);
+      const payload = await postJSON('/v1/xiaozhi/body-motion', {
+        device_id: currentDeviceID(),
+        motion: motion,
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      });
+      const led = lastBodyStepArgs(payload, 'robot_led_color');
+      const head = lastBodyStepArgs(payload, 'robot_head_angles_set');
+      state.bodyMotion = {
+        motion: payload.motion || motion,
+        trace_id: payload.trace_id || ids.trace_id,
+        session_id: payload.session_id || ids.session_id,
+        status: payload.status || '',
+        delivered_transport: payload.delivered_transport || '',
+        physical_accepted: !!payload.physical_accepted,
+        steps: payload.steps || []
+      };
+      state.bodyPreset = Object.assign({}, state.bodyPreset || {}, {
+        trace_id: state.bodyMotion.trace_id,
+        session_id: state.bodyMotion.session_id
+      });
+      setText(ui.bodyPresetStatus, 'motion=' + (payload.motion || motion));
+      setText(ui.bodyPresetPhysicalStatus, 'physical_accepted=' + String(!!payload.physical_accepted));
+      setText(ui.bodyPresetTraceStatus, 'trace=' + (payload.trace_id || ids.trace_id));
+      setText(ui.bodyPresetTransportStatus, payload.delivered_transport || 'xiaozhi_mcp_sequence');
+      setText(ui.bodyPresetLEDStatus, 'rgb=' + [led.red, led.green, led.blue].map((value) => value == null ? 'none' : value).join('/'));
+      setText(ui.bodyPresetHeadStatus, 'pose=' + ['yaw:' + (head.yaw == null ? 'none' : head.yaw), 'pitch:' + (head.pitch == null ? 'none' : head.pitch), 'speed:' + (head.speed == null ? 'none' : head.speed)].join(' / '));
+      await refreshBodyPresetTrace();
+      state.bodyMotion.trace_markers = (state.bodyPreset && state.bodyPreset.trace_markers) || [];
+      log('body motion ' + (payload.motion || motion) + ' ' + (payload.status || 'sent'));
     }
     function renderHardwareScreenResponse(response, action) {
       const args = (response && response.arguments) || {};
@@ -1761,6 +1812,13 @@ const workspaceConsoleHTML = `<!doctype html>
         body_preset_transport: (state.bodyPreset && state.bodyPreset.delivered_transport) || '',
         body_preset_physical_accepted: !!(state.bodyPreset && state.bodyPreset.physical_accepted),
         body_preset_trace_markers: (state.bodyPreset && state.bodyPreset.trace_markers) || [],
+        body_motion: (state.bodyMotion && state.bodyMotion.motion) || '',
+        body_motion_trace_id: (state.bodyMotion && state.bodyMotion.trace_id) || '',
+        body_motion_session_id: (state.bodyMotion && state.bodyMotion.session_id) || '',
+        body_motion_status: (state.bodyMotion && state.bodyMotion.status) || '',
+        body_motion_transport: (state.bodyMotion && state.bodyMotion.delivered_transport) || '',
+        body_motion_physical_accepted: !!(state.bodyMotion && state.bodyMotion.physical_accepted),
+        body_motion_trace_markers: (state.bodyMotion && state.bodyMotion.trace_markers) || [],
         screen_control_action: (state.hardwareScreen && state.hardwareScreen.action) || '',
         screen_control_trace_id: (state.hardwareScreen && state.hardwareScreen.trace_id) || '',
         screen_control_session_id: (state.hardwareScreen && state.hardwareScreen.session_id) || '',
@@ -1855,8 +1913,14 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.refreshVoiceProbeTrace.addEventListener('click', () => refreshVoiceProbeTrace().catch((err) => log('probe trace ' + err.message)));
     ui.bodyPresetActions.addEventListener('click', (event) => {
       const button = event.target.closest('[data-body-preset]');
-      if (!button) return;
-      runBodyPreset(button.dataset.bodyPreset).catch((err) => log('body preset ' + err.message));
+      if (button) {
+        runBodyPreset(button.dataset.bodyPreset).catch((err) => log('body preset ' + err.message));
+        return;
+      }
+      const motionButton = event.target.closest('[data-body-motion]');
+      if (motionButton) {
+        runBodyMotion(motionButton.dataset.bodyMotion).catch((err) => log('body motion ' + err.message));
+      }
     });
     ui.refreshBodyPresetTrace.addEventListener('click', () => refreshBodyPresetTrace().catch((err) => log('body trace ' + err.message)));
     ui.screenBrightness.addEventListener('input', () => {

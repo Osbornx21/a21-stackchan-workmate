@@ -418,6 +418,20 @@ surfaces:
   redacted step metadata and `physical_accepted=false`. This endpoint is a
   stable control/evidence handle for operator body checks, not proof that the
   LED or servos visibly moved.
+- `POST /v1/xiaozhi/body-motion` is the product-operation alias for bounded
+  MCP-backed body motion when the separate official `/stackChan/ws` avatar
+  relay is not connected. The request accepts `device_id`, a `motion` of
+  `look_up`, `nod`, `shake`, `dance`, or `stop`, and optional `trace_id` /
+  `session_id`. Gateway expands the motion into a short bounded sequence of
+  official robot MCP writes using only `self.robot.set_led_color` and
+  `self.robot.set_head_angles`; it never emits camera, snapshot, video, NFC,
+  infrared, reboot, upgrade, app-lifecycle, provider, or V21 work. Delivery
+  records generic MCP markers plus ordered body-motion markers such as
+  `xiaozhi.body_motion.dance.step1.robot_led_color.sent`; responses carry only
+  redacted step metadata and `physical_accepted=false`. This is immediate
+  product-socket body-control evidence, not official avatar/action relay
+  acceptance and not physical proof until operator or instrument evidence
+  confirms visible movement.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,
@@ -930,8 +944,9 @@ mode/ASR/LLM/realtime-provider selection through existing
 `/v1/wake-word`, run safe roleplay/professional Voice Probe checks through
 existing `/v1/fast-companion/turn`, `/v1/professional-query`, `/v1/traces`,
 and `/v1/professional-read-records`, run bounded StackChan body presets through
-existing `/v1/xiaozhi/body-preset`, operate the low-risk hardware screen/status
-surface through existing `/v1/xiaozhi/device-status`,
+existing `/v1/xiaozhi/body-preset`, run bounded MCP-backed StackChan motions
+through existing `/v1/xiaozhi/body-motion`, operate the low-risk hardware
+screen/status surface through existing `/v1/xiaozhi/device-status`,
 `/v1/xiaozhi/screen-brightness`, `/v1/xiaozhi/screen-theme`,
 `/v1/xiaozhi/mcp-control` for `self.screen.get_info`, and
 `/v1/xiaozhi/mcp-capabilities`, operate official StackChan semantic
