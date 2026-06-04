@@ -71,7 +71,48 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
-Live truth after the 2026-06-05 02:17 CST full body check deployment:
+Live truth after the 2026-06-05 02:30 CST paced full body check deployment:
+
+- Commit `6f43646 feat(gateway): pace hardware body scenes` is pushed and
+  deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.
+- Gateway now paces `POST /v1/xiaozhi/body-scene` sequences so screen/RGB/servo
+  scenes are operator-visible instead of emitted in a near-instant burst. The
+  `gateway` command defaults to 180 ms between body-scene steps; ECS explicitly
+  records `A21_BODY_SCENE_STEP_DELAY_MS=180` in `/etc/a21/runtime.env`.
+- Responses now include `step_delay_ms` and `total_planned_delay_ms`, while
+  `physical_accepted=false` remains until operator or instrument evidence
+  confirms visible movement.
+- Local verification before deploy:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiBodySceneReportsAndAppliesStepPacing|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence|TestXiaozhiBodySceneSendsScreenAndBodyMCPSequence' -count=1`
+  passed, `GOMAXPROCS=2 go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresBodySceneStepDelay' -count=1`
+  passed, and `GOMAXPROCS=2 make verify` passed.
+- Remote `/opt/a21.next` focused Gateway/App tests passed and
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`
+  passed. ECS `a21-gateway.service` restarted active, loopback `/healthz`
+  passed, and public `/healthz` passed.
+- Product trace
+  `a21-trace-hardware-full-check-paced-6f43646-202606050230` returned HTTP 200
+  `status=delivered`, `delivered_transport=xiaozhi_mcp_sequence`,
+  `scene=full_check`, `step_delay_ms=180`, `total_planned_delay_ms=2700`, and
+  16 redacted steps.
+- The trace endpoint recorded 32 ordered markers from
+  `xiaozhi.body_scene.full_check.step1.screen_theme.sent` through
+  `xiaozhi.body_scene.full_check.step16.robot_head_angles_set.sent`, with
+  `summary.last_offset_ms=2710`.
+- `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_status=delivered`, `last_body_scene_step=16`, final
+  `screen_theme=auto`, `screen_brightness=55`, final head
+  `yaw=0,pitch=18,speed=200`, and final RGB `0/0/32`. A follow-up public
+  `/v1/devices` check about 12 seconds later still showed product device
+  `44:1b:f6:e2:6a:60` online with heartbeat updates.
+- This is a hardware body-scene pacing/product-socket evidence cut only. It
+  does not reopen, retest, or roll back the internal-test3 voice chain.
+- No firmware build/flash, no NVS write, no provider/V21 execution, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback
+  occurred in this code deployment.
+
+Previous live truth after the 2026-06-05 02:17 CST full body check deployment:
 
 - Commit `9171751 feat(gateway): add full body check scene` is pushed and
   deployed to ECS `47.103.57.217` through `/opt/a21.next` safe swap.

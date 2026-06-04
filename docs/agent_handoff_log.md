@@ -16604,3 +16604,93 @@ Forbidden actions avoided:
   V21 execution, no generic product flash lane, no camera/NFC/IR expansion, no
   reboot/OTA/snapshot/video/app-lifecycle exposure, no Git prune/gc, and no
   internal-test3 voice/protocol rollback.
+
+## 2026-06-05 02:30 CST - Hardware Body Scene Pacing Deployed
+
+Round goal:
+
+- Stop treating machine-delivered `full_check` as sufficient body feel when
+  the scene was emitted in a near-instant burst, without reopening or
+  rolling back internal-test3 voice-chain acceptance.
+
+Actual completed work:
+
+- Added bounded inter-step pacing to `POST /v1/xiaozhi/body-scene`.
+- Added response fields `step_delay_ms` and `total_planned_delay_ms`.
+- Wired the `gateway` runtime default to 180 ms per body-scene step and added
+  positive `A21_BODY_SCENE_STEP_DELAY_MS` override support.
+- Set ECS `/etc/a21/runtime.env` to `A21_BODY_SCENE_STEP_DELAY_MS=180`.
+- Documented the body-scene pacing contract in `docs/engineering/PROTOCOL.md`.
+- Committed and pushed:
+  `6f43646 feat(gateway): pace hardware body scenes`.
+- Deployed `6f43646` to ECS through `/opt/a21.next` safe-swap.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red test first failed as expected before implementation:
+  `TestXiaozhiBodySceneReportsAndAppliesStepPacing` did not find
+  `step_delay_ms`.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiBodySceneReportsAndAppliesStepPacing|TestXiaozhiBodySceneFullCheckRunsOperatorVisibleSequence|TestXiaozhiBodySceneSendsScreenAndBodyMCPSequence' -count=1`.
+- Focused local App env test passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestGatewayServerOptionsFromEnvWiresBodySceneStepDelay' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Remote `/opt/a21.next` focused Gateway/App tests passed.
+- Remote build passed:
+  `GOMAXPROCS=2 /usr/local/go/bin/go build -o /opt/a21.next/bin/a21 ./cmd/a21`.
+- ECS `a21-gateway.service` restarted active; loopback and public `/healthz`
+  passed.
+
+Runtime or physical evidence:
+
+- ECS runtime env now includes `A21_BODY_SCENE_STEP_DELAY_MS=180`.
+- Product device `44:1b:f6:e2:6a:60` was online on `/v1/xiaozhi`.
+- Live public `full_check` trace
+  `a21-trace-hardware-full-check-paced-6f43646-202606050230` returned HTTP 200
+  with `status=delivered`, `scene=full_check`, `step_delay_ms=180`,
+  `total_planned_delay_ms=2700`, and 16 redacted steps.
+- Trace endpoint recorded 32 ordered markers with
+  `summary.last_offset_ms=2710`, proving the sequence is paced over the
+  intended operator-visible window instead of delivered in about 1 ms.
+- Public `/v1/devices` recorded `last_body_scene=full_check`,
+  `last_body_scene_step=16`, `screen_theme=auto`, `screen_brightness=55`,
+  final head `yaw=0,pitch=18,speed=200`, final RGB `0/0/32`, and the device
+  remained online after a follow-up heartbeat check about 12 seconds later.
+- This is machine-readable product-socket evidence. It is still not physical
+  acceptance because no operator/instrument confirmation was recorded in this
+  round.
+
+Remaining issues:
+
+- `physical_accepted=false` remains for body scenes until the operator confirms
+  visible screen/RGB/head movement or instrument evidence is attached.
+- Official `/stackChan/ws` avatar/action relay remains disconnected.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+- Automatic `A21_XIAOZHI_PRODUCT_STATE_REACTIONS=false` remains off on ECS for
+  stability.
+
+Next suggested action:
+
+- Ask the operator to watch `/workspace` Full Check and confirm visible screen
+  theme/brightness, RGB, and head movement. If accepted, record a physical
+  evidence report and promote body-scene physical acceptance; otherwise tune
+  scene poses/delays before touching firmware lifecycle.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
