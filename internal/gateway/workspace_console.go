@@ -637,6 +637,7 @@ const workspaceConsoleHTML = `<!doctype html>
           <h2>Official Actions</h2>
           <div class="tagline">
             <span class="tag ready" id="officialActionStatus">action=idle</span>
+            <span class="tag warn" id="officialRelayStatus">relay=unknown</span>
             <span class="tag warn" id="officialActionPhysicalStatus">physical_accepted=false</span>
           </div>
         </div>
@@ -661,6 +662,7 @@ const workspaceConsoleHTML = `<!doctype html>
             <button class="secondary" data-official-motion="shake">Shake</button>
             <button data-official-motion="dance">Dance</button>
             <button class="secondary" data-official-motion="stop">Stop</button>
+            <button class="secondary" id="refreshOfficialRelayStatus">Relay status</button>
             <button class="secondary" id="refreshOfficialActionTrace">Trace markers</button>
           </div>
           <div class="status-strip">
@@ -669,6 +671,8 @@ const workspaceConsoleHTML = `<!doctype html>
             <div class="metric"><span>Packets</span><strong id="officialActionPacketStatus">packets=0</strong></div>
             <div class="metric"><span>Transport</span><strong id="officialActionTransportStatus">stackchan_official_ws</strong></div>
             <div class="metric"><span>Surfaces</span><strong id="officialActionSurfaceStatus">surfaces=none</strong></div>
+            <div class="metric"><span>Relay</span><strong id="officialRelaySocketStatus">connected=false</strong></div>
+            <div class="metric"><span>Next</span><strong id="officialRelayNextStatus">next=connect_official_stackchan_ws</strong></div>
           </div>
           <div class="row-list" id="officialActionTraceList" aria-label="Official action trace markers"></div>
         </div>
@@ -746,6 +750,7 @@ const workspaceConsoleHTML = `<!doctype html>
       hardwareAcceptance: null,
       hardwareScreen: null,
       officialAction: null,
+      officialRelayStatus: null,
       lastExport: null
     };
     const ui = {
@@ -856,14 +861,18 @@ const workspaceConsoleHTML = `<!doctype html>
       officialActionControls: document.getElementById('officialActionControls'),
       officialActionYAngle: document.getElementById('officialActionYAngle'),
       officialActionYAngleValue: document.getElementById('officialActionYAngleValue'),
+      refreshOfficialRelayStatus: document.getElementById('refreshOfficialRelayStatus'),
       refreshOfficialActionTrace: document.getElementById('refreshOfficialActionTrace'),
       officialActionStatus: document.getElementById('officialActionStatus'),
+      officialRelayStatus: document.getElementById('officialRelayStatus'),
       officialActionPhysicalStatus: document.getElementById('officialActionPhysicalStatus'),
       officialActionTraceStatus: document.getElementById('officialActionTraceStatus'),
       officialActionEventStatus: document.getElementById('officialActionEventStatus'),
       officialActionPacketStatus: document.getElementById('officialActionPacketStatus'),
       officialActionTransportStatus: document.getElementById('officialActionTransportStatus'),
       officialActionSurfaceStatus: document.getElementById('officialActionSurfaceStatus'),
+      officialRelaySocketStatus: document.getElementById('officialRelaySocketStatus'),
+      officialRelayNextStatus: document.getElementById('officialRelayNextStatus'),
       officialActionTraceList: document.getElementById('officialActionTraceList'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
@@ -1627,6 +1636,24 @@ const workspaceConsoleHTML = `<!doctype html>
       setText(ui.officialActionTransportStatus, (response && response.delivered_transport) || 'stackchan_official_ws');
       setText(ui.officialActionSurfaceStatus, officialSurfaceText(surfaces));
     }
+    function renderOfficialRelayStatus(payload) {
+      payload = payload || {};
+      const connected = !!payload.connected;
+      state.officialRelayStatus = payload;
+      setText(ui.officialRelayStatus, 'relay=' + (connected ? 'connected' : 'disconnected'));
+      setText(ui.officialRelaySocketStatus, 'connected=' + String(connected) + (payload.official_device_id ? ' / ' + payload.official_device_id : ''));
+      setText(ui.officialRelayNextStatus, 'next=' + (payload.next_action || 'connect_official_stackchan_ws'));
+      setText(ui.officialActionPhysicalStatus, 'physical_accepted=' + String(!!payload.physical_accepted));
+      setText(ui.officialActionTransportStatus, payload.delivered_transport || 'xiaozhi_mcp_fallback_available');
+      setText(ui.officialActionPacketStatus, 'packets=' + (payload.last_packet_count || 0));
+      setText(ui.officialActionSurfaceStatus, officialSurfaceText(payload.official_action_surfaces || {}));
+      if (payload.last_trace_id) {
+        setText(ui.officialActionTraceStatus, 'trace=' + payload.last_trace_id);
+      }
+      if (payload.last_event) {
+        setText(ui.officialActionEventStatus, 'event=' + payload.last_event);
+      }
+    }
     function renderOfficialActionTrace(payload) {
       const events = (payload && payload.events) || [];
       const summary = (payload && payload.summary) || {};
@@ -1649,6 +1676,12 @@ const workspaceConsoleHTML = `<!doctype html>
       state.officialAction.trace_markers = traceNameList(payload);
       renderOfficialActionTrace(payload);
       log('official action trace ' + ((payload.summary || {}).event_count || 0));
+    }
+    async function refreshOfficialRelayStatus() {
+      const payload = await fetchJSON('/v1/stackchan/official/status?device_id=' + encodeURIComponent(currentDeviceID()), { cache: 'no-store' });
+      renderOfficialRelayStatus(payload);
+      log('official relay ' + (payload.next_action || 'status'));
+      return payload;
     }
     async function runOfficialAction(kind, value) {
       const action = kind + '-' + value;
@@ -1684,11 +1717,21 @@ const workspaceConsoleHTML = `<!doctype html>
           official_action_surfaces: payload.official_action_surfaces || {}
         };
         renderOfficialActionResponse(payload);
+        try {
+          await refreshOfficialRelayStatus();
+        } catch (refreshErr) {
+          log('official relay status ' + refreshErr.message);
+        }
         await refreshOfficialActionTrace();
         log('official action ' + action + ' ' + (payload.status || 'sent'));
       } catch (err) {
         try {
           await runOfficialActionFallback(kind, value, err.message);
+          try {
+            await refreshOfficialRelayStatus();
+          } catch (refreshErr) {
+            log('official relay status ' + refreshErr.message);
+          }
         } catch (fallbackErr) {
           state.officialAction = {
             action: action,
@@ -2274,6 +2317,12 @@ const workspaceConsoleHTML = `<!doctype html>
         official_action_blocked_reason: (state.officialAction && state.officialAction.blocked_reason) || '',
         official_action_fallback: (state.officialAction && state.officialAction.fallback) || '',
         official_action_trace_markers: (state.officialAction && state.officialAction.trace_markers) || [],
+        official_relay_connected: !!(state.officialRelayStatus && state.officialRelayStatus.connected),
+        official_relay_device_id: (state.officialRelayStatus && state.officialRelayStatus.official_device_id) || '',
+        official_relay_transport: (state.officialRelayStatus && state.officialRelayStatus.delivered_transport) || '',
+        official_relay_next_action: (state.officialRelayStatus && state.officialRelayStatus.next_action) || '',
+        official_relay_last_event: (state.officialRelayStatus && state.officialRelayStatus.last_event) || '',
+        official_relay_physical_accepted: !!(state.officialRelayStatus && state.officialRelayStatus.physical_accepted),
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -2402,6 +2451,7 @@ const workspaceConsoleHTML = `<!doctype html>
         runOfficialAction('motion', button.dataset.officialMotion);
       }
     });
+    ui.refreshOfficialRelayStatus.addEventListener('click', () => refreshOfficialRelayStatus().catch((err) => log('official relay status ' + err.message)));
     ui.refreshOfficialActionTrace.addEventListener('click', () => refreshOfficialActionTrace().catch((err) => log('official action trace ' + err.message)));
     ui.voiceProbeModeSelect.addEventListener('change', () => {
       if (ui.voiceProbeModeSelect.value === 'professional') {

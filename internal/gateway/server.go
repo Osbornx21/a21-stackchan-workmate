@@ -826,6 +826,27 @@ type XiaozhiDeviceControlResponse struct {
 	OfficialActionSurfaces         map[string]string `json:"official_action_surfaces,omitempty"`
 }
 
+type OfficialStackChanStatusResponse struct {
+	SchemaVersion          string            `json:"schema_version"`
+	DeviceID               string            `json:"device_id"`
+	OfficialDeviceID       string            `json:"official_device_id,omitempty"`
+	Connected              bool              `json:"connected"`
+	ConnectedMS            int64             `json:"connected_ms,omitempty"`
+	ConnectedSinceMS       int64             `json:"connected_since_ms,omitempty"`
+	FallbackAvailable      bool              `json:"fallback_available"`
+	DeliveredTransport     string            `json:"delivered_transport"`
+	LastTraceID            string            `json:"last_trace_id,omitempty"`
+	LastSessionID          string            `json:"last_session_id,omitempty"`
+	LastEvent              string            `json:"last_event,omitempty"`
+	LastAutoState          string            `json:"last_auto_state,omitempty"`
+	LastAutoReason         string            `json:"last_auto_reason,omitempty"`
+	LastAutoTarget         string            `json:"last_auto_target,omitempty"`
+	LastPacketCount        int               `json:"last_packet_count,omitempty"`
+	PhysicalAccepted       bool              `json:"physical_accepted"`
+	OfficialActionSurfaces map[string]string `json:"official_action_surfaces,omitempty"`
+	NextAction             string            `json:"next_action"`
+}
+
 type XiaozhiSpeakerVolumeRequest struct {
 	DeviceID  string `json:"device_id"`
 	Volume    int    `json:"volume"`
@@ -1695,6 +1716,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/xiaozhi", s.handleXiaozhiWS)
 	mux.HandleFunc("/stackChan/ws", s.handleOfficialStackChanWS)
 	mux.HandleFunc("/v1/stackchan/official/control", s.handleOfficialStackChanControl)
+	mux.HandleFunc("/v1/stackchan/official/status", s.handleOfficialStackChanStatus)
 	mux.HandleFunc("/xiaozhi/ota/", s.handleXiaozhiOTA)
 	mux.HandleFunc("/xiaozhi/ota", s.handleXiaozhiOTA)
 	mux.HandleFunc("/ws/control", s.handleControlWS)
@@ -7268,6 +7290,22 @@ func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.R
 	})
 }
 
+func (s *Server) handleOfficialStackChanStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if deviceID == "" {
+		deviceID = defaultOfficialStackChanDeviceID
+	}
+	if !validA21DeviceID(deviceID) {
+		http.Error(w, "valid device_id is required", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.officialStackChanStatus(deviceID))
+}
+
 func xiaozhiDeviceControlEventFromRequest(req XiaozhiDeviceControlRequest) (xiaozhitransport.DeviceExtensionEvent, error) {
 	kind := strings.TrimSpace(strings.ToLower(firstNonEmpty(req.Event, req.Kind)))
 	if kind == "" {
@@ -12384,6 +12422,113 @@ func (s *Server) officialStackChanSocketForXiaozhiDevice(deviceID string) (*devi
 		return socket, defaultOfficialStackChanDeviceID, true
 	}
 	return nil, "", false
+}
+
+func (s *Server) officialStackChanStatus(deviceID string) OfficialStackChanStatusResponse {
+	nowMS := s.now().UnixMilli()
+	var record DeviceRecord
+	var found bool
+	officialDeviceID := ""
+	connectedSinceMS := int64(0)
+	s.mu.Lock()
+	record, found = s.devices[deviceID]
+	if socket := s.officialStackChanSockets[deviceID]; socket != nil {
+		officialDeviceID = deviceID
+		connectedSinceMS = socket.connected
+	} else if socket := s.officialStackChanSockets[defaultOfficialStackChanDeviceID]; socket != nil {
+		officialDeviceID = defaultOfficialStackChanDeviceID
+		connectedSinceMS = socket.connected
+	}
+	if found && record.RuntimeEcho != nil {
+		record.RuntimeEcho = mergeDeviceCapabilities(nil, record.RuntimeEcho)
+	}
+	s.mu.Unlock()
+
+	connected := connectedSinceMS > 0
+	deliveredTransport := "xiaozhi_mcp_fallback_available"
+	connectedMS := int64(0)
+	if connected {
+		deliveredTransport = "stackchan_official_ws"
+		connectedMS = nowMS - connectedSinceMS
+		if connectedMS < 0 {
+			connectedMS = 0
+		}
+	}
+	runtimeEcho := record.RuntimeEcho
+	packetCount := officialStackChanStatusPacketCount(runtimeEcho)
+	physicalAccepted := officialStackChanStatusPhysicalAccepted(runtimeEcho)
+	nextAction := "connect_official_stackchan_ws"
+	if connected && physicalAccepted {
+		nextAction = "official_relay_ready"
+	} else if connected {
+		nextAction = "send_official_control_and_collect_physical_acceptance"
+	}
+	lastEvent := ""
+	if found && record.LastEvent != "" {
+		lastEvent = string(record.LastEvent)
+	}
+	return OfficialStackChanStatusResponse{
+		SchemaVersion:          "a21.stackchan.official.status.v1",
+		DeviceID:               deviceID,
+		OfficialDeviceID:       officialDeviceID,
+		Connected:              connected,
+		ConnectedMS:            connectedMS,
+		ConnectedSinceMS:       connectedSinceMS,
+		FallbackAvailable:      true,
+		DeliveredTransport:     deliveredTransport,
+		LastTraceID:            record.LastTraceID,
+		LastSessionID:          record.LastSessionID,
+		LastEvent:              lastEvent,
+		LastAutoState:          runtimeEcho["official_stackchan_auto_state"],
+		LastAutoReason:         runtimeEcho["official_stackchan_auto_reason"],
+		LastAutoTarget:         runtimeEcho["official_stackchan_auto_target"],
+		LastPacketCount:        packetCount,
+		PhysicalAccepted:       physicalAccepted,
+		OfficialActionSurfaces: officialStackChanStatusSurfaces(runtimeEcho),
+		NextAction:             nextAction,
+	}
+}
+
+func officialStackChanStatusPacketCount(runtimeEcho map[string]string) int {
+	if runtimeEcho == nil {
+		return 0
+	}
+	for _, key := range []string{"official_stackchan_packets", "official_stackchan_auto_packets"} {
+		if count, err := strconv.Atoi(strings.TrimSpace(runtimeEcho[key])); err == nil && count > 0 {
+			return count
+		}
+	}
+	return 0
+}
+
+func officialStackChanStatusPhysicalAccepted(runtimeEcho map[string]string) bool {
+	if runtimeEcho == nil {
+		return false
+	}
+	accepted, err := strconv.ParseBool(strings.TrimSpace(runtimeEcho["official_stackchan_physical_accepted"]))
+	return err == nil && accepted
+}
+
+func officialStackChanStatusSurfaces(runtimeEcho map[string]string) map[string]string {
+	if runtimeEcho == nil {
+		return nil
+	}
+	surfaces := map[string]string{}
+	for key, value := range runtimeEcho {
+		surface, ok := strings.CutPrefix(key, "official_stackchan_")
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		switch surface {
+		case "packets", "physical_accepted", "last_motion", "auto_state", "auto_reason", "auto_target", "auto_packets":
+			continue
+		}
+		surfaces[surface] = value
+	}
+	if len(surfaces) == 0 {
+		return nil
+	}
+	return surfaces
 }
 
 func (s *Server) recordOfficialStackChanConnected(deviceID string) {

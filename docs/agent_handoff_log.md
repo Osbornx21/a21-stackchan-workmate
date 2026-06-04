@@ -17488,6 +17488,164 @@ Forbidden actions avoided:
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
 
+## 2026-06-05 07:30 CST - Latest Recovery Pointer: Official StackChan Relay Status Surface
+
+Round goal:
+
+- Make the official StackChan `/stackChan/ws` relay state visible and
+  testable, so physical recovery can distinguish disconnected socket, relay
+  delivery, MCP fallback, and physical acceptance instead of relying on
+  registry archaeology.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`.
+- Added read-only
+  `GET /v1/stackchan/official/status?device_id=...` with schema
+  `a21.stackchan.official.status.v1`.
+- Added `/workspace` `Relay status`, relay connected/next-action metrics, and
+  exported `official_relay_*` metadata.
+- Documented the status contract in `docs/engineering/PROTOCOL.md`.
+- Updated `docs/engineering/A21_CURRENT_CONTROL.md` and
+  `docs/project_state_machine.md` so the first-read state now points to this
+  transition after the 07:18 ROM diagnostic.
+
+Changed files:
+
+- `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`
+- `docs/engineering/PROTOCOL.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red tests first failed as expected with HTTP 404 for
+  `/v1/stackchan/official/status`.
+- Focused official relay/workspace tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan(Status|Control|TurnLifecycle|OpusDownlink)|WorkspaceConsolePageServed' -count=1`.
+- Gateway review race subset passed:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`.
+- Full verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Sequential control gates passed:
+  `GOMAXPROCS=2 make preflight && GOMAXPROCS=2 make doctor`.
+
+Runtime or physical evidence:
+
+- No runtime device action or physical acceptance was attempted. The new
+  status surface is observational only.
+
+Known risks/blockers:
+
+- Product StackChan still needs physical recovery/acceptance. The status
+  endpoint can show official relay state precisely, but it does not make the
+  product official socket physically connected or accepted.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+
+Recommended next action:
+
+- Commit and push this status transition, deploy the Gateway update to ECS,
+  smoke `/workspace` and `/v1/stackchan/official/status`, then resume product
+  physical recovery: guarded product flash if needed, reconnect Xiaozhi and
+  official `/stackChan/ws`, verify power-key startup, wake/listen/playback,
+  barge-in, and visible body behavior.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite historical loose-object warnings, and no
+  internal-test3 voice/protocol rollback.
+
+## 2026-06-05 07:30 CST - Official StackChan Relay Status Surface Ready
+
+Transition:
+
+- `T-STACKCHAN-OFFICIAL-RELAY-STATUS-SURFACE-001`
+
+What changed:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  it against current HEAD. Previously reported software blockers for Gateway
+  race, namespace/preflight, stock professional route, PMIC power-key parity,
+  and wake physical launch-gate semantics remain closed in the current
+  implementation.
+- Added read-only
+  `GET /v1/stackchan/official/status?device_id=...` with schema
+  `a21.stackchan.official.status.v1`.
+- The endpoint reports exact/default official `/stackChan/ws` socket
+  connection, connected age, latest trace/session/event, latest packet count,
+  official action semantic surfaces, physical acceptance, fallback
+  availability, and `next_action`.
+- `/workspace` now exposes `Relay status`, shows connected/next-action
+  metrics, and exports `official_relay_*` metadata separately from official
+  action delivery and MCP fallback.
+- Added the transition plan and documented the status contract in protocol and
+  control state files.
+
+Files changed:
+
+- `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`
+- `docs/engineering/PROTOCOL.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- Red tests first failed as expected with HTTP 404 for
+  `/v1/stackchan/official/status`.
+- Focused official relay/workspace tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan(Status|Control|TurnLifecycle|OpusDownlink)|WorkspaceConsolePageServed' -count=1`.
+- Gateway review race subset passed:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`.
+- Full verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Sequential control gates passed:
+  `GOMAXPROCS=2 make preflight && GOMAXPROCS=2 make doctor`.
+
+Runtime or physical evidence:
+
+- No runtime device action or physical acceptance was attempted in this
+  transition. The new status surface is observational only.
+
+Deviations from plan:
+
+- None.
+
+Remaining issues:
+
+- Product StackChan still needs physical recovery/acceptance: enter real
+  ESP32-S3 ROM/download mode when needed, use the guarded product flash lane,
+  reconnect product Xiaozhi and official `/stackChan/ws`, then collect
+  power-key startup, wake/listen/playback/barge-in, and visible body evidence.
+- Official relay status can now show the gap precisely, but it does not itself
+  make `/stackChan/ws` physically connected or accepted.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+
+Next suggested action:
+
+- Commit and push this status transition, deploy the Gateway update to ECS,
+  smoke `/workspace` and `/v1/stackchan/official/status`, then resume the
+  physical product recovery/acceptance window.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite historical loose-object warnings, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 07:07 CST - Product Flash Wait-ROM Guard Ready
 
 Round goal:
@@ -18265,3 +18423,78 @@ Forbidden actions avoided:
   printing, no provider or V21 execution, no generic product flash lane, no
   camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
   exposure, no Git prune/gc, and no internal-test3 voice/protocol rollback.
+
+## 2026-06-05 07:30 CST - Latest Recovery Pointer: Official StackChan Relay Status Surface
+
+Round goal:
+
+- Make the official StackChan `/stackChan/ws` relay state visible and
+  testable, so physical recovery can distinguish disconnected socket, relay
+  delivery, MCP fallback, and physical acceptance instead of relying on
+  registry archaeology.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`.
+- Added read-only
+  `GET /v1/stackchan/official/status?device_id=...` with schema
+  `a21.stackchan.official.status.v1`.
+- Added `/workspace` `Relay status`, relay connected/next-action metrics, and
+  exported `official_relay_*` metadata.
+- Documented the status contract in `docs/engineering/PROTOCOL.md`.
+- Updated `docs/engineering/A21_CURRENT_CONTROL.md` and
+  `docs/project_state_machine.md` so the first-read state now points to this
+  transition after the 07:18 ROM diagnostic.
+
+Changed files:
+
+- `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`
+- `docs/engineering/PROTOCOL.md`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Red tests first failed as expected with HTTP 404 for
+  `/v1/stackchan/official/status`.
+- Focused official relay/workspace tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'OfficialStackChan(Status|Control|TurnLifecycle|OpusDownlink)|WorkspaceConsolePageServed' -count=1`.
+- Gateway review race subset passed:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`.
+- Full verification passed:
+  `GOMAXPROCS=2 make verify`.
+- Sequential control gates passed:
+  `GOMAXPROCS=2 make preflight && GOMAXPROCS=2 make doctor`.
+
+Runtime or physical evidence:
+
+- No runtime device action or physical acceptance was attempted. The new
+  status surface is observational only.
+
+Known risks/blockers:
+
+- Product StackChan still needs physical recovery/acceptance. The status
+  endpoint can show official relay state precisely, but it does not make the
+  product official socket physically connected or accepted.
+- Camera, NFC, and infrared remain planned/high-risk parity spikes.
+
+Recommended next action:
+
+- Commit and push this status transition, deploy the Gateway update to ECS,
+  smoke `/workspace` and `/v1/stackchan/official/status`, then resume product
+  physical recovery: guarded product flash if needed, reconnect Xiaozhi and
+  official `/stackChan/ws`, verify power-key startup, wake/listen/playback,
+  barge-in, and visible body behavior.
+
+Forbidden actions avoided:
+
+- No firmware build, no firmware flash, no NVS write, no provider secret
+  printing, no provider or V21 execution, no generic product flash lane, no
+  camera/NFC/IR expansion, no reboot/OTA/snapshot/video/app-lifecycle
+  exposure, no Git prune/gc despite historical loose-object warnings, and no
+  internal-test3 voice/protocol rollback.

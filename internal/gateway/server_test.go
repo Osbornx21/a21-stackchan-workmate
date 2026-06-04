@@ -509,6 +509,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"/v1/xiaozhi/mcp-capabilities",
 		"/v1/xiaozhi/mcp-control",
 		"/v1/stackchan/official/control",
+		"/v1/stackchan/official/status",
 		"/v1/traces",
 		`id="queryScope"`,
 		`id="documentLabel"`,
@@ -5554,6 +5555,142 @@ func TestOfficialStackChanControlEndpointRequiresConnectedOfficialSocket(t *test
 	if resp.StatusCode != http.StatusConflict {
 		data, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+}
+
+func TestOfficialStackChanStatusReportsDisconnectedAndNextAction(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	resp, err := http.Get(httpServer.URL + "/v1/stackchan/official/status?device_id=stackchan-official-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, data)
+	}
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status["schema_version"] != "a21.stackchan.official.status.v1" ||
+		status["device_id"] != "stackchan-official-001" ||
+		status["connected"] != false ||
+		status["fallback_available"] != true ||
+		status["delivered_transport"] != "xiaozhi_mcp_fallback_available" ||
+		status["next_action"] != "connect_official_stackchan_ws" {
+		t.Fatalf("status = %#v, want disconnected official relay with clear next action", status)
+	}
+}
+
+func TestOfficialStackChanStatusReportsConnectedFallbackSocket(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	resp, err := http.Get(httpServer.URL + "/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, data)
+	}
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status["connected"] != true ||
+		status["official_device_id"] != defaultOfficialStackChanDeviceID ||
+		status["delivered_transport"] != "stackchan_official_ws" ||
+		status["next_action"] != "send_official_control_and_collect_physical_acceptance" {
+		t.Fatalf("status = %#v, want product device routed through default official StackChan socket", status)
+	}
+	if connectedSince, ok := status["connected_since_ms"].(float64); !ok || connectedSince <= 0 {
+		t.Fatalf("connected_since_ms = %#v, want positive timestamp", status["connected_since_ms"])
+	}
+}
+
+func TestOfficialStackChanStatusReportsDeliveryMetadata(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?device_id=stackchan-official-001"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	body := bytes.NewBufferString(`{"device_id":"stackchan-official-001","event":"motion","name":"look_up","y_angle":120,"trace_id":"a21-trace-stackchan-official-status","session_id":"a21-session-stackchan-official-status"}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/stackchan/official/control", "application/json", body)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, data)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	statusResp, err := http.Get(httpServer.URL + "/v1/stackchan/official/status?device_id=stackchan-official-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer statusResp.Body.Close()
+	if statusResp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(statusResp.Body)
+		t.Fatalf("status = %d, want 200: %s", statusResp.StatusCode, data)
+	}
+	var status map[string]any
+	if err := json.NewDecoder(statusResp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	surfaces, ok := status["official_action_surfaces"].(map[string]any)
+	if !ok {
+		t.Fatalf("status = %#v, want official_action_surfaces", status)
+	}
+	if status["connected"] != true ||
+		status["last_trace_id"] != "a21-trace-stackchan-official-status" ||
+		status["last_session_id"] != "a21-session-stackchan-official-status" ||
+		status["last_event"] != "stackchan.official_control.motion" ||
+		status["last_packet_count"] != float64(1) ||
+		status["physical_accepted"] != false ||
+		status["next_action"] != "send_official_control_and_collect_physical_acceptance" ||
+		surfaces["servo_y"] != "pitch_clamped" ||
+		surfaces["servo_x"] != "not_used" ||
+		surfaces["rgb"] != "unchanged_no_rgb_frame" {
+		t.Fatalf("status = %#v, want latest official delivery metadata", status)
 	}
 }
 

@@ -71,6 +71,32 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 07:30 CST official relay status transition:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was read and compared
+  against current HEAD again. Prior review findings for Gateway race,
+  namespace/preflight, stock professional mode gating, PMIC power-key parity,
+  and physical wake launch-gate semantics remain software-remediated.
+- Added plan
+  `docs/plans/2026-06-05-official-stackchan-relay-status-surface.md`.
+- Gateway now exposes read-only
+  `GET /v1/stackchan/official/status?device_id=...` so operators can see
+  exact/default official `/stackChan/ws` socket connection, connected age,
+  latest trace/session/event, packet count, semantic action surfaces,
+  physical acceptance, fallback availability, and `next_action`.
+- `/workspace` now has a `Relay status` control and exported
+  `official_relay_*` metadata. Official relay delivery remains separate from
+  MCP fallback and physical acceptance.
+- Verification passed: focused official relay/workspace tests, Gateway review
+  race subset,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- This transition did not flash firmware, write NVS, execute provider/V21,
+  trigger camera/NFC/IR, or promote physical acceptance.
+- Remaining product blocker is still physical: recover/flash the product
+  StackChan into a state where official `/stackChan/ws`, power-key startup,
+  wake/listen/playback/barge-in, and visible body behavior can be accepted.
+
 Live truth after the 2026-06-05 07:18 CST ROM diagnostic flash attempt:
 
 - A guarded wait-ROM product flash execute was attempted after commit

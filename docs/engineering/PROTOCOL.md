@@ -573,6 +573,17 @@ surfaces:
   into `/v1/devices.runtime_echo` with `official_stackchan_` keys. This relay
   is separate from the stock Xiaozhi voice socket and must not add A21 visual
   semantics to Xiaozhi stock audio messages.
+- Gateway also exposes read-only
+  `GET /v1/stackchan/official/status?device_id=...` with schema
+  `a21.stackchan.official.status.v1`. It reports whether the exact
+  `/stackChan/ws` socket or the default `stackchan-official` relay socket is
+  connected, connected time, last trace/session/event, last packet count,
+  semantic action surfaces, physical acceptance, fallback availability, and a
+  `next_action` of `connect_official_stackchan_ws`,
+  `send_official_control_and_collect_physical_acceptance`, or
+  `official_relay_ready`. The status endpoint is observational only: it must
+  not send official frames, trigger MCP fallback, or promote physical
+  acceptance.
 
 ### A21 StackChan Device Extension
 
@@ -1061,7 +1072,8 @@ screen/status surface through existing `/v1/xiaozhi/device-status`,
 `/v1/xiaozhi/mcp-control` for `self.screen.get_info`, and
 `/v1/xiaozhi/mcp-capabilities`, operate official StackChan semantic
 state/face/motion controls through existing
-`/v1/stackchan/official/control`, and view the
+`/v1/stackchan/official/control`, inspect official relay/socket state through
+`/v1/stackchan/official/status`, and view the
 roleplay/professional boundary from `/v1/roleplay-profile`,
 `/v1/voice-chain-profiles`, `/v1/wake-word`, and `/v1/voice-modes`. The
 console must keep state labels honest:
@@ -1073,11 +1085,13 @@ the LED/head movement on the product device, and screen/status controls must
 keep `physical_accepted=false` until visible screen/operator or instrument
 evidence proves the effect on the product device. Official action controls
 must keep `official_action_physical_accepted=false`, and must show the
-disconnected `/stackChan/ws` path as a blocked control state rather than
-pretending the face/motion/dance packet was delivered. The console may then
-run an explicit MCP-backed body-preset/body-motion fallback so the product
-still moves; exported metadata must keep `official_action_blocked_reason` and
-`official_action_fallback` separate from official-frame delivery. Device
+disconnected `/stackChan/ws` path, latest packet/surface metadata, and
+`next_action` as a visible relay status rather than pretending the
+face/motion/dance packet was delivered. The console may then run an explicit
+MCP-backed body-preset/body-motion fallback so the product still moves;
+exported metadata must keep `official_action_blocked_reason`,
+`official_action_fallback`, and `official_relay_*` status separate from
+official-frame delivery. Device
 binding state must remain metadata-only and show `open_until_binding_configured` or
 `bound_devices_only` honestly. Custom wake-word intent must show built-in
 Xiaozhi WakeNet as active until guarded firmware evidence exists. The Voice
