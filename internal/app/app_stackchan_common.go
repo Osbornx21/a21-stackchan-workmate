@@ -210,10 +210,7 @@ func postStackChanMicProbeControl(gatewayBaseURL string, deviceID string, state 
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   3 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(3 * time.Second)
 	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
@@ -252,10 +249,7 @@ func postStackChanSpeakerControl(gatewayBaseURL string, deviceID string, state p
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   3 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(3 * time.Second)
 	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
@@ -293,10 +287,7 @@ func postStackChanAudioPlaybackBatch(gatewayBaseURL string, deviceID string, tra
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(15 * time.Second)
 	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
@@ -357,10 +348,7 @@ func postStackChanTouchControl(gatewayBaseURL string, deviceID string, spec stac
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   3 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(3 * time.Second)
 	resp, err := client.Post(endpoint, "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return gateway.DeviceControlResponse{}, err

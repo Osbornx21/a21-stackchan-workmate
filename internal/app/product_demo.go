@@ -1542,7 +1542,7 @@ func fetchProductWakeWordReadiness(ctx context.Context, gatewayURL string) (prod
 			Detail:  "invalid_request",
 		}}
 	}
-	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(700 * time.Millisecond)
 	response, err := client.Do(request)
 	if err != nil {
 		return productWakeWordUnavailable(), []productReadinessFinding{{
@@ -1663,7 +1663,7 @@ func fetchProductVoiceChainReadiness(ctx context.Context, gatewayURL string) (pr
 			Detail:  "invalid_request",
 		}}
 	}
-	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(700 * time.Millisecond)
 	response, err := client.Do(request)
 	if err != nil {
 		return unavailable, nil
@@ -3069,7 +3069,7 @@ func fetchProductRoleplayReadiness(ctx context.Context, gatewayURL string) (prod
 			Detail:  "invalid_request",
 		}}
 	}
-	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(700 * time.Millisecond)
 	response, err := client.Do(request)
 	if err != nil {
 		return unavailable, nil
@@ -5256,7 +5256,7 @@ func gatewayHealthOK(ctx context.Context, gatewayURL string) bool {
 	if err != nil {
 		return false
 	}
-	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(700 * time.Millisecond)
 	response, err := client.Do(request)
 	if err != nil {
 		return false
@@ -5270,7 +5270,7 @@ func gatewaySimulatorOK(ctx context.Context, gatewayURL string) bool {
 	if err != nil {
 		return false
 	}
-	client := http.Client{Timeout: 700 * time.Millisecond, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(700 * time.Millisecond)
 	response, err := client.Do(request)
 	if err != nil {
 		return false

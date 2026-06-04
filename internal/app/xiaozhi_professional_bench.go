@@ -646,7 +646,7 @@ func fetchXiaozhiProfessionalBenchTraceEvidence(ctx context.Context, gatewayURL 
 	if err != nil {
 		return xiaozhiProfessionalBenchTraceEvidence{}, err
 	}
-	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(2 * time.Second)
 	response, err := client.Do(request)
 	if err != nil {
 		return xiaozhiProfessionalBenchTraceEvidence{}, err
@@ -691,7 +691,7 @@ func fetchXiaozhiProfessionalBenchReadRecord(ctx context.Context, gatewayURL str
 	if err != nil {
 		return xiaozhiProfessionalBenchReadRecord{}
 	}
-	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(2 * time.Second)
 	response, err := client.Do(request)
 	if err != nil {
 		return xiaozhiProfessionalBenchReadRecord{}

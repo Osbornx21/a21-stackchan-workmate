@@ -355,7 +355,9 @@ func runXiaozhiVoiceBenchTurn(ctx context.Context, options xiaozhiVoiceBenchOpti
 	}
 	turnCtx, cancel := context.WithTimeout(ctx, time.Duration(options.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	conn, resp, err := websocket.Dial(turnCtx, wsURL, nil)
+	conn, resp, err := websocket.Dial(turnCtx, wsURL, &websocket.DialOptions{
+		HTTPClient: a21DirectHTTPClient(time.Duration(options.TimeoutMS) * time.Millisecond),
+	})
 	if err != nil {
 		receipt.Findings = append(receipt.Findings, xiaozhiVoiceBenchWebSocketFailureFinding(resp, err))
 		return receipt
@@ -907,7 +909,7 @@ func fetchXiaozhiVoiceBenchTraceSummary(ctx context.Context, gatewayURL string, 
 	if err != nil {
 		return xiaozhiVoiceBenchTraceSummary{}, err
 	}
-	client := http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(2 * time.Second)
 	response, err := client.Do(request)
 	if err != nil {
 		return xiaozhiVoiceBenchTraceSummary{}, err

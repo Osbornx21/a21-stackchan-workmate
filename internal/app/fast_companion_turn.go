@@ -601,7 +601,7 @@ func fetchStackChanRecentAudio(ctx context.Context, gatewayURL string, deviceID 
 	if err != nil {
 		return gateway.AudioRecentResponse{}, err
 	}
-	client := http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(5 * time.Second)
 	response, err := client.Do(request)
 	if err != nil {
 		return gateway.AudioRecentResponse{}, err

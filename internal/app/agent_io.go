@@ -427,7 +427,7 @@ func executeAgentIO(ctx context.Context, options agentIOOptions, plan agentplan.
 	if key := strings.TrimSpace(options.AgentKey); key != "" {
 		request.Header.Set("Authorization", "Bearer "+key)
 	}
-	client := http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(timeout)
 	start := time.Now()
 	response, err := client.Do(request)
 	duration := time.Since(start)

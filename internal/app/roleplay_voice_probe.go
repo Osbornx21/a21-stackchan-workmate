@@ -200,10 +200,7 @@ func postRoleplayVoiceProbeTurn(ctx context.Context, options roleplayVoiceProbeO
 	if err != nil {
 		return gateway.FastCompanionTurnResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(15 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return gateway.FastCompanionTurnResponse{}, err

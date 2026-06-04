@@ -808,7 +808,7 @@ func fetchXiaozhiPhysicalRecentAudio(options xiaozhiPhysicalEvidenceOptions) (ga
 	if err != nil {
 		return gateway.AudioRecentResponse{}, err
 	}
-	client := http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	client := *a21DirectHTTPClient(3 * time.Second)
 	resp, err := client.Get(endpoint)
 	if err != nil {
 		return gateway.AudioRecentResponse{}, err

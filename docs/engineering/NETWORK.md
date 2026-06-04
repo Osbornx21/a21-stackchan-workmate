@@ -74,6 +74,14 @@ reports only `network_mode=direct`. `A21_PROVIDER_PROXY_URL` does not yet apply
 to WebSocket TTS. If explicit provider-proxy WebSocket support is needed, add a
 separate adapter transition with tests and redacted reporting.
 
+Mac-side A21 verification commands that fetch Gateway HTTP/WS evidence also use
+direct clients with ambient proxy disabled. If a local TUN/VPN route still
+captures public A21 or Aliyun traffic after proxy env has been bypassed, set
+`A21_DIRECT_SOURCE_IP=<local-en0-ip>` for the verification command. This binds
+the outbound TCP source address, equivalent to `curl --interface`, and is a
+control-machine diagnostic escape hatch only. Do not set it in firmware, ECS
+systemd units, provider env, or product runtime configuration.
+
 `agent-io-smoke --execute` is intentionally not a cloud provider egress client.
 It uses an HTTP transport with `Proxy: nil`, records only a coarse endpoint
 label, and refuses URL credentials or device-control paths.

@@ -543,10 +543,7 @@ func setV21DevHeaders(req *http.Request) {
 }
 
 func v21BridgeHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	return &*a21DirectHTTPClient(timeout)
 }
 
 func writeV21BridgeJSON(w http.ResponseWriter, status int, value interface{}) {

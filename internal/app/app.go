@@ -378,10 +378,7 @@ func fetchGatewayTrace(gatewayBaseURL string, traceID string) (gateway.TraceResp
 	if err != nil {
 		return gateway.TraceResponse{}, err
 	}
-	client := http.Client{
-		Timeout:   3 * time.Second,
-		Transport: &http.Transport{Proxy: nil},
-	}
+	client := *a21DirectHTTPClient(3 * time.Second)
 	resp, err := client.Get(endpoint)
 	if err != nil {
 		return gateway.TraceResponse{}, err
