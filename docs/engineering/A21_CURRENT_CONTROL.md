@@ -71,6 +71,41 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 06:52 CST readiness remote-context alignment:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read. Its
+  prior P0/P1 software findings for Gateway race, namespace/preflight, stock
+  professional route, and PMIC power-key parity remain remediated on the
+  current branch.
+- `product-readiness` now adopts the public Gateway voice-chain selected LLM
+  profile only for provider-smoke matching when local provider selection is
+  unset/mock. Explicit local real providers still win, and no-smoke mock demos
+  still report mock honestly.
+- Professional external Gateway evidence now suppresses the misleading local
+  `A21_V21_ADAPTER_URL` next action when a safe bench/read-record report has
+  already proven `external_gateway_ready`; launch readiness still remains
+  physical-gated.
+- Public readiness was re-run with source-bound direct connect
+  `A21_DIRECT_SOURCE_IP=192.168.1.27`, `NO_PROXY=47.103.57.217`, the latest
+  StepFun provider smoke report, and `--use-latest-reports`, without setting
+  local `A21_PROVIDER_PRIMARY=stepfun`.
+- Result:
+  `reports/a21-product-readiness-20260605-064932.json`,
+  `status=server_side_candidate_ready`. Provider `primary`, `selected`, and
+  `smoke_provider` are StepFun. Professional bench/read-record, roleplay voice
+  runtime, host voice loopback, wake-word server-side, and voice-chain
+  evidence are ready.
+- Canonical remaining evidence is exactly `physical_stackchan_online` and
+  `physical_stackchan_prd_acceptance`.
+- Tests and gates passed:
+  focused app readiness tests, `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, `GOMAXPROCS=2 make doctor`, and
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute' -count=1`.
+- Product device `44:1b:f6:e2:6a:60` remains stale/offline from the public
+  Gateway view. The next product action is still physical ROM download entry
+  and guarded product app flash of the delayed-relay artifact, followed by
+  physical PRD acceptance.
+
 Live truth after the 2026-06-05 05:45 CST stock professional route remediation:
 
 - Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was re-read and

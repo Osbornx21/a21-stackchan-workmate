@@ -274,6 +274,54 @@ func TestProductReadinessAcceptsExecutedProviderSmokeEvidenceWithoutLocalKey(t *
 	}
 }
 
+func TestProductReadinessUsesGatewayVoiceChainProviderWhenLocalProviderIsMock(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessProviderSmokeReportFixtureFromData(t, productReadinessProviderSmokeReportFixtureForProvider("stepfun"))
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:          server.URL,
+		DeviceID:            "stackchan-001",
+		ProviderSmokeReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if !report.Provider.RealProviderReady || !report.Provider.TextStreamReady || !report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, want Gateway-selected StepFun smoke to satisfy product provider gate", report.Provider)
+	}
+	if report.Provider.Primary != "stepfun" || report.Provider.Selected != "stepfun" || report.Provider.SmokeProvider != "stepfun" {
+		t.Fatalf("provider readiness = %+v, want Gateway voice-chain StepFun selection", report.Provider)
+	}
+	if containsProductFinding(report.Findings, "provider_smoke_report_mismatch", "") ||
+		containsProductAction(report.NextActions, "configure a real A21 provider") {
+		t.Fatalf("readiness findings/actions = %#v/%#v, want no provider mismatch or local mock gap", report.Findings, report.NextActions)
+	}
+}
+
+func TestProductReadinessKeepsExplicitLocalProviderOverGatewayVoiceChainProvider(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessProviderSmokeReportFixtureFromData(t, productReadinessProviderSmokeReportFixtureForProvider("stepfun"))
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:          server.URL,
+		DeviceID:            "stackchan-001",
+		ProviderSmokeReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=deepseek",
+		"A21_LAB_DEEPSEEK_API_KEY=secret-value",
+	})
+
+	if report.Provider.RealProviderReady || report.Provider.SmokeEvidenceValid {
+		t.Fatalf("provider readiness = %+v, want explicit local DeepSeek selection to reject StepFun smoke", report.Provider)
+	}
+	if report.Provider.Selected != "deepseek" {
+		t.Fatalf("provider readiness = %+v, want explicit local provider preserved", report.Provider)
+	}
+	if !containsProductFinding(report.Findings, "provider_smoke_report_mismatch", "") {
+		t.Fatalf("findings = %#v, want mismatch when explicit local provider conflicts with smoke", report.Findings)
+	}
+}
+
 func TestProductReadinessIngestsRealtimeFixtureWithoutPromotingRealLaunch(t *testing.T) {
 	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
 	fixture := writeProductReadinessRealtimeFixtureReportFixture(t)
@@ -2207,6 +2255,39 @@ func TestProductReadinessIngestsXiaozhiProfessionalGatewayReport(t *testing.T) {
 		if strings.Contains(encoded.String(), forbidden) {
 			t.Fatalf("product readiness leaked or overclaimed %q: %s", forbidden, encoded.String())
 		}
+	}
+}
+
+func TestProductReadinessDoesNotAskForLocalV21AdapterWhenProfessionalGatewayEvidenceIsReady(t *testing.T) {
+	server := newProductReadinessTestServer(t, `{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[{"device_id":"stackchan-sim-001","identity_status":"unknown","connection_status":"online","first_seen_ms":1,"last_seen_ms":2}]}`)
+	fixture := writeProductReadinessXiaozhiProfessionalGatewayReportFixture(t)
+	originalLister := listFirmwareSerialDevices
+	listFirmwareSerialDevices = func() ([]firmwarecheck.SerialDevice, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() {
+		listFirmwareSerialDevices = originalLister
+	})
+
+	report := buildProductReadinessReport(context.Background(), productReadinessOptions{
+		GatewayURL:            server.URL,
+		DeviceID:              "stackchan-001",
+		V21ProfessionalReport: fixture,
+	}, []string{
+		"A21_PROVIDER_PRIMARY=mock",
+	})
+
+	if report.V21.Healthy {
+		t.Fatalf("v21 readiness = %+v, want local adapter runtime to remain unconfigured", report.V21)
+	}
+	if !productProfessionalRitualReady(report.V21) || !productProfessionalReadRecordReady(report.V21) {
+		t.Fatalf("v21 professional execution = %+v, want external Gateway professional proof accepted", report.V21.ProfessionalExecution)
+	}
+	if containsProductAction(report.NextActions, "A21_V21_ADAPTER_URL") {
+		t.Fatalf("next actions = %#v, should not ask for local adapter config after external Gateway professional proof", report.NextActions)
+	}
+	if report.LaunchReady {
+		t.Fatalf("launch_ready = true with professional-only evidence; physical gates must still block")
 	}
 }
 
@@ -5501,6 +5582,18 @@ func productReadinessProviderSmokeReportFixtureJSON() string {
 func productReadinessProviderSmokeReportFixtureForProvider(provider string) string {
 	data := productReadinessProviderSmokeReportFixtureJSON()
 	switch provider {
+	case "stepfun":
+		replacements := map[string]string{
+			`"provider": "deepseek"`:                        `"provider": "stepfun"`,
+			`"endpoint_host": "api.deepseek.com"`:           `"endpoint_host": "api.stepfun.com"`,
+			`"api_key_env": "A21_LAB_DEEPSEEK_API_KEY"`:     `"api_key_env": "A21_LAB_STEPFUN_API_KEY"`,
+			`"model_env": "A21_DEEPSEEK_MODEL"`:             `"model_env": "A21_STEPFUN_MODEL"`,
+			`"base_url_env": "A21_DEEPSEEK_BASE_URL"`:       `"base_url_env": "A21_STEPFUN_BASE_URL"`,
+			`"report_path": "a21-provider-smoke-real.json"`: `"report_path": "a21-provider-smoke-stepfun.json"`,
+		}
+		for old, newValue := range replacements {
+			data = strings.ReplaceAll(data, old, newValue)
+		}
 	case "local_ollama":
 		replacements := map[string]string{
 			`"provider": "deepseek"`:                        `"provider": "local_ollama"`,

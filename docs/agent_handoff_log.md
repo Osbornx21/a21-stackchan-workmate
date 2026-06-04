@@ -19,6 +19,97 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 06:52 CST - Readiness Remote Context Aligned
+
+Round goal:
+
+- Continue review-thread remediation without repeating already-closed Gateway
+  race, namespace, stock professional route, or PMIC power-key work. Remove
+  false readiness blockers so the current launch report accurately separates
+  server-side readiness from the still-pending physical StackChan recovery.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  its findings against current HEAD. The software-closed findings remain
+  closed; the active product blocker is still physical device recovery plus
+  PRD physical acceptance.
+- Fixed `product-readiness` provider context for public Gateway runs: when a
+  provider smoke report is supplied or `--use-latest-reports` is selecting one,
+  the tool now adopts the Gateway voice-chain selected LLM profile as the
+  provider match context only if the local environment is unset/mock.
+- Preserved explicit local real provider selection. A local real provider such
+  as `deepseek` is not silently overwritten by the Gateway selector, and a
+  mismatched smoke report remains rejected.
+- Kept mock demo behavior honest. Without provider smoke evidence or latest
+  provider-smoke selection, product readiness still reports the local mock
+  provider rather than promoting the Gateway selector.
+- Removed a misleading next action: when a safe external Gateway professional
+  bench/read-record report already proves `external_gateway_ready`,
+  product-readiness no longer asks for local `A21_V21_ADAPTER_URL` setup while
+  still keeping `launch_ready=false` until physical gates pass.
+- Re-ran public product readiness without setting local
+  `A21_PROVIDER_PRIMARY=stepfun`; the report now resolves provider selection
+  to StepFun from the Gateway voice-chain context and remains
+  `server_side_candidate_ready`.
+
+Changed files:
+
+- `internal/app/product_demo.go`
+- `internal/app/app_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- Focused app regression tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'ProductReadinessReportsMockDemoWithoutFullURLLeak|ProductReadinessUsesGatewayVoiceChainProvider|ProductReadinessKeepsExplicitLocalProvider|ProductReadinessDoesNotAskForLocalV21Adapter|ProductReadiness.*ProviderSmoke|ProductReadiness.*Professional' -count=1`.
+- Wider app readiness tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'ProductReadiness.*ProviderSmoke|ProductReadinessUsesGatewayVoiceChainProvider|ProductReadinessKeepsExplicitLocalProvider|ProductReadiness.*V21|ProductReadiness.*Professional|RunProductReadinessLatestProviderSmoke|RunProductReadinessLatestV21|ServerSideReadiness' -count=1`.
+- Full verification passed: `GOMAXPROCS=2 make verify`.
+- Default gates passed: `GOMAXPROCS=2 make preflight` and
+  `GOMAXPROCS=2 make doctor`.
+- Gateway review regression passed under race detector:
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute' -count=1`.
+
+Runtime or physical evidence:
+
+- Public product readiness was run with `A21_DIRECT_SOURCE_IP=192.168.1.27`,
+  `NO_PROXY=47.103.57.217`, the latest StepFun provider smoke report, and
+  `--use-latest-reports`, without local `A21_PROVIDER_PRIMARY=stepfun`.
+- Result:
+  `reports/a21-product-readiness-20260605-064932.json`,
+  `status=server_side_candidate_ready`, provider `primary/selected/smoke` all
+  StepFun, professional bench/read-record evidence ready, roleplay voice
+  runtime ready, host voice loopback ready, and wake-word server-side ready.
+- Canonical missing real evidence is now exactly
+  `physical_stackchan_online` and `physical_stackchan_prd_acceptance`.
+
+Remaining issues:
+
+- Product device `44:1b:f6:e2:6a:60` is still stale/offline from the public
+  Gateway view, consistent with the pending guarded delayed-relay firmware
+  recovery flash.
+- The device still needs physical ESP32-S3 ROM download entry before the
+  guarded product app flash can proceed.
+- Official `/stackChan/ws` relay and PRD physical voice/body acceptance remain
+  unaccepted until the recovered firmware is flashed and observed.
+
+Next suggested action:
+
+- Enter ESP32-S3 ROM download mode physically, run the guarded product
+  `no_reset` flash for `a21-stackchan-official-xiaozhi-compatible.bin`, then
+  collect serial/no-WDT, Xiaozhi reconnect, official relay, screen/RGB/head,
+  touch, wake/listen, playback-start, barge-in, and PRD physical acceptance
+  evidence.
+
+Forbidden actions avoided:
+
+- No provider secret output, no generic `xiaozhi.bin` product flash lane, no
+  unguarded firmware upload, no NVS write, no JTAG flash, no Git prune/gc, no
+  internal-test3 voice/protocol rollback, and no camera/NFC/IR expansion.
+
 ## 2026-06-05 06:43 CST - Server-Side Candidate Reconfirmed While Physical Flash Pending
 
 Round goal:

@@ -879,7 +879,12 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 		report.StackChan.Status = "gateway_device_registry_unavailable"
 		report.Findings = append(report.Findings, productReadinessFinding{Code: "device_registry_unavailable", Message: "A21 device registry is not reachable"})
 	}
+	voiceChain, voiceChainFindings := fetchProductVoiceChainReadiness(ctx, gatewayURL)
+	report.Findings = append(report.Findings, voiceChainFindings...)
 	report.Provider = buildProductProviderReadiness(env)
+	if productReadinessProviderSmokeSelectionEnabled(options) {
+		alignProductProviderReadinessWithGatewayVoiceChain(&report.Provider, voiceChain)
+	}
 	report.Findings = append(report.Findings, resolveLatestProductProviderSmokeReport(&options, report.Provider)...)
 	providerSmokeEvidence, providerSmokeFindings := loadProductProviderSmokeReportEvidence(options.ProviderSmokeReport)
 	report.Findings = append(report.Findings, providerSmokeFindings...)
@@ -903,8 +908,6 @@ func buildProductReadinessReport(ctx context.Context, options productReadinessOp
 	wakeWord, wakeWordFindings := fetchProductWakeWordReadiness(ctx, gatewayURL)
 	report.WakeWord = wakeWord
 	report.Findings = append(report.Findings, wakeWordFindings...)
-	voiceChain, voiceChainFindings := fetchProductVoiceChainReadiness(ctx, gatewayURL)
-	report.Findings = append(report.Findings, voiceChainFindings...)
 	voiceChainCapabilityEvidence, voiceChainCapabilityFindings := loadProductVoiceChainReadinessReportEvidence(options.VoiceChainReadinessReport)
 	report.Findings = append(report.Findings, voiceChainCapabilityFindings...)
 	if voiceChainCapabilityEvidence.Valid {
@@ -1011,6 +1014,35 @@ func buildProductProviderReadiness(env []string) productProviderReadiness {
 		}
 	}
 	return readiness
+}
+
+func productReadinessProviderSmokeSelectionEnabled(options productReadinessOptions) bool {
+	return options.UseLatestReports || strings.TrimSpace(options.ProviderSmokeReport) != ""
+}
+
+func alignProductProviderReadinessWithGatewayVoiceChain(readiness *productProviderReadiness, voiceChain productVoiceChainReadiness) {
+	if readiness == nil || !voiceChain.Available {
+		return
+	}
+	selected := strings.TrimSpace(voiceChain.SelectedLLMProfile)
+	if selected == "" ||
+		selected == "mock" ||
+		providerLatencySafeIdentifier(selected, false) != selected {
+		return
+	}
+	if strings.TrimSpace(readiness.Selected) != "" && strings.TrimSpace(readiness.Selected) != "mock" {
+		return
+	}
+	readiness.Primary = selected
+	readiness.Selected = selected
+	readiness.SelectedFamily = string(providers.ProviderFamilyTextStream)
+	readiness.SelectedConfigured = false
+	readiness.SelectedRouteEligible = true
+	readiness.RealProviderReady = false
+	readiness.TextStreamReady = false
+	readiness.VoiceRealtimeReady = false
+	readiness.MissingEnv = nil
+	readiness.PresentEnv = nil
 }
 
 type productProviderSmokeReportEvidence struct {
@@ -5158,7 +5190,7 @@ func buildProductNextActions(report productReadinessReport) []string {
 			actions = append(actions, "configure a real A21 provider with A21_PROVIDER_PRIMARY plus its required env names")
 		}
 	}
-	if !report.V21.Healthy {
+	if !report.V21.Healthy && !productProfessionalRitualReady(report.V21) {
 		actions = append(actions, "start/configure the A21 V21 adapter boundary with A21_V21_ADAPTER_URL")
 	}
 	if !productV21ProfessionalReady(report.V21) {
