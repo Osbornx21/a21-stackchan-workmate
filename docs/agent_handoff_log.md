@@ -12824,14 +12824,20 @@ Actual completed work:
   and credential-shaped identities remain rejected.
 - Remote voice-clone CLI smoke then passed and produced a 16 kHz mono WAV with
   audio quality passed.
-- Fresh roleplay voice runtime probe passed:
+- Fresh roleplay voice runtime probe passed before formal ECS swap:
   `reports/a21-roleplay-voice-probe-20260604-172311.json`, with StepFun text
   stream executed, prompt input used, voice clone profile used, audio downlink
-  observed, device playback start observed, and 46 audio chunks.
-- Fresh server-side bundle passed as server-side candidate:
-  `reports/a21-server-side-readiness-bundle-20260604-172349.json`.
+  observed, device playback start observed, and 46 audio chunks. After deploying
+  commit `431c7ec`, final deployed evidence
+  `reports/a21-roleplay-voice-probe-20260604-172658.json` also passed with 45
+  audio chunks.
+- Fresh server-side bundle passed as server-side candidate before deploy:
+  `reports/a21-server-side-readiness-bundle-20260604-172349.json`; after deploy
+  `reports/a21-server-side-readiness-bundle-20260604-172722.json` is the final
+  current bundle.
 - Fresh product readiness remains truthful:
-  `reports/a21-product-readiness-20260604-172349.json` is
+  `reports/a21-product-readiness-20260604-172349.json` was the pre-deploy
+  bundle; after deploy `reports/a21-product-readiness-20260604-172722.json` is
   `server_side_candidate_ready`, `launch_ready=false`, `prd_accepted=false`,
   with only `physical_stackchan_prd_acceptance` missing at the canonical
   decision layer.
@@ -12882,12 +12888,13 @@ Test/build/runtime results:
 - `python3 -m py_compile scripts/a21_dashscope_cosyvoice_tts.py`: passed.
 - Remote `/opt/a21/bin/a21 local-tts-smoke --engine voice_clone_cli`: passed;
   latest remote report `a21-local-tts-smoke-20260604-171908.json`.
-- `a21 roleplay-voice-probe --require-ready`: passed; report
-  `reports/a21-roleplay-voice-probe-20260604-172311.json`.
-- `a21 server-side-readiness-bundle`: passed as server-side candidate; report
-  `reports/a21-server-side-readiness-bundle-20260604-172349.json`.
-- `a21 product-readiness`: server-side candidate only; report
-  `reports/a21-product-readiness-20260604-172349.json`.
+- `a21 roleplay-voice-probe --require-ready`: passed; reports
+  `reports/a21-roleplay-voice-probe-20260604-172311.json` and final deployed
+  `reports/a21-roleplay-voice-probe-20260604-172658.json`.
+- `a21 server-side-readiness-bundle`: passed as server-side candidate; final
+  deployed report `reports/a21-server-side-readiness-bundle-20260604-172722.json`.
+- `a21 product-readiness`: server-side candidate only; final deployed report
+  `reports/a21-product-readiness-20260604-172722.json`.
 
 Failure location/reason:
 

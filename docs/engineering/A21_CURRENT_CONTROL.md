@@ -96,14 +96,16 @@ Current focused cut:
   `T-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-001`
 - Status:
   ready as server-side evidence. Fresh runtime report
-  `reports/a21-roleplay-voice-probe-20260604-172311.json` passed with selected
-  `a21_roleplay_wry_peer`, scenario `engineer_pushback`,
+  `reports/a21-roleplay-voice-probe-20260604-172311.json` first passed before
+  the formal ECS swap; after deploying commit `431c7ec`, final deployed
+  evidence `reports/a21-roleplay-voice-probe-20260604-172658.json` also passed
+  with selected `a21_roleplay_wry_peer`, scenario `engineer_pushback`,
   `a21_voice_clone_default`, StepFun text stream execution, prompt input,
-  voice-clone profile usage, audio downlink, device playback start, and 46
+  voice-clone profile usage, audio downlink, device playback start, and 45
   audio chunks. Server-side bundle
-  `reports/a21-server-side-readiness-bundle-20260604-172349.json` is
+  `reports/a21-server-side-readiness-bundle-20260604-172722.json` is
   `server_side_candidate_ready`. Product readiness
-  `reports/a21-product-readiness-20260604-172349.json` remains
+  `reports/a21-product-readiness-20260604-172722.json` remains
   `server_side_candidate_ready` only because physical StackChan PRD acceptance
   is still missing.
 

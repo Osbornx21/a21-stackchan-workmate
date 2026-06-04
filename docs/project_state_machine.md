@@ -14,20 +14,21 @@ Current total state: `S-INTERNAL-TEST4-ROLEPLAY-SOUL-PROFILE-READY-ROLEPLAY-PROM
 Latest control update, 2026-06-04 17:23 CST:
 
 - `T-SERVER-SIDE-ROLEPLAY-VOICE-RUNTIME-GATE-001` now has fresh cloud runtime
-  evidence rather than only static readiness. Report
-  `reports/a21-roleplay-voice-probe-20260604-172311.json` is `passed` and
-  proves selected role soul/scenario/memory prompt input, selected
-  `a21_voice_clone_default`, StepFun text-stream execution, audio downlink,
-  device playback start marker, and 46 audio playback chunks.
+  evidence rather than only static readiness. Pre-deploy report
+  `reports/a21-roleplay-voice-probe-20260604-172311.json` passed, and final
+  deployed report `reports/a21-roleplay-voice-probe-20260604-172658.json`
+  also passed, proving selected role soul/scenario/memory prompt input,
+  selected `a21_voice_clone_default`, StepFun text-stream execution, audio
+  downlink, device playback start marker, and 45 audio playback chunks.
 - Root causes fixed in this control cut: provider pipeline adapters now honor
   the `A21_VOICE_CLONE_CLI` compatibility alias, the DashScope CosyVoice
   wrapper no longer consumes generic Qwen realtime `A21_DASHSCOPE_TTS_MODEL`
   or `A21_DASHSCOPE_TTS_VOICE` values, and roleplay evidence parsing accepts
   real StackChan MAC-style device IDs without allowing URLs, paths, whitespace,
   or credential-shaped identities.
-- Fresh `reports/a21-server-side-readiness-bundle-20260604-172349.json` is
+- Fresh `reports/a21-server-side-readiness-bundle-20260604-172722.json` is
   `server_side_candidate_ready`; fresh
-  `reports/a21-product-readiness-20260604-172349.json` still correctly keeps
+  `reports/a21-product-readiness-20260604-172722.json` still correctly keeps
   launch/PRD false because `physical_stackchan_prd_acceptance` remains missing.
 
 Active child transitions:
