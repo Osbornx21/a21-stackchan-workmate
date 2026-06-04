@@ -12622,3 +12622,88 @@ Forbidden actions avoided:
 
 - No provider, V21, ECS, firmware build, serial, NVS, prune/gc, flash, or
   physical hardware action occurred.
+
+## 2026-06-04 12:39 CST - Workspace Voice Probe Control Surface
+
+Transition:
+
+- `T-WORKSPACE-VOICE-PROBE-CONTROL-SURFACE-001`
+
+What changed:
+
+- Extended `GET /workspace` with a safe Voice Probe panel over existing Gateway
+  routes only.
+- Added a roleplay probe that calls `/v1/fast-companion/turn` at the
+  no-provider boundary and displays selected role soul, scenario, voice
+  profile, memory count, prompt readiness, route status, and trace markers.
+- Added a professional probe that calls `/v1/mock-turn`, refreshes
+  `/v1/traces`, and filters `/v1/professional-read-records` by generated trace
+  id to display safe professional route/read metadata.
+- Safe metadata export now includes the last voice-probe mode, trace/session,
+  route, event count, trace marker names, roleplay profile, voice profile, and
+  professional status.
+
+Files changed:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/plans/2026-06-04-workspace-voice-probe-control-surface.md`
+- `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests run and results:
+
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed' -count=1`:
+  passed.
+- `go test ./internal/gateway -run 'TestWorkspaceConsolePageServed|TestFastCompanionHybridRoutesLocalAudioFrontendToTextStreamBoundary|TestProfessionalReadRecordsCompleteWithRedactedScopeMetadata|TestProfessionalReadRecordsFailSafelyWhenV21Unavailable|TestProfessionalVoiceTrigger|TestRoleplayProfile|TestVoiceChainProfiles|TestWakeWord|TestProfessionalWorkspace|TestWorkspaceDocumentUpload|TestWorkspaceIndex|TestWorkspaceSource' -count=1`:
+  passed.
+- `git diff --check`: passed.
+- `GOMAXPROCS=2 make verify`: passed.
+
+Runtime or physical evidence:
+
+- Local Gateway was started on `127.0.0.1:21080` only for page verification,
+  then stopped.
+- Playwright used a temporary `/tmp/a21-playwright` module install and system
+  Chrome; no project dependency was added.
+- Playwright opened `/workspace` at desktop `1270x900` and mobile `390x900`
+  with no horizontal overflow.
+- Playwright selected `a21_roleplay_wry_peer`, `engineer_pushback`, and
+  `a21_voice_clone_default`, saved one bounded memory hint, and ran the
+  roleplay probe. Observed safe status:
+  `route=fast_companion_hybrid`, trace event count `14`,
+  `a21_roleplay_wry_peer / engineer_pushback / prompt=true`,
+  `voice=a21_voice_clone_default`, and `memory=ready / 1`.
+- Playwright ran the professional probe. Observed safe status:
+  `route=professional_mock_turn`, trace event count `13`, and one
+  `a21-professional-read-*` record with `status=completed`,
+  `query_scope=public_only`, and `workspace_status=searchable` in the
+  host-local default mock path.
+- Desktop/mobile screenshots and JSON evidence were written under
+  `.a21-run/evidence/` for local runtime evidence only.
+
+Deviations from plan:
+
+- Browser/IAB control was not exposed in this context, so Playwright was used
+  as the browser automation fallback.
+
+Remaining issues:
+
+- This is product-console dialogue-path metadata evidence. It is not real
+  provider execution, real V21 execution, audible voice-clone playback,
+  real indexing, Gateway deployment, ECS runtime acceptance, firmware build,
+  wake-word activation, or physical StackChan roleplay/professional acceptance.
+
+Next suggested action:
+
+- Move to a host-only selected voice-chain smoke/readiness slice, or schedule a
+  foreground hardware evidence window for physical roleplay/professional/wake
+  acceptance once the operator is ready.
+
+Forbidden actions avoided:
+
+- No provider, real V21, ECS, firmware build, serial, NVS, prune/gc, flash, or
+  physical hardware action occurred.

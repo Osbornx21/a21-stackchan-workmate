@@ -481,6 +481,44 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Voice probe">
+        <div class="panel-head">
+          <h2>Voice Probe</h2>
+          <div class="tagline">
+            <span class="tag ready" id="voiceProbeRouteStatus">route=idle</span>
+            <span class="tag warn" id="voiceProbeTraceStatus">trace=none</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Probe mode
+              <select id="voiceProbeModeSelect">
+                <option value="roleplay">roleplay</option>
+                <option value="professional">professional</option>
+              </select>
+            </label>
+            <label>Probe cue
+              <input id="voiceProbeInput" placeholder="safe short cue" autocomplete="off">
+            </label>
+          </div>
+          <div class="actions">
+            <button id="runRoleplayProbe">Run roleplay probe</button>
+            <button id="runProfessionalProbe">Run professional probe</button>
+            <button class="secondary" id="refreshVoiceProbeTrace">Trace markers</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Role soul</span><strong id="voiceProbeRoleplayStatus">none</strong></div>
+            <div class="metric"><span>Voice profile</span><strong id="voiceProbeVoiceStatus">none</strong></div>
+            <div class="metric"><span>Memory</span><strong id="voiceProbeMemoryStatus">none</strong></div>
+            <div class="metric"><span>Professional</span><strong id="voiceProbeProfessionalStatus">idle</strong></div>
+          </div>
+          <div class="stack">
+            <div class="row-list" id="voiceProbeTraceList" aria-label="Voice probe trace markers"></div>
+            <div class="row-list" id="voiceProbeReadList" aria-label="Voice probe read records"></div>
+          </div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -513,6 +551,7 @@ const workspaceConsoleHTML = `<!doctype html>
       voiceCatalog: null,
       wakeWord: null,
       voiceModes: null,
+      voiceProbe: null,
       lastExport: null
     };
     const ui = {
@@ -566,6 +605,19 @@ const workspaceConsoleHTML = `<!doctype html>
       wakeWordRuntimeStatus: document.getElementById('wakeWordRuntimeStatus'),
       wakeWordFirmwareStatus: document.getElementById('wakeWordFirmwareStatus'),
       wakeWordCodeStatus: document.getElementById('wakeWordCodeStatus'),
+      voiceProbeModeSelect: document.getElementById('voiceProbeModeSelect'),
+      voiceProbeInput: document.getElementById('voiceProbeInput'),
+      runRoleplayProbe: document.getElementById('runRoleplayProbe'),
+      runProfessionalProbe: document.getElementById('runProfessionalProbe'),
+      refreshVoiceProbeTrace: document.getElementById('refreshVoiceProbeTrace'),
+      voiceProbeRouteStatus: document.getElementById('voiceProbeRouteStatus'),
+      voiceProbeTraceStatus: document.getElementById('voiceProbeTraceStatus'),
+      voiceProbeRoleplayStatus: document.getElementById('voiceProbeRoleplayStatus'),
+      voiceProbeVoiceStatus: document.getElementById('voiceProbeVoiceStatus'),
+      voiceProbeMemoryStatus: document.getElementById('voiceProbeMemoryStatus'),
+      voiceProbeProfessionalStatus: document.getElementById('voiceProbeProfessionalStatus'),
+      voiceProbeTraceList: document.getElementById('voiceProbeTraceList'),
+      voiceProbeReadList: document.getElementById('voiceProbeReadList'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -720,6 +772,158 @@ const workspaceConsoleHTML = `<!doctype html>
         const detail = [record.trace_id, record.session_id].filter(Boolean).join(' / ');
         ui.readList.append(row(record.record_id, left, record.status, tone, detail));
       });
+    }
+    function safeControlStates(events) {
+      return (events || []).map((event) => {
+        const raw = event && event.payload;
+        let payload = raw;
+        if (typeof raw === 'string') {
+          try { payload = JSON.parse(raw); } catch (_) { payload = {}; }
+        }
+        return (payload && (payload.state || payload.mode || payload.type)) || event.type || 'event';
+      }).filter(Boolean);
+    }
+    function traceNameList(payload) {
+      return ((payload && payload.events) || []).map((event) => event.name || '').filter(Boolean);
+    }
+    function renderProbeTrace(payload) {
+      const events = (payload && payload.events) || [];
+      const summary = (payload && payload.summary) || {};
+      ui.voiceProbeTraceList.textContent = '';
+      setText(ui.voiceProbeTraceStatus, 'trace=' + (payload && payload.trace_id ? payload.trace_id : 'none') + ' / events=' + (summary.event_count || events.length));
+      if (!events.length) {
+        ui.voiceProbeTraceList.append(row('No trace markers', 'probe idle', 'none', 'warn'));
+        return;
+      }
+      events.slice(-8).forEach((event) => {
+        ui.voiceProbeTraceList.append(row(event.name, 'offset_ms=' + String(event.offset_ms || 0), event.session_id || 'session', 'ready', event.device_id || 'device'));
+      });
+    }
+    function renderProbeReadRecords(payload) {
+      const records = (payload && payload.records) || [];
+      ui.voiceProbeReadList.textContent = '';
+      if (!records.length) {
+        ui.voiceProbeReadList.append(row('No probe read records', 'professional route idle', 'none', 'warn'));
+        return;
+      }
+      records.forEach((record) => {
+        const left = [record.query_scope, record.workspace_status, countsText(record.source_scope_counts)].filter(Boolean).join(' / ');
+        const tone = record.status === 'completed' ? 'ready' : 'warn';
+        const detail = [record.utterance_bucket, record.failure_code].filter(Boolean).join(' / ');
+        ui.voiceProbeReadList.append(row(record.record_id, left, record.status, tone, detail));
+      });
+    }
+    function nextProbeIDs(mode) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-probe-' + mode + '-' + stamp,
+        session_id: 'a21-session-workspace-probe-' + mode + '-' + stamp
+      };
+    }
+    function probeCue(mode) {
+      const value = ui.voiceProbeInput.value.trim();
+      if (value) return value;
+      return mode === 'professional' ? 'check evidence' : 'stay with the messy boundary';
+    }
+    function setProbeRoute(label, payload) {
+      const states = safeControlStates((payload && payload.events) || []);
+      setText(ui.voiceProbeRouteStatus, 'route=' + label + ' / events=' + states.length);
+      state.voiceProbe = Object.assign({}, state.voiceProbe || {}, {
+        route: label,
+        event_count: states.length,
+        state_markers: states.slice(-4)
+      });
+    }
+    function setProbeRoleplay(payload) {
+      const runtime = (payload && payload.roleplay) || {};
+      setText(ui.voiceProbeRoleplayStatus, [runtime.roleplay_profile, runtime.scenario, 'prompt=' + String(!!runtime.prompt_composed)].filter(Boolean).join(' / '));
+      setText(ui.voiceProbeVoiceStatus, runtime.voice_clone_profile || ui.roleplayVoiceStatus.textContent);
+      setText(ui.voiceProbeMemoryStatus, (runtime.memory_configured ? 'ready' : 'empty') + ' / ' + (runtime.memory_hint_count || 0));
+      setText(ui.voiceProbeProfessionalStatus, 'idle');
+      state.voiceProbe = Object.assign({}, state.voiceProbe || {}, {
+        roleplay_profile: runtime.roleplay_profile || '',
+        scenario: runtime.scenario || '',
+        voice_profile: runtime.voice_clone_profile || '',
+        memory_hint_count: runtime.memory_hint_count || 0,
+        prompt_ready: !!runtime.prompt_composed
+      });
+    }
+    function setProbeProfessional(payload, recordsPayload) {
+      const records = (recordsPayload && recordsPayload.records) || [];
+      const latest = records[records.length - 1] || {};
+      setText(ui.voiceProbeProfessionalStatus, [latest.status || 'started', latest.query_scope || ui.queryScope.value, latest.workspace_status || latest.failure_code || 'pending'].filter(Boolean).join(' / '));
+      setText(ui.voiceProbeRoleplayStatus, 'professional route');
+      setText(ui.voiceProbeVoiceStatus, ui.voiceChainTTSStatus.textContent || 'none');
+      setText(ui.voiceProbeMemoryStatus, 'not used');
+      state.voiceProbe = Object.assign({}, state.voiceProbe || {}, {
+        professional_status: latest.status || '',
+        professional_query_scope: latest.query_scope || '',
+        professional_workspace_status: latest.workspace_status || '',
+        professional_failure_code: latest.failure_code || ''
+      });
+      setProbeRoute('professional_mock_turn', payload);
+    }
+    async function refreshVoiceProbeTrace() {
+      if (!state.voiceProbe || !state.voiceProbe.trace_id) {
+        renderProbeTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        return;
+      }
+      const payload = await fetchJSON('/v1/traces?trace_id=' + encodeURIComponent(state.voiceProbe.trace_id), { cache: 'no-store' });
+      state.voiceProbe.trace_markers = traceNameList(payload);
+      renderProbeTrace(payload);
+      log('probe trace ' + ((payload.summary || {}).event_count || 0));
+    }
+    async function refreshVoiceProbeReads() {
+      if (!state.voiceProbe || !state.voiceProbe.trace_id) {
+        renderProbeReadRecords({ records: [] });
+        return { records: [] };
+      }
+      const payload = await fetchJSON('/v1/professional-read-records?trace_id=' + encodeURIComponent(state.voiceProbe.trace_id), { cache: 'no-store' });
+      renderProbeReadRecords(payload);
+      return payload;
+    }
+    async function runRoleplayProbe() {
+      const ids = nextProbeIDs('roleplay');
+      const localBoundary = { asr_provider: 'workspace_probe', first_partial_ms: 32 };
+      localBoundary['final_' + 'trans' + 'cript_chars'] = Math.max(1, probeCue('roleplay').length);
+      state.voiceProbe = {
+        mode: 'roleplay',
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      };
+      const payload = await postJSON('/v1/fast-companion/turn', {
+        device_id: 'stackchan-sim-001',
+        mode: 'roleplay',
+        trace_id: ids.trace_id,
+        session_id: ids.session_id,
+        local_audio: localBoundary
+      });
+      setProbeRoute(payload.route || 'fast_companion_hybrid', payload);
+      setProbeRoleplay(payload);
+      await refreshVoiceProbeTrace();
+      renderProbeReadRecords({ records: [] });
+      log('probe roleplay ' + (payload.status || 'ok'));
+    }
+    async function runProfessionalProbe() {
+      const ids = nextProbeIDs('professional');
+      state.voiceProbe = {
+        mode: 'professional',
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      };
+      const payload = await postJSON('/v1/mock-turn', {
+        device_id: 'stackchan-sim-001',
+        mode: 'professional',
+        text: probeCue('professional'),
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      });
+      setProbeRoute('professional_mock_turn', payload);
+      await refreshVoiceProbeTrace();
+      const records = await refreshVoiceProbeReads();
+      setProbeProfessional(payload, records);
+      await refreshReads();
+      log('probe professional ' + (((records.records || [])[0] || {}).status || 'recorded'));
     }
     function setWorkspace(payload) {
       state.workspace = payload || null;
@@ -1035,6 +1239,15 @@ const workspaceConsoleHTML = `<!doctype html>
         wake_word_runtime_status: ui.wakeWordRuntimeStatus.textContent,
         wake_word_firmware_status: ui.wakeWordFirmwareStatus.textContent,
         wake_word_code: ui.wakeWordCodeStatus.textContent,
+        voice_probe_mode: (state.voiceProbe && state.voiceProbe.mode) || '',
+        voice_probe_trace_id: (state.voiceProbe && state.voiceProbe.trace_id) || '',
+        voice_probe_session_id: (state.voiceProbe && state.voiceProbe.session_id) || '',
+        voice_probe_route: (state.voiceProbe && state.voiceProbe.route) || '',
+        voice_probe_event_count: (state.voiceProbe && state.voiceProbe.event_count) || 0,
+        voice_probe_trace_markers: (state.voiceProbe && state.voiceProbe.trace_markers) || [],
+        voice_probe_roleplay_profile: (state.voiceProbe && state.voiceProbe.roleplay_profile) || '',
+        voice_probe_voice_profile: (state.voiceProbe && state.voiceProbe.voice_profile) || '',
+        voice_probe_professional_status: (state.voiceProbe && state.voiceProbe.professional_status) || '',
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -1072,6 +1285,8 @@ const workspaceConsoleHTML = `<!doctype html>
         await refreshReads();
         await refreshRoleplayAndModes();
         await refreshWakeWord();
+        renderProbeTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        renderProbeReadRecords({ records: [] });
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -1095,6 +1310,16 @@ const workspaceConsoleHTML = `<!doctype html>
     ui.saveVoiceChainSetup.addEventListener('click', () => saveVoiceChainSetup().catch((err) => log('voice chain ' + err.message)));
     ui.saveWakeWordSetup.addEventListener('click', () => saveWakeWordSetup().catch((err) => log('wake word ' + err.message)));
     ui.resetWakeWordSetup.addEventListener('click', () => resetWakeWordSetup().catch((err) => log('wake word ' + err.message)));
+    ui.runRoleplayProbe.addEventListener('click', () => runRoleplayProbe().catch((err) => log('probe roleplay ' + err.message)));
+    ui.runProfessionalProbe.addEventListener('click', () => runProfessionalProbe().catch((err) => log('probe professional ' + err.message)));
+    ui.refreshVoiceProbeTrace.addEventListener('click', () => refreshVoiceProbeTrace().catch((err) => log('probe trace ' + err.message)));
+    ui.voiceProbeModeSelect.addEventListener('change', () => {
+      if (ui.voiceProbeModeSelect.value === 'professional') {
+        ui.voiceProbeInput.placeholder = 'safe evidence cue';
+      } else {
+        ui.voiceProbeInput.placeholder = 'safe short cue';
+      }
+    });
     boot();
   </script>
 </body>

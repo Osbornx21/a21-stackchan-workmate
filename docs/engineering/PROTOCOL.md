@@ -712,17 +712,21 @@ roleplay role soul/scenario/voice profile/bounded memory hint through existing
 `/v1/roleplay-profile` and `/v1/voice-chain-profiles`, configure voice-chain
 mode/ASR/LLM/realtime-provider selection through existing
 `/v1/voice-chain-profiles`, configure wake-word intent through existing
-`/v1/wake-word`, and view the
+`/v1/wake-word`, run safe roleplay/professional Voice Probe checks through
+existing `/v1/fast-companion/turn`, `/v1/mock-turn`, `/v1/traces`, and
+`/v1/professional-read-records`, and view the
 roleplay/professional boundary from `/v1/roleplay-profile`,
 `/v1/voice-chain-profiles`, `/v1/wake-word`, and `/v1/voice-modes`. The
 console must keep state labels honest:
 `storage_status=stored_local`, `index_status=indexing_requested_no_execute`
 when requested, `searchable=false`, `v21_execution_allowed=false`, and
 `physical_accepted=false`; custom wake-word intent must show built-in Xiaozhi
-WakeNet as active until guarded firmware evidence exists. It must not display
+WakeNet as active until guarded firmware evidence exists. The Voice Probe must
+display only safe route/status, selected role/profile IDs, memory counts, trace
+marker names/counts, and professional read metadata. It must not display
 document text, raw bytes, local paths, credentials, prompt text, transcripts,
-provider output, evidence bodies, voice samples, audio, or document-derived
-text.
+provider output, evidence bodies, voice samples, audio, raw user utterances, or
+document-derived text.
 
 `workspace_sources` is the memory-only source/readiness registry derived from
 workspace upload/import job metadata. `GET /v1/workspace-sources` returns

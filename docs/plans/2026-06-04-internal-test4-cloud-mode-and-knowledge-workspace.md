@@ -182,6 +182,14 @@ StackChan hardware.
   honest activation boundary: custom MultiNet requests are
   `pending_firmware_build`, built-in Xiaozhi WakeNet remains active, runtime
   hot swap is false, and physical acceptance is still separate.
+- The workspace console now also exposes a safe Voice Probe panel. Roleplay
+  probe uses existing `/v1/fast-companion/turn` boundary metadata to show the
+  selected role soul, scenario, voice profile, memory count, prompt readiness,
+  and trace markers. Professional probe uses existing `/v1/mock-turn`,
+  `/v1/traces`, and `/v1/professional-read-records` to show professional
+  route/read metadata. It does not add a backend route, execute real provider
+  or V21 services, index documents, touch firmware/hardware, or expose raw
+  utterance, prompt, evidence, document, credential, or audio content.
 
 ## Product Form
 
