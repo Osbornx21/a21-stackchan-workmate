@@ -6023,6 +6023,15 @@ func TestGatewayServerOptionsFromEnvWiresProductPlaybackEvents(t *testing.T) {
 	}
 }
 
+func TestGatewayServerOptionsFromEnvWiresProductTouchEvents(t *testing.T) {
+	options := newGatewayServerOptionsFromEnv([]string{
+		"A21_XIAOZHI_PRODUCT_TOUCH_EVENTS=true",
+	})
+	if !options.XiaozhiProductTouchEvents {
+		t.Fatal("xiaozhi product touch events not configured")
+	}
+}
+
 func TestGatewayServerOptionsFromEnvWiresXiaozhiListenMaxDuration(t *testing.T) {
 	options := newGatewayServerOptionsFromEnv([]string{
 		"A21_XIAOZHI_LISTEN_MAX_MS=4500",

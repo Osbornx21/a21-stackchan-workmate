@@ -31,6 +31,7 @@ const (
 	DeviceEventKindMotion    DeviceEventKind = "motion"
 	DeviceEventKindHeartbeat DeviceEventKind = "heartbeat"
 	DeviceEventKindPlayback  DeviceEventKind = "playback"
+	DeviceEventKindTouch     DeviceEventKind = "touch"
 )
 
 type DeviceExtensionEvent struct {
@@ -38,6 +39,7 @@ type DeviceExtensionEvent struct {
 	Value    string
 	YAngle   int
 	StreamID string
+	Source   string
 	Text     string
 	Reason   string
 }
@@ -59,6 +61,8 @@ type deviceExtensionWire struct {
 	Motion    string `json:"motion,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Playback  string `json:"playback,omitempty"`
+	Touch     string `json:"touch,omitempty"`
+	Source    string `json:"source,omitempty"`
 	YAngle    *int   `json:"y_angle,omitempty"`
 	StreamID  string `json:"stream_id,omitempty"`
 	Text      string `json:"text,omitempty"`
@@ -123,8 +127,11 @@ func ParseDeviceExtensionEvent(data []byte) (DeviceExtensionEvent, error) {
 	case DeviceEventKindPlayback:
 		event.Value = wire.Playback
 		event.StreamID = wire.StreamID
+	case DeviceEventKindTouch:
+		event.Value = firstNonEmpty(wire.Touch, wire.Name)
+		event.Source = wire.Source
 	default:
-		event.Value = firstNonEmpty(wire.State, wire.Face, wire.Display, wire.Motion, wire.Playback)
+		event.Value = firstNonEmpty(wire.State, wire.Face, wire.Display, wire.Motion, wire.Playback, wire.Touch)
 	}
 	return NormalizeDeviceExtensionEvent(event)
 }
@@ -141,6 +148,7 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 		Value:    value,
 		YAngle:   event.YAngle,
 		StreamID: strings.TrimSpace(event.StreamID),
+		Source:   strings.TrimSpace(strings.ToLower(event.Source)),
 		Text:     strings.TrimSpace(event.Text),
 		Reason:   strings.TrimSpace(event.Reason),
 	}
@@ -179,6 +187,13 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 		}
 		if !safePlaybackStreamID(normalized.StreamID) {
 			return DeviceExtensionEvent{}, fmt.Errorf("%w: playback stream_id", ErrUnsupportedDeviceEventValue)
+		}
+	case DeviceEventKindTouch:
+		if !allowedDeviceEventValue(value, "screen_tap", "screen_barge_in", "top_tap", "top_swipe_forward", "top_swipe_backward", "top_barge_in") {
+			return DeviceExtensionEvent{}, fmt.Errorf("%w: touch", ErrUnsupportedDeviceEventValue)
+		}
+		if normalized.Source != "" && !allowedDeviceEventValue(normalized.Source, "screen", "top_sensor") {
+			return DeviceExtensionEvent{}, fmt.Errorf("%w: touch source", ErrUnsupportedDeviceEventValue)
 		}
 	default:
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: kind", ErrUnsupportedDeviceEventKind)
@@ -249,6 +264,9 @@ func assignDeviceEventValue(wire *deviceExtensionWire, event DeviceExtensionEven
 	case DeviceEventKindPlayback:
 		wire.Playback = event.Value
 		wire.StreamID = event.StreamID
+	case DeviceEventKindTouch:
+		wire.Touch = event.Value
+		wire.Source = event.Source
 	}
 }
 

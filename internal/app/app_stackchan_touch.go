@@ -200,18 +200,23 @@ func runStackChanTouchAcceptanceCase(options stackChanTouchAcceptanceOptions) st
 		report.addFinding("gateway_device_report_failed", err.Error())
 		return report
 	}
-	if _, ok := findFirmwareDeviceRecord(before.Devices, options.DeviceID); !ok {
+	beforeDevice, ok := findFirmwareDeviceRecord(before.Devices, options.DeviceID)
+	if !ok {
 		report.addFinding("device_missing", "expected StackChan device is missing from Gateway")
 		return report
 	}
 
 	control, err := postStackChanTouchControl(options.GatewayURL, options.DeviceID, spec)
 	if err != nil {
-		report.addFinding("device_control_failed", err.Error())
-		return report
+		if strings.TrimSpace(beforeDevice.Capabilities["xiaozhi_transport"]) != "websocket" {
+			report.addFinding("device_control_failed", err.Error())
+			return report
+		}
+		report.addFinding("xiaozhi_touch_observation_only", "stock Xiaozhi product route has no audio_ws prompt channel; observing real touch events only")
+	} else {
+		report.ControlTraceID = control.TraceID
+		report.ControlSessionID = control.SessionID
 	}
-	report.ControlTraceID = control.TraceID
-	report.ControlSessionID = control.SessionID
 
 	controlStartedAtMS := time.Now().UnixMilli()
 	deadline := time.Now().Add(time.Duration(options.WindowMS) * time.Millisecond)

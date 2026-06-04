@@ -36,6 +36,15 @@ index 304e48d..f8b985e 100644
 +        device sends only playback start/stop_done after the server returns
 +        a21.profile=product and a21.playback_events=true.
 +
++config A21_PRODUCT_TOUCH_EVENTS
++    bool "A21 product touch events"
++    depends on BOARD_TYPE_M5STACK_STACK_CHAN
++    default n
++    help
++        Advertise the product-safe A21 touch event hint. The device sends only
++        screen/top touch semantics after the server returns
++        a21.profile=product and a21.touch_events=true.
++
  choice
 diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp
 index 164a751..c94a8b0 100644
@@ -75,6 +84,7 @@ index 4db623a..aa977b5 100644
 +# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set
 +CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y
 +CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y
++CONFIG_A21_PRODUCT_TOUCH_EVENTS=y
 +# CONFIG_WAKE_WORD_DISABLED is not set
 +# CONFIG_USE_ESP_WAKE_WORD is not set
 +# CONFIG_USE_AFE_WAKE_WORD is not set
@@ -98,10 +108,58 @@ index 0656b16..8b9bc5a 100644
 -assets,   data, spiffs,  0xA00000,  4M,
 +assets,   data, spiffs,  0xA00000,  5M,
  coredump, data, coredump,,          0x10000,
+diff --git a/firmware/main/hal/hal.h b/firmware/main/hal/hal.h
+--- a/firmware/main/hal/hal.h
++++ b/firmware/main/hal/hal.h
+@@ -230,4 +230,7 @@ public:
+     /* --------------------------------- HeadPet -------------------------------- */
+     uitk::Signal<HeadPetGesture> onHeadPetGesture;
+
++    /* -------------------------------- ScreenTouch ----------------------------- */
++    uitk::Signal<> onScreenTouch;
++
+     /* ----------------------------------- RGB ---------------------------------- */
+diff --git a/firmware/main/hal/hal.cpp b/firmware/main/hal/hal.cpp
+--- a/firmware/main/hal/hal.cpp
++++ b/firmware/main/hal/hal.cpp
+@@ -285,14 +285,23 @@ static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
+     auto& bridge_data = hal_bridge::get_data();
+
+     // mclog::tagInfo(_tag, "touchpoint: {}, x: {}, y: {}", bridge_data.touchPoint.num, bridge_data.touchPoint.x,
+     //                bridge_data.touchPoint.y);
+
++    static bool was_pressed = false;
++    bool emit_screen_touch = false;
+     if (bridge_data.touchPoint.num == 0) {
+         data->state = LV_INDEV_STATE_RELEASED;
++        was_pressed = false;
+     } else {
+         data->state   = LV_INDEV_STATE_PRESSED;
+         data->point.x = bridge_data.touchPoint.x;
+         data->point.y = bridge_data.touchPoint.y;
++        if (!was_pressed) {
++            emit_screen_touch = true;
++        }
++        was_pressed = true;
+     }
+
+     hal_bridge::unlock();
++
++    if (emit_screen_touch) {
++        GetHAL().onScreenTouch.emit();
++    }
+ }
 diff --git a/firmware/xiaozhi-esp32/main/application.cc b/firmware/xiaozhi-esp32/main/application.cc
 index 3b6f07e..396b23a 100644
 --- a/firmware/xiaozhi-esp32/main/application.cc
 +++ b/firmware/xiaozhi-esp32/main/application.cc
+@@ -9,5 +9,6 @@
+ #include "mcp_server.h"
+ #include "assets.h"
+ #include "settings.h"
+
++#include <hal/hal.h>
+ #include <cstring>
 @@ -21,2 +21,6 @@
 
 +static constexpr int64_t A21_VAD_STOP_DEBOUNCE_MS = 520;
@@ -131,7 +189,14 @@ index 3b6f07e..396b23a 100644
 +        esp_timer_delete(vad_stop_timer_handle_);
 +    }
      vEventGroupDelete(event_group_);
-@@ -83,6 +103,19 @@ void Application::Initialize() {
+@@ -76,12 +76,34 @@ void Application::Initialize() {
+     AudioServiceCallbacks callbacks;
+     callbacks.on_send_queue_available = [this]() {
+         xEventGroupSetBits(event_group_, MAIN_EVENT_SEND_AUDIO);
+     };
+     callbacks.on_wake_word_detected = [this](const std::string& wake_word) {
+         xEventGroupSetBits(event_group_, MAIN_EVENT_WAKE_WORD_DETECTED);
+     };
      callbacks.on_vad_change = [this](bool speaking) {
 +        vad_speaking_ = speaking;
 +        if (speaking) {
@@ -151,6 +216,21 @@ index 3b6f07e..396b23a 100644
 +    };
 +#endif
      audio_service_.SetCallbacks(callbacks);
+
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    GetHAL().onScreenTouch.connect([this]() {
++        Schedule([this]() {
++            HandleA21ScreenTouchEvent();
++        });
++    });
++    GetHAL().onHeadPetGesture.connect([this](HeadPetGesture gesture) {
++        Schedule([this, gesture]() {
++            HandleA21HeadPetGesture(gesture);
++        });
++    });
++#endif
++
+     // Add state change listeners
 @@ -181,3 +205,4 @@ void Application::Run() {
          MAIN_EVENT_ACTIVATION_DONE |
 -        MAIN_EVENT_STATE_CHANGED;
@@ -249,6 +329,56 @@ index 3b6f07e..396b23a 100644
 +        a21_ready_notified_ = true;
 +    }
 +    SetDeviceState(kDeviceStateIdle);
++#endif
++}
++
++void Application::HandleA21ScreenTouchEvent() {
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    if (!protocol_) {
++        return;
++    }
++    if (GetDeviceState() == kDeviceStateSpeaking) {
++        protocol_->SendA21TouchEvent("screen_barge_in", "screen");
++        AbortSpeaking(kAbortReasonNone);
++        return;
++    }
++    protocol_->SendA21TouchEvent("screen_tap", "screen");
++    HandleStartListeningEvent();
++#endif
++}
++
++void Application::HandleA21HeadPetGesture(HeadPetGesture gesture) {
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    if (!protocol_) {
++        return;
++    }
++    switch (gesture) {
++        case HeadPetGesture::SwipeForward:
++            a21_head_touch_swiped_ = true;
++            protocol_->SendA21TouchEvent("top_swipe_forward", "top_sensor");
++            return;
++        case HeadPetGesture::SwipeBackward:
++            a21_head_touch_swiped_ = true;
++            protocol_->SendA21TouchEvent("top_swipe_backward", "top_sensor");
++            return;
++        case HeadPetGesture::Release:
++            if (a21_head_touch_swiped_) {
++                a21_head_touch_swiped_ = false;
++                return;
++            }
++            if (GetDeviceState() == kDeviceStateSpeaking) {
++                protocol_->SendA21TouchEvent("top_barge_in", "top_sensor");
++                AbortSpeaking(kAbortReasonNone);
++                return;
++            }
++            protocol_->SendA21TouchEvent("top_tap", "top_sensor");
++            HandleStartListeningEvent();
++            return;
++        default:
++            return;
++    }
++#else
++    (void)gesture;
 +#endif
 +}
 +
@@ -498,6 +628,13 @@ index 7ca7af4..46cfdac 100644
 +#include <atomic>
  #include <string>
  #include <mutex>
+@@ -17,2 +18,5 @@
+ #include "device_state.h"
+ #include "device_state_machine.h"
+
++enum class HeadPetGesture;
++
+ // Main event bits
 @@ -33,2 +33,3 @@
  #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
 +#define MAIN_EVENT_VAD_STOP_TIMEOUT     (1 << 13)
@@ -512,6 +649,7 @@ index 7ca7af4..46cfdac 100644
 +    bool vad_speech_seen_ = false;
 +    bool a21_ready_notified_ = false;
 +    bool a21_control_retry_notified_ = false;
++    bool a21_head_touch_swiped_ = false;
 +    int64_t listening_started_at_us_ = 0;
 +    std::atomic_bool a21_playback_ack_sent_{false};
 +    std::atomic_bool a21_playback_stop_ack_sent_{false};
@@ -523,6 +661,8 @@ index 7ca7af4..46cfdac 100644
      void ContinueOpenAudioChannel(ListeningMode mode);
      void ContinueWakeWordInvoke(const std::string& wake_word);
 +    void EnsureA21ControlChannel();
++    void HandleA21ScreenTouchEvent();
++    void HandleA21HeadPetGesture(HeadPetGesture gesture);
 
      // Activation task (runs in background)
 diff --git a/firmware/xiaozhi-esp32/main/audio/audio_service.h b/firmware/xiaozhi-esp32/main/audio/audio_service.h
@@ -557,6 +697,7 @@ index 28ef604..edfc5b4 100644
 +    virtual bool SendA21Keepalive();
 +    virtual void SendA21PlaybackStart();
 +    virtual void SendA21PlaybackStopDone();
++    virtual void SendA21TouchEvent(const char* touch, const char* source);
 +
  protected:
 @@ -89,2 +91,6 @@ protected:
@@ -565,6 +706,7 @@ index 28ef604..edfc5b4 100644
 +    std::string device_id_;
 +    bool a21_product_playback_events_allowed_ = false;
 +    bool a21_product_keepalive_events_allowed_ = false;
++    bool a21_product_touch_events_allowed_ = false;
 +    bool SendA21DeviceHeartbeat();
 +    void SendA21PlaybackEvent(const char* playback);
      std::chrono::time_point<std::chrono::steady_clock> last_incoming_time_;
@@ -648,6 +790,37 @@ index 470cc91..d825a04 100644
 +#endif
 +}
 +
++void Protocol::SendA21TouchEvent(const char* touch, const char* source) {
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    if (!a21_product_touch_events_allowed_) {
++        return;
++    }
++    cJSON* root = cJSON_CreateObject();
++    cJSON_AddStringToObject(root, "type", "device");
++    cJSON_AddStringToObject(root, "kind", "touch");
++    cJSON_AddStringToObject(root, "touch", touch);
++    cJSON_AddStringToObject(root, "source", source);
++    if (!session_id_.empty()) {
++        cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
++    }
++    if (!trace_id_.empty()) {
++        cJSON_AddStringToObject(root, "trace_id", trace_id_.c_str());
++    }
++    if (!device_id_.empty()) {
++        cJSON_AddStringToObject(root, "device_id", device_id_.c_str());
++    }
++    auto json_str = cJSON_PrintUnformatted(root);
++    if (json_str != nullptr) {
++        SendText(json_str);
++        cJSON_free(json_str);
++    }
++    cJSON_Delete(root);
++#else
++    (void)touch;
++    (void)source;
++#endif
++}
++
  bool Protocol::IsTimeout() const {
 diff --git a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
 index 4b74a5e..51cc6a2 100644
@@ -715,6 +888,9 @@ index 4b74a5e..51cc6a2 100644
 +    cJSON_AddBoolToObject(features, "playback_events", true);
 +    cJSON_AddBoolToObject(features, "keepalive_events", true);
 +#endif
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    cJSON_AddBoolToObject(features, "touch_events", true);
++#endif
      cJSON_AddItemToObject(root, "features", features);
 @@ -238,3 +241,27 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
          ESP_LOGI(TAG, "Session ID: %s", session_id_.c_str());
@@ -732,6 +908,7 @@ index 4b74a5e..51cc6a2 100644
 +
 +    a21_product_playback_events_allowed_ = false;
 +    a21_product_keepalive_events_allowed_ = false;
++    a21_product_touch_events_allowed_ = false;
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
 +    auto a21 = cJSON_GetObjectItem(root, "a21");
 +    if (cJSON_IsObject(a21)) {
@@ -752,6 +929,17 @@ index 4b74a5e..51cc6a2 100644
 +                esp_timer_start_periodic(a21_keepalive_timer_handle_, 10000000);
 +            }
 +        }
++    }
++#endif
++#if CONFIG_A21_PRODUCT_TOUCH_EVENTS
++    auto a21_touch = cJSON_GetObjectItem(root, "a21");
++    if (cJSON_IsObject(a21_touch)) {
++        auto profile = cJSON_GetObjectItem(a21_touch, "profile");
++        auto touch_events = cJSON_GetObjectItem(a21_touch, "touch_events");
++        a21_product_touch_events_allowed_ =
++            cJSON_IsString(profile) &&
++            strcmp(profile->valuestring, "product") == 0 &&
++            cJSON_IsTrue(touch_events);
 +    }
 +#endif
 +

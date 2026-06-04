@@ -79,6 +79,7 @@ type Server struct {
 	xiaozhiFastAckTTS            providers.TTSAdapter
 	xiaozhiStockProfessional     bool
 	xiaozhiProductPlaybackEvents bool
+	xiaozhiProductTouchEvents    bool
 	xiaozhiListenMaxDurationMS   int64
 	wakeWordConfigPath           string
 	voiceModeConfig              string
@@ -125,6 +126,7 @@ type ServerOptions struct {
 	AudioIngressConfig           audio.IngressConfig
 	XiaozhiStockProfessional     bool
 	XiaozhiProductPlaybackEvents bool
+	XiaozhiProductTouchEvents    bool
 	XiaozhiListenMaxDuration     time.Duration
 	WakeWordConfigPath           string
 	WorkspaceDocumentStoreDir    string
@@ -1317,6 +1319,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiFastAckTTS:            xiaozhiFastAckTTS,
 		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
 		xiaozhiProductPlaybackEvents: options.XiaozhiProductPlaybackEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
+		xiaozhiProductTouchEvents:    options.XiaozhiProductTouchEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
 		xiaozhiListenMaxDurationMS:   xiaozhiListenMaxDurationMS,
 		wakeWordConfigPath:           wakeWordConfigPath(options.WakeWordConfigPath),
 		roleplayProfileConfig:        DefaultRoleplayProfile,
@@ -7241,8 +7244,9 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 	}
 	productPlaybackEvents := s.xiaozhiProductPlaybackEventsAllowed(session)
 	productKeepaliveEvents := s.xiaozhiProductKeepaliveEventsAllowed(session)
-	if !session.features.DeviceEvents && !productPlaybackEvents && !productKeepaliveEvents {
-		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product playback/keepalive allowance"))
+	productTouchEvents := s.xiaozhiProductTouchEventsAllowed(session)
+	if !session.features.DeviceEvents && !productPlaybackEvents && !productKeepaliveEvents && !productTouchEvents {
+		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "device_events_disabled", "device events require debug profile negotiation or product allowance"))
 		return true
 	}
 	event, err := xiaozhitransport.ParseDeviceExtensionEvent(data)
@@ -7262,8 +7266,13 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product playback allowance does not accept keepalive heartbeats"))
 				return true
 			}
+		case xiaozhitransport.DeviceEventKindTouch:
+			if !productTouchEvents {
+				_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product allowance does not accept touch events"))
+				return true
+			}
 		default:
-			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product allowance only accepts playback acknowledgements and keepalive heartbeats"))
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "product allowance only accepts playback acknowledgements, keepalive heartbeats, and touch events"))
 			return true
 		}
 	}
@@ -7282,6 +7291,11 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 		}
 	case xiaozhitransport.DeviceEventKindHeartbeat:
 		s.recordXiaozhiHeartbeat(session)
+		return true
+	case xiaozhitransport.DeviceEventKindTouch:
+		if !s.recordXiaozhiTouchEvent(session, event) {
+			_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi touch event"))
+		}
 		return true
 	default:
 		_ = session.writeXiaozhiJSON(ctx, conn, nil, s.xiaozhiError(session, "unsupported_device_event", "unsupported xiaozhi device event"))
@@ -7774,6 +7788,61 @@ func (s *Server) recordXiaozhiHeartbeat(session *xiaozhiSession) {
 	s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
 }
 
+func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) bool {
+	if session == nil || strings.TrimSpace(session.deviceID) == "" {
+		return false
+	}
+	var deviceEvent protocol.DeviceEventKind
+	var source protocol.TouchSource
+	switch event.Value {
+	case "screen_tap":
+		deviceEvent = protocol.DeviceEventTouchWakeOrListen
+		source = protocol.TouchSourceScreen
+	case "screen_barge_in":
+		deviceEvent = protocol.DeviceEventTouchBargeIn
+		source = protocol.TouchSourceScreen
+	case "top_tap":
+		deviceEvent = protocol.DeviceEventTouchTopTap
+		source = protocol.TouchSourceTopSensor
+	case "top_swipe_forward":
+		deviceEvent = protocol.DeviceEventTouchTopSwipeForward
+		source = protocol.TouchSourceTopSensor
+	case "top_swipe_backward":
+		deviceEvent = protocol.DeviceEventTouchTopSwipeBackward
+		source = protocol.TouchSourceTopSensor
+	case "top_barge_in":
+		deviceEvent = protocol.DeviceEventTouchBargeIn
+		source = protocol.TouchSourceTopSensor
+	default:
+		return false
+	}
+	if event.Source == string(protocol.TouchSourceScreen) {
+		source = protocol.TouchSourceScreen
+	} else if event.Source == string(protocol.TouchSourceTopSensor) {
+		source = protocol.TouchSourceTopSensor
+	}
+	nowMS := s.now().UnixMilli()
+	traceName := "device." + string(deviceEvent) + ".received"
+	s.recordTrace(session.traceID, session.sessionID, session.deviceID, traceName, nowMS)
+	s.mu.Lock()
+	record := s.devices[session.deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = session.deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.LastEvent = deviceEvent
+	record.LastTouchSource = source
+	record.LastTraceID = session.traceID
+	record.LastSessionID = session.sessionID
+	record.LastSeenMS = nowMS
+	s.devices[session.deviceID] = record
+	s.mu.Unlock()
+	return true
+}
+
 func (s *Server) recordXiaozhiPlaybackEvent(session *xiaozhiSession, event string, streamID string) {
 	if session == nil || strings.TrimSpace(session.deviceID) == "" {
 		return
@@ -7832,6 +7901,12 @@ func (s *Server) xiaozhiFeatureCapabilities(features xiaozhitransport.HelloFeatu
 			capabilities["xiaozhi_product_keepalive_events"] = "true"
 		}
 	}
+	if features.TouchEvents {
+		capabilities["xiaozhi_feature_touch_events"] = "true"
+		if s.xiaozhiProductTouchEventsAllowed(session) {
+			capabilities["xiaozhi_product_touch_events"] = "true"
+		}
+	}
 	if features.DebugMetrics {
 		capabilities["xiaozhi_feature_debug_metrics"] = "true"
 	}
@@ -7856,6 +7931,16 @@ func (s *Server) xiaozhiProductKeepaliveEventsAllowed(session *xiaozhiSession) b
 		s.xiaozhiProductPlaybackEvents &&
 		session != nil &&
 		session.features.KeepaliveEvents &&
+		!session.features.DeviceEvents &&
+		!session.features.DebugMetrics &&
+		hardwareMACDeviceID(session.deviceID)
+}
+
+func (s *Server) xiaozhiProductTouchEventsAllowed(session *xiaozhiSession) bool {
+	return s != nil &&
+		s.xiaozhiProductTouchEvents &&
+		session != nil &&
+		session.features.TouchEvents &&
 		!session.features.DeviceEvents &&
 		!session.features.DebugMetrics &&
 		hardwareMACDeviceID(session.deviceID)
@@ -9302,7 +9387,7 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 			"profile":       "debug",
 			"device_events": true,
 		}
-	} else if s.xiaozhiProductPlaybackEventsAllowed(session) || s.xiaozhiProductKeepaliveEventsAllowed(session) {
+	} else if s.xiaozhiProductPlaybackEventsAllowed(session) || s.xiaozhiProductKeepaliveEventsAllowed(session) || s.xiaozhiProductTouchEventsAllowed(session) {
 		a21 := map[string]any{
 			"profile": "product",
 		}
@@ -9311,6 +9396,9 @@ func (s *Server) xiaozhiHelloReply(session *xiaozhiSession) map[string]any {
 		}
 		if s.xiaozhiProductKeepaliveEventsAllowed(session) {
 			a21["keepalive_events"] = true
+		}
+		if s.xiaozhiProductTouchEventsAllowed(session) {
+			a21["touch_events"] = true
 		}
 		reply["a21"] = a21
 	}

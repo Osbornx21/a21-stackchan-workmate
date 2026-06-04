@@ -160,6 +160,8 @@ func TestParseHelloCapturesFeatureProfile(t *testing.T) {
 			"aec": true,
 			"device_events": true,
 			"playback_events": true,
+			"keepalive_events": true,
+			"touch_events": true,
 			"debug_metrics": true
 		},
 		"audio": {
@@ -173,7 +175,7 @@ func TestParseHelloCapturesFeatureProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	features := frame.Control.Hello.Features
-	if !features.MCP || !features.AEC || !features.DeviceEvents || !features.PlaybackEvents || !features.DebugMetrics {
+	if !features.MCP || !features.AEC || !features.DeviceEvents || !features.PlaybackEvents || !features.KeepaliveEvents || !features.TouchEvents || !features.DebugMetrics {
 		t.Fatalf("features = %+v, want all advertised flags captured", features)
 	}
 

@@ -103,6 +103,8 @@ func TestDeviceExtensionSchemaValidatesEnumsAndClamp(t *testing.T) {
 		{name: "heartbeat", event: DeviceExtensionEvent{Kind: DeviceEventKindHeartbeat}, want: DeviceExtensionEvent{Kind: DeviceEventKindHeartbeat}},
 		{name: "playback start", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-xiaozhi-stream-001"}, want: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-xiaozhi-stream-001"}},
 		{name: "playback stop done", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "stop_done", StreamID: "a21-xiaozhi-stream-001"}, want: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "stop_done", StreamID: "a21-xiaozhi-stream-001"}},
+		{name: "screen touch", event: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "screen_tap", Source: "screen"}, want: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "screen_tap", Source: "screen"}},
+		{name: "top swipe", event: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "top_swipe_forward", Source: "top_sensor"}, want: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "top_swipe_forward", Source: "top_sensor"}},
 	}
 
 	for _, tc := range tests {
@@ -111,10 +113,28 @@ func TestDeviceExtensionSchemaValidatesEnumsAndClamp(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.Kind != tc.want.Kind || got.Value != tc.want.Value || got.YAngle != tc.want.YAngle || got.StreamID != tc.want.StreamID {
+			if got.Kind != tc.want.Kind || got.Value != tc.want.Value || got.YAngle != tc.want.YAngle || got.StreamID != tc.want.StreamID || got.Source != tc.want.Source {
 				t.Fatalf("normalized = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseDeviceExtensionTouchRuntimeEcho(t *testing.T) {
+	event, err := ParseDeviceExtensionEvent([]byte(`{
+		"type":"device",
+		"kind":"touch",
+		"touch":"top_swipe_backward",
+		"source":"top_sensor",
+		"trace_id":"a21-trace-xiaozhi-touch",
+		"session_id":"a21-session-xiaozhi-touch",
+		"device_id":"44:1b:f6:e2:6a:60"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Kind != DeviceEventKindTouch || event.Value != "top_swipe_backward" || event.Source != "top_sensor" {
+		t.Fatalf("event = %+v, want top touch swipe backward", event)
 	}
 }
 
@@ -168,6 +188,8 @@ func TestDeviceExtensionBadValuesUseStableErrorsWithoutLegacyLeak(t *testing.T) 
 		{name: "playback stream secret label", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "secret-token"}, want: ErrUnsupportedDeviceEventValue},
 		{name: "playback stream api key", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "sk-test-secret"}, want: ErrUnsupportedDeviceEventValue},
 		{name: "playback stream a21 token", event: DeviceExtensionEvent{Kind: DeviceEventKindPlayback, Value: "start", StreamID: "a21-secret-token"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "bad touch value", event: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "top_admin"}, want: ErrUnsupportedDeviceEventValue},
+		{name: "bad touch source", event: DeviceExtensionEvent{Kind: DeviceEventKindTouch, Value: "top_tap", Source: "debug_port"}, want: ErrUnsupportedDeviceEventValue},
 	}
 
 	for _, tc := range tests {

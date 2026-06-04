@@ -84,6 +84,7 @@ type HelloFeatures struct {
 	DeviceEvents    bool
 	PlaybackEvents  bool
 	KeepaliveEvents bool
+	TouchEvents     bool
 	DebugMetrics    bool
 }
 
@@ -137,6 +138,7 @@ type helloFeaturesWire struct {
 	DeviceEvents    bool `json:"device_events"`
 	PlaybackEvents  bool `json:"playback_events"`
 	KeepaliveEvents bool `json:"keepalive_events"`
+	TouchEvents     bool `json:"touch_events"`
 	DebugMetrics    bool `json:"debug_metrics"`
 }
 
@@ -202,6 +204,7 @@ func ParseTextFrame(data []byte, direction Direction, identity Identity) (Frame,
 				DeviceEvents:    msg.Features.DeviceEvents,
 				PlaybackEvents:  msg.Features.PlaybackEvents,
 				KeepaliveEvents: msg.Features.KeepaliveEvents,
+				TouchEvents:     msg.Features.TouchEvents,
 				DebugMetrics:    msg.Features.DebugMetrics,
 			},
 			AudioParams: AudioParams{

@@ -5579,6 +5579,95 @@ func TestXiaozhiProductKeepaliveEventsAllowanceRecordsHeartbeat(t *testing.T) {
 	}
 }
 
+func TestXiaozhiProductTouchEventsAllowanceRecordsTouch(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{XiaozhiProductTouchEvents: true}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-touch",
+		"session_id": "a21-session-xiaozhi-product-touch",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp":          true,
+			"aec":          true,
+			"touch_events": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	replyJSON := mustJSON(t, reply)
+	for _, forbidden := range []string{"debug_metrics", `"device_events":true`, `"profile":"debug"`} {
+		if strings.Contains(strings.ToLower(replyJSON), strings.ToLower(forbidden)) {
+			t.Fatalf("product touch hello leaked debug field %q: %s", forbidden, replyJSON)
+		}
+	}
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["touch_events"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product touch allowance", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":    "device",
+		"kind":    "motion",
+		"name":    "nod",
+		"y_angle": 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rejected := readXiaozhiJSON(t, ctx, conn)
+	if rejected["type"] != "error" || rejected["code"] != "unsupported_device_event" {
+		t.Fatalf("product touch allowance accepted motion event: %#v", rejected)
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":       "device",
+		"kind":       "touch",
+		"touch":      "top_swipe_forward",
+		"source":     "top_sensor",
+		"trace_id":   "a21-trace-xiaozhi-product-touch",
+		"session_id": "a21-session-xiaozhi-product-touch",
+		"device_id":  "44:1b:f6:e2:6a:60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-touch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	body, err := io.ReadAll(traceResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "device.touch.top.swipe_forward.received") {
+		t.Fatalf("trace missing product touch event: %s", body)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "touch.top.swipe_forward" || registry["last_touch_source"] != "top_sensor" {
+		t.Fatalf("registry touch = %#v, want top swipe forward source", registry)
+	}
+	capabilities, ok := registry["capabilities"].(map[string]any)
+	if !ok ||
+		capabilities["xiaozhi_feature_touch_events"] != "true" ||
+		capabilities["xiaozhi_product_touch_events"] != "true" {
+		t.Fatalf("registry capabilities = %#v, want product touch events", registry["capabilities"])
+	}
+	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
+		t.Fatalf("product touch allowance marked debug capabilities: %#v", capabilities)
+	}
+}
+
 func TestXiaozhiSessionTurnCancelInvalidatesCurrentTurnAndResetsPacer(t *testing.T) {
 	session := &xiaozhiSession{}
 	turn := session.startXiaozhiTurn(context.Background(), protocol.ModeWorkmate)
