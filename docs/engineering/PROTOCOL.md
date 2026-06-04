@@ -603,7 +603,12 @@ hardware-MAC stock client with `hello.features.mcp=true`. The current bounded
 map covers `idle`, `listening`, `thinking`, `speaking`, `error`, and
 `fatal_error`, and sends only `self.robot.set_led_color` plus
 `self.robot.set_head_angles` over the same live `/v1/xiaozhi` MCP socket.
-State reaction delivery records `xiaozhi.state_reaction.robot_led_color.sent`
+The stock physical `listening` transition caused by `listen_start` is a
+special sensitive audio-lifecycle boundary and must not receive automatic
+state-reaction MCP writes; Gateway records
+`xiaozhi.state_reaction.listen_start_suppressed` and redacted runtime echo
+`last_state_reaction_status=suppressed_listen_start` instead. Other accepted
+state reaction delivery records `xiaozhi.state_reaction.robot_led_color.sent`
 and `xiaozhi.state_reaction.robot_head_angles_set.sent`; failures record
 `xiaozhi.state_reaction.failed`. The device registry stores only redacted
 runtime echo such as `last_state_reaction_status`,

@@ -8454,6 +8454,13 @@ func (s *Server) maybeSendXiaozhiStateReaction(ctx context.Context, session *xia
 	if !s.xiaozhiProductStateReactionsAllowed(session) {
 		return
 	}
+	if xiaozhiStateReactionSuppressed(state, reason) {
+		s.recordTrace(session.traceID, session.sessionID, session.deviceID, "xiaozhi.state_reaction.listen_start_suppressed", s.now().UnixMilli())
+		s.recordXiaozhiStateReactionEcho(session, state, reason, map[string]string{
+			"last_state_reaction_status": "suppressed_listen_start",
+		})
+		return
+	}
 	plans := xiaozhiStateReactionPlans(session, state)
 	if len(plans) == 0 {
 		return
@@ -8479,6 +8486,11 @@ func (s *Server) maybeSendXiaozhiStateReaction(ctx context.Context, session *xia
 		echo["last_state_reaction_tool"] = delivery.Marker
 		s.recordXiaozhiStateReactionEcho(session, state, reason, echo)
 	}
+}
+
+func xiaozhiStateReactionSuppressed(state string, reason string) bool {
+	return strings.EqualFold(strings.TrimSpace(state), "listening") &&
+		strings.EqualFold(strings.TrimSpace(reason), "listen_start")
 }
 
 func xiaozhiStateReactionPlans(session *xiaozhiSession, state string) []XiaozhiMCPControlRequest {

@@ -6050,9 +6050,10 @@ func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
 }
 
 func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
-	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+	server := NewServerWithOptions(ServerOptions{
 		XiaozhiProductStateReactions: true,
-	}).Handler())
+	})
+	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -6079,12 +6080,12 @@ func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
 		t.Fatalf("a21 hello extension = %#v, want product state reactions", reply["a21"])
 	}
 
-	if err := wsjson.Write(ctx, conn, map[string]any{
-		"type":  "listen",
-		"state": "start",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	server.writeXiaozhiOfficialStackChanState(ctx, &xiaozhiSession{
+		deviceID:  "44:1b:f6:e2:6a:60",
+		traceID:   "a21-trace-xiaozhi-product-state-reaction",
+		sessionID: "a21-session-xiaozhi-product-state-reaction",
+		features:  xiaozhitransport.HelloFeatures{MCP: true, AEC: true},
+	}, "thinking", "voice_pipeline_start", false)
 
 	readMCP := func() (string, map[string]any) {
 		message := readXiaozhiJSON(t, ctx, conn)
@@ -6108,16 +6109,16 @@ func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
 
 	tool, args := readMCP()
 	if tool != xiaozhiMCPRobotSetLEDColorToolName ||
-		args["red"] != float64(0) ||
-		args["green"] != float64(72) ||
+		args["red"] != float64(90) ||
+		args["green"] != float64(0) ||
 		args["blue"] != float64(168) {
 		t.Fatalf("led state reaction = tool:%s args:%#v", tool, args)
 	}
 	tool, args = readMCP()
 	if tool != xiaozhiMCPRobotSetHeadAnglesToolName ||
 		args["yaw"] != float64(0) ||
-		args["pitch"] != float64(30) ||
-		args["speed"] != float64(180) {
+		args["pitch"] != float64(36) ||
+		args["speed"] != float64(160) {
 		t.Fatalf("head state reaction = tool:%s args:%#v", tool, args)
 	}
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
@@ -6132,7 +6133,6 @@ func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"xiaozhi.listen.start",
 		"stackchan.display_state.registry_updated",
 		"xiaozhi.state_reaction.robot_led_color.sent",
 		"xiaozhi.state_reaction.robot_head_angles_set.sent",
@@ -6143,8 +6143,8 @@ func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
 	}
 
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
-	if registry["display_state"] != "listening" || registry["display_state_source"] != "xiaozhi" {
-		t.Fatalf("registry display state = %#v, want xiaozhi/listening", registry)
+	if registry["display_state"] != "thinking" || registry["display_state_source"] != "xiaozhi" {
+		t.Fatalf("registry display state = %#v, want xiaozhi/thinking", registry)
 	}
 	capabilities, ok := registry["capabilities"].(map[string]any)
 	if !ok || capabilities["xiaozhi_product_state_reactions"] != "true" {
@@ -6153,11 +6153,75 @@ func TestXiaozhiProductStateReactionsSendBoundedBodyMCP(t *testing.T) {
 	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
 	if !ok ||
 		runtimeEcho["last_state_reaction_status"] != "delivered" ||
-		runtimeEcho["last_state_reaction_state"] != "listening" ||
-		runtimeEcho["last_state_reaction_reason"] != "listen_start" ||
-		runtimeEcho["robot_head_pitch"] != "30" ||
+		runtimeEcho["last_state_reaction_state"] != "thinking" ||
+		runtimeEcho["last_state_reaction_reason"] != "voice_pipeline_start" ||
+		runtimeEcho["robot_head_pitch"] != "36" ||
 		runtimeEcho["robot_led_blue"] != "168" {
 		t.Fatalf("registry runtime_echo = %#v, want state reaction echo", registry["runtime_echo"])
+	}
+}
+
+func TestXiaozhiProductStateReactionsSuppressListenStartMCP(t *testing.T) {
+	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
+		XiaozhiProductStateReactions: true,
+	}).Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-product-state-listen-start",
+		"session_id": "a21-session-xiaozhi-product-state-listen-start",
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"features": map[string]any{
+			"mcp": true,
+			"aec": true,
+		},
+	})
+	reply := readXiaozhiJSON(t, ctx, conn)
+	a21, ok := reply["a21"].(map[string]any)
+	if !ok || a21["profile"] != "product" || a21["state_reactions"] != true {
+		t.Fatalf("a21 hello extension = %#v, want product state reactions", reply["a21"])
+	}
+
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":  "listen",
+		"state": "start",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
+
+	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-state-listen-start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = traceResp.Body.Close() })
+	var traces TraceResponse
+	if err := json.NewDecoder(traceResp.Body).Decode(&traces); err != nil {
+		t.Fatal(err)
+	}
+	if !traceContains(traces.Events, "xiaozhi.state_reaction.listen_start_suppressed") {
+		t.Fatalf("trace missing listen-start suppression: %+v", traces.Events)
+	}
+	if traceContains(traces.Events, "xiaozhi.state_reaction.robot_led_color.sent") {
+		t.Fatalf("listen-start state reaction sent MCP unexpectedly: %+v", traces.Events)
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok ||
+		runtimeEcho["last_state_reaction_status"] != "suppressed_listen_start" ||
+		runtimeEcho["last_state_reaction_state"] != "listening" ||
+		runtimeEcho["last_state_reaction_reason"] != "listen_start" {
+		t.Fatalf("registry runtime_echo = %#v, want listen-start suppression", registry["runtime_echo"])
 	}
 }
 
