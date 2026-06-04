@@ -15,8 +15,8 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD before this focused workspace index-request cut:
-  `509d688 feat(gateway): fold speaker volume into mcp control`
+- Current source HEAD before this V21 scope-guard control-doc sync:
+  `6a63e71 feat(gateway): track workspace index requests`
 - Remote:
   `origin/codex/a21-hardware-window-20260603-wifi-provisioning-flash`
 - Tracked dirty-state policy:
@@ -90,14 +90,15 @@ Target:
 
 Current focused cut:
 
-- `docs/plans/2026-06-04-workspace-index-request-ledger.md`
+- V21 scoped worker plan:
+  `/Users/jiyurun/.codex/worktrees/b0c0/v21-knowledge-platform/docs/plans/2026-06-04-a21-v2-workspace-scope-retrieval-guard.md`
 - Transition:
-  `T-INTERNAL-TEST4-WORKSPACE-INDEX-REQUEST-LEDGER-001`
+  `T-V21-A21-WORKSPACE-SCOPE-RETRIEVAL-GUARD-001`
 - Target:
-  add a redacted no-execute workspace indexing request ledger so locally stored
-  uploads can advance from `stored_local_pending_index` to
-  `indexing_requested_no_execute` without parsing, embedding, V21 execution, or
-  private-content leakage.
+  make V21 native `/internal/v1/knowledge/voice-query` execute A21 v2
+  `query_scope` against classified `source_scope=public|personal` evidence
+  before answer generation, without claiming full tenant/account ACL or real
+  personal upload indexing.
 
 ## Scoped Hardware Parity Transition
 
@@ -821,6 +822,54 @@ Current conclusion:
   personal/public corpus enforcement or nonzero personal/public scope counts.
 - The worker did not touch A21 code, A21 Gateway runtime, StackChan hardware,
   firmware, provider APIs, or the dirty V21 LAN/desktop connector work.
+
+## Latest Control-Tower Result - 2026-06-04 V21 Scope Retrieval Guard Completed
+
+The next V21 scoped worker moved the native A21 v2 bridge from metadata-only
+acceptance to executable source-scope filtering.
+
+Current implementation state:
+
+- V21 worker branch:
+  `origin/codex/a21-v2-workspace-scope-retrieval-guard`.
+- V21 worker commit:
+  `fccd0ac feat(voice-query): enforce A21 workspace source scope`.
+- V21 retrieval requests now carry safe A21 v2 metadata:
+  `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- V21 retrieval results and voice-query evidence now carry safe
+  `source_scope=public|personal` labels.
+- `public_only`, `personal_only`, and `personal_plus_public` are filtered
+  before answer generation; unclassified evidence is not promoted into scoped
+  A21 responses.
+- V21 HTTP retrieval adapter and Qdrant sidecar both pass through
+  `source_scope`; the Postgres retrieval writer can derive scope from chunk
+  metadata, source-unit locator metadata, or `object_refs.access_class`.
+- Scoped responses can report `workspace_status=searchable` with classified
+  `source_scope_counts`; legacy requests without `query_scope` still keep
+  `scope_contract_ready_acl_pending` and zero claimed scope counts.
+
+Verification:
+
+- V21 `go test ./...` from `backend/`: passed.
+- V21 sidecar `python3 -m unittest retrieval_service_test.py`: passed.
+- V21 retrieval eval
+  `python3 -m unittest evals/retrieval/test_qdrant_retrieval_sidecar.py`:
+  passed.
+- V21 `git diff --check`: passed.
+- V21 `make compose-config`: passed.
+- V21 `make test` and `make check`: blocked at `check-toolchain` because the
+  Makefile expects Node `v24.15.0` and this shell has Node `v25.8.0`.
+
+Current conclusion:
+
+- A21 can now treat the V21 worker branch as source-scope guard evidence, not
+  merely shape evidence.
+- This still does not complete durable tenant/account ACL, real personal
+  upload indexing, cloud storage, V21 merge/release, or physical StackChan
+  professional consult acceptance.
+- The worker did not start V21/A21 services, execute providers, ingest private
+  documents, touch ECS, firmware, serial, NVS, or the dirty V21 LAN/desktop
+  connector worktree.
 
 ## Latest Control-Tower Result - 2026-06-04 Internal Test 4 Workspace Job Skeleton
 

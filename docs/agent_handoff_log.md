@@ -11077,6 +11077,120 @@ Failure location/reason:
 
 - None in this focused round.
 
+## 2026-06-04 10:37 CST - V21 Source-Scope Retrieval Guard
+
+Round goal:
+
+- Move the V21 side of the A21 internal test 4 workspace contract beyond
+  metadata-only acceptance by adding executable source-scope filtering for
+  `public_only`, `personal_only`, and `personal_plus_public`, while preserving
+  the boundary that this is not yet durable tenant/account ACL or real personal
+  indexing.
+
+Actual completed work:
+
+- Inspected the dirty main V21 worktree and avoided it. The dirty checkout is
+  `/Users/jiyurun/Documents/v21-knowledge-platform` on
+  `feat/consumer-lan-discovery-ui`.
+- Continued from the clean V21 worker worktree
+  `/Users/jiyurun/.codex/worktrees/b0c0/v21-knowledge-platform`.
+- Created V21 branch
+  `codex/a21-v2-workspace-scope-retrieval-guard` from the previous A21 v2
+  native contract branch.
+- Added V21 plan
+  `docs/plans/2026-06-04-a21-v2-workspace-scope-retrieval-guard.md`.
+- Implemented V21 source-scope guard commit
+  `fccd0ac feat(voice-query): enforce A21 workspace source scope` and pushed it
+  to `origin/codex/a21-v2-workspace-scope-retrieval-guard`.
+- V21 retrieval requests now carry safe A21 v2 metadata:
+  `device_id`, `user_id`, `workspace_id`, and `query_scope`.
+- V21 retrieval results and voice-query evidence now carry safe
+  `source_scope=public|personal`.
+- V21 voice-query filters scoped results before answer generation; unclassified
+  evidence is not promoted into scoped A21 responses.
+- V21 HTTP retrieval adapter and Qdrant sidecar pass `source_scope`; the
+  Postgres writer can derive it from chunk metadata, source-unit locator
+  metadata, or `object_refs.access_class`.
+- Scoped V21 responses can now return `workspace_status=searchable` with
+  classified `source_scope_counts`; legacy requests without `query_scope`
+  remain `scope_contract_ready_acl_pending`.
+- Updated A21 control docs to record the worker result and next boundary.
+
+Changed files:
+
+- V21 worker commit `fccd0ac` changed:
+  - `backend/internal/adapters/postgres/admin_reader_test.go`
+  - `backend/internal/adapters/postgres/upload_writer.go`
+  - `backend/internal/adapters/retrieval/http_searcher.go`
+  - `backend/internal/adapters/retrieval/http_searcher_test.go`
+  - `backend/internal/admin/readmodel.go`
+  - `backend/internal/admin/voice_query.go`
+  - `backend/internal/httpapi/voice_query.go`
+  - `backend/internal/httpapi/voice_query_test.go`
+  - `contracts/internal/voice-knowledge-query.schema.json`
+  - `deploy/sidecars/retrieval-qdrant/retrieval_service.py`
+  - `deploy/sidecars/retrieval-qdrant/retrieval_service_test.py`
+  - `docs/core/07-DEVICE-VOICE-AND-PROTOCOL.md`
+  - `docs/core/10-API-AND-EVENT-CONTRACTS.md`
+  - `docs/plans/2026-06-04-a21-v2-workspace-scope-retrieval-guard.md`
+- A21 control docs changed:
+  - `docs/engineering/A21_CURRENT_CONTROL.md`
+  - `docs/engineering/V21_INTEGRATION.md`
+  - `docs/plans/2026-06-04-internal-test4-cloud-mode-and-knowledge-workspace.md`
+  - `docs/project_state_machine.md`
+  - `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- V21 worker branches still need V21 owner/main-thread review and merge.
+- Durable tenant/account ACL is not complete.
+- Real personal document parsing, chunking, embedding, indexing, cloud storage,
+  and V21 release readiness are not complete.
+- A21 Gateway still has no real execution path that consumes uploaded A21
+  workspace documents into V21 personal corpora.
+- Physical StackChan professional consult acceptance remains separate.
+
+Known risks/blockers:
+
+- `fccd0ac` is source-scope guard evidence only; do not claim full personal
+  corpus readiness from it.
+- V21 `make test` and `make check` are currently blocked by Node toolchain
+  mismatch: Makefile expects Node `v24.15.0`; this shell has Node `v25.8.0`.
+- Git may still warn about historical loose objects/gc; no prune/gc action was
+  taken.
+
+Recommended next action:
+
+- Review/merge the two V21 worker branches, then dispatch a durable A21/V21
+  indexing adapter transition that takes A21 stored-local documents through an
+  approved V21 upload/index contract and returns source-scope-aware searchable
+  readiness. Keep this separate from physical StackChan professional consult
+  evidence.
+
+Test/build/runtime results:
+
+- V21 `go test ./internal/httpapi ./internal/adapters/retrieval ./internal/adapters/postgres -run 'VoiceQuery|HTTPSearcher|UploadWriterSearch' -count=1`:
+  passed.
+- V21 `go test ./...` from `backend/`: passed.
+- V21 sidecar `python3 -m unittest retrieval_service_test.py`: passed.
+- V21 retrieval eval
+  `python3 -m unittest evals/retrieval/test_qdrant_retrieval_sidecar.py`:
+  passed.
+- V21 `git diff --check`: passed.
+- V21 `make compose-config`: passed.
+- V21 `make test`: blocked at `check-toolchain` due Node version mismatch.
+- V21 `make check`: blocked at `check-toolchain` due Node version mismatch.
+- No A21 Gateway service was started, no provider or real V21 service
+  execution occurred, no private documents were ingested, and no firmware
+  build, flash, serial, NVS, ECS change, prune/gc, or physical hardware action
+  occurred.
+
+Failure location/reason:
+
+- `make test` and `make check` in V21 root failed before tests at
+  `check-toolchain` because Node is `v25.8.0` while the Makefile expects
+  `v24.15.0`.
+
 ## 2026-06-04 09:46 CST - Roleplay Soul Profile Contract
 
 Round goal:

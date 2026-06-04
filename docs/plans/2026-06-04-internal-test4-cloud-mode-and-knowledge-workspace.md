@@ -121,6 +121,19 @@ StackChan hardware.
   Traces record only safe markers:
   `professional.voice_trigger.detected` and
   `xiaozhi.professional_route.voice_trigger`.
+- V21 scoped worker branch
+  `origin/codex/a21-v2-workspace-scope-retrieval-guard` at commit `fccd0ac`
+  now makes native V21 `/internal/v1/knowledge/voice-query` execute A21 v2
+  `query_scope` against classified `source_scope=public|personal` evidence
+  before answer generation. The worker passes A21 scope metadata into
+  retrieval requests, carries `source_scope` through HTTP/Qdrant/Postgres
+  retrieval paths, filters `public_only`, `personal_only`, and
+  `personal_plus_public`, fails closed for unclassified evidence in scoped A21
+  responses, and returns classified `source_scope_counts` with
+  `workspace_status=searchable`. Legacy requests without `query_scope` remain
+  `scope_contract_ready_acl_pending`. This is source-scope guard evidence, not
+  full tenant/account ACL, real personal upload indexing, V21 merge/release, or
+  physical StackChan professional consult acceptance.
 
 ## Product Form
 

@@ -135,6 +135,14 @@ Rules:
   available.
 - `professional` mode must be user-confirmed before A21 sends a V21 query.
 - `public_only` must never return personal source IDs.
+- V21 scoped worker
+  `origin/codex/a21-v2-workspace-scope-retrieval-guard` commit `fccd0ac`
+  implements the first native source-scope guard: V21 carries A21 v2 scope
+  metadata into retrieval requests, filters classified
+  `source_scope=public|personal` evidence before answer generation, fails
+  closed for unclassified evidence in scoped A21 responses, and can return
+  `workspace_status=searchable` with nonzero classified counts. This is not yet
+  durable tenant/account ACL or real personal upload indexing.
 - V21 reports may include scope labels and counts, but not uploaded document
   text, evidence bodies, full source paths, credentials, local private URLs,
   prompts, transcripts, or provider output.
