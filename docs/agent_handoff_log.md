@@ -14341,3 +14341,100 @@ Forbidden actions avoided:
 - No generic `xiaozhi.bin` product flash, no prune/gc, no provider secret
   printing, no firmware key storage, no V21 internal execution, and no
   internal-test3 protocol/audio rollback occurred.
+
+## 2026-06-04 20:07 CST - Corrected ChinaNet NVS And TUN Route Recovery
+
+Round goal:
+
+- Correct the SSID spelling from the operator screenshot, stop misclassifying
+  TUN-route false negatives as ECS downtime, and update the live product truth.
+
+Actual completed work:
+
+- Operator screenshot clarified the visible SSID is `ChinaNet-N6e3` with no
+  spaces around the hyphen.
+- Ran corrected product NVS plan and guarded NVS execute on
+  `/dev/cu.usbmodem1101`; execution passed.
+- Captured serial after the corrected NVS write:
+  - Device found AP `ChinaNet-N6e3`.
+  - Device connected to Wi-Fi and received IP `192.168.1.26`.
+  - Device opened `ws://47.103.57.217/v1/xiaozhi`.
+  - Device entered listening/speaking state and produced the audible short
+    reply marker `嗯。`.
+- Operator then pointed out TUN mode was enabled. Route inspection confirmed
+  public A21 traffic to `47.103.57.217` was going through `utun6` via
+  `198.18.0.1`, reproducing the known false-negative pattern.
+- Applied the historical direct-source workaround with source IP
+  `192.168.1.20`:
+  - `http://47.103.57.217/healthz` returned A21 Gateway ok.
+  - `http://47.103.57.217/xiaozhi/ota/` returned
+    `ws://47.103.57.217/v1/xiaozhi`.
+  - `http://47.103.57.217/v1/devices` showed product device
+    `44:1b:f6:e2:6a:60` online.
+- SSH with the same source bind reached the real auth state and failed with
+  `Permission denied (publickey)`, so the remaining ECS deploy blocker is key
+  authorization, not Gateway reachability.
+- Live trace `a21-trace-44-1b-f6-e2-6a-60` now has `1803` events, including
+  real physical Opus ingress/decode, ASR partial/final, provider first content,
+  TTS first audio, Opus downlink, voice-pipeline completion, and one barge-in
+  stop marker.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- Full PRD acceptance is still not claimable because physical evidence still
+  lacks device playback-start/stop-done or trusted audible/instrument
+  observation.
+- The latest local Web/App professional-query Gateway code is not deployed to
+  ECS from this Mac because SSH root auth is not available.
+- A Mac-side `product-readiness` run without ECS provider secret env still
+  under-reports provider as `mock`; live public Gateway runtime itself reports
+  cascade mode with StepFun and voice-clone TTS selected.
+
+Known risks/blockers:
+
+- Keep using `A21_DIRECT_SOURCE_IP=192.168.1.20` or `curl --interface
+  192.168.1.20` for public A21 verification while TUN mode is active.
+- Do not treat TUN-path empty replies as ECS downtime unless the bound-source
+  check also fails.
+- `root@47.103.57.217` needs an accepted key or Aliyun workbench access for
+  deployment/restart.
+
+Recommended next action:
+
+- Run physical acceptance from the now-online device and direct-source public
+  Gateway path: confirm audible playback, playback-start/stop-done or trusted
+  observation, barge-in, and professional/roleplay mode behavior; then
+  regenerate physical evidence and product readiness with provider env aligned
+  to the live ECS runtime.
+
+Test/build/runtime results:
+
+- Corrected NVS plan:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-200246-1780574566418018000.json`
+  passed with `dry_run=true`.
+- Corrected NVS execute:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-200257-1780574577392353000.json`
+  passed with `write_executed=true`, `mutated_entry_count=5`,
+  `wifi_credentials_written=true`, and `servo_calibration_present=true`.
+- Direct-source public Gateway checks passed for `/healthz`, `/xiaozhi/ota/`,
+  `/v1/devices`, and `/v1/voice-chain-profiles`.
+- Live device registry: `44:1b:f6:e2:6a:60` online, current mode `roleplay`,
+  voice chain `cascade`, LLM `stepfun`, TTS `voice_clone_cli`, last event
+  `xiaozhi.tts.opus_frame.downlink`.
+- Live trace counts include `xiaozhi.opus_frame.received=230`,
+  `xiaozhi.opus_frame.decoded=230`, `asr.first_partial=8`, `asr.final=8`,
+  `provider.first_content=4`, `tts.first_audio=4`,
+  `xiaozhi.tts.opus_frame.downlink=214`,
+  `xiaozhi.voice_pipeline.completed=4`, `barge_in.detected=1`, and
+  `playback.stop=1`.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no provider secret printing, no
+  provider key in firmware, no prune/gc, no V21 internal execution, no
+  internal-test3 rollback, and no false PRD acceptance claim occurred.

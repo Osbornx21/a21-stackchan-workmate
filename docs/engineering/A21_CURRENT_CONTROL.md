@@ -71,6 +71,38 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-04 20:07 CST hardware/network recovery:
+
+- Product app flash is complete through the official-compatible product lane:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260604-195734-1780574254123911000.json`,
+  app SHA-256
+  `e66a41ef486b866b076746bd064af2e3afb75e0a316515921bbc681b89fb36a8`.
+- Corrected product NVS is complete:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260604-200257-1780574577392353000.json`,
+  with `wifi_credentials_written=true`, `mutated_entry_count=5`, and
+  `servo_calibration_present=true`.
+- The correct SSID is `ChinaNet-N6e3` with no spaces around the hyphen.
+- Serial evidence shows device `44:1b:f6:e2:6a:60` found `ChinaNet-N6e3`,
+  connected with IP `192.168.1.26`, and opened
+  `ws://47.103.57.217/v1/xiaozhi`.
+- This Mac currently has TUN mode routing `47.103.57.217` through
+  `utun6` / `198.18.0.1`. Default public curls may therefore show false
+  empty replies. Use `A21_DIRECT_SOURCE_IP=192.168.1.20` or
+  `curl --interface 192.168.1.20 --noproxy '*' ...` for public A21
+  verification while TUN is active.
+- With the source bind, public `/healthz`, `/xiaozhi/ota/`, `/v1/devices`,
+  `/v1/voice-chain-profiles`, and `/v1/traces` are reachable and healthy.
+- Live `/v1/devices` reports `current_mode=roleplay`,
+  `current_voice_chain_mode=cascade`, `current_llm_profile=stepfun`,
+  `current_tts_profile=voice_clone_cli`, and last event
+  `xiaozhi.tts.opus_frame.downlink`.
+- Live trace `a21-trace-44-1b-f6-e2-6a-60` has physical Opus ingress/decode,
+  ASR partial/final, provider first content, TTS first audio, Opus downlink,
+  four voice-pipeline completions, and one barge-in/playback-stop marker.
+- SSH with source bind reaches the real auth state but fails
+  `Permission denied (publickey)`. ECS deploy/restart is blocked by missing
+  accepted SSH key or workbench access, not by Gateway app health.
+
 ## Active Transition
 
 Current active plan:
@@ -550,10 +582,10 @@ Current conclusion:
   by readiness.
 - Full launch remains blocked by `v21_professional_execution` and
   `physical_stackchan_prd_acceptance`.
-- Direct curls from this control Mac to `47.103.57.217` still return empty
-  replies, while ECS loopback and 5080lab public HTTP are healthy. Treat this as
-  a source-path/network issue to inspect in Aliyun/network tooling, not as an
-  A21 Gateway runtime blocker.
+- Superseded by the 2026-06-04 20:07 CST TUN diagnosis above: default curls
+  may return empty replies while TUN is active, but direct-source public A21
+  probes with `192.168.1.20` are healthy. Do not reopen this as an ECS runtime
+  blocker unless the direct-source check also fails.
 
 ## Latest Control-Tower Result - 2026-06-04 04:14 CST
 
@@ -1694,17 +1726,18 @@ Current implementation state:
 - The device was hard-reset after the cloud NVS write. Serial output observed
   regular `SystemInfo` lines and did not repeat the earlier `No AP found` or
   hotspot-provisioning fallback in the observed window.
-- From the current Mac/hotspot network, cloud TCP ports `22`, `80`, `443`, and
-  `21081` are reachable, but HTTP/HTTPS application requests to
-  `47.103.57.217` and `47.103.57.217:21081` return empty replies or TLS
-  syscall errors. SSH is also closed by the remote host before authentication.
+- Superseded by the 2026-06-04 20:07 CST TUN diagnosis above: default public
+  probes were routed through TUN and returned false empty replies. Direct-source
+  probes with `192.168.1.20` return healthy A21 Gateway responses. SSH now
+  reaches the real auth state and fails with `Permission denied (publickey)`.
 
 Current conclusion:
 
-- The product NVS is now aligned with the all-cloud architecture. The remaining
-  blocker is not local Gateway routing; it is cloud Gateway application-layer
-  reachability from this network or ECS runtime/Caddy state.
-- Device registration cannot be confirmed from this control Mac until the cloud
-  Gateway HTTP/WS path responds or an ECS/control-plane path is available.
+- The product NVS is now aligned with the all-cloud architecture, and the later
+  corrected SSID NVS write restored physical reconnect. The remaining cloud
+  blocker is ECS SSH authorization for deployment/restart, not Gateway HTTP/WS
+  health.
+- Device registration can be confirmed from this control Mac only through the
+  direct-source path while TUN is active.
 - No provider key exposure, firmware app flash, generic Xiaozhi product flash,
   V21 execution, repository prune/gc, or internal-test3 rollback occurred.
