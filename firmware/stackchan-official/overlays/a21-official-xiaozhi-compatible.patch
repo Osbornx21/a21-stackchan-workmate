@@ -653,6 +653,49 @@ diff --git a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc b/firmw
 index 4b74a5e..51cc6a2 100644
 --- a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
 +++ b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.cc
+@@ -9,2 +9,3 @@
+ #include <esp_log.h>
++#include <esp_timer.h>
+ #include <arpa/inet.h>
+@@ -15,2 +16,19 @@ WebsocketProtocol::WebsocketProtocol() {
+ WebsocketProtocol::WebsocketProtocol() {
+     event_group_handle_ = xEventGroupCreate();
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    esp_timer_create_args_t a21_keepalive_timer_args = {
++        .callback = [](void* arg) {
++            auto* protocol = static_cast<WebsocketProtocol*>(arg);
++            if (protocol != nullptr && !protocol->SendA21Keepalive()) {
++                ESP_LOGW(TAG, "A21 product websocket keepalive failed; closing stale channel");
++                protocol->CloseAudioChannel(false);
++            }
++        },
++        .arg = this,
++        .dispatch_method = ESP_TIMER_TASK,
++        .name = "a21_ws_keepalive",
++        .skip_unhandled_events = true
++    };
++    esp_timer_create(&a21_keepalive_timer_args, &a21_keepalive_timer_handle_);
++#endif
+ }
+@@ -19,2 +37,8 @@ WebsocketProtocol::~WebsocketProtocol() {
+ WebsocketProtocol::~WebsocketProtocol() {
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (a21_keepalive_timer_handle_ != nullptr) {
++        esp_timer_stop(a21_keepalive_timer_handle_);
++        esp_timer_delete(a21_keepalive_timer_handle_);
++    }
++#endif
+     vEventGroupDelete(event_group_handle_);
+ }
+@@ -60,2 +83,7 @@ void WebsocketProtocol::CloseAudioChannel(bool send_goodbye) {
+     (void)send_goodbye;  // Websocket doesn't need to send goodbye message
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    if (a21_keepalive_timer_handle_ != nullptr) {
++        esp_timer_stop(a21_keepalive_timer_handle_);
++    }
++#endif
+     websocket_.reset();
+ }
 @@ -212,2 +212,5 @@ std::string WebsocketProtocol::GetHelloMessage() {
      cJSON_AddBoolToObject(features, "mcp", true);
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
@@ -690,7 +733,36 @@ index 4b74a5e..51cc6a2 100644
 +            cJSON_IsString(profile) &&
 +            strcmp(profile->valuestring, "product") == 0 &&
 +            cJSON_IsTrue(keepalive_events);
++        if (a21_keepalive_timer_handle_ != nullptr) {
++            esp_timer_stop(a21_keepalive_timer_handle_);
++            if (a21_product_keepalive_events_allowed_) {
++                esp_timer_start_periodic(a21_keepalive_timer_handle_, 10000000);
++            }
++        }
 +    }
 +#endif
 +
      auto audio_params = cJSON_GetObjectItem(root, "audio_params");
+diff --git a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.h b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.h
+index 1cc6b3f..62e9ab7 100644
+--- a/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.h
++++ b/firmware/xiaozhi-esp32/main/protocols/websocket_protocol.h
+@@ -7,5 +7,6 @@
+ #include <web_socket.h>
+ #include <freertos/FreeRTOS.h>
+ #include <freertos/event_groups.h>
+-
++#include <esp_timer.h>
++
+ #define WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT (1 << 0)
+@@ -27,6 +28,9 @@ private:
+ private:
+     EventGroupHandle_t event_group_handle_;
+     std::unique_ptr<WebSocket> websocket_;
+     int version_ = 1;
+-
++#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
++    esp_timer_handle_t a21_keepalive_timer_handle_ = nullptr;
++#endif
++
+     void ParseServerHello(const cJSON* root);
