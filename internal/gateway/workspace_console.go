@@ -147,6 +147,11 @@ const workspaceConsoleHTML = `<!doctype html>
       padding: 7px;
       color: var(--muted);
     }
+    input[type="range"] {
+      min-height: 40px;
+      padding: 0;
+      accent-color: var(--accent);
+    }
     input[type="file"]::file-selector-button {
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -554,6 +559,44 @@ const workspaceConsoleHTML = `<!doctype html>
         </div>
       </section>
 
+      <section class="wide" aria-label="Hardware screen">
+        <div class="panel-head">
+          <h2>Hardware Screen</h2>
+          <div class="tagline">
+            <span class="tag ready" id="hardwareScreenStatus">screen=idle</span>
+            <span class="tag warn" id="hardwareScreenPhysicalStatus">physical_accepted=false</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="grid">
+            <label>Brightness
+              <input id="screenBrightness" type="range" min="0" max="100" step="1" value="55">
+            </label>
+            <label>Level
+              <input id="screenBrightnessValue" value="55" readonly>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="applyScreenBrightness">Apply brightness</button>
+            <button class="secondary" data-screen-theme="light">Light</button>
+            <button class="secondary" data-screen-theme="dark">Dark</button>
+            <button class="secondary" data-screen-theme="auto">Auto</button>
+            <button class="secondary" id="runDeviceStatus">Device status</button>
+            <button class="secondary" id="runScreenInfo">Screen info</button>
+            <button class="secondary" id="refreshMCPCapabilities">Capabilities</button>
+            <button class="secondary" id="refreshHardwareScreenTrace">Trace markers</button>
+          </div>
+          <div class="status-strip">
+            <div class="metric"><span>Trace</span><strong id="hardwareScreenTraceStatus">trace=none</strong></div>
+            <div class="metric"><span>Brightness</span><strong id="screenBrightnessStatus">brightness=55</strong></div>
+            <div class="metric"><span>Theme</span><strong id="screenThemeStatus">theme=none</strong></div>
+            <div class="metric"><span>Tool</span><strong id="screenToolStatus">tool=none</strong></div>
+            <div class="metric"><span>Capabilities</span><strong id="mcpCapabilitiesStatus">mcp=unknown</strong></div>
+          </div>
+          <div class="row-list" id="hardwareScreenTraceList" aria-label="Hardware screen trace markers"></div>
+        </div>
+      </section>
+
       <section class="wide" aria-label="Mode boundary">
         <div class="panel-head">
           <h2>Mode Boundary</h2>
@@ -590,6 +633,7 @@ const workspaceConsoleHTML = `<!doctype html>
       voiceModes: null,
       voiceProbe: null,
       bodyPreset: null,
+      hardwareScreen: null,
       lastExport: null
     };
     const ui = {
@@ -669,6 +713,21 @@ const workspaceConsoleHTML = `<!doctype html>
       bodyPresetHeadStatus: document.getElementById('bodyPresetHeadStatus'),
       bodyPresetTransportStatus: document.getElementById('bodyPresetTransportStatus'),
       bodyPresetTraceList: document.getElementById('bodyPresetTraceList'),
+      screenBrightness: document.getElementById('screenBrightness'),
+      screenBrightnessValue: document.getElementById('screenBrightnessValue'),
+      applyScreenBrightness: document.getElementById('applyScreenBrightness'),
+      runDeviceStatus: document.getElementById('runDeviceStatus'),
+      runScreenInfo: document.getElementById('runScreenInfo'),
+      refreshMCPCapabilities: document.getElementById('refreshMCPCapabilities'),
+      refreshHardwareScreenTrace: document.getElementById('refreshHardwareScreenTrace'),
+      hardwareScreenStatus: document.getElementById('hardwareScreenStatus'),
+      hardwareScreenPhysicalStatus: document.getElementById('hardwareScreenPhysicalStatus'),
+      hardwareScreenTraceStatus: document.getElementById('hardwareScreenTraceStatus'),
+      screenBrightnessStatus: document.getElementById('screenBrightnessStatus'),
+      screenThemeStatus: document.getElementById('screenThemeStatus'),
+      screenToolStatus: document.getElementById('screenToolStatus'),
+      mcpCapabilitiesStatus: document.getElementById('mcpCapabilitiesStatus'),
+      hardwareScreenTraceList: document.getElementById('hardwareScreenTraceList'),
       storageStatus: document.getElementById('storageStatus'),
       indexStatus: document.getElementById('indexStatus'),
       searchableStatus: document.getElementById('searchableStatus'),
@@ -892,6 +951,13 @@ const workspaceConsoleHTML = `<!doctype html>
         session_id: 'a21-session-workspace-body-' + preset + '-' + stamp
       };
     }
+    function nextHardwareScreenIDs(action) {
+      const stamp = Date.now();
+      return {
+        trace_id: 'a21-trace-workspace-screen-' + action + '-' + stamp,
+        session_id: 'a21-session-workspace-screen-' + action + '-' + stamp
+      };
+    }
     function probeCue(mode) {
       const value = ui.voiceProbeInput.value.trim();
       if (value) return value;
@@ -1011,6 +1077,96 @@ const workspaceConsoleHTML = `<!doctype html>
       renderBodyPresetResponse(payload);
       await refreshBodyPresetTrace();
       log('body preset ' + (payload.preset || preset) + ' ' + (payload.status || 'sent'));
+    }
+    function renderHardwareScreenResponse(response, action) {
+      const args = (response && response.arguments) || {};
+      const tool = (response && response.tool_name) || 'none';
+      const brightness = args.brightness == null ? ui.screenBrightness.value : args.brightness;
+      const theme = args.theme || (state.hardwareScreen && state.hardwareScreen.theme) || 'none';
+      setText(ui.hardwareScreenStatus, 'screen=' + (action || 'delivered'));
+      setText(ui.hardwareScreenPhysicalStatus, 'physical_accepted=false');
+      setText(ui.hardwareScreenTraceStatus, 'trace=' + ((response && response.trace_id) || 'none'));
+      setText(ui.screenBrightnessStatus, 'brightness=' + brightness);
+      setText(ui.screenThemeStatus, 'theme=' + theme);
+      setText(ui.screenToolStatus, tool);
+    }
+    function renderHardwareScreenTrace(payload) {
+      const events = (payload && payload.events) || [];
+      const summary = (payload && payload.summary) || {};
+      ui.hardwareScreenTraceList.textContent = '';
+      setText(ui.hardwareScreenTraceStatus, 'trace=' + (payload && payload.trace_id ? payload.trace_id : 'none') + ' / events=' + (summary.event_count || events.length));
+      if (!events.length) {
+        ui.hardwareScreenTraceList.append(row('No screen trace markers', 'screen idle', 'none', 'warn'));
+        return;
+      }
+      events.slice(-8).forEach((event) => {
+        ui.hardwareScreenTraceList.append(row(event.name, 'offset_ms=' + String(event.offset_ms || 0), event.session_id || 'session', 'ready', event.device_id || 'device'));
+      });
+    }
+    async function refreshHardwareScreenTrace() {
+      if (!state.hardwareScreen || !state.hardwareScreen.trace_id) {
+        renderHardwareScreenTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        return;
+      }
+      const payload = await fetchJSON('/v1/traces?trace_id=' + encodeURIComponent(state.hardwareScreen.trace_id), { cache: 'no-store' });
+      state.hardwareScreen.trace_markers = traceNameList(payload);
+      renderHardwareScreenTrace(payload);
+      log('screen trace ' + ((payload.summary || {}).event_count || 0));
+    }
+    async function refreshMCPCapabilities() {
+      const payload = await fetchJSON('/v1/xiaozhi/mcp-capabilities?device_id=' + encodeURIComponent(currentDeviceID()), { cache: 'no-store' });
+      const tools = payload.allowed_tools || [];
+      const blocked = payload.blocked_tool_classes || [];
+      setText(ui.mcpCapabilitiesStatus, 'mcp=' + String(!!payload.mcp_advertised) + ' / allowed=' + tools.length + ' / blocked=' + blocked.length);
+      state.hardwareScreen = Object.assign({}, state.hardwareScreen || {}, {
+        capabilities_device_id: payload.device_id || currentDeviceID(),
+        mcp_advertised: !!payload.mcp_advertised,
+        allowed_tools: tools,
+        blocked_tool_classes: blocked,
+        physical_accepted: !!payload.physical_accepted
+      });
+      log('mcp capabilities ' + tools.length);
+    }
+    async function runHardwareScreenAction(action, value) {
+      const ids = nextHardwareScreenIDs(action);
+      const base = {
+        device_id: currentDeviceID(),
+        trace_id: ids.trace_id,
+        session_id: ids.session_id
+      };
+      let payload;
+      if (action === 'brightness') {
+        payload = await postJSON('/v1/xiaozhi/screen-brightness', Object.assign({}, base, {
+          brightness: Number(value == null ? ui.screenBrightness.value : value)
+        }));
+      } else if (action === 'theme') {
+        payload = await postJSON('/v1/xiaozhi/screen-theme', Object.assign({}, base, {
+          theme: String(value || 'dark')
+        }));
+      } else if (action === 'screen_info') {
+        payload = await postJSON('/v1/xiaozhi/mcp-control', Object.assign({}, base, {
+          tool_name: 'self.screen.get_info'
+        }));
+      } else {
+        payload = await postJSON('/v1/xiaozhi/device-status', base);
+      }
+      state.hardwareScreen = Object.assign({}, state.hardwareScreen || {}, {
+        action: action,
+        trace_id: payload.trace_id || ids.trace_id,
+        session_id: payload.session_id || ids.session_id,
+        status: payload.status || '',
+        delivered_transport: payload.delivered_transport || '',
+        tool_name: payload.tool_name || '',
+        mcp_id: payload.mcp_id || '',
+        arguments: payload.arguments || {},
+        physical_accepted: false
+      });
+      if (payload.arguments && payload.arguments.theme) {
+        state.hardwareScreen.theme = payload.arguments.theme;
+      }
+      renderHardwareScreenResponse(payload, action);
+      await refreshHardwareScreenTrace();
+      log('screen ' + action + ' ' + (payload.status || 'sent'));
     }
     async function runRoleplayProbe() {
       const ids = nextProbeIDs('roleplay');
@@ -1446,6 +1602,15 @@ const workspaceConsoleHTML = `<!doctype html>
         body_preset_transport: (state.bodyPreset && state.bodyPreset.delivered_transport) || '',
         body_preset_physical_accepted: !!(state.bodyPreset && state.bodyPreset.physical_accepted),
         body_preset_trace_markers: (state.bodyPreset && state.bodyPreset.trace_markers) || [],
+        screen_control_action: (state.hardwareScreen && state.hardwareScreen.action) || '',
+        screen_control_trace_id: (state.hardwareScreen && state.hardwareScreen.trace_id) || '',
+        screen_control_session_id: (state.hardwareScreen && state.hardwareScreen.session_id) || '',
+        screen_control_status: (state.hardwareScreen && state.hardwareScreen.status) || '',
+        screen_control_tool: (state.hardwareScreen && state.hardwareScreen.tool_name) || '',
+        screen_control_transport: (state.hardwareScreen && state.hardwareScreen.delivered_transport) || '',
+        screen_control_physical_accepted: !!(state.hardwareScreen && state.hardwareScreen.physical_accepted),
+        screen_control_trace_markers: (state.hardwareScreen && state.hardwareScreen.trace_markers) || [],
+        screen_control_mcp_advertised: !!(state.hardwareScreen && state.hardwareScreen.mcp_advertised),
         professional_cue: ui.professionalCue.textContent,
         redaction: {
           raw_content_included: false,
@@ -1487,6 +1652,7 @@ const workspaceConsoleHTML = `<!doctype html>
         renderProbeTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         renderProbeReadRecords({ records: [] });
         renderBodyPresetTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
+        renderHardwareScreenTrace({ trace_id: '', events: [], summary: { event_count: 0 } });
         setText(ui.serviceStatus, 'gateway contract ready');
       } catch (err) {
         setText(ui.serviceStatus, 'gateway unavailable');
@@ -1522,6 +1688,18 @@ const workspaceConsoleHTML = `<!doctype html>
       runBodyPreset(button.dataset.bodyPreset).catch((err) => log('body preset ' + err.message));
     });
     ui.refreshBodyPresetTrace.addEventListener('click', () => refreshBodyPresetTrace().catch((err) => log('body trace ' + err.message)));
+    ui.screenBrightness.addEventListener('input', () => {
+      ui.screenBrightnessValue.value = ui.screenBrightness.value;
+      setText(ui.screenBrightnessStatus, 'brightness=' + ui.screenBrightness.value);
+    });
+    ui.applyScreenBrightness.addEventListener('click', () => runHardwareScreenAction('brightness').catch((err) => log('screen brightness ' + err.message)));
+    document.querySelectorAll('[data-screen-theme]').forEach((button) => {
+      button.addEventListener('click', () => runHardwareScreenAction('theme', button.dataset.screenTheme).catch((err) => log('screen theme ' + err.message)));
+    });
+    ui.runDeviceStatus.addEventListener('click', () => runHardwareScreenAction('device_status').catch((err) => log('device status ' + err.message)));
+    ui.runScreenInfo.addEventListener('click', () => runHardwareScreenAction('screen_info').catch((err) => log('screen info ' + err.message)));
+    ui.refreshMCPCapabilities.addEventListener('click', () => refreshMCPCapabilities().catch((err) => log('mcp capabilities ' + err.message)));
+    ui.refreshHardwareScreenTrace.addEventListener('click', () => refreshHardwareScreenTrace().catch((err) => log('screen trace ' + err.message)));
     ui.voiceProbeModeSelect.addEventListener('change', () => {
       if (ui.voiceProbeModeSelect.value === 'professional') {
         ui.voiceProbeInput.placeholder = 'safe evidence cue';
