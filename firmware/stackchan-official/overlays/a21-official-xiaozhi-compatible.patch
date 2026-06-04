@@ -112,7 +112,8 @@ index 164a751..199a17d 100644
  #include <smooth_ui_toolkit.hpp>
  #include <uitk/short_namespace.hpp>
  #include <mooncake_log.h>
-@@ -37,6 +39,14 @@ extern "C" void app_main(void)
+@@ -36,6 +38,18 @@ extern "C" void app_main(void)
+     GetMooncake().installApp(std::make_unique<AppDance>());
      GetMooncake().installApp(std::make_unique<AppSetup>());
 -
 +#if defined(A21_OEM_AUTOSTART_XIAOZHI) && A21_OEM_AUTOSTART_XIAOZHI
@@ -120,14 +121,17 @@ index 164a751..199a17d 100644
 +    if (codec != nullptr) {
 +        codec->SetOutputVolume(92);
 +    }
-+    mclog::tagInfo("main", "A21 requesting Xiaozhi mode after official apps preload");
-+    GetHAL().requestXiaozhiStart();
++    mclog::tagInfo("main", "A21 starting Xiaozhi mode directly after official apps preload");
++    GetHAL().startXiaozhi();
++    while (1) {
++        GetHAL().feedTheDog();
++        GetHAL().delay(1000);
++    }
 +#endif
 +
      // Main loop
      while (1) {
          GetHAL().feedTheDog();
-         GetHAL().updateHeapStatusLog();
 diff --git a/firmware/partitions.csv b/firmware/partitions.csv
 index 0656b16..8b9bc5a 100644
 --- a/firmware/partitions.csv

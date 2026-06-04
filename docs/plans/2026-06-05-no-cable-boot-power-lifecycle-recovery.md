@@ -1,6 +1,6 @@
 # 2026-06-05 - No-Cable Boot Power Lifecycle Recovery
 
-Status: active.
+Status: active, lifecycle request path rejected by serial evidence.
 Transition: `T-NO-CABLE-BOOT-POWER-LIFECYCLE-001`.
 
 ## Problem
@@ -21,12 +21,27 @@ close that acceptance.
   official `requestXiaozhiStart -> main loop break -> uninstall apps ->
   DestroyMooncake -> startXiaozhi` lifecycle.
 
+## Runtime Finding
+
+- Commit `fabffd4` changed the overlay to request Xiaozhi through the official
+  lifecycle. The product build and guarded flash passed, but post-flash MCP
+  body commands returned HTTP 409 `xiaozhi websocket is not connected`.
+- Serial evidence on `/dev/cu.usbmodem1101` showed repeated task watchdog
+  triggers with CPU0 running `main`.
+- The decoded backtrace pointed at `GetMooncake().uninstallAllApps()` from
+  `app_main`, specifically AppSetup/AppLauncher LVGL object teardown. This
+  makes the official teardown path unsafe as an immediate product fix.
+- The product lane must therefore preserve the WDT-safe direct
+  `GetHAL().startXiaozhi()` path until a separate lifecycle-teardown transition
+  can prove a non-regressing official app shutdown.
+
 ## Target State
 
-- Keep the no-welcome product behavior.
+- Keep the no-welcome product behavior and avoid the WDT-triggering Mooncake
+  teardown path.
 - Keep official-compatible product lane and artifact name.
-- Request Xiaozhi start through the official lifecycle instead of directly
-  starting Xiaozhi from `app_main`.
+- Start Xiaozhi directly after official apps preload and keep feeding the
+  watchdog so the product runtime reconnects to the Gateway.
 - Build and flash only through the guarded
   `a21-stackchan-official-xiaozhi-compatible` product lane.
 - Treat physical power-button/cold no-cable boot as pending until the operator
@@ -34,8 +49,8 @@ close that acceptance.
 
 ## Acceptance
 
-- Focused overlay tests prove the A21 product overlay requests Xiaozhi through
-  the official lifecycle and no longer adds a direct `startXiaozhi` bypass.
+- Focused overlay tests prove the A21 product overlay starts Xiaozhi directly
+  before Mooncake teardown and does not request the unsafe lifecycle path.
 - Official-compatible product build passes.
 - Guarded no-write flash plan passes.
 - Guarded flash execute passes on `/dev/cu.usbmodem1101`.
