@@ -796,21 +796,22 @@ type deviceSocket struct {
 }
 
 type XiaozhiDeviceControlRequest struct {
-	DeviceID  string `json:"device_id"`
-	Kind      string `json:"kind,omitempty"`
-	Event     string `json:"event,omitempty"`
-	State     string `json:"state,omitempty"`
-	Face      string `json:"face,omitempty"`
-	Emotion   string `json:"emotion,omitempty"`
-	Display   string `json:"display,omitempty"`
-	Slot      string `json:"slot,omitempty"`
-	Motion    string `json:"motion,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Text      string `json:"text,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	YAngle    int    `json:"y_angle,omitempty"`
-	TraceID   string `json:"trace_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
+	DeviceID         string `json:"device_id"`
+	Kind             string `json:"kind,omitempty"`
+	Event            string `json:"event,omitempty"`
+	State            string `json:"state,omitempty"`
+	Face             string `json:"face,omitempty"`
+	Emotion          string `json:"emotion,omitempty"`
+	Display          string `json:"display,omitempty"`
+	Slot             string `json:"slot,omitempty"`
+	Motion           string `json:"motion,omitempty"`
+	Name             string `json:"name,omitempty"`
+	Text             string `json:"text,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	YAngle           int    `json:"y_angle,omitempty"`
+	TraceID          string `json:"trace_id,omitempty"`
+	SessionID        string `json:"session_id,omitempty"`
+	AllowMCPFallback bool   `json:"allow_mcp_fallback,omitempty"`
 }
 
 type XiaozhiDeviceControlResponse struct {
@@ -824,6 +825,7 @@ type XiaozhiDeviceControlResponse struct {
 	PacketCount                    int               `json:"packet_count,omitempty"`
 	OfficialActionPhysicalAccepted *bool             `json:"official_action_physical_accepted,omitempty"`
 	OfficialActionSurfaces         map[string]string `json:"official_action_surfaces,omitempty"`
+	OfficialActionFallbackReason   string            `json:"official_action_fallback_reason,omitempty"`
 }
 
 type OfficialStackChanStatusResponse struct {
@@ -7037,6 +7039,114 @@ func xiaozhiBodyMotionPlans(deviceID string, motion string) (string, []XiaozhiMC
 	}
 }
 
+func xiaozhiOfficialMCPFallbackPlans(deviceID string, event xiaozhitransport.DeviceExtensionEvent) (string, []XiaozhiMCPControlRequest, error) {
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindState:
+		preset := map[string]string{
+			"idle":      "reset_idle",
+			"listening": "listening",
+			"thinking":  "thinking",
+			"speaking":  "speaking",
+			"error":     "reset_idle",
+		}[event.Value]
+		if preset == "" {
+			return "", nil, errors.New("official state has no safe xiaozhi mcp fallback")
+		}
+		name, plans, err := xiaozhiBodyPresetPlans(deviceID, preset)
+		return "body_preset:" + name, plans, err
+	case xiaozhitransport.DeviceEventKindFace:
+		preset := map[string]string{
+			"idle":      "reset_idle",
+			"attentive": "listening",
+			"thinking":  "thinking",
+			"speaking":  "speaking",
+			"happy":     "celebrate",
+			"error":     "reset_idle",
+		}[event.Value]
+		if preset == "" {
+			return "", nil, errors.New("official face has no safe xiaozhi mcp fallback")
+		}
+		name, plans, err := xiaozhiBodyPresetPlans(deviceID, preset)
+		return "body_preset:" + name, plans, err
+	case xiaozhitransport.DeviceEventKindMotion:
+		name, plans, err := xiaozhiBodyMotionPlans(deviceID, event.Value)
+		return "body_motion:" + name, plans, err
+	default:
+		return "", nil, errors.New("official event has no safe xiaozhi mcp fallback")
+	}
+}
+
+func (s *Server) deliverOfficialStackChanMCPFallback(ctx context.Context, deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, metadata stackchantransport.OfficialActionMetadata) (XiaozhiDeviceControlResponse, int, string) {
+	fallbackName, plans, err := xiaozhiOfficialMCPFallbackPlans(deviceID, event)
+	if err != nil {
+		return XiaozhiDeviceControlResponse{}, http.StatusBadRequest, err.Error()
+	}
+	if len(plans) == 0 {
+		return XiaozhiDeviceControlResponse{}, http.StatusBadRequest, "official stackchan fallback has no safe xiaozhi mcp steps"
+	}
+	valueToken := safeGatewayFallbackToken(event.Value, "value")
+	for index, plan := range plans {
+		plan.TraceID = traceID
+		plan.SessionID = sessionID
+		delivery, status, message := s.sendXiaozhiMCPControl(ctx, plan)
+		if status != 0 {
+			s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_mcp_fallback.failed", s.now().UnixMilli())
+			return XiaozhiDeviceControlResponse{}, status, message
+		}
+		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
+		fallbackMarker := "stackchan.official_mcp_fallback." + string(event.Kind) + "." + valueToken + ".step" + strconv.Itoa(index+1) + "." + delivery.Marker + ".sent"
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
+		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, fallbackMarker, s.now().UnixMilli())
+		activity := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
+		activity["official_stackchan_fallback"] = "xiaozhi_mcp_sequence"
+		activity["official_stackchan_fallback_name"] = fallbackName
+		activity["official_stackchan_fallback_status"] = "delivered"
+		activity["official_stackchan_fallback_step"] = strconv.Itoa(index + 1)
+		activity["official_stackchan_event"] = string(event.Kind)
+		activity["official_stackchan_value"] = event.Value
+		s.recordXiaozhiDeviceActivity(&xiaozhiSession{
+			deviceID:  delivery.Response.DeviceID,
+			traceID:   delivery.Response.TraceID,
+			sessionID: delivery.Response.SessionID,
+		}, fallbackMarker, activity)
+	}
+
+	surfaces := officialStackChanMCPFallbackSurfaces(metadata.Surfaces, fallbackName, len(plans), metadata.PacketCount)
+	s.recordOfficialStackChanMCPFallbackDelivered(deviceID, traceID, sessionID, event, metadata, fallbackName, len(plans), surfaces)
+	accepted := false
+	return XiaozhiDeviceControlResponse{
+		TraceID:                        traceID,
+		SessionID:                      sessionID,
+		DeviceID:                       deviceID,
+		Status:                         "fallback_delivered",
+		DeliveredTransport:             "xiaozhi_mcp_sequence",
+		Event:                          string(event.Kind),
+		Value:                          event.Value,
+		OfficialActionPhysicalAccepted: &accepted,
+		OfficialActionSurfaces:         surfaces,
+		OfficialActionFallbackReason:   "official_stackchan_ws_disconnected",
+	}, 0, ""
+}
+
+func officialStackChanMCPFallbackSurfaces(metadata map[string]string, fallbackName string, stepCount int, plannedPackets int) map[string]string {
+	surfaces := map[string]string{
+		"official_relay":         "disconnected",
+		"fallback":               "xiaozhi_mcp_sequence",
+		"fallback_name":          fallbackName,
+		"fallback_steps":         strconv.Itoa(stepCount),
+		"planned_packet_count":   strconv.Itoa(plannedPackets),
+		"physical_accepted":      "false",
+		"packet_delivery_status": "not_sent_no_official_ws",
+	}
+	for key, value := range metadata {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
+			continue
+		}
+		surfaces["planned_"+key] = value
+	}
+	return surfaces
+}
+
 func xiaozhiBodyScenePlans(deviceID string, scene string) (string, []XiaozhiMCPControlRequest, error) {
 	scene = strings.ToLower(strings.TrimSpace(scene))
 	if scene == "" {
@@ -7257,12 +7367,21 @@ func (s *Server) handleOfficialStackChanControl(w http.ResponseWriter, r *http.R
 		return
 	}
 	event = plan.Event
+	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	socket, ok := s.officialStackChanSocket(req.DeviceID)
 	if !ok {
+		if req.AllowMCPFallback {
+			response, status, message := s.deliverOfficialStackChanMCPFallback(r.Context(), req.DeviceID, traceID, sessionID, event, plan.Metadata)
+			if status != 0 {
+				http.Error(w, message, status)
+				return
+			}
+			writeJSON(w, http.StatusOK, response)
+			return
+		}
 		http.Error(w, "official stackchan websocket is not connected", http.StatusConflict)
 		return
 	}
-	traceID, sessionID := s.ids(req.TraceID, req.SessionID)
 	socket.writeMu.Lock()
 	for _, packet := range plan.Packets {
 		err = socket.conn.Write(r.Context(), websocket.MessageBinary, packet.Bytes())
@@ -12697,6 +12816,51 @@ func (s *Server) recordOfficialStackChanControlDelivered(deviceID string, traceI
 		"official_stackchan_physical_accepted": strconv.FormatBool(metadata.PhysicalAccepted),
 	}
 	for key, value := range metadata.Surfaces {
+		echo["official_stackchan_"+key] = value
+	}
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, echo)
+	s.devices[deviceID] = record
+}
+
+func (s *Server) recordOfficialStackChanMCPFallbackDelivered(deviceID string, traceID string, sessionID string, event xiaozhitransport.DeviceExtensionEvent, metadata stackchantransport.OfficialActionMetadata, fallbackName string, stepCount int, surfaces map[string]string) {
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_mcp_fallback."+string(event.Kind), nowMS)
+	s.recordTrace(traceID, sessionID, deviceID, "stackchan.official_mcp_fallback.delivered", nowMS)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.LastEvent = protocol.DeviceEventKind("stackchan.official_mcp_fallback." + string(event.Kind))
+	record.LastTraceID = traceID
+	record.LastSessionID = sessionID
+	record.LastSeenMS = nowMS
+	switch event.Kind {
+	case xiaozhitransport.DeviceEventKindState, xiaozhitransport.DeviceEventKindFace:
+		record.CurrentExpr = protocol.ExpressionState(event.Value)
+	case xiaozhitransport.DeviceEventKindMotion:
+		record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, map[string]string{"official_stackchan_last_motion": event.Value})
+	}
+	echo := map[string]string{
+		"official_stackchan_packets":           "0",
+		"official_stackchan_planned_packets":   strconv.Itoa(metadata.PacketCount),
+		"official_stackchan_physical_accepted": "false",
+		"official_stackchan_fallback":          "xiaozhi_mcp_sequence",
+		"official_stackchan_fallback_name":     fallbackName,
+		"official_stackchan_fallback_status":   "delivered",
+		"official_stackchan_fallback_steps":    strconv.Itoa(stepCount),
+		"official_stackchan_official_relay":    "disconnected",
+		"official_stackchan_event":             string(event.Kind),
+		"official_stackchan_value":             event.Value,
+		"official_stackchan_packet_delivery":   "not_sent_no_official_ws",
+		"official_stackchan_fallback_reason":   "official_stackchan_ws_disconnected",
+	}
+	for key, value := range surfaces {
 		echo["official_stackchan_"+key] = value
 	}
 	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, echo)

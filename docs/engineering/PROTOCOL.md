@@ -573,6 +573,20 @@ surfaces:
   into `/v1/devices.runtime_echo` with `official_stackchan_` keys. This relay
   is separate from the stock Xiaozhi voice socket and must not add A21 visual
   semantics to Xiaozhi stock audio messages.
+- `POST /v1/stackchan/official/control` remains strict by default. If no
+  official `/stackChan/ws` relay is connected, it returns HTTP 409 unless the
+  request explicitly sets `allow_mcp_fallback=true`. With that flag, Gateway
+  maps safe official `state`, `face`, and `motion` semantics to existing
+  bounded Xiaozhi MCP body-preset/body-motion sequences and returns
+  `status=fallback_delivered`,
+  `delivered_transport=xiaozhi_mcp_sequence`,
+  `official_action_fallback_reason=official_stackchan_ws_disconnected`, and
+  `official_action_physical_accepted=false`. Fallback delivery records
+  `stackchan.official_mcp_fallback.*` trace markers and
+  `/v1/devices.runtime_echo` keys such as
+  `official_stackchan_fallback_status=delivered` and
+  `official_stackchan_packets=0`; it must not claim official packet delivery or
+  physical acceptance.
 - Gateway also exposes read-only
   `GET /v1/stackchan/official/status?device_id=...` with schema
   `a21.stackchan.official.status.v1`. It reports whether the exact
@@ -1087,11 +1101,12 @@ evidence proves the effect on the product device. Official action controls
 must keep `official_action_physical_accepted=false`, and must show the
 disconnected `/stackChan/ws` path, latest packet/surface metadata, and
 `next_action` as a visible relay status rather than pretending the
-face/motion/dance packet was delivered. The console may then run an explicit
-MCP-backed body-preset/body-motion fallback so the product still moves;
-exported metadata must keep `official_action_blocked_reason`,
-`official_action_fallback`, and `official_relay_*` status separate from
-official-frame delivery. Device
+face/motion/dance packet was delivered. The console may request backend
+`allow_mcp_fallback=true` so the product still moves through a bounded
+Xiaozhi MCP body-preset/body-motion sequence; exported metadata must keep the
+MCP fallback reason/surfaces and `official_relay_*` status separate from
+official-frame delivery. The older client-side fallback remains only as a UI
+compatibility path. Device
 binding state must remain metadata-only and show `open_until_binding_configured` or
 `bound_devices_only` honestly. Custom wake-word intent must show built-in
 Xiaozhi WakeNet as active until guarded firmware evidence exists. The Voice

@@ -71,6 +71,44 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 08:15 CST official StackChan backend MCP
+fallback transition:
+
+- Review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` was compared against
+  current code again. Gateway race/preflight/doctor/verify findings are
+  software-remediated; the remaining physical product blocker is still product
+  recovery/ROM/download and post-recovery hardware acceptance.
+- Added plan
+  `docs/plans/2026-06-05-official-stackchan-backend-mcp-fallback.md`.
+- `POST /v1/stackchan/official/control` remains strict by default: without an
+  official `/stackChan/ws` relay it still returns HTTP 409 unless the request
+  explicitly sets `allow_mcp_fallback=true`.
+- With `allow_mcp_fallback=true`, Gateway now maps safe official
+  state/face/motion semantics to existing bounded Xiaozhi MCP body-preset or
+  body-motion sequences and returns `status=fallback_delivered`,
+  `delivered_transport=xiaozhi_mcp_sequence`,
+  `official_action_fallback_reason=official_stackchan_ws_disconnected`, and
+  `official_action_physical_accepted=false`.
+- Fallback delivery records `stackchan.official_mcp_fallback.*` trace markers
+  and `/v1/devices.runtime_echo` keys including
+  `official_stackchan_fallback_status=delivered`,
+  `official_stackchan_official_relay=disconnected`, and
+  `official_stackchan_packets=0`.
+- `/workspace` now sends `allow_mcp_fallback=true` for Official Actions, so the
+  product UI no longer depends on catching a 409 before running body fallback.
+  The older client-side fallback remains only as compatibility if backend
+  fallback fails.
+- Focused local Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanControlEndpoint|TestOfficialStackChanStatusReportsDisconnected|TestWorkspaceConsolePageServed' -count=1`.
+- Full local verification passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanControlEndpoint|TestOfficialStackChanStatus|TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset|TestXiaozhiBodyMotion' -count=1`,
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- This transition does not flash firmware, write NVS, execute providers/V21,
+  expose reboot/OTA/snapshot/video/camera/NFC/IR/app lifecycle, mark physical
+  acceptance, or roll back internal-test3 voice/protocol changes.
+
 Live truth after the 2026-06-05 07:51 CST product recovery precheck
 transition:
 

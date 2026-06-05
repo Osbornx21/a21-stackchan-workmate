@@ -732,6 +732,7 @@ func TestWorkspaceConsolePageServed(t *testing.T) {
 		"official_action_trace_id",
 		"official_action_fallback",
 		"official_action_blocked_reason",
+		"allow_mcp_fallback",
 		"runOfficialAction",
 		"runOfficialActionFallback",
 		"officialActionFallback",
@@ -5555,6 +5556,129 @@ func TestOfficialStackChanControlEndpointRequiresConnectedOfficialSocket(t *test
 	if resp.StatusCode != http.StatusConflict {
 		data, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d, want 409: %s", resp.StatusCode, data)
+	}
+}
+
+func TestOfficialStackChanControlEndpointFallsBackToXiaozhiMCPWhenAllowed(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-official-mcp-fallback",
+		"session_id": "a21-session-official-mcp-fallback",
+		"features": map[string]any{
+			"mcp": true,
+			"aec": true,
+		},
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(
+			httpServer.URL+"/v1/stackchan/official/control",
+			"application/json",
+			bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","event":"face","emotion":"happy","allow_mcp_fallback":true,"trace_id":"a21-trace-official-mcp-fallback","session_id":"a21-session-official-mcp-fallback"}`),
+		)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	ledMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, ledMessage, xiaozhiMCPRobotSetLEDColorToolName, map[string]any{
+		"red":   float64(0),
+		"green": float64(168),
+		"blue":  float64(80),
+	})
+	headMessage := readXiaozhiJSON(t, ctx, conn)
+	assertXiaozhiMCPMessage(t, headMessage, xiaozhiMCPRobotSetHeadAnglesToolName, map[string]any{
+		"yaw":   float64(18),
+		"pitch": float64(36),
+		"speed": float64(260),
+	})
+
+	var response XiaozhiDeviceControlResponse
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status = %d: %s", resp.StatusCode, body)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	if response.Status != "fallback_delivered" ||
+		response.DeliveredTransport != "xiaozhi_mcp_sequence" ||
+		response.Event != "face" ||
+		response.Value != "happy" ||
+		response.PacketCount != 0 ||
+		response.OfficialActionPhysicalAccepted == nil ||
+		*response.OfficialActionPhysicalAccepted ||
+		response.OfficialActionFallbackReason != "official_stackchan_ws_disconnected" {
+		t.Fatalf("response = %+v, want mcp fallback without physical acceptance", response)
+	}
+	if response.OfficialActionSurfaces["fallback"] != "xiaozhi_mcp_sequence" ||
+		response.OfficialActionSurfaces["fallback_name"] != "body_preset:celebrate" ||
+		response.OfficialActionSurfaces["official_relay"] != "disconnected" ||
+		response.OfficialActionSurfaces["packet_delivery_status"] != "not_sent_no_official_ws" ||
+		response.OfficialActionSurfaces["planned_packet_count"] != "1" ||
+		response.OfficialActionSurfaces["planned_avatar"] != "happy" {
+		t.Fatalf("surfaces = %#v, want explicit official relay fallback metadata", response.OfficialActionSurfaces)
+	}
+
+	for _, want := range []string{
+		"xiaozhi.mcp.robot_led_color.sent",
+		"stackchan.official_mcp_fallback.face.happy.step1.robot_led_color.sent",
+		"stackchan.official_mcp_fallback.face.happy.step2.robot_head_angles_set.sent",
+		"stackchan.official_mcp_fallback.delivered",
+	} {
+		if !traceContains(server.traceEvents("a21-trace-official-mcp-fallback"), want) {
+			t.Fatalf("trace missing %q: %+v", want, server.traceEvents("a21-trace-official-mcp-fallback"))
+		}
+	}
+
+	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
+	if registry["last_event"] != "stackchan.official_mcp_fallback.face" {
+		t.Fatalf("last event = %#v, want official mcp fallback", registry["last_event"])
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok {
+		t.Fatalf("registry = %#v, want runtime_echo", registry)
+	}
+	for key, want := range map[string]any{
+		"official_stackchan_packets":           "0",
+		"official_stackchan_planned_packets":   "1",
+		"official_stackchan_physical_accepted": "false",
+		"official_stackchan_fallback":          "xiaozhi_mcp_sequence",
+		"official_stackchan_fallback_name":     "body_preset:celebrate",
+		"official_stackchan_fallback_status":   "delivered",
+		"official_stackchan_official_relay":    "disconnected",
+		"official_stackchan_planned_avatar":    "happy",
+	} {
+		if runtimeEcho[key] != want {
+			t.Fatalf("runtime_echo[%s] = %#v, want %#v in %#v", key, runtimeEcho[key], want, runtimeEcho)
+		}
 	}
 }
 

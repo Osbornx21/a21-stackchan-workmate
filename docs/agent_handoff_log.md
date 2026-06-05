@@ -18711,3 +18711,81 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider/V21 execution, no generic
   product flash lane, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
+
+## 2026-06-05 08:15 CST - Official StackChan Backend MCP Fallback
+
+Round goal:
+
+- Apply the review-thread conclusion that official StackChan body parity needs
+  a Gateway-owned fallback path when the official `/stackChan/ws` relay is
+  disconnected, without weakening official-frame truth or physical acceptance
+  discipline.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-official-stackchan-backend-mcp-fallback.md`.
+- Added explicit `allow_mcp_fallback` to
+  `POST /v1/stackchan/official/control`.
+- Preserved strict default behavior: without the flag, missing official
+  `/stackChan/ws` still returns HTTP 409.
+- With the flag, Gateway maps safe official state/face/motion events to the
+  existing bounded Xiaozhi MCP body-preset/body-motion sequence and returns
+  `fallback_delivered` over `xiaozhi_mcp_sequence`.
+- Added fallback traces and registry metadata while keeping
+  `official_action_physical_accepted=false` and
+  `official_stackchan_packets=0`.
+- Updated `/workspace` Official Actions to request backend fallback directly,
+  while keeping the older client-side fallback only as compatibility.
+- Updated `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/A21_CURRENT_CONTROL.md`, and
+  `docs/project_state_machine.md`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/gateway/workspace_console.go`
+- `docs/plans/2026-06-05-official-stackchan-backend-mcp-fallback.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanControlEndpoint|TestOfficialStackChanStatusReportsDisconnected|TestWorkspaceConsolePageServed' -count=1`
+  passed.
+- `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanControlEndpoint|TestOfficialStackChanStatus|TestWorkspaceConsolePageServed|TestXiaozhiBodyPreset|TestXiaozhiBodyMotion' -count=1`
+  passed.
+- `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`
+  passed.
+- `GOMAXPROCS=2 make verify` passed.
+- `GOMAXPROCS=2 make preflight` passed.
+- `GOMAXPROCS=2 make doctor` passed.
+
+Runtime or physical evidence:
+
+- Local unit/integration test evidence proves backend fallback emits MCP LED
+  and head commands, records `stackchan.official_mcp_fallback.*` traces, and
+  mirrors honest fallback metadata into `/v1/devices.runtime_echo`.
+- No live product physical evidence was collected in this transition.
+
+Known risks/blockers:
+
+- Product device recovery is still blocked on physical ROM/download entry and
+  post-recovery verification of product Xiaozhi, official `/stackChan/ws`,
+  power-key startup, wake/listen/playback, barge-in, screen/RGB/servo/touch,
+  and visible body behavior.
+
+Recommended next action:
+
+- Run full local gates, commit/push this backend fallback remediation, deploy
+  to ECS, then continue the physical product recovery window.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no reboot/OTA/snapshot/video/camera/NFC/IR/app
+  lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
+  rollback.

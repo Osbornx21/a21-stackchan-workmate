@@ -1690,7 +1690,8 @@ const workspaceConsoleHTML = `<!doctype html>
         device_id: currentDeviceID(),
         event: kind,
         trace_id: ids.trace_id,
-        session_id: ids.session_id
+        session_id: ids.session_id,
+        allow_mcp_fallback: true
       };
       if (kind === 'state') {
         body.state = value;
