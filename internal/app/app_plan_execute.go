@@ -27,6 +27,11 @@ func runStackChanOfficialAudioSmokeFlashCLI(args []string, stdout io.Writer, std
 	return runStackChanOfficialAudioSmokeFlash(clean, execute, stdout, stderr)
 }
 
+func runStackChanOfficialBaselineFlashCLI(args []string, stdout io.Writer, stderr io.Writer) int {
+	clean, execute := splitExecuteFlag(args)
+	return runStackChanOfficialBaselineFlash(clean, execute, stdout, stderr)
+}
+
 func runStackChanOfficialPCMBridgeFlashCLI(args []string, stdout io.Writer, stderr io.Writer) int {
 	clean, execute := splitExecuteFlag(args)
 	return runStackChanOfficialPCMBridgeFlash(clean, execute, stdout, stderr)
@@ -84,6 +89,10 @@ func runDeprecatedPlanExecuteAlias(args []string, stdout io.Writer, stderr io.Wr
 		return 0, false
 	}
 	switch args[0] {
+	case "stackchan-official-baseline-flash-plan":
+		return runStackChanOfficialBaselineFlashCLI(args[1:], stdout, stderr), true
+	case "stackchan-official-baseline-flash-execute":
+		return runStackChanOfficialBaselineFlashCLI(withExecuteFlag(args[1:]), stdout, stderr), true
 	case "stackchan-official-audio-smoke-flash-plan":
 		return runStackChanOfficialAudioSmokeFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-audio-smoke-flash-execute":
@@ -174,6 +183,8 @@ func runAuxiliaryCommandAlias(args []string, stdout io.Writer, stderr io.Writer)
 		return runWakeWordPhysicalAcceptance(args[1:], stdout, stderr), true
 	case "stackchan-official-baseline":
 		return runStackChanOfficialBaseline(args[1:], stdout, stderr), true
+	case "stackchan-official-baseline-flash":
+		return runStackChanOfficialBaselineFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-audio-smoke-flash":
 		return runStackChanOfficialAudioSmokeFlashCLI(args[1:], stdout, stderr), true
 	case "stackchan-official-pcm-bridge-flash":

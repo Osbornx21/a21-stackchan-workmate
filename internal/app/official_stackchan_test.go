@@ -801,6 +801,105 @@ func TestCollectOfficialStackChanBuildArtifactsFindsPCMBridgeFallbackApp(t *test
 	}
 }
 
+func TestRunStackChanOfficialBaselineFlashPlanBuildsNoFlashReceipt(t *testing.T) {
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+
+	buildDir := writeTestOfficialBaselineBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-baseline-flash-plan",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		`"schema_version": "a21.stackchan.official_baseline_flash.v1"`,
+		`"flash_allowed": false`,
+		`"path": "`,
+		`stack-chan.bin`,
+		`"0x20000"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("baseline flash plan missing %q: %s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunStackChanOfficialBaselineFlashExecuteRequiresConfirmationToken(t *testing.T) {
+	buildDir := writeTestOfficialBaselineBuild(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-baseline-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", filepath.Join(t.TempDir(), "export.sh"),
+	}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatalf("execute without confirmation unexpectedly passed: %s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_BASELINE_DIAGNOSTIC") {
+		t.Fatalf("stderr missing confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanOfficialBaselineFlashExecuteRunsGuardedCommand(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialBaselineFlashCommand
+	var ranScript string
+	runStackChanOfficialBaselineFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		ranScript = script
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialBaselineFlashCommand = originalRunner
+	}()
+
+	buildDir := writeTestOfficialBaselineBuild(t)
+	idfExport := filepath.Join(t.TempDir(), "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-official-baseline-flash-execute",
+		"--build-dir", buildDir,
+		"--port", "/dev/cu.usbmodemA21",
+		"--idf-export", idfExport,
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_BASELINE_DIAGNOSTIC",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"python -m esptool", "--chip esp32s3", "--port '/dev/cu.usbmodemA21'", "write_flash @flash_args"} {
+		if !strings.Contains(ranScript, want) {
+			t.Fatalf("flash script missing %q: %s", want, ranScript)
+		}
+	}
+	if !strings.Contains(stdout.String(), `"flash_executed": true`) {
+		t.Fatalf("execution receipt missing flash_executed: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"control_guard"`) {
+		t.Fatalf("execution receipt missing control guard evidence: %s", stdout.String())
+	}
+}
+
 func TestRunStackChanOfficialAudioSmokeFlashPlanBuildsNoFlashReceipt(t *testing.T) {
 	originalDetector := detectFirmwareUploadPortUsage
 	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
@@ -2339,6 +2438,25 @@ func writeTestOfficialAudioSmokeBuild(t *testing.T) string {
 		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
 		"0x0 bootloader/bootloader.bin",
 		"0x20000 a21-stackchan-official-audio-smoke.bin",
+		"0x8000 partition_table/partition-table.bin",
+		"0xd000 ota_data_initial.bin",
+		"0xa00000 generated_assets.bin",
+	}, "\n")+"\n")
+	return buildDir
+}
+
+func writeTestOfficialBaselineBuild(t *testing.T) string {
+	t.Helper()
+	buildDir := filepath.Join(t.TempDir(), "a21-stackchan-official-build")
+	writeTestFile(t, filepath.Join(buildDir, "bootloader", "bootloader.bin"), "boot")
+	writeTestFile(t, filepath.Join(buildDir, "partition_table", "partition-table.bin"), "part")
+	writeTestFile(t, filepath.Join(buildDir, "ota_data_initial.bin"), "ota")
+	writeTestFile(t, filepath.Join(buildDir, "generated_assets.bin"), "assets")
+	writeTestFile(t, filepath.Join(buildDir, "stack-chan.bin"), "app")
+	writeTestFile(t, filepath.Join(buildDir, "flash_args"), strings.Join([]string{
+		"--flash_mode dio --flash_freq 80m --flash_size 16MB",
+		"0x0 bootloader/bootloader.bin",
+		"0x20000 stack-chan.bin",
 		"0x8000 partition_table/partition-table.bin",
 		"0xd000 ota_data_initial.bin",
 		"0xa00000 generated_assets.bin",

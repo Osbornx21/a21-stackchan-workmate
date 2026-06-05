@@ -32,6 +32,8 @@ Date: 2026-06-05
 - Stock-official no-overlay app artifact:
   `/tmp/a21-stackchan-official-stock-build/stack-chan.bin`, SHA-256
   `a0cd9129b9e5f4718893d4fa672cb62e57088d5585057a1e4fa8ec835018135e`.
+- Stock-official diagnostic flash plan passed without flashing:
+  `reports/a21-stackchan-official-baseline-flash-20260605-160124-1780646484411288000.json`.
 
 ## State Machine Comparison
 
@@ -83,8 +85,9 @@ affect the failing cold-start window.
    current A21 product candidate.
 3. Only after the no-flash evidence is recorded, decide the physical A/B:
    - If a stock-official temporary flash is allowed for diagnostic evidence,
-     run it as an explicitly non-product A/B and immediately restore the A21
-     product candidate afterward.
+     use only the guarded `stackchan-official-baseline-flash-execute`
+     diagnostic lane. It accepts only the official no-overlay `stack-chan.bin`
+     artifact, never the A21 product artifact or generic `xiaozhi.bin`.
    - If stock-official flashing is not allowed by release discipline, the next
      product-lane test must be a single-variable A21 candidate with an explicit
      hypothesis and no unrelated overlay churn.

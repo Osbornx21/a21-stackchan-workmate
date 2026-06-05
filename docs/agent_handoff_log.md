@@ -47,12 +47,21 @@ Actual completed work:
 - Recorded that stock official and A21 product share flash offsets but differ
   in bootloader SHA, partition table SHA, app name/SHA, assets SHA/size, and
   sdkconfig/product features.
+- Added a guarded stock-official baseline diagnostic flash lane:
+  `stackchan-official-baseline-flash-plan` /
+  `stackchan-official-baseline-flash-execute`. The lane accepts only
+  `stack-chan.bin` from the no-overlay official reference build.
+- Ran the new lane in no-flash plan mode on `/dev/cu.usbmodem1101`.
 
 Changed files:
 
+- `Makefile`
 - `docs/plans/2026-06-05-stackchan-power-state-machine-ab-rca.md`
 - `docs/agent_handoff_log.md`
 - `docs/project_state_machine.md`
+- `internal/app/app_plan_execute.go`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
 
 Tests/build/runtime results:
 
@@ -62,6 +71,8 @@ Tests/build/runtime results:
 - Stock-official app artifact:
   `/tmp/a21-stackchan-official-stock-build/stack-chan.bin`, SHA-256
   `a0cd9129b9e5f4718893d4fa672cb62e57088d5585057a1e4fa8ec835018135e`.
+- Stock-official diagnostic flash plan:
+  `reports/a21-stackchan-official-baseline-flash-20260605-160124-1780646484411288000.json`.
 - No stock-official or Xiaozhi firmware was flashed in this round.
 
 Remaining issues:
@@ -75,10 +86,10 @@ Remaining issues:
 
 Next suggested action:
 
-- Use the RCA plan to choose one of two controlled paths: a temporary
-  stock-official physical A/B followed by immediate A21 product restore, or a
-  single-variable A21 product-lane candidate with a recorded hypothesis. Do not
-  add another PMIC patch without this decision.
+- After verification and a clean commit, the next physical action can be the
+  guarded stock-official baseline diagnostic flash, followed by immediate
+  no-USB power-key A/B observation and A21 product restore. Do not add another
+  PMIC patch without this decision.
 
 Forbidden actions avoided:
 

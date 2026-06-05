@@ -27,6 +27,11 @@ Latest foreground hardware-window update, 2026-06-05 15:56 CST:
 - Stock-official no-overlay app artifact:
   `/tmp/a21-stackchan-official-stock-build/stack-chan.bin`, SHA-256
   `a0cd9129b9e5f4718893d4fa672cb62e57088d5585057a1e4fa8ec835018135e`.
+- Added and dry-run verified the guarded stock-official diagnostic flash lane:
+  `stackchan-official-baseline-flash-plan` /
+  `stackchan-official-baseline-flash-execute`.
+- No-flash plan report on `/dev/cu.usbmodem1101`:
+  `reports/a21-stackchan-official-baseline-flash-20260605-160124-1780646484411288000.json`.
 - Next action: choose a controlled physical A/B path. Either temporarily flash
   stock-official as explicit non-product diagnostic evidence and restore the
   A21 product candidate immediately afterward, or run a single-variable

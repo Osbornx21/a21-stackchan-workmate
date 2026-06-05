@@ -22,6 +22,7 @@ import (
 )
 
 const stackChanOfficialBaselineSchema = "a21.stackchan.official_baseline.v1"
+const stackChanOfficialBaselineFlashSchema = "a21.stackchan.official_baseline_flash.v1"
 const stackChanOfficialAudioSmokeFlashSchema = "a21.stackchan.official_audio_smoke_flash.v1"
 const stackChanOfficialPCMBridgeFlashPlanSchema = "a21.stackchan.official_pcm_bridge_flash_plan.v1"
 const stackChanOfficialPCMBridgeFlashExecutionSchema = "a21.stackchan.official_pcm_bridge_flash_execution.v1"
@@ -31,6 +32,7 @@ const stackChanOfficialXiaozhiCompatibleNVSPlanSchema = "a21.stackchan.official_
 const stackChanOfficialXiaozhiCompatibleNVSExecutionSchema = "a21.stackchan.official_xiaozhi_compatible_nvs_execution.v1"
 const stackChanOfficialPCMBridgeNVSPlanSchema = "a21.stackchan.official_pcm_bridge_nvs_plan.v1"
 const stackChanOfficialPCMBridgeNVSExecutionSchema = "a21.stackchan.official_pcm_bridge_nvs_execution.v1"
+const stackChanOfficialBaselineFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_BASELINE_DIAGNOSTIC"
 const stackChanOfficialAudioSmokeFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_AUDIO_SMOKE"
 const stackChanOfficialPCMBridgeNVSConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_NVS"
 const stackChanOfficialPCMBridgeAppFlashConfirm = "WRITE_A21_STACKCHAN_OFFICIAL_PCM_BRIDGE_APP"
@@ -45,6 +47,7 @@ const stackChanOfficialXiaozhiCompatibleAppBinary = "a21-stackchan-official-xiao
 const stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds = 60
 
 var runStackChanOfficialSmokeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
+var runStackChanOfficialBaselineFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialPCMBridgeFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialXiaozhiCompatibleFlashCommand = runStackChanOfficialSmokeFlashCommandExec
 var runStackChanOfficialXiaozhiCompatibleNVSCommand = runStackChanOfficialSmokeFlashCommandExec
@@ -509,6 +512,113 @@ func runStackChanOfficialBaseline(args []string, stdout io.Writer, stderr io.Wri
 	}
 	if err := writeJSONStackChanOfficialBaseline(stdout, report); err != nil {
 		fmt.Fprintf(stderr, "encode official baseline report: %v\n", err)
+		return 1
+	}
+	if report.Status == "failed" {
+		return 1
+	}
+	return 0
+}
+
+func runStackChanOfficialBaselineFlash(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
+	options := stackChanOfficialSmokeFlashOptions{
+		BuildDir:  firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport: firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		Port:      strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
+		OutputDir: "",
+		Confirm:   "",
+		Execute:   execute,
+	}
+	if execute {
+		options.Confirm = strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_BASELINE_FLASH_CONFIRM"))
+	}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h":
+			fmt.Fprintln(stdout, "a21 stackchan-official-baseline-flash --build-dir /tmp/a21-stackchan-official-build --port /dev/cu.usbmodemXXXX [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_BASELINE_DIAGNOSTIC] [--idf-export /path/to/export.sh] [--output-dir reports]")
+			return 0
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--port":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--port requires a value")
+				return 2
+			}
+			i++
+			options.Port = args[i]
+		case "--output-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--output-dir requires a value")
+				return 2
+			}
+			i++
+			options.OutputDir = args[i]
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
+		default:
+			fmt.Fprintf(stderr, "unknown stackchan official baseline flash option %q\n", args[i])
+			return 2
+		}
+	}
+
+	var controlGuard runtimeguard.ControlGuardReport
+	if execute {
+		if options.Confirm != stackChanOfficialBaselineFlashConfirm {
+			fmt.Fprintf(stderr, "stackchan official baseline flash requires --confirm %s\n", stackChanOfficialBaselineFlashConfirm)
+			return 2
+		}
+		var code int
+		controlGuard, code = requireA21ControlAllowed("stackchan-official-baseline-flash --execute", stderr)
+		if code != 0 {
+			return code
+		}
+	}
+	report, err := buildStackChanOfficialBaselineFlashReport(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "stackchan official baseline flash: %v\n", err)
+		return 1
+	}
+	if execute {
+		report.ControlGuard = &controlGuard
+		if err := executeStackChanOfficialBaselineFlash(context.Background(), options, &report); err != nil {
+			report.Status = "failed"
+			report.Findings = append(report.Findings, stackChanOfficialBaselineFinding{
+				Code:    "flash_execute_failed",
+				Message: err.Error(),
+			})
+		}
+	}
+	if options.OutputDir != "" {
+		if err := validateA21ReportDir(options.OutputDir); err != nil {
+			fmt.Fprintf(stderr, "official baseline flash report dir invalid: %v\n", err)
+			return 1
+		}
+		reportPath, err := writeStackChanOfficialBaselineFlashReport(options.OutputDir, report)
+		if err != nil {
+			fmt.Fprintf(stderr, "write official baseline flash report: %v\n", err)
+			return 1
+		}
+		report.ReportPath = reportPath
+	}
+	if err := writeJSONStackChanOfficialSmokeFlash(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode official baseline flash report: %v\n", err)
 		return 1
 	}
 	if report.Status == "failed" {
@@ -1293,6 +1403,47 @@ func buildStackChanOfficialSmokeFlashReport(options stackChanOfficialSmokeFlashO
 	return report, nil
 }
 
+func buildStackChanOfficialBaselineFlashReport(options stackChanOfficialSmokeFlashOptions) (stackChanOfficialSmokeFlashReport, error) {
+	buildDir := filepath.Clean(options.BuildDir)
+	if err := validateA21OfficialScratchDir(buildDir); err != nil {
+		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("build dir invalid: %w", err)
+	}
+	if containsLegacyIdentityPathToken(buildDir) {
+		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("build dir contains forbidden legacy identity")
+	}
+	if err := validateOfficialSmokeUploadPort(options.Port); err != nil {
+		return stackChanOfficialSmokeFlashReport{}, err
+	}
+	usage, err := detectFirmwareUploadPortUsage(options.Port)
+	if err != nil {
+		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("inspect upload port: %w", err)
+	}
+	if !usage.Exists {
+		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("upload port %s does not exist", options.Port)
+	}
+	if usage.InUse {
+		return stackChanOfficialSmokeFlashReport{}, fmt.Errorf("upload port %s is already in use: %s", options.Port, usage.Detail)
+	}
+	parts, err := collectOfficialBaselineFlashParts(buildDir)
+	if err != nil {
+		return stackChanOfficialSmokeFlashReport{}, err
+	}
+	report := stackChanOfficialSmokeFlashReport{
+		SchemaVersion:            stackChanOfficialBaselineFlashSchema,
+		GeneratedAtMS:            time.Now().UnixMilli(),
+		Status:                   "ready",
+		DryRun:                   !options.Execute,
+		FlashAllowed:             false,
+		FlashExecuted:            false,
+		Port:                     options.Port,
+		BuildDir:                 buildDir,
+		IDFExport:                filepath.Clean(options.IDFExport),
+		NextRequiredConfirmation: "stackchan-official-baseline-flash-execute_with_confirmation_token",
+		Parts:                    parts,
+	}
+	return report, nil
+}
+
 func buildStackChanOfficialPCMBridgeFlashPlanReport(options stackChanOfficialPCMBridgeFlashPlanOptions) (stackChanOfficialPCMBridgeFlashPlanReport, error) {
 	buildDir := filepath.Clean(options.BuildDir)
 	if err := validateA21OfficialScratchDir(buildDir); err != nil {
@@ -1544,6 +1695,10 @@ func buildStackChanOfficialPCMBridgeNVSReport(options stackChanOfficialPCMBridge
 
 func collectOfficialSmokeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
 	return collectOfficialFlashPartsForApp(buildDir, "a21-stackchan-official-audio-smoke.bin")
+}
+
+func collectOfficialBaselineFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
+	return collectOfficialFlashPartsForApp(buildDir, "stack-chan.bin")
 }
 
 func collectOfficialPCMBridgeFlashParts(buildDir string) ([]stackChanOfficialSmokeFlashPart, error) {
@@ -2395,6 +2550,28 @@ func executeStackChanOfficialSmokeFlash(ctx context.Context, options stackChanOf
 		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
 	}, "\n")
 	if err := runStackChanOfficialSmokeFlashCommand(ctx, report.FlashLogPath, script); err != nil {
+		return err
+	}
+	report.FlashExecuted = true
+	report.Status = "passed"
+	return nil
+}
+
+func executeStackChanOfficialBaselineFlash(ctx context.Context, options stackChanOfficialSmokeFlashOptions, report *stackChanOfficialSmokeFlashReport) error {
+	if _, err := os.Stat(options.IDFExport); err != nil {
+		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
+	}
+	report.DryRun = false
+	report.FlashAllowed = true
+	report.NextRequiredConfirmation = ""
+	report.FlashLogPath = filepath.Join(options.BuildDir, fmt.Sprintf("a21-official-baseline-flash-%s.log", time.Now().Format("20060102-150405")))
+	script := strings.Join([]string{
+		"set -euo pipefail",
+		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
+		fmt.Sprintf("cd %s", shellSingleQuote(options.BuildDir)),
+		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash @flash_args", shellSingleQuote(options.Port)),
+	}, "\n")
+	if err := runStackChanOfficialBaselineFlashCommand(ctx, report.FlashLogPath, script); err != nil {
 		return err
 	}
 	report.FlashExecuted = true
@@ -3416,6 +3593,24 @@ func writeStackChanOfficialSmokeFlashReport(outputDir string, report stackChanOf
 	}
 	now := time.Now()
 	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-audio-smoke-flash-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanOfficialSmokeFlash(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
+func writeStackChanOfficialBaselineFlashReport(outputDir string, report stackChanOfficialSmokeFlashReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	now := time.Now()
+	reportPath := filepath.Join(outputDir, fmt.Sprintf("a21-stackchan-official-baseline-flash-%s-%d.json", now.Format("20060102-150405"), now.UnixNano()))
 	file, err := os.Create(reportPath)
 	if err != nil {
 		return "", err
