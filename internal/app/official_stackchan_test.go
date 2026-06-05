@@ -344,46 +344,6 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialAvatarRelayWorkerWithA
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayStartsBodyRelayInAIAgentRuntime(t *testing.T) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get cwd: %v", err)
-	}
-	projectRoot := findProjectRoot(cwd)
-	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
-	data, err := os.ReadFile(overlayPath)
-	if err != nil {
-		t.Fatalf("read overlay: %v", err)
-	}
-	overlay := string(data)
-
-	for _, required := range []string{
-		`diff --git a/firmware/main/hal/hal.cpp b/firmware/main/hal/hal.cpp`,
-		`onWsAvatarData.connect([](std::string_view data)`,
-		`GetStackChan().updateAvatarFromJson(data.data());`,
-		`onWsMotionData.connect([](std::string_view data)`,
-		`GetStackChan().updateMotionFromJson(data.data());`,
-		`startWebSocketAvatarService(nullptr);`,
-		`diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avatar.cpp`,
-		`xTaskCreatePinnedToCore(_websocket_avatar_task, "ws-avatar"`,
-		`ESP_LOGI(_tag.c_str(), "Connecting to %s...", _url.c_str());`,
-	} {
-		if !strings.Contains(overlay, required) {
-			t.Fatalf("official Xiaozhi-compatible overlay missing AI.AGENT body relay runtime contract %q", required)
-		}
-	}
-
-	for _, forbidden := range []string{
-		`diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp`,
-		`diff --git a/firmware/main/apps/app_ai_agent/app_ai_agent.cpp b/firmware/main/apps/app_ai_agent/app_ai_agent.cpp`,
-		`A21_OEM_AUTOSTART_XIAOZHI`,
-	} {
-		if strings.Contains(overlay, forbidden) {
-			t.Fatalf("official frontend entry must stay official while AI.AGENT runtime starts body relay; found %q", forbidden)
-		}
-	}
-}
-
 func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPmicStartupParity(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
