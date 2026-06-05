@@ -18812,6 +18812,88 @@ Forbidden actions avoided:
   lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
 
+## 2026-06-05 08:58 CST - Power Lifecycle Cold Boot Evidence Guard
+
+Round goal:
+
+- Apply the code-review thread's power/lifecycle finding to the current
+  Gateway state machine so the product cannot accidentally accept an online
+  socket as proof that the physical power key can cold boot StackChan from
+  battery with USB disconnected.
+
+Actual completed work:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared it
+  against the current Gateway MCP/power lifecycle implementation, product
+  overlay PMIC register profile, and recovery window state.
+- Added plan
+  `docs/plans/2026-06-05-power-lifecycle-cold-boot-evidence-guard.md`.
+- Tightened `POST /v1/power-lifecycle-acceptance` to require explicit
+  cold-boot evidence:
+  `boot_source=battery_power_key_cold_boot`,
+  `usb_connected_during_boot=false`, `power_key_hold_ms` in `250..12000`,
+  `pmic_power_key_profile=a21_stackchan_axp2101_pwrkey_v1`, and
+  `boot_observed_at_ms>0`.
+- Preserved the existing online product registry and active Xiaozhi WebSocket
+  prerequisite before acceptance.
+- Extended successful acceptance output and registry capabilities with redacted
+  boot-source, PMIC profile, no-USB, power-key hold window, and boot observation
+  metadata.
+- Added `pmic_power_key_profile` to `GET /v1/power-lifecycle` so PMIC profile
+  acceptance is distinct from generic runtime online status.
+- Updated protocol/current-control/state-machine docs.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `docs/plans/2026-06-05-power-lifecycle-cold-boot-evidence-guard.md`
+
+Tests/build/runtime results:
+
+- Focused Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestPowerLifecycle|TestHardwareAcceptance' -count=1`.
+- Review-related verification passed:
+  `git diff --check`,
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'PowerLifecycle|OfficialStackChan|Xiaozhi|WorkspaceConsolePageServed' -count=1`,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+
+Runtime or physical evidence:
+
+- No firmware flash, no NVS write, no provider/V21 execution, and no physical
+  power-key acceptance occurred in this transition.
+- Product state remains honest: the device still needs the guarded
+  official-compatible product recovery flash/reconnect window and foreground
+  no-USB power-key cold-boot observation.
+
+Known risks/blockers:
+
+- This closes the false-positive acceptance path, but it does not by itself
+  prove or repair the physical button. The actual product blocker remains live
+  until the device boots from battery via power key, reconnects to Gateway, and
+  the new evidence contract is accepted.
+- If the device still cannot enter ROM/download or cannot boot after the
+  guarded product flash, the next investigation must stay on the official
+  StackChan PMIC/power/app lifecycle path.
+
+Recommended next action:
+
+- Run the full gates, commit/push, deploy the Gateway contract change, then
+  execute the guarded product recovery/physical cold-boot window and record the
+  new required evidence only if the product actually boots with USB
+  disconnected.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no generic product flash lane, no
+  provider/V21 execution, no Git prune/gc, and no internal-test3
+  voice/protocol rollback.
+
 ## 2026-06-05 08:47 CST - StackChan Product Recovery Executor
 
 Round goal:

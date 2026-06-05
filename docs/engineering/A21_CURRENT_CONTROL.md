@@ -71,6 +71,38 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 08:58 CST Power Lifecycle cold-boot evidence
+guard transition:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  the power/lifecycle finding with the current Gateway, protocol, product
+  overlay, and recovery state.
+- Added plan
+  `docs/plans/2026-06-05-power-lifecycle-cold-boot-evidence-guard.md`.
+- Tightened `POST /v1/power-lifecycle-acceptance` so product power-key
+  acceptance now requires foreground no-USB cold-boot evidence:
+  `boot_source=battery_power_key_cold_boot`,
+  `usb_connected_during_boot=false`, `power_key_hold_ms` in `250..12000`,
+  `pmic_power_key_profile=a21_stackchan_axp2101_pwrkey_v1`, and
+  `boot_observed_at_ms>0`.
+- Kept the existing requirement that the product device must be online with an
+  active Xiaozhi socket before acceptance. An already-online socket alone can no
+  longer be recorded as physical cold-boot acceptance.
+- `GET /v1/power-lifecycle` now exposes a `pmic_power_key_profile` state item,
+  and accepted evidence records redacted boot source, PMIC profile, no-USB
+  condition, hold window, and boot observation metadata in device capabilities.
+- Focused local Gateway test passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestPowerLifecycle|TestHardwareAcceptance' -count=1`.
+- Review-related verification passed:
+  `git diff --check`,
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'PowerLifecycle|OfficialStackChan|Xiaozhi|WorkspaceConsolePageServed' -count=1`,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- This transition does not flash firmware, write NVS, execute provider/V21, or
+  mark product power-key physical acceptance. The product still needs the
+  guarded official-compatible recovery flash/reconnect window and real no-USB
+  cold-boot observation.
+
 Live truth after the 2026-06-05 08:47 CST StackChan product recovery executor
 transition:
 

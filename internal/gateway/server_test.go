@@ -1653,7 +1653,7 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 	acceptResp, err := http.Post(
 		httpServer.URL+"/v1/power-lifecycle-acceptance",
 		"application/json",
-		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-acceptance","session_id":"a21-session-power-acceptance","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"observer":"operator"}`),
+		bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-acceptance","session_id":"a21-session-power-acceptance","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"boot_source":"battery_power_key_cold_boot","usb_connected_during_boot":false,"power_key_hold_ms":4200,"pmic_power_key_profile":"a21_stackchan_axp2101_pwrkey_v1","boot_observed_at_ms":1780617600000,"observer":"operator"}`),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1668,10 +1668,12 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 		t.Fatal(err)
 	}
 	for key, want := range map[string]any{
-		"schema_version":    "a21.gateway.power_lifecycle_acceptance.v1",
-		"status":            "accepted",
-		"physical_accepted": true,
-		"result_redacted":   true,
+		"schema_version":         "a21.gateway.power_lifecycle_acceptance.v1",
+		"status":                 "accepted",
+		"physical_accepted":      true,
+		"result_redacted":        true,
+		"boot_source":            "battery_power_key_cold_boot",
+		"pmic_power_key_profile": "a21_stackchan_axp2101_pwrkey_v1",
 	} {
 		if accepted[key] != want {
 			t.Fatalf("accepted[%s] = %#v, want %#v in %#v", key, accepted[key], want, accepted)
@@ -1693,10 +1695,15 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
 	capabilities := registry["capabilities"].(map[string]any)
 	for key, want := range map[string]any{
-		"power_lifecycle_physical_accepted":             "true",
-		"no_cable_cold_boot_physical_accepted":          "true",
-		"physical_power_button_start_physical_accepted": "true",
-		"last_power_lifecycle_acceptance_status":        "operator_power_button_accepted",
+		"power_lifecycle_physical_accepted":              "true",
+		"no_cable_cold_boot_physical_accepted":           "true",
+		"physical_power_button_start_physical_accepted":  "true",
+		"last_power_lifecycle_acceptance_status":         "operator_power_button_accepted",
+		"last_power_lifecycle_boot_source":               "battery_power_key_cold_boot",
+		"last_power_lifecycle_usb_connected_during_boot": "false",
+		"last_power_lifecycle_power_key_hold_ms":         "4200",
+		"last_power_lifecycle_pmic_profile":              "a21_stackchan_axp2101_pwrkey_v1",
+		"stackchan_pmic_power_key_profile":               "a21_stackchan_axp2101_pwrkey_v1",
 	} {
 		if capabilities[key] != want {
 			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
@@ -1705,11 +1712,62 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 }
 
 func TestPowerLifecycleAcceptanceRequiresOnlineXiaozhiSocket(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/power-lifecycle-acceptance", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-missing","session_id":"a21-session-power-missing","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"observer":"operator"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/power-lifecycle-acceptance", bytes.NewBufferString(`{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-missing","session_id":"a21-session-power-missing","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"boot_source":"battery_power_key_cold_boot","usb_connected_during_boot":false,"power_key_hold_ms":4200,"pmic_power_key_profile":"a21_stackchan_axp2101_pwrkey_v1","boot_observed_at_ms":1780617600000,"observer":"operator"}`))
 	rec := httptest.NewRecorder()
 	NewServer().Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("power lifecycle acceptance status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPowerLifecycleAcceptanceRequiresColdBootPMICEvidence(t *testing.T) {
+	server := NewServer()
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"device_id":  "44:1b:f6:e2:6a:60",
+		"trace_id":   "a21-trace-power-contract-hello",
+		"session_id": "a21-session-power-contract-hello",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "missing boot source",
+			body: `{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-contract","session_id":"a21-session-power-contract","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"usb_connected_during_boot":false,"power_key_hold_ms":4200,"pmic_power_key_profile":"a21_stackchan_axp2101_pwrkey_v1","boot_observed_at_ms":1780617600000,"observer":"operator"}`,
+		},
+		{
+			name: "usb still connected",
+			body: `{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-contract","session_id":"a21-session-power-contract","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"boot_source":"battery_power_key_cold_boot","usb_connected_during_boot":true,"power_key_hold_ms":4200,"pmic_power_key_profile":"a21_stackchan_axp2101_pwrkey_v1","boot_observed_at_ms":1780617600000,"observer":"operator"}`,
+		},
+		{
+			name: "wrong PMIC profile",
+			body: `{"device_id":"44:1b:f6:e2:6a:60","trace_id":"a21-trace-power-contract","session_id":"a21-session-power-contract","cold_boot_without_usb":true,"power_button_started":true,"gateway_connected":true,"xiaozhi_socket_online":true,"standalone_runtime_ok":true,"boot_source":"battery_power_key_cold_boot","usb_connected_during_boot":false,"power_key_hold_ms":4200,"pmic_power_key_profile":"old_profile","boot_observed_at_ms":1780617600000,"observer":"operator"}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := http.Post(httpServer.URL+"/v1/power-lifecycle-acceptance", "application/json", bytes.NewBufferString(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status = %d, want 400: %s", resp.StatusCode, body)
+			}
+		})
 	}
 }
 

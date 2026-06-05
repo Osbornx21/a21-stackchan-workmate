@@ -511,14 +511,20 @@ surfaces:
   `trace_id` / `session_id`, `cold_boot_without_usb=true`,
   `power_button_started=true`, `gateway_connected=true`,
   `xiaozhi_socket_online=true`, `standalone_runtime_ok=true`, and
-  `observer=operator` or `observer=instrument`. Gateway also requires the
+  `observer=operator` or `observer=instrument`. It also requires the explicit
+  cold-boot evidence contract `boot_source=battery_power_key_cold_boot`,
+  `usb_connected_during_boot=false`, `power_key_hold_ms` in `250..12000`,
+  `pmic_power_key_profile=a21_stackchan_axp2101_pwrkey_v1`, and
+  `boot_observed_at_ms>0`, so an already-online socket cannot be mistaken for
+  physical power-key acceptance. Gateway also requires the
   device to be online with an active `/v1/xiaozhi` socket before accepting.
   Successful acceptance records trace marker
   `power_lifecycle.physical_acceptance.accepted` and registry fields such as
   `power_lifecycle_physical_accepted=true`,
   `no_cable_cold_boot_physical_accepted=true`, and
-  `physical_power_button_start_physical_accepted=true`. If the physical button
-  still fails to start the device, this endpoint must remain unaccepted.
+  `physical_power_button_start_physical_accepted=true`, plus the accepted
+  StackChan PMIC profile and boot-source metadata. If the physical button still
+  fails to start the device, this endpoint must remain unaccepted.
 - `a21 stackchan-product-recovery` is the product recovery control-tower
   precheck. By default it is read-only: it checks Gateway `/v1/devices`, the
   official relay status endpoint, USB serial candidates, and latest

@@ -942,29 +942,44 @@ type XiaozhiBodySceneAcceptanceRequest struct {
 }
 
 type PowerLifecycleAcceptanceRequest struct {
-	DeviceID            string `json:"device_id"`
-	TraceID             string `json:"trace_id"`
-	SessionID           string `json:"session_id"`
-	ColdBootWithoutUSB  bool   `json:"cold_boot_without_usb"`
-	PowerButtonStarted  bool   `json:"power_button_started"`
-	GatewayConnected    bool   `json:"gateway_connected"`
-	XiaozhiSocketOnline bool   `json:"xiaozhi_socket_online"`
-	StandaloneRuntimeOK bool   `json:"standalone_runtime_ok"`
-	Observer            string `json:"observer"`
+	DeviceID               string `json:"device_id"`
+	TraceID                string `json:"trace_id"`
+	SessionID              string `json:"session_id"`
+	ColdBootWithoutUSB     bool   `json:"cold_boot_without_usb"`
+	PowerButtonStarted     bool   `json:"power_button_started"`
+	GatewayConnected       bool   `json:"gateway_connected"`
+	XiaozhiSocketOnline    bool   `json:"xiaozhi_socket_online"`
+	StandaloneRuntimeOK    bool   `json:"standalone_runtime_ok"`
+	BootSource             string `json:"boot_source"`
+	USBConnectedDuringBoot *bool  `json:"usb_connected_during_boot"`
+	PowerKeyHoldMS         int    `json:"power_key_hold_ms"`
+	PMICPowerKeyProfile    string `json:"pmic_power_key_profile"`
+	BootObservedAtMS       int64  `json:"boot_observed_at_ms"`
+	Observer               string `json:"observer"`
 }
 
 type PowerLifecycleAcceptanceResponse struct {
-	SchemaVersion     string   `json:"schema_version"`
-	TraceID           string   `json:"trace_id"`
-	SessionID         string   `json:"session_id"`
-	DeviceID          string   `json:"device_id"`
-	Status            string   `json:"status"`
-	Observer          string   `json:"observer"`
-	AcceptedSurfaces  []string `json:"accepted_surfaces"`
-	PhysicalAccepted  bool     `json:"physical_accepted"`
-	ResultRedacted    bool     `json:"result_redacted"`
-	AcceptanceEventMS int64    `json:"acceptance_event_ms"`
+	SchemaVersion          string   `json:"schema_version"`
+	TraceID                string   `json:"trace_id"`
+	SessionID              string   `json:"session_id"`
+	DeviceID               string   `json:"device_id"`
+	Status                 string   `json:"status"`
+	Observer               string   `json:"observer"`
+	BootSource             string   `json:"boot_source"`
+	USBConnectedDuringBoot bool     `json:"usb_connected_during_boot"`
+	PowerKeyHoldMS         int      `json:"power_key_hold_ms"`
+	PMICPowerKeyProfile    string   `json:"pmic_power_key_profile"`
+	BootObservedAtMS       int64    `json:"boot_observed_at_ms"`
+	AcceptedSurfaces       []string `json:"accepted_surfaces"`
+	PhysicalAccepted       bool     `json:"physical_accepted"`
+	ResultRedacted         bool     `json:"result_redacted"`
+	AcceptanceEventMS      int64    `json:"acceptance_event_ms"`
 }
+
+const (
+	stackChanPowerLifecycleBootSourceBatteryKey = "battery_power_key_cold_boot"
+	stackChanPMICPowerKeyProfileAXP2101V1       = "a21_stackchan_axp2101_pwrkey_v1"
+)
 
 type XiaozhiMCPControlResponse struct {
 	TraceID            string         `json:"trace_id"`
@@ -1817,6 +1832,28 @@ func (s *Server) handlePowerLifecycleAcceptance(w http.ResponseWriter, r *http.R
 		http.Error(w, "cold_boot_without_usb, power_button_started, gateway_connected, xiaozhi_socket_online, and standalone_runtime_ok must be true", http.StatusBadRequest)
 		return
 	}
+	bootSource := strings.ToLower(strings.TrimSpace(req.BootSource))
+	if bootSource != stackChanPowerLifecycleBootSourceBatteryKey {
+		http.Error(w, "boot_source must be battery_power_key_cold_boot", http.StatusBadRequest)
+		return
+	}
+	if req.USBConnectedDuringBoot == nil || *req.USBConnectedDuringBoot {
+		http.Error(w, "usb_connected_during_boot must be explicitly false", http.StatusBadRequest)
+		return
+	}
+	if req.PowerKeyHoldMS < 250 || req.PowerKeyHoldMS > 12000 {
+		http.Error(w, "power_key_hold_ms must be between 250 and 12000", http.StatusBadRequest)
+		return
+	}
+	pmicProfile := strings.TrimSpace(req.PMICPowerKeyProfile)
+	if pmicProfile != stackChanPMICPowerKeyProfileAXP2101V1 {
+		http.Error(w, "pmic_power_key_profile must be a21_stackchan_axp2101_pwrkey_v1", http.StatusBadRequest)
+		return
+	}
+	if req.BootObservedAtMS <= 0 {
+		http.Error(w, "boot_observed_at_ms is required", http.StatusBadRequest)
+		return
+	}
 	state := s.powerLifecycle(req.DeviceID)
 	if state.ConnectionStatus != "online" || !state.XiaozhiWSOnline {
 		http.Error(w, "online device and Xiaozhi websocket evidence are required before power lifecycle acceptance", http.StatusConflict)
@@ -1826,18 +1863,23 @@ func (s *Server) handlePowerLifecycleAcceptance(w http.ResponseWriter, r *http.R
 	nowMS := s.now().UnixMilli()
 	marker := "power_lifecycle.physical_acceptance.accepted"
 	s.recordTrace(traceID, sessionID, req.DeviceID, marker, nowMS)
-	s.recordPowerLifecyclePhysicalAcceptance(req.DeviceID, traceID, sessionID, observer, nowMS, marker)
+	s.recordPowerLifecyclePhysicalAcceptance(req.DeviceID, traceID, sessionID, observer, bootSource, pmicProfile, req.PowerKeyHoldMS, req.BootObservedAtMS, nowMS, marker)
 	writeJSON(w, http.StatusOK, PowerLifecycleAcceptanceResponse{
-		SchemaVersion:     "a21.gateway.power_lifecycle_acceptance.v1",
-		TraceID:           traceID,
-		SessionID:         sessionID,
-		DeviceID:          req.DeviceID,
-		Status:            "accepted",
-		Observer:          observer,
-		AcceptedSurfaces:  []string{"no_cable_cold_boot", "physical_power_button", "gateway_reconnect", "xiaozhi_socket"},
-		PhysicalAccepted:  true,
-		ResultRedacted:    true,
-		AcceptanceEventMS: nowMS,
+		SchemaVersion:          "a21.gateway.power_lifecycle_acceptance.v1",
+		TraceID:                traceID,
+		SessionID:              sessionID,
+		DeviceID:               req.DeviceID,
+		Status:                 "accepted",
+		Observer:               observer,
+		BootSource:             bootSource,
+		USBConnectedDuringBoot: false,
+		PowerKeyHoldMS:         req.PowerKeyHoldMS,
+		PMICPowerKeyProfile:    pmicProfile,
+		BootObservedAtMS:       req.BootObservedAtMS,
+		AcceptedSurfaces:       []string{"no_cable_cold_boot", "physical_power_button", "gateway_reconnect", "xiaozhi_socket", "pmic_power_key_profile"},
+		PhysicalAccepted:       true,
+		ResultRedacted:         true,
+		AcceptanceEventMS:      nowMS,
 	})
 }
 
@@ -6649,18 +6691,24 @@ func (s *Server) recordBodyScenePhysicalAcceptance(deviceID string, scene string
 	s.devices[deviceID] = record
 }
 
-func (s *Server) recordPowerLifecyclePhysicalAcceptance(deviceID string, traceID string, sessionID string, observer string, atMS int64, event string) {
+func (s *Server) recordPowerLifecyclePhysicalAcceptance(deviceID string, traceID string, sessionID string, observer string, bootSource string, pmicProfile string, powerKeyHoldMS int, bootObservedAtMS int64, atMS int64, event string) {
 	capabilities := map[string]string{
-		"power_lifecycle_physical_accepted":             "true",
-		"no_cable_cold_boot_physical_accepted":          "true",
-		"physical_power_button_start_physical_accepted": "true",
-		"gateway_reconnect_after_power_button_accepted": "true",
-		"xiaozhi_socket_after_power_button_accepted":    "true",
-		"last_power_lifecycle_acceptance_status":        "operator_power_button_accepted",
-		"last_power_lifecycle_acceptance_trace_id":      traceID,
-		"last_power_lifecycle_acceptance_session_id":    sessionID,
-		"last_power_lifecycle_acceptance_observer":      observer,
-		"last_power_lifecycle_acceptance_at_ms":         strconv.FormatInt(atMS, 10),
+		"power_lifecycle_physical_accepted":              "true",
+		"no_cable_cold_boot_physical_accepted":           "true",
+		"physical_power_button_start_physical_accepted":  "true",
+		"gateway_reconnect_after_power_button_accepted":  "true",
+		"xiaozhi_socket_after_power_button_accepted":     "true",
+		"stackchan_pmic_power_key_profile":               pmicProfile,
+		"last_power_lifecycle_boot_source":               bootSource,
+		"last_power_lifecycle_usb_connected_during_boot": "false",
+		"last_power_lifecycle_power_key_hold_ms":         strconv.Itoa(powerKeyHoldMS),
+		"last_power_lifecycle_boot_observed_at_ms":       strconv.FormatInt(bootObservedAtMS, 10),
+		"last_power_lifecycle_pmic_profile":              pmicProfile,
+		"last_power_lifecycle_acceptance_status":         "operator_power_button_accepted",
+		"last_power_lifecycle_acceptance_trace_id":       traceID,
+		"last_power_lifecycle_acceptance_session_id":     sessionID,
+		"last_power_lifecycle_acceptance_observer":       observer,
+		"last_power_lifecycle_acceptance_at_ms":          strconv.FormatInt(atMS, 10),
 	}
 	if observer == "instrument" {
 		capabilities["last_power_lifecycle_acceptance_status"] = "instrument_power_button_accepted"
@@ -12961,10 +13009,16 @@ func (s *Server) powerLifecycle(deviceID string) PowerLifecycleResponse {
 		batteryTelemetry = "diagnostic_runtime_echo"
 	}
 	physicalAccepted := found && capabilities["power_lifecycle_physical_accepted"] == "true"
+	pmicProfileStatus := strings.TrimSpace(capabilities["stackchan_pmic_power_key_profile"])
+	if pmicProfileStatus == "" {
+		pmicProfileStatus = strings.TrimSpace(capabilities["last_power_lifecycle_pmic_profile"])
+	}
+	pmicProfileAccepted := physicalAccepted && pmicProfileStatus == stackChanPMICPowerKeyProfileAXP2101V1
 	items := []PowerLifecycleItem{
 		powerLifecycleItem("runtime_online", "Runtime online", found && record.ConnectionStatus == "online", false, record.ConnectionStatus, "gateway_registry", "reconnect_device"),
 		powerLifecycleItem("xiaozhi_socket", "Xiaozhi socket", xiaozhiOnline, false, boolStatus(xiaozhiOnline), "gateway_socket_registry", "restore_xiaozhi_socket"),
 		powerLifecycleItem("battery_telemetry", "Battery telemetry", strings.TrimSpace(runtimeEcho["battery_mv"]) != "", false, batteryTelemetry, "device_runtime_echo", "run_sensor_battery_diagnostic_probe"),
+		powerLifecycleItem("pmic_power_key_profile", "PMIC power-key profile", pmicProfileAccepted, pmicProfileAccepted, pmicProfileStatus, "operator_or_instrument", "accept_pmic_power_key_profile"),
 		powerLifecycleItem("no_cable_cold_boot", "No-cable cold boot", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_no_cable_cold_boot"),
 		powerLifecycleItem("physical_power_button", "Physical power button", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_power_button_start"),
 	}
