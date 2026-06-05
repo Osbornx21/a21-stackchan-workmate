@@ -19,6 +19,67 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 14:13 CST - StackChan Official Home NVS Provision Executed
+
+Round goal:
+
+- Execute the official Home unlock on the product StackChan through the guarded
+  NVS lane after the Python override fixed the local ESP-IDF toolchain issue.
+
+Actual completed work:
+
+- Re-ran
+  `a21-stackchan-official-xiaozhi-compatible-nvs-execute` from the clean
+  foreground hardware-window branch at commit `01f38f21e763`.
+- Set `A21_IDF_PYTHON` to the verified ESP-IDF Python 3.14 venv, bypassing the
+  broken local Python 3.13 auto-detection path.
+- T7 control guard passed: foreground worktree, hardware-window branch,
+  non-detached HEAD, dirty file count `0`.
+- NVS write passed: esptool connected to ESP32-S3 device MAC
+  `44:1b:f6:e2:6a:60`, wrote the NVS partition at `0x9000`, verified flash
+  hash, and hard reset the device.
+- Provision summary shows explicit Wi-Fi credentials written, A21 OTA/WS route
+  written, existing calibration preserved, and
+  `app_config_marked_configured=true`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- Successful NVS execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260605-141249-1780639969993980000.json`.
+- Write log:
+  `.a21-run/firmware/official-xiaozhi-compatible-nvs/a21-stackchan-official-xiaozhi-compatible-nvs-write-20260605-141248.log`.
+- Report summary:
+  `write_executed=true`, `wifi_credentials_written=true`,
+  `app_config_marked_configured=true`, `servo_calibration_present=true`.
+- Gateway status after reset did not show a new A21 voice/body connection yet,
+  which is expected while the device remains in official Home before the
+  operator opens `AI.AGENT`.
+
+Remaining issues:
+
+- Foreground operator must visually confirm that the device leaves
+  `Ready to Configure` and reaches official Home.
+- After operator opens `AI.AGENT`, Gateway must show fresh `/v1/xiaozhi` and
+  `/stackChan/ws` device activity.
+- No-cable power-key acceptance still needs a separate physical check after
+  this official Home path is confirmed.
+
+Next suggested action:
+
+- Ask the operator to confirm the screen state, then open `AI.AGENT` and query
+  Gateway device/status surfaces for fresh voice/body connections.
+
+Forbidden actions avoided:
+
+- No firmware app flash, no generic `xiaozhi.bin`, no provider key in firmware,
+  no PMIC overlay change, no system Python repair, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 14:09 CST - StackChan Official NVS Python Override Ready
 
 Round goal:
