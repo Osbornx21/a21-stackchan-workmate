@@ -19,6 +19,102 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 22:52 CST - 5080lab StepFun Evidence Imported, Physical Lock Still Blocked
+
+Round goal:
+
+- Retry 5080lab execution after the user requested another attempt.
+
+Actual completed work:
+
+- Rechecked 5080lab access. TCP/22 is now reachable and SSH works.
+- Found that 5080lab has Git for Windows `bash`, `git`, and Go, but no `make`
+  binary in PATH or the Git installation. The literal
+  `make provider-5080lab-runbook A21_PROVIDER=stepfun` command therefore
+  cannot execute on that host until `make` is installed.
+- Found an old 5080 A21 source package at
+  `D:\a21-provider-closure\89f51faf6266`; it is not current and still reports
+  StepFun as not route-eligible, so it was not used for final evidence.
+- Streamed current `main-lean` commit `584e803` to 5080lab as
+  `D:\a21-provider-closure\main-lean-584e803`.
+- Created a selected-provider-only
+  `D:\a21-provider-closure\main-lean-584e803\.a21-run\5080lab\provider.env`
+  through SSH using redacted handling. No provider key was printed.
+- Ran the runbook-equivalent `go run` sequence on 5080lab. The 5080 executed
+  StepFun streaming smoke passed with three HTTP 200 attempts.
+- Packaged a clean provider-only bundle on 5080lab and pulled it back to the
+  control machine:
+  `reports/a21-5080lab-provider-evidence-20260605-225138.tgz`.
+- Imported the bundle locally. Import status is `accepted`, source report is
+  `a21-provider-smoke-20260605-225111-334580400.json`, and redaction checks
+  report no payloads, prompts, transcripts, provider output, URLs, local paths,
+  or credential values.
+- Reran local product/server readiness. Provider evidence is now ready and
+  points at the 5080 StepFun report.
+- Reran the physical north-star command and read-only recovery. Product
+  StackChan remains `xiaozhi_ws_disconnected`, so the north-star still fails
+  before timing with `device is not online`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/lean/CARVE_LOG.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- Literal `make` execution on 5080lab is still unavailable because `make` is
+  not installed there.
+- True-provider physical first-audio p95 and physical barge-in success are
+  still missing because product StackChan is offline.
+
+Known risks/blockers:
+
+- 5080 provider evidence is closed, but it does not substitute for physical
+  StackChan online/playback/barge-in evidence.
+- Product device `44:1b:f6:e2:6a:60` remains stale in the public Gateway and
+  absent from local USB serial.
+
+Recommended next action:
+
+- Power/connect product StackChan, open `AI.AGENT`, and confirm it reconnects to
+  `ws://47.103.57.217/v1/xiaozhi`, then rerun the direct-source
+  `make stackchan-fast-companion-turn` command from `main-lean`.
+- Optionally install `make` on 5080lab for future operator convenience; the
+  current provider evidence no longer depends on that wrapper.
+
+Tests/build/runtime results:
+
+- 5080 dry-run provider smoke:
+  `a21-provider-smoke-20260605-225110-107773000.json`, `status=ready`.
+- 5080 executed provider smoke:
+  `a21-provider-smoke-20260605-225111-334580400.json`, `status=passed`,
+  `executed=true`, `route_eligible=true`, `repeat=3`, HTTP 200 on all attempts,
+  first-content p95 `304.399 ms`, total-duration p95 `406.981 ms`.
+- 5080 package accepted:
+  `a21-5080lab-provider-evidence-20260605-225138.tgz`.
+- Local import accepted:
+  `reports/a21-provider-evidence-import-20260605-225155.json`.
+- Local product readiness wrote
+  `reports/a21-product-readiness-20260605-225203.json`; provider evidence is
+  ready, but launch remains blocked by Gateway/physical/wake/voice-chain gaps.
+- Local server-side readiness wrote
+  `reports/a21-server-side-readiness-bundle-20260605-225203.json`; provider is
+  ready and missing evidence is now `gateway`, `roleplay_voice_runtime`,
+  `wake_word`, and `voice_chain_selector`.
+- Direct-source `stackchan-fast-companion-turn` wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-225217.json`, status
+  `failed`, finding `device is not online`.
+- Direct-source product recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-225225.json`, status
+  `product_offline_serial_missing`.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider key output, no V21 internal
+  execution, no stale 2026-06-02 evidence substitution, and no provider evidence
+  substitution for physical acceptance.
+
 ## 2026-06-05 22:27 CST - 5080lab Provider Path Reopened, Physical Lock Still Blocked
 
 Round goal:

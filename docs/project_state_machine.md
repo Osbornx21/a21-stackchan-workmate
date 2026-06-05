@@ -132,6 +132,45 @@ Latest lean carve 5080/runtime update, 2026-06-05 22:27 CST:
 - Current override remains
   `S-LEAN-CARVE-GOVERNANCE-CI-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
 
+Latest lean carve 5080 closure update, 2026-06-05 22:52 CST:
+
+- 5080lab SSH recovered. The host has Git Bash and Go, but no `make`, so the
+  literal `make provider-5080lab-runbook A21_PROVIDER=stepfun` wrapper cannot
+  run there until `make` is installed.
+- The old 5080 source package
+  `D:\a21-provider-closure\89f51faf6266` is stale and was not used for final
+  evidence. Current `main-lean` commit `584e803` was streamed to 5080lab at
+  `D:\a21-provider-closure\main-lean-584e803`.
+- A selected-provider-only redacted StepFun env was created on 5080lab under
+  `.a21-run\5080lab\provider.env`; no provider key was printed.
+- The runbook-equivalent `go run` sequence on 5080lab produced:
+  - dry-run smoke `a21-provider-smoke-20260605-225110-107773000.json`,
+    `status=ready`;
+  - executed smoke `a21-provider-smoke-20260605-225111-334580400.json`,
+    `status=passed`, `executed=true`, `route_eligible=true`, `repeat=3`, HTTP
+    200 for all attempts, first-content p95 `304.399 ms`, total-duration p95
+    `406.981 ms`;
+  - accepted provider bundle
+    `a21-5080lab-provider-evidence-20260605-225138.tgz`.
+- The control machine imported the bundle successfully via
+  `reports/a21-provider-evidence-import-20260605-225155.json`. Redaction checks
+  passed with no payload, prompt, transcript, provider output, URL, local path,
+  or credential value storage.
+- Local product/server readiness now treats provider evidence as ready through
+  `a21-provider-smoke-20260605-225111-334580400.json`.
+- Direct-source public Gateway still lists product device
+  `44:1b:f6:e2:6a:60` as `xiaozhi_ws_disconnected`; official relay status is
+  `connected=false`.
+- The direct-source true-provider-intent `make stackchan-fast-companion-turn`
+  run wrote `reports/a21-stackchan-fast-companion-turn-20260605-225217.json`,
+  status `failed`, finding `device is not online`; no p95 or physical barge-in
+  result exists.
+- Read-only recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-225225.json`, status
+  `product_offline_serial_missing`.
+- Current override remains
+  `S-LEAN-CARVE-GOVERNANCE-CI-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
+
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
 are the project memory.

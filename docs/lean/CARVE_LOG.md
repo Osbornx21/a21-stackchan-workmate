@@ -98,6 +98,25 @@ run diary and must stay short.
   `failed`, finding `device is not online`; read-only recovery wrote
   `reports/a21-stackchan-product-recovery-20260605-222723.json`, status
   `product_offline_serial_missing`. No p95/barge-in success recorded.
+- 2026-06-05 22:52 CST retry: 5080lab SSH recovered, but `make` is not
+  installed on the host, so the literal
+  `make provider-5080lab-runbook A21_PROVIDER=stepfun` wrapper could not run.
+  Current `main-lean` commit `584e803` was streamed to 5080lab and the
+  runbook-equivalent `go run` sequence closed StepFun provider evidence. The
+  5080 executed report `a21-provider-smoke-20260605-225111-334580400.json`
+  passed with `executed=true`, `route_eligible=true`, `repeat=3`, HTTP 200 for
+  all attempts, first-content p95 `304.399 ms`, and total-duration p95
+  `406.981 ms`. The clean 5080 bundle
+  `reports/a21-5080lab-provider-evidence-20260605-225138.tgz` was imported
+  locally via `reports/a21-provider-evidence-import-20260605-225155.json`.
+  Product/server readiness now marks provider evidence ready. Direct-source
+  Gateway still reports product device `44:1b:f6:e2:6a:60` as
+  `xiaozhi_ws_disconnected`. The direct-source true-provider-intent
+  `make stackchan-fast-companion-turn` run wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-225217.json`, status
+  `failed`, finding `device is not online`; read-only recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-225225.json`, status
+  `product_offline_serial_missing`. No p95/barge-in success recorded.
 
 ## Lean Gate Results - 2026-06-05
 
