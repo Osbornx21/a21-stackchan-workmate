@@ -35,6 +35,17 @@ Latest control update, 2026-06-05 08:15 CST:
 - Focused Gateway official-control/status/workspace tests, the review-related
   Gateway `-race` subset, `make verify`, `make preflight`, and `make doctor`
   passed locally.
+- Commit `c5fb24b feat(gateway): add official stackchan mcp fallback` is pushed
+  and deployed to ECS `47.103.57.217` through Aliyun Cloud Assistant over the
+  existing 5080lab SOCKS path. Remote archive SHA verification, focused Gateway
+  tests, build, `/opt/a21.next` safe-swap, `a21-gateway` restart, loopback
+  health, Caddy health, official relay status, and `/workspace` smoke passed.
+- Public `/workspace` now exposes `allow_mcp_fallback`; public official status
+  remains `connected=false`, `physical_accepted=false`, and
+  `next_action=connect_official_stackchan_ws`.
+- Public fallback control currently returns HTTP 409
+  `xiaozhi websocket is not connected` because the product device is offline;
+  this is the expected honest failure mode until product Xiaozhi reconnects.
 - This is a backend state-machine/control-surface remediation only. It does
   not mark product physical acceptance, flash firmware, write NVS, execute
   providers/V21, or resolve the current product-offline ROM/download blocker.

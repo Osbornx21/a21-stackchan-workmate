@@ -18740,6 +18740,11 @@ Actual completed work:
 - Updated `docs/engineering/PROTOCOL.md`,
   `docs/engineering/A21_CURRENT_CONTROL.md`, and
   `docs/project_state_machine.md`.
+- Committed and pushed
+  `c5fb24b feat(gateway): add official stackchan mcp fallback`.
+- Deployed `c5fb24b` to ECS `47.103.57.217` through Aliyun Cloud Assistant
+  over the existing 5080lab SOCKS path, because direct SSH still closes before
+  command execution.
 
 Changed files:
 
@@ -18763,12 +18768,27 @@ Tests/build/runtime results:
 - `GOMAXPROCS=2 make verify` passed.
 - `GOMAXPROCS=2 make preflight` passed.
 - `GOMAXPROCS=2 make doctor` passed.
+- Remote archive SHA verification passed:
+  `7c3c6c03976b01d9e554a140f7a1dc2c54c50fba5dcfddb0e7db54d5f229c287`.
+- Remote focused Gateway tests passed in `/opt/a21.next`.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- ECS `a21-gateway` restarted active; loopback `127.0.0.1:21081/healthz`,
+  Caddy `127.0.0.1/healthz`, and public SOCKS-path `/healthz` passed.
+- Public `/workspace` smoke found `allow_mcp_fallback`,
+  `fallback_delivered`, and `official_action_fallback`.
 
 Runtime or physical evidence:
 
 - Local unit/integration test evidence proves backend fallback emits MCP LED
   and head commands, records `stackchan.official_mcp_fallback.*` traces, and
   mirrors honest fallback metadata into `/v1/devices.runtime_echo`.
+- Public official status remains `connected=false`,
+  `physical_accepted=false`, and
+  `next_action=connect_official_stackchan_ws`.
+- Public fallback control with `allow_mcp_fallback=true` currently returns
+  HTTP 409 `xiaozhi websocket is not connected` because the product device is
+  still offline. This is the expected honest failure mode until product
+  Xiaozhi reconnects.
 - No live product physical evidence was collected in this transition.
 
 Known risks/blockers:
@@ -18780,8 +18800,10 @@ Known risks/blockers:
 
 Recommended next action:
 
-- Run full local gates, commit/push this backend fallback remediation, deploy
-  to ECS, then continue the physical product recovery window.
+- Continue the physical product recovery window: enter ROM/download mode if
+  needed, recover product Xiaozhi connectivity, then verify backend fallback on
+  the live MCP socket plus official `/stackChan/ws`, power-key startup, wake,
+  voice, and visible body behavior.
 
 Forbidden actions avoided:
 

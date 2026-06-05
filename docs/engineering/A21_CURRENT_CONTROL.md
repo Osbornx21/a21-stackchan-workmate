@@ -105,6 +105,23 @@ fallback transition:
   `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
+- Commit `c5fb24b feat(gateway): add official stackchan mcp fallback` was
+  pushed and deployed to ECS `47.103.57.217` through Aliyun Cloud Assistant
+  over the existing 5080lab SOCKS path.
+- ECS deployment reassembled the source archive at SHA-256
+  `7c3c6c03976b01d9e554a140f7a1dc2c54c50fba5dcfddb0e7db54d5f229c287`,
+  ran remote focused Gateway tests, built `/opt/a21.next/bin/a21`, safe-swapped
+  `/opt/a21.next` to `/opt/a21`, restarted `a21-gateway`, and passed loopback
+  plus Caddy `/healthz`.
+- Public smoke through the same SOCKS path passed for `/healthz`,
+  `/v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60`, and
+  `/workspace` containing `allow_mcp_fallback`, `fallback_delivered`, and
+  `official_action_fallback`.
+- Public `POST /v1/stackchan/official/control` with
+  `allow_mcp_fallback=true` currently returns HTTP 409
+  `xiaozhi websocket is not connected` because the product device is still not
+  online. This is the expected honest failure mode: backend fallback requires a
+  live Xiaozhi MCP socket and does not pretend to move an offline device.
 - This transition does not flash firmware, write NVS, execute providers/V21,
   expose reboot/OTA/snapshot/video/camera/NFC/IR/app lifecycle, mark physical
   acceptance, or roll back internal-test3 voice/protocol changes.
