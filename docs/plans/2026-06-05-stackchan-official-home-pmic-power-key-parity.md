@@ -24,6 +24,20 @@ PMIC parity that previously enabled the AXP2101 PWRON/OFFLEVEL power-off path
 and 16-second hardware shutdown fallback. The remaining failure is before
 Gateway, provider, voice, or A21 mode entry can participate.
 
+After the first parity flash still did not prove physical no-USB cold boot, the
+active hypothesis was narrowed further:
+
+- NVS does not contain a `xiaozhi/idle_sec` or `xiaozhi/ext_pwr` value that
+  would explain immediate battery-mode shutdown.
+- The symptom still looks like an AXP2101 battery cold-boot hold problem or a
+  rail/threshold problem before A21 Gateway can observe the device.
+- AXP2101 `REG24` controls the battery-voltage power-off threshold. The next
+  product candidate lowers it to the 2.6V setting to tolerate cold-boot inrush,
+  while leaving DCDC over/under-voltage protection enabled.
+- The product heartbeat now carries a read-only PMIC raw register snapshot as
+  `pmic_power_status` so future Gateway evidence can distinguish battery
+  absent/low/charging, power-off causes, and applied register values.
+
 ## Target State
 
 - Keep official StackChan Home, setup, mobile surfaces, and `AI.AGENT` mode
@@ -31,7 +45,10 @@ Gateway, provider, voice, or A21 mode entry can participate.
 - Restore only the conservative AXP2101 PMIC power-key parity:
   - `REG10 |= 0x04` for the hardware PWRON shutdown fallback.
   - `REG22 = 0b110` so PWRON and OFFLEVEL can request PMIC power-off.
+  - `REG24 = 0x00` for the 2.6V battery-voltage power-off threshold.
   - `REG27 = 0x00` to preserve official ON/OFF timing.
+- Expose read-only PMIC raw state in the heartbeat without adding any remote
+  power-control surface.
 - Product flash uses only the guarded official-compatible lane and artifact
   `a21-stackchan-official-xiaozhi-compatible.bin`.
 
@@ -40,10 +57,11 @@ Gateway, provider, voice, or A21 mode entry can participate.
 1. Update the official-compatible overlay with the narrow PMIC parity hunk.
 2. Update overlay tests so the official front-end remains guarded while this
    exact PMIC parity hunk is required.
-3. Verify the overlay applies to the clean official StackChan source.
-4. Run focused tests and `make verify`.
-5. Build and flash the product artifact through the guarded product lane.
-6. Collect Gateway/device evidence, then request physical no-USB boot/shutdown
+3. Add PMIC cold-boot threshold hardening and raw snapshot heartbeat evidence.
+4. Verify the overlay applies to the clean official StackChan source.
+5. Run focused tests and `make verify`.
+6. Build and flash the product artifact through the guarded product lane.
+7. Collect Gateway/device evidence, then request physical no-USB boot/shutdown
    acceptance.
 
 ## Acceptance
@@ -56,6 +74,18 @@ Gateway, provider, voice, or A21 mode entry can participate.
 - Guarded product build and flash reports are recorded.
 - Operator confirms no-USB power key can cold boot to official Home and shut
   down/restart without USB.
+
+## Build Evidence
+
+- 2026-06-05 15:10 CST: focused overlay tests passed.
+- 2026-06-05 15:10 CST: `git diff --check` passed.
+- 2026-06-05 15:10 CST: `GOMAXPROCS=2 make verify` passed.
+- 2026-06-05 15:10 CST: guarded product build passed.
+- App artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `31615f23fb2dc5d8e746fc6b6ed3186b65a020f29e9c72f114b89b39b4aaf36e`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-150958-1780643398410587000.json`.
 
 ## Failure State
 

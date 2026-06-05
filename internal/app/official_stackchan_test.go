@@ -361,10 +361,15 @@ func TestOfficialXiaozhiCompatibleOverlayRestoresStackChanPowerKeyParity(t *test
 		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
 		`WriteReg(0x10, common_config | 0x04);`,
 		`WriteReg(0x22, 0b110);`,
+		`WriteReg(0x24, 0x00);`,
 		`WriteReg(0x27, 0x00);`,
 		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
 		`PWRON and OFFLEVEL can request PMIC power-off.`,
+		`Lower VSYS shutdown threshold to 2.6V for battery cold boot inrush.`,
 		`Preserve official ON/OFF timing: 128ms on, 4s off.`,
+		`std::string GetPowerDiagnosticSnapshot()`,
+		`std::string board_get_power_diagnostic_snapshot();`,
+		`return board.GetPmicPowerDiagnosticSnapshot();`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key parity contract %q", required)
@@ -554,6 +559,8 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`cJSON_AddBoolToObject(root, "battery_discharging", battery_discharging);`,
 		`cJSON_AddBoolToObject(root, "external_power", !battery_discharging);`,
 		`cJSON_AddStringToObject(root, "pmic_power_key_profile", "a21_stackchan_axp2101_pwrkey_v1");`,
+		`hal_bridge::board_get_power_diagnostic_snapshot`,
+		`cJSON_AddStringToObject(root, "pmic_power_status", pmic_status.c_str());`,
 		`SendA21PlaybackStart`,
 		`SendA21PlaybackStopDone`,
 		`SendA21TouchEvent`,

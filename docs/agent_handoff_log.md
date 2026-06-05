@@ -19,6 +19,62 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 15:10 CST - StackChan PMIC Cold-Boot Diagnostic Build Ready
+
+Round goal:
+
+- Continue the no-USB power-key investigation after the operator confirmed the
+  official Home/AI.AGENT path can enter, but unplugged cold boot still fails.
+
+Actual completed work:
+
+- Kept the restored official Home/setup/AI.AGENT lifecycle intact.
+- Added the next narrow PMIC candidate to the official-compatible overlay:
+  `REG24 = 0x00` for lower battery-voltage power-off threshold tolerance.
+- Added read-only AXP2101 diagnostic heartbeat evidence as
+  `pmic_power_status`, containing raw key PMIC registers.
+- Fixed the overlay hunk structure so the product build clean export accepts
+  the patch without relying on blank context lines in the patch file.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-home-pmic-power-key-parity.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Guarded product build passed through
+  `a21-stackchan-official-xiaozhi-compatible-build`.
+- App artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `31615f23fb2dc5d8e746fc6b6ed3186b65a020f29e9c72f114b89b39b4aaf36e`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-150958-1780643398410587000.json`.
+
+Remaining issues:
+
+- Product flash is still pending.
+- Physical no-USB cold boot and shutdown/restart acceptance is still pending.
+- If this candidate still only flashes screen/red LED on battery, the next
+  evidence boundary is before A21 app/Gateway: battery connector/charge path,
+  AXP2101 rail/latch state, or stock official firmware A/B no-USB power test.
+
+Next suggested action:
+
+- Commit and push this build-ready transition, then run only the guarded
+  official-compatible product flash lane on the foreground device.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct boot into
+  Xiaozhi, no official Home/Setup rewrite, no NVS write, no Git prune/gc, and
+  no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 14:28 CST - StackChan Official Home PMIC Power-Key Flashed
 
 Round goal:
