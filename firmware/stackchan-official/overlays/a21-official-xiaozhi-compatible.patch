@@ -120,12 +120,21 @@ diff --git a/firmware/main/hal/hal_ws_avatar.cpp b/firmware/main/hal/hal_ws_avat
 index 3ff4871..334a27d 100644
 --- a/firmware/main/hal/hal_ws_avatar.cpp
 +++ b/firmware/main/hal/hal_ws_avatar.cpp
-@@ -66,3 +66,5 @@ public:
+@@ -66,3 +66,14 @@ public:
 -        _url = fmt::format("{}/stackChan/ws?deviceType=StackChan", secret_logic::get_server_url());
 -
++        auto device_id = GetHAL().getFactoryMacString(":");
++        std::string escaped_device_id;
++        for (auto c : device_id) {
++            if (c == ':') {
++                escaped_device_id += "%3A";
++            } else {
++                escaped_device_id.push_back(c);
++            }
++        }
 +        _url = fmt::format("{}/stackChan/ws?deviceType=StackChan&device_id={}",
 +                           secret_logic::get_server_url(),
-+                           GetHAL().getFactoryMacString(":"));
++                           escaped_device_id);
 +
          connect();
 @@ -478,7 +480,31 @@ private:

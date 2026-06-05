@@ -315,6 +315,8 @@ func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeW
 		`_a21_avatar_runtime = std::make_unique<WebSocketAvatar>();`,
 		`_a21_avatar_runtime->update();`,
 		`GetHAL().getFactoryMacString(":")`,
+		`escaped_device_id += "%3A";`,
+		`escaped_device_id`,
 		`device_id={}`,
 		`CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=8192`,
 	} {
