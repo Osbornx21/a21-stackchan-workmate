@@ -19,6 +19,69 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 15:15 CST - StackChan PMIC Cold-Boot Diagnostic Flashed
+
+Round goal:
+
+- Flash the PMIC cold-boot diagnostic candidate after the build-ready
+  transition passed verification.
+
+Actual completed work:
+
+- Committed and pushed
+  `1106dd49dc8e fix(stackchan): add pmic cold boot diagnostics`.
+- Ran the guarded official-compatible product flash executor on
+  `/dev/cu.usbmodem1101`.
+- Flash guard accepted the foreground hardware-window branch because the
+  worktree was clean, HEAD was not detached, and the confirmation string
+  matched the product lane.
+- Flash executed and wrote bootloader, app, partition table, OTA data, and
+  generated assets.
+- Queried the public Gateway after flash. `/healthz` passed. Device registry
+  and official relay still show stale/disconnected until the operator opens
+  official `AI.AGENT`.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- Product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-151446-1780643686932286000.json`.
+- Flashed app artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `31615f23fb2dc5d8e746fc6b6ed3186b65a020f29e9c72f114b89b39b4aaf36e`.
+- Control guard commit:
+  `1106dd49dc8e`.
+- Public `/healthz` returned OK after flash.
+- `/v1/devices` still shows the product device stale from the earlier session;
+  `/v1/stackchan/official/status` reports `connected=false`.
+
+Remaining issues:
+
+- Operator physical no-USB cold boot and shutdown/restart acceptance is still
+  pending.
+- `pmic_power_status` evidence will appear only after the operator opens
+  `AI.AGENT` and the A21 Xiaozhi heartbeat reaches Gateway.
+- If no-USB cold boot still only flashes screen/red LED and never reaches
+  official Home, the failure boundary is before A21 app/Gateway: battery
+  connector/charge path, AXP2101 rail/latch state, or stock official firmware
+  A/B no-USB power test.
+
+Next suggested action:
+
+- Operator confirms the device reaches official Home on USB after this flash,
+  opens `AI.AGENT` once so Gateway records `pmic_power_status`, then unplugs
+  USB fully and tests upper-left power-key cold boot.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct boot into
+  Xiaozhi, no official Home/Setup rewrite, no NVS write, no Git prune/gc, and
+  no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 15:10 CST - StackChan PMIC Cold-Boot Diagnostic Build Ready
 
 Round goal:
