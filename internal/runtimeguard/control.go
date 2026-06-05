@@ -74,6 +74,7 @@ func LookupControlCommandSpec(command string) (ControlCommandSpec, bool) {
 	}
 	for _, command := range []string{
 		"stackchan-official-audio-smoke-flash",
+		"stackchan-official-baseline-flash",
 		"stackchan-official-pcm-bridge-flash",
 		"a21-stackchan-official-xiaozhi-compatible-flash",
 		"a21-stackchan-official-xiaozhi-compatible-nvs",
@@ -200,6 +201,8 @@ func controlCommandSpecs() map[string]ControlCommandSpec {
 	return map[string]ControlCommandSpec{
 		"stackchan-official-audio-smoke-flash --execute":            t7HardwareWrite("stackchan-official-audio-smoke-flash --execute", "official StackChan app flash execute"),
 		"stackchan-official-audio-smoke-flash-execute":              t7HardwareWrite("stackchan-official-audio-smoke-flash-execute", "official StackChan app flash execute"),
+		"stackchan-official-baseline-flash --execute":               t7HardwareWrite("stackchan-official-baseline-flash --execute", "official StackChan baseline diagnostic flash execute"),
+		"stackchan-official-baseline-flash-execute":                 t7HardwareWrite("stackchan-official-baseline-flash-execute", "official StackChan baseline diagnostic flash execute"),
 		"stackchan-official-pcm-bridge-nvs --execute":               t7HardwareWrite("stackchan-official-pcm-bridge-nvs --execute", "official StackChan PCM bridge NVS write"),
 		"stackchan-official-pcm-bridge-nvs-execute":                 t7HardwareWrite("stackchan-official-pcm-bridge-nvs-execute", "official StackChan PCM bridge NVS write"),
 		"a21-stackchan-official-xiaozhi-compatible-flash --execute": t7HardwareWrite("a21-stackchan-official-xiaozhi-compatible-flash --execute", "A21 official Xiaozhi compatible app flash execute"),

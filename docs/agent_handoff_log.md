@@ -19,6 +19,60 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 16:08 CST - Official Baseline Flash Guard Repaired
+
+Round goal:
+
+- Unblock the controlled stock-official physical A/B path without adding
+  another speculative A21 PMIC or firmware patch.
+
+Actual completed work:
+
+- Confirmed the previous `stackchan-official-baseline-flash-execute` attempt
+  stopped before flashing because the new diagnostic lane was not registered
+  as a known T7 hardware-write command.
+- Added the stock-official baseline diagnostic flash command to the control
+  guard's known hardware-write specs, including `--execute` flag
+  classification.
+- Added a runtimeguard test that proves baseline diagnostic flashing requires a
+  `codex/a21-hardware-window-*` branch, clean worktree, non-detached HEAD, and
+  foreground hardware-window discipline.
+
+Changed files:
+
+- `internal/runtimeguard/control.go`
+- `internal/runtimeguard/control_test.go`
+- `docs/agent_handoff_log.md`
+- `docs/project_state_machine.md`
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test ./internal/runtimeguard -run 'ControlGuard|LookupControlCommandSpec' -count=1` passed.
+- `GOMAXPROCS=2 go test ./internal/app -run 'OfficialBaselineFlash|OfficialAudioSmokeFlash|OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1` passed.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- No firmware flash, NVS write, provider execution, or Gateway change occurred
+  in this round.
+
+Remaining issues:
+
+- Physical no-USB cold boot is still unresolved and must be decided by the next
+  stock-official vs A21 product A/B evidence, not by further unproven register
+  churn.
+
+Recommended next action:
+
+- Commit and push this guard repair, run the stock-official baseline diagnostic
+  flash through T7, ask the operator to perform no-USB upper-left PWRKEY cold
+  boot, then restore the current A21 product candidate through the product
+  official-compatible lane.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no A21 product rollback, no
+  internal-test3 voice/protocol rollback, no Git prune/gc, and no unguarded
+  firmware write.
+
 ## 2026-06-05 15:56 CST - StackChan Power State Machine A/B RCA
 
 Round goal:

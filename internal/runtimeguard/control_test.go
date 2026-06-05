@@ -114,6 +114,28 @@ func TestControlGuardAllowsPCMBridgeFlashFromHardwareWindow(t *testing.T) {
 	}
 }
 
+func TestControlGuardAllowsOfficialBaselineFlashFromHardwareWindow(t *testing.T) {
+	report := EvaluateControlGuard(context.Background(), ControlGuardInput{
+		Command: "stackchan-official-baseline-flash-execute",
+		CWD:     "/work/a21",
+		Runner: fakeControlGitRunner{
+			branch: "codex/a21-hardware-window-20260605-stock-official-ab",
+			commit: "abc123def456",
+			root:   "/work/a21",
+		},
+	})
+
+	if !report.Result.OK {
+		t.Fatalf("guard failed: %+v", report.Result.Findings)
+	}
+	if report.Tier != "T7" {
+		t.Fatalf("tier = %q, want T7", report.Tier)
+	}
+	if !report.Spec.RequiresHardwareWindow || !report.Spec.RequiresCleanWorktree {
+		t.Fatalf("baseline flash must remain a guarded hardware write: %+v", report.Spec)
+	}
+}
+
 func TestControlGuardClassifiesExecuteFlagCommands(t *testing.T) {
 	for _, command := range []string{
 		"provider-smoke --execute",
@@ -134,6 +156,7 @@ func TestControlGuardClassifiesExecuteFlagCommands(t *testing.T) {
 func TestControlGuardClassifiesFlashExecuteFlagCommands(t *testing.T) {
 	for _, command := range []string{
 		"stackchan-official-audio-smoke-flash --execute",
+		"stackchan-official-baseline-flash --execute",
 		"stackchan-official-pcm-bridge-flash --execute",
 		"stackchan-official-pcm-bridge-nvs --execute",
 		"firmware-bootstrap-flash --execute",
