@@ -36,7 +36,17 @@ Latest control update, 2026-06-05 08:58 CST:
   `GOMAXPROCS=2 go test -race ./internal/gateway -run 'PowerLifecycle|OfficialStackChan|Xiaozhi|WorkspaceConsolePageServed' -count=1`,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
-- Commit, push, and ECS deployment are pending for this transition.
+- Commit `a181d44 feat(gateway): harden power lifecycle acceptance evidence`
+  was pushed to the current branch.
+- ECS deployment from this Mac is pending because Aliyun ECS API TLS closes
+  during handshake through the current TUN fake-IP route, SSH to
+  `47.103.57.217:22` closes before the SSH banner, and public HTTP ports accept
+  TCP but return empty application replies from this host.
+- Local deployment archive is ready at `/tmp/a21-a181d4464af9.tar.gz` with
+  SHA-256
+  `0d1fd7b40e09d43a10338515189c6c6c7cfc4841729e06cc1c14dde25fb47666`; GitHub
+  codeload for commit `a181d4464af90f55f5488f9e78b8ffda61dac16c` returns
+  HTTP 200.
 - No firmware flash, NVS write, provider/V21 execution, or physical acceptance
   occurred in this transition.
 

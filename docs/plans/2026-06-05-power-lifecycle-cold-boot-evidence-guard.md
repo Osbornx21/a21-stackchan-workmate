@@ -1,7 +1,8 @@
 # 2026-06-05 - Power Lifecycle Cold Boot Evidence Guard
 
-Status: implemented and locally verified in current working tree, pending
-commit and deployment.
+Status: implemented, locally verified, committed, and pushed; ECS deployment
+from this Mac is pending because the current network path closes Aliyun ECS API,
+SSH, and public HTTP sessions before usable command execution.
 Transition: `T-POWER-LIFECYCLE-COLD-BOOT-EVIDENCE-GUARD-001`.
 
 ## Problem

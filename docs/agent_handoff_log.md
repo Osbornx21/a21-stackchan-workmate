@@ -18862,6 +18862,23 @@ Tests/build/runtime results:
   `GOMAXPROCS=2 go test -race ./internal/gateway -run 'PowerLifecycle|OfficialStackChan|Xiaozhi|WorkspaceConsolePageServed' -count=1`,
   `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
   `GOMAXPROCS=2 make doctor`.
+- Commit `a181d44 feat(gateway): harden power lifecycle acceptance evidence`
+  was pushed to
+  `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`.
+- ECS deployment from this Mac was attempted but not completed:
+  - Aliyun ECS API TLS closed during handshake through the current TUN fake-IP
+    route.
+  - Direct SSH to `47.103.57.217:22` closed before the SSH banner.
+  - SSH through local SOCKS also closed before a usable session.
+  - Public HTTP ports `80` and `21081` accepted TCP but returned empty
+    application replies from this host.
+- Local deployment archive is ready at `/tmp/a21-a181d4464af9.tar.gz` with
+  SHA-256
+  `0d1fd7b40e09d43a10338515189c6c6c7cfc4841729e06cc1c14dde25fb47666`.
+- GitHub codeload for commit
+  `a181d4464af90f55f5488f9e78b8ffda61dac16c` returns HTTP 200 from this host,
+  so Aliyun Workbench/Cloud Assistant can use it if the ECS host has outbound
+  GitHub access.
 
 Runtime or physical evidence:
 
@@ -18883,10 +18900,10 @@ Known risks/blockers:
 
 Recommended next action:
 
-- Run the full gates, commit/push, deploy the Gateway contract change, then
-  execute the guarded product recovery/physical cold-boot window and record the
-  new required evidence only if the product actually boots with USB
-  disconnected.
+- Deploy `a181d44` through Aliyun Workbench or a restored Cloud Assistant API
+  route, then execute the guarded product recovery/physical cold-boot window
+  and record the new required evidence only if the product actually boots with
+  USB disconnected.
 
 Forbidden actions avoided:
 
