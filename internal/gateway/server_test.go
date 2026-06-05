@@ -10332,6 +10332,60 @@ func TestXiaozhiWebSocketStreamingASRStartsBeforeListenStop(t *testing.T) {
 	}
 }
 
+func TestXiaozhiWebSocketStreamingASRRecordsSanitizedProviderError(t *testing.T) {
+	streamingASR := newErrorEventStreamingASRAdapter("dashscope realtime ASR provider error model_or_profile", errors.New("dashscope realtime ASR provider error: model_or_profile"))
+	server := NewServerWithOptions(ServerOptions{
+		XiaozhiVoicePipelineAdapters: &providers.VoicePipelineAdapters{
+			ASR:        streamingASR,
+			TextStream: providers.NewMockTextStreamAdapter("mock-text-stream"),
+			TTS:        providers.NewMockTTSAdapter("mock-fast-tts"),
+			Selection:  providers.VoicePipelineSelectionFromEnv(nil),
+		},
+	})
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	writeXiaozhiHello(t, ctx, conn, map[string]any{
+		"trace_id":   "a21-trace-xiaozhi-streaming-asr-error",
+		"session_id": "a21-session-xiaozhi-streaming-asr-error",
+		"device_id":  "stackchan-001",
+	})
+	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{"type": "listen", "state": "start", "mode": "realtime"}); err != nil {
+		t.Fatal(err)
+	}
+	readXiaozhiJSON(t, ctx, conn)
+
+	var traces []TraceEvent
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		traces = server.traceEvents("a21-trace-xiaozhi-streaming-asr-error")
+		if traceContains(traces, "asr.stream.error.model_or_profile") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{"asr.stream.start", "asr.stream.error", "asr.stream.error.model_or_profile"} {
+		if !traceContains(traces, want) {
+			t.Fatalf("trace missing %q: %+v", want, traces)
+		}
+	}
+	for _, forbidden := range []string{"sk-", "qwen3-asr-secret-model", "InvalidModel"} {
+		if traceContains(traces, forbidden) {
+			t.Fatalf("trace leaked provider detail %q: %+v", forbidden, traces)
+		}
+	}
+}
+
 func TestXiaozhiWebSocketASRPartialDoesNotSpeakBeforeListenStop(t *testing.T) {
 	streamingASR := providers.NewMockStreamingASRAdapter("mock-streaming-asr")
 	asr, ok := streamingASR.(providers.ASRAdapter)
@@ -16102,6 +16156,15 @@ type reusableStreamingASRAdapter struct {
 	name string
 }
 
+type errorEventStreamingASRAdapter struct {
+	finding string
+	err     error
+}
+
+type errorEventStreamingASRSession struct {
+	events chan providers.ASRAdapterEvent
+}
+
 func (a reusableStreamingASRAdapter) Name() string {
 	if strings.TrimSpace(a.name) == "" {
 		return "mock-streaming-asr"
@@ -16116,6 +16179,41 @@ func (a reusableStreamingASRAdapter) Transcribe(ctx context.Context, req provide
 func (a reusableStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
 	return providers.NewMockStreamingASRAdapter(a.Name()).StartStreamingASR(ctx, req)
 }
+
+func newErrorEventStreamingASRAdapter(finding string, err error) errorEventStreamingASRAdapter {
+	return errorEventStreamingASRAdapter{finding: finding, err: err}
+}
+
+func (a errorEventStreamingASRAdapter) Name() string {
+	return "a21-error-event-streaming-asr"
+}
+
+func (a errorEventStreamingASRAdapter) Transcribe(ctx context.Context, req providers.ASRAdapterRequest) (<-chan providers.ASRAdapterEvent, error) {
+	out := make(chan providers.ASRAdapterEvent)
+	close(out)
+	return out, nil
+}
+
+func (a errorEventStreamingASRAdapter) StartStreamingASR(ctx context.Context, req providers.StreamingASRStartRequest) (providers.StreamingASRSession, error) {
+	events := make(chan providers.ASRAdapterEvent, 1)
+	events <- providers.ASRAdapterEvent{Finding: a.finding, Err: a.err}
+	close(events)
+	return &errorEventStreamingASRSession{events: events}, nil
+}
+
+func (s *errorEventStreamingASRSession) AppendFrame(ctx context.Context, frame providers.VoicePipelinePCMFrame) error {
+	return nil
+}
+
+func (s *errorEventStreamingASRSession) Events() <-chan providers.ASRAdapterEvent {
+	return s.events
+}
+
+func (s *errorEventStreamingASRSession) Commit(ctx context.Context) error {
+	return nil
+}
+
+func (s *errorEventStreamingASRSession) Cancel(error) {}
 
 func newBlockingCommitStreamingASRAdapter() *blockingCommitStreamingASRAdapter {
 	return &blockingCommitStreamingASRAdapter{

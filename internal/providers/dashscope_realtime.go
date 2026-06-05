@@ -186,9 +186,52 @@ func (s *dashScopeRealtimeASRSession) readLoop(ctx context.Context) {
 		case "session.finished":
 			return
 		case "error":
-			s.events <- ASRAdapterEvent{Finding: "dashscope realtime ASR provider error", Err: fmt.Errorf("dashscope realtime ASR provider error")}
+			code := dashScopeRealtimeProviderErrorToken(raw)
+			s.events <- ASRAdapterEvent{
+				Finding: "dashscope realtime ASR provider error " + code,
+				Err:     fmt.Errorf("dashscope realtime ASR provider error: %s", code),
+			}
 			return
 		}
+	}
+}
+
+func dashScopeRealtimeProviderErrorToken(raw map[string]any) string {
+	fields := []string{
+		firstStringField(raw, "code", "type", "message"),
+	}
+	if nested, ok := raw["error"].(map[string]any); ok {
+		fields = append(fields, firstStringField(nested, "code", "type", "message"))
+	}
+	message := strings.ToLower(strings.TrimSpace(strings.Join(fields, " ")))
+	switch {
+	case message == "":
+		return "provider_failed"
+	case strings.Contains(message, "auth") ||
+		strings.Contains(message, "401") ||
+		strings.Contains(message, "403") ||
+		strings.Contains(message, "apikey") ||
+		strings.Contains(message, "api key"):
+		return "auth_failed"
+	case strings.Contains(message, "model"):
+		return "model_or_profile"
+	case strings.Contains(message, "audio") ||
+		strings.Contains(message, "pcm") ||
+		strings.Contains(message, "sample") ||
+		strings.Contains(message, "format"):
+		return "audio_format"
+	case strings.Contains(message, "quota") ||
+		strings.Contains(message, "rate") ||
+		strings.Contains(message, "limit"):
+		return "rate_limited_or_quota"
+	case strings.Contains(message, "session") ||
+		strings.Contains(message, "update"):
+		return "session_update_failed"
+	case strings.Contains(message, "invalid") ||
+		strings.Contains(message, "parameter"):
+		return "invalid_request"
+	default:
+		return "provider_failed"
 	}
 }
 

@@ -8521,6 +8521,7 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 		if event.Err != nil {
 			id := session.identitySnapshot()
 			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.error", s.now().UnixMilli())
+			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "asr.stream.error."+xiaozhiStreamingASREventErrorCode(event), s.now().UnixMilli())
 			continue
 		}
 		partialText := strings.TrimSpace(event.Text)
@@ -8557,6 +8558,52 @@ func (s *Server) consumeXiaozhiStreamingASREvents(ctx context.Context, conn *web
 		session.streamingASRClosed = true
 	}
 	session.mu.Unlock()
+}
+
+func xiaozhiStreamingASREventErrorCode(event providers.ASRAdapterEvent) string {
+	message := strings.ToLower(strings.TrimSpace(event.Finding + " " + errString(event.Err)))
+	switch {
+	case message == "":
+		return "unknown"
+	case strings.Contains(message, "missing"):
+		return "missing_env"
+	case strings.Contains(message, "401") ||
+		strings.Contains(message, "403") ||
+		strings.Contains(message, "auth") ||
+		strings.Contains(message, "api key") ||
+		strings.Contains(message, "apikey") ||
+		strings.Contains(message, "bearer"):
+		return "auth_failed"
+	case strings.Contains(message, "model"):
+		return "model_or_profile"
+	case strings.Contains(message, "audio") ||
+		strings.Contains(message, "pcm") ||
+		strings.Contains(message, "sample") ||
+		strings.Contains(message, "format"):
+		return "audio_format"
+	case strings.Contains(message, "quota") ||
+		strings.Contains(message, "rate") ||
+		strings.Contains(message, "limit"):
+		return "rate_limited_or_quota"
+	case strings.Contains(message, "session") ||
+		strings.Contains(message, "update"):
+		return "session_update_failed"
+	case strings.Contains(message, "commit") ||
+		strings.Contains(message, "finish"):
+		return "commit_failed"
+	case strings.Contains(message, "dial") ||
+		strings.Contains(message, "websocket") ||
+		strings.Contains(message, "network"):
+		return "network"
+	case strings.Contains(message, "read") ||
+		strings.Contains(message, "eof"):
+		return "read_failed"
+	case strings.Contains(message, "invalid") ||
+		strings.Contains(message, "parameter"):
+		return "invalid_request"
+	default:
+		return "provider_failed"
+	}
 }
 
 func (s *Server) startXiaozhiPartialVoicePipeline(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, partialText string) {

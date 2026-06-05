@@ -281,44 +281,24 @@ index 3b6f07e..ec1e05d 100644
  #include <cstring>
  #include <esp_log.h>
  #include <cJSON.h>
-@@ -19,6 +20,10 @@
+@@ -19,6 +20,6 @@
 
  #define TAG "Application"
 
-+static constexpr int64_t A21_VAD_STOP_DEBOUNCE_MS = 520;
-+static constexpr int64_t A21_VAD_MIN_LISTENING_MS = 1200;
-+static constexpr int64_t A21_NO_SPEECH_LISTENING_TIMEOUT_MS = 7000;
-+
 
  Application::Application() {
      event_group_ = xEventGroupCreate();
-@@ -44,6 +49,18 @@ Application::Application() {
+@@ -44,6 +45,6 @@ Application::Application() {
          .skip_unhandled_events = true
      };
      esp_timer_create(&clock_timer_args, &clock_timer_handle_);
-+
-+    esp_timer_create_args_t vad_stop_timer_args = {
-+        .callback = [](void* arg) {
-+            Application* app = (Application*)arg;
-+            xEventGroupSetBits(app->event_group_, MAIN_EVENT_VAD_STOP_TIMEOUT);
-+        },
-+        .arg = this,
-+        .dispatch_method = ESP_TIMER_TASK,
-+        .name = "a21_vad_stop_timer",
-+        .skip_unhandled_events = true
-+    };
-+    esp_timer_create(&vad_stop_timer_args, &vad_stop_timer_handle_);
  }
 
  Application::~Application() {
-@@ -51,6 +68,10 @@ Application::~Application() {
+@@ -51,6 +52,6 @@ Application::~Application() {
          esp_timer_stop(clock_timer_handle_);
          esp_timer_delete(clock_timer_handle_);
      }
-+    if (vad_stop_timer_handle_ != nullptr) {
-+        esp_timer_stop(vad_stop_timer_handle_);
-+        esp_timer_delete(vad_stop_timer_handle_);
-+    }
      vEventGroupDelete(event_group_);
  }
 
@@ -326,10 +306,6 @@ index 3b6f07e..ec1e05d 100644
          xEventGroupSetBits(event_group_, MAIN_EVENT_WAKE_WORD_DETECTED);
      };
      callbacks.on_vad_change = [this](bool speaking) {
-+        vad_speaking_ = speaking;
-+        if (speaking) {
-+            vad_speech_seen_ = true;
-+        }
          xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
      };
 +#if CONFIG_A21_PRODUCT_PLAYBACK_EVENTS
@@ -366,8 +342,7 @@ index 3b6f07e..ec1e05d 100644
          MAIN_EVENT_STOP_LISTENING |
          MAIN_EVENT_ACTIVATION_DONE |
 -        MAIN_EVENT_STATE_CHANGED;
-+        MAIN_EVENT_STATE_CHANGED |
-+        MAIN_EVENT_VAD_STOP_TIMEOUT;
++        MAIN_EVENT_STATE_CHANGED;
 
      while (true) {
          auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -375,15 +350,11 @@ index 3b6f07e..ec1e05d 100644
          }
 
          if (bits & MAIN_EVENT_VAD_CHANGE) {
-+            HandleVadChange(vad_speaking_);
              if (GetDeviceState() == kDeviceStateListening) {
                  auto led = Board::GetInstance().GetLed();
                  led->OnStateChanged();
              }
-+        }
-+
-+        if (bits & MAIN_EVENT_VAD_STOP_TIMEOUT) {
-+            HandleVadStopTimeoutEvent();
+         }
          }
 
          if (bits & MAIN_EVENT_SCHEDULE) {
@@ -505,36 +476,36 @@ index 3b6f07e..ec1e05d 100644
 +    uint8_t green = 160;
 +    uint8_t blue = 255;
 +    int32_t yaw = 0;
-+    int32_t pitch = 580;
-+    int speed = 620;
++    int32_t pitch = 720;
++    int speed = 760;
 +    bool move_head = true;
 +
 +    if (strcmp(touch, "screen_barge_in") == 0 || strcmp(touch, "top_barge_in") == 0) {
 +        red = 255;
 +        green = 72;
 +        blue = 0;
-+        pitch = 420;
-+        speed = 780;
++        pitch = 360;
++        speed = 900;
 +    } else if (strcmp(touch, "top_swipe_forward") == 0) {
 +        red = 0;
 +        green = 255;
 +        blue = 180;
-+        yaw = 520;
-+        pitch = 700;
-+        speed = 850;
++        yaw = 900;
++        pitch = 760;
++        speed = 950;
 +    } else if (strcmp(touch, "top_swipe_backward") == 0) {
 +        red = 160;
 +        green = 0;
 +        blue = 255;
-+        yaw = -520;
-+        pitch = 460;
-+        speed = 850;
++        yaw = -900;
++        pitch = 360;
++        speed = 950;
 +    } else if (strcmp(touch, "top_tap") == 0) {
 +        red = 0;
 +        green = 180;
 +        blue = 255;
-+        pitch = 660;
-+        speed = 720;
++        pitch = 820;
++        speed = 850;
 +    } else if (strcmp(touch, "screen_tap") != 0) {
 +        move_head = false;
 +    }
@@ -695,11 +666,6 @@ index 3b6f07e..ec1e05d 100644
              display->SetStatus(Lang::Strings::STANDBY);
              display->ClearChatMessages();  // Clear messages first
              display->SetEmotion("neutral"); // Then set emotion (wechat mode checks child count)
-+            if (vad_stop_timer_handle_ != nullptr) {
-+                esp_timer_stop(vad_stop_timer_handle_);
-+            }
-+            vad_speaking_ = false;
-+            vad_speech_seen_ = false;
              audio_service_.EnableVoiceProcessing(false);
              audio_service_.EnableWakeWordDetection(true);
              break;
@@ -707,11 +673,6 @@ index 3b6f07e..ec1e05d 100644
              break;
          case kDeviceStateSpeaking:
              display->SetStatus(Lang::Strings::SPEAKING);
-+            if (vad_stop_timer_handle_ != nullptr) {
-+                esp_timer_stop(vad_stop_timer_handle_);
-+            }
-+            vad_speaking_ = false;
-+            vad_speech_seen_ = false;
 
              if (listening_mode_ != kListeningModeRealtime) {
                  audio_service_.EnableVoiceProcessing(false);
@@ -734,74 +695,8 @@ index 3b6f07e..ec1e05d 100644
      }
  }
 
-+void Application::HandleVadChange(bool speaking) {
-+    if (GetDeviceState() != kDeviceStateListening) {
-+        return;
-+    }
-+
-+    if (speaking) {
-+        vad_speech_seen_ = true;
-+        if (vad_stop_timer_handle_ != nullptr) {
-+            esp_timer_stop(vad_stop_timer_handle_);
-+        }
-+        return;
-+    }
-+
-+    if (listening_mode_ != kListeningModeAutoStop) {
-+        return;
-+    }
-+
-+    if (!vad_speech_seen_ || vad_stop_timer_handle_ == nullptr) {
-+        return;
-+    }
-+
-+    int64_t elapsed_ms = (esp_timer_get_time() - listening_started_at_us_) / 1000;
-+    int64_t delay_ms = A21_VAD_STOP_DEBOUNCE_MS;
-+    if (elapsed_ms < A21_VAD_MIN_LISTENING_MS) {
-+        delay_ms += A21_VAD_MIN_LISTENING_MS - elapsed_ms;
-+    }
-+    esp_timer_stop(vad_stop_timer_handle_);
-+    esp_timer_start_once(vad_stop_timer_handle_, delay_ms * 1000);
-+    ESP_LOGI(TAG, "A21 device VAD silence detected, stop in %lld ms", (long long)delay_ms);
-+}
-+
-+void Application::HandleVadStopTimeoutEvent() {
-+    if (GetDeviceState() != kDeviceStateListening || vad_speaking_) {
-+        return;
-+    }
-+
-+    int64_t elapsed_ms = (esp_timer_get_time() - listening_started_at_us_) / 1000;
-+    if (!vad_speech_seen_) {
-+        ESP_LOGI(TAG, "A21 no-speech timeout, stop listening elapsed=%lld ms", (long long)elapsed_ms);
-+        StopListening();
-+        return;
-+    }
-+
-+    if (listening_mode_ != kListeningModeAutoStop) {
-+        return;
-+    }
-+
-+    if (elapsed_ms < A21_VAD_MIN_LISTENING_MS && vad_stop_timer_handle_ != nullptr) {
-+        int64_t delay_ms = A21_VAD_MIN_LISTENING_MS - elapsed_ms + A21_VAD_STOP_DEBOUNCE_MS;
-+        esp_timer_start_once(vad_stop_timer_handle_, delay_ms * 1000);
-+        return;
-+    }
-+
-+    ESP_LOGI(TAG, "A21 device VAD stop listening elapsed=%lld ms", (long long)elapsed_ms);
-+    StopListening();
-+}
-+
  void Application::SetListeningMode(ListeningMode mode) {
      listening_mode_ = mode;
-+    listening_started_at_us_ = esp_timer_get_time();
-+    vad_speaking_ = false;
-+    vad_speech_seen_ = false;
-+    if (vad_stop_timer_handle_ != nullptr) {
-+        esp_timer_stop(vad_stop_timer_handle_);
-+    }
-+    if (mode != kListeningModeRealtime && vad_stop_timer_handle_ != nullptr) {
-+        esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);
-+    }
      SetDeviceState(kDeviceStateListening);
  }
 
@@ -830,7 +725,6 @@ index 7ca7af4..2e5ae90 100644
  #define MAIN_EVENT_START_LISTENING      (1 << 10)
  #define MAIN_EVENT_STOP_LISTENING       (1 << 11)
  #define MAIN_EVENT_STATE_CHANGED        (1 << 12)
-+#define MAIN_EVENT_VAD_STOP_TIMEOUT     (1 << 13)
 
 
  enum AecMode {
@@ -838,7 +732,6 @@ index 7ca7af4..2e5ae90 100644
      std::unique_ptr<Protocol> protocol_;
      EventGroupHandle_t event_group_ = nullptr;
      esp_timer_handle_t clock_timer_handle_ = nullptr;
-+    esp_timer_handle_t vad_stop_timer_handle_ = nullptr;
      DeviceStateMachine state_machine_;
      ListeningMode listening_mode_ = kListeningModeAutoStop;
      AecMode aec_mode_ = kAecOff;
@@ -846,12 +739,9 @@ index 7ca7af4..2e5ae90 100644
      bool aborted_ = false;
      bool assets_version_checked_ = false;
      bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
-+    bool vad_speaking_ = false;
-+    bool vad_speech_seen_ = false;
 +    bool a21_ready_notified_ = false;
 +    bool a21_control_retry_notified_ = false;
 +    bool a21_head_touch_swiped_ = false;
-+    int64_t listening_started_at_us_ = 0;
 +    std::atomic_bool a21_playback_ack_sent_{false};
 +    std::atomic_bool a21_playback_stop_ack_sent_{false};
      int clock_ticks_ = 0;
@@ -861,8 +751,6 @@ index 7ca7af4..2e5ae90 100644
      void HandleNetworkDisconnectedEvent();
      void HandleActivationDoneEvent();
      void HandleWakeWordDetectedEvent();
-+    void HandleVadChange(bool speaking);
-+    void HandleVadStopTimeoutEvent();
      void ContinueOpenAudioChannel(ListeningMode mode);
      void ContinueWakeWordInvoke(const std::string& wake_word);
 +    void EnsureA21ControlChannel();

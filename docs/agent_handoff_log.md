@@ -19,6 +19,264 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 17:37 CST - Voice ASR Visibility And Official VAD Parity Fix
+
+Round goal:
+
+- Stop the current voice regression from being debugged blindly, restore
+  official Xiaozhi listening ownership by removing A21's local VAD-stop overlay,
+  and add sanitized ASR provider error classification before redeploying.
+
+Actual completed work:
+
+- Reconfirmed public Gateway became reachable after the operator disabled the
+  local proxy/TUN interference: `/healthz` returned 200, SSH reached ECS, and
+  `a21-gateway` was active.
+- Confirmed ECS runtime loads `/etc/a21/runtime.env` and
+  `/etc/a21/secrets/provider.env`; provider secrets are on ECS, not firmware.
+- Confirmed live non-secret runtime selection:
+  `A21_ASR_PROFILE=cloud`,
+  `A21_ASR_CLOUD_PROFILE=dashscope_qwen_asr_realtime`,
+  `A21_TEXT_STREAM_PROFILE=stepfun`,
+  `A21_TTS_FAST_PROFILE=dashscope_qwen_tts_realtime`.
+- Removed the A21 firmware overlay's self-invented local VAD stop timer and
+  no-speech timeout from the official-compatible product patch. Official
+  Xiaozhi keeps VAD as a state/display signal and lets the listen
+  start/stop/commit path own ASR finalization.
+- Increased local touch reaction servo amplitudes in the product overlay from
+  soft A21 values toward official StackChan/M5Stack motion units.
+- Added Gateway trace classification for streaming ASR event errors:
+  `asr.stream.error.<sanitized_reason>`.
+- Added DashScope realtime ASR provider error tokenization so public/runtime
+  traces classify failures without leaking provider bodies, API keys, model
+  secrets, or raw error text.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/providers/dashscope_realtime.go`
+- `internal/providers/dashscope_realtime_test.go`
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- ECS deployment, post-deploy public health, and one fresh physical voice trace
+  still need to run from the new commit.
+- Product firmware build/flash still needs to run after commit if the operator
+  wants the no-local-VAD and larger touch motion overlay on-device.
+
+Known risks or blockers:
+
+- The product device was disconnected from `/v1/xiaozhi` during the pre-deploy
+  status check, so a fresh foreground reconnect/voice turn is required.
+- Existing public trace `a21-trace-44-1b-f6-e2-6a-60` contains heartbeat,
+  hello, and MCP markers but no useful live voice turn after the reconnect.
+- No-USB power-key acceptance remains a separate physical/PMIC/battery
+  boundary; this round does not claim that hardware power acceptance is closed.
+
+Recommended next action:
+
+- Commit and deploy this Gateway build to ECS, then run one foreground voice
+  turn. If ASR still fails, inspect the new `asr.stream.error.<reason>` marker
+  before changing firmware wake or provider settings.
+- After Gateway deployment, build and flash the product lane only:
+  `a21-stackchan-official-xiaozhi-compatible.bin`.
+
+Test/build/runtime results:
+
+- Focused app overlay tests passed.
+- Focused Gateway streaming ASR tests passed.
+- Focused DashScope realtime ASR tests passed.
+- `GOMAXPROCS=2 make verify` passed locally, including `go test ./...` and
+  `git diff --check`.
+- Public `/healthz` returned
+  `{"service":"a21-gateway","status":"ok","version":"0.1.0-dev"}`.
+- ECS `a21-gateway` was active on `127.0.0.1:21081`.
+
+Failure location and reason:
+
+- The previous physical failure location remains Gateway streaming ASR after
+  Opus ingress/decode and before ASR partial/final. The exact reason was hidden
+  by the old generic trace marker; this round adds the missing sanitized
+  classification.
+
+## 2026-06-05 17:19 CST - Voice Chain Regression Comparison Continuation
+
+Round goal:
+
+- Continue the interrupted Codex thread
+  `019e96fd-af3a-7603-a2e0-61587c4779ac` that was comparing
+  `78/xiaozhi-esp32`, stock official StackChan, and the current A21
+  official-compatible product firmware/runtime voice chain.
+
+Actual completed work:
+
+- Confirmed the local A21 worktree was clean before continuing.
+- Read the interrupted thread summary, current handoff log, current project
+  state machine, the latest flash/build reports, and the active transition.
+- Confirmed the live flashed product report is still
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-163318-1780648398612612000.json`
+  from commit `998a4bba6e9d`, app SHA-256
+  `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`.
+- Confirmed current local HEAD is later (`81b79133b871`), with the
+  manual-start official mode parity candidate applied in source but not yet
+  built/flashed.
+- Compared `HandleStartListeningEvent` across local `78/xiaozhi-esp32`,
+  stock official StackChan, current generated A21 source, and the flashed
+  commit overlay. Upstream/stock/current source preserve manual
+  `kListeningModeManualStop`; the flashed `998a4bb` overlay still changed
+  manual start to `GetDefaultListeningMode()`.
+- Rechecked live public Gateway status. The product Xiaozhi socket is online,
+  selected chain is
+  `dashscope_qwen_asr_realtime -> stepfun -> dashscope_qwen_tts_realtime`,
+  `/v1/providers/voice/health` still reports `a21-mock-voice`, and
+  `/stackChan/ws` is disconnected with Xiaozhi MCP fallback available.
+- Rechecked the current live trace. It has been refreshed by reconnects and now
+  contains only `xiaozhi.hello.received`, `device.heartbeat`, and MCP response
+  markers; the earlier `asr.stream.error` turn must be recaptured or inspected
+  through sanitized ECS logs.
+- Checked current DashScope realtime ASR adapter behavior against official
+  Qwen-ASR Realtime docs: the client-side event shape broadly matches manual
+  mode (`session.update`, `input_audio_buffer.append`, `input_audio_buffer.commit`,
+  `session.finish`), but A21 currently collapses provider/read errors to a
+  generic `asr.stream.error` marker.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Unfinished items:
+
+- Full verify, guarded product build, and product flash for commit
+  `81b79133b871` have not run.
+- The exact DashScope realtime ASR failure reason remains unknown because the
+  previous live trace redacted it and the current trace no longer contains that
+  turn.
+- Physical wake sensitivity, manual touch/listen behavior, auto-listen after a
+  real answer, barge-in, and first TTS downlink still need one fresh foreground
+  AI.AGENT voice run.
+
+Known risks or blockers:
+
+- The device is likely still running the flashed `998a4bb` firmware, not the
+  local `81b7913` manual-start candidate.
+- Wake sensitivity remains intentionally different from stock official because
+  A21 uses custom MultiNet `紫悦` wake and disables the stock
+  `CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3` AFE wake path.
+- `CONFIG_WAKE_WORD_DETECTION_IN_LISTENING` remains unset, so wake-word
+  interruption while already listening is not stock-equivalent.
+- The Gateway health endpoint for the generic voice provider does not prove the
+  selected physical cascade ASR/TTS chain is live.
+
+Recommended next action:
+
+- First run full verify, guarded product build, and product-lane flash for the
+  `81b7913` manual-start parity candidate so physical tests are not evaluating
+  the stale `998a4bb` manual-start divergence.
+- Then run exactly one foreground AI.AGENT physical voice turn and capture
+  trace markers for `listen.start`, Opus ingress/decode, ASR partial/final,
+  LLM first content, TTS first downlink, `tts.stop`, official auto-listen
+  restart, and barge-in/touch behavior.
+- If `asr.stream.error` repeats, inspect sanitized ECS logs or add redacted
+  provider error-code trace markers before changing firmware wake settings.
+
+Test/build/runtime results:
+
+- `git status --short` and `git diff --stat` were clean before the handoff-log
+  update.
+- Public `/healthz` returned ok.
+- Public `/v1/devices` showed device `44:1b:f6:e2:6a:60` online with
+  `xiaozhi_audio=opus_16000hz_mono_60ms`, selected ASR `dashscope_qwen_asr_realtime`,
+  selected LLM `stepfun`, and selected TTS `dashscope_qwen_tts_realtime`.
+- Public trace event counts for the refreshed trace were
+  `device.heartbeat=429`, `xiaozhi.hello.received=9`, and
+  `xiaozhi.mcp.response.received=5`.
+
+Failure location and reason:
+
+- The interrupted comparison's strongest failure boundary remains Gateway
+  streaming ASR after physical Opus ingress/decode and before ASR partial/final,
+  but this needs a fresh trace or sanitized logs because the current live trace
+  no longer contains the failing turn.
+
+## 2026-06-05 17:16 CST - Voice Chain Regression Root-Cause Investigation
+
+Round goal:
+
+- Investigate why the current flashed A21 StackChan official-compatible voice
+  experience no longer matches the earlier sensitive wake, low-latency,
+  interruptible, continuous-conversation behavior, comparing the local
+  `78/xiaozhi-esp32` reference with the currently flashed product firmware and
+  live Gateway traces.
+
+Actual completed work:
+
+- Identified the currently flashed product app report as
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-163318-1780648398612612000.json`,
+  artifact `a21-stackchan-official-xiaozhi-compatible.bin`, SHA-256
+  `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`.
+- Compared the current generated product firmware tree under
+  `/private/tmp/a21-stackchan-official-clean/firmware/xiaozhi-esp32` with the
+  stock official baseline and the local `78/xiaozhi-esp32` reference checkout.
+- Checked live public Gateway device and trace endpoints for device
+  `44:1b:f6:e2:6a:60`; the device was online and sending Xiaozhi Opus frames,
+  but the physical trace showed repeated `asr.stream.error` events with no ASR
+  partial/final, no LLM start, and no TTS downlink for those turns.
+- Confirmed the current Gateway HEAD already contains the post-`tts.stop`
+  auto-listen parity fix, so normal completed answers should no longer suppress
+  official auto-listen restart.
+
+Changed files:
+
+- `docs/agent_handoff_log.md` only.
+
+Unfinished items:
+
+- Exact DashScope realtime ASR provider error text was not available from the
+  redacted public trace; ECS logs or additional sanitized trace markers are
+  still needed.
+- Physical serial proof for custom wake sensitivity and speaking/listening
+  interruption behavior is still missing.
+- No firmware or Gateway fix was applied during this investigation round.
+
+Known risks or blockers:
+
+- Current firmware uses custom MultiNet wake words and disables stock
+  `CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3`; wake sensitivity is therefore not stock
+  official parity.
+- `CONFIG_WAKE_WORD_DETECTION_IN_LISTENING` remains unset, and custom wake is
+  not AFE wake, so wake-word interruption while listening/speaking is not the
+  same behavior as the earlier sensitive/interruptible path.
+- The active runtime voice health endpoint reports the mock provider as
+  healthy, which does not prove the selected physical chain
+  `dashscope_qwen_asr_realtime -> stepfun -> dashscope_qwen_tts_realtime`.
+
+Recommended next action:
+
+- Do not reflash first. Inspect sanitized ECS logs or add redacted provider
+  error markers around `asr.stream.error`, fix the realtime ASR session/config
+  failure, then run one physical turn to verify ASR partial/final, LLM start,
+  first TTS downlink, auto-listen restart, and barge-in evidence.
+- After the ASR runtime break is fixed, make an explicit product decision on
+  whether A21 should restore wake-in-listening/speaking semantics or keep the
+  current echo-safe custom-wake behavior.
+
+Test/build/runtime results:
+
+- Read-only runtime check found device online with Opus ingress/decode markers
+  present, but repeated `asr.stream.error` and no successful physical answer
+  chain in the current trace.
+- No tests or builds were run; this was a root-cause evidence pass.
+
+Failure location and reason:
+
+- Current physical voice path fails at Gateway streaming ASR after Xiaozhi Opus
+  ingress/decode and before ASR partial/final. Provider error details are
+  currently hidden behind the generic `asr.stream.error` trace marker.
+
 ## 2026-06-05 16:34 CST - Product Candidate Restored With Stock PMIC Startup
 
 Round goal:

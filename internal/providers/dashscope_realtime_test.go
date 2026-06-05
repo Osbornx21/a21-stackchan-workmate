@@ -52,6 +52,42 @@ func TestVoicePipelineAdaptersFromEnvSelectsDashScopeCloudStreamingASR(t *testin
 	assertDashScopeRealtimeEventIDs(t, conn.messages)
 }
 
+func TestDashScopeRealtimeASRReportsSanitizedProviderErrorCode(t *testing.T) {
+	conn := &fakeRealtimeConn{
+		serverMessages: []map[string]any{{
+			"type": "error",
+			"error": map[string]any{
+				"code":    "InvalidModel",
+				"message": "bad sk-a21-secret for qwen3-asr-secret-model",
+			},
+		}},
+	}
+	adapter := NewDashScopeRealtimeASRAdapter(DashScopeRealtimeASRAdapterOptions{
+		Env:    []string{"A21_DASHSCOPE_API_KEY=sk-a21-secret"},
+		Dialer: fakeRealtimeDialer{conn: conn},
+	})
+	streaming, ok := adapter.(StreamingASRAdapter)
+	if !ok {
+		t.Fatalf("adapter %T does not implement StreamingASRAdapter", adapter)
+	}
+	session, err := streaming.StartStreamingASR(context.Background(), StreamingASRStartRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collectASREvents(t, session.Events())
+	if len(events) != 1 || events[0].Err == nil {
+		t.Fatalf("events = %#v, want one sanitized provider error", events)
+	}
+	if !strings.Contains(events[0].Finding, "model_or_profile") || !strings.Contains(events[0].Err.Error(), "model_or_profile") {
+		t.Fatalf("event = %#v, want model_or_profile marker", events[0])
+	}
+	for _, forbidden := range []string{"sk-a21-secret", "qwen3-asr-secret-model", "InvalidModel"} {
+		if strings.Contains(events[0].Finding, forbidden) || strings.Contains(events[0].Err.Error(), forbidden) {
+			t.Fatalf("event leaked provider detail %q: %#v", forbidden, events[0])
+		}
+	}
+}
+
 func TestVoicePipelineAdaptersFromEnvSelectsDashScopeRealtimeTTS(t *testing.T) {
 	conn := &fakeRealtimeConn{
 		serverMessages: []map[string]any{
