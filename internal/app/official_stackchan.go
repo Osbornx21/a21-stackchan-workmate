@@ -363,6 +363,7 @@ type stackChanOfficialXiaozhiCompatibleNVSSummary struct {
 	ServoCalibrationPresent      bool `json:"servo_calibration_present"`
 	WiFiCredentialsPreserved     bool `json:"wifi_credentials_preserved"`
 	WiFiCredentialsWritten       bool `json:"wifi_credentials_written"`
+	AppConfigMarkedConfigured    bool `json:"app_config_marked_configured"`
 }
 
 type officialStackChanProductLaneArtifactEvidence struct {
@@ -2160,11 +2161,16 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 		}
 	}
 	summary.WiFiCredentialsPreserved = !wifiCredentialsRequested && hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
+	appConfigShouldMarkConfigured := wifiCredentialsRequested || summary.WiFiCredentialsPreserved
 	for _, namespace := range []string{"wifi", "websocket"} {
 		if !seenNamespaces[namespace] {
 			seenNamespaces[namespace] = true
 			namespaceOrder = append(namespaceOrder, namespace)
 		}
+	}
+	if appConfigShouldMarkConfigured && !seenNamespaces["app_config"] {
+		seenNamespaces["app_config"] = true
+		namespaceOrder = append(namespaceOrder, "app_config")
 	}
 	if wifiCredentialsRequested {
 		grouped["wifi"] = removeNVSRows(grouped["wifi"], "ssid", "password")
@@ -2179,9 +2185,17 @@ func writeOfficialXiaozhiCompatibleNVSCSV(writer io.Writer, entries []stackChanN
 		[]string{"url", "data", "string", websocketURL},
 		[]string{"version", "data", "u32", strconv.Itoa(websocketVersion)},
 	)
+	if appConfigShouldMarkConfigured {
+		grouped["app_config"] = removeNVSRows(grouped["app_config"], "is_configed")
+		grouped["app_config"] = append(grouped["app_config"], []string{"is_configed", "data", "u8", "1"})
+		summary.AppConfigMarkedConfigured = true
+	}
 	summary.MutatedEntryCount = 3
 	if wifiCredentialsRequested {
 		summary.MutatedEntryCount += 2
+	}
+	if appConfigShouldMarkConfigured {
+		summary.MutatedEntryCount += 1
 	}
 
 	for _, namespace := range namespaceOrder {
@@ -2225,6 +2239,8 @@ func isOfficialXiaozhiConnectionNVSKey(namespace string, key string) bool {
 		return key == "ota_url"
 	case "websocket":
 		return key == "url" || key == "token" || key == "version"
+	case "app_config":
+		return key == "is_configed"
 	default:
 		return false
 	}
@@ -2316,6 +2332,10 @@ func verifyOfficialXiaozhiCompatibleNVSProvision(path string, otaURL string, web
 		if !nvsEntryEquals(entries, "wifi", "password", strings.TrimSpace(wifiPassword)) {
 			return fmt.Errorf("provisioned NVS missing wifi/password")
 		}
+	}
+	hasProvisionedWiFiCredentials := hasNVSEntry(entries, "wifi", "ssid") && hasNVSEntry(entries, "wifi", "password")
+	if hasProvisionedWiFiCredentials && !nvsEntryEquals(entries, "app_config", "is_configed", "1") {
+		return fmt.Errorf("provisioned NVS missing app_config/is_configed")
 	}
 	if !nvsEntryEquals(entries, "wifi", "ota_url", otaURL) {
 		return fmt.Errorf("provisioned NVS missing wifi/ota_url")

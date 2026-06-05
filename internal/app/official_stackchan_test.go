@@ -1959,9 +1959,10 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateW
 		`"write_executed": true`,
 		`"control_guard"`,
 		`"preserved_entry_count": 5`,
-		`"mutated_entry_count": 3`,
-		`"existing_connection_entry_count": 4`,
+		`"mutated_entry_count": 4`,
+		`"existing_connection_entry_count": 5`,
 		`"wifi_credentials_preserved": true`,
+		`"app_config_marked_configured": true`,
 		`"servo_calibration_present": true`,
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -2051,6 +2052,8 @@ func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *
 		"websocket,namespace,,",
 		"url,data,string,ws://192.0.2.10:21080/v1/xiaozhi",
 		"version,data,u32,1",
+		"app_config,namespace,,",
+		"is_configed,data,u8,1",
 		"servo,namespace,,",
 		"zero_pos_1,data,i32,460",
 		"zero_pos_2,data,i32,620",
@@ -2065,9 +2068,10 @@ func TestOfficialXiaozhiCompatibleNVSCSVPreservesWiFiAndClearsWebsocketToken(t *
 		}
 	}
 	if summary.PreservedEntryCount != 5 ||
-		summary.MutatedEntryCount != 3 ||
+		summary.MutatedEntryCount != 4 ||
 		summary.ExistingConnectionEntryCount != 4 ||
 		!summary.WiFiCredentialsPreserved ||
+		!summary.AppConfigMarkedConfigured ||
 		!summary.ServoCalibrationPresent {
 		t.Fatalf("summary = %+v", summary)
 	}
@@ -2094,6 +2098,8 @@ func TestOfficialXiaozhiCompatibleNVSCSVCanWriteExplicitWiFiCredentials(t *testi
 		"ota_url,data,string,http://192.0.2.10:21080/xiaozhi/ota/",
 		"url,data,string,ws://192.0.2.10:21080/v1/xiaozhi",
 		"version,data,u32,1",
+		"app_config,namespace,,",
+		"is_configed,data,u8,1",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("csv missing %q:\n%s", want, text)
@@ -2104,10 +2110,40 @@ func TestOfficialXiaozhiCompatibleNVSCSVCanWriteExplicitWiFiCredentials(t *testi
 			t.Fatalf("csv retained stale Wi-Fi credential %q:\n%s", forbidden, text)
 		}
 	}
-	if summary.MutatedEntryCount != 5 ||
+	if summary.MutatedEntryCount != 6 ||
 		summary.WiFiCredentialsPreserved ||
 		!summary.WiFiCredentialsWritten ||
+		!summary.AppConfigMarkedConfigured ||
 		!summary.ServoCalibrationPresent {
+		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestOfficialXiaozhiCompatibleNVSCSVReplacesStaleAppConfigGate(t *testing.T) {
+	entries := []stackChanNVSMinimalEntry{
+		{Namespace: "wifi", Key: "ssid", Encoding: "string", Data: "old-wifi", State: "Written"},
+		{Namespace: "wifi", Key: "password", Encoding: "string", Data: "old-secret", State: "Written"},
+		{Namespace: "app_config", Key: "is_configed", Encoding: "uint8_t", Data: float64(0), State: "Written"},
+	}
+
+	var csv bytes.Buffer
+	summary, err := writeOfficialXiaozhiCompatibleNVSCSV(&csv, entries, "http://192.0.2.10:21080/xiaozhi/ota/", "ws://192.0.2.10:21080/v1/xiaozhi", 1, "A21-Lab-WiFi", "secret-password-123")
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	text := csv.String()
+	for _, want := range []string{
+		"app_config,namespace,,",
+		"is_configed,data,u8,1",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("csv missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "is_configed,data,u8,0") {
+		t.Fatalf("csv retained stale app config gate:\n%s", text)
+	}
+	if summary.ExistingConnectionEntryCount != 1 || !summary.AppConfigMarkedConfigured {
 		t.Fatalf("summary = %+v", summary)
 	}
 }
@@ -2157,7 +2193,8 @@ func testNVSJSONForXiaozhiCompatibleProvision(otaURL string, websocketURL string
   {"namespace":"servo","key":"zero_pos_1","encoding":"int32_t","data":460,"state":"Written","is_empty":false},
   {"namespace":"servo","key":"zero_pos_2","encoding":"int32_t","data":620,"state":"Written","is_empty":false},
   {"namespace":"websocket","key":"url","encoding":"string","data":%q,"state":"Written","is_empty":false},
-%s  {"namespace":"websocket","key":"version","encoding":"uint32_t","data":1,"state":"Written","is_empty":false}
+%s  {"namespace":"websocket","key":"version","encoding":"uint32_t","data":1,"state":"Written","is_empty":false},
+  {"namespace":"app_config","key":"is_configed","encoding":"uint8_t","data":1,"state":"Written","is_empty":false}
 ]`, otaURL, websocketURL, tokenEntry)
 }
 
