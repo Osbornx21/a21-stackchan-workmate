@@ -18811,3 +18811,87 @@ Forbidden actions avoided:
   product flash lane, no reboot/OTA/snapshot/video/camera/NFC/IR/app
   lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
+
+## 2026-06-05 08:29 CST - Xiaozhi Product STT Screen And Fast-Ack Guard
+
+Round goal:
+
+- Apply the remaining software-closeable review findings from
+  `019e941c-761b-7ee0-a4b8-68103a0850a1` that affect product voice smoothness,
+  self-speech risk, and device transcript display, without rolling back
+  internal-test3 voice protocol or claiming physical acceptance.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-xiaozhi-product-stt-screen-and-fast-ack-guard.md`.
+- Added Gateway STT screen policy `A21_XIAOZHI_STT_SCREEN_POLICY` with
+  `raw`, `status_only`, and `off`.
+- Kept Gateway fixture/lab default as stock-compatible `raw`.
+- Set cloud-edge product-chain default to
+  `A21_XIAOZHI_STT_SCREEN_POLICY=status_only`, so device `stt.text` does not
+  show raw transcript while the answer pipeline still receives the raw ASR
+  text internally.
+- Set cloud-edge product-chain default to
+  `A21_XIAOZHI_FAST_ACK_ENABLED=false`, so product roleplay does not speak a
+  fast acknowledgement placeholder before the real answer unless a lab run
+  explicitly opts in.
+- Added trace markers `xiaozhi.stt.display.raw`,
+  `xiaozhi.stt.display.status_only`, and `xiaozhi.stt.display.off`.
+- Updated `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/A21_CURRENT_CONTROL.md`, and
+  `docs/project_state_machine.md`.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-05-xiaozhi-product-stt-screen-and-fast-ack-guard.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused local tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestGatewayServerOptionsFromEnvCloudEdgeProductChainDoesNotDefaultToLocalSherpa' -count=1`.
+- Focused Gateway tests passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiWebSocketStreamingASRFinalSendsStockSTTBeforeTTS|TestXiaozhiWebSocketSTTScreenPolicyStatusOnlyRedactsDeviceTranscript|TestXiaozhiWebSocketFastAckDisabledWaitsForAnswer' -count=1`.
+- Review-related verification passed:
+  `git diff --check`,
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`,
+  `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- Deployment and public smoke are still pending for this round at the time this
+  handoff entry was updated.
+
+Runtime or physical evidence:
+
+- Local unit tests prove stock raw STT ordering still works by default and
+  status-only policy redacts device display text without leaking the raw ASR
+  transcript into traces.
+- No live product physical evidence was collected in this transition.
+
+Known risks/blockers:
+
+- Product device is still offline/missing from Gateway registry until physical
+  recovery/ROM-download/product flash/reconnect is completed.
+- Physical power-key startup, wake, real latency, barge-in, official
+  `/stackChan/ws`, and visible screen/RGB/servo/touch behavior remain
+  unaccepted.
+
+Recommended next action:
+
+- Run full gates, commit/push/deploy the product voice defaults, then continue
+  the product recovery window and collect live physical evidence.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no reboot/OTA/snapshot/video/camera/NFC/IR/app
+  lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
+  rollback.

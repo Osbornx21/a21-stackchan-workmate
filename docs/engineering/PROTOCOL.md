@@ -129,6 +129,24 @@ path for A21 control events and PCM fixtures. Batch/non-streaming ASR fallback
 on `/v1/xiaozhi` is below product acceptance until it carries equivalent
 `stt -> tts.start` evidence on the stock product socket.
 
+Product display policy is separate from ASR text used by the answer pipeline.
+By default fixture/lab Gateway runs preserve official-compatible raw `stt.text`
+frames. Cloud-edge product-chain defaults set
+`A21_XIAOZHI_STT_SCREEN_POLICY=status_only`, so the device display receives a
+non-sensitive status phrase while the raw ASR transcript still drives
+ASR -> text stream -> TTS internally and remains absent from traces/reports.
+Allowed values are `raw`, `status_only`, and `off`; `raw` is the explicit
+official-compatibility/lab option, while `off` suppresses the device STT frame.
+Gateway records only policy markers such as `xiaozhi.stt.display.status_only`
+and never stores the transcript text in trace summaries.
+
+Cloud-edge product-chain defaults also set
+`A21_XIAOZHI_FAST_ACK_ENABLED=false`. This prevents the fast acknowledgement
+TTS placeholder from speaking before the real answer in the product roleplay
+path. Lab or latency-contest runs may still opt in explicitly with
+`A21_XIAOZHI_FAST_ACK_ENABLED=true` and the existing
+`A21_XIAOZHI_FAST_ACK_DELAY_MS` threshold.
+
 Xiaozhi TTS binary downlink uses the Go `AudioRateController` primitive before
 writing frames: default 60 ms frame slots, one-frame prebuffer, per-frame
 abort checks, and reset on turn cancellation. Raw unpaced binary writes are

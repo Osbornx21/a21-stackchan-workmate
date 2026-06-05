@@ -50,6 +50,10 @@ const defaultWorkspaceDocumentMaxBytes int64 = 16 << 20
 const workspaceDocumentMultipartOverheadBytes int64 = 1 << 20
 const defaultOfficialStackChanDeviceID = "stackchan-official"
 const localFallbackText = "外部大脑连不上，但我还在。你可以继续说，我先记下来。"
+const xiaozhiSTTScreenPolicyRaw = "raw"
+const xiaozhiSTTScreenPolicyStatusOnly = "status_only"
+const xiaozhiSTTScreenPolicyOff = "off"
+const xiaozhiSTTStatusOnlyText = "语音已识别"
 
 type Server struct {
 	mu                           sync.Mutex
@@ -81,6 +85,7 @@ type Server struct {
 	xiaozhiFastAckTTS            providers.TTSAdapter
 	xiaozhiFastAckEnabled        bool
 	xiaozhiFastAckDelay          time.Duration
+	xiaozhiSTTScreenPolicy       string
 	xiaozhiStockProfessional     bool
 	xiaozhiProductPlaybackEvents bool
 	xiaozhiProductTouchEvents    bool
@@ -137,6 +142,7 @@ type ServerOptions struct {
 	XiaozhiProductTouchReactions bool
 	XiaozhiProductStateReactions bool
 	XiaozhiListenMaxDuration     time.Duration
+	XiaozhiSTTScreenPolicy       string
 	BodySceneStepDelay           time.Duration
 	WakeWordConfigPath           string
 	WorkspaceDocumentStoreDir    string
@@ -1516,6 +1522,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 	xiaozhiFastAckTTS := providers.NewMockTTSAdapter("mock-fast-tts")
 	xiaozhiFastAckEnabled := gatewayEnvBoolDefault(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_ENABLED", true)
 	xiaozhiFastAckDelay := gatewayEnvDurationMSDefault(options.CloudVoiceEnv, "A21_XIAOZHI_FAST_ACK_DELAY_MS", 0)
+	xiaozhiSTTScreenPolicy := normalizeXiaozhiSTTScreenPolicy(firstNonEmpty(options.XiaozhiSTTScreenPolicy, gatewayEnvValue(options.CloudVoiceEnv, "A21_XIAOZHI_STT_SCREEN_POLICY")))
 	if options.XiaozhiVoicePipelineAdapters != nil {
 		adapters := *options.XiaozhiVoicePipelineAdapters
 		xiaozhiRunnerFactory = func() xiaozhiVoicePipelineRunner {
@@ -1576,6 +1583,7 @@ func NewServerWithOptions(options ServerOptions) *Server {
 		xiaozhiFastAckTTS:            xiaozhiFastAckTTS,
 		xiaozhiFastAckEnabled:        xiaozhiFastAckEnabled,
 		xiaozhiFastAckDelay:          xiaozhiFastAckDelay,
+		xiaozhiSTTScreenPolicy:       xiaozhiSTTScreenPolicy,
 		xiaozhiStockProfessional:     options.XiaozhiStockProfessional,
 		xiaozhiProductPlaybackEvents: options.XiaozhiProductPlaybackEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_PLAYBACK_EVENTS"),
 		xiaozhiProductTouchEvents:    options.XiaozhiProductTouchEvents || gatewayEnvBool(options.CloudVoiceEnv, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
@@ -1655,6 +1663,19 @@ func gatewayEnvDurationMSDefault(env []string, key string, defaultValue time.Dur
 		return defaultValue
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+func normalizeXiaozhiSTTScreenPolicy(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", xiaozhiSTTScreenPolicyRaw:
+		return xiaozhiSTTScreenPolicyRaw
+	case "status", "status-only", "status_only", "private", "redacted":
+		return xiaozhiSTTScreenPolicyStatusOnly
+	case "false", "no", "none", "disabled", "suppress", "suppressed", xiaozhiSTTScreenPolicyOff:
+		return xiaozhiSTTScreenPolicyOff
+	default:
+		return xiaozhiSTTScreenPolicyRaw
+	}
 }
 
 func isZeroGatewayVoicePipelineSelection(selection providers.VoicePipelineSelection) bool {
@@ -10650,10 +10671,19 @@ func (s *Server) writeXiaozhiSTT(ctx context.Context, conn *websocket.Conn, sess
 	if text == "" {
 		return true
 	}
+	displayText, displayPolicy, sendDisplay := xiaozhiSTTDisplayText(text, s.xiaozhiSTTScreenPolicy)
+	s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt.display."+displayPolicy, s.now().UnixMilli())
+	if !sendDisplay {
+		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt.suppressed", s.now().UnixMilli())
+		if source != "" {
+			s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt."+safeGatewayFallbackToken(source, "streaming"), s.now().UnixMilli())
+		}
+		return true
+	}
 	payload := map[string]any{
 		"type":       "stt",
 		"session_id": task.sessionID,
-		"text":       text,
+		"text":       displayText,
 	}
 	if err := session.writeXiaozhiJSON(ctx, conn, turn, payload); err != nil {
 		session.cancelXiaozhiTurnContext(turn, "stt_write_error")
@@ -10664,6 +10694,17 @@ func (s *Server) writeXiaozhiSTT(ctx context.Context, conn *websocket.Conn, sess
 		s.recordTrace(task.traceID, task.sessionID, task.deviceID, "xiaozhi.stt."+safeGatewayFallbackToken(source, "streaming"), s.now().UnixMilli())
 	}
 	return true
+}
+
+func xiaozhiSTTDisplayText(text string, policy string) (string, string, bool) {
+	switch normalizeXiaozhiSTTScreenPolicy(policy) {
+	case xiaozhiSTTScreenPolicyStatusOnly:
+		return xiaozhiSTTStatusOnlyText, xiaozhiSTTScreenPolicyStatusOnly, true
+	case xiaozhiSTTScreenPolicyOff:
+		return "", xiaozhiSTTScreenPolicyOff, false
+	default:
+		return text, xiaozhiSTTScreenPolicyRaw, true
+	}
 }
 
 func (s *Server) writeXiaozhiStreamingVoicePipelineAnswer(ctx context.Context, conn *websocket.Conn, session *xiaozhiSession, turn *xiaozhiTurn, task xiaozhiTurnTask, runner xiaozhiVoicePipelineStreamer, req providers.VoicePipelineRequest, startAtMS int64, markAnswerReady func()) bool {

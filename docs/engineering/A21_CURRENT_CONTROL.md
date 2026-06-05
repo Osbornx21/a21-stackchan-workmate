@@ -71,6 +71,39 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 08:29 CST Xiaozhi product STT screen and
+fast-ack guard transition:
+
+- Re-read review thread `019e941c-761b-7ee0-a4b8-68103a0850a1` and compared
+  its final findings against current code and control state. Gateway race,
+  namespace/preflight, doctor, power-lifecycle server state, and official MCP
+  fallback have already been remediated in later commits; product physical
+  recovery and official `/stackChan/ws` acceptance remain open.
+- Added plan
+  `docs/plans/2026-06-05-xiaozhi-product-stt-screen-and-fast-ack-guard.md`.
+- Added `A21_XIAOZHI_STT_SCREEN_POLICY` with `raw`, `status_only`, and `off`
+  behavior. Fixture/lab Gateway default remains stock-compatible raw STT text;
+  cloud-edge product-chain default is now `status_only`.
+- Status-only STT screen policy keeps raw ASR transcript available to the
+  internal answer pipeline, but sends the device only a non-sensitive STT
+  status phrase and records policy trace markers such as
+  `xiaozhi.stt.display.status_only`.
+- Cloud-edge product-chain default now sets
+  `A21_XIAOZHI_FAST_ACK_ENABLED=false`, so product roleplay waits for real
+  answer audio instead of speaking a fast acknowledgement placeholder unless a
+  lab run explicitly opts back in.
+- Local focused tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestGatewayServerOptionsFromEnvCloudEdgeProductChainDoesNotDefaultToLocalSherpa' -count=1` and
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestXiaozhiWebSocketStreamingASRFinalSendsStockSTTBeforeTTS|TestXiaozhiWebSocketSTTScreenPolicyStatusOnlyRedactsDeviceTranscript|TestXiaozhiWebSocketFastAckDisabledWaitsForAnswer' -count=1`.
+- Review-related verification passed:
+  `git diff --check`,
+  `GOMAXPROCS=2 go test -race ./internal/gateway -run 'Xiaozhi|PowerLifecycle|OfficialStackChan|StockProfessionalRoute|WorkspaceConsolePageServed' -count=1`,
+  `GOMAXPROCS=2 make verify`, `GOMAXPROCS=2 make preflight`, and
+  `GOMAXPROCS=2 make doctor`.
+- This transition does not mark physical power-key, wake, latency, official
+  `/stackChan/ws`, or body-action acceptance. Product device recovery and
+  post-flash physical validation are still required.
+
 Live truth after the 2026-06-05 08:15 CST official StackChan backend MCP
 fallback transition:
 

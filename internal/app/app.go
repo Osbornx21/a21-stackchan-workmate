@@ -1029,6 +1029,7 @@ func newGatewayServerOptionsFromEnv(env []string) gateway.ServerOptions {
 		XiaozhiProductTouchEvents:    appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_EVENTS"),
 		XiaozhiProductTouchReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_TOUCH_REACTIONS"),
 		XiaozhiProductStateReactions: appEnvBool(env, "A21_XIAOZHI_PRODUCT_STATE_REACTIONS"),
+		XiaozhiSTTScreenPolicy:       appEnvValue(env, "A21_XIAOZHI_STT_SCREEN_POLICY"),
 		BodySceneStepDelay:           180 * time.Millisecond,
 		MacLocalGatewayURL:           appEnvValue(env, "A21_MAC_LOCAL_GATEWAY_URL"),
 		PublicGatewayURL:             appEnvValue(env, "A21_PUBLIC_GATEWAY_URL"),
@@ -1089,9 +1090,15 @@ func applyXiaozhiProductChainEnvDefaults(env []string) []string {
 }
 
 func applyXiaozhiCloudEdgeProductChainEnvDefaults(env []string) []string {
-	out := applyXiaozhiFastAckDelayEnvDefaults(env)
+	out := append([]string(nil), env...)
+	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_ENABLED")) == "" {
+		out = append(out, "A21_XIAOZHI_FAST_ACK_ENABLED=false")
+	}
 	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS")) == "" {
 		out = append(out, "A21_XIAOZHI_FAST_ACK_DELAY_MS=700")
+	}
+	if strings.TrimSpace(appEnvValue(out, "A21_XIAOZHI_STT_SCREEN_POLICY")) == "" {
+		out = append(out, "A21_XIAOZHI_STT_SCREEN_POLICY=status_only")
 	}
 	if strings.TrimSpace(appEnvValue(out, "A21_ASR_PROFILE")) == "" {
 		out = append(out, "A21_ASR_PROFILE=cloud")
