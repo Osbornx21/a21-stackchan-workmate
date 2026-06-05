@@ -153,7 +153,11 @@ index c75df3d..b654ed2 100644
 +        WriteReg(0x27, 0x00);                  // Preserve official ON/OFF timing: 128ms on, 4s off.
 +
          auto ret = setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_700MA);
-@@ -123,4 +126,16 @@ public:
+@@ -76,3 +79,4 @@ public:
+         SetBrightness(0);
++        LogPowerDiagnosticSnapshot("boot-after-init");
+     }
+@@ -123,4 +127,24 @@ public:
          // Treat any non-discharging state as externally powered so a plugged-in cable
          // still counts even after the battery is full.
          return current_direction != 2 || is_charging_done;
@@ -161,12 +165,21 @@ index c75df3d..b654ed2 100644
 +
 +    std::string GetPowerDiagnosticSnapshot()
 +    {
-+        char status[160];
++        char status[320];
 +        snprintf(status, sizeof(status),
-+                 "r00=%02x,r01=%02x,r10=%02x,r20=%02x,r21=%02x,r22=%02x,r23=%02x,r24=%02x,r27=%02x,r90=%02x,a4=%02x",
-+                 ReadReg(0x00), ReadReg(0x01), ReadReg(0x10), ReadReg(0x20), ReadReg(0x21), ReadReg(0x22),
-+                 ReadReg(0x23), ReadReg(0x24), ReadReg(0x27), ReadReg(0x90), ReadReg(0xA4));
++                 "r00=%02x,r01=%02x,r10=%02x,r12=%02x,r14=%02x,r20=%02x,r21=%02x,r22=%02x,r23=%02x,r24=%02x,r26=%02x,r27=%02x,r30=%02x,r61=%02x,r62=%02x,r63=%02x,r64=%02x,r80=%02x,r82=%02x,r90=%02x,r91=%02x,r92=%02x,r94=%02x,r95=%02x,r97=%02x,r99=%02x,a4=%02x,a5=%02x",
++                 ReadReg(0x00), ReadReg(0x01), ReadReg(0x10), ReadReg(0x12), ReadReg(0x14), ReadReg(0x20),
++                 ReadReg(0x21), ReadReg(0x22), ReadReg(0x23), ReadReg(0x24), ReadReg(0x26), ReadReg(0x27),
++                 ReadReg(0x30), ReadReg(0x61), ReadReg(0x62), ReadReg(0x63), ReadReg(0x64), ReadReg(0x80),
++                 ReadReg(0x82), ReadReg(0x90), ReadReg(0x91), ReadReg(0x92), ReadReg(0x94), ReadReg(0x95),
++                 ReadReg(0x97), ReadReg(0x99), ReadReg(0xA4), ReadReg(0xA5));
 +        return status;
++    }
++
++    void LogPowerDiagnosticSnapshot(const char* stage)
++    {
++        auto status = GetPowerDiagnosticSnapshot();
++        ESP_LOGI(TAG, "A21 PMIC %s: %s", stage, status.c_str());
 +    }
  };
 @@ -555,4 +570,9 @@ public:

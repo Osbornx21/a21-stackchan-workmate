@@ -19,6 +19,61 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 15:29 CST - StackChan PMIC Boot Snapshot Build Ready
+
+Round goal:
+
+- Add stronger PMIC evidence after the product device remained stale in Gateway
+  and no new `pmic_power_status` could be collected without opening
+  `AI.AGENT`.
+
+Actual completed work:
+
+- Kept official Home/setup/AI.AGENT lifecycle and voice/body behavior intact.
+- Extended the AXP2101 diagnostic snapshot to include charger and rail
+  registers: `0x61`-`0x64`, `0x80`, `0x82`, `0x90`-`0x92`, `0x94`,
+  `0x95`, `0x97`, and `0x99`.
+- Added a USB boot-time serial log line:
+  `A21 PMIC boot-after-init: ...`, so PMIC evidence no longer depends on first
+  entering A21 mode.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Guarded product build passed through
+  `a21-stackchan-official-xiaozhi-compatible-build`.
+- App artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `a99ac8b1311a122865136ff52f06160c659e2e89465361cefd26eacfc7322684`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-152919-1780644559915124000.json`.
+
+Remaining issues:
+
+- Product flash is pending.
+- The no-USB cold boot symptom is still not physically accepted.
+- After flash, the next evidence target is a serial boot capture proving the
+  new `A21 PMIC boot-after-init` line and its register values.
+
+Next suggested action:
+
+- Commit/push this build-ready diagnostic transition, flash through the guarded
+  official-compatible product lane, then capture USB boot serial logs.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no provider key in firmware, no direct boot into
+  Xiaozhi, no official Home/Setup rewrite, no NVS write, no Git prune/gc, and
+  no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 15:15 CST - StackChan PMIC Cold-Boot Diagnostic Flashed
 
 Round goal:
