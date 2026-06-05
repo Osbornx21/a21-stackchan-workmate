@@ -15,8 +15,9 @@ execution plan.
 - Branch: `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Sprint start HEAD:
   `b58283b docs(handoff): add internal test 3 master handoff`
-- Current source HEAD after the latest ROM flash guard/diagnostic remediation:
-  current branch tip for the latest ROM flash guard/diagnostic transition.
+- Current source HEAD after the StackChan sys_evt boot-loop recovery and
+  avatar relay URL remediation:
+  `a95bb868e85e7a0f2fcc9e70e2953aa538af9464`.
 - Remote:
   `origin/codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
 - Tracked dirty-state policy:
@@ -70,6 +71,50 @@ Evidence truth:
 - Product readiness: `server_side_blocked`.
 - Launch ready: false.
 - PRD accepted: false.
+
+Live truth after the 2026-06-05 09:54 CST StackChan sys_evt boot-loop recovery
+and official avatar relay reconnect transition:
+
+- The product StackChan is not hard-bricked. macOS enumerated the ESP32-S3
+  USB/JTAG serial device as `/dev/cu.usbmodem1101`, serial
+  `44:1B:F6:E2:6A:60`.
+- Serial evidence before the fix showed the visible infinite white flashing
+  screen was an app boot loop: the official-compatible app initialized PMIC,
+  display, camera, touch, IMU, servo, and audio, then reset after Wi-Fi scan
+  with `***ERROR*** A stack overflow in task sys_evt has been detected.`
+- Added plan
+  `docs/plans/2026-06-05-stackchan-sys-evt-boot-loop-recovery.md`.
+- Firmware overlay remediation:
+  `Hal::startA21WebSocketAvatarRuntime` now waits for the existing Xiaozhi
+  network path instead of starting a second network path, and
+  `CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=8192` is applied for the heavier
+  product runtime.
+- Second firmware overlay remediation: the official avatar relay URL now
+  percent-encodes MAC-address colons in `device_id`, avoiding the official
+  WebSocket parser misreading the query string as part of the host/port and
+  failing DNS with `Failed to get host by name`.
+- Product app was rebuilt and guarded-flashed through the official-compatible
+  product lane only:
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+- Current flashed product app artifact SHA-256:
+  `c68e9557f065eb40a184ea88d8f111fbc4aa87ca6729c38899cc8555edc7acaf`.
+- Current flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-095236-1780624356871525000.json`.
+- Post-flash serial evidence over a 45 second capture:
+  no `stack overflow in task sys_evt`, no `Rebooting...`, no `rst:`, no
+  `Guru Meditation`, no `abort()`, Xiaozhi session
+  `a21-session-44-1b-f6-e2-6a-60` observed, quiet control websocket kept open,
+  official avatar relay waited for Xiaozhi network, DNS failure absent, and
+  `WS-Avatar: Connected to server!` with heartbeat pings observed.
+- Local tests and build for this transition passed:
+  focused official-compatible overlay tests, broader app firmware/product
+  recovery tests, `git diff --check`, and
+  `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build`.
+- The transition does not write NVS, use the generic `xiaozhi.bin` flash lane,
+  execute provider/V21, mark no-USB power-key physical acceptance, or claim full
+  PRD launch acceptance. Foreground physical UX checks still need the operator
+  to observe screen stability, power-key behavior, wake/listen/playback, and
+  visible body reactions.
 
 Live truth after the 2026-06-05 08:58 CST Power Lifecycle cold-boot evidence
 guard transition:

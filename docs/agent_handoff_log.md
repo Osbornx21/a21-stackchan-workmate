@@ -18812,6 +18812,89 @@ Forbidden actions avoided:
   lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
 
+## 2026-06-05 09:54 CST - StackChan Sys_evt Boot Loop Recovery And Avatar Relay Reconnect
+
+Round goal:
+
+- Resolve the product hardware emergency where StackChan showed an infinite
+  white flashing screen and appeared bricked, while preserving the
+  internal-test3 voice protocol and using only the official-compatible product
+  flash lane.
+
+Actual completed work:
+
+- Confirmed the device is not hard-bricked: macOS enumerated the ESP32-S3
+  USB/JTAG serial device as `/dev/cu.usbmodem1101`, serial
+  `44:1B:F6:E2:6A:60`.
+- Captured serial evidence showing the visible white flashing was an app boot
+  loop caused by `***ERROR*** A stack overflow in task sys_evt has been
+  detected.`
+- Added
+  `docs/plans/2026-06-05-stackchan-sys-evt-boot-loop-recovery.md`.
+- Updated the official-compatible firmware overlay so the A21 official avatar
+  relay waits for Xiaozhi's existing network path instead of starting a second
+  network path, and increased ESP system event task stack to 8192 bytes.
+- Fixed the follow-up official avatar relay DNS failure by percent-encoding
+  MAC-address colons in the relay `device_id` query parameter.
+- Rebuilt and guarded-flashed the product app with
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/plans/2026-06-05-stackchan-sys-evt-boot-loop-recovery.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused official-compatible overlay tests passed.
+- Broader app firmware/product recovery tests passed.
+- `git diff --check` passed before the product flash commits.
+- `GOMAXPROCS=2 make a21-stackchan-official-xiaozhi-compatible-build` passed.
+- Final product app SHA-256:
+  `c68e9557f065eb40a184ea88d8f111fbc4aa87ca6729c38899cc8555edc7acaf`.
+- Final guarded product flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-095236-1780624356871525000.json`.
+- Post-flash 45 second serial capture showed no `sys_evt` stack overflow, no
+  reset/Guru/abort loop, Xiaozhi session
+  `a21-session-44-1b-f6-e2-6a-60`, quiet control websocket active, and
+  official avatar relay `Connected to server!` with heartbeat pings.
+
+Runtime or physical evidence:
+
+- USB/JTAG serial presence proves the device is recoverable and not a hard
+  brick.
+- Serial evidence proves the previous infinite white flashing loop is no
+  longer occurring during the captured Wi-Fi/connect/runtime window.
+- Serial evidence proves the official avatar relay reaches the public Gateway
+  and stays connected long enough to receive heartbeat pings.
+
+Known risks/blockers:
+
+- Foreground operator validation is still required for visible screen stability,
+  no-USB power-key startup, wake/listen/playback, barge-in, and visible
+  RGB/servo/touch behavior.
+- Public ECS HTTP access from this Mac has had intermittent empty-reply/TUN
+  behavior, but the device-side WebSocket connection to `47.103.57.217` is
+  observed in serial.
+- This transition does not claim full PRD launch readiness or physical
+  power-key acceptance.
+
+Recommended next action:
+
+- Push the recovery commits and documentation, then run the operator-facing
+  physical UX pass: screen no longer flashes white, power-key no-USB boot,
+  wake/listen/playback, barge-in, and body reaction checks.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider/V21
+  execution, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 08:58 CST - Power Lifecycle Cold Boot Evidence Guard
 
 Round goal:
@@ -19098,3 +19181,21 @@ Forbidden actions avoided:
   product flash lane, no reboot/OTA/snapshot/video/camera/NFC/IR/app
   lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
+
+## 2026-06-05 09:59 CST - Tail Recovery Pointer
+
+- Latest hardware truth is the 2026-06-05 09:54 CST recovery entry:
+  StackChan was not hard-bricked; the infinite white flashing screen was a
+  `sys_evt` app boot loop, now fixed and product-flashed through the
+  official-compatible lane.
+- Current flashed app SHA-256:
+  `c68e9557f065eb40a184ea88d8f111fbc4aa87ca6729c38899cc8555edc7acaf`.
+- Current flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-095236-1780624356871525000.json`.
+- Latest serial evidence shows no `sys_evt` stack overflow, no reboot loop,
+  Xiaozhi session `a21-session-44-1b-f6-e2-6a-60`, quiet control websocket
+  active, and official avatar relay connected with heartbeat pings.
+- Next action is foreground operator validation of screen stability, no-USB
+  power-key boot, wake/listen/playback, barge-in, and visible RGB/servo/touch
+  behavior. Do not go back to the old ROM-download-pending assumption unless
+  fresh evidence contradicts this serial capture.
