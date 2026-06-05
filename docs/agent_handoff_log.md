@@ -19,6 +19,75 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 16:32 CST - PMIC Startup Re-Aligned To Stock Official
+
+Round goal:
+
+- Stop speculative PMIC/startup patching and compare the current A21 product
+  startup path against stock official StackChan/Xiaozhi before restoring the
+  product candidate.
+
+Actual completed work:
+
+- Captured USB serial from the current stock-official baseline flash. The
+  device booted stock `stack-chan` 1.4.1, initialized PMIC, display, camera,
+  touch, MCP, head touch, IO expander, RTC, IMU, servos, and reached official
+  Launcher.
+- Compared stock official and current A21 generated trees. `main.cpp` and
+  `AI.AGENT` entry are identical: official Launcher/Home runs first, and
+  Xiaozhi starts only after `AI.AGENT` requests it.
+- Identified that the remaining A21 startup delta was the PMIC hunk writing
+  AXP2101 registers `0x10`, `0x22`, and `0x24`. This hunk did not solve the
+  physical no-USB symptom and diverged from stock official.
+- Removed those PMIC writes from the A21 official-compatible overlay. The
+  product candidate now leaves stock PMIC startup writes intact and keeps only
+  read-only PMIC boot/heartbeat diagnostics.
+- Updated overlay tests so future workers cannot reintroduce the speculative
+  PMIC startup writes as a required contract.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused overlay/product contract tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Guarded product candidate build passed. App artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-162941-1780648181282432000.json`.
+- Generated-tree diff confirms A21 product PMIC init now matches stock official
+  except for read-only `LogPowerDiagnosticSnapshot("boot-after-init")` and
+  `GetPowerDiagnosticSnapshot()`.
+
+Remaining issues:
+
+- Physical no-USB PWRKEY acceptance is still not closed. Since stock official
+  boots under USB and the operator reported the same no-USB flash/red-LED
+  symptom after the stock baseline A/B, the unresolved boundary is low-level
+  battery/PMIC rail hold, physical power-key hold behavior, or battery state,
+  not Gateway/provider/voice.
+- Current device is still flashed with stock official baseline until the A21
+  product candidate is restored through the guarded product lane.
+
+Recommended next action:
+
+- Commit this stock-parity correction, restore the A21 product candidate through
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`, capture USB serial
+  PMIC snapshot, then repeat the no-USB PWRKEY test with explicit hold-time
+  evidence.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Gateway/provider rollback, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 16:11 CST - Stock Official Baseline Flashed for Physical A/B
 
 Round goal:

@@ -38,6 +38,21 @@ active hypothesis was narrowed further:
   `pmic_power_status` so future Gateway evidence can distinguish battery
   absent/low/charging, power-off causes, and applied register values.
 
+2026-06-05 16:32 CST update:
+
+- A stock-official no-overlay baseline was T7-flashed and captured over USB. It
+  boots stock `stack-chan` 1.4.1 to the official Launcher and initializes the
+  expected hardware stack under USB power.
+- The operator then reported the same no-USB PWRKEY symptom on the stock A/B:
+  screen/red LED flash, then no usable boot. That shifts the unresolved boundary
+  below A21 Gateway, voice, and AI.AGENT runtime.
+- The A21 overlay PMIC write hunk for `REG10`, `REG22`, and `REG24` did not
+  close the symptom and diverges from stock official. It has been removed from
+  the product candidate. Only read-only PMIC diagnostics remain.
+- Future PMIC changes require new evidence from serial PMIC snapshots,
+  battery/rail inspection, or official hardware documentation. Do not restore
+  speculative AXP2101 write churn as a default product fix.
+
 ## Target State
 
 - Keep official StackChan Home, setup, mobile surfaces, and `AI.AGENT` mode

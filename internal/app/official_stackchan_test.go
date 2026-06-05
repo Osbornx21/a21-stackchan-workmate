@@ -344,7 +344,7 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialAvatarRelayWorkerWithA
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayRestoresStackChanPowerKeyParity(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPmicStartupParity(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -359,14 +359,6 @@ func TestOfficialXiaozhiCompatibleOverlayRestoresStackChanPowerKeyParity(t *test
 
 	for _, required := range []string{
 		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
-		`WriteReg(0x10, common_config | 0x04);`,
-		`WriteReg(0x22, 0b110);`,
-		`WriteReg(0x24, 0x00);`,
-		`WriteReg(0x27, 0x00);`,
-		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
-		`PWRON and OFFLEVEL can request PMIC power-off.`,
-		`Lower VSYS shutdown threshold to 2.6V for battery cold boot inrush.`,
-		`Preserve official ON/OFF timing: 128ms on, 4s off.`,
 		`LogPowerDiagnosticSnapshot("boot-after-init");`,
 		`A21 PMIC %s: %s`,
 		`r61=%02x,r62=%02x,r63=%02x,r64=%02x`,
@@ -379,8 +371,18 @@ func TestOfficialXiaozhiCompatibleOverlayRestoresStackChanPowerKeyParity(t *test
 			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key parity contract %q", required)
 		}
 	}
-	if strings.Contains(overlay, `+        WriteReg(0x27, 0x10);`) {
-		t.Fatalf("official Xiaozhi-compatible overlay must preserve official PMIC ON/OFF timing instead of changing IRQLEVEL")
+	for _, forbidden := range []string{
+		`WriteReg(0x10, common_config | 0x04);`,
+		`WriteReg(0x22, 0b110);`,
+		`WriteReg(0x24, 0x00);`,
+		`+        WriteReg(0x27, 0x10);`,
+		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
+		`PWRON and OFFLEVEL can request PMIC power-off.`,
+		`Lower VSYS shutdown threshold to 2.6V for battery cold boot inrush.`,
+	} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official Xiaozhi-compatible overlay must keep StackChan PMIC startup writes official; found %q", forbidden)
+		}
 	}
 }
 

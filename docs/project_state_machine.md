@@ -24,6 +24,31 @@ Latest foreground hardware-window update, 2026-06-05 16:11 CST:
   PWRKEY test. A21 product candidate must be restored after this A/B evidence
   is captured.
 
+Latest foreground hardware-window update, 2026-06-05 16:32 CST:
+
+- USB serial capture from the current stock-official baseline proved the device
+  is not bricked under USB: stock `stack-chan` 1.4.1 initializes PMIC, display,
+  camera, touch, MCP, head touch, IO expander, RTC, IMU, servos, and reaches
+  official Launcher.
+- A stock-vs-A21 generated-tree comparison found `main.cpp` and `AI.AGENT`
+  startup entry identical. The official front-end remains the first runtime;
+  A21/Xiaozhi starts only after the operator selects `AI.AGENT`.
+- The only PMIC startup delta was the A21 overlay hunk writing AXP2101
+  registers `0x10`, `0x22`, and `0x24`. It did not close the no-USB symptom and
+  diverged from stock official, so it has been removed.
+- The rebuilt A21 product candidate now preserves stock PMIC startup writes and
+  adds only read-only PMIC diagnostics. Generated-tree diff confirms
+  `WriteReg(0x27, 0x00)` is the only PMIC startup write in both stock and A21.
+- Verification passed: focused overlay/product contract tests, `git diff
+  --check`, `GOMAXPROCS=2 make verify`, and guarded product candidate build.
+- New product app artifact:
+  `/tmp/a21-stackchan-official-build/a21-stackchan-official-xiaozhi-compatible.bin`,
+  SHA-256 `5968211923f788666e08bca51740e691dd17ae36d2535d8c265ced73d3abbf23`.
+- Next action is to commit/push this correction, restore the A21 product
+  candidate through the official-compatible product flash lane, capture USB
+  serial PMIC snapshot, and repeat no-USB PWRKEY with explicit hold-time
+  evidence. Do not reintroduce PMIC write churn without new evidence.
+
 Latest foreground hardware-window update, 2026-06-05 16:08 CST:
 
 - The first attempt to execute the stock-official baseline diagnostic flash

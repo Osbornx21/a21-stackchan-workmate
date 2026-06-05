@@ -140,24 +140,11 @@ index c75df3d..b654ed2 100644
  #include <algorithm>
  #include "stackchan_camera.h"
  #include "hal_bridge.h"
-@@ -59,7 +59,10 @@ public:
-         WriteReg(0x90, 0xBF);
-         WriteReg(0x94, 33 - 5);
-         WriteReg(0x95, 33 - 5);
--        WriteReg(0x27, 0x00);
--
-+        auto common_config = ReadReg(0x10);
-+        WriteReg(0x10, common_config | 0x04);  // Enable 16s PWRON hardware PMIC shutdown fallback.
-+        WriteReg(0x22, 0b110);                 // PWRON and OFFLEVEL can request PMIC power-off.
-+        WriteReg(0x24, 0x00);                  // Lower VSYS shutdown threshold to 2.6V for battery cold boot inrush.
-+        WriteReg(0x27, 0x00);                  // Preserve official ON/OFF timing: 128ms on, 4s off.
-+
-         auto ret = setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_700MA);
-@@ -76,3 +79,4 @@ public:
+@@ -76,3 +78,4 @@ public:
          SetBrightness(0);
 +        LogPowerDiagnosticSnapshot("boot-after-init");
      }
-@@ -123,4 +127,24 @@ public:
+@@ -123,4 +126,24 @@ public:
          // Treat any non-discharging state as externally powered so a plugged-in cable
          // still counts even after the battery is full.
          return current_direction != 2 || is_charging_done;
