@@ -259,6 +259,49 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialLauncherEntryLifecycle
 	}
 }
 
+func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	projectRoot := findProjectRoot(cwd)
+	overlayPath := filepath.Join(projectRoot, "firmware", "stackchan-official", "overlays", "a21-official-xiaozhi-compatible.patch")
+	data, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("read overlay: %v", err)
+	}
+	overlay := string(data)
+
+	for _, required := range []string{
+		`CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"`,
+		`CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"`,
+		`return CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL;`,
+		`/stackChan/ws?deviceType=StackChan&device_id={}`,
+		`CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y`,
+		`CONFIG_A21_STACKCHAN_KEEP_CONTROL_CHANNEL=y`,
+		`CONFIG_A21_PRODUCT_PLAYBACK_EVENTS=y`,
+		`CONFIG_A21_PRODUCT_TOUCH_EVENTS=y`,
+	} {
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official frontend to A21 agent runtime contract missing %q", required)
+		}
+	}
+
+	for _, forbidden := range []string{
+		`diff --git a/firmware/main/main.cpp b/firmware/main/main.cpp`,
+		`A21_OEM_AUTOSTART_XIAOZHI`,
+		`CONFIG_X21_STACKCHAN_AUTO_START_XIAOZHI=y`,
+		`diff --git a/firmware/main/hal/hal_ble.cpp b/firmware/main/hal/hal_ble.cpp`,
+		`diff --git a/firmware/main/apps/app_setup/`,
+		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
+		`AddAuth(ssid, password)`,
+	} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("official frontend/Wi-Fi/PMIC must remain official before AI.AGENT entry; found %q", forbidden)
+		}
+	}
+}
+
 func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialAvatarRelayWorkerWithA21DeviceId(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

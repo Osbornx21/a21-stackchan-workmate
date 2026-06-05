@@ -1,6 +1,6 @@
 # StackChan Official Power And UI Parity Recovery
 
-Status: build-ready transition.
+Status: flashed, official front-end restored, App BLE secret pending.
 Created: 2026-06-05.
 
 ## Goal
@@ -39,12 +39,24 @@ is the wrong product default once the official front-end is accepted.
 - Official launcher/setup/home/app selection lifecycle remains default:
   A21 product overlay no longer patches `firmware/main/main.cpp` and no longer
   defines `A21_OEM_AUTOSTART_XIAOZHI`.
+- Product state machine boundary is explicit:
+  boot, PMIC, launcher, Home, Setup, Wi-Fi provisioning, Wi-Fi NVS persistence,
+  mobile association surfaces, and up-swipe Home navigation stay official until
+  the user opens the official `AI.AGENT` app. Opening `AI.AGENT` is the only
+  product transition into the A21 runtime.
 - A21 remains the backend and mode service after the user enters the official
   AI agent / A21 front-end:
   `secret_logic::get_server_url()` returns
   `CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL`.
 - Official `AppAvatar` relay keeps the A21 `device_id` query parameter so the
   Gateway can bind body/action state.
+- The official Xiaozhi voice client receives its endpoint through A21 OTA:
+  `CONFIG_OTA_URL` points to `http://47.103.57.217/xiaozhi/ota/`, and the
+  Gateway returns `ws://47.103.57.217/v1/xiaozhi`.
+- The official body/action relay uses the same A21 Gateway origin and connects
+  to `/stackChan/ws?deviceType=StackChan&device_id=...`.
+- Existing Wi-Fi credentials remain owned by the official firmware/NVS path;
+  A21 must not reset, rewrite, or fork that path for this transition.
 
 ## Acceptance
 
@@ -58,6 +70,30 @@ is the wrong product default once the official front-end is accepted.
   `a21-stackchan-official-xiaozhi-compatible.bin`.
 - Foreground operator confirms no-USB power-key boot reaches the official
   StackChan front-end instead of only flashing and stopping.
+- Foreground operator opens `AI.AGENT` and confirms voice/body runtime connects
+  to A21 Gateway while the official Home/Setup/Wi-Fi experience remains usable
+  before entry and recoverable on reboot.
+
+## App BLE Association Finding
+
+The restored official mobile App currently reports `Failed to process device
+data` during BLE association. This is not a Gateway, PMIC, or A21 voice runtime
+failure. The App shows that toast while processing BLE `notifyState` type `4`;
+it expects `data.state` to be RSA-OAEP(SHA-256) encrypted, decrypts it through
+`RsaUtil.decryptStackChanBlue`, and then reads the first 12 plaintext
+characters as the device MAC.
+
+The public official firmware source keeps
+`secret_logic::generate_handshake_token()` as the placeholder `hi-stack-chan`,
+and the public App source keeps `ValueConstant.stackChanBluePrivateKey` empty.
+The operator-provided device ID `441BF6E26A60` is the needed plaintext MAC, but
+the stock official App still requires the matching BLE public key or the closed
+official `secret_logic` implementation to produce the encrypted state it can
+decrypt.
+
+Until that secret material or an A21 companion-App/key-pair path is available,
+the product-compatible route is: preserve official front-end and Wi-Fi/NVS,
+enter A21 by opening `AI.AGENT`, and route voice/body links to A21 Gateway.
 
 ## Forbidden Actions
 

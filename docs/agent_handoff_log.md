@@ -19,6 +19,72 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 13:31 CST - StackChan Official Front-End Restored And AI Agent Boundary Accepted
+
+Round goal:
+
+- Capture the operator-approved product state machine: use official StackChan
+  from boot through Home/Setup/Wi-Fi/mobile surfaces, then switch to A21 only
+  when the user opens `AI.AGENT`.
+
+Actual completed work:
+
+- Guarded product flash at commit `290a35073651` completed through the
+  official-compatible product lane on `/dev/cu.usbmodem1101`.
+- Foreground operator confirmed the official StackChan front-end is restored.
+- Root-caused the official mobile App `Failed to process device data` report
+  to BLE `notifyState` type `4` device-data decryption. The public firmware
+  returns placeholder `hi-stack-chan` from
+  `secret_logic::generate_handshake_token()`, while the stock App expects
+  RSA-OAEP(SHA-256) encrypted data that decrypts to the device MAC.
+- Recorded the physical device ID `441BF6E26A60`
+  (`44:1b:f6:e2:6a:60` normalized) as the needed plaintext MAC for App
+  association, while noting that the official BLE public key or closed
+  `secret_logic` implementation is still required for the stock App to accept
+  the encrypted state.
+- Added a focused guard test so future overlay changes preserve official
+  boot/Home/Setup/Wi-Fi/PMIC before `AI.AGENT`, and route only the post-entry
+  voice/body runtime to A21 Gateway.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-power-ui-parity-recovery.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused official-compatible overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Previous flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-132511-1780637111677933000.json`.
+- Flashed app artifact SHA-256:
+  `2f50122b1a05879b393faf8490a6e3adec4e61f947417bdd4d53c16d7184e8a9`.
+
+Remaining issues:
+
+- Stock official mobile App BLE association cannot be completed from the
+  public source alone because the matching BLE encryption material is absent.
+- Physical no-USB power-key cold boot still needs operator acceptance after
+  the restored official front-end flash.
+- Foreground `AI.AGENT` entry into A21 voice/body runtime still needs physical
+  acceptance after the operator opens the app from the restored Home.
+
+Next suggested action:
+
+- Physically open `AI.AGENT` on the restored front-end and validate that A21
+  voice connects to `/v1/xiaozhi` and body/action connects to `/stackChan/ws`
+  while Wi-Fi remains from official NVS.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no Wi-Fi/NVS reset or rewrite, no
+  provider key in firmware, no Git prune/gc, no direct A21 autostart, no PMIC
+  lifecycle patch, and no internal-test3 Gateway/voice protocol rollback.
+
 ## 2026-06-05 13:18 CST - StackChan Official Power And UI Parity Build Ready
 
 Round goal:
