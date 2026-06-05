@@ -19,6 +19,79 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 22:16 CST - Lean Carve North-Star Blocker Reconfirmed
+
+Round goal:
+
+- Continue the full lean carve objective after CI closure and try to advance
+  the remaining true-provider physical StackChan p95/barge-in requirement.
+
+Actual completed work:
+
+- Re-audited `main-lean`: worktree was clean at `6c5da40`, active branch count
+  was exactly 3, product dependency scan found no bench/demo/evidence/
+  professional leakage, and latest GitHub Actions run `27019800550` was green.
+- Rechecked the public Gateway with direct source IP `192.168.1.27`; Gateway
+  health was OK and `/v1/devices` now lists product device
+  `44:1b:f6:e2:6a:60`, but its connection status is
+  `xiaozhi_ws_disconnected`.
+- Reran the true-provider-intent north-star command with StackChan mic source.
+  It failed before provider/audio timing with finding `device is not online`.
+- Ran read-only product recovery, which returned
+  `product_offline_serial_missing` with official relay disconnected and no
+  `/dev/cu.usbmodem1101`.
+- Checked provider-side closure after the user allowed 5080lab assistance.
+  Local `stepfun` provider smoke remains skipped because required provider env
+  values are missing locally; the existing 5080lab runbook is the correct
+  off-machine path for provider evidence, but it cannot replace the physical
+  StackChan requirement.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/lean/CARVE_LOG.md`
+- `docs/project_state_machine.md`
+
+Unfinished items:
+
+- The objective remains incomplete: no true-provider physical
+  `stackchan-fast-companion-turn` p95 below 1500 ms and no physical barge-in
+  success were recorded.
+
+Known risks/blockers:
+
+- Product StackChan is not online at the Gateway and is not present as local
+  USB serial. The last Gateway record is stale and disconnected.
+- Local provider env is incomplete for `stepfun` smoke; 5080lab can close only
+  provider evidence, not the physical StackChan online requirement.
+
+Recommended next action:
+
+- External action required: power/connect product StackChan, open `AI.AGENT`,
+  and confirm it reconnects to `ws://47.103.57.217/v1/xiaozhi`. If using
+  5080lab, run the existing `make provider-5080lab-runbook A21_PROVIDER=stepfun`
+  steps on that host and return the evidence bundle, then rerun the physical
+  north-star command from this branch.
+
+Tests/build/runtime results:
+
+- Local: `bash scripts/lean-gate.sh` passed.
+- Local: direct-source Gateway `/healthz` returned OK.
+- Local: direct-source `stackchan-fast-companion-turn` wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-221543.json`, status
+  `failed`, finding `device is not online`.
+- Local: direct-source product recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-221605.json`, status
+  `product_offline_serial_missing`.
+- Local: `go run ./cmd/a21 provider-smoke --provider stepfun --stream --repeat 3`
+  skipped with missing required provider env.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider key output, no new branch, no
+  new command, no V21 internal execution, and no provider result substitution
+  for physical acceptance.
+
 ## 2026-06-05 22:08 CST - Main-Lean CI Governance Gate Closed
 
 Round goal:

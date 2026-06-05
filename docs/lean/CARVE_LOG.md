@@ -72,6 +72,17 @@ run diary and must stay short.
   `product_offline_serial_missing`; official relay is disconnected,
   `/dev/cu.usbmodem1101` is absent, and the next actions are
   `connect_product_usb_or_power` and `recheck_product_recovery_status`.
+- 2026-06-05 22:16 CST continuation: direct-source Gateway health is OK and
+  product device `44:1b:f6:e2:6a:60` is listed, but it is stale and
+  `xiaozhi_ws_disconnected`. The direct-source true-provider-intent
+  `make stackchan-fast-companion-turn` run wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-221543.json`, status
+  `failed`, finding `device is not online`; read-only recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-221605.json`, status
+  `product_offline_serial_missing`. Local `stepfun` provider smoke is also not
+  closed because required provider env is missing locally; 5080lab remains an
+  allowed provider-evidence path, not a substitute for physical StackChan
+  p95/barge-in acceptance.
 
 ## Lean Gate Results - 2026-06-05
 

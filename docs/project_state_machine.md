@@ -92,6 +92,20 @@ Latest lean carve CI update, 2026-06-05 22:08 CST:
 - The active transition remains runtime-blocked only on physical product
   StackChan reconnection and true-provider fast-companion p95/barge-in proof.
 
+Latest lean carve runtime update, 2026-06-05 22:16 CST:
+
+- Current direct-source public Gateway probes show Gateway health OK and
+  product device `44:1b:f6:e2:6a:60` present but
+  `xiaozhi_ws_disconnected`.
+- The direct-source true-provider-intent `make stackchan-fast-companion-turn`
+  run failed before timing with finding `device is not online`; no p95 or
+  physical barge-in result exists.
+- Read-only product recovery remains `product_offline_serial_missing`; local
+  `/dev/cu.usbmodem1101` is absent.
+- Local `stepfun` provider smoke is skipped because required env is missing;
+  5080lab may close provider evidence, but the transition cannot complete
+  without physical StackChan reconnection.
+
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
 are the project memory.
