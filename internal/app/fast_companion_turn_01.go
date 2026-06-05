@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +26,7 @@ type stackChanFastCompanionTurnReport struct {
 	Metadata                latencyBenchMetadata                 `json:"metadata"`
 	Status                  string                               `json:"status"`
 	GatewayURL              string                               `json:"gateway_url"`
+	DirectSourceIP          string                               `json:"direct_source_ip,omitempty"`
 	DeviceID                string                               `json:"device_id"`
 	Repeat                  int                                  `json:"repeat"`
 	DeviceOnline            bool                                 `json:"device_online"`
@@ -71,6 +73,7 @@ type stackChanFastCompanionTurnReceipt struct {
 
 type stackChanFastCompanionTurnOptions struct {
 	GatewayURL          string
+	DirectSourceIP      string
 	DeviceID            string
 	Engine              string
 	Text                string
@@ -108,31 +111,36 @@ type stackChanPhysicalMicEvidence struct {
 
 func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanFastCompanionTurnOptions{
-		GatewayURL:   firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
-		DeviceID:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001"),
-		Engine:       strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TTS_ENGINE"), "sherpa_onnx")),
-		Voice:        strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE")),
-		ModelDir:     strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR")),
-		SpeakerID:    parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21),
-		ASRProvider:  strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_PROVIDER"), "mock_asr")),
-		ASRFamily:    strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_FAMILY")),
-		ASRModelDir:  strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_MODEL_DIR")),
-		ASRWAVPath:   strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_WAV")),
-		TextProvider: strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TEXT_PROVIDER"), "mock_text_stream")),
-		ListenSource: "host_fixture",
-		Text:         "A21 fast companion turn.",
-		MicWindowMS:  1200,
-		MinMicFrames: 1,
-		Repeat:       1,
-		OutputDir:    "reports",
+		GatewayURL:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DirectSourceIP: strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)),
+		DeviceID:       firstNonEmpty(strings.TrimSpace(os.Getenv("A21_DEVICE_ID")), "stackchan-001"),
+		Engine:         strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TTS_ENGINE"), "sherpa_onnx")),
+		Voice:          strings.TrimSpace(os.Getenv("A21_LOCAL_TTS_VOICE")),
+		ModelDir:       strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_MODEL_DIR")),
+		SpeakerID:      parsePositiveIntOrDefault(os.Getenv("A21_SHERPA_ONNX_SPEAKER_ID"), 21),
+		ASRProvider:    strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_ASR_PROVIDER"), "mock_asr")),
+		ASRFamily:      strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_FAMILY")),
+		ASRModelDir:    strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_MODEL_DIR")),
+		ASRWAVPath:     strings.TrimSpace(os.Getenv("A21_SHERPA_ONNX_ASR_WAV")),
+		TextProvider:   strings.TrimSpace(firstNonEmpty(os.Getenv("A21_LOCAL_TEXT_PROVIDER"), "mock_text_stream")),
+		ListenSource:   "host_fixture",
+		Text:           "A21 fast companion turn.",
+		MicWindowMS:    1200,
+		MinMicFrames:   1,
+		Repeat:         1,
+		OutputDir:      "reports",
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-fast-companion-turn [--gateway-url http://127.0.0.1:21080] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say|voice_clone_cli|iflytek_tts] [--asr-provider mock_asr|sherpa_onnx] [--text-provider mock_text_stream|deepseek|local_ollama|stepfun|<A21_PROVIDER_PROFILES_PATH text_stream profile>] [--execute-text-provider] [--listen-source host_fixture|stackchan_mic] [--repeat 3] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-fast-companion-turn [--gateway-url http://127.0.0.1:21080] [--direct-source-ip 192.168.1.20] [--device-id stackchan-001] [--engine sherpa_onnx|macos_say|voice_clone_cli|iflytek_tts] [--asr-provider mock_asr|sherpa_onnx] [--text-provider mock_text_stream|deepseek|local_ollama|stepfun|<A21_PROVIDER_PROFILES_PATH text_stream profile>] [--execute-text-provider] [--listen-source host_fixture|stackchan_mic] [--repeat 3] [--output-dir reports]")
 			return 0
 		case "--gateway-url":
 			if !readStringOption(args, &i, stderr, "--gateway-url", &options.GatewayURL) {
+				return 2
+			}
+		case "--direct-source-ip":
+			if !readStringOption(args, &i, stderr, "--direct-source-ip", &options.DirectSourceIP) {
 				return 2
 			}
 		case "--device-id":
@@ -218,6 +226,13 @@ func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Wr
 		fmt.Fprintf(stderr, "stackchan fast companion turn report dir invalid: %v\n", err)
 		return 1
 	}
+	options.DirectSourceIP = strings.TrimSpace(options.DirectSourceIP)
+	if options.DirectSourceIP != "" && net.ParseIP(options.DirectSourceIP) == nil {
+		fmt.Fprintf(stderr, "--direct-source-ip must be a valid IP address\n")
+		return 2
+	}
+	restoreDirectSourceIP := applyA21DirectSourceIPForCommand(options.DirectSourceIP)
+	defer restoreDirectSourceIP()
 	report, buildErr := buildStackChanFastCompanionTurnReport(context.Background(), options)
 	if buildErr != nil && report.SchemaVersion == "" {
 		fmt.Fprintf(stderr, "stackchan fast companion turn failed: %v\n", buildErr)
@@ -243,6 +258,22 @@ func runStackChanFastCompanionTurn(args []string, stdout io.Writer, stderr io.Wr
 	return 0
 }
 
+func applyA21DirectSourceIPForCommand(sourceIP string) func() {
+	sourceIP = strings.TrimSpace(sourceIP)
+	if sourceIP == "" {
+		return func() {}
+	}
+	previous, hadPrevious := os.LookupEnv(a21DirectSourceIPEnv)
+	_ = os.Setenv(a21DirectSourceIPEnv, sourceIP)
+	return func() {
+		if hadPrevious {
+			_ = os.Setenv(a21DirectSourceIPEnv, previous)
+			return
+		}
+		_ = os.Unsetenv(a21DirectSourceIPEnv)
+	}
+}
+
 func readStringOption(args []string, index *int, stderr io.Writer, name string, target *string) bool {
 	if *index+1 >= len(args) || strings.HasPrefix(args[*index+1], "-") {
 		fmt.Fprintf(stderr, "%s requires a value\n", name)
@@ -260,15 +291,16 @@ func buildStackChanFastCompanionTurnReport(ctx context.Context, options stackCha
 	options.ListenSource = normalizeFastCompanionListenSource(options.ListenSource)
 	generatedAtMS := time.Now().UnixMilli()
 	report := stackChanFastCompanionTurnReport{
-		SchemaVersion: "a21.stackchan_fast_companion_turn.v1",
-		GeneratedAtMS: generatedAtMS,
-		Metadata:      buildLatencyBenchMetadata(),
-		Status:        "failed",
-		GatewayURL:    sanitizedOfficeGatewayURL(options.GatewayURL),
-		DeviceID:      options.DeviceID,
-		Repeat:        options.Repeat,
-		ListenSource:  options.ListenSource,
-		M3Candidate:   false,
+		SchemaVersion:  "a21.stackchan_fast_companion_turn.v1",
+		GeneratedAtMS:  generatedAtMS,
+		Metadata:       buildLatencyBenchMetadata(),
+		Status:         "failed",
+		GatewayURL:     sanitizedOfficeGatewayURL(options.GatewayURL),
+		DirectSourceIP: strings.TrimSpace(options.DirectSourceIP),
+		DeviceID:       options.DeviceID,
+		Repeat:         options.Repeat,
+		ListenSource:   options.ListenSource,
+		M3Candidate:    false,
 	}
 	gatewayReport, err := fetchFirmwareDeviceReport(options.GatewayURL)
 	if err != nil {

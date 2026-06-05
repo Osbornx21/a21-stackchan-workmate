@@ -9,7 +9,7 @@ Active override transition:
 `T-A21-LEAN-CARVE-MAINLINE-001`.
 
 Current override state:
-`S-LEAN-CARVE-GOVERNANCE-GATES-PASSED-RUNTIME-GATEWAY-EOF-BLOCKED`.
+`S-LEAN-CARVE-GOVERNANCE-GATES-PASSED-RUNTIME-PHYSICAL-STACKCHAN-OFFLINE-BLOCKED`.
 
 Internal test 4 is now the protected recovery baseline. Until P0 stabilization
 exits, no new feature work, product flash, provider chain change, side-branch
@@ -56,18 +56,29 @@ Latest lean carve update, 2026-06-05 21:20 CST:
 - Product dependency and product-binary checks passed with no
   bench/demo/evidence/professional dependency path matches and no
   lab/simulator binary symbol matches.
-- The carve is not complete: `make stackchan-fast-companion-turn` with true
-  provider intent failed before timing evidence because public Gateway
-  `/v1/devices` returned EOF. No current p95/barge-in lock exists.
-- Recovery probing from this workspace is externally blocked: public direct
-  `/healthz` and `/v1/devices` return `Empty reply from server`, and SSH to
-  `root@47.103.57.217` closes the port 22 connection before remote commands can
-  run.
+- Follow-up direct-source probing reclassified the previous public Gateway EOF
+  as a local TUN false negative. With source IP `192.168.1.27`, public
+  `/healthz`, `/v1/devices`, `/v1/voice-chain-profiles`,
+  `/v1/gateway-profiles`, official relay status, and `/xiaozhi/ota/` are
+  reachable; `/v1/voice-chain-profiles` selects LLM `stepfun`.
+- `stackchan-fast-companion-turn` now records `direct_source_ip` and uses the
+  direct-source HTTP client for its barge-in WebSocket path as well as HTTP
+  Gateway calls.
+- The carve is still not complete: the direct-source true-provider-intent
+  `make stackchan-fast-companion-turn` run wrote
+  `reports/a21-stackchan-fast-companion-turn-20260605-213250.json` and failed
+  with `device missing from Gateway`. No current p95/barge-in lock exists.
+- Read-only product recovery wrote
+  `reports/a21-stackchan-product-recovery-20260605-213040.json` with status
+  `product_offline_serial_missing`: product `44:1b:f6:e2:6a:60` is absent from
+  the Gateway registry, official relay is disconnected, and
+  `/dev/cu.usbmodem1101` is not present locally.
 - Next state candidate:
-  `S-LEAN-CARVE-RUNTIME-GATEWAY-RECOVERED-FAST-COMPANION-LOCK-PENDING`.
-- Next action: recover the ECS Gateway/public `/v1/devices` path, rerun the
-  true-provider StackChan fast companion turn, and record p95 plus barge-in
-  stop metrics in `docs/lean/CARVE_LOG.md`.
+  `S-LEAN-CARVE-PHYSICAL-STACKCHAN-RECONNECTED-FAST-COMPANION-LOCK-PENDING`.
+- Next action: physically power/connect the product StackChan and open
+  `AI.AGENT` so it reconnects to the public Gateway, then rerun the
+  direct-source true-provider StackChan fast companion turn and record p95 plus
+  barge-in stop metrics in `docs/lean/CARVE_LOG.md`.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence

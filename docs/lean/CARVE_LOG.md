@@ -59,6 +59,19 @@ run diary and must stay short.
 ## Latency Lock
 
 - 2026-06-05 current carve attempt: `A21_PROVIDER_PRIMARY=stepfun A21_GATEWAY_URL=http://47.103.57.217 A21_DEVICE_ID=44:1b:f6:e2:6a:60 A21_LOCAL_ASR_PROVIDER=mock_asr make stackchan-fast-companion-turn` failed before provider/audio timing because Gateway `GET /v1/devices` returned EOF. Report path: `reports/a21-stackchan-fast-companion-turn-20260605-211656.json`; status `failed`; finding `gateway device report failed`. No p95/barge-in success recorded.
+- 2026-06-05 continuation: the Gateway EOF was reclassified as a false
+  negative from the local TUN route. Source-bound checks with
+  `192.168.1.27` returned HTTP 200 for `/healthz`, `/v1/devices`, and
+  `/xiaozhi/ota/`; `/v1/voice-chain-profiles` reports selected LLM
+  `stepfun`. `A21_PROVIDER_PRIMARY=stepfun A21_GATEWAY_URL=http://47.103.57.217 A21_DIRECT_SOURCE_IP=192.168.1.27 A21_DEVICE_ID=44:1b:f6:e2:6a:60 A21_LOCAL_ASR_PROVIDER=sherpa_onnx A21_FAST_COMPANION_LISTEN_SOURCE=stackchan_mic make stackchan-fast-companion-turn` now fails with report path
+  `reports/a21-stackchan-fast-companion-turn-20260605-213250.json`, status
+  `failed`, and finding `device missing from Gateway`. No p95/barge-in success
+  recorded.
+- Read-only recovery precheck with the same direct-source path wrote
+  `reports/a21-stackchan-product-recovery-20260605-213040.json` with status
+  `product_offline_serial_missing`; official relay is disconnected,
+  `/dev/cu.usbmodem1101` is absent, and the next actions are
+  `connect_product_usb_or_power` and `recheck_product_recovery_status`.
 
 ## Lean Gate Results - 2026-06-05
 

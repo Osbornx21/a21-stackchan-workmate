@@ -117,7 +117,9 @@ func stackChanPCM16SilenceBase64(sampleRateHz int, durationMS int) string {
 func measureStackChanFastCompanionBargeIn(ctx context.Context, gatewayURL string, deviceID string, traceID string, sessionID string, seq uint64) (float64, error) {
 	bargeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(bargeCtx, latencyBenchWebSocketURL(gatewayURL, "/ws/audio"), nil)
+	conn, _, err := websocket.Dial(bargeCtx, latencyBenchWebSocketURL(gatewayURL, "/ws/audio"), &websocket.DialOptions{
+		HTTPClient: a21DirectHTTPClient(3 * time.Second),
+	})
 	if err != nil {
 		return stackChanFastCompanionTraceBargeInStopMS(gatewayURL, traceID, err)
 	}

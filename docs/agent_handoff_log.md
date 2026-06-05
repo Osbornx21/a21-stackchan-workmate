@@ -19,6 +19,84 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 21:33 CST - Lean Carve Runtime Lock Reclassified To Physical Offline
+
+Round goal:
+
+- Continue the lean carve goal after the governance commit by resolving the
+  north-star `stackchan-fast-companion-turn` blocker as far as current external
+  state allows.
+
+Actual completed work:
+
+- Rechecked the clean `main-lean` worktree at commit `dc11057`.
+- Re-read the current control records and found the existing TUN-safe public
+  Gateway workaround: source-bind to the current `en0` address or set
+  `A21_DIRECT_SOURCE_IP`.
+- Verified public Gateway health using `curl --interface 192.168.1.27`:
+  `/healthz`, `/v1/devices`, and `/xiaozhi/ota/` all returned HTTP 200.
+- Verified `/v1/voice-chain-profiles` currently selects LLM `stepfun`.
+- Added `--direct-source-ip` / `direct_source_ip` support to
+  `stackchan-fast-companion-turn`, and made its barge-in WebSocket use the
+  same direct HTTP client path as the rest of the A21 command.
+- Reran the north-star command with true provider intent and
+  `A21_DIRECT_SOURCE_IP=192.168.1.27`.
+- Ran read-only `stackchan-product-recovery` with the same direct-source path.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+- `docs/lean/CARVE_LOG.md`
+- `docs/project_state_machine.md`
+- `internal/app/fast_companion_turn_01.go`
+- `internal/app/fast_companion_turn_02.go`
+- `internal/app/app_part_14_test.go`
+
+Unfinished items:
+
+- The north-star p95/barge-in lock is still not satisfied because the product
+  StackChan device is absent from the public Gateway registry and not present
+  on local USB.
+
+Known risks/blockers:
+
+- Direct, unbound public curls from this Mac can still produce false
+  `Empty reply from server` because TUN routes the ECS IP through the fake-IP
+  interface.
+- Current direct-source `/v1/devices` only shows a stale virtual bench device.
+  Product `44:1b:f6:e2:6a:60` is missing.
+- `GET /v1/stackchan/official/status?device_id=44:1b:f6:e2:6a:60` returns
+  `connected=false` and `next_action=connect_official_stackchan_ws`.
+- Local `/dev/cu.usbmodem1101` is absent; read-only product recovery status is
+  `product_offline_serial_missing`.
+
+Recommended next action:
+
+- Physically power/connect the product StackChan and open `AI.AGENT` so it
+  reconnects to `ws://47.103.57.217/v1/xiaozhi`, then rerun
+  `A21_PROVIDER_PRIMARY=stepfun A21_GATEWAY_URL=http://47.103.57.217 A21_DIRECT_SOURCE_IP=192.168.1.27 A21_DEVICE_ID=44:1b:f6:e2:6a:60 A21_LOCAL_ASR_PROVIDER=sherpa_onnx A21_FAST_COMPANION_LISTEN_SOURCE=stackchan_mic make stackchan-fast-companion-turn`.
+
+Tests/build/runtime results:
+
+- Focused app tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestRunStackChanFastCompanionTurn' -count=1`.
+- `bash scripts/lean-gate.sh` passed.
+- Direct-source public Gateway probes passed for `/healthz`, `/v1/devices`,
+  `/v1/voice-chain-profiles`, `/v1/gateway-profiles`, official relay status,
+  and `/xiaozhi/ota/`.
+- `stackchan-fast-companion-turn` report
+  `reports/a21-stackchan-fast-companion-turn-20260605-213250.json` failed with
+  `device missing from Gateway`; no p95/barge-in success was recorded.
+- Read-only recovery report
+  `reports/a21-stackchan-product-recovery-20260605-213040.json` returned
+  `product_offline_serial_missing`.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider key output, no V21 execution,
+  no generic Xiaozhi lane, no ECS restart, no system proxy mutation, and no
+  Git prune/gc.
+
 ## 2026-06-05 21:20 CST - Lean Carve Mainline Governance Rescue
 
 Round goal:

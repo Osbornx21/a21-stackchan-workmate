@@ -776,7 +776,7 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--device-id", "stackchan-001", "--engine", "macos_say", "--text", "用户输入不要进报告", "--output-dir", dir}, &stdout, &stderr)
+	code := Run([]string{"stackchan-fast-companion-turn", "--gateway-url", server.URL, "--direct-source-ip", "127.0.0.1", "--device-id", "stackchan-001", "--engine", "macos_say", "--text", "用户输入不要进报告", "--output-dir", dir}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("code = %d, want 0: %s", code, stderr.String())
@@ -790,6 +790,7 @@ func TestRunStackChanFastCompanionTurnDeliversAckAndAnswerWithoutLeakingText(t *
 	for _, want := range []string{
 		`"schema_version": "a21.stackchan_fast_companion_turn.v1"`,
 		`"status": "passed"`,
+		`"direct_source_ip": "127.0.0.1"`,
 		`"device_online": true`,
 		`"local_ack_playback_chunks": 2`,
 		`"answer_playback_chunks": 2`,
