@@ -9618,29 +9618,110 @@ func (s *Server) maybeSendXiaozhiTouchReaction(ctx context.Context, session *xia
 		return
 	}
 	id := session.identitySnapshot()
-	plans := xiaozhiTouchReactionPlans(session, event)
+	plans := officialTouchReactionPlans(event)
 	if len(plans) == 0 {
 		return
 	}
-	for _, req := range plans {
-		delivery, status, message := s.sendXiaozhiMCPControl(ctx, req)
-		if status != 0 {
-			s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.failed", s.now().UnixMilli())
-			if message != "" {
+	socket, officialDeviceID, ok := s.officialStackChanSocketForXiaozhiDevice(id.deviceID)
+	if !ok {
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws_not_connected", s.now().UnixMilli())
+		s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
+			"last_touch_reaction_status":    "failed_no_official_ws",
+			"last_touch_reaction_transport": "stackchan_official_ws",
+		})
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	writeCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	deliveredPackets := 0
+	surfaces := map[string]string{
+		"last_touch_reaction_transport": "stackchan_official_ws",
+		"last_touch_reaction_target":    officialDeviceID,
+	}
+	socket.writeMu.Lock()
+	for _, plan := range plans {
+		for _, packet := range plan.Packets {
+			if err := socket.conn.Write(writeCtx, websocket.MessageBinary, packet.Bytes()); err != nil {
+				socket.writeMu.Unlock()
+				s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws_delivery_error", s.now().UnixMilli())
 				s.recordXiaozhiTouchReactionEcho(session, event, map[string]string{
-					"last_touch_reaction_status": "failed_" + strconv.Itoa(status),
+					"last_touch_reaction_status":    "failed_delivery_error",
+					"last_touch_reaction_transport": "stackchan_official_ws",
 				})
+				return
 			}
+			deliveredPackets++
+		}
+		for key, value := range plan.Metadata.Surfaces {
+			surfaces["last_touch_reaction_"+key] = value
+		}
+	}
+	socket.writeMu.Unlock()
+	if deliveredPackets == 0 {
+		s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws_empty", s.now().UnixMilli())
+		return
+	}
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "xiaozhi.touch_reaction.official_ws.sent", s.now().UnixMilli())
+	echo := map[string]string{
+		"last_touch_reaction_status":  "delivered",
+		"last_touch_reaction_packets": strconv.Itoa(deliveredPackets),
+	}
+	for key, value := range surfaces {
+		echo[key] = value
+	}
+	s.recordXiaozhiTouchReactionEcho(session, event, echo)
+}
+
+func officialTouchReactionPlans(event xiaozhitransport.DeviceExtensionEvent) []stackchantransport.OfficialActionPlan {
+	events := officialTouchReactionEvents(event)
+	if len(events) == 0 {
+		return nil
+	}
+	plans := make([]stackchantransport.OfficialActionPlan, 0, len(events))
+	for _, reaction := range events {
+		plan, err := stackchantransport.BuildOfficialActionPlan(reaction)
+		if err != nil {
 			continue
 		}
-		genericMarker := "xiaozhi.mcp." + delivery.Marker + ".sent"
-		reactionMarker := "xiaozhi.touch_reaction." + delivery.Marker + ".sent"
-		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, genericMarker, s.now().UnixMilli())
-		s.recordTrace(delivery.Response.TraceID, delivery.Response.SessionID, delivery.Response.DeviceID, reactionMarker, s.now().UnixMilli())
-		echo := xiaozhiMCPActivity(delivery.Marker, delivery.Args)
-		echo["last_touch_reaction_status"] = "delivered"
-		echo["last_touch_reaction_tool"] = delivery.Marker
-		s.recordXiaozhiTouchReactionEcho(session, event, echo)
+		plans = append(plans, plan)
+	}
+	return plans
+}
+
+func officialTouchReactionEvents(event xiaozhitransport.DeviceExtensionEvent) []xiaozhitransport.DeviceExtensionEvent {
+	switch event.Value {
+	case "screen_tap":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindFace, Value: "attentive"},
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 48},
+		}
+	case "screen_barge_in":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindFace, Value: "attentive"},
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "stop"},
+		}
+	case "top_tap":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "nod"},
+		}
+	case "top_swipe_forward":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 62},
+		}
+	case "top_swipe_backward":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "shake"},
+		}
+	case "top_barge_in":
+		return []xiaozhitransport.DeviceExtensionEvent{
+			{Kind: xiaozhitransport.DeviceEventKindFace, Value: "attentive"},
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "stop"},
+		}
+	default:
+		return nil
 	}
 }
 
@@ -9998,11 +10079,9 @@ func (s *Server) xiaozhiProductTouchEventsAllowed(session *xiaozhiSession) bool 
 }
 
 func (s *Server) xiaozhiProductTouchReactionsAllowed(session *xiaozhiSession) bool {
-	features := session.featuresSnapshot()
 	return s != nil &&
 		s.xiaozhiProductTouchReactions &&
-		s.xiaozhiProductTouchEventsAllowed(session) &&
-		features.MCP
+		s.xiaozhiProductTouchEventsAllowed(session)
 }
 
 func (s *Server) xiaozhiProductStateReactionsAllowed(session *xiaozhiSession) bool {

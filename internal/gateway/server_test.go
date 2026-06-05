@@ -25,6 +25,7 @@ import (
 	"a21.local/a21/internal/audio/opuscodec"
 	"a21.local/a21/internal/protocol"
 	"a21.local/a21/internal/providers"
+	stackchantransport "a21.local/a21/internal/transport/stackchan"
 	xiaozhitransport "a21.local/a21/internal/transport/xiaozhi"
 	"a21.local/a21/internal/v21adapter"
 	"github.com/coder/websocket"
@@ -6718,7 +6719,7 @@ func TestXiaozhiProductTouchBargeInCancelsActiveTurnAndStopsPlayback(t *testing.
 	}
 }
 
-func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
+func TestXiaozhiProductTouchReactionsUseOfficialRelayNotXiaozhiMCP(t *testing.T) {
 	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
 		XiaozhiProductTouchEvents:    true,
 		XiaozhiProductTouchReactions: true,
@@ -6727,6 +6728,12 @@ func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	t.Cleanup(cancel)
+
+	officialConn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?device_id="+url.QueryEscape("44:1b:f6:e2:6a:60")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = officialConn.Close(websocket.StatusNormalClosure, "test done") })
 
 	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/v1/xiaozhi"), nil)
 	if err != nil {
@@ -6762,40 +6769,21 @@ func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	readMCP := func() (string, map[string]any) {
-		message := readXiaozhiJSON(t, ctx, conn)
-		if message["type"] != "mcp" || message["trace_id"] != "a21-trace-xiaozhi-product-touch-reaction" || message["device_id"] != "44:1b:f6:e2:6a:60" {
-			t.Fatalf("reaction mcp wrapper = %#v", message)
-		}
-		payload, ok := message["payload"].(map[string]any)
-		if !ok {
-			t.Fatalf("reaction payload = %#v", message["payload"])
-		}
-		params, ok := payload["params"].(map[string]any)
-		if !ok {
-			t.Fatalf("reaction params = %#v", payload["params"])
-		}
-		args, ok := params["arguments"].(map[string]any)
-		if !ok {
-			t.Fatalf("reaction args = %#v", params["arguments"])
-		}
-		return fmt.Sprint(params["name"]), args
+	msgType, frame, err := officialConn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	tool, args := readMCP()
-	if tool != xiaozhiMCPRobotSetLEDColorToolName ||
-		args["red"] != float64(0) ||
-		args["green"] != float64(120) ||
-		args["blue"] != float64(90) {
-		t.Fatalf("led reaction = tool:%s args:%#v", tool, args)
+	if msgType != websocket.MessageBinary || len(frame) < 5 || frame[0] != stackchantransport.DataTypeControlMotion {
+		t.Fatalf("official reaction frame type=%v frame=%#v, want ControlMotion", msgType, frame[:min(len(frame), 5)])
 	}
-	tool, args = readMCP()
-	if tool != xiaozhiMCPRobotSetHeadAnglesToolName ||
-		args["yaw"] != float64(18) ||
-		args["pitch"] != float64(24) ||
-		args["speed"] != float64(200) {
-		t.Fatalf("head reaction = tool:%s args:%#v", tool, args)
+	var motion map[string]map[string]int
+	if err := json.Unmarshal(frame[5:], &motion); err != nil {
+		t.Fatal(err)
 	}
+	if motion["pitchServo"]["angle"] != 620 {
+		t.Fatalf("official touch reaction motion = %#v, want top swipe forward pitch 620", motion)
+	}
+	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 
 	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-xiaozhi-product-touch-reaction")
 	if err != nil {
@@ -6808,11 +6796,18 @@ func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
 	}
 	for _, want := range []string{
 		"device.touch.top.swipe_forward.received",
-		"xiaozhi.touch_reaction.robot_led_color.sent",
-		"xiaozhi.touch_reaction.robot_head_angles_set.sent",
+		"xiaozhi.touch_reaction.official_ws.sent",
 	} {
 		if !traceContains(traces.Events, want) {
 			t.Fatalf("trace missing %q: %+v", want, traces.Events)
+		}
+	}
+	for _, forbidden := range []string{
+		"xiaozhi.touch_reaction.robot_led_color.sent",
+		"xiaozhi.touch_reaction.robot_head_angles_set.sent",
+	} {
+		if traceContains(traces.Events, forbidden) {
+			t.Fatalf("trace contains forbidden Xiaozhi MCP touch reaction %q: %+v", forbidden, traces.Events)
 		}
 	}
 
@@ -6832,31 +6827,14 @@ func TestXiaozhiProductTouchReactionsSendBoundedBodyMCP(t *testing.T) {
 	if !ok ||
 		runtimeEcho["last_touch_reaction_status"] != "delivered" ||
 		runtimeEcho["last_touch_reaction_event"] != "top_swipe_forward" ||
-		runtimeEcho["robot_head_yaw"] != "18" ||
-		runtimeEcho["robot_led_green"] != "120" {
-		t.Fatalf("registry runtime_echo = %#v, want touch reaction echo", registry["runtime_echo"])
-	}
-
-	if err := wsjson.Write(ctx, conn, map[string]any{
-		"type": "mcp",
-		"payload": map[string]any{
-			"jsonrpc": "2.0",
-			"id":      1,
-			"result":  map[string]any{"content": []any{}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
-	registry = fetchSingleDeviceRegistryItem(t, httpServer.URL)
-	if registry["last_event"] != "xiaozhi.mcp.response.received" ||
-		registry["last_touch_event"] != "touch.top.swipe_forward" ||
-		registry["last_touch_source"] != "top_sensor" {
-		t.Fatalf("registry after mcp response = %#v, want stable last_touch_event", registry)
+		runtimeEcho["last_touch_reaction_transport"] != "stackchan_official_ws" ||
+		runtimeEcho["last_touch_reaction_packets"] != "1" ||
+		runtimeEcho["last_touch_reaction_servo_y"] != "pitch_clamped" {
+		t.Fatalf("registry runtime_echo = %#v, want official touch reaction echo", registry["runtime_echo"])
 	}
 }
 
-func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
+func TestXiaozhiProductTouchReactionsDoNotFallbackToXiaozhiMCPWithoutOfficialRelay(t *testing.T) {
 	httpServer := httptest.NewServer(NewServerWithOptions(ServerOptions{
 		XiaozhiProductTouchEvents:    true,
 		XiaozhiProductTouchReactions: true,
@@ -6886,8 +6864,8 @@ func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
 	if !ok || a21["profile"] != "product" || a21["touch_events"] != true {
 		t.Fatalf("a21 hello extension = %#v, want product touch allowance", reply["a21"])
 	}
-	if _, ok := a21["touch_reactions"]; ok {
-		t.Fatalf("touch reactions allowed without mcp: %#v", a21)
+	if a21["touch_reactions"] != true {
+		t.Fatalf("touch reactions = %#v, want product official relay reaction advertised", a21)
 	}
 
 	if err := wsjson.Write(ctx, conn, map[string]any{
@@ -6905,6 +6883,12 @@ func TestXiaozhiProductTouchReactionsRequireMCP(t *testing.T) {
 	registry := fetchSingleDeviceRegistryItem(t, httpServer.URL)
 	if registry["last_event"] != "touch.top.tap" || registry["last_touch_event"] != "touch.top.tap" {
 		t.Fatalf("registry touch without mcp = %#v", registry)
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok ||
+		runtimeEcho["last_touch_reaction_status"] != "failed_no_official_ws" ||
+		runtimeEcho["last_touch_reaction_transport"] != "stackchan_official_ws" {
+		t.Fatalf("registry runtime_echo without official relay = %#v, want failed_no_official_ws and no Xiaozhi MCP fallback", registry["runtime_echo"])
 	}
 }
 
