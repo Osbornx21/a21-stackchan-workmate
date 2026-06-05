@@ -81,7 +81,7 @@ func buildOfficialPacketsForNormalized(normalized xiaozhi.DeviceExtensionEvent) 
 		if err != nil {
 			return nil, err
 		}
-		motion, err := buildMotionPitchPacket(yAngleForState(normalized.Value), 300)
+		motion, err := buildMotionPitchPacket(yAngleForState(normalized.Value), 520)
 		if err != nil {
 			return nil, err
 		}
@@ -186,9 +186,9 @@ func buildMotionPackets(event xiaozhi.DeviceExtensionEvent) ([]OfficialPacket, e
 	case "look_up":
 		yAngle := event.YAngle
 		if yAngle == 0 {
-			yAngle = 38
+			yAngle = 68
 		}
-		packet, err := buildMotionPitchPacket(yAngle, 300)
+		packet, err := buildMotionPitchPacket(yAngle, 650)
 		if err != nil {
 			return nil, err
 		}
@@ -291,11 +291,11 @@ func faceForState(state string) string {
 func yAngleForState(state string) int {
 	switch state {
 	case "listening":
-		return 38
+		return 62
 	case "thinking":
-		return 52
+		return 70
 	case "speaking":
-		return 48
+		return 58
 	default:
 		return 45
 	}
@@ -331,17 +331,19 @@ func rgbForState(state string) string {
 
 func nodSequence() []officialDanceKeyframe {
 	return []officialDanceKeyframe{
-		{PitchServo: &officialServo{Angle: 380, Speed: 450}, DurationMS: 120},
-		{PitchServo: &officialServo{Angle: 520, Speed: 450}, DurationMS: 120},
-		{PitchServo: &officialServo{Angle: 450, Speed: 350}, DurationMS: 160},
+		{PitchServo: &officialServo{Angle: 320, Speed: 760}, DurationMS: 140},
+		{PitchServo: &officialServo{Angle: 720, Speed: 860}, DurationMS: 150},
+		{PitchServo: &officialServo{Angle: 450, Speed: 620}, DurationMS: 170},
 	}
 }
 
 func shakeSequence() []officialDanceKeyframe {
 	return []officialDanceKeyframe{
-		{YawServo: yawServo(-120, 450), DurationMS: 120},
-		{YawServo: yawServo(120, 450), DurationMS: 120},
-		{YawServo: yawServo(0, 350), DurationMS: 160},
+		{YawServo: yawServo(-520, 860), DurationMS: 140},
+		{YawServo: yawServo(520, 860), DurationMS: 150},
+		{YawServo: yawServo(-360, 740), DurationMS: 120},
+		{YawServo: yawServo(360, 740), DurationMS: 120},
+		{YawServo: yawServo(0, 620), DurationMS: 170},
 	}
 }
 
@@ -349,10 +351,10 @@ func danceSequence() []officialDanceKeyframe {
 	happy := officialAvatarForFace("happy")
 	speaking := officialAvatarForFace("speaking")
 	return []officialDanceKeyframe{
-		{LeftEye: &happy.LeftEye, RightEye: &happy.RightEye, Mouth: &happy.Mouth, PitchServo: &officialServo{Angle: 420, Speed: 500}, DurationMS: 140},
-		{YawServo: yawServo(-180, 600), PitchServo: &officialServo{Angle: 540, Speed: 500}, DurationMS: 160},
-		{LeftEye: &speaking.LeftEye, RightEye: &speaking.RightEye, Mouth: &speaking.Mouth, YawServo: yawServo(180, 600), DurationMS: 160},
-		{YawServo: yawServo(0, 450), PitchServo: &officialServo{Angle: 450, Speed: 350}, DurationMS: 180},
+		{LeftEye: &happy.LeftEye, RightEye: &happy.RightEye, Mouth: &happy.Mouth, PitchServo: &officialServo{Angle: 360, Speed: 760}, DurationMS: 140},
+		{YawServo: yawServo(-650, 880), PitchServo: &officialServo{Angle: 700, Speed: 820}, DurationMS: 160},
+		{LeftEye: &speaking.LeftEye, RightEye: &speaking.RightEye, Mouth: &speaking.Mouth, YawServo: yawServo(650, 880), DurationMS: 160},
+		{YawServo: yawServo(0, 650), PitchServo: &officialServo{Angle: 450, Speed: 600}, DurationMS: 180},
 	}
 }
 
@@ -361,11 +363,11 @@ func yawServo(angle int, speed int) *officialServo {
 }
 
 func clampYawAngle(angle int) int {
-	if angle < -180 {
-		return -180
+	if angle < -1280 {
+		return -1280
 	}
-	if angle > 180 {
-		return 180
+	if angle > 1280 {
+		return 1280
 	}
 	return angle
 }

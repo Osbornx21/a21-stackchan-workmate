@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -35,13 +36,14 @@ const (
 )
 
 type DeviceExtensionEvent struct {
-	Kind     DeviceEventKind
-	Value    string
-	YAngle   int
-	StreamID string
-	Source   string
-	Text     string
-	Reason   string
+	Kind        DeviceEventKind
+	Value       string
+	YAngle      int
+	StreamID    string
+	Source      string
+	Text        string
+	Reason      string
+	RuntimeEcho map[string]string
 }
 
 type InlineDeviceMarks struct {
@@ -70,6 +72,14 @@ type deviceExtensionWire struct {
 	TraceID   string `json:"trace_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	DeviceID  string `json:"device_id,omitempty"`
+
+	BatteryLevel       *int   `json:"battery_level,omitempty"`
+	BatteryCharging    *bool  `json:"battery_charging,omitempty"`
+	BatteryDischarging *bool  `json:"battery_discharging,omitempty"`
+	ExternalPower      *bool  `json:"external_power,omitempty"`
+	PowerSource        string `json:"power_source,omitempty"`
+	PMICProfile        string `json:"pmic_power_key_profile,omitempty"`
+	PMICPowerStatus    string `json:"pmic_power_status,omitempty"`
 }
 
 var inlineDeviceMarkPattern = regexp.MustCompile(`\[(state|face|display|motion):([^\]\s]+)\]`)
@@ -107,9 +117,10 @@ func ParseDeviceExtensionEvent(data []byte) (DeviceExtensionEvent, error) {
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: device", ErrUnsupportedMessageType)
 	}
 	event := DeviceExtensionEvent{
-		Kind:   DeviceEventKind(firstNonEmpty(wire.Kind, wire.Event)),
-		Text:   wire.Text,
-		Reason: wire.Reason,
+		Kind:        DeviceEventKind(firstNonEmpty(wire.Kind, wire.Event)),
+		Text:        wire.Text,
+		Reason:      wire.Reason,
+		RuntimeEcho: deviceExtensionRuntimeEchoFromWire(wire),
 	}
 	switch event.Kind {
 	case DeviceEventKindState:
@@ -144,18 +155,24 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 	}
 
 	normalized := DeviceExtensionEvent{
-		Kind:     kind,
-		Value:    value,
-		YAngle:   event.YAngle,
-		StreamID: strings.TrimSpace(event.StreamID),
-		Source:   strings.TrimSpace(strings.ToLower(event.Source)),
-		Text:     strings.TrimSpace(event.Text),
-		Reason:   strings.TrimSpace(event.Reason),
+		Kind:        kind,
+		Value:       value,
+		YAngle:      event.YAngle,
+		StreamID:    strings.TrimSpace(event.StreamID),
+		Source:      strings.TrimSpace(strings.ToLower(event.Source)),
+		Text:        strings.TrimSpace(event.Text),
+		Reason:      strings.TrimSpace(event.Reason),
+		RuntimeEcho: normalizeDeviceRuntimeEcho(event.RuntimeEcho),
 	}
 	if containsLegacyIdentity(normalized.StreamID) ||
 		containsLegacyIdentity(normalized.Text) ||
 		containsLegacyIdentity(normalized.Reason) {
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: device extension", ErrLegacyIdentity)
+	}
+	for key, value := range normalized.RuntimeEcho {
+		if containsLegacyIdentity(key) || containsLegacyIdentity(value) {
+			return DeviceExtensionEvent{}, fmt.Errorf("%w: device extension", ErrLegacyIdentity)
+		}
 	}
 	switch kind {
 	case DeviceEventKindState:
@@ -199,6 +216,92 @@ func NormalizeDeviceExtensionEvent(event DeviceExtensionEvent) (DeviceExtensionE
 		return DeviceExtensionEvent{}, fmt.Errorf("%w: kind", ErrUnsupportedDeviceEventKind)
 	}
 	return normalized, nil
+}
+
+func deviceExtensionRuntimeEchoFromWire(wire deviceExtensionWire) map[string]string {
+	echo := map[string]string{}
+	addInt := func(key string, value *int) {
+		if value != nil {
+			echo[key] = strconv.Itoa(*value)
+		}
+	}
+	addBool := func(key string, value *bool) {
+		if value != nil {
+			echo[key] = strconv.FormatBool(*value)
+		}
+	}
+	addString := func(key string, value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			echo[key] = value
+		}
+	}
+	addInt("battery_level", wire.BatteryLevel)
+	addBool("battery_charging", wire.BatteryCharging)
+	addBool("battery_discharging", wire.BatteryDischarging)
+	addBool("external_power", wire.ExternalPower)
+	addString("power_source", wire.PowerSource)
+	addString("pmic_power_key_profile", wire.PMICProfile)
+	addString("pmic_power_status", wire.PMICPowerStatus)
+	if len(echo) == 0 {
+		return nil
+	}
+	return echo
+}
+
+func normalizeDeviceRuntimeEcho(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		"battery_level":          {},
+		"battery_charging":       {},
+		"battery_discharging":    {},
+		"external_power":         {},
+		"power_source":           {},
+		"pmic_power_key_profile": {},
+		"pmic_power_status":      {},
+	}
+	normalized := map[string]string{}
+	for key, value := range input {
+		key = strings.TrimSpace(strings.ToLower(key))
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		if _, ok := allowed[key]; !ok {
+			continue
+		}
+		if len(value) > 96 || !safeDeviceRuntimeEchoValue(value) {
+			continue
+		}
+		normalized[key] = value
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func safeDeviceRuntimeEchoValue(value string) bool {
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= 'A' && r <= 'Z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		switch r {
+		case '_', '-', '.', ':', '+':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ParseInlineDeviceMarks(text string) (InlineDeviceMarks, error) {

@@ -7016,32 +7016,32 @@ func xiaozhiBodyPresetPlans(deviceID string, preset string) (string, []XiaozhiMC
 	case "ready":
 		return preset, []XiaozhiMCPControlRequest{
 			led(0, 36, 96),
-			head(0, 22, 180),
+			head(0, 45, 420),
 		}, nil
 	case "listening":
 		return preset, []XiaozhiMCPControlRequest{
 			led(0, 120, 88),
-			head(0, 35, 220),
+			head(0, 62, 520),
 		}, nil
 	case "thinking":
 		return preset, []XiaozhiMCPControlRequest{
 			led(120, 72, 0),
-			head(-12, 28, 180),
+			head(-28, 54, 480),
 		}, nil
 	case "speaking":
 		return preset, []XiaozhiMCPControlRequest{
 			led(20, 24, 168),
-			head(12, 30, 220),
+			head(24, 56, 520),
 		}, nil
 	case "celebrate":
 		return preset, []XiaozhiMCPControlRequest{
 			led(0, 168, 80),
-			head(18, 36, 260),
+			head(45, 68, 680),
 		}, nil
 	case "reset_idle":
 		return preset, []XiaozhiMCPControlRequest{
 			led(0, 0, 32),
-			head(0, 18, 180),
+			head(0, 45, 420),
 		}, nil
 	default:
 		return "", nil, errors.New("body_preset must be ready, listening, thinking, speaking, celebrate, or reset_idle")
@@ -7074,34 +7074,34 @@ func xiaozhiBodyMotionPlans(deviceID string, motion string) (string, []XiaozhiMC
 	case "look_up":
 		return motion, []XiaozhiMCPControlRequest{
 			led(0, 80, 168),
-			head(0, 42, 220),
+			head(0, 68, 620),
 		}, nil
 	case "nod":
 		return motion, []XiaozhiMCPControlRequest{
 			led(0, 120, 88),
-			head(0, 38, 260),
-			head(0, 18, 260),
-			head(0, 30, 220),
+			head(0, 32, 700),
+			head(0, 72, 820),
+			head(0, 45, 620),
 		}, nil
 	case "shake":
 		return motion, []XiaozhiMCPControlRequest{
 			led(120, 60, 0),
-			head(-18, 28, 260),
-			head(18, 28, 260),
-			head(0, 24, 220),
+			head(-45, 45, 780),
+			head(45, 45, 780),
+			head(0, 45, 620),
 		}, nil
 	case "dance":
 		return motion, []XiaozhiMCPControlRequest{
 			led(168, 80, 0),
-			head(-18, 36, 260),
+			head(-55, 38, 820),
 			led(0, 168, 80),
-			head(18, 36, 260),
-			head(0, 24, 220),
+			head(55, 70, 820),
+			head(0, 45, 620),
 		}, nil
 	case "stop":
 		return motion, []XiaozhiMCPControlRequest{
 			led(0, 0, 32),
-			head(0, 18, 200),
+			head(0, 45, 620),
 		}, nil
 	default:
 		return "", nil, errors.New("body_motion must be look_up, nod, shake, dance, or stop")
@@ -8978,7 +8978,7 @@ func (s *Server) handleXiaozhiDeviceExtension(ctx context.Context, conn *websock
 			return true
 		}
 	case xiaozhitransport.DeviceEventKindHeartbeat:
-		s.recordXiaozhiHeartbeat(session)
+		s.recordXiaozhiHeartbeat(session, event)
 		return true
 	case xiaozhitransport.DeviceEventKindTouch:
 		if !s.recordXiaozhiTouchEvent(session, event) {
@@ -9526,13 +9526,54 @@ func (s *Server) recordXiaozhiPlaybackStopDone(session *xiaozhiSession, streamID
 	s.recordXiaozhiPlaybackEvent(session, "device.playback.stop_done", streamID)
 }
 
-func (s *Server) recordXiaozhiHeartbeat(session *xiaozhiSession) {
+func (s *Server) recordXiaozhiHeartbeat(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) {
 	id := session.identitySnapshot()
 	if strings.TrimSpace(id.deviceID) == "" {
 		return
 	}
-	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "device.heartbeat", s.now().UnixMilli())
-	s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
+	nowMS := s.now().UnixMilli()
+	s.recordTrace(id.traceID, id.sessionID, id.deviceID, "device.heartbeat", nowMS)
+	runtimeEcho := xiaozhiHeartbeatRuntimeEcho(event)
+	if len(runtimeEcho) == 0 {
+		s.recordXiaozhiDeviceActivity(session, "device.heartbeat", nil)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record := s.devices[id.deviceID]
+	if record.DeviceID == "" {
+		record.DeviceID = id.deviceID
+		record.FirstSeenMS = nowMS
+	}
+	if record.IdentityStatus == "" {
+		record.IdentityStatus = "unknown"
+	}
+	record.ConnectionStatus = "online"
+	record.LastEvent = protocol.DeviceEventKind("device.heartbeat")
+	record.LastTraceID = id.traceID
+	record.LastSessionID = id.sessionID
+	record.LastSeenMS = nowMS
+	record.RuntimeEcho = mergeDeviceCapabilities(record.RuntimeEcho, runtimeEcho)
+	s.devices[id.deviceID] = record
+}
+
+func xiaozhiHeartbeatRuntimeEcho(event xiaozhitransport.DeviceExtensionEvent) map[string]string {
+	if event.Kind != xiaozhitransport.DeviceEventKindHeartbeat || len(event.RuntimeEcho) == 0 {
+		return nil
+	}
+	echo := map[string]string{}
+	for key, value := range event.RuntimeEcho {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		echo[key] = value
+	}
+	if len(echo) == 0 {
+		return nil
+	}
+	return echo
 }
 
 func (s *Server) recordXiaozhiTouchEvent(session *xiaozhiSession, event xiaozhitransport.DeviceExtensionEvent) bool {
@@ -9696,7 +9737,7 @@ func officialTouchReactionEvents(event xiaozhitransport.DeviceExtensionEvent) []
 	case "screen_tap":
 		return []xiaozhitransport.DeviceExtensionEvent{
 			{Kind: xiaozhitransport.DeviceEventKindFace, Value: "attentive"},
-			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 48},
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 68},
 		}
 	case "screen_barge_in":
 		return []xiaozhitransport.DeviceExtensionEvent{
@@ -9709,7 +9750,7 @@ func officialTouchReactionEvents(event xiaozhitransport.DeviceExtensionEvent) []
 		}
 	case "top_swipe_forward":
 		return []xiaozhitransport.DeviceExtensionEvent{
-			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 62},
+			{Kind: xiaozhitransport.DeviceEventKindMotion, Value: "look_up", YAngle: 78},
 		}
 	case "top_swipe_backward":
 		return []xiaozhitransport.DeviceExtensionEvent{
@@ -9855,33 +9896,33 @@ func xiaozhiTouchReactionPlans(session *xiaozhiSession, event xiaozhitransport.D
 	switch event.Value {
 	case "screen_tap":
 		return []XiaozhiMCPControlRequest{
-			led(0, 72, 168),
-			head(nil, 28, 180),
+			led(0, 120, 168),
+			head(nil, 62, 560),
 		}
 	case "screen_barge_in":
 		return []XiaozhiMCPControlRequest{
 			led(168, 40, 0),
-			head(xiaozhiReactionInt(0), 24, 240),
+			head(xiaozhiReactionInt(0), 38, 720),
 		}
 	case "top_tap":
 		return []XiaozhiMCPControlRequest{
 			led(60, 0, 168),
-			head(nil, 32, 180),
+			head(nil, 68, 680),
 		}
 	case "top_swipe_forward":
 		return []XiaozhiMCPControlRequest{
 			led(0, 120, 90),
-			head(xiaozhiReactionInt(18), 24, 200),
+			head(xiaozhiReactionInt(45), 70, 780),
 		}
 	case "top_swipe_backward":
 		return []XiaozhiMCPControlRequest{
 			led(120, 60, 0),
-			head(xiaozhiReactionInt(-18), 24, 200),
+			head(xiaozhiReactionInt(-45), 45, 780),
 		}
 	case "top_barge_in":
 		return []XiaozhiMCPControlRequest{
 			led(168, 24, 0),
-			head(xiaozhiReactionInt(0), 20, 240),
+			head(xiaozhiReactionInt(0), 35, 720),
 		}
 	default:
 		return nil
@@ -13091,7 +13132,9 @@ func (s *Server) powerLifecycle(deviceID string) PowerLifecycleResponse {
 	if status := strings.TrimSpace(capabilities["battery"]); status != "" {
 		batteryTelemetry = status
 	}
-	if strings.TrimSpace(runtimeEcho["battery_mv"]) != "" {
+	hasRuntimeBatteryTelemetry := strings.TrimSpace(runtimeEcho["battery_mv"]) != "" ||
+		strings.TrimSpace(runtimeEcho["battery_level"]) != ""
+	if hasRuntimeBatteryTelemetry {
 		batteryTelemetry = "diagnostic_runtime_echo"
 	}
 	physicalAccepted := found && capabilities["power_lifecycle_physical_accepted"] == "true"
@@ -13103,7 +13146,7 @@ func (s *Server) powerLifecycle(deviceID string) PowerLifecycleResponse {
 	items := []PowerLifecycleItem{
 		powerLifecycleItem("runtime_online", "Runtime online", found && record.ConnectionStatus == "online", false, record.ConnectionStatus, "gateway_registry", "reconnect_device"),
 		powerLifecycleItem("xiaozhi_socket", "Xiaozhi socket", xiaozhiOnline, false, boolStatus(xiaozhiOnline), "gateway_socket_registry", "restore_xiaozhi_socket"),
-		powerLifecycleItem("battery_telemetry", "Battery telemetry", strings.TrimSpace(runtimeEcho["battery_mv"]) != "", false, batteryTelemetry, "device_runtime_echo", "run_sensor_battery_diagnostic_probe"),
+		powerLifecycleItem("battery_telemetry", "Battery telemetry", hasRuntimeBatteryTelemetry, false, batteryTelemetry, "device_runtime_echo", "run_sensor_battery_diagnostic_probe"),
 		powerLifecycleItem("pmic_power_key_profile", "PMIC power-key profile", pmicProfileAccepted, pmicProfileAccepted, pmicProfileStatus, "operator_or_instrument", "accept_pmic_power_key_profile"),
 		powerLifecycleItem("no_cable_cold_boot", "No-cable cold boot", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_no_cable_cold_boot"),
 		powerLifecycleItem("physical_power_button", "Physical power button", physicalAccepted, physicalAccepted, capabilities["last_power_lifecycle_acceptance_status"], "operator_or_instrument", "accept_power_button_start"),

@@ -19,6 +19,67 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 12:54 CST - StackChan Native Motion And Power Build Ready
+
+Round goal:
+
+- Address the foreground report that no-USB power behavior is still not
+  accepted and StackChan body/touch motion amplitude is visibly below the
+  official kit.
+
+Actual completed work:
+
+- Increased official StackChan state, preset, motion, and touch-reaction body
+  amplitudes in Gateway and the official avatar transport.
+- Increased firmware-local touch RGB, vibration, and servo feedback amplitudes
+  and removed the local `isMoving()` suppression that made repeated physical
+  touches feel ignored.
+- Added Xiaozhi device heartbeat battery/power-source runtime echo parsing and
+  Gateway recording for no-cable power diagnosis.
+- Fixed the product overlay `protocol.cc` include hunk so it applies reliably
+  with the official source export.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-native-motion-power-diagnostics.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/transport/stackchan/official_avatar.go`
+- `internal/transport/stackchan/official_avatar_test.go`
+- `internal/transport/xiaozhi/device_extension.go`
+- `internal/transport/xiaozhi/device_extension_test.go`
+
+Tests/build/runtime results:
+
+- Focused app/Gateway/transport tests passed earlier in the transition.
+- `git diff --check` passed.
+- Clean official source overlay apply check passed.
+- `GOMAXPROCS=2 make verify` passed.
+- Product build passed through
+  `a21-stackchan-official-xiaozhi-compatible-build`; app artifact SHA-256:
+  `357211684819d915106f8b72acdfe3bbf7d4b2f63d4547970599d05efdcd9c51`.
+
+Remaining issues:
+
+- Guarded product flash was blocked once because the implementation worktree
+  was dirty, as designed. No physical acceptance has been claimed yet.
+
+Next suggested action:
+
+- Commit this transition, deploy Gateway to ECS so runtime echo is accepted,
+  then guarded-flash `/dev/cu.usbmodem1101` through
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute`.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 06:58 CST - Wake Physical Launch Gate Enforced
 
 Round goal:

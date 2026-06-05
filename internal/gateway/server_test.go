@@ -1607,7 +1607,7 @@ func TestHardwareAcceptanceSummaryReportsMachineEvidenceAndPhysicalPending(t *te
 }
 
 func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testing.T) {
-	server := NewServer()
+	server := NewServerWithOptions(ServerOptions{XiaozhiProductPlaybackEvents: true})
 	httpServer := httptest.NewServer(server.Handler())
 	t.Cleanup(httpServer.Close)
 
@@ -1622,8 +1622,29 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 		"device_id":  "44:1b:f6:e2:6a:60",
 		"trace_id":   "a21-trace-power-hello",
 		"session_id": "a21-session-power-hello",
+		"features": map[string]any{
+			"mcp":              true,
+			"playback_events":  true,
+			"keepalive_events": true,
+		},
 	})
 	readXiaozhiJSON(t, ctx, conn)
+	if err := wsjson.Write(ctx, conn, map[string]any{
+		"type":                   "device",
+		"kind":                   "heartbeat",
+		"trace_id":               "a21-trace-power-hello",
+		"session_id":             "a21-session-power-hello",
+		"device_id":              "44:1b:f6:e2:6a:60",
+		"battery_level":          68,
+		"battery_charging":       false,
+		"battery_discharging":    true,
+		"external_power":         false,
+		"power_source":           "battery_discharging",
+		"pmic_power_key_profile": "a21_stackchan_axp2101_pwrkey_v1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(25 * time.Millisecond)
 
 	resp, err := http.Get(httpServer.URL + "/v1/power-lifecycle?device_id=44:1b:f6:e2:6a:60")
 	if err != nil {
@@ -1645,6 +1666,7 @@ func TestPowerLifecycleReportsAndAcceptsOnlyForegroundColdBootEvidence(t *testin
 		"xiaozhi_ws_online": true,
 		"result_redacted":   true,
 		"connection_status": "online",
+		"battery_telemetry": "diagnostic_runtime_echo",
 	} {
 		if pending[key] != want {
 			t.Fatalf("pending[%s] = %#v, want %#v in %#v", key, pending[key], want, pending)
@@ -5666,9 +5688,9 @@ func TestOfficialStackChanControlEndpointFallsBackToXiaozhiMCPWhenAllowed(t *tes
 	})
 	headMessage := readXiaozhiJSON(t, ctx, conn)
 	assertXiaozhiMCPMessage(t, headMessage, xiaozhiMCPRobotSetHeadAnglesToolName, map[string]any{
-		"yaw":   float64(18),
-		"pitch": float64(36),
-		"speed": float64(260),
+		"yaw":   float64(45),
+		"pitch": float64(68),
+		"speed": float64(680),
 	})
 
 	var response XiaozhiDeviceControlResponse
@@ -6511,11 +6533,17 @@ func TestXiaozhiProductKeepaliveEventsAllowanceRecordsHeartbeat(t *testing.T) {
 	}
 
 	if err := wsjson.Write(ctx, conn, map[string]any{
-		"type":       "device",
-		"kind":       "heartbeat",
-		"trace_id":   "a21-trace-xiaozhi-product-keepalive",
-		"session_id": "a21-session-xiaozhi-product-keepalive",
-		"device_id":  "44:1b:f6:e2:6a:60",
+		"type":                   "device",
+		"kind":                   "heartbeat",
+		"trace_id":               "a21-trace-xiaozhi-product-keepalive",
+		"session_id":             "a21-session-xiaozhi-product-keepalive",
+		"device_id":              "44:1b:f6:e2:6a:60",
+		"battery_level":          73,
+		"battery_charging":       false,
+		"battery_discharging":    true,
+		"external_power":         false,
+		"power_source":           "battery_discharging",
+		"pmic_power_key_profile": "a21_stackchan_axp2101_pwrkey_v1",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -6546,6 +6574,15 @@ func TestXiaozhiProductKeepaliveEventsAllowanceRecordsHeartbeat(t *testing.T) {
 	}
 	if _, ok := capabilities["xiaozhi_debug_extension_isolated"]; ok {
 		t.Fatalf("product keepalive allowance marked debug capabilities: %#v", capabilities)
+	}
+	runtimeEcho, ok := registry["runtime_echo"].(map[string]any)
+	if !ok ||
+		runtimeEcho["battery_level"] != "73" ||
+		runtimeEcho["battery_discharging"] != "true" ||
+		runtimeEcho["external_power"] != "false" ||
+		runtimeEcho["power_source"] != "battery_discharging" ||
+		runtimeEcho["pmic_power_key_profile"] != "a21_stackchan_axp2101_pwrkey_v1" {
+		t.Fatalf("registry runtime_echo = %#v, want heartbeat power diagnostics", registry["runtime_echo"])
 	}
 }
 
@@ -6780,8 +6817,8 @@ func TestXiaozhiProductTouchReactionsUseOfficialRelayNotXiaozhiMCP(t *testing.T)
 	if err := json.Unmarshal(frame[5:], &motion); err != nil {
 		t.Fatal(err)
 	}
-	if motion["pitchServo"]["angle"] != 620 {
-		t.Fatalf("official touch reaction motion = %#v, want top swipe forward pitch 620", motion)
+	if motion["pitchServo"]["angle"] != 780 {
+		t.Fatalf("official touch reaction motion = %#v, want top swipe forward pitch 780", motion)
 	}
 	assertNoXiaozhiMessage(t, conn, 100*time.Millisecond)
 
@@ -7790,9 +7827,9 @@ func TestXiaozhiBodyPresetSendsBoundedMCPSequence(t *testing.T) {
 	})
 	headMessage := readXiaozhiJSON(t, ctx, conn)
 	assertXiaozhiMCPMessage(t, headMessage, xiaozhiMCPRobotSetHeadAnglesToolName, map[string]any{
-		"yaw":   float64(18),
-		"pitch": float64(36),
-		"speed": float64(260),
+		"yaw":   float64(45),
+		"pitch": float64(68),
+		"speed": float64(680),
 	})
 
 	traceResp, err := http.Get(httpServer.URL + "/v1/traces?trace_id=a21-trace-body-preset")
@@ -7822,7 +7859,7 @@ func TestXiaozhiBodyPresetSendsBoundedMCPSequence(t *testing.T) {
 		"last_body_preset":        "celebrate",
 		"last_body_preset_status": "delivered",
 		"robot_led_green":         "168",
-		"robot_head_yaw":          "18",
+		"robot_head_yaw":          "45",
 	} {
 		if capabilities[key] != want {
 			t.Fatalf("capabilities[%s] = %#v, want %#v in %#v", key, capabilities[key], want, capabilities)
@@ -7892,10 +7929,10 @@ func TestXiaozhiBodyMotionSendsBoundedMCPSequence(t *testing.T) {
 		args map[string]any
 	}{
 		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(168), "green": float64(80), "blue": float64(0)}},
-		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(-18), "pitch": float64(36), "speed": float64(260)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(-55), "pitch": float64(38), "speed": float64(820)}},
 		{tool: xiaozhiMCPRobotSetLEDColorToolName, args: map[string]any{"red": float64(0), "green": float64(168), "blue": float64(80)}},
-		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(18), "pitch": float64(36), "speed": float64(260)}},
-		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(0), "pitch": float64(24), "speed": float64(220)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(55), "pitch": float64(70), "speed": float64(820)}},
+		{tool: xiaozhiMCPRobotSetHeadAnglesToolName, args: map[string]any{"yaw": float64(0), "pitch": float64(45), "speed": float64(620)}},
 	}
 	for _, want := range expected {
 		message := readXiaozhiJSON(t, ctx, conn)
@@ -7931,7 +7968,7 @@ func TestXiaozhiBodyMotionSendsBoundedMCPSequence(t *testing.T) {
 		"last_body_motion_status": "delivered",
 		"last_body_motion_step":   "5",
 		"robot_head_yaw":          "0",
-		"robot_head_pitch":        "24",
+		"robot_head_pitch":        "45",
 		"robot_led_green":         "168",
 	} {
 		if capabilities[key] != want {
@@ -17069,9 +17106,9 @@ func assertOfficialStackChanState(t *testing.T, ctx context.Context, conn *webso
 				t.Fatal(err)
 			}
 			wantAngle := map[string]int{
-				"listening": 380,
-				"thinking":  520,
-				"speaking":  480,
+				"listening": 620,
+				"thinking":  700,
+				"speaking":  580,
 			}[state]
 			if wantAngle == 0 {
 				wantAngle = 450

@@ -47,8 +47,8 @@ func TestOfficialPacketsMapMotionToOfficialControlMotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	pitch := payload["pitchServo"]
-	if pitch["angle"] != 850 || pitch["speed"] != 300 {
-		t.Fatalf("pitchServo = %#v, want clamped 85deg as 850 units at speed 300", pitch)
+	if pitch["angle"] != 850 || pitch["speed"] != 650 {
+		t.Fatalf("pitchServo = %#v, want clamped 85deg as 850 units at speed 650", pitch)
 	}
 }
 
@@ -104,15 +104,15 @@ func TestOfficialActionPlanMapsSemanticStatesDeterministically(t *testing.T) {
 			wantRGB:   "soft_idle_semantic_no_rgb_frame",
 		},
 		"listening": {
-			wantPitch: 380,
+			wantPitch: 620,
 			wantRGB:   "listening_semantic_no_rgb_frame",
 		},
 		"thinking": {
-			wantPitch: 520,
+			wantPitch: 700,
 			wantRGB:   "thinking_semantic_no_rgb_frame",
 		},
 		"speaking": {
-			wantPitch: 480,
+			wantPitch: 580,
 			wantRGB:   "speaking_semantic_no_rgb_frame",
 		},
 		"error": {
@@ -208,8 +208,8 @@ func TestOfficialActionPlanMarksYawCandidateWithoutPhysicalAcceptance(t *testing
 		if keyframe.YawServo == nil {
 			continue
 		}
-		if keyframe.YawServo.Angle < -180 || keyframe.YawServo.Angle > 180 {
-			t.Fatalf("yaw keyframe = %+v, want clamped -180..180", keyframe.YawServo)
+		if keyframe.YawServo.Angle < -1280 || keyframe.YawServo.Angle > 1280 {
+			t.Fatalf("yaw keyframe = %+v, want clamped -1280..1280", keyframe.YawServo)
 		}
 	}
 }

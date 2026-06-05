@@ -3,6 +3,7 @@ package xiaozhi
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -174,6 +175,38 @@ func TestParseDeviceExtensionPlaybackStopDoneRuntimeEcho(t *testing.T) {
 	}
 }
 
+func TestParseDeviceExtensionHeartbeatPowerRuntimeEcho(t *testing.T) {
+	event, err := ParseDeviceExtensionEvent([]byte(`{
+		"type":"device",
+		"kind":"heartbeat",
+		"battery_level":73,
+		"battery_charging":false,
+		"battery_discharging":true,
+		"external_power":false,
+		"power_source":"battery_discharging",
+		"pmic_power_key_profile":"a21_stackchan_axp2101_pwrkey_v1"
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Kind != DeviceEventKindHeartbeat {
+		t.Fatalf("event = %+v, want heartbeat", event)
+	}
+	want := map[string]string{
+		"battery_level":          "73",
+		"battery_charging":       "false",
+		"battery_discharging":    "true",
+		"external_power":         "false",
+		"power_source":           "battery_discharging",
+		"pmic_power_key_profile": "a21_stackchan_axp2101_pwrkey_v1",
+	}
+	for key, value := range want {
+		if event.RuntimeEcho[key] != value {
+			t.Fatalf("runtime_echo[%s] = %q, want %q in %#v", key, event.RuntimeEcho[key], value, event.RuntimeEcho)
+		}
+	}
+}
+
 func TestDeviceExtensionBadValuesUseStableErrorsWithoutLegacyLeak(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -216,10 +249,10 @@ func TestParseInlineDeviceMarksStripsMarksAndReturnsSemanticEvents(t *testing.T)
 	if len(parsed.Events) != 2 {
 		t.Fatalf("events = %+v, want two semantic events", parsed.Events)
 	}
-	if parsed.Events[0] != (DeviceExtensionEvent{Kind: DeviceEventKindFace, Value: "happy"}) {
+	if !reflect.DeepEqual(parsed.Events[0], DeviceExtensionEvent{Kind: DeviceEventKindFace, Value: "happy"}) {
 		t.Fatalf("first event = %+v, want face happy", parsed.Events[0])
 	}
-	if parsed.Events[1] != (DeviceExtensionEvent{Kind: DeviceEventKindMotion, Value: "nod"}) {
+	if !reflect.DeepEqual(parsed.Events[1], DeviceExtensionEvent{Kind: DeviceEventKindMotion, Value: "nod"}) {
 		t.Fatalf("second event = %+v, want motion nod", parsed.Events[1])
 	}
 }

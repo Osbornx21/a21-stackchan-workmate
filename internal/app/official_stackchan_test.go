@@ -536,6 +536,12 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`esp_timer_handle_t a21_keepalive_timer_handle_ = nullptr;`,
 		`SendA21Keepalive`,
 		`cJSON_AddStringToObject(root, "kind", "heartbeat");`,
+		`Board::GetInstance().GetBatteryLevel`,
+		`cJSON_AddNumberToObject(root, "battery_level", battery_level);`,
+		`cJSON_AddBoolToObject(root, "battery_charging", battery_charging);`,
+		`cJSON_AddBoolToObject(root, "battery_discharging", battery_discharging);`,
+		`cJSON_AddBoolToObject(root, "external_power", !battery_discharging);`,
+		`cJSON_AddStringToObject(root, "pmic_power_key_profile", "a21_stackchan_axp2101_pwrkey_v1");`,
 		`SendA21PlaybackStart`,
 		`SendA21PlaybackStopDone`,
 		`SendA21TouchEvent`,
@@ -551,6 +557,10 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`rightNeonLight().setColor`,
 		`top_swipe_forward`,
 		`top_barge_in`,
+		`yaw = 520;`,
+		`yaw = -520;`,
+		`pitch = 700;`,
+		`speed = 850;`,
 		`callbacks.on_playback_started`,
 		`AudioOutputTask()`,
 		`audio_service_.ResetDecoder();`,
@@ -566,6 +576,7 @@ func TestOfficialXiaozhiCompatibleOverlayAddsProductPlaybackAckOnly(t *testing.T
 		`"profile", "debug"`,
 		`"device_events"`,
 		`ENABLE_X21_DEVICE_EVENTS`,
+		`!motion.isMoving()`,
 	} {
 		if strings.Contains(overlay, forbidden) {
 			t.Fatalf("product playback ack overlay must not enable debug/legacy device events %q", forbidden)
