@@ -282,18 +282,36 @@ func collectASREvents(t *testing.T, events <-chan ASRAdapterEvent) []ASRAdapterE
 
 func writeFakeSherpaStreamingHelper(t *testing.T, logPath string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "a21-fake-sherpa-streaming-helper.sh")
-	script := `#!/bin/sh
-set -eu
-while IFS= read -r line; do
-  printf '%s\n' "$line" >> "` + logPath + `"
-  case "$line" in
-    *'"type":"start"'*) printf '%s\n' '{"type":"ready"}' ;;
-    *'"type":"append"'*) printf '%s\n' '{"type":"partial","text":"partial-from-helper"}' ;;
-    *'"type":"commit"'*) printf '%s\n' '{"type":"final","text":"final-from-helper"}'; exit 0 ;;
-    *'"type":"cancel"'*) exit 0 ;;
-  esac
-done
+	path := filepath.Join(t.TempDir(), "a21-fake-sherpa-streaming-helper.py")
+	quotedLogPath, err := json.Marshal(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env python3
+import json
+import sys
+
+log_path = ` + string(quotedLogPath) + `
+
+with open(log_path, "a", encoding="utf-8") as log:
+    for line in sys.stdin:
+        log.write(line)
+        log.flush()
+        try:
+            command = json.loads(line)
+        except Exception:
+            print(json.dumps({"type": "error", "code": "bad_command"}), flush=True)
+            continue
+        command_type = command.get("type")
+        if command_type == "start":
+            print(json.dumps({"type": "ready"}), flush=True)
+        elif command_type == "append":
+            print(json.dumps({"type": "partial", "text": "partial-from-helper"}), flush=True)
+        elif command_type == "commit":
+            print(json.dumps({"type": "final", "text": "final-from-helper"}), flush=True)
+            sys.exit(0)
+        elif command_type == "cancel":
+            sys.exit(0)
 `
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
