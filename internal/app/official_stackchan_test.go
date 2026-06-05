@@ -472,9 +472,7 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 		`esp_timer_start_periodic(a21_keepalive_timer_handle_, 10000000);`,
 		`esp_timer_stop(a21_keepalive_timer_handle_);`,
 		`protocol_->OpenAudioChannel()`,
-		`ContinueOpenAudioChannel(mode);`,
 		`state != kDeviceStateConnecting && !(state == kDeviceStateIdle && protocol_->IsAudioChannelOpened())`,
-		`SetListeningMode(GetDefaultListeningMode());`,
 		`mode != kListeningModeRealtime`,
 		`listening_mode_ != kListeningModeAutoStop`,
 		`esp_timer_start_once(vad_stop_timer_handle_, A21_NO_SPEECH_LISTENING_TIMEOUT_MS * 1000);`,
@@ -495,14 +493,15 @@ func TestOfficialXiaozhiCompatibleOverlayKeepsA21IdleSocketReady(t *testing.T) {
 		t.Fatal("official Xiaozhi-compatible overlay must patch ContinueWakeWordInvoke itself, not only a nearby helper with similar context")
 	}
 	forbiddenAdded := []string{
-		`+                ContinueOpenAudioChannel(kListeningModeManualStop);`,
-		`+        SetListeningMode(kListeningModeManualStop);`,
+		`+            ListeningMode mode = GetDefaultListeningMode();`,
+		`+                ContinueOpenAudioChannel(mode);`,
+		`+        SetListeningMode(GetDefaultListeningMode());`,
 		`+    if (mode == kListeningModeAutoStop && vad_stop_timer_handle_ != nullptr) {`,
 		`+            listening_mode_ != kListeningModeAutoStop ||`,
 	}
 	for _, forbidden := range forbiddenAdded {
 		if strings.Contains(overlay, forbidden) {
-			t.Fatalf("A21 overlay must not reintroduce unbounded manual listening path %q", forbidden)
+			t.Fatalf("A21 overlay must preserve official manual-start listening semantics; found %q", forbidden)
 		}
 	}
 	heartbeatBeforeIdleGuard := strings.Index(overlay, `if (protocol_->IsAudioChannelOpened()) {`)

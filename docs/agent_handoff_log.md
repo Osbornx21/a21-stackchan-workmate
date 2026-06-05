@@ -20441,6 +20441,63 @@ Forbidden actions avoided:
   no generic product flash lane, no Git prune/gc, and no rollback of
   internal-test3 protocol changes.
 
+## 2026-06-05 17:18 CST - Xiaozhi Manual Start Official Mode Parity Candidate
+
+Round goal:
+
+- Remove a firmware-side Xiaozhi state-machine divergence that made manual
+  touch/start enter `GetDefaultListeningMode()` instead of the official
+  `kListeningModeManualStop`.
+
+Actual completed work:
+
+- Compared A21 overlay against official Xiaozhi
+  `Application::HandleStartListeningEvent`.
+- Confirmed official behavior: in Idle, manual start opens the audio channel
+  with `kListeningModeManualStop`; if already open, it sets
+  `kListeningModeManualStop`; in Speaking, it aborts speaking and sets
+  `kListeningModeManualStop`.
+- Removed the A21 overlay hunk that changed those three sites to
+  `GetDefaultListeningMode()` / captured default mode.
+- Updated overlay contract tests so future changes must preserve official
+  manual-start listening semantics.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused official-compatible overlay tests passed:
+  `OfficialXiaozhiCompatibleOverlay(KeepsA21IdleSocketReady|PreservesStackChanPowerKeyLifecycle|AddsProductPlaybackAckOnly|SetsZiYueCustomWake)|StackChanOfficialCandidateContract`.
+- `git diff --check` passed.
+- Full `make verify`, guarded product build, and product flash still need to
+  run before physical validation.
+
+Runtime or physical evidence:
+
+- No firmware build or flash in this entry.
+
+Known risks/blockers:
+
+- This candidate targets manual/touch trigger state semantics. It does not yet
+  change custom wake-word configuration or no-USB PWRKEY behavior.
+
+Recommended next action:
+
+- Run full verify, commit, guarded product build, then product-lane flash using
+  `a21-stackchan-official-xiaozhi-compatible.bin`. After flash, validate touch
+  start no longer creates an auto-listen loop.
+
+Forbidden actions avoided:
+
+- No firmware flash yet, no PMIC write, no NVS write, no provider key in
+  firmware, no generic product flash lane, no Git prune/gc, and no rollback of
+  internal-test3 protocol changes.
+
 ## 2026-06-05 17:05 CST - AI.AGENT Touch Body MCP Fallback Candidate
 
 Round goal:

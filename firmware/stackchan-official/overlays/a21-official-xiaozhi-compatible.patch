@@ -661,27 +661,6 @@ index 3b6f07e..ec1e05d 100644
                  });
              } else if (strcmp(state->valuestring, "sentence_start") == 0) {
                  auto text = cJSON_GetObjectItem(root, "text");
-@@ -749,15 +934,16 @@ void Application::HandleStartListeningEvent() {
-         if (!protocol_->IsAudioChannelOpened()) {
-             SetDeviceState(kDeviceStateConnecting);
-             // Schedule to let the state change be processed first (UI update)
--            Schedule([this]() {
--                ContinueOpenAudioChannel(kListeningModeManualStop);
-+            ListeningMode mode = GetDefaultListeningMode();
-+            Schedule([this, mode]() {
-+                ContinueOpenAudioChannel(mode);
-             });
-             return;
-         }
--        SetListeningMode(kListeningModeManualStop);
-+        SetListeningMode(GetDefaultListeningMode());
-     } else if (state == kDeviceStateSpeaking) {
-         AbortSpeaking(kAbortReasonNone);
--        SetListeningMode(kListeningModeManualStop);
-+        SetListeningMode(GetDefaultListeningMode());
-     }
- }
-
 @@ -778,6 +964,10 @@ void Application::HandleStopListeningEvent() {
 
  void Application::HandleWakeWordDetectedEvent() {

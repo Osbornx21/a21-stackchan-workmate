@@ -4,7 +4,7 @@ Status: active state document.
 Last updated: 2026-06-05.
 
 Active transition:
-`T-XIAOZHI-AI-AGENT-BODY-MCP-FALLBACK-001`.
+`T-XIAOZHI-MANUAL-START-OFFICIAL-MODE-PARITY-001`.
 
 This document records A21 as a set of explicit transitions. A conversation is an
 execution surface; the repository state, plans, handoff log, tests, and evidence
@@ -62,6 +62,19 @@ Latest AI.AGENT body update, 2026-06-05 17:05 CST:
   is disconnected or delivery fails.
 - Focused Gateway tests passed for both official relay delivery and
   AI.AGENT/Xiaozhi MCP fallback delivery.
+
+Latest firmware state-machine parity candidate, 2026-06-05 17:18 CST:
+
+- Official Xiaozhi `HandleStartListeningEvent` comparison found manual
+  touch/start always uses `kListeningModeManualStop`.
+- The A21 official-compatible overlay had changed that path to
+  `GetDefaultListeningMode()`, which can turn manual touch into auto/realtime
+  listening and diverge from official stop/listen behavior.
+- The current firmware candidate removes that overlay hunk so the official
+  manual-start semantics remain intact while keeping the A21 quiet control
+  channel and wake-word invoke patches.
+- Focused official-compatible overlay tests passed before this state update;
+  full verify and guarded product build/flash remain next actions.
 
 Latest foreground hardware-window update, 2026-06-05 16:11 CST:
 
