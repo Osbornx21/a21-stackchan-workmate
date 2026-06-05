@@ -19,6 +19,85 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 18:16 CST - Body Relay Bad Flash Recovered
+
+Round goal:
+
+- Recover the product StackChan from the AI.AGENT crash introduced by the
+  attempted official `/stackChan/ws` body relay startup patch, preserve the
+  known-good voice/runtime path, and mark the bad patch as reverted in mainline.
+
+Actual completed work:
+
+- Captured serial evidence from the crashed product firmware after tapping
+  AI.AGENT.
+- Identified the exact root cause: the bad firmware started
+  `WS-Avatar` before the Xiaozhi Wi-Fi/lwIP stack initialized, then attempted
+  `Connect()` to
+  `ws://47.103.57.217/stackChan/ws?deviceType=StackChan&device_id=...`,
+  causing ESP-IDF/lwIP assert
+  `tcpip_send_msg_wait_sem ... Invalid mbox` and an immediate reboot.
+- Rebuilt the previous stable `0680d42` official-compatible product firmware
+  from a clean hardware-window worktree.
+- Flashed the stable restore product package back to `/dev/cu.usbmodem1101`
+  using only the guarded
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute` lane.
+- Verified by serial after restore that tapping AI.AGENT now enters Xiaozhi:
+  StackChan avatar is created, Wi-Fi connects to the configured AP, the device
+  gets IP `192.168.0.195`, activation reaches idle, and
+  `ws://47.103.57.217/v1/xiaozhi` receives a session id without the lwIP panic.
+- Reverted the bad mainline commit `9f4532a` with targeted revert commit
+  `1483292`; this only removes the unsafe body relay startup patch and its
+  test, and does not roll back internal-test3 voice/protocol changes or the
+  stable `0680d42` overlay regeneration.
+
+Changed files:
+
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Bad package flash report before recovery:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-180932-1780654172075567000.json`;
+  app SHA-256 `5ba3ed2fb9a66c45ed716a5646c8a8edd07eae9b093ae6327c4b62aab8ef5d79`.
+- Crash serial evidence: AI.AGENT -> `WS-Avatar: Connecting...` ->
+  `assert failed: tcpip_send_msg_wait_sem ... Invalid mbox`.
+- Restore build report:
+  `reports/a21-stackchan-official-baseline-20260605-181424-1780654464866486000.json`;
+  app SHA-256 `148e553046f448bb49ef8b8909654d61f379f21617cee8622905731701841044`.
+- Restore flash report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-flash-20260605-181549-1780654549745143000.json`;
+  status `passed`, branch
+  `codex/a21-hardware-window-20260605-restore-0680d42`, commit `0680d42c2d2e`,
+  clean worktree and control guard OK.
+- Focused app tests after revert passed:
+  `go test ./internal/app -run 'TestOfficialXiaozhiCompatibleOverlay(PreservesOfficialAvatarRelayWorkerWithA21DeviceId|UsesOfficialFrontendThenA21AgentRuntime|PreservesOfficialLauncherEntryLifecycle)|TestRunStackChanOfficialXiaozhiCompatiblePlanReportsProductCandidateContract|TestApplyStackChanOfficialCandidateContractKeepsXiaozhiCompatibleAfterExecute' -count=1`.
+- `git diff --check` passed.
+
+Known risks/blockers:
+
+- Official `/stackChan/ws` body relay remains disconnected in the restored
+  product package. Do not restart it before the Xiaozhi network stack is ready.
+- The next body relay fix must be event-gated on Xiaozhi/network readiness or
+  implemented inside an official post-network lifecycle hook; starting it
+  directly at the beginning of `Hal::startXiaozhi()` is forbidden by evidence.
+- No-USB power-key acceptance is still not closed by this recovery round.
+
+Recommended next action:
+
+- Keep the restored `0680d42` product package as the current physical fallback.
+- For body relay parity, create a small delayed-start candidate that waits for
+  Xiaozhi network readiness before constructing `WebSocketAvatar`, then test it
+  with serial evidence before any product flash.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no NVS write, no provider key in
+  firmware, no Git prune/gc, and no rollback of internal-test3 voice/protocol
+  changes.
+
 ## 2026-06-05 17:37 CST - Voice ASR Visibility And Official VAD Parity Fix
 
 Round goal:
@@ -20631,6 +20710,119 @@ Forbidden actions avoided:
 - No firmware flash, no NVS write, no provider/V21 execution, no generic
   product flash lane, no Git prune/gc, and no rollback of internal-test3
   voice/protocol changes.
+
+## 2026-06-05 17:50 CST - Workspace Console Chinese ECS Hotfix
+
+Round goal:
+
+- Convert the A21 public Workspace Console visible UI to Chinese and bring up
+  the ECS-hosted page for user acceptance without carrying unrelated dirty
+  worktree changes.
+
+Actual completed work:
+
+- Localized the visible Workspace Console surface to Chinese, including setup,
+  readiness, roleplay, voice chain, wake word, voice probe, body preset,
+  hardware scene, screen, official action, mode boundary, and hardware
+  acceptance surfaces.
+- Added runtime value translation for provider catalog labels, status labels,
+  event-log text, and hardware acceptance labels while preserving technical
+  IDs where needed.
+- Deployed directly to ECS `47.103.57.217` by packaging only
+  `internal/gateway/workspace_console.go` and
+  `internal/gateway/server_test.go` over a clean `git archive HEAD`.
+- Restarted the remote `a21-gateway` after a safe `/opt/a21.next` to
+  `/opt/a21` swap.
+- Stopped the local temporary gateway on `127.0.0.1:21080` after verification
+  to avoid confusing it with the ECS page.
+
+Changed files:
+
+- `internal/gateway/workspace_console.go`
+- `internal/gateway/server_test.go`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Local `go test ./internal/gateway -run TestWorkspaceConsolePageServed -count=1`
+  passed.
+- Local focused Gateway tests for workspace console, workspace bindings,
+  professional query, hardware acceptance, and mode ritual passed.
+- Local targeted `git diff --check -- internal/gateway/workspace_console.go
+  internal/gateway/server_test.go` passed.
+- Full `git diff --check` still reports pre-existing trailing whitespace in
+  `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`;
+  this round did not touch or deploy that file.
+- Remote focused Gateway tests passed before deploy swap.
+- Remote `go build -o /opt/a21.next/bin/a21 ./cmd/a21` passed.
+- Remote `a21-gateway` is active and loopback `/healthz` passed.
+- Public direct `/healthz` on `http://47.103.57.217/healthz` passed.
+- Browser verification on `http://47.103.57.217/workspace` passed:
+  title `A21 工作台控制台`, required Chinese text present, old visible English
+  acceptance/setup labels absent, `连接设备` and `刷新验收` buttons clickable,
+  event log Chinese, and console errors empty.
+
+Known risks/blockers:
+
+- Browser validation covers the web console and gateway responses only. It does
+  not mark the physical StackChan foreground hardware acceptance complete.
+
+Recommended next action:
+
+- User can start acceptance at `http://47.103.57.217/workspace`.
+
+## 2026-06-05 18:15 CST - Voice Clone TTS Fixed To User Reference
+
+Round goal:
+
+- Fix the ECS Gateway's current StackChan voice-chain TTS to use the user's
+  provided reference sound for the next several days, without playing audio
+  because the user reported firmware is currently being changed.
+
+Actual completed work:
+
+- Inspected the user-provided local file
+  `/Users/jiyurun/Downloads/小马宝莉 2.mp3`; despite the `.mp3` name, it is a
+  QuickTime/MP4 container. Standard local decoders stalled on the container.
+- Parsed the MP4/QuickTime sample table directly and extracted the AAC audio
+  track to `/tmp/a21-xiaomabaoli-ref.aac`.
+- Uploaded the extracted reference audio to ECS under the A21 runtime voice
+  reference area.
+- Ran an ECS `voice_clone_cli` smoke with that extracted reference audio.
+- Updated `/etc/a21/secrets/provider.env` so `a21-gateway` starts with:
+  `A21_VOICE_CLONE_REF_AUDIO` present, `A21_VOICE_CLONE_PROFILE` present,
+  `A21_TTS_FAST_PROFILE=voice_clone_cli`, and
+  `A21_LOCAL_TTS_ENGINE=voice_clone_cli`.
+- Restarted `a21-gateway`.
+- Did not send playback audio to StackChan after the user said not to play.
+
+Changed files:
+
+- `docs/agent_handoff_log.md`
+
+Runtime results:
+
+- ECS `voice_clone_cli` smoke using the user's extracted reference audio
+  passed with provider/engine `voice_clone_cli`, model `cosyvoice_v3_flash`,
+  output format `wav_pcm_s16le_16000_mono`, and first audio around 3.1s.
+- Public `/v1/voice-chain-profiles` now reports
+  `selected_voice_chain_mode=cascade`,
+  `selected_tts_profile=voice_clone_cli`, and
+  `selected_voice_clone_profile=a21_voice_clone_default`.
+- `a21-gateway` is active and healthy after restart.
+
+Known risks/blockers:
+
+- Physical StackChan playback was intentionally not executed per user
+  instruction.
+- Firmware/device-side acceptance remains pending after the firmware issue is
+  resolved.
+
+Recommended next action:
+
+- After firmware is fixed, run one physical `/v1/xiaozhi/say` or
+  `stackchan-local-tts-playback` check to confirm the cloned voice reaches the
+  device speaker.
 
 ## 2026-06-05 16:50 CST - Xiaozhi Official Auto-Listen State Parity Candidate
 
