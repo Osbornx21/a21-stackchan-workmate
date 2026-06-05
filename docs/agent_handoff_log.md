@@ -19,6 +19,57 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 16:11 CST - Stock Official Baseline Flashed for Physical A/B
+
+Round goal:
+
+- Execute the controlled stock-official baseline flash so the no-USB PWRKEY
+  failure can be separated from A21 product firmware and Gateway behavior.
+
+Actual completed work:
+
+- Confirmed the worktree was clean, the foreground hardware-window branch was
+  current, `/dev/cu.usbmodem1101` was present, and the stock-official app hash
+  matched the previously built baseline.
+- Flashed the clean official StackChan no-overlay baseline through the guarded
+  diagnostic lane:
+  `stackchan-official-baseline-flash-execute`.
+- The T7 control guard accepted the command only after verifying foreground
+  hardware-window branch, clean worktree, and non-detached HEAD.
+
+Changed files:
+
+- No source files changed in this round.
+
+Tests/build/runtime results:
+
+- Flash passed and wrote official baseline bootloader, app, partition table,
+  OTA data, and generated assets.
+- Flash report:
+  `reports/a21-stackchan-official-baseline-flash-20260605-161057-1780647057743653000.json`.
+- Stock-official app artifact:
+  `/tmp/a21-stackchan-official-stock-build/stack-chan.bin`, SHA-256
+  `a0cd9129b9e5f4718893d4fa672cb62e57088d5585057a1e4fa8ec835018135e`.
+
+Remaining issues:
+
+- Physical no-USB PWRKEY result is pending operator report. The device is now
+  temporarily flashed with stock official baseline, not the A21 product
+  candidate.
+
+Recommended next action:
+
+- Operator fully unplugs USB, waits for full power-off, presses the upper-left
+  PWRKEY, and reports whether stock official reaches Home or still only flashes
+  the screen/red LED. After recording that result, restore the A21 product
+  candidate with the official-compatible product flash lane.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin` product flash, no A21 product rollback commit, no
+  provider/Gateway/V21 change, no NVS write, no Git prune/gc, and no
+  internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 16:08 CST - Official Baseline Flash Guard Repaired
 
 Round goal:
