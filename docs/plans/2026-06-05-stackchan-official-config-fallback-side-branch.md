@@ -97,6 +97,24 @@ committed here, then cherry-picked or merged into
 `codex/a21-hardware-window-*` before running
 `a21-stackchan-official-xiaozhi-compatible-nvs-execute`.
 
+## Foreground Toolchain Fix
+
+After the candidate was integrated into the foreground hardware-window branch,
+the first guarded NVS execution attempt passed T7 control guard but failed
+before reading flash. The report was
+`reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260605-140250-1780639370066907000.json`;
+`write_executed=false`.
+
+The read log showed ESP-IDF `export.sh` selecting a broken system Python 3.13
+whose `_ssl` and `hashlib` modules are blocked by macOS code-signing policy.
+This was not a serial, Gateway, Wi-Fi, or firmware-state failure.
+
+The foreground hardware-window branch now supports `A21_IDF_PYTHON` and
+`--idf-python` for the official-compatible NVS executor. When supplied, it uses
+that Python directly for esptool and the ESP-IDF NVS scripts instead of
+sourcing `export.sh`. This keeps the hardware write guarded while avoiding the
+broken local Python auto-detection path.
+
 ## Remaining Physical Acceptance
 
 - Execute the guarded NVS path with the operator-approved Wi-Fi credentials.

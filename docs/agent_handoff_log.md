@@ -19,6 +19,70 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 14:09 CST - StackChan Official NVS Python Override Ready
+
+Round goal:
+
+- Continue the official Home unlock from the foreground hardware-window branch
+  and resolve the first failed NVS execution without guessing at serial,
+  Gateway, Wi-Fi, or firmware-state causes.
+
+Actual completed work:
+
+- Cherry-picked side-branch commit `7aaf50a` into foreground hardware-window
+  branch as `843c59f`, then pushed it to origin.
+- Ran focused tests, `git diff --check`, and `GOMAXPROCS=2 make verify`;
+  all passed before the hardware attempt.
+- Executed the guarded official-compatible NVS path once. T7 guard passed on
+  clean branch `codex/a21-hardware-window-20260604-internal-test4-local-lan-nvs`
+  at commit `843c59f`, but the run failed before reading flash:
+  `write_executed=false`.
+- Root-caused the failed read to ESP-IDF `export.sh` selecting a broken system
+  Python 3.13 whose `_ssl` and `hashlib` modules are blocked by local macOS
+  code-signing policy.
+- Added `A21_IDF_PYTHON` / `--idf-python` support for
+  `a21-stackchan-official-xiaozhi-compatible-nvs`, so esptool and ESP-IDF NVS
+  scripts can run through a verified ESP-IDF Python venv without relying on
+  `export.sh` auto-detection.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-config-fallback-side-branch.md`
+- `docs/agent_handoff_log.md`
+- `internal/app/official_stackchan.go`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused NVS and official-compatible overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatible.*NVS|OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- Verified ESP-IDF Python venv:
+  `/Users/jiyurun/.espressif/python_env/idf5.5_py3.14_env/bin/python -m esptool version`
+  and NVS generator help both passed.
+- Failed NVS execution report:
+  `reports/a21-stackchan-official-xiaozhi-compatible-nvs-20260605-140250-1780639370066907000.json`.
+
+Remaining issues:
+
+- Need run full `GOMAXPROCS=2 make verify` after this Python override commit.
+- Need commit/push the override, then rerun guarded NVS execute with
+  `A21_IDF_PYTHON` set to the verified ESP-IDF Python venv.
+- Physical acceptance remains pending: official Home after reboot, then
+  `AI.AGENT` connects A21 voice/body runtime through Gateway.
+
+Next suggested action:
+
+- Commit and push the Python override, rerun guarded NVS execute from the clean
+  foreground hardware-window branch, then ask the operator to confirm the
+  device leaves `Ready to Configure`.
+
+Forbidden actions avoided:
+
+- No firmware app flash, no generic `xiaozhi.bin`, no provider key in firmware,
+  no manual Git prune/gc, no system Python repair, no PMIC overlay change, and
+  no internal-test3 voice/protocol rollback.
+
 ## 2026-06-05 13:54 CST - StackChan Official Config Fallback Side Branch Ready
 
 Round goal:

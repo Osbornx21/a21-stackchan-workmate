@@ -159,6 +159,7 @@ type stackChanOfficialXiaozhiCompatibleFlashOptions struct {
 
 type stackChanOfficialXiaozhiCompatibleNVSOptions struct {
 	IDFExport        string
+	IDFPython        string
 	Port             string
 	OutputDir        string
 	RunDir           string
@@ -324,6 +325,7 @@ type stackChanOfficialPCMBridgeNVSTools struct {
 	NVSToolPath       string `json:"nvs_tool_path"`
 	NVSGeneratorPath  string `json:"nvs_generator_path"`
 	EsptoolModuleName string `json:"esptool_module_name"`
+	IDFPythonPath     string `json:"idf_python_path,omitempty"`
 }
 
 type stackChanOfficialPCMBridgeNVSSummary struct {
@@ -875,6 +877,7 @@ func runStackChanOfficialXiaozhiCompatibleFlash(args []string, execute bool, std
 func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanOfficialXiaozhiCompatibleNVSOptions{
 		IDFExport:        firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		IDFPython:        strings.TrimSpace(os.Getenv("A21_IDF_PYTHON")),
 		Port:             strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")),
 		RunDir:           firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS_RUN_DIR"), filepath.Join(".a21-run", "firmware", "official-xiaozhi-compatible-nvs")),
 		OTAURL:           strings.TrimSpace(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_OTA_URL")),
@@ -896,7 +899,7 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--wifi-ssid SSID --wifi-password PASSWORD] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 a21-stackchan-official-xiaozhi-compatible-nvs --port /dev/cu.usbmodemXXXX --ota-url http://LAN:21080/xiaozhi/ota/ --websocket-url ws://LAN:21080/v1/xiaozhi [--websocket-version 1] [--wifi-ssid SSID --wifi-password PASSWORD] [--execute --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS] [--idf-export /path/to/export.sh] [--idf-python /path/to/python] [--run-dir .a21-run/firmware/official-xiaozhi-compatible-nvs] [--output-dir reports]")
 			return 0
 		case "--idf-export":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -905,6 +908,13 @@ func runStackChanOfficialXiaozhiCompatibleNVS(args []string, execute bool, stdou
 			}
 			i++
 			options.IDFExport = args[i]
+		case "--idf-python":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-python requires a value")
+				return 2
+			}
+			i++
+			options.IDFPython = strings.TrimSpace(args[i])
 		case "--port":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				fmt.Fprintln(stderr, "--port requires a value")
@@ -1463,6 +1473,7 @@ func buildStackChanOfficialXiaozhiCompatibleNVSReport(options stackChanOfficialX
 			NVSToolPath:       officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_tool/nvs_tool.py"),
 			NVSGeneratorPath:  officialIDFToolPath(options.IDFExport, "components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"),
 			EsptoolModuleName: "esptool",
+			IDFPythonPath:     options.IDFPython,
 		},
 		NextRequiredConfirmation: "a21-stackchan-official-xiaozhi-compatible-nvs-execute_with_confirmation_token",
 	}, nil
@@ -2493,6 +2504,11 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	if _, err := os.Stat(options.IDFExport); err != nil {
 		return fmt.Errorf("ESP-IDF export.sh is missing: %w", err)
 	}
+	if options.IDFPython != "" {
+		if _, err := os.Stat(options.IDFPython); err != nil {
+			return fmt.Errorf("ESP-IDF python override is missing: %w", err)
+		}
+	}
 	if _, err := os.Stat(report.Tools.NVSToolPath); err != nil {
 		return fmt.Errorf("ESP-IDF nvs_tool.py is missing: %w", err)
 	}
@@ -2522,15 +2538,29 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	report.ProvisionCSVPath = provisionCSVPath
 	report.ProvisionedBinPath = provisionedBinPath
 
-	readScript := strings.Join([]string{
-		"set -euo pipefail",
-		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
-		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after no_reset read_flash %s %s %s",
+	pythonCommand := "python"
+	sourceIDF := true
+	if options.IDFPython != "" {
+		pythonCommand = shellSingleQuote(options.IDFPython)
+		sourceIDF = false
+	}
+	nvsScriptLines := func(lines ...string) string {
+		script := []string{"set -euo pipefail"}
+		if sourceIDF {
+			script = append(script, fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)))
+		}
+		script = append(script, lines...)
+		return strings.Join(script, "\n")
+	}
+
+	readScript := nvsScriptLines(
+		fmt.Sprintf("%s -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after no_reset read_flash %s %s %s",
+			pythonCommand,
 			shellSingleQuote(options.Port),
 			stackChanOfficialPCMBridgeNVSOffset,
 			stackChanOfficialPCMBridgeNVSSizeHex,
 			shellSingleQuote(backupPath)),
-	}, "\n")
+	)
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.ReadLogPath, readScript); err != nil {
 		return fmt.Errorf("read current NVS partition: %w", err)
 	}
@@ -2540,14 +2570,13 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	}
 	report.BackupSHA256 = backupSHA
 
-	parseScript := strings.Join([]string{
-		"set -euo pipefail",
-		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
-		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+	parseScript := nvsScriptLines(
+		fmt.Sprintf("%s %s -d minimal -f json %s > %s",
+			pythonCommand,
 			shellSingleQuote(report.Tools.NVSToolPath),
 			shellSingleQuote(backupPath),
 			shellSingleQuote(beforeJSONPath)),
-	}, "\n")
+	)
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.ParseLogPath, parseScript); err != nil {
 		return fmt.Errorf("parse current NVS partition: %w", err)
 	}
@@ -2569,15 +2598,14 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	}
 	report.Summary = &summary
 
-	generateScript := strings.Join([]string{
-		"set -euo pipefail",
-		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
-		fmt.Sprintf("python %s generate %s %s %s",
+	generateScript := nvsScriptLines(
+		fmt.Sprintf("%s %s generate %s %s %s",
+			pythonCommand,
 			shellSingleQuote(report.Tools.NVSGeneratorPath),
 			shellSingleQuote(provisionCSVPath),
 			shellSingleQuote(provisionedBinPath),
 			stackChanOfficialPCMBridgeNVSSizeHex),
-	}, "\n")
+	)
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.GenerateLogPath, generateScript); err != nil {
 		return fmt.Errorf("generate provisioned NVS partition: %w", err)
 	}
@@ -2587,14 +2615,13 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 	}
 	report.ProvisionedBinSHA256 = provisionedSHA
 
-	verifyScript := strings.Join([]string{
-		"set -euo pipefail",
-		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
-		fmt.Sprintf("python %s -d minimal -f json %s > %s",
+	verifyScript := nvsScriptLines(
+		fmt.Sprintf("%s %s -d minimal -f json %s > %s",
+			pythonCommand,
 			shellSingleQuote(report.Tools.NVSToolPath),
 			shellSingleQuote(provisionedBinPath),
 			shellSingleQuote(afterJSONPath)),
-	}, "\n")
+	)
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.VerifyLogPath, verifyScript); err != nil {
 		return fmt.Errorf("verify provisioned NVS partition: %w", err)
 	}
@@ -2602,14 +2629,13 @@ func executeStackChanOfficialXiaozhiCompatibleNVS(ctx context.Context, options s
 		return err
 	}
 
-	writeScript := strings.Join([]string{
-		"set -euo pipefail",
-		fmt.Sprintf("source %s >/dev/null", shellSingleQuote(options.IDFExport)),
-		fmt.Sprintf("python -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash %s %s",
+	writeScript := nvsScriptLines(
+		fmt.Sprintf("%s -m esptool --chip esp32s3 --port %s -b 460800 --before default_reset --after hard_reset write_flash %s %s",
+			pythonCommand,
 			shellSingleQuote(options.Port),
 			stackChanOfficialPCMBridgeNVSOffset,
 			shellSingleQuote(provisionedBinPath)),
-	}, "\n")
+	)
 	if err := runStackChanOfficialXiaozhiCompatibleNVSCommand(ctx, report.WriteLogPath, writeScript); err != nil {
 		return fmt.Errorf("write provisioned NVS partition: %w", err)
 	}

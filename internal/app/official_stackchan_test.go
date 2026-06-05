@@ -1920,7 +1920,9 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateW
 
 	idfRoot := filepath.Join(t.TempDir(), "esp-idf-v5.5.2")
 	idfExport := filepath.Join(idfRoot, "export.sh")
+	idfPython := filepath.Join(idfRoot, "python-env", "bin", "python")
 	writeTestFile(t, idfExport, "#!/bin/sh\n")
+	writeTestFile(t, idfPython, "#!/usr/bin/env python\n")
 	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_tool", "nvs_tool.py"), "#!/usr/bin/env python\n")
 	writeTestFile(t, filepath.Join(idfRoot, "components", "nvs_flash", "nvs_partition_generator", "nvs_partition_gen.py"), "#!/usr/bin/env python\n")
 
@@ -1932,6 +1934,7 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateW
 		"--ota-url", "http://192.0.2.10:21080/xiaozhi/ota/",
 		"--websocket-url", "ws://192.0.2.10:21080/v1/xiaozhi",
 		"--idf-export", idfExport,
+		"--idf-python", idfPython,
 		"--run-dir", filepath.Join(t.TempDir(), "a21-official-xiaozhi-nvs-run"),
 		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_NVS",
 	}, &stdout, &stderr)
@@ -1943,6 +1946,7 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateW
 	}
 	joined := strings.Join(scripts, "\n")
 	for _, want := range []string{
+		shellSingleQuote(idfPython),
 		"read_flash 0x9000 0x4000",
 		"nvs_partition_tool/nvs_tool.py",
 		"nvs_partition_generator/nvs_partition_gen.py",
@@ -1953,11 +1957,15 @@ func TestRunStackChanOfficialXiaozhiCompatibleNVSExecuteRunsGuardedReadGenerateW
 			t.Fatalf("scripts missing %q:\n%s", want, joined)
 		}
 	}
+	if strings.Contains(joined, "source ") {
+		t.Fatalf("idf python override scripts must not source export.sh:\n%s", joined)
+	}
 	for _, want := range []string{
 		`"schema_version": "a21.stackchan.official_xiaozhi_compatible_nvs_execution.v1"`,
 		`"write_allowed": true`,
 		`"write_executed": true`,
 		`"control_guard"`,
+		`"idf_python_path":`,
 		`"preserved_entry_count": 5`,
 		`"mutated_entry_count": 4`,
 		`"existing_connection_entry_count": 5`,
