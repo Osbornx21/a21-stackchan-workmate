@@ -3,6 +3,7 @@ package app
 import (
 	"a21.local/a21/internal/firmwarecheck"
 	"a21.local/a21/internal/gateway"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,13 +17,20 @@ import (
 )
 
 type stackChanProductRecoveryOptions struct {
-	GatewayURL     string
-	DeviceID       string
-	UploadPort     string
-	SerialGlob     string
-	ReportsDir     string
-	OutputDir      string
-	DirectSourceIP string
+	GatewayURL            string
+	DeviceID              string
+	UploadPort            string
+	SerialGlob            string
+	ReportsDir            string
+	OutputDir             string
+	DirectSourceIP        string
+	ExecuteFlash          bool
+	Confirm               string
+	BuildDir              string
+	IDFExport             string
+	EsptoolBefore         string
+	WaitROMTimeoutSeconds int
+	PostCheckDelay        time.Duration
 }
 
 type stackChanProductRecoveryReport struct {
@@ -96,20 +104,38 @@ type stackChanProductRecoveryFinding struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
+type stackChanProductRecoveryExecutionReport struct {
+	SchemaVersion string                                         `json:"schema_version"`
+	GeneratedAtMS int64                                          `json:"generated_at_ms"`
+	Status        string                                         `json:"status"`
+	GatewayURL    string                                         `json:"gateway_url"`
+	DeviceID      string                                         `json:"device_id"`
+	Precheck      stackChanProductRecoveryReport                 `json:"precheck"`
+	Flash         *stackChanOfficialXiaozhiCompatibleFlashReport `json:"flash,omitempty"`
+	PostCheck     *stackChanProductRecoveryReport                `json:"postcheck,omitempty"`
+	Findings      []stackChanProductRecoveryFinding              `json:"findings,omitempty"`
+	ReportPath    string                                         `json:"report_path,omitempty"`
+}
+
 func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writer) int {
 	options := stackChanProductRecoveryOptions{
-		GatewayURL:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
-		DeviceID:       firstNonEmpty(strings.TrimSpace(os.Getenv("A21_PRODUCT_DEVICE_ID")), "44:1b:f6:e2:6a:60"),
-		UploadPort:     firstNonEmpty(strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")), "/dev/cu.usbmodem1101"),
-		SerialGlob:     "/dev/cu.usbmodem*",
-		ReportsDir:     "reports",
-		OutputDir:      "reports",
-		DirectSourceIP: strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)),
+		GatewayURL:            firstNonEmpty(strings.TrimSpace(os.Getenv("A21_GATEWAY_URL")), "http://127.0.0.1:21080"),
+		DeviceID:              firstNonEmpty(strings.TrimSpace(os.Getenv("A21_PRODUCT_DEVICE_ID")), "44:1b:f6:e2:6a:60"),
+		UploadPort:            firstNonEmpty(strings.TrimSpace(os.Getenv("A21_UPLOAD_PORT")), "/dev/cu.usbmodem1101"),
+		SerialGlob:            "/dev/cu.usbmodem*",
+		ReportsDir:            "reports",
+		OutputDir:             "reports",
+		DirectSourceIP:        strings.TrimSpace(os.Getenv(a21DirectSourceIPEnv)),
+		BuildDir:              firstNonEmpty(os.Getenv("A21_STACKCHAN_OFFICIAL_BUILD_DIR"), filepath.Join(os.TempDir(), "a21-stackchan-official-build")),
+		IDFExport:             firstNonEmpty(os.Getenv("A21_IDF_EXPORT"), "/Users/jiyurun/esp/esp-idf-v5.5.2/export.sh"),
+		EsptoolBefore:         "no_reset",
+		WaitROMTimeoutSeconds: parsePositiveIntOrDefault(os.Getenv("A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_WAIT_ROM_TIMEOUT_SECONDS"), stackChanOfficialXiaozhiCompatibleDefaultWaitROMTimeoutSeconds),
+		PostCheckDelay:        8 * time.Second,
 	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--help", "-h":
-			fmt.Fprintln(stdout, "a21 stackchan-accept --check product-recovery [--gateway-url http://47.103.57.217] [--device-id 44:1b:f6:e2:6a:60] [--direct-source-ip 192.168.1.20] [--upload-port /dev/cu.usbmodem1101] [--serial-glob '/dev/cu.usbmodem*'] [--reports-dir reports] [--output-dir reports]")
+			fmt.Fprintln(stdout, "a21 stackchan-accept --check product-recovery [--gateway-url http://47.103.57.217] [--device-id 44:1b:f6:e2:6a:60] [--direct-source-ip 192.168.1.20] [--upload-port /dev/cu.usbmodem1101] [--serial-glob '/dev/cu.usbmodem*'] [--reports-dir reports] [--output-dir reports] [--execute-flash --confirm WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP --build-dir /tmp/a21-stackchan-official-build --idf-export /path/to/export.sh --wait-rom-timeout-seconds 60]")
 			return 0
 		case "--gateway-url":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
@@ -160,6 +186,52 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 			}
 			i++
 			options.OutputDir = args[i]
+		case "--execute-flash":
+			options.ExecuteFlash = true
+		case "--confirm":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--confirm requires a value")
+				return 2
+			}
+			i++
+			options.Confirm = args[i]
+		case "--build-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--build-dir requires a value")
+				return 2
+			}
+			i++
+			options.BuildDir = args[i]
+		case "--idf-export":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--idf-export requires a value")
+				return 2
+			}
+			i++
+			options.IDFExport = args[i]
+		case "--esptool-before":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				fmt.Fprintln(stderr, "--esptool-before requires a value")
+				return 2
+			}
+			i++
+			options.EsptoolBefore = args[i]
+		case "--wait-rom-timeout-seconds":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--wait-rom-timeout-seconds")
+			if !ok {
+				return 2
+			}
+			options.WaitROMTimeoutSeconds = value
+		case "--post-check-delay-ms":
+			value, ok := parsePositiveIntCLIOption(args, &i, stderr, "--post-check-delay-ms")
+			if !ok {
+				return 2
+			}
+			if value > 60000 {
+				fmt.Fprintln(stderr, "--post-check-delay-ms must be between 0 and 60000")
+				return 2
+			}
+			options.PostCheckDelay = time.Duration(value) * time.Millisecond
 		default:
 			fmt.Fprintf(stderr, "unknown product-recovery option %q\n", args[i])
 			return 2
@@ -178,6 +250,9 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 		fmt.Fprintf(stderr, "product recovery output dir invalid: %v\n", err)
 		return 1
 	}
+	if options.ExecuteFlash {
+		return runStackChanProductRecoveryExecuteFlash(options, stdout, stderr)
+	}
 	report := buildStackChanProductRecoveryReport(options)
 	reportPath, err := writeStackChanProductRecoveryReport(options.OutputDir, report)
 	if err != nil {
@@ -190,6 +265,102 @@ func runStackChanProductRecovery(args []string, stdout io.Writer, stderr io.Writ
 		return 1
 	}
 	return 0
+}
+
+func runStackChanProductRecoveryExecuteFlash(options stackChanProductRecoveryOptions, stdout io.Writer, stderr io.Writer) int {
+	if options.Confirm != stackChanOfficialXiaozhiCompatibleAppFlashConfirm {
+		fmt.Fprintf(stderr, "product recovery flash requires --confirm %s\n", stackChanOfficialXiaozhiCompatibleAppFlashConfirm)
+		return 2
+	}
+	precheck := buildStackChanProductRecoveryReport(options)
+	report := stackChanProductRecoveryExecutionReport{
+		SchemaVersion: "a21.stackchan_product_recovery_execution.v1",
+		GeneratedAtMS: time.Now().UnixMilli(),
+		GatewayURL:    precheck.GatewayURL,
+		DeviceID:      precheck.DeviceID,
+		Precheck:      precheck,
+		Status:        "precheck_completed",
+	}
+	if precheck.DeviceOnline {
+		report.Status = "product_online_flash_skipped"
+		report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "product_already_online", Message: "product is already online; guarded recovery flash skipped", Detail: precheck.DeviceID})
+		return writeStackChanProductRecoveryExecutionAndExit(options.OutputDir, report, stdout, stderr, 0)
+	}
+	controlGuard, code := requireA21ControlAllowed("stackchan product recovery official-compatible flash --execute", stderr)
+	if code != 0 {
+		return code
+	}
+	flashOptions := stackChanOfficialXiaozhiCompatibleFlashOptions{
+		BuildDir:              options.BuildDir,
+		IDFExport:             options.IDFExport,
+		Port:                  options.UploadPort,
+		EsptoolBefore:         options.EsptoolBefore,
+		WaitROM:               true,
+		WaitROMTimeoutSeconds: options.WaitROMTimeoutSeconds,
+		OutputDir:             options.OutputDir,
+		Confirm:               options.Confirm,
+		Execute:               true,
+	}
+	flashReport, err := buildStackChanOfficialXiaozhiCompatibleFlashReport(flashOptions)
+	if err != nil {
+		report.Status = "flash_plan_failed"
+		report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "flash_plan_failed", Message: err.Error()})
+		return writeStackChanProductRecoveryExecutionAndExit(options.OutputDir, report, stdout, stderr, 1)
+	}
+	flashReport.ControlGuard = &controlGuard
+	if err := executeStackChanOfficialXiaozhiCompatibleFlash(context.Background(), flashOptions, &flashReport); err != nil {
+		flashReport.Status = "failed"
+		flashReport.Findings = append(flashReport.Findings, stackChanOfficialBaselineFinding{
+			Code:    "flash_execute_failed",
+			Message: err.Error(),
+		})
+	}
+	flashReportPath, err := writeStackChanOfficialXiaozhiCompatibleFlashReport(options.OutputDir, flashReport)
+	if err != nil {
+		report.Status = "flash_report_write_failed"
+		report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "flash_report_write_failed", Message: err.Error()})
+		report.Flash = &flashReport
+		return writeStackChanProductRecoveryExecutionAndExit(options.OutputDir, report, stdout, stderr, 1)
+	}
+	flashReport.ReportPath = flashReportPath
+	report.Flash = &flashReport
+	if flashReport.Status == "failed" || !flashReport.FlashExecuted {
+		report.Status = "flash_failed_rom_download_required"
+		report.Findings = append(report.Findings, stackChanProductRecoveryFinding{Code: "product_flash_failed", Message: "guarded product flash did not execute successfully", Detail: filepath.Base(flashReport.ReportPath)})
+		return writeStackChanProductRecoveryExecutionAndExit(options.OutputDir, report, stdout, stderr, 1)
+	}
+	if options.PostCheckDelay > 0 {
+		time.Sleep(options.PostCheckDelay)
+	}
+	postcheck := buildStackChanProductRecoveryReport(options)
+	report.PostCheck = &postcheck
+	report.Status = classifyStackChanProductRecoveryExecutionPostcheck(postcheck)
+	return writeStackChanProductRecoveryExecutionAndExit(options.OutputDir, report, stdout, stderr, 0)
+}
+
+func classifyStackChanProductRecoveryExecutionPostcheck(postcheck stackChanProductRecoveryReport) string {
+	switch {
+	case postcheck.DeviceOnline && postcheck.OfficialRelay.Connected:
+		return "flash_passed_product_online_official_relay_ready"
+	case postcheck.DeviceOnline:
+		return "flash_passed_product_online_official_relay_disconnected"
+	default:
+		return "flash_passed_reconnect_pending"
+	}
+}
+
+func writeStackChanProductRecoveryExecutionAndExit(outputDir string, report stackChanProductRecoveryExecutionReport, stdout io.Writer, stderr io.Writer, code int) int {
+	reportPath, err := writeStackChanProductRecoveryExecutionReport(outputDir, report)
+	if err != nil {
+		fmt.Fprintf(stderr, "write product recovery execution report: %v\n", err)
+		return 1
+	}
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanProductRecoveryExecution(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "encode product recovery execution report: %v\n", err)
+		return 1
+	}
+	return code
 }
 
 func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions) stackChanProductRecoveryReport {
@@ -461,7 +632,30 @@ func writeStackChanProductRecoveryReport(outputDir string, report stackChanProdu
 	return reportPath, nil
 }
 
+func writeStackChanProductRecoveryExecutionReport(outputDir string, report stackChanProductRecoveryExecutionReport) (string, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", err
+	}
+	reportPath := filepath.Join(outputDir, "a21-stackchan-product-recovery-execution-"+time.Now().Format("20060102-150405")+".json")
+	file, err := os.Create(reportPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	report.ReportPath = reportPath
+	if err := writeJSONStackChanProductRecoveryExecution(file, report); err != nil {
+		return "", err
+	}
+	return reportPath, nil
+}
+
 func writeJSONStackChanProductRecovery(writer io.Writer, report stackChanProductRecoveryReport) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
+}
+
+func writeJSONStackChanProductRecoveryExecution(writer io.Writer, report stackChanProductRecoveryExecutionReport) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(report)

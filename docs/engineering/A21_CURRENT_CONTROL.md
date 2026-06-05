@@ -71,6 +71,43 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 08:47 CST StackChan product recovery executor
+transition:
+
+- Added plan
+  `docs/plans/2026-06-05-stackchan-product-recovery-executor.md`.
+- `a21 stackchan-product-recovery` remains read-only by default, but now has
+  an explicit `--execute-flash` mode for the physical recovery window.
+- Execution mode requires confirmation token
+  `WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP`, uses the existing
+  hardware control guard, skips flash if the product is already online, and
+  calls only the existing official-compatible product flash implementation with
+  wait-ROM and `esptool_before=no_reset`.
+- The execution report schema is
+  `a21.stackchan_product_recovery_execution.v1`; it records precheck, guarded
+  flash receipt, and post-flash Gateway/official relay postcheck without
+  promoting physical acceptance.
+- Added Make targets `stackchan-product-recovery` and
+  `stackchan-product-recovery-execute` so the next hardware window has one
+  correct command and does not drift to the generic Xiaozhi flash lane.
+- Focused local app tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'ProductRecovery|OfficialXiaozhiCompatibleFlash' -count=1`.
+- Read-only Make target passed with
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_DIRECT_SOURCE_IP=192.168.1.27 GOMAXPROCS=2 make stackchan-product-recovery`
+  and wrote
+  `reports/a21-stackchan-product-recovery-20260605-084627.json`.
+- `git diff --check`, `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, and `GOMAXPROCS=2 make doctor` passed.
+- ECS deployment is not required for this transition because the public
+  Gateway runtime did not change; the new work is local hardware recovery CLI
+  and Makefile workflow.
+- Current live product truth is unchanged: Gateway is reachable with direct
+  source IP, product device is absent from registry, official relay is
+  `connected=false`, USB `/dev/cu.usbmodem1101` is present, and the latest
+  guarded flash log still reports ESP32-S3 `No serial data received`.
+- No firmware flash, NVS write, provider/V21 execution, reboot/OTA/camera/NFC/IR
+  action, or physical acceptance occurred in this transition.
+
 Live truth after the 2026-06-05 08:29 CST Xiaozhi product STT screen and
 fast-ack guard transition:
 

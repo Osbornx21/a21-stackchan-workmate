@@ -18812,6 +18812,89 @@ Forbidden actions avoided:
   lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
   rollback.
 
+## 2026-06-05 08:47 CST - StackChan Product Recovery Executor
+
+Round goal:
+
+- Convert the remaining manual product recovery window into one guarded
+  control-tower command without creating a second flash lane or weakening the
+  official-compatible product artifact guard.
+
+Actual completed work:
+
+- Added plan
+  `docs/plans/2026-06-05-stackchan-product-recovery-executor.md`.
+- Extended `a21 stackchan-product-recovery` with `--execute-flash`.
+- Kept the default product recovery command read-only.
+- Added execution schema `a21.stackchan_product_recovery_execution.v1`.
+- Execution mode requires confirmation token
+  `WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP` and the existing A21
+  hardware control guard.
+- Execution mode skips flash if the product is already online.
+- Execution mode uses only the existing
+  `a21-stackchan-official-xiaozhi-compatible` wait-ROM product flash path with
+  `esptool_before=no_reset`, then performs a post-flash Gateway and official
+  relay check.
+- Added Make targets `stackchan-product-recovery` and
+  `stackchan-product-recovery-execute`.
+- Updated `docs/engineering/PROTOCOL.md`,
+  `docs/engineering/A21_CURRENT_CONTROL.md`, and
+  `docs/project_state_machine.md`.
+
+Changed files:
+
+- `Makefile`
+- `internal/app/app_stackchan_product_recovery.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-05-stackchan-product-recovery-executor.md`
+- `docs/engineering/PROTOCOL.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- Focused product recovery and official-compatible flash tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'ProductRecovery|OfficialXiaozhiCompatibleFlash' -count=1`.
+- Read-only Make target passed with the stable direct-source path:
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_DIRECT_SOURCE_IP=192.168.1.27 GOMAXPROCS=2 make stackchan-product-recovery`.
+- The read-only run wrote
+  `reports/a21-stackchan-product-recovery-20260605-084627.json`.
+- `git diff --check`, `GOMAXPROCS=2 make verify`,
+  `GOMAXPROCS=2 make preflight`, and `GOMAXPROCS=2 make doctor` passed.
+- ECS deployment is not required for this transition because the public
+  Gateway runtime did not change; this is a local hardware recovery CLI and
+  Makefile workflow.
+
+Runtime or physical evidence:
+
+- Current live product truth is still
+  `status=product_offline_rom_download_required`, public `/v1/devices`
+  reports no product device, official relay is `connected=false`, and
+  `/dev/cu.usbmodem1101` is present.
+- No firmware flash was executed in this transition.
+
+Known risks/blockers:
+
+- Product still requires manual ESP32-S3 ROM/download entry before the new
+  executor can write flash.
+- Physical power-key startup, wake, real latency, barge-in, official
+  `/stackChan/ws`, and visible screen/RGB/servo/touch behavior remain
+  unaccepted until the product reconnects and is observed.
+
+Recommended next action:
+
+- Run full gates, commit/push, then use
+  `A21_UPLOAD_PORT=/dev/cu.usbmodem1101 A21_DIRECT_SOURCE_IP=192.168.1.27 A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP_FLASH_CONFIRM=WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP make stackchan-product-recovery-execute`
+  only while the operator is holding the device in ESP32-S3 ROM/download mode.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no reboot/OTA/snapshot/video/camera/NFC/IR/app
+  lifecycle exposure, no Git prune/gc, and no internal-test3 voice/protocol
+  rollback.
+
 ## 2026-06-05 08:29 CST - Xiaozhi Product STT Screen And Fast-Ack Guard
 
 Round goal:

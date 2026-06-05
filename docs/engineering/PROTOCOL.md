@@ -519,6 +519,19 @@ surfaces:
   `no_cable_cold_boot_physical_accepted=true`, and
   `physical_power_button_start_physical_accepted=true`. If the physical button
   still fails to start the device, this endpoint must remain unaccepted.
+- `a21 stackchan-product-recovery` is the product recovery control-tower
+  precheck. By default it is read-only: it checks Gateway `/v1/devices`, the
+  official relay status endpoint, USB serial candidates, and latest
+  official-compatible product flash evidence, then writes
+  `a21.stackchan_product_recovery.v1`. With explicit `--execute-flash` plus
+  confirmation token `WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP`,
+  it writes `a21.stackchan_product_recovery_execution.v1` and orchestrates
+  exactly one guarded recovery path: precheck, skip if the product is already
+  online, existing `a21-stackchan-official-xiaozhi-compatible` wait-ROM app
+  flash with `--esptool-before no_reset`, then post-flash Gateway and official
+  relay check. This is not a second product flash lane; it is a safer wrapper
+  around the existing official-compatible product lane and must never use
+  generic `xiaozhi.bin`.
 - Official StackChan/Xiaozhi status-display parity is recorded as A21 device
   registry state, not as custom firmware drawing. Gateway normalizes official
   state words into the stable A21 `display_state` vocabulary: `starting`,

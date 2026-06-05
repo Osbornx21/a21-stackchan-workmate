@@ -6057,6 +6057,227 @@ func TestRunStackChanProductRecoveryRejectsInvalidDirectSourceIP(t *testing.T) {
 	}
 }
 
+func TestRunStackChanProductRecoveryExecuteFlashRequiresConfirmationToken(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--execute-flash",
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP") {
+		t.Fatalf("stderr missing product flash confirmation token: %s", stderr.String())
+	}
+}
+
+func TestRunStackChanProductRecoveryExecuteFlashSkipsWhenProductAlreadyOnline(t *testing.T) {
+	originalRunner := runStackChanOfficialXiaozhiCompatibleFlashCommand
+	runStackChanOfficialXiaozhiCompatibleFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		t.Fatalf("flash runner should not be called when product is already online")
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialXiaozhiCompatibleFlashCommand = originalRunner
+	}()
+
+	deviceID := "44:1b:f6:e2:6a:60"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [{
+    "device_id": "` + deviceID + `",
+    "identity_status": "ok",
+    "connection_status": "online",
+    "firmware": {"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"}
+  }]
+}`))
+		case "/v1/stackchan/official/status":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "` + deviceID + `",
+  "connected": false,
+  "fallback_available": true,
+  "delivered_transport": "xiaozhi_mcp_fallback_available",
+  "physical_accepted": false,
+  "next_action": "connect_official_stackchan_ws"
+}`))
+		default:
+			t.Fatalf("unexpected product recovery request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--gateway-url", server.URL,
+		"--device-id", deviceID,
+		"--execute-flash",
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP",
+		"--output-dir", filepath.Join(tempDir, "out"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report stackChanProductRecoveryExecutionReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode execution report: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "product_online_flash_skipped" {
+		t.Fatalf("status = %q, want product_online_flash_skipped: %+v", report.Status, report)
+	}
+	if report.Flash != nil {
+		t.Fatalf("flash report present despite online skip: %+v", report.Flash)
+	}
+	if !containsString(reportFindingCodes(report.Findings), "product_already_online") {
+		t.Fatalf("findings missing product_already_online: %+v", report.Findings)
+	}
+}
+
+func TestRunStackChanProductRecoveryExecuteFlashRunsOfficialWaitROMAndPostCheck(t *testing.T) {
+	allowA21ControlGuardForTest(t)
+	originalDetector := detectFirmwareUploadPortUsage
+	detectFirmwareUploadPortUsage = func(port string) (firmwarecheck.PortUsage, error) {
+		return firmwarecheck.PortUsage{Exists: true, InUse: false}, nil
+	}
+	defer func() {
+		detectFirmwareUploadPortUsage = originalDetector
+	}()
+	originalRunner := runStackChanOfficialXiaozhiCompatibleFlashCommand
+	var ranScript string
+	runStackChanOfficialXiaozhiCompatibleFlashCommand = func(ctx context.Context, logPath string, script string) error {
+		ranScript = script
+		return nil
+	}
+	defer func() {
+		runStackChanOfficialXiaozhiCompatibleFlashCommand = originalRunner
+	}()
+
+	deviceID := "44:1b:f6:e2:6a:60"
+	deviceRequests := 0
+	officialRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			deviceRequests++
+			if deviceRequests == 1 {
+				_, _ = w.Write([]byte(`{"schema_version":"a21.gateway.devices.v1","service":"a21-gateway","devices":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [{
+    "device_id": "` + deviceID + `",
+    "identity_status": "ok",
+    "connection_status": "online",
+    "firmware": {"id":"a21-stackchan","version":"0.1.0","board":"m5stack-cores3","commit":"abcdef1"},
+    "last_event": "xiaozhi.hello"
+  }]
+}`))
+		case "/v1/stackchan/official/status":
+			officialRequests++
+			if officialRequests == 1 {
+				_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "` + deviceID + `",
+  "connected": false,
+  "fallback_available": true,
+  "delivered_transport": "xiaozhi_mcp_fallback_available",
+  "physical_accepted": false,
+  "next_action": "connect_official_stackchan_ws"
+}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "` + deviceID + `",
+  "official_device_id": "` + deviceID + `",
+  "connected": true,
+  "fallback_available": true,
+  "delivered_transport": "stackchan_official_ws",
+  "last_packet_count": 2,
+  "physical_accepted": false,
+  "next_action": "send_official_control_and_collect_physical_acceptance"
+}`))
+		default:
+			t.Fatalf("unexpected product recovery request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	outputDir := filepath.Join(tempDir, "out")
+	serialPort := filepath.Join(tempDir, "cu.usbmodemA21")
+	writeTestFile(t, serialPort, "")
+	buildDir := writeTestOfficialXiaozhiCompatibleBuild(t)
+	idfExport := filepath.Join(tempDir, "export.sh")
+	writeTestFile(t, idfExport, "#!/bin/sh\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--gateway-url", server.URL,
+		"--device-id", deviceID,
+		"--upload-port", serialPort,
+		"--serial-glob", filepath.Join(tempDir, "cu.usbmodem*"),
+		"--reports-dir", outputDir,
+		"--output-dir", outputDir,
+		"--execute-flash",
+		"--confirm", "WRITE_A21_STACKCHAN_OFFICIAL_XIAOZHI_COMPATIBLE_APP",
+		"--build-dir", buildDir,
+		"--idf-export", idfExport,
+		"--wait-rom-timeout-seconds", "75",
+		"--post-check-delay-ms", "0",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"A21_FLASH_PORT='" + serialPort + "'",
+		"A21_WAIT_ROM_DEADLINE=$((SECONDS + 75))",
+		`python -m esptool --chip esp32s3 --port "$candidate" -b 115200 --before no_reset --after no_reset --no-stub chip_id`,
+		`--port "${A21_FLASH_PORT}"`,
+		"--before 'no_reset'",
+		"write_flash @flash_args",
+	} {
+		if !strings.Contains(ranScript, want) {
+			t.Fatalf("flash script missing %q: %s", want, ranScript)
+		}
+	}
+	var report stackChanProductRecoveryExecutionReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode execution report: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "flash_passed_product_online_official_relay_ready" {
+		t.Fatalf("status = %q, want flash_passed_product_online_official_relay_ready: %+v", report.Status, report)
+	}
+	if report.Precheck.Status != "product_offline_recovery_required" && report.Precheck.Status != "product_offline_rom_download_required" {
+		t.Fatalf("precheck status = %q, want offline recovery status", report.Precheck.Status)
+	}
+	if report.Flash == nil || !report.Flash.FlashExecuted || !report.Flash.WaitROM || report.Flash.EsptoolBefore != "no_reset" {
+		t.Fatalf("flash report = %+v, want executed wait-ROM no_reset product flash", report.Flash)
+	}
+	if report.PostCheck == nil || !report.PostCheck.DeviceOnline || !report.PostCheck.OfficialRelay.Connected {
+		t.Fatalf("postcheck = %+v, want online official relay", report.PostCheck)
+	}
+	for _, forbidden := range []string{"xiaozhi.bin", buildDir, idfExport} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("execution report leaked forbidden detail %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func reportFindingCodes(findings []stackChanProductRecoveryFinding) []string {
 	codes := make([]string, 0, len(findings))
 	for _, finding := range findings {
