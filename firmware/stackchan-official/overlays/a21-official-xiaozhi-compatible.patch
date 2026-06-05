@@ -141,7 +141,7 @@ index 3ff4871..334a27d 100644
 +void Hal::startA21WebSocketAvatarRuntime(std::function<void(std::string_view)> onStartLog)
 +{
 +    mclog::tagInfo(_tag, "start A21 direct websocket avatar runtime");
-+    startNetwork(onStartLog);
++    mclog::tagInfo(_tag, "A21 official avatar relay waits for Xiaozhi network");
 +    onStartLog("Connecting to\nA21 relay...");
 +    if (!_a21_avatar_runtime) {
 +        _a21_avatar_runtime = std::make_unique<WebSocketAvatar>();
@@ -251,13 +251,14 @@ diff --git a/firmware/sdkconfig.defaults b/firmware/sdkconfig.defaults
 index 4db623a..998b27b 100644
 --- a/firmware/sdkconfig.defaults
 +++ b/firmware/sdkconfig.defaults
-@@ -10,7 +10,24 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
+@@ -10,7 +10,25 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
  CONFIG_LANGUAGE_EN_US=y
  CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN=y
  CONFIG_SEND_WAKE_WORD_DATA=n
 -CONFIG_SR_WN_WN9_HISTACKCHAN_TTS3=y
 +CONFIG_OTA_URL="http://47.103.57.217/xiaozhi/ota/"
 +CONFIG_A21_STACKCHAN_OFFICIAL_GATEWAY_BASE_URL="ws://47.103.57.217"
++CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=8192
 +CONFIG_USE_HOTSPOT_WIFI_PROVISIONING=y
 +# CONFIG_USE_ESP_BLUFI_WIFI_PROVISIONING is not set
 +# CONFIG_USE_ACOUSTIC_WIFI_PROVISIONING is not set

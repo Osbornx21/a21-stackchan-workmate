@@ -311,14 +311,19 @@ func TestOfficialXiaozhiCompatibleOverlayRunsOfficialAvatarRelayWithoutMooncakeW
 		`void updateA21WebSocketAvatarRuntime();`,
 		`static std::unique_ptr<WebSocketAvatar> _a21_avatar_runtime;`,
 		`start A21 direct websocket avatar runtime`,
+		`A21 official avatar relay waits for Xiaozhi network`,
 		`_a21_avatar_runtime = std::make_unique<WebSocketAvatar>();`,
 		`_a21_avatar_runtime->update();`,
 		`GetHAL().getFactoryMacString(":")`,
 		`device_id={}`,
+		`CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=8192`,
 	} {
 		if !strings.Contains(overlay, required) {
 			t.Fatalf("official Xiaozhi-compatible overlay missing official avatar relay runtime contract %q", required)
 		}
+	}
+	if strings.Contains(overlay, `+    startNetwork(onStartLog);`) {
+		t.Fatalf("A21 direct avatar runtime must not start a second Wi-Fi/network path from the avatar relay task")
 	}
 	if strings.Contains(overlay, `+    mooncake::GetMooncake().extensionManager()->createAbility(std::make_unique<WebsocketAvatarWorker>());`) {
 		t.Fatalf("A21 direct avatar runtime must not depend on the Mooncake worker in the parked Xiaozhi path")
