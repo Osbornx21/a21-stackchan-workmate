@@ -293,11 +293,11 @@ func TestOfficialXiaozhiCompatibleOverlayUsesOfficialFrontendThenA21AgentRuntime
 		`CONFIG_X21_STACKCHAN_AUTO_START_XIAOZHI=y`,
 		`diff --git a/firmware/main/hal/hal_ble.cpp b/firmware/main/hal/hal_ble.cpp`,
 		`diff --git a/firmware/main/apps/app_setup/`,
-		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
+		`+        WriteReg(0x27, 0x10);`,
 		`AddAuth(ssid, password)`,
 	} {
 		if strings.Contains(overlay, forbidden) {
-			t.Fatalf("official frontend/Wi-Fi/PMIC must remain official before AI.AGENT entry; found %q", forbidden)
+			t.Fatalf("official frontend/Wi-Fi/PMIC timing must remain official before AI.AGENT entry; found %q", forbidden)
 		}
 	}
 }
@@ -344,7 +344,7 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesOfficialAvatarRelayWorkerWithA
 	}
 }
 
-func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle(t *testing.T) {
+func TestOfficialXiaozhiCompatibleOverlayRestoresStackChanPowerKeyParity(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -357,17 +357,21 @@ func TestOfficialXiaozhiCompatibleOverlayPreservesStackChanPowerKeyLifecycle(t *
 	}
 	overlay := string(data)
 
-	for _, forbidden := range []string{
+	for _, required := range []string{
 		`diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc`,
 		`WriteReg(0x10, common_config | 0x04);`,
 		`WriteReg(0x22, 0b110);`,
-		`WriteReg(0x27, 0x10);`,
+		`WriteReg(0x27, 0x00);`,
 		`Enable 16s PWRON hardware PMIC shutdown fallback.`,
 		`PWRON and OFFLEVEL can request PMIC power-off.`,
+		`Preserve official ON/OFF timing: 128ms on, 4s off.`,
 	} {
-		if strings.Contains(overlay, forbidden) {
-			t.Fatalf("official Xiaozhi-compatible overlay must leave official StackChan PMIC lifecycle untouched; found %q", forbidden)
+		if !strings.Contains(overlay, required) {
+			t.Fatalf("official Xiaozhi-compatible overlay missing StackChan power-key parity contract %q", required)
 		}
+	}
+	if strings.Contains(overlay, `+        WriteReg(0x27, 0x10);`) {
+		t.Fatalf("official Xiaozhi-compatible overlay must preserve official PMIC ON/OFF timing instead of changing IRQLEVEL")
 	}
 }
 

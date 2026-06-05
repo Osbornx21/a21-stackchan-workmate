@@ -127,6 +127,22 @@ index 3ff4871..334a27d 100644
 +                           escaped_device_id);
 +
          connect();
+diff --git a/firmware/main/hal/board/stackchan.cc b/firmware/main/hal/board/stackchan.cc
+index c75df3d..0d37a2b 100644
+--- a/firmware/main/hal/board/stackchan.cc
++++ b/firmware/main/hal/board/stackchan.cc
+@@ -59,7 +59,10 @@ public:
+         WriteReg(0x90, 0xBF);
+         WriteReg(0x94, 33 - 5);
+         WriteReg(0x95, 33 - 5);
+-        WriteReg(0x27, 0x00);
+-
++        auto common_config = ReadReg(0x10);
++        WriteReg(0x10, common_config | 0x04);  // Enable 16s PWRON hardware PMIC shutdown fallback.
++        WriteReg(0x22, 0b110);                 // PWRON and OFFLEVEL can request PMIC power-off.
++        WriteReg(0x27, 0x00);                  // Preserve official ON/OFF timing: 128ms on, 4s off.
++
+         auto ret = setChargerConstantCurr(XPOWERS_AXP2101_CHG_CUR_700MA);
 diff --git a/firmware/partitions.csv b/firmware/partitions.csv
 index 0656b16..8b9bc5a 100644
 --- a/firmware/partitions.csv

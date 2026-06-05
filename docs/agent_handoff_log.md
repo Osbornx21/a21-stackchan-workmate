@@ -19,6 +19,72 @@ Each entry should include:
 - test, build, or runtime results;
 - failure location and reason, when applicable.
 
+## 2026-06-05 14:24 CST - StackChan Official Home PMIC Power-Key Build Ready
+
+Round goal:
+
+- Resolve the remaining no-USB power-key failure after the operator confirmed
+  the official Home/NVS path works.
+
+Actual completed work:
+
+- Added
+  `docs/plans/2026-06-05-stackchan-official-home-pmic-power-key-parity.md`
+  for transition
+  `T-STACKCHAN-OFFICIAL-HOME-PMIC-POWER-KEY-PARITY-001`.
+- Restored the narrow AXP2101 PMIC power-key parity hunk in the
+  official-compatible product overlay:
+  `REG10 |= 0x04`, `REG22 = 0b110`, and `REG27 = 0x00`.
+- Updated overlay guard tests so official StackChan Home/setup/BLE and
+  no-direct-Xiaozhi boot remain protected, while the exact PMIC parity hunk is
+  required.
+- Kept A21 as a selected mode/backend after official `AI.AGENT` entry; no
+  Gateway/provider/voice path was changed in this round.
+
+Changed files:
+
+- `docs/plans/2026-06-05-stackchan-official-home-pmic-power-key-parity.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+- `firmware/stackchan-official/overlays/a21-official-xiaozhi-compatible.patch`
+- `internal/app/official_stackchan_test.go`
+
+Tests/build/runtime results:
+
+- Focused overlay tests passed:
+  `GOMAXPROCS=2 go test ./internal/app -run 'OfficialXiaozhiCompatibleOverlay|StackChanOfficialCandidateContract' -count=1`.
+- `git diff --check` passed.
+- Clean official StackChan source accepted the overlay through
+  `git apply --check --recount`.
+- `GOMAXPROCS=2 make verify` passed.
+- Guarded product build passed through
+  `a21-stackchan-official-xiaozhi-compatible-build`.
+- App artifact:
+  `a21-stackchan-official-xiaozhi-compatible.bin`; SHA-256
+  `1f1348156a3312c76059f0a084d956d13ca41cc74a22ca2c0b8884b4ea1a9aa3`.
+- Build report:
+  `reports/a21-stackchan-official-baseline-20260605-142444-1780640684585168000.json`.
+
+Remaining issues:
+
+- Product flash and physical no-USB cold boot/shutdown acceptance are still
+  pending.
+- If the same physical symptom remains after this candidate is flashed, the
+  next investigation should move to battery/PMIC rail/latch hardware evidence
+  and a stock official firmware A/B power test.
+
+Next suggested action:
+
+- Commit this build-ready transition, push it, then run only the guarded
+  `a21-stackchan-official-xiaozhi-compatible-flash-execute` product lane on the
+  foreground device.
+
+Forbidden actions avoided:
+
+- No generic `xiaozhi.bin`, no NVS write, no provider key in firmware, no
+  direct boot into Xiaozhi, no BLE/setup/main launcher rewrites, no Git
+  prune/gc, and no rollback of internal-test3 voice/protocol changes.
+
 ## 2026-06-05 14:13 CST - StackChan Official Home NVS Provision Executed
 
 Round goal:
