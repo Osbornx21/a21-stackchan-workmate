@@ -19199,3 +19199,71 @@ Forbidden actions avoided:
   power-key boot, wake/listen/playback, barge-in, and visible RGB/servo/touch
   behavior. Do not go back to the old ROM-download-pending assumption unless
   fresh evidence contradicts this serial capture.
+
+## 2026-06-05 10:04 CST - StackChan Device ID Casefold Recovery
+
+Round goal:
+
+- Resolve the false hardware-offline/official-relay-disconnected diagnosis
+  caused by uppercase/lowercase MAC records splitting one physical StackChan
+  into two Gateway identities after the firmware recovery.
+
+Actual completed work:
+
+- Confirmed fresh serial evidence still shows heartbeat pings and no reboot
+  loop, so the new issue is Gateway state mapping rather than a renewed brick.
+- Added
+  `docs/plans/2026-06-05-stackchan-device-id-casefold-recovery.md`.
+- Added Gateway MAC-shaped device-id lookup normalization for official relay
+  socket register/unregister, status lookup, official control lookup,
+  Xiaozhi-to-official fanout, and official relay connection registry writes.
+- Updated product recovery to prefer online/latest records when duplicate
+  case-variant MAC records are present.
+- Added regression tests for uppercase official relay plus lowercase product
+  status/control, and recovery choosing lowercase online over uppercase stale.
+
+Changed files:
+
+- `internal/gateway/server.go`
+- `internal/gateway/server_test.go`
+- `internal/app/app_stackchan_product_recovery.go`
+- `internal/app/app_test.go`
+- `docs/plans/2026-06-05-stackchan-device-id-casefold-recovery.md`
+- `docs/engineering/A21_CURRENT_CONTROL.md`
+- `docs/project_state_machine.md`
+- `docs/agent_handoff_log.md`
+
+Tests/build/runtime results:
+
+- `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanStatusAndControlNormalizeHardwareMACCase|TestOfficialStackChanStatusReportsConnectedFallbackSocket|TestOfficialStackChanControlEndpointDeliversOfficialMotionFrame' -count=1` passed.
+- `GOMAXPROCS=2 go test ./internal/app -run 'TestRunStackChanProductRecovery(PrefersOnlineCaseFoldedDevice|ReadyWhenOnlineAndOfficialRelayConnected|RequiresROMDownloadWhenOfflineWithSerial)' -count=1` passed.
+- `GOMAXPROCS=2 go test ./internal/gateway ./internal/app -run 'OfficialStackChan|ProductRecovery|Xiaozhi|PowerLifecycle' -count=1` passed.
+- `GOMAXPROCS=2 make verify` passed.
+
+Runtime or physical evidence:
+
+- Public pre-fix evidence showed lowercase `/v1/devices` product record online
+  and uppercase official relay status connected. Lowercase official status was
+  false before this fix.
+- Fresh serial evidence showed official avatar relay heartbeat pings without
+  reset-loop symptoms.
+
+Known risks/blockers:
+
+- ECS still needs deployment for public lowercase official status and recovery
+  precheck to reflect the fix.
+- Foreground physical validation is still required for screen stability,
+  no-USB power-key boot, wake/listen/playback, barge-in, and visible
+  RGB/servo/touch behavior.
+
+Recommended next action:
+
+- Commit/push, deploy Gateway to ECS through the existing `/opt/a21.next`
+  safe-swap path, then rerun public lowercase official status and product
+  recovery precheck.
+
+Forbidden actions avoided:
+
+- No firmware flash, no NVS write, no provider/V21 execution, no generic
+  product flash lane, no Git prune/gc, and no rollback of internal-test3
+  voice/protocol changes.

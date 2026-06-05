@@ -6042,6 +6042,95 @@ func TestRunStackChanProductRecoveryReadyWhenOnlineAndOfficialRelayConnected(t *
 	}
 }
 
+func TestRunStackChanProductRecoveryPrefersOnlineCaseFoldedDevice(t *testing.T) {
+	deviceID := "44:1b:f6:e2:6a:60"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/devices":
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.gateway.devices.v1",
+  "service": "a21-gateway",
+  "devices": [{
+    "device_id": "44:1B:F6:E2:6A:60",
+    "identity_status": "unknown",
+    "connection_status": "stale",
+    "device_age_ms": 400000,
+    "last_seen_ms": 1780624371663,
+    "last_event": "stackchan.official_ws.connected"
+  }, {
+    "device_id": "` + deviceID + `",
+    "identity_status": "unknown",
+    "connection_status": "online",
+    "device_age_ms": 900,
+    "last_seen_ms": 1780624802828,
+    "last_event": "device.heartbeat"
+  }]
+}`))
+		case "/v1/stackchan/official/status":
+			if r.URL.Query().Get("device_id") != deviceID {
+				t.Fatalf("device_id query = %q, want %q", r.URL.Query().Get("device_id"), deviceID)
+			}
+			_, _ = w.Write([]byte(`{
+  "schema_version": "a21.stackchan.official.status.v1",
+  "device_id": "` + deviceID + `",
+  "official_device_id": "` + deviceID + `",
+  "connected": true,
+  "fallback_available": true,
+  "delivered_transport": "stackchan_official_ws",
+  "physical_accepted": false,
+  "next_action": "send_official_control_and_collect_physical_acceptance"
+}`))
+		default:
+			t.Fatalf("unexpected product recovery request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	reportsDir := filepath.Join(tempDir, "reports")
+	if err := os.MkdirAll(reportsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeProductReadinessReportFixtureFile(t, reportsDir, "a21-stackchan-official-xiaozhi-compatible-flash-20260605-095236-1780624356871525000.json", `{
+  "schema_version": "a21.stackchan.official_xiaozhi_compatible_flash_execution.v1",
+  "status": "passed",
+  "flash_allowed": true,
+  "flash_executed": true,
+  "port": "/dev/cu.usbmodem1101"
+}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"stackchan-product-recovery",
+		"--gateway-url", server.URL,
+		"--device-id", deviceID,
+		"--serial-glob", filepath.Join(tempDir, "cu.usbmodem*"),
+		"--reports-dir", reportsDir,
+		"--output-dir", filepath.Join(tempDir, "out"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0: stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var report stackChanProductRecoveryReport
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v\n%s", err, stdout.String())
+	}
+	if report.Status != "product_online_official_relay_ready" {
+		t.Fatalf("status = %q, want product_online_official_relay_ready: %+v", report.Status, report)
+	}
+	if !report.DeviceOnline || report.Device == nil || report.Device.DeviceID != deviceID {
+		t.Fatalf("device = %+v online=%v, want lowercase online record", report.Device, report.DeviceOnline)
+	}
+	if !report.OfficialRelay.Checked || !report.OfficialRelay.Connected {
+		t.Fatalf("official relay = %+v, want connected", report.OfficialRelay)
+	}
+	if report.ROMDownloadRequired {
+		t.Fatalf("ROMDownloadRequired = true, want false")
+	}
+}
+
 func TestRunStackChanProductRecoveryRejectsInvalidDirectSourceIP(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -386,9 +386,10 @@ func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions
 		for _, device := range deviceReport.Devices {
 			if strings.EqualFold(device.DeviceID, report.DeviceID) {
 				deviceCopy := device
-				report.Device = &deviceCopy
-				report.DeviceOnline = strings.TrimSpace(device.ConnectionStatus) == "online"
-				break
+				if report.Device == nil || stackChanProductRecoveryDevicePreferred(deviceCopy, *report.Device) {
+					report.Device = &deviceCopy
+					report.DeviceOnline = strings.TrimSpace(device.ConnectionStatus) == "online"
+				}
 			}
 		}
 		if report.Device == nil {
@@ -408,6 +409,21 @@ func buildStackChanProductRecoveryReport(options stackChanProductRecoveryOptions
 	}
 	report.Status, report.ROMDownloadRequired, report.NextActions = classifyStackChanProductRecovery(report)
 	return report
+}
+
+func stackChanProductRecoveryDevicePreferred(candidate firmwarecheck.DeviceIdentityRecord, current firmwarecheck.DeviceIdentityRecord) bool {
+	candidateOnline := strings.TrimSpace(candidate.ConnectionStatus) == "online"
+	currentOnline := strings.TrimSpace(current.ConnectionStatus) == "online"
+	if candidateOnline != currentOnline {
+		return candidateOnline
+	}
+	if candidate.LastSeenMS != current.LastSeenMS {
+		return candidate.LastSeenMS > current.LastSeenMS
+	}
+	if candidate.DeviceAgeMS != current.DeviceAgeMS {
+		return candidate.DeviceAgeMS > 0 && (current.DeviceAgeMS <= 0 || candidate.DeviceAgeMS < current.DeviceAgeMS)
+	}
+	return strings.TrimSpace(candidate.DeviceID) < strings.TrimSpace(current.DeviceID)
 }
 
 func fetchStackChanProductRecoveryDeviceReport(options stackChanProductRecoveryOptions) (firmwareDeviceReport, error) {

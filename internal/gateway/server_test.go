@@ -5804,6 +5804,106 @@ func TestOfficialStackChanStatusReportsConnectedFallbackSocket(t *testing.T) {
 	}
 }
 
+func TestOfficialStackChanStatusAndControlNormalizeHardwareMACCase(t *testing.T) {
+	httpServer := httptest.NewServer(NewServer().Handler())
+	t.Cleanup(httpServer.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+
+	officialID := "44:1B:F6:E2:6A:60"
+	productID := "44:1b:f6:e2:6a:60"
+	conn, _, err := websocket.Dial(ctx, webSocketURL(httpServer.URL, "/stackChan/ws?device_id="+url.QueryEscape(officialID)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+
+	resp, err := http.Get(httpServer.URL + "/v1/stackchan/official/status?device_id=" + url.QueryEscape(productID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, data)
+	}
+	var status OfficialStackChanStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Connected ||
+		status.DeviceID != productID ||
+		status.OfficialDeviceID != productID ||
+		status.DeliveredTransport != "stackchan_official_ws" ||
+		status.NextAction != "send_official_control_and_collect_physical_acceptance" {
+		t.Fatalf("status = %+v, want lowercase product id connected to uppercase official relay", status)
+	}
+
+	controlBody := bytes.NewBufferString(`{"device_id":"` + productID + `","event":"motion","name":"look_up","y_angle":120,"trace_id":"a21-trace-mac-case","session_id":"a21-session-mac-case"}`)
+	respCh := make(chan *http.Response, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		resp, err := http.Post(httpServer.URL+"/v1/stackchan/official/control", "application/json", controlBody)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		respCh <- resp
+	}()
+
+	msgType, frame, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msgType != websocket.MessageBinary || len(frame) < 5 || frame[0] != 0x04 {
+		t.Fatalf("frame type=%v frame=%#v, want official ControlMotion", msgType, frame[:min(len(frame), 5)])
+	}
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case resp := <-respCh:
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("control status = %d, want 200: %s", resp.StatusCode, data)
+		}
+		var control XiaozhiDeviceControlResponse
+		if err := json.NewDecoder(resp.Body).Decode(&control); err != nil {
+			t.Fatal(err)
+		}
+		if control.Status != "delivered" || control.DeliveredTransport != "stackchan_official_ws" {
+			t.Fatalf("control = %+v, want official delivery through normalized MAC key", control)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+
+	devicesResp, err := http.Get(httpServer.URL + "/v1/devices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devicesResp.Body.Close()
+	var devices struct {
+		Devices []map[string]any `json:"devices"`
+	}
+	if err := json.NewDecoder(devicesResp.Body).Decode(&devices); err != nil {
+		t.Fatal(err)
+	}
+	var matches int
+	for _, device := range devices.Devices {
+		if strings.EqualFold(fmt.Sprint(device["device_id"]), productID) {
+			matches++
+			if device["device_id"] != productID {
+				t.Fatalf("device_id = %#v, want normalized lowercase MAC", device["device_id"])
+			}
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("devices = %#v, want one normalized MAC record", devices.Devices)
+	}
+}
+
 func TestOfficialStackChanStatusReportsDeliveryMetadata(t *testing.T) {
 	httpServer := httptest.NewServer(NewServer().Handler())
 	t.Cleanup(httpServer.Close)

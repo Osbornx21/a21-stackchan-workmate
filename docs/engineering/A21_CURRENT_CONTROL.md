@@ -72,6 +72,36 @@ Evidence truth:
 - Launch ready: false.
 - PRD accepted: false.
 
+Live truth after the 2026-06-05 10:04 CST StackChan device-id casefold recovery
+transition:
+
+- Fresh serial evidence after the firmware recovery showed the device remained
+  running around the 400 second uptime mark with repeated official avatar relay
+  heartbeat pings and no `sys_evt` stack overflow, reboot, Guru, or abort.
+- Public Gateway read-only checks exposed a server-side identity split, not a
+  fresh firmware brick:
+  lowercase `44:1b:f6:e2:6a:60` was online on the Xiaozhi product socket, while
+  uppercase `44:1B:F6:E2:6A:60` held the official relay connection record.
+- Lowercase official status returned `connected=false`, but uppercase official
+  status returned `connected=true`, `delivered_transport=stackchan_official_ws`,
+  and `next_action=send_official_control_and_collect_physical_acceptance`.
+- Added plan
+  `docs/plans/2026-06-05-stackchan-device-id-casefold-recovery.md`.
+- Gateway now normalizes MAC-shaped device IDs for official StackChan socket
+  register/unregister, status lookup, official control lookup, Xiaozhi fanout
+  lookup, and official relay connection registry writes.
+- Product recovery now prefers online/latest records when duplicate MAC
+  case-variants exist, instead of stopping at the first stale case-insensitive
+  match.
+- Local verification passed:
+  `GOMAXPROCS=2 go test ./internal/gateway -run 'TestOfficialStackChanStatusAndControlNormalizeHardwareMACCase|TestOfficialStackChanStatusReportsConnectedFallbackSocket|TestOfficialStackChanControlEndpointDeliversOfficialMotionFrame' -count=1`,
+  `GOMAXPROCS=2 go test ./internal/app -run 'TestRunStackChanProductRecovery(PrefersOnlineCaseFoldedDevice|ReadyWhenOnlineAndOfficialRelayConnected|RequiresROMDownloadWhenOfflineWithSerial)' -count=1`,
+  `GOMAXPROCS=2 go test ./internal/gateway ./internal/app -run 'OfficialStackChan|ProductRecovery|Xiaozhi|PowerLifecycle' -count=1`,
+  and `GOMAXPROCS=2 make verify`.
+- This is a server-side state-machine/status fix. It does not flash firmware,
+  write NVS, execute provider/V21, perform Git prune/gc, or mark physical
+  no-USB power-key/full PRD acceptance.
+
 Live truth after the 2026-06-05 09:54 CST StackChan sys_evt boot-loop recovery
 and official avatar relay reconnect transition:
 

@@ -12596,35 +12596,39 @@ func (s *Server) registerOfficialStackChanSocket(deviceID string, conn *websocke
 	if !validA21DeviceID(deviceID) || conn == nil || writeMu == nil {
 		return
 	}
+	key := deviceIDLookupKey(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.officialStackChanSockets[deviceID] = &deviceSocket{conn: conn, writeMu: writeMu, connected: s.now().UnixMilli()}
+	s.officialStackChanSockets[key] = &deviceSocket{conn: conn, writeMu: writeMu, connected: s.now().UnixMilli()}
 }
 
 func (s *Server) unregisterOfficialStackChanSocket(deviceID string, conn *websocket.Conn) {
 	if deviceID == "" || conn == nil {
 		return
 	}
+	key := deviceIDLookupKey(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	socket := s.officialStackChanSockets[deviceID]
+	socket := s.officialStackChanSockets[key]
 	if socket != nil && socket.conn == conn {
-		delete(s.officialStackChanSockets, deviceID)
+		delete(s.officialStackChanSockets, key)
 	}
 }
 
 func (s *Server) officialStackChanSocket(deviceID string) (*deviceSocket, bool) {
+	key := deviceIDLookupKey(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	socket := s.officialStackChanSockets[deviceID]
+	socket := s.officialStackChanSockets[key]
 	return socket, socket != nil
 }
 
 func (s *Server) officialStackChanSocketForXiaozhiDevice(deviceID string) (*deviceSocket, string, bool) {
+	key := deviceIDLookupKey(deviceID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if socket := s.officialStackChanSockets[deviceID]; socket != nil {
-		return socket, deviceID, true
+	if socket := s.officialStackChanSockets[key]; socket != nil {
+		return socket, key, true
 	}
 	if socket := s.officialStackChanSockets[defaultOfficialStackChanDeviceID]; socket != nil {
 		return socket, defaultOfficialStackChanDeviceID, true
@@ -12634,14 +12638,16 @@ func (s *Server) officialStackChanSocketForXiaozhiDevice(deviceID string) (*devi
 
 func (s *Server) officialStackChanStatus(deviceID string) OfficialStackChanStatusResponse {
 	nowMS := s.now().UnixMilli()
+	deviceID = strings.TrimSpace(deviceID)
+	key := deviceIDLookupKey(deviceID)
 	var record DeviceRecord
 	var found bool
 	officialDeviceID := ""
 	connectedSinceMS := int64(0)
 	s.mu.Lock()
-	record, found = s.devices[deviceID]
-	if socket := s.officialStackChanSockets[deviceID]; socket != nil {
-		officialDeviceID = deviceID
+	record, found = s.devices[key]
+	if socket := s.officialStackChanSockets[key]; socket != nil {
+		officialDeviceID = key
 		connectedSinceMS = socket.connected
 	} else if socket := s.officialStackChanSockets[defaultOfficialStackChanDeviceID]; socket != nil {
 		officialDeviceID = defaultOfficialStackChanDeviceID
@@ -12740,13 +12746,14 @@ func officialStackChanStatusSurfaces(runtimeEcho map[string]string) map[string]s
 }
 
 func (s *Server) recordOfficialStackChanConnected(deviceID string) {
+	key := deviceIDLookupKey(deviceID)
 	nowMS := s.now().UnixMilli()
-	s.recordTrace("", "", deviceID, "stackchan.official_ws.connected", nowMS)
+	s.recordTrace("", "", key, "stackchan.official_ws.connected", nowMS)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	record := s.devices[deviceID]
+	record := s.devices[key]
 	if record.DeviceID == "" {
-		record.DeviceID = deviceID
+		record.DeviceID = key
 		record.FirstSeenMS = nowMS
 	}
 	if record.IdentityStatus == "" {
@@ -12755,7 +12762,7 @@ func (s *Server) recordOfficialStackChanConnected(deviceID string) {
 	record.ConnectionStatus = "official_stackchan_ws_connected"
 	record.LastSeenMS = nowMS
 	record.LastEvent = protocol.DeviceEventKind("stackchan.official_ws.connected")
-	s.devices[deviceID] = record
+	s.devices[key] = record
 }
 
 func (s *Server) writeXiaozhiOfficialStackChanState(ctx context.Context, session *xiaozhiSession, state string, reason string, force bool) bool {
@@ -13262,6 +13269,14 @@ func validA21DeviceID(deviceID string) bool {
 	}
 	lower := strings.ToLower(deviceID)
 	return !strings.Contains(lower, "x21") && !strings.Contains(lower, "v21")
+}
+
+func deviceIDLookupKey(deviceID string) string {
+	deviceID = strings.TrimSpace(deviceID)
+	if hardwareMACDeviceID(deviceID) {
+		return strings.ToLower(deviceID)
+	}
+	return deviceID
 }
 
 func hardwareMACDeviceID(deviceID string) bool {
